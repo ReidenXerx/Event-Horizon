@@ -823,20 +823,6 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     let aborted = checkAbort("preflight");
     if (aborted) return aborted;
 
-    // Seed the bundled-archive prefetch pool. We compute the zip
-    // entries the driver will likely extract and kick off background
-    // extraction for the first `concurrency` of them. Recovery paths
-    // and conflict-choice changes that take a different bundled
-    // entry will hit the cold path inside `pool.take` and extract
-    // inline — slower for that one mod but safe and self-healing.
-    const prefetchEntries = collectBundledZipEntriesForPrefetch(
-      plan,
-      ctx,
-    );
-    if (prefetchEntries.length > 0) {
-      bundledPool.prime(prefetchEntries);
-    }
-
     // ── 2 + 3. profile resolution ───────────────────────────────────
     if (plan.installTarget.kind === "fresh-profile") {
       // Fresh-profile mode: create a new profile and switch into it — or
@@ -937,6 +923,33 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       // Current-profile mode: install in-place into the active profile.
       activeProfileId = plan.installTarget.profileId;
       activeProfileName = plan.installTarget.profileName;
+    }
+
+    /**
+     * ─── PREFETCH ONLY ONCE THE PROFILE SWITCH IS DONE ─────────────────
+     * This used to run before profile resolution, and it cost a tester their
+     * install. Their log:
+     *
+     *   22:12:44  bundled-prefetch.primed {requested: 13}
+     *   22:12:44  install.profile.resolved {mode: "created"}
+     *   22:13:25  extract.ok    311 MB in  41s
+     *   22:13:47  bundled-prefetch.dispose        <- the run died here, 63s in
+     *   22:16:34  extract.ok  2,577 MB in 177s    (still finishing)
+     *   22:16:46  extract.ok  4,890 MB in 242s
+     *
+     * "Profile switch did not complete within 64s." Vortex had to purge a
+     * profile holding ~1,100 deployed mods, and we had just pointed 7.7 GB of
+     * concurrent archive extraction at the same disk. It was not a stuck
+     * deployment — the error text said to go looking for one — it was us
+     * starving the switch we were waiting on.
+     *
+     * The prefetch exists to overlap extraction with INSTALLS, and the
+     * switch is a one-time step before any of those. Moving it here costs
+     * nothing and removes the contention entirely.
+     */
+    const prefetchEntries = collectBundledZipEntriesForPrefetch(plan, ctx);
+    if (prefetchEntries.length > 0) {
+      bundledPool.prime(prefetchEntries);
     }
 
     // ── 4. remove replaced + orphan-uninstalled mods ────────────────

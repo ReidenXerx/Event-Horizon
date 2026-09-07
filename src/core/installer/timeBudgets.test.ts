@@ -69,7 +69,20 @@ describe("profileSwitchBudgetMs", () => {
 
   it("is bounded and never below the original 30s", async () => {
     expect(profileSwitchBudgetMs(0, WIN)).toBeGreaterThanOrEqual(30_000);
-    expect(profileSwitchBudgetMs(100_000, WINE)).toBeLessThanOrEqual(5 * 60_000);
+    expect(profileSwitchBudgetMs(100_000, WINE)).toBeLessThanOrEqual(10 * 60_000);
+  });
+
+  it("gives a big collection time to PURGE, not just to flip a flag", () => {
+    /**
+     * A switch makes Vortex unlink every deployed file of the profile being
+     * left. A tester with ~1,100 mods deployed got 64s for that and lost the
+     * install to "Profile switch did not complete within 64s. Check Vortex's
+     * notifications for a stuck deployment." There was no stuck deployment.
+     *
+     * The number here is not sacred; being in the minutes for a collection
+     * this size is. Sixty-four seconds was not.
+     */
+    expect(profileSwitchBudgetMs(1725, WIN)).toBeGreaterThan(5 * 60_000);
   });
 });
 

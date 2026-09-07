@@ -234,7 +234,7 @@ export function findManualUpdates(
   mods: readonly CuratorMod[],
 ): ManualUpdate[] {
   const out: ManualUpdate[] = [];
-  const seen = new Set<number>();
+  const seen = new Set<string>();
 
   for (const mod of mods) {
     if (mod.frozenAtVersion !== undefined) continue;
@@ -258,11 +258,11 @@ export function findManualUpdates(
      */
     if (!vortexReportsUpdate(mod)) continue;
 
-    // One per page, like the automated list, so several installs of the same
-    // mod do not each demand a visit to the same page.
-    if (mod.nexusModId !== undefined) {
-      if (seen.has(mod.nexusModId)) continue;
-      seen.add(mod.nexusModId);
+    // One per FILE, not one per page — see `updateGroupKey`.
+    const key = updateGroupKey(mod);
+    if (key !== undefined) {
+      if (seen.has(key)) continue;
+      seen.add(key);
     }
 
     out.push({
@@ -282,8 +282,35 @@ export function findManualUpdates(
   return out;
 }
 
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * What counts as "the same thing" when collapsing duplicate update rows.
+ *
+ * The PAGE alone is wrong, and wrong in the direction that hides work. One
+ * Nexus page ships a main file, optional files, variants and patches, each
+ * with its own file id and its own updates — `fileIdentity`'s docblock names
+ * the case that proved it, where a bodypaint's CBBE and Male variants looked
+ * like an old version and its replacement. Collapsing by page meant a curator
+ * running three different files from one page saw one row and updated one
+ * file, believing they had done all three.
+ *
+ * So the key is page + file. Two installs of the SAME file still collapse —
+ * that is a genuine duplicate and only needs one visit — while different
+ * files on one page each get their own row.
+ *
+ * `undefined` means we cannot tell which file this is, and the caller must
+ * NOT collapse on a guess: showing one row too many costs a glance, and
+ * hiding one costs a mod left at the wrong version.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+export function updateGroupKey(mod: CuratorMod): string | undefined {
+  if (mod.nexusModId === undefined) return undefined;
+  const file = fileIdentity(mod);
+  return file === undefined ? undefined : `${mod.nexusModId}::${file}`;
+}
+
 export function findUpdatable(mods: readonly CuratorMod[]): UpdateCandidate[] {
-  const best = new Map<number, CuratorMod>();
+  const best = new Map<string, CuratorMod>();
   const noPage: CuratorMod[] = [];
 
   for (const mod of mods) {
@@ -295,14 +322,17 @@ export function findUpdatable(mods: readonly CuratorMod[]): UpdateCandidate[] {
     // downgrade wearing an update's clothes.
     if (mod.newestFileId <= mod.nexusFileId) continue;
 
-    if (mod.nexusModId === undefined) {
-      // No page to group by. Cannot be a duplicate of anything we can see.
+    const key = updateGroupKey(mod);
+    if (key === undefined) {
+      // No page, or no way to tell which FILE this is. Cannot be shown to be
+      // a duplicate of anything, so it gets its own row rather than being
+      // folded into a mod it may have nothing to do with.
       noPage.push(mod);
       continue;
     }
-    const held = best.get(mod.nexusModId);
+    const held = best.get(key);
     if (held === undefined || (mod.nexusFileId ?? 0) > (held.nexusFileId ?? 0)) {
-      best.set(mod.nexusModId, mod);
+      best.set(key, mod);
     }
   }
 
@@ -327,9 +357,16 @@ export function findUpdateShadowed(
   const offered = new Map(
     findUpdatable(mods).map((c) => [c.mod.id, c.mod] as const),
   );
-  const byPage = new Map<number, CuratorMod>();
+  /**
+   * Keyed the same way `findUpdatable` groups, and that is not optional: if
+   * the two disagreed, a mod could be offered an update AND listed as
+   * shadowed by it, or shadowed by a mod that is a different FILE from the
+   * same page and has nothing to do with it.
+   */
+  const byFile = new Map<string, CuratorMod>();
   for (const candidate of offered.values()) {
-    if (candidate.nexusModId !== undefined) byPage.set(candidate.nexusModId, candidate);
+    const key = updateGroupKey(candidate);
+    if (key !== undefined) byFile.set(key, candidate);
   }
 
   const out: { mod: CuratorMod; newerInstall: CuratorMod }[] = [];
@@ -338,7 +375,9 @@ export function findUpdateShadowed(
     if (mod.nexusModId === undefined || mod.nexusFileId === undefined) continue;
     if (mod.newestFileId === undefined || mod.newestFileId <= mod.nexusFileId) continue;
     if (offered.has(mod.id)) continue;
-    const newer = byPage.get(mod.nexusModId);
+    const key = updateGroupKey(mod);
+    if (key === undefined) continue;
+    const newer = byFile.get(key);
     if (newer !== undefined) out.push({ mod, newerInstall: newer });
   }
   return out;

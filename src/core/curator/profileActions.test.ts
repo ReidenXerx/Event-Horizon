@@ -226,9 +226,18 @@ describe("two installs of one mod, both with an update waiting", () => {
   // — 7.0 and 8.1 — and BOTH were offered an update to 8.2. Taking both would
   // install 8.2 twice and leave four copies where there were two, with the
   // tool making the exact mess it exists to clean up.
+  // Two installs of the SAME FILE at different versions. The shared
+  // `logicalFileName` is what makes them the same thing — a page id alone
+  // cannot say that, because one page ships many different files.
   const twoInstalls = [
-    mod({ id: "old", nexusModId: 47213, nexusFileId: 700, newestFileId: 820, version: "7.0" }),
-    mod({ id: "new", nexusModId: 47213, nexusFileId: 810, newestFileId: 820, version: "8.1" }),
+    mod({
+      id: "old", nexusModId: 47213, nexusFileId: 700, newestFileId: 820,
+      version: "7.0", logicalFileName: "Immersive Armors",
+    }),
+    mod({
+      id: "new", nexusModId: 47213, nexusFileId: 810, newestFileId: 820,
+      version: "8.1", logicalFileName: "Immersive Armors",
+    }),
   ];
 
   it("offers the update once, on the newest install", () => {
@@ -324,13 +333,40 @@ describe("updates we can see but not take", () => {
     ).toHaveLength(0);
   });
 
-  it("asks for one visit per mod page, not one per install", () => {
-    // Two installs of the same mod are one trip to one page.
+  it("asks for one visit per FILE, not one per install", () => {
+    // Two installs of the same file are one trip. The shared logical name is
+    // what establishes that; a shared page id would not.
     const found = findManualUpdates([
-      m({ id: "old", nexusModId: 7, version: "1.0", newestVersion: "3.0" }),
-      m({ id: "new", nexusModId: 7, version: "2.0", newestVersion: "3.0" }),
+      m({ id: "old", nexusModId: 7, version: "1.0", newestVersion: "3.0", logicalFileName: "Main File" }),
+      m({ id: "new", nexusModId: 7, version: "2.0", newestVersion: "3.0", logicalFileName: "Main File" }),
     ]);
     expect(found).toHaveLength(1);
+  });
+
+  it("lists DIFFERENT files from one page separately", () => {
+    /**
+     * The curator's request, and a real omission before it. One Nexus page
+     * ships a main file, optional files, variants and patches — each with its
+     * own updates. Collapsing by page showed one row, so a curator running
+     * three files from one page updated one and believed they had done all
+     * three.
+     */
+    const found = findManualUpdates([
+      m({ id: "cbbe", nexusModId: 31826, version: "1.0", newestVersion: "2.0", logicalFileName: "Barbarian Bodypaints - CBBE" }),
+      m({ id: "male", nexusModId: 31826, version: "1.0", newestVersion: "2.0", logicalFileName: "Barbarian Bodypaints - Male" }),
+    ]);
+    expect(found.map((f) => f.mod.id).sort()).toEqual(["cbbe", "male"]);
+  });
+
+  it("does not collapse two installs it cannot tell apart", () => {
+    // No logical name and no parseable archive name: we cannot show these are
+    // the same file. Hiding one costs a mod left at the wrong version; showing
+    // one extra costs a glance. The asymmetry decides it.
+    const found = findManualUpdates([
+      m({ id: "a", nexusModId: 9, version: "1.0", newestVersion: "2.0" }),
+      m({ id: "b", nexusModId: 9, version: "1.0", newestVersion: "2.0" }),
+    ]);
+    expect(found).toHaveLength(2);
   });
 
   it("still lists a mod with no page, without inventing a link", () => {

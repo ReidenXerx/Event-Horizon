@@ -117,17 +117,34 @@ export function deployBudgetMs(modCount: number, env: BudgetEnv): number {
 /**
  * Ceiling for Vortex to switch profiles.
  *
- * Cheaper than deployment but still proportional: the profile carries every
- * mod's enabled state.
+ * ─── A SWITCH IS A PURGE, NOT A FLAG FLIP ──────────────────────────────
+ * This used to read "cheaper than deployment but still proportional: the
+ * profile carries every mod's enabled state", and charged 20ms per mod
+ * against deployment's 500ms. That description is of the profile RECORD.
+ * The work Vortex actually does is unlink every deployed file of the profile
+ * being LEFT before it activates the new one — a deployment in reverse, at
+ * deployment's cost.
+ *
+ * A tester with ~1,100 mods deployed got 64s for that and the install died
+ * with "Profile switch did not complete within 64s. Check Vortex's
+ * notifications for a stuck deployment." There was no stuck deployment. The
+ * error sent them looking for one, which is the worst thing a timeout can do.
+ *
+ * Sized from the purge now. Still below `deployBudgetMs` — a purge unlinks
+ * where a deploy links and reads content — but the same shape, because it is
+ * the same walk over the same files.
  */
 export function profileSwitchBudgetMs(
   modCount: number,
   env: BudgetEnv,
 ): number {
   return clamp(
-    scale(30_000 + 20 * Math.max(0, modCount), env),
+    scale(60_000 + 200 * Math.max(0, modCount), env),
     LEGACY_PROFILE_SWITCH_TIMEOUT_MS,
-    5 * 60_000,
+    // Ten minutes, not five. A real hang is unbearable at either, and the
+    // cost of being wrong the other way is a 1,700-mod install thrown away
+    // at the second step — which is what happened.
+    10 * 60_000,
   );
 }
 
