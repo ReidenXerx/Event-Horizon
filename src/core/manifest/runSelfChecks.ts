@@ -123,6 +123,28 @@ export type PostProcessingCandidate = {
   /** How many staged files the archive cannot produce. */
   unexplained: number;
   /**
+   * EVERY file this mod stages is one the archive cannot produce, so a user
+   * who installs it from that archive receives nothing the curator has.
+   *
+   * The degenerate corner of curator divergence, and it needs its own name
+   * because the ordinary answers are all wrong here. "Declare" settles what
+   * VERIFICATION should do — the user is no worse off without these files —
+   * and says nothing about whether the mod is worth installing at all. So a
+   * curator can answer the question correctly and still ship a mod that makes
+   * every user perform an install to obtain nothing.
+   *
+   * Measured on a real 1,755-mod collection: exactly one mod, staging a
+   * single 74-byte placeholder. Its Nexus archive is a FOMOD, so reproducing
+   * it meant a dialog the user could not answer — and answering it the way
+   * the curator had, by selecting nothing, made Vortex fail with ENOENT
+   * because an install that selects nothing creates no folder.
+   *
+   * Bundling or mirroring would "fix" it by shipping the placeholder, which is
+   * why this is surfaced as its own finding: the useful answer is almost
+   * always to drop the mod from the collection.
+   */
+  shipsNothing: boolean;
+  /**
    * A few of them, classified, so the answer comes from looking.
    *
    * Not bare paths: a path cannot tell the curator whether declaring means the
@@ -203,6 +225,10 @@ export function findPostProcessingCandidates(
           modId: r.modId,
           modName: r.modName,
           unexplained: r.unexplained,
+          // Every staged file unexplained ⇒ nothing of this mod survives a
+          // plain install. `stagedCount > 0` because a mod that stages no
+          // files at all is a different (and harmless) shape.
+          shipsNothing: r.stagedCount > 0 && r.unexplained >= r.stagedCount,
           files: r.unexplainedExamples,
           canMirror: mirrorable.has(r.modId),
           ...(r.unexplainedFingerprint !== undefined
@@ -581,4 +607,63 @@ export async function runSelfChecks(
   });
 
   return { reports, summary, warnings, postProcessingCandidates, mirrorable };
+}
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * Mods that will INTERROGATE the user during their install.
+ *
+ * The archive branches — it carries a FOMOD script — and Vortex kept no record
+ * of what the curator answered, so Event Horizon has nothing to replay and the
+ * installer must ask. The person answering has never seen the curator's setup,
+ * so whatever they pick, the mod they end up with is theirs.
+ *
+ * ─── WHY THIS IS NOT THE POST-PROCESSING QUESTION ──────────────────────
+ * That question is asked about `unexplained > 0` — staged files the archive
+ * cannot produce. These two populations barely overlap. A mod can prompt with
+ * nothing unexplained at all, and on a real 1,755-mod collection the mod that
+ * broke a tester's install was flagged by neither in a way that helped: the
+ * curator was asked about its one placeholder file, answered "declare"
+ * correctly, and the mod still went on to prompt every user and fail.
+ *
+ * Deliberately not a build refusal. It is not an error in the collection, it
+ * is a fact about what Vortex remembered, and the curator has two good fixes:
+ * reinstall the mod so the answers are recorded, or bundle it so no installer
+ * runs on the user's machine at all.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+export type PromptingMod = {
+  modId: string;
+  modName: string;
+  /** Staged files, so a curator can see how much of their build is at stake. */
+  stagedCount: number;
+  /**
+   * Every file this mod stages is one the archive cannot produce.
+   *
+   * Then the prompt is not merely risky, it is unanswerable: no combination of
+   * choices reproduces the curator's folder, so the mod has to be bundled or
+   * dropped. This is the exact shape that failed on a real install.
+   */
+  shipsNothing: boolean;
+};
+
+export function findModsThatPromptTheUser(
+  reports: readonly SelfCheckReport[],
+): PromptingMod[] {
+  return reports
+    .filter((r) => r.promptsUser === true)
+    .map((r) => ({
+      modId: r.modId,
+      modName: r.modName,
+      stagedCount: r.stagedCount,
+      shipsNothing: r.stagedCount > 0 && r.unexplained >= r.stagedCount,
+    }))
+    // Unanswerable first: those cannot be fixed by the user being careful.
+    .sort((a, b) =>
+      a.shipsNothing !== b.shipsNothing
+        ? a.shipsNothing
+          ? -1
+          : 1
+        : b.stagedCount - a.stagedCount,
+    );
 }

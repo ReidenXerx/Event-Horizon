@@ -92,6 +92,25 @@ export type SelfCheckReport = {
   omissionLeads: OmissionLead[];
   stagedCount: number;
   expectedCount: number;
+  /**
+   * The archive carries a FOMOD script and Vortex recorded no answers for it.
+   *
+   * That combination is what a USER experiences as a dialog they cannot answer
+   * correctly: there is nothing to replay, so Event Horizon must let the
+   * installer ask, and the person answering has never seen the curator's
+   * setup. Whatever they pick, the mod is theirs rather than the curator's,
+   * and every file check downstream then passes on the wrong file set.
+   *
+   * It is not a defect in the mod or in the curator's profile — Vortex simply
+   * does not always keep `installerChoices`, and a mod re-created as a variant
+   * can lose them. It IS something the curator can fix before shipping, by
+   * reinstalling the mod so the answers are recorded, or by bundling it.
+   *
+   * Separate from `unexplained` because the two do not overlap: a mod can
+   * prompt with nothing unexplained at all, which is exactly the case the
+   * post-processing question never asks about.
+   */
+  promptsUser?: boolean;
 };
 
 export type SelfCheckInput = {
@@ -241,8 +260,18 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
     // Vortex records nothing when an install had no branching. The script's
     // unconditional files could still be derived, but a wrong "missing" claim
     // is worse than no claim, so this stays containment-only for now.
+    //
+    // It is also the moment we learn this mod will INTERROGATE the user: the
+    // archive branches and we have no answers to give the installer. See
+    // `promptsUser`.
     notes.push("No recorded FOMOD choices; cannot derive the expected file set.");
-    return { ...withLeads, depth: "containment", notes, ...unexplainedFacts(containment, listing) };
+    return {
+      ...withLeads,
+      depth: "containment",
+      notes,
+      promptsUser: true,
+      ...unexplainedFacts(containment, listing),
+    };
   }
 
   let raw: Buffer | undefined;

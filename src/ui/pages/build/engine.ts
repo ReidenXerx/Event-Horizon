@@ -50,6 +50,7 @@ import {
 import { buildManifest } from "../../../core/manifest/buildManifest";
 import { captureStagingFiles } from "../../../core/manifest/captureStagingFiles";
 import { runSelfChecks,
+  findModsThatPromptTheUser,
   findPostProcessingCandidates,
 } from "../../../core/manifest/runSelfChecks";
 import type { MirrorFileSpec } from "../../../core/manifest/packageZip";
@@ -1593,12 +1594,39 @@ export async function runBuildPipeline(
       );
     }
 
+    /**
+     * ─── MODS THAT WILL STOP AND ASK THE USER ─────────────────────────
+     * A FOMOD archive whose answers Vortex never recorded. Nothing to
+     * replay, so the installer runs on the user's machine and the person
+     * answering has never seen this collection.
+     *
+     * Logged rather than gated: it is not an error in the build, it is a
+     * fact about what Vortex remembered, and the curator has two good
+     * fixes — reinstall the mod so the answers are recorded, or bundle it.
+     * A tester lost an evening to one of these, and nothing in the build
+     * output had mentioned it.
+     */
+    const prompting = findModsThatPromptTheUser(selfCheck.reports);
+    if (prompting.length > 0) {
+      ehLog("warn", "build.mods-that-prompt-the-user", {
+        count: prompting.length,
+        unanswerable: prompting.filter((m) => m.shipsNothing).length,
+        mods: prompting.slice(0, 20).map((m) => ({
+          name: m.modName,
+          staged: m.stagedCount,
+          shipsNothing: m.shipsNothing,
+        })),
+      });
+    }
+
     selfCheckOp.ok({
       replayed: selfCheck.summary.replayed,
       containment: selfCheck.summary.containment,
       skipped: selfCheck.summary.skipped,
       modsWithMissing: selfCheck.summary.modsWithMissing,
       missingFiles: selfCheck.summary.missingFiles,
+      promptsUser: prompting.length,
+      shipsNothing: prompting.filter((m) => m.shipsNothing).length,
     });
   } catch (err) {
     // A self-check problem is never a build problem.

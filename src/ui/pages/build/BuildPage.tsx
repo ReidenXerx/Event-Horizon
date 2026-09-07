@@ -2993,6 +2993,38 @@ function PostProcessingDecisions(props: {
                 </span>
               </div>
 
+              {c.shipsNothing && (
+                /*
+                  The degenerate case, and it needs saying out loud because
+                  every ordinary answer below is wrong for it.
+                  "Declare" settles what VERIFICATION does — the user is no
+                  worse off without these files — and says nothing about
+                  whether the mod is worth installing. A curator can answer
+                  correctly and still ship a mod that makes every user
+                  perform an install to obtain nothing, and on a real
+                  collection that install was a FOMOD dialog that ended in a
+                  Vortex error.
+                */
+                <p
+                  style={{
+                    margin: 0,
+                    padding: "var(--eh-sp-2)",
+                    borderLeft: "3px solid var(--eh-warning)",
+                    color: "var(--eh-text-secondary)",
+                    fontSize: "var(--eh-text-sm)",
+                  }}
+                >
+                  <strong className="eh-strong">
+                    This mod ships nothing a user can obtain.
+                  </strong>{" "}
+                  Every file in its staging folder is one its archive cannot
+                  produce, so installing it from that archive gives the user an
+                  empty mod. Bundling or mirroring would ship these exact files
+                  and work — but if they are a placeholder or leftover, the
+                  useful answer is to remove the mod from your collection.
+                </p>
+              )}
+
               {c.reopened && (
                 // Not a new question. The curator answered this mod before and
                 // the files it was about have changed since, so the old answer
