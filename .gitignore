@@ -23,3 +23,7 @@ docs/ARCHITECTURE.gitnexus.md
 !.claude/skills/gitnexus-area-*/
 # --- end bearing ---
 .scratch-render/
+
+# --- rust backend ---
+/target
+**/*.rs.bk

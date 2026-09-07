@@ -1,0 +1,17 @@
+[package]
+name = "eh-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ehcoll = { workspace = true }
+eh-identity = { workspace = true }
+eh-archive = { workspace = true }
+eh-fomod = { workspace = true }
+eh-plugin = { workspace = true }
+eh-loadorder = { workspace = true }
+eh-resolver = { workspace = true }
+eh-deploy = { workspace = true }

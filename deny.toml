@@ -1,0 +1,39 @@
+# ─────────────────────────────────────────────────────────────────────────
+# The licence gate. Run in CI: `cargo deny check licenses`.
+#
+# WHY THIS EXISTS, AND WHY IT IS A GATE RATHER THAN A RULE IN A DOC:
+# the Rust LOOT stack is genuinely the right library for load-order work and
+# it is GPL-3-or-later. Verified on crates.io 2026-09-07: libloot 0.29.6 is
+# GPL-3.0-or-later, esplugin 6.1.4 is GPL-3.0. Adding either to a crate in
+# this workspace relicenses the whole product, permanently, and nothing in
+# the build output would say so.
+#
+# `version = 2` means: anything not in `allow` FAILS. Adding to this list is
+# a deliberate act, which is the point.
+# ─────────────────────────────────────────────────────────────────────────
+[licenses]
+version = 2
+confidence-threshold = 0.93
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+]
+
+[bans]
+# Belt and braces: even if a licence were misdetected, these names never
+# belong in this workspace. They belong in the separate GPL-3 sorter binary.
+deny = [
+    { name = "libloot" },
+    { name = "esplugin" },
+    { name = "libloadorder" },
+    { name = "loot-condition-interpreter" },
+]
+
+[advisories]
+version = 2

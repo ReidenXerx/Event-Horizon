@@ -1,0 +1,49 @@
+# ─────────────────────────────────────────────────────────────────────────
+# The MIT workspace.
+#
+# Everything in `crates/` is MIT and MUST STAY MIT. That is not a
+# preference: `.ehcoll` is only worth something as a format if any tool can
+# implement and embed it, including tools that cannot take copyleft. See
+# NS-1 and NS-3 in `.bearing/northstars.md`.
+#
+# The load-order SORTER is the one thing that cannot live here — the entire
+# LOOT stack (libloot, esplugin, libloadorder, loot-condition-interpreter)
+# is GPL-3, and Rust static linking makes a linked GPL crate derivative.
+# It lives behind a PROCESS boundary as its own GPL-3 binary, deliberately
+# outside this workspace. See `crates/eh-loadorder/src/lib.rs`.
+#
+# `deny.toml` enforces this. It is not left to discipline, because the
+# failure mode is one `path = "…"` line silently relicensing the product.
+# ─────────────────────────────────────────────────────────────────────────
+[workspace]
+resolver = "2"
+members = [
+    "crates/ehcoll",
+    "crates/eh-identity",
+    "crates/eh-archive",
+    "crates/eh-fomod",
+    "crates/eh-plugin",
+    "crates/eh-loadorder",
+    "crates/eh-resolver",
+    "crates/eh-deploy",
+    "crates/eh-engine",
+    "crates/eh-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/ReidenXerx/Event-Horizon"
+rust-version = "1.75"
+
+[workspace.dependencies]
+ehcoll        = { path = "crates/ehcoll" }
+eh-identity   = { path = "crates/eh-identity" }
+eh-archive    = { path = "crates/eh-archive" }
+eh-fomod      = { path = "crates/eh-fomod" }
+eh-plugin     = { path = "crates/eh-plugin" }
+eh-loadorder  = { path = "crates/eh-loadorder" }
+eh-resolver   = { path = "crates/eh-resolver" }
+eh-deploy     = { path = "crates/eh-deploy" }
+eh-engine     = { path = "crates/eh-engine" }
