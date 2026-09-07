@@ -372,6 +372,22 @@ export type ModInstallSpec = {
    * `{ type, options }`, and replay has to hand back both halves.
    */
   installerChoicesType?: string;
+  /**
+   * The curator installed this mod WITHOUT selecting anything, and the build
+   * proved it by replaying the installer with no choices and comparing the
+   * result against their staging folder.
+   *
+   * Only meaningful when `fomodSelections` is empty, where that emptiness is
+   * otherwise ambiguous: Vortex records nothing both when a user picks nothing
+   * AND when a mod's answers were lost (creating a variant without
+   * "Pre-populate installer options" discards them). Guessing costs either a
+   * mod installed with less than the curator has, or a dialog a stranger
+   * cannot answer.
+   *
+   * When set, the user side hands the installer an empty answer unattended
+   * instead of letting it ask.
+   */
+  emptySelectionVerified?: boolean;
 };
 
 export type ModInstallState = {

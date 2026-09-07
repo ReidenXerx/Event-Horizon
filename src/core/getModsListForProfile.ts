@@ -104,6 +104,15 @@ export type AuditorMod = {
    * Vortex has no such concept, so it never arrives from the profile.
    */
   mirrored?: boolean;
+  /**
+   * The build proved that installing this mod WITHOUT selecting anything
+   * reproduces the curator's staging folder.
+   *
+   * Overlaid from the self-check at build time, like `mirrored` — it is a
+   * conclusion about the archive and the folder together, not something
+   * Vortex knows.
+   */
+  emptySelectionVerified?: boolean;
   collectionIds?: string[];
 
   installerType?: string;

@@ -123,6 +123,7 @@ import {
   decidedPostProcessing,
   modsNewlyBundled,
   modsNoLongerBundled,
+  choiceFromEntry,
 } from "../../../core/manifest/collectionConfig";
 import {
   collectExternalHints,
@@ -443,6 +444,12 @@ export function collectMirrorPayload(
   state: types.IState,
   gameId: string,
   mods: readonly AuditorMod[],
+  /**
+   * The collection config, so this obeys the SAME precedence the curator was
+   * shown. Optional only so existing callers and tests keep working; without
+   * it a mod answered both ways ships its bytes twice.
+   */
+  config?: CollectionConfig,
 ): MirrorFileSpec[] {
   const installRoot = installRootFor(state, gameId);
   if (installRoot === undefined) return [];
@@ -451,6 +458,24 @@ export function collectMirrorPayload(
   const seen = new Set<string>();
   for (const mod of mods) {
     if (mod.mirrored !== true) continue;
+    /**
+     * A BUNDLED mod already ships its whole staging folder as an archive, so
+     * collecting it again as mirror blobs writes the same bytes into the
+     * package twice — on a 6 GB LOD mod that is 6 GB of nothing.
+     *
+     * The two flags are not mutually exclusive in the config: the decisions
+     * screen clears the others when it writes one, but the build form's
+     * source picker does not, so ticking "Bundled" on a mod already answered
+     * "mirror" leaves both set. `choiceFromEntry` ranks bundle above mirror
+     * and that is the verdict the curator is shown; this makes the packager
+     * obey the same precedence instead of honouring both.
+     */
+    if (
+      config !== undefined &&
+      choiceFromEntry(config.externalMods[mod.id]) === "bundle"
+    ) {
+      continue;
+    }
     const root = stagingRootFromFolder(installRoot, mod.installationPath);
     if (root === undefined) continue;
     for (const file of mod.stagingFiles ?? []) {
@@ -459,6 +484,8 @@ export function collectMirrorPayload(
       out.push({
         sourcePath: path.join(root, ...file.path.split("/")),
         sha256: file.sha256,
+        // Carried so a build that fails on this file can name the mod.
+        modName: mod.name,
       });
     }
   }
@@ -1618,6 +1645,25 @@ export async function runBuildPipeline(
      * A tester lost an evening to one of these, and nothing in the build
      * output had mentioned it.
      */
+    /**
+     * Carry the "they picked nothing, and we checked" verdict onto the mods
+     * so the manifest can ship it. Without this the proof is computed, logged
+     * and thrown away, and the user still gets the dialog.
+     */
+    const verifiedEmpty = new Set(
+      selfCheck.reports
+        .filter((r) => r.emptySelectionVerified === true)
+        .map((r) => r.modId),
+    );
+    if (verifiedEmpty.size > 0) {
+      mods = mods.map((m) =>
+        verifiedEmpty.has(m.id) ? { ...m, emptySelectionVerified: true } : m,
+      );
+      ehLog("info", "build.empty-selection-verified", {
+        mods: verifiedEmpty.size,
+      });
+    }
+
     const prompting = findModsThatPromptTheUser(selfCheck.reports);
     if (prompting.length > 0) {
       ehLog("warn", "build.mods-that-prompt-the-user", {
@@ -1903,7 +1949,7 @@ export async function runBuildPipeline(
   // and cannot be wrong, and only mods the curator explicitly asked to mirror
   // pay for it. Narrowing this needs real content matching, not a smaller
   // guess — see the note in mirrorStaging.ts.
-  const mirrorFiles = collectMirrorPayload(state, gameId, mods);
+  const mirrorFiles = collectMirrorPayload(state, gameId, mods, collectionConfig);
   if (mirrorFiles.length > 0) {
     beginOp("build.mirror-payload", {
       files: mirrorFiles.length,

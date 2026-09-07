@@ -695,11 +695,16 @@ function validateInstallSpec(
           errors,
         );
 
+  // Proof that an EMPTY selection list means "nothing was picked" rather than
+  // "nothing was remembered". Dropping it here would put the ambiguity back.
+  const emptySelectionVerified = obj.emptySelectionVerified === true;
+
   if (fomodSelections === undefined) return undefined;
   return {
     fomodSelections,
     ...(installerType !== undefined ? { installerType } : {}),
     ...(installerChoicesType !== undefined ? { installerChoicesType } : {}),
+    ...(emptySelectionVerified ? { emptySelectionVerified: true } : {}),
   };
 }
 

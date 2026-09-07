@@ -698,6 +698,12 @@ function buildModInstallSpec(
     ...(mod.installerChoicesType !== undefined
       ? { installerChoicesType: mod.installerChoicesType }
       : {}),
+    // Only meaningful alongside an EMPTY selection list, which is where the
+    // ambiguity lives. Writing it for a mod that recorded real choices would
+    // be noise at best and a contradiction at worst.
+    ...(fomodSelections.length === 0 && mod.emptySelectionVerified === true
+      ? { emptySelectionVerified: true }
+      : {}),
   };
 }
 

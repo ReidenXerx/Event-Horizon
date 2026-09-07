@@ -84,7 +84,33 @@ export function choicesFor(entry: EhcollMod | undefined): VortexInstallerChoices
    * a given selection unattended it falls back to asking, which is precisely
    * what happened without it.
    */
-  if (selections.length === 0) return undefined;
+  if (selections.length === 0) {
+    /**
+     * ─── UNLESS THE BUILD PROVED NOTHING WAS PICKED ────────────────────
+     * The docblock above says an empty list means "the build never observed
+     * an installer for this mod". That is true of the 1,454 mods in a real
+     * collection that simply have no FOMOD — and FALSE for the handful that
+     * have one whose answers Vortex did not keep. A tester's install stopped
+     * dead on one of those: a dialog with nothing to replay, and answering it
+     * the way the curator had made Vortex fail outright.
+     *
+     * `emptySelectionVerified` is the build having replayed the installer
+     * with NO choices and confirmed that reproduces the curator's staging
+     * exactly. That makes "they picked nothing" a measurement, so it can be
+     * replayed like any other answer — an empty options list, unattended.
+     *
+     * Vortex accepts it: its installer needs `choices !== undefined` and
+     * `choices.type === "fomod"` to run unattended, and says nothing about
+     * the options being non-empty.
+     */
+    if (entry?.install?.emptySelectionVerified === true) {
+      return {
+        type: entry.install.installerChoicesType ?? LEGACY_CHOICE_TYPE,
+        options: [],
+      };
+    }
+    return undefined;
+  }
 
   return {
     type: entry?.install?.installerChoicesType ?? LEGACY_CHOICE_TYPE,

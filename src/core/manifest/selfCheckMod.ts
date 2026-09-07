@@ -93,6 +93,20 @@ export type SelfCheckReport = {
   stagedCount: number;
   expectedCount: number;
   /**
+   * Replaying this mod's FOMOD with NO choices reproduces the curator's
+   * staging folder exactly.
+   *
+   * Which makes "the curator picked nothing" a measured fact rather than an
+   * inference from an empty record — and an empty record is genuinely
+   * ambiguous, because Vortex also produces one when a variant loses its
+   * `installerChoices`.
+   *
+   * Only set when the replay was high-confidence AND every expected file is
+   * staged AND the curator has nothing the replay does not predict. Anything
+   * less and the honest answer is that we do not know what they picked.
+   */
+  emptySelectionVerified?: boolean;
+  /**
    * The archive carries a FOMOD script and Vortex recorded no answers for it.
    *
    * That combination is what a USER experiences as a dialog they cannot answer
@@ -265,11 +279,43 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
     // archive branches and we have no answers to give the installer. See
     // `promptsUser`.
     notes.push("No recorded FOMOD choices; cannot derive the expected file set.");
+    /**
+     * ─── OR DID THEY SIMPLY PICK NOTHING? ────────────────────────────────
+     * `[]` is ambiguous. It is what Vortex records when a variant was created
+     * without "Pre-populate installer options from existing mod" — the
+     * answers are LOST — and it is also consistent with an install where the
+     * curator ticked nothing and pressed Finish, which is an ordinary way to
+     * install a mod whose options are all optional.
+     *
+     * Guessing either way is wrong. Replaying "nothing" for a mod whose
+     * answers were merely forgotten installs LESS than the curator has;
+     * refusing to replay for a mod where nothing was genuinely picked stops a
+     * stranger's install with a dialog they cannot answer.
+     *
+     * So it is measured instead. Replaying the script with NO choices yields
+     * the required files plus whatever conditions hold with no flags set —
+     * which IS "picked nothing", exactly. If that reproduces the curator's
+     * staging, then nothing was picked, as a fact rather than a hope, and the
+     * user side can replay it unattended.
+     */
+    const verdict = await verifyEmptySelection({
+      readEntry: input.readEntry,
+      archivePath: input.archivePath,
+      configEntry,
+      listing,
+      staged: input.staged,
+    });
+    notes.push(verdict.note);
     return {
       ...withLeads,
       depth: "containment",
       notes,
+      // Still true even when verified: the installer WILL run on the user's
+      // machine. What changes is that we now have an answer to give it.
       promptsUser: true,
+      ...(verdict.emptySelectionReproducesStaging
+        ? { emptySelectionVerified: true }
+        : {}),
       ...unexplainedFacts(containment, listing),
     };
   }
@@ -364,4 +410,91 @@ export function summarizeSelfChecks(reports: SelfCheckReport[]): {
     modsWithOmissionLeads,
     highConfidenceLeads,
   };
+}
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * Does a no-choice install of this FOMOD produce exactly what the curator has?
+ *
+ * `replayFomod(script, [])` is not a degenerate call — it is the precise
+ * meaning of "the curator ticked nothing and pressed Finish": the script's
+ * required files, plus every conditional pattern that holds with no flags set.
+ *
+ * The comparison has to go BOTH ways, and that is the whole value of it. If
+ * the replay predicts a file the curator does not have, they picked something
+ * that excluded it. If the curator has a file the replay does not predict,
+ * they picked something that added it. Only when the two sets are equal is
+ * "nothing was picked" the explanation — and then it is not a guess.
+ *
+ * Never throws: a mod we cannot decide about simply keeps its dialog.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+async function verifyEmptySelection(input: {
+  readEntry: (archivePath: string, entryPath: string) => Promise<Buffer | undefined>;
+  archivePath: string;
+  configEntry: string;
+  listing: ArchiveListing;
+  staged: readonly StagedFileRef[];
+}): Promise<{ emptySelectionReproducesStaging: boolean; note: string }> {
+  const no = (note: string) => ({
+    emptySelectionReproducesStaging: false,
+    note,
+  });
+
+  let raw: Buffer | undefined;
+  try {
+    raw = await input.readEntry(input.archivePath, input.configEntry);
+  } catch {
+    raw = undefined;
+  }
+  if (raw === undefined) {
+    return no("Could not read the FOMOD script; cannot tell what was picked.");
+  }
+
+  try {
+    const parsed = await parseModuleConfig(raw);
+    const replay = replayFomod(parsed.script, []);
+    if (replay.confidence === "low") {
+      // Same rule as the main replay path: a script we do not fully
+      // understand must not be the basis of a claim about the curator.
+      return no(
+        "A no-choice replay of this FOMOD is low confidence; not concluding " +
+          "anything about what was picked.",
+      );
+    }
+    const expected = expandFomodPlan(replay.sources, input.listing);
+    if (expected.unmatchedSpecs.length > 0) {
+      return no(
+        `${expected.unmatchedSpecs.length} FOMOD spec(s) matched nothing in ` +
+          `the archive; cannot tell what was picked.`,
+      );
+    }
+
+    const predicted = new Set(expected.files.map((f) => f.path.toLowerCase()));
+    const actual = new Set(input.staged.map((f) => f.path.toLowerCase()));
+    const missing = [...predicted].filter((p) => !actual.has(p));
+    const extra = [...actual].filter((p) => !predicted.has(p));
+
+    if (missing.length === 0 && extra.length === 0) {
+      return {
+        emptySelectionReproducesStaging: true,
+        note:
+          "No installer choices were recorded, and installing this mod " +
+          "WITHOUT selecting anything reproduces your staging folder " +
+          "exactly — so that is what will be replayed, with no dialog.",
+      };
+    }
+    return no(
+      `No installer choices were recorded, and a no-choice install does NOT ` +
+        `reproduce your folder (${missing.length} file(s) it would add are ` +
+        `absent, ${extra.length} you have would not appear). Options were ` +
+        `picked and Vortex did not keep them — reinstall this mod, or bundle ` +
+        `it, or users will be asked a question they cannot answer.`,
+    );
+  } catch (err) {
+    return no(
+      `Could not replay this FOMOD without choices: ` +
+        `${err instanceof Error ? err.message : String(err)}.`,
+    );
+  }
 }

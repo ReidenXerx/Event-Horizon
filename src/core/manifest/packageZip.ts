@@ -65,6 +65,14 @@ export type MirrorFileSpec = {
   sourcePath: string;
   /** Its SHA-256, which is also its name inside the package. */
   sha256: string;
+  /**
+   * Which mod this file belongs to, for the error message.
+   *
+   * Without it a vanished or altered source produced a raw Windows errno
+   * naming a temp path, after every expensive phase of a fifty-minute build,
+   * and the curator had to reverse-map a staging path to a mod by hand.
+   */
+  modName?: string;
 };
 
 /**
@@ -417,6 +425,54 @@ function validateInput(input: PackageEhcollInput, errors: string[]): void {
       );
     }
   }
+
+  /**
+   * ─── THE SAME BIJECTION, FOR MIRRORS ───────────────────────────────────
+   * Bundling has been checked both ways since the beginning; mirroring was
+   * not checked at all, and it fails in a quieter direction.
+   *
+   * A mod ships `mirrored: true` and contributes NO blobs whenever one of its
+   * staged files could not be hashed — a locked file, an antivirus handle —
+   * because the payload collector skips hashless entries. The build succeeds.
+   * On every user's machine `planMirror` then marks the whole target
+   * unverifiable, which disables deletion for that mod and reconciles
+   * nothing. The feature is off, silently, on both sides.
+   *
+   * So: a mirrored mod must have a hash for every staged file, and each of
+   * those hashes must be in the package.
+   */
+  const mirrorShas = new Set(input.mirrorFiles?.map((f) => f.sha256) ?? []);
+  for (const mod of input.manifest.mods) {
+    if (mod.state?.mirrored !== true) continue;
+    const staged = mod.state.stagingFiles ?? [];
+    if (staged.length === 0) {
+      errors.push(
+        `"${mod.name}" is marked mirrored=true but no staged files were ` +
+          `recorded for it, so there is nothing to reproduce on the user's ` +
+          `machine. Re-run the build, or change this mod's answer.`,
+      );
+      continue;
+    }
+    const hashless = staged.filter((f) => f.sha256 === undefined).length;
+    if (hashless > 0) {
+      errors.push(
+        `"${mod.name}" is marked mirrored=true but ${hashless} of its ` +
+          `${staged.length} staged file(s) could not be hashed, so they ` +
+          `cannot be reproduced. A locked or unreadable file is the usual ` +
+          `cause. Close whatever holds it and rebuild, or change this mod's ` +
+          `answer.`,
+      );
+      continue;
+    }
+    const absent = staged.filter((f) => !mirrorShas.has(f.sha256!)).length;
+    if (absent > 0) {
+      errors.push(
+        `"${mod.name}" is marked mirrored=true but ${absent} of its ` +
+          `${staged.length} file(s) were not collected into the package. ` +
+          `Users would receive an incomplete copy of this mod.`,
+      );
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -530,7 +586,52 @@ async function stageMirrorFiles(
     });
     if (staged.has(file.sha256)) continue;
     staged.add(file.sha256);
+    await verifyMirrorHash(file);
     await stageOne(file.sourcePath, path.join(mirrorDir, file.sha256));
+  }
+}
+
+/**
+ * ─── THE BYTES MUST STILL BE THE BYTES WE NAMED ────────────────────────
+ * Bundled archives have been re-hashed before staging since the beginning;
+ * mirror files were hardlinked to `mirror/<recorded sha>` and trusted.
+ *
+ * The window is not a race, it is human-scale. The hashes are computed during
+ * the inspect pass; packaging runs after the self-check, the deployment
+ * capture, the bundling repack, AND the decisions gate — a modal the curator
+ * can sit on for as long as they like. Clean a plugin in xEdit in that window
+ * and the file ships under a name that is no longer its hash.
+ *
+ * The user side catches it and refuses to write, which is the right failure
+ * direction — but it fails on every tester's machine instead of once on the
+ * curator's, and the tester has no idea what to do about it. Better to fail
+ * the build, here, naming the mod and the file.
+ *
+ * Deduplication makes it worse without this: two mods sharing a blob stage it
+ * once, so ONE stale source silently breaks the mirror for a mod that never
+ * changed.
+ */
+async function verifyMirrorHash(file: MirrorFileSpec): Promise<void> {
+  const { hashFileSha256 } = await import("../archiveHashing");
+  let actual: string;
+  try {
+    actual = await hashFileSha256(file.sourcePath);
+  } catch (err) {
+    throw new PackageEhcollError([
+      `${file.modName !== undefined ? `"${file.modName}": ` : ""}` +
+        `the file "${file.sourcePath}" was recorded at the start of this ` +
+        `build and could not be read now (${
+          err instanceof Error ? err.message : String(err)
+        }). Rebuild so the package matches your current staging folder.`,
+    ]);
+  }
+  if (actual !== file.sha256) {
+    throw new PackageEhcollError([
+      `${file.modName !== undefined ? `"${file.modName}": ` : ""}` +
+        `the file "${file.sourcePath}" changed during this build — it was ` +
+        `recorded as ${file.sha256} and is now ${actual}. Shipping it under ` +
+        `the old name would make every user refuse to write it. Rebuild.`,
+    ]);
   }
 }
 

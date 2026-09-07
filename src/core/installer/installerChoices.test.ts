@@ -179,3 +179,44 @@ describe("the mod that stopped a tester mid-install", () => {
     expect(replayArgs(entry({ fomodSelections: [] }), "silent")).toEqual({});
   });
 });
+
+/**
+ * The replay half of `emptySelectionVerified`: a proven "nothing was picked"
+ * is an answer like any other, and must reach Vortex as one.
+ */
+describe("a verified empty selection is replayed, not asked", () => {
+  const mod = (install: Record<string, unknown>) =>
+    ({ install } as never);
+
+  it("hands Vortex an empty fomod answer when the build proved it", () => {
+    /**
+     * Vortex runs an installer unattended only when `choices !== undefined`
+     * and `choices.type === "fomod"`. It says nothing about the options being
+     * non-empty — so an empty list IS a sendable answer, and it is the one
+     * that reproduces a curator who ticked nothing.
+     */
+    expect(
+      choicesFor(mod({ fomodSelections: [], emptySelectionVerified: true })),
+    ).toEqual({ type: "fomod", options: [] });
+  });
+
+  it("still refuses for an empty list the build did NOT prove", () => {
+    // The 1,454 mods with no installer at all, and the ones whose answers
+    // Vortex lost. Sending an empty answer for those would claim a
+    // measurement nobody made — and for the lost-answers case it would
+    // install less than the curator has.
+    expect(choicesFor(mod({ fomodSelections: [] }))).toBeUndefined();
+  });
+
+  it("keeps the recorded installer type when there is one", () => {
+    expect(
+      choicesFor(
+        mod({
+          fomodSelections: [],
+          emptySelectionVerified: true,
+          installerChoicesType: "fomod-v2",
+        }),
+      ),
+    ).toEqual({ type: "fomod-v2", options: [] });
+  });
+});
