@@ -1062,6 +1062,22 @@ export async function listNeverBuiltConfigs(
   try {
     entries = await fsp.readdir(configDir);
   } catch (err) {
+    /**
+     * ─── A DIRECTORY NOBODY HAS WRITTEN TO IS NOT A FAILURE ─────────────
+     * The config directory is created on the first save, so on a machine
+     * that has only ever INSTALLED collections it never exists. That is the
+     * normal state for every user who is not a curator, and it was logged
+     * three times per session as `error` with a stack — in a file testers
+     * are asked to send when something goes wrong. Noise at error level
+     * teaches people to skip the errors.
+     *
+     * Anything else — a permission problem, a path that is a file — is a
+     * real failure and still says so.
+     */
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
+      op.ok({ scanned: 0, unbuilt: 0, skipped: 0, reason: "no-config-dir" });
+      return [];
+    }
     op.fail(err);
     return [];
   }

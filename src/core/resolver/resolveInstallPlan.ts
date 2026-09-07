@@ -1064,6 +1064,56 @@ function bundledZipPath(sha256: string, expectedFilename: string): string {
   return `bundled/${sha256}${extractExtension(expectedFilename)}`;
 }
 
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * The decision that would REINSTALL a mod we already matched as installed.
+ *
+ * `*-already-installed` is not an install instruction — it says "re-use what
+ * is on disk", and it carries no archive, no download id, nothing to act on.
+ * That is correct for the plan and useless for a repair, because the mod we
+ * want to repair is exactly the one that decision pointed at.
+ *
+ * So when verification proves those files are wrong, the repair needs an
+ * install decision built from the MANIFEST instead — the same one the
+ * resolver would have produced had it never found a match:
+ *
+ *   nexus            → download it again (Vortex re-uses its cached archive
+ *                      when it still has one, so this is usually local)
+ *   external+bundled → extract it from the package we are installing from
+ *   external, no bundle → nothing. There is no archive on this machine and
+ *                      no way to fetch one, so the honest answer is that we
+ *                      cannot repair it, not a decision that fails later.
+ *
+ * Deliberately NOT `*-use-local-download`: that needs an archiveId from the
+ * user state, which the plan does not retain, and inventing one would be a
+ * guess where a re-download is merely slow.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+export function repairDecisionFor(mod: EhcollMod): ModDecision | undefined {
+  const src = mod.source;
+
+  if (src.kind === "nexus") {
+    return {
+      kind: "nexus-download",
+      gameDomain: src.gameDomain,
+      modId: src.modId,
+      fileId: src.fileId,
+      expectedSha256: src.sha256,
+      archiveName: src.archiveName,
+    };
+  }
+
+  if (src.bundled === true && src.sha256 !== undefined) {
+    return {
+      kind: "external-use-bundled",
+      sha256: src.sha256,
+      zipPath: bundledZipPath(src.sha256, src.expectedFilename),
+    };
+  }
+
+  return undefined;
+}
+
 function extractExtension(filename: string): string {
   // Special-case multi-part archive extensions the packager preserves.
   const lower = filename.toLowerCase();

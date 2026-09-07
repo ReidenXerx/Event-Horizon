@@ -631,6 +631,14 @@ export async function installFromBundledArchive(
      */
     preExtracted?: { extractedPath: string; tempDir: string };
     /**
+     * The curator's mod name. Becomes the extracted archive's file name and
+     * therefore what Vortex calls the installed mod — see
+     * {@link bundledArchiveFileName} for why that is load-bearing and not
+     * cosmetic. Ignored when `preExtracted` is supplied, because the pool
+     * has already named the file.
+     */
+    preferredName?: string;
+    /**
      * The curator's recorded installer answers.
      *
      * Bundling a mod must not lose them. `start-install` — the call this
@@ -668,7 +676,11 @@ export async function installFromBundledArchive(
 
   const { extractedPath, tempDir } =
     args.preExtracted ??
-    (await extractBundledFromEhcoll(args.ehcollZipPath, args.bundledZipEntry));
+    (await extractBundledFromEhcoll(
+      args.ehcollZipPath,
+      args.bundledZipEntry,
+      args.preferredName,
+    ));
 
   try {
     if (args.signal?.aborted) {
@@ -1311,18 +1323,111 @@ async function findBundledEntryBySha(
   }
 }
 
+/**
+ * Windows-safe file name for the archive we hand to Vortex.
+ *
+ * ─── THE FILE NAME BECOMES THE MOD NAME ────────────────────────────────
+ * Vortex derives a mod's name — and therefore its staging FOLDER — from the
+ * archive it installed. A bundled entry is called `bundled/<sha256>.zip`
+ * because the sha is its identity inside the package, so extracting it under
+ * that name gave the user mod folders called `b3d8853c…`, and a tester
+ * reasonably asked what they were.
+ *
+ * That is the cosmetic half. The expensive half: `enrichInstalledModsWithStagingSetHashes`
+ * only hashes installed mods whose NAME matches an external manifest entry,
+ * and a mod called `b3d8853c…` matches nothing. So no staging-set hash was
+ * ever computed, the resolver's second identity rung could never fire, and
+ * every bundled external mod was reinstalled on every resume. From the
+ * tester's log, on a run with 1,105 mods already installed:
+ *
+ *     resolver.staging-hashes.done {"wanted":29,"candidates":0,"enriched":0}
+ *
+ * Twenty-nine external mods, zero candidates, every single run.
+ *
+ * So the extracted file takes the curator's mod name. The name is only a
+ * cheap CANDIDATE filter — identity is still decided by hashing the staging
+ * folder — which is why borrowing it here is sound rather than a guess.
+ *
+ * Falls back to the entry's own basename when there is no usable name, so a
+ * caller that passes nothing behaves exactly as before.
+ */
+export function bundledArchiveFileName(
+  bundledZipEntry: string,
+  preferredName: string | undefined,
+): string {
+  const fallback = bundledZipEntry.split("/").pop() ?? bundledZipEntry;
+  if (preferredName === undefined) return fallback;
+
+  // Reserved on Windows, plus control characters. These names came off the
+  // curator's own filesystem so they are already legal, but this file is
+  // written to disk on a machine we have never seen.
+  const cleaned = preferredName
+    .replace(/[/\\:*?"<>|]/g, "_")
+    // Trailing dots and spaces are silently dropped by Win32, which would
+    // make the path we return differ from the path that exists.
+    .replace(/[\s.]+$/, "")
+    .trim();
+  // A name with no letter or digit left in it identifies nothing — `___` is a
+  // legal file name and a useless one. The entry's sha at least identifies the
+  // bytes, so fall back to it rather than to noise.
+  if (!/[\p{L}\p{N}]/u.test(cleaned)) return fallback;
+
+  // The extension decides which extractor Vortex reaches for, so it is taken
+  // from the entry name — never from the mod name, which routinely ends in
+  // something like "-149724-1-1746902603.1" that is a Vortex disambiguator
+  // rather than a file type.
+  const ext = archiveExtensionOf(fallback);
+  const base = cleaned.toLowerCase().endsWith(ext.toLowerCase())
+    ? cleaned
+    : `${cleaned}${ext}`;
+
+  // Win32 MAX_PATH leaves little room once the temp dir and `bundled/` are
+  // spent, and a curator mod name can be long. Truncate the stem, never the
+  // extension.
+  const MAX_STEM = 120;
+  const stem = base.slice(0, base.length - ext.length);
+  return stem.length > MAX_STEM ? `${stem.slice(0, MAX_STEM)}${ext}` : base;
+}
+
+/**
+ * The archive extension of a bundled entry's file name, `""` when it has none.
+ *
+ * Mirrors the packager's own convention, multi-part extensions included — it
+ * writes `.tar.gz` whole, so splitting on the last dot would name the file
+ * `.gz` and hand Vortex an archive it unpacks one layer short.
+ */
+function archiveExtensionOf(fileName: string): string {
+  const lower = fileName.toLowerCase();
+  for (const multi of [".tar.gz", ".tar.bz2", ".tar.xz"]) {
+    if (lower.endsWith(multi)) return fileName.slice(-multi.length);
+  }
+  const lastDot = fileName.lastIndexOf(".");
+  return lastDot <= 0 ? "" : fileName.slice(lastDot);
+}
+
 export async function extractBundledFromEhcoll(
   ehcollZipPath: string,
   bundledZipEntry: string,
+  /**
+   * The curator's mod name, when the caller knows it. Decides the extracted
+   * file's name and therefore what Vortex calls the mod — see
+   * {@link bundledArchiveFileName}.
+   */
+  preferredName?: string,
 ): Promise<{ extractedPath: string; tempDir: string }> {
   const tempDir = await fsp.mkdtemp(
     path.join(os.tmpdir(), "event-horizon-install-"),
   );
 
   try {
-    // The entry's path is preserved inside `tempDir`, matching what 7z's
-    // `extractFull` did — callers and cleanup both depend on that shape.
-    const extractedPath = path.join(tempDir, ...bundledZipEntry.split("/"));
+    // The entry's DIRECTORY is preserved inside `tempDir`, matching what 7z's
+    // `extractFull` did — callers and cleanup both depend on that shape. Only
+    // the file NAME is ours to choose.
+    const dir = path.join(tempDir, ...bundledZipEntry.split("/").slice(0, -1));
+    const pathFor = (entry: string): string =>
+      path.join(dir, bundledArchiveFileName(entry, preferredName));
+
+    let extractedPath = pathFor(bundledZipEntry);
 
     try {
       await extractZipEntryToFile(ehcollZipPath, bundledZipEntry, extractedPath);
@@ -1361,6 +1466,10 @@ export async function extractBundledFromEhcoll(
         asked: bundledZipEntry,
         found: recovered,
       });
+      // Name the file after the entry we FOUND. The whole reason we are here
+      // is that the extension we asked for was wrong, so reusing it would
+      // write a zip called `<name>.1` and leave Vortex to guess the format.
+      extractedPath = pathFor(recovered);
       await extractZipEntryToFile(ehcollZipPath, recovered, extractedPath);
     }
 

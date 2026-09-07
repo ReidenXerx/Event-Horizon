@@ -237,7 +237,11 @@ import {
   verifyModInstall,
   type VerifyResult,
 } from "./verifyModInstall";
-import { BundledPrefetchPool } from "./bundledPrefetch";
+import {
+  BundledPrefetchPool,
+  type PrefetchRequest,
+} from "./bundledPrefetch";
+import { repairDecisionFor } from "../resolver/resolveInstallPlan";
 // NOTE: there used to be a `pluginsTxt.ts` writer module here. It
 // was deleted along with the `writing-plugins-txt` driver phase
 // when the rules-only strategy locked. Vortex's
@@ -1158,12 +1162,14 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     // archive wasn't fully extracted" bug — the famous "Vortex
     // randomly loses files" symptom we saw in the wild.
     //
-    // We only verify mods with `kind === "freshly-installed"`
-    // (fromDecision is a download / bundled / local-archive path).
-    // `*-already-installed` decisions re-use the user's pre-existing
-    // mod folder which we can't meaningfully verify against the
-    // curator's snapshot — the user might have edited files on
-    // purpose and we'd produce false positives.
+    // EVERY installed entry is verified, `*-already-installed` re-uses
+    // included. This comment used to claim the opposite — that we only
+    // checked freshly-installed mods — while the loop below has always
+    // iterated the whole list. It mattered: "was this mod installed
+    // correctly?" is the question the tool exists to answer, and a mod we
+    // skipped because it was already there is no less able to be broken.
+    // Identity ("is this the same mod?") and integrity ("did the right bytes
+    // land?") are separate passes, and this is the second one.
     //
     // Failures don't abort the install. Each failing mod is given
     // ONE retry (uninstall + reinstall via the same decision path,
@@ -1409,7 +1415,11 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               installEntry,
               verifyResult,
               level: declaredLevel === "thorough" ? "thorough" : "fast",
-              retryAttempted: retried.kind === "retry-failed",
+              // `errored` means the reinstall threw AFTER the uninstall, so
+              // the mod is gone and an attempt very much was made. Reporting
+              // that as "not attempted" understated what happened to the
+              // user's disk.
+              retryAttempted: retried.kind !== "not-eligible",
             }),
           );
           continue;
@@ -1458,7 +1468,9 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             installEntry,
             verifyResult,
             level: declaredLevel === "thorough" ? "thorough" : "fast",
-            retryAttempted: retried.kind === "retry-failed",
+            // Same reasoning as the damaged-archive receipt above: `errored`
+            // is an attempt that reached the uninstall and then failed.
+            retryAttempted: retried.kind !== "not-eligible",
           }),
         );
       }
@@ -2436,15 +2448,17 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
 function collectBundledZipEntriesForPrefetch(
   plan: DriverContext["plan"],
   _ctx: DriverContext,
-): string[] {
-  const out: string[] = [];
+): PrefetchRequest[] {
+  const out: PrefetchRequest[] = [];
   const seen = new Set<string>();
   for (const res of plan.modResolutions) {
     const dec = res.decision;
     if (dec.kind !== "external-use-bundled") continue;
     if (seen.has(dec.zipPath)) continue;
     seen.add(dec.zipPath);
-    out.push(dec.zipPath);
+    // The resolution's name is the curator's mod name, which is what the
+    // extracted archive — and so the user's staging folder — gets called.
+    out.push({ zipEntry: dec.zipPath, preferredName: res.name });
   }
   return out;
 }
@@ -2539,7 +2553,7 @@ async function executeDecision(args: {
 
     case "external-use-bundled": {
       const preExtracted = bundledPool
-        ? await bundledPool.take(decision.zipPath)
+        ? await bundledPool.take(decision.zipPath, resolution.name)
         : undefined;
       const result = await installFromBundledArchive(ctx.api, {
         gameId: manifest.game.id,
@@ -2547,6 +2561,7 @@ async function executeDecision(args: {
         bundledZipEntry: decision.zipPath,
         signal: ctx.abortSignal,
         preExtracted,
+        preferredName: resolution.name,
         // Bundling a mod must not cost it the curator's installer answers.
         ...replayArgs(manifestEntry, ctx.decisions.fomodReplayMode),
       });
@@ -2909,7 +2924,7 @@ async function installManifestEntry(args: {
 
   const bundledEntry = findBundledZipEntry(ctx, ex);
   const preExtracted = bundledPool
-    ? await bundledPool.take(bundledEntry)
+    ? await bundledPool.take(bundledEntry, resolution.name)
     : undefined;
   const result = await installFromBundledArchive(ctx.api, {
     gameId,
@@ -2917,6 +2932,7 @@ async function installManifestEntry(args: {
     bundledZipEntry: bundledEntry,
     signal: ctx.abortSignal,
     preExtracted,
+    preferredName: resolution.name,
     // The Nexus branch of this same function already did this; the bundled
     // branch did not, and a "replace existing" choice therefore reinstalled
     // the mod with default installer options.
@@ -3856,12 +3872,31 @@ function emptyUserlistApplication(): UserlistApplicationReceipt {
  * decision, re-enable in the active profile, re-verify. The
  * recovery succeeds when the second verify reports `kind === "ok"`.
  *
- * We only attempt recovery for decisions that performed a fresh
- * Vortex install — `*-already-installed` arms re-used a mod the
- * user already had on disk, and our verification snapshot can't
- * reliably distinguish "Vortex truncated during install" from "user
- * deleted a file two months ago". Retrying those would overwrite
- * the user's changes for a false-positive failure.
+ * ─── ALREADY-INSTALLED MODS ARE REPAIRED TOO ──────────────────────────
+ * They used not to be. The rule was that `*-already-installed` re-used a mod
+ * the user had on disk, so a mismatch might be their own edit from two months
+ * ago rather than a bad extraction, and reinstalling would overwrite it.
+ *
+ * That reasoning was written when "already installed" could only mean "the
+ * user had this before Event Horizon ran". On a RESUME it mostly means "we
+ * installed this ourselves twenty minutes ago and the run was interrupted" —
+ * which is precisely the population most likely to be half-extracted. The
+ * guard was protecting the wrong mods, and leaving broken ones broken after
+ * detecting them, which is the one outcome this tool exists to prevent.
+ *
+ * Two things make it safe to reinstall now, and both are checks that did not
+ * exist when the rule was written. `judgeReinstall` has already excused the
+ * mods whose files differ because the CURATOR's staging diverged, and the
+ * ones whose files match the archive exactly; what reaches here differs from
+ * the curator's copy AND from the archive it came from. And the repair
+ * uninstalls first, so Vortex never shows its "already installed — replace or
+ * install as a variant?" dialog for it.
+ *
+ * The decision arm carries nothing to re-execute — it points at the very mod
+ * being repaired — so the install decision is rebuilt from the manifest by
+ * {@link repairDecisionFor}. A mod it cannot rebuild one for (an external mod
+ * with no bundled archive) stays `not-eligible`: there is nothing on this
+ * machine to reinstall from.
  *
  * The retry runs inline in the verifying-mods phase. There is no
  * progress sub-bar — typical recovery completes in seconds (Vortex
@@ -3901,12 +3936,6 @@ async function tryRecoverFailedMod(args: {
   const { ctx, installEntry, manifestEntry, activeProfileId, expectedFiles, level } =
     args;
 
-  // Already-installed re-uses: we never installed these, so retry
-  // would mutate the user's pre-existing state. Refuse.
-  if (installEntry.fromDecision.endsWith("already-installed")) {
-    return { kind: "not-eligible" };
-  }
-
   // Find the resolution so we can re-execute the original decision.
   // Resolutions are keyed by compareKey; we already validated all
   // installed entries have a matching resolution at the install
@@ -3916,6 +3945,29 @@ async function tryRecoverFailedMod(args: {
   );
   if (resolution === undefined || manifestEntry === undefined) {
     return { kind: "not-eligible" };
+  }
+
+  // An already-installed arm has no install to re-execute — re-running it
+  // would return the id of the mod we are about to uninstall, and we would
+  // "recover" onto a mod that no longer exists. Rebuild a real one, or stop
+  // BEFORE the uninstall rather than after it.
+  let retryResolution = resolution;
+  if (installEntry.fromDecision.endsWith("already-installed")) {
+    const repair = repairDecisionFor(manifestEntry);
+    if (repair === undefined) {
+      ehLog("info", "verify.repair.not-possible", {
+        name: installEntry.name,
+        fromDecision: installEntry.fromDecision,
+        why: "no archive to reinstall from",
+      });
+      return { kind: "not-eligible" };
+    }
+    retryResolution = { ...resolution, decision: repair };
+    ehLog("info", "verify.repair.rebuilt-decision", {
+      name: installEntry.name,
+      fromDecision: installEntry.fromDecision,
+      repairDecision: repair.kind,
+    });
   }
 
   try {
@@ -3949,7 +4001,7 @@ async function tryRecoverFailedMod(args: {
   try {
     newEntry = await executeDecision({
       ctx,
-      resolution,
+      resolution: retryResolution,
       manifestEntry,
       profileId: activeProfileId,
       // A notice from a RETRY would duplicate the one the first attempt

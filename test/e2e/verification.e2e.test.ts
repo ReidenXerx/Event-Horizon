@@ -79,14 +79,14 @@ async function packageFrom(w: World): Promise<EhcollManifest> {
   return parseManifest(JSON.stringify(manifest)).manifest;
 }
 
-const userState = (): UserSideState =>
+const userState = (installedMods: unknown[] = []): UserSideState =>
   ({
     gameId: "fallout4",
     gameVersion: "1.10.163.0",
     vortexVersion: "2.6.0",
     deploymentMethod: "hardlink",
     enabledExtensions: [],
-    installedMods: [],
+    installedMods,
     availableDownloads: [],
     activeProfileId: "profile-e2e",
     activeProfileName: "E2E Profile",
@@ -116,6 +116,8 @@ function why(result: unknown): string {
 async function install(
   rawManifest: EhcollManifest,
   fake: ReturnType<typeof makeFakeVortex>,
+  /** Mods the user already has, for the `*-already-installed` arms. */
+  installedMods: unknown[] = [],
 ) {
   /**
    * ─── THROUGH THE REAL FORMAT, NOT AROUND IT ─────────────────────────
@@ -136,7 +138,7 @@ async function install(
    */
   const manifest = parseManifest(JSON.stringify(rawManifest)).manifest;
 
-  const plan = resolveInstallPlan(manifest, userState(), {
+  const plan = resolveInstallPlan(manifest, userState(installedMods), {
     kind: "fresh-profile",
     profileName: "E2E Profile",
   } as never);
@@ -725,5 +727,147 @@ describe("the archive is consulted before a reinstall is spent", () => {
     // …and NOT a message accusing the curator of a re-upload.
     expect(result.curatorReports).toBeUndefined();
     expect(result.damagedArchiveNotice?.[0]).not.toMatch(/re-uploaded/i);
+  });
+});
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * A mod we SKIPPED because it was already installed can still be broken.
+ *
+ * Identity and integrity are two questions. The resolver answers the first —
+ * "is this the same mod?" — and a match means no download and no install. The
+ * verification pass answers the second, "did the right bytes land?", and it
+ * has always run over already-installed mods too.
+ *
+ * What it did NOT do was repair them. `tryRecoverFailedMod` refused anything
+ * whose decision ended in `already-installed`, on the reasoning that we never
+ * installed it so the mismatch might be the user's own edit.
+ *
+ * That reasoning aged badly. On a RESUME — a 1,755-mod install interrupted and
+ * restarted, which is the case a tester actually hit — "already installed"
+ * overwhelmingly means "we installed it ourselves and got interrupted", which
+ * is exactly where a half-extracted mod lives. So the tool detected the
+ * failure it exists to detect and then declined to fix it.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("a broken mod is repaired even when we skipped installing it", () => {
+  /** The mod id the user's pre-existing copy lives under. */
+  const EXISTING_ID = "user-had-this-already";
+
+  /**
+   * The user's copy, as an interrupted install leaves it: registered with
+   * Vortex, present on disk, and MISSING a file the curator recorded.
+   *
+   * Missing rather than merely different on purpose — `judgeReinstall` excuses
+   * differing files the archive explains, and absence is the one thing it
+   * never excuses, so this is the shape that must reach the repair.
+   */
+  function seedHalfInstalled(w: World, fake: ReturnType<typeof makeFakeVortex>) {
+    const dir = nodePath.join(w.stagingRoot, EXISTING_ID);
+    fs.mkdirSync(nodePath.join(dir, "Data"), { recursive: true });
+    // "Textures/rock.dds" is deliberately absent — the lost-file bug.
+    fs.writeFileSync(nodePath.join(dir, "Data", "rock.esp"), "a plugin");
+
+    const mods = (
+      fake.api.getState().persistent as {
+        mods: Record<string, Record<string, unknown>>;
+      }
+    ).mods[w.gameId]!;
+    mods[EXISTING_ID] = {
+      id: EXISTING_ID,
+      installationPath: EXISTING_ID,
+      type: "",
+      archiveId: ARCHIVE_ID,
+      attributes: { name: "Rock Textures", version: "1.0.0" },
+    };
+  }
+
+  /**
+   * The user state that makes the resolver say "already installed".
+   *
+   * No `archiveSha256`, which is the real-world shape: Vortex enriches it from
+   * the download record and an install does not reliably keep one.
+   */
+  const alreadyInstalled = [
+    {
+      id: EXISTING_ID,
+      name: "Rock Textures",
+      nexusModId: 100,
+      nexusFileId: 200,
+    },
+  ];
+
+  it("reinstalls it, rather than reporting it and moving on", async () => {
+    world = makeWorld({ mods: [MOD] });
+    const manifest = await packageFrom(world);
+    const fake = makeFakeVortex({
+      gameId: world.gameId,
+      downloads: { [ARCHIVE_ID]: "mod.zip" },
+      stagingRoot: world.stagingRoot,
+      // The repair downloads again and this time everything lands.
+      installProduces: () => ({
+        "Textures/rock.dds": "the bytes the curator shipped",
+        "Data/rock.esp": "a plugin",
+      }),
+    });
+    seedHalfInstalled(world, fake);
+
+    const result = (await install(manifest, fake, alreadyInstalled)) as {
+      kind: string;
+      verifications?: Array<{ kind: string; retryAttempted?: boolean }>;
+    };
+
+    expect(result.kind, why(result)).toBe("success");
+
+    // THE assertion. Before this change the plan installed nothing at all
+    // (the mod was already there) and the driver left the broken copy alone,
+    // so `installed` was empty and the receipt said "fail".
+    expect(fake.installed).toHaveLength(1);
+    expect(result.verifications?.[0]?.kind).toBe("ok");
+    expect(result.verifications?.[0]?.retryAttempted).toBe(true);
+  });
+
+  it("does NOT touch one whose files are all present and correct", async () => {
+    // The other half, and the reason the old guard existed: a mod that is
+    // genuinely fine must not be reinstalled just because we did not install
+    // it. Without this the change trades one wasted-work bug for another.
+    world = makeWorld({ mods: [MOD] });
+    const manifest = await packageFrom(world);
+    const fake = makeFakeVortex({
+      gameId: world.gameId,
+      downloads: { [ARCHIVE_ID]: "mod.zip" },
+      stagingRoot: world.stagingRoot,
+    });
+
+    const dir = nodePath.join(world.stagingRoot, EXISTING_ID);
+    fs.mkdirSync(nodePath.join(dir, "Textures"), { recursive: true });
+    fs.mkdirSync(nodePath.join(dir, "Data"), { recursive: true });
+    fs.writeFileSync(
+      nodePath.join(dir, "Textures", "rock.dds"),
+      "the bytes the curator shipped",
+    );
+    fs.writeFileSync(nodePath.join(dir, "Data", "rock.esp"), "a plugin");
+    const mods = (
+      fake.api.getState().persistent as {
+        mods: Record<string, Record<string, unknown>>;
+      }
+    ).mods[world.gameId]!;
+    mods[EXISTING_ID] = {
+      id: EXISTING_ID,
+      installationPath: EXISTING_ID,
+      type: "",
+      archiveId: ARCHIVE_ID,
+      attributes: { name: "Rock Textures", version: "1.0.0" },
+    };
+
+    const result = (await install(manifest, fake, alreadyInstalled)) as {
+      kind: string;
+      verifications?: Array<{ kind: string; retryAttempted?: boolean }>;
+    };
+
+    expect(result.kind, why(result)).toBe("success");
+    expect(fake.installed).toHaveLength(0);
+    expect(result.verifications?.[0]?.kind).toBe("ok");
+    expect(result.verifications?.[0]?.retryAttempted).toBeFalsy();
   });
 });

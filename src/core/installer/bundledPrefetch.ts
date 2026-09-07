@@ -85,6 +85,21 @@ export type BundledPrefetchPoolOptions = {
   onExtracted?: (zipEntry: string, ms: number) => void;
 };
 
+/**
+ * One entry to prefetch: which archive inside the .ehcoll, and what the
+ * curator calls the mod it holds.
+ *
+ * The name is not decoration. It becomes the extracted file's name, which
+ * becomes the mod's name in Vortex, which is what
+ * `enrichInstalledModsWithStagingSetHashes` matches on to decide whether a
+ * bundled external mod is already installed. Prime without it and every such
+ * mod is reinstalled on every resume — see {@link bundledArchiveFileName}.
+ */
+export type PrefetchRequest = {
+  zipEntry: string;
+  preferredName?: string;
+};
+
 type Slot =
   | { state: "queued"; zipEntry: string }
   | {
@@ -120,6 +135,16 @@ export class BundledPrefetchPool {
   private readonly slots = new Map<string, Slot>();
 
   /**
+   * zipEntry → the curator's mod name for it.
+   *
+   * Separate from {@link slots} because a slot is CONSUMED by `take` while the
+   * name must outlive it: a retry after a failed verification takes the same
+   * entry again on the cold path, and it should land in a folder with the same
+   * name as the first attempt rather than one named after the hash.
+   */
+  private readonly names = new Map<string, string>();
+
+  /**
    * Order the driver primed entries in. We extract in this order so
    * the prefetch matches the install order — the pool can't know the
    * driver's actual sequence, but the curator's manifest order is
@@ -149,19 +174,27 @@ export class BundledPrefetchPool {
    * asynchronously and saturate up to `concurrency`. Use
    * {@link take} to consume them.
    */
-  prime(zipEntries: readonly string[]): void {
+  prime(entries: readonly PrefetchRequest[]): void {
     if (this.disposed) return;
     let added = 0;
-    for (const zipEntry of zipEntries) {
+    for (const { zipEntry, preferredName } of entries) {
+      // Recorded even for an entry we have already queued: two manifest mods
+      // can share one bundled archive, and the first name that arrives is the
+      // one both installs will carry. Not worth resolving — they are the same
+      // bytes — but worth not overwriting mid-flight.
+      if (preferredName !== undefined && !this.names.has(zipEntry)) {
+        this.names.set(zipEntry, preferredName);
+      }
       if (this.slots.has(zipEntry)) continue;
       this.slots.set(zipEntry, { state: "queued", zipEntry });
       this.queue.push(zipEntry);
       added++;
     }
     ehLog("info", "bundled-prefetch.primed", {
-      requested: zipEntries.length,
+      requested: entries.length,
       added,
-      alreadyQueued: zipEntries.length - added,
+      alreadyQueued: entries.length - added,
+      named: this.names.size,
       concurrency: this.concurrency,
     });
     this.pump();
@@ -179,7 +212,16 @@ export class BundledPrefetchPool {
    * with the extracted file. The pool removes the slot to avoid
    * double-cleanup at `dispose()` time.
    */
-  async take(zipEntry: string): Promise<PrefetchedBundle> {
+  async take(
+    zipEntry: string,
+    /**
+     * The curator's mod name, for the cold path. A primed entry already
+     * carries one from {@link prime}; this only matters when the driver takes
+     * a bundled entry nobody predicted, and passing it keeps that mod's
+     * folder named like every other one rather than after its hash.
+     */
+    preferredName?: string,
+  ): Promise<PrefetchedBundle> {
     if (this.signal?.aborted) {
       throw new AbortError();
     }
@@ -189,6 +231,9 @@ export class BundledPrefetchPool {
       // Never primed — extract inline. This is the cold path; the
       // driver's prime() call should usually have caught it.
       ehLog("warn", "bundled-prefetch.take.cold", { zipEntry });
+      if (preferredName !== undefined && !this.names.has(zipEntry)) {
+        this.names.set(zipEntry, preferredName);
+      }
       return await this.runExtraction(zipEntry, /* tracked */ false);
     }
 
@@ -323,6 +368,7 @@ export class BundledPrefetchPool {
       const result = await extractBundledFromEhcoll(
         this.ehcollZipPath,
         zipEntry,
+        this.names.get(zipEntry),
       );
       const elapsed = Date.now() - startedAt;
       this.onExtracted?.(zipEntry, elapsed);
