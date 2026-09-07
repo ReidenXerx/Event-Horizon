@@ -22,7 +22,7 @@
 import * as fs from "fs";
 import * as nodePath from "path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { runInstall } from "../../src/core/installer/runInstall";
 import { parseManifest } from "../../src/core/manifest/parseManifest";
@@ -976,6 +976,54 @@ describe("resuming an interrupted install", () => {
       expect(e.profileId).toBe(RESUME_PROFILE);
       expect(e.enabled).toBe(true);
     }
+  });
+
+  it("logs the profiles Vortex has when it refuses to resume", async () => {
+    /**
+     * The three facts that settle a forked profile, actually emitted rather
+     * than merely present in the source. A source-only test would pass on a
+     * log call sitting in a branch that never runs.
+     */
+    world = makeWorld({ mods: [MOD] });
+    const manifest = await packageFrom(world);
+    const fake = makeFakeVortex({
+      gameId: world.gameId,
+      downloads: { [ARCHIVE_ID]: "mod.zip" },
+      stagingRoot: world.stagingRoot,
+      installProduces: () => ({
+        "Textures/rock.dds": "the bytes the curator shipped",
+        "Data/rock.esp": "a plugin",
+      }),
+    });
+
+    const vortexApi = await import("@nexusmods/vortex-api");
+    const logged: Array<[string, string, unknown]> = [];
+    const spy = vi
+      .spyOn(vortexApi, "log")
+      .mockImplementation((level: never, msg: never, data: never) => {
+        logged.push([String(level), String(msg), data]);
+      });
+
+    try {
+      await install(manifest, fake, [], {
+        kind: "fresh-profile",
+        suggestedProfileName: "E2E",
+        // Refused because the recorded profile is not in Vortex's state.
+        resumeRefusedWhy: "profile-deleted",
+        resumeRefusedProfileId: "a-profile-that-is-gone",
+      });
+    } finally {
+      spy.mockRestore();
+    }
+
+    const line = logged.find(([, msg]) => msg.includes("install.profile.resolved"));
+    expect(line, "the profile decision was never logged").toBeDefined();
+    const data = line![2] as Record<string, unknown>;
+    expect(data.whyNotResumed).toBe("profile-deleted");
+    expect(data.attemptProfileId).toBe("a-profile-that-is-gone");
+    // The list Vortex actually has — this is what makes the refusal checkable
+    // instead of merely stated.
+    expect(Array.isArray(data.knownProfiles)).toBe(true);
   });
 
   it("creates one when there is nothing to resume", async () => {

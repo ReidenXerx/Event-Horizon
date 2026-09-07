@@ -443,6 +443,37 @@ function gameDataDirFor(
   }
 }
 
+/**
+ * Every Vortex profile for this game, as `id — name`.
+ *
+ * Logged beside a refused resume so "the profile was deleted" can be checked
+ * rather than believed. Capped, because a profile list is a user's own data
+ * and a log is something they send to a stranger: enough to answer the
+ * question, not a copy of their setup.
+ */
+function listProfilesForGame(
+  api: types.IExtensionApi,
+  gameId: string,
+): string[] {
+  try {
+    const profiles = (
+      api.getState() as unknown as {
+        persistent?: {
+          profiles?: Record<string, { gameId?: string; name?: string }>;
+        };
+      }
+    ).persistent?.profiles;
+    if (profiles === undefined) return ["<no profiles in state>"];
+    return Object.entries(profiles)
+      .filter(([, p]) => p?.gameId === gameId)
+      .slice(0, 20)
+      .map(([id, p]) => `${id} — ${p?.name ?? "<unnamed>"}`);
+  } catch {
+    // Never let a diagnostic break an install.
+    return ["<could not read profiles>"];
+  }
+}
+
 function archivePathForMod(
   api: types.IExtensionApi,
   gameId: string,
@@ -571,6 +602,7 @@ async function recordAttemptOutcome(
       // The receipt is now the record of what is installed. Leaving the
       // journal behind would leave two answers to one question.
       await clearJournal(ctx.appDataPath, pkg.id);
+      ehLog("info", "install.attempt.cleared", { packageId: pkg.id });
       return;
     }
     // Both remaining kinds carry `installedSoFar` — the list exists precisely
@@ -597,6 +629,33 @@ async function recordAttemptOutcome(
       ...(typeof result.partialProfileId === "string"
         ? { profileId: result.partialProfileId }
         : {}),
+    });
+
+    /**
+     * ─── BOTH SIDES OF THE HANDOFF, IN ONE FILE ─────────────────────────
+     * The next run reads this record to decide whether to resume. When it
+     * refuses, the only way to tell "the profile was deleted" from "we wrote
+     * an id that can never match" is to see what was WRITTEN — and that
+     * happened in a previous run, whose only trace was a file on the user's
+     * disk that nobody thinks to ask for.
+     *
+     * A tester's fourth forked profile came down to exactly that gap. Both
+     * halves are now in the log, so one file answers it.
+     */
+    ehLog("info", "install.attempt.recorded", {
+      packageId: pkg.id,
+      packageVersion: pkg.version,
+      outcome: result.kind === "aborted" ? "aborted" : "failed",
+      phase: typeof result.phase === "string" ? result.phase : "unknown",
+      installedCount: installed,
+      profileId:
+        typeof result.partialProfileId === "string"
+          ? result.partialProfileId
+          : null,
+      // `null` is the finding, not a formatting choice: a record with no
+      // profile is one the next run cannot resume from, and that is worth
+      // seeing at the moment it is written rather than inferring later.
+      willBeResumable: typeof result.partialProfileId === "string",
     });
   } catch {
     // The install has already ended. Losing the record of a failure is a far
@@ -883,11 +942,24 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         ...(resumeId === undefined
           ? {
               whyNotResumed: plan.installTarget.resumeRefusedWhy ?? "no-attempt",
-              // Name the profile we went looking for, so "it was deleted" is
-              // a claim the reader can check against their own profile list.
+              /**
+               * ─── THE THREE FACTS THAT SETTLE IT ───────────────────────
+               * A tester forked a fourth profile and the log said only
+               * "profile-deleted". That is equally consistent with them
+               * deleting it between attempts — a habit worth mentioning —
+               * and with us recording an id that can never match, which is a
+               * bug that forks a profile on every run forever. Reading the
+               * log could not tell those apart, so neither could anyone.
+               *
+               * Together these do: the id we wanted, and every profile Vortex
+               * actually has for this game. If the id is absent from the
+               * list, it was deleted. If the list is empty or shaped
+               * differently, the lookup is wrong. No follow-up question.
+               */
               ...(plan.installTarget.resumeRefusedProfileId !== undefined
                 ? { attemptProfileId: plan.installTarget.resumeRefusedProfileId }
                 : {}),
+              knownProfiles: listProfilesForGame(api, plan.manifest.game.id),
             }
           : {}),
       });
