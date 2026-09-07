@@ -153,6 +153,21 @@ export function pickInstallTarget(
   receipt: InstallReceipt | undefined,
   activeProfileId: string,
   activeProfileName: string,
+  /**
+   * The profile an INTERRUPTED attempt at this same collection was
+   * installing into, when one exists and still does.
+   *
+   * Only consulted in the receipt-missing branch, and it does not change
+   * which branch is taken — a resume is still `fresh-profile` mode, because
+   * an attempt that never finished is not a previous install. It decides
+   * only whether the driver makes a new profile or continues in the one
+   * already half-filled. See {@link InstallIntoFreshProfile.resumeProfileId}
+   * for what five restarts looked like without it.
+   *
+   * The CALLER checks the profile still exists. A user who deleted it meant
+   * to, and a fresh profile is the right answer then.
+   */
+  interruptedProfile?: { id: string; name: string },
 ): InstallTarget {
   if (receipt !== undefined) {
     return {
@@ -164,7 +179,50 @@ export function pickInstallTarget(
   return {
     kind: "fresh-profile",
     suggestedProfileName: buildSuggestedProfileName(manifest),
+    ...(interruptedProfile !== undefined
+      ? {
+          resumeProfileId: interruptedProfile.id,
+          resumeProfileName: interruptedProfile.name,
+        }
+      : {}),
   };
+}
+
+/**
+ * The profile a previous interrupted attempt at `packageId` was filling, if
+ * that profile is still there.
+ *
+ * Reads the attempt record — which is why the record's own header now says it
+ * decides WHERE a resume lands. It still decides nothing about WHAT to
+ * install; that stays with the resolver's re-match against the disk, because
+ * a dead run's list of what it managed is exactly the thing not to trust.
+ *
+ * Returns undefined for every honest reason there is no profile to resume:
+ * no attempt, an attempt that never got as far as making one, a profile the
+ * user has since deleted, or one belonging to a different game.
+ */
+export function resumableProfileFromAttempts(
+  state: types.IState,
+  gameId: string,
+  packageId: string,
+  attempts: ReadonlyArray<{ packageId: string; profileId?: string }>,
+): { id: string; name: string } | undefined {
+  const attempt = attempts.find((a) => a.packageId === packageId);
+  const profileId = attempt?.profileId;
+  if (profileId === undefined) return undefined;
+
+  const profiles = (
+    state as unknown as {
+      persistent?: { profiles?: Record<string, { gameId?: string; name?: string }> };
+    }
+  ).persistent?.profiles;
+  const profile = profiles?.[profileId];
+  // Belonging to this game is checked, not assumed: a profile id that has
+  // been reused by another game would send the whole install somewhere the
+  // user never asked for.
+  if (profile === undefined || profile.gameId !== gameId) return undefined;
+
+  return { id: profileId, name: profile.name ?? profileId };
 }
 
 /**

@@ -118,6 +118,8 @@ async function install(
   fake: ReturnType<typeof makeFakeVortex>,
   /** Mods the user already has, for the `*-already-installed` arms. */
   installedMods: unknown[] = [],
+  /** Override the install target, for the resume-profile cases. */
+  installTarget?: unknown,
 ) {
   /**
    * ─── THROUGH THE REAL FORMAT, NOT AROUND IT ─────────────────────────
@@ -138,10 +140,14 @@ async function install(
    */
   const manifest = parseManifest(JSON.stringify(rawManifest)).manifest;
 
-  const plan = resolveInstallPlan(manifest, userState(installedMods), {
-    kind: "fresh-profile",
-    profileName: "E2E Profile",
-  } as never);
+  const plan = resolveInstallPlan(
+    manifest,
+    userState(installedMods),
+    (installTarget ?? {
+      kind: "fresh-profile",
+      profileName: "E2E Profile",
+    }) as never,
+  );
   const running = runInstall({
     api: fake.api,
     plan,
@@ -869,5 +875,107 @@ describe("a broken mod is repaired even when we skipped installing it", () => {
     expect(fake.installed).toHaveLength(0);
     expect(result.verifications?.[0]?.kind).toBe("ok");
     expect(result.verifications?.[0]?.retryAttempted).toBeFalsy();
+  });
+});
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * A resume continues its profile instead of forking a new one.
+ *
+ * Five restarts produced five profiles in one tester's log, because an
+ * interrupted run leaves no receipt and so picks fresh-profile mode again.
+ * Enablement is per-profile, so the mods from the earlier runs read
+ * "Disabled" in the newest profile — which is what the user saw and
+ * reasonably reported as "Event Horizon installs mods disabled".
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("resuming an interrupted install", () => {
+  const RESUME_PROFILE = "profile-from-the-last-attempt";
+
+  /** Every `setModEnabled` this run dispatched, as (profileId, modId). */
+  function enablesFrom(
+    fake: ReturnType<typeof makeFakeVortex>,
+  ): Array<{ profileId: string; modId: string; enabled: boolean }> {
+    return fake.dispatched
+      .filter(
+        (a): a is { type: string; payload: { profileId: string; modId: string; enabled: boolean } } =>
+          (a as { type?: string })?.type === "STUB_SET_MOD_ENABLED",
+      )
+      .map((a) => a.payload);
+  }
+
+  it("installs into the named profile and creates none", async () => {
+    world = makeWorld({ mods: [MOD] });
+    const manifest = await packageFrom(world);
+    const fake = makeFakeVortex({
+      gameId: world.gameId,
+      downloads: { [ARCHIVE_ID]: "mod.zip" },
+      stagingRoot: world.stagingRoot,
+      installProduces: () => ({
+        "Textures/rock.dds": "the bytes the curator shipped",
+        "Data/rock.esp": "a plugin",
+      }),
+    });
+    // The profile the interrupted attempt was filling, still present.
+    (
+      fake.api.getState().persistent as {
+        profiles: Record<string, unknown>;
+      }
+    ).profiles[RESUME_PROFILE] = {
+      id: RESUME_PROFILE,
+      gameId: world.gameId,
+      name: "Verification E2E (Event Horizon v1.0.0)",
+      modState: {},
+    };
+
+    const result = (await install(manifest, fake, [], {
+      kind: "fresh-profile",
+      suggestedProfileName: "Verification E2E (Event Horizon v1.0.0)",
+      resumeProfileId: RESUME_PROFILE,
+      resumeProfileName: "Verification E2E (Event Horizon v1.0.0)",
+    })) as { kind: string };
+
+    expect(result.kind, why(result)).toBe("success");
+
+    // No new profile. This is the whole fix: five restarts used to mean five.
+    expect(
+      fake.dispatched.filter(
+        (a) => (a as { type?: string })?.type === "STUB_SET_PROFILE",
+      ),
+    ).toHaveLength(0);
+
+    // And the mod is enabled IN THAT PROFILE — enabling it in a profile the
+    // user is not looking at is indistinguishable from not enabling it.
+    const enables = enablesFrom(fake);
+    expect(enables.length).toBeGreaterThan(0);
+    for (const e of enables) {
+      expect(e.profileId).toBe(RESUME_PROFILE);
+      expect(e.enabled).toBe(true);
+    }
+  });
+
+  it("creates one when there is nothing to resume", async () => {
+    // The unchanged first-install path. Without this the fix could silently
+    // stop creating profiles altogether.
+    world = makeWorld({ mods: [MOD] });
+    const manifest = await packageFrom(world);
+    const fake = makeFakeVortex({
+      gameId: world.gameId,
+      downloads: { [ARCHIVE_ID]: "mod.zip" },
+      stagingRoot: world.stagingRoot,
+      installProduces: () => ({
+        "Textures/rock.dds": "the bytes the curator shipped",
+        "Data/rock.esp": "a plugin",
+      }),
+    });
+
+    const result = (await install(manifest, fake)) as { kind: string };
+
+    expect(result.kind, why(result)).toBe("success");
+    expect(
+      fake.dispatched.filter(
+        (a) => (a as { type?: string })?.type === "STUB_SET_PROFILE",
+      ).length,
+    ).toBe(1);
   });
 });

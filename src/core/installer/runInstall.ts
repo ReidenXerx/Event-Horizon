@@ -813,22 +813,52 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
 
     // ── 2 + 3. profile resolution ───────────────────────────────────
     if (plan.installTarget.kind === "fresh-profile") {
-      // Fresh-profile mode: create a new profile and switch into it.
+      // Fresh-profile mode: create a new profile and switch into it — or
+      // continue the one an interrupted attempt already made.
       reportProgress(
         "creating-profile",
         0,
         1,
-        `Creating Vortex profile "${plan.installTarget.suggestedProfileName}"...`,
+        plan.installTarget.resumeProfileId !== undefined
+          ? `Resuming into "${plan.installTarget.resumeProfileName ?? "the previous profile"}"...`
+          : `Creating Vortex profile "${plan.installTarget.suggestedProfileName}"...`,
       );
 
-      const created = createFreshProfile(
-        api,
-        plan.manifest.game.id,
-        plan.installTarget.suggestedProfileName,
-      );
-      createdProfileId = created.id;
-      activeProfileId = created.id;
-      activeProfileName = created.name;
+      /**
+       * ─── A RESUME CONTINUES A PROFILE; IT DOES NOT FORK ONE ─────────
+       * An interrupted install writes no receipt, so the next run is
+       * fresh-profile mode again — and used to make ANOTHER profile every
+       * time. One tester's log has five `install.start` lines with five
+       * different profile ids. Since enablement is per-profile, everything
+       * the earlier runs installed reads "Disabled" in the newest one, and
+       * Vortex reopens on whichever profile was last active, so they were
+       * usually looking at a different profile than the one filling up.
+       *
+       * The resolver only sets this when a recorded attempt for this
+       * package names a profile that still exists for this game.
+       */
+      const resumeId = plan.installTarget.resumeProfileId;
+      if (resumeId !== undefined) {
+        activeProfileId = resumeId;
+        activeProfileName =
+          plan.installTarget.resumeProfileName ?? resumeId;
+        // NOT recorded as `createdProfileId`: we did not create it, so the
+        // abort path must not offer to delete it. It holds the mods of every
+        // earlier attempt.
+        ehLog("info", "install.profile.resumed", {
+          profileId: activeProfileId,
+          profileName: activeProfileName,
+        });
+      } else {
+        const created = createFreshProfile(
+          api,
+          plan.manifest.game.id,
+          plan.installTarget.suggestedProfileName,
+        );
+        createdProfileId = created.id;
+        activeProfileId = created.id;
+        activeProfileName = created.name;
+      }
 
       aborted = checkAbort("creating-profile");
       if (aborted) return aborted;

@@ -20,9 +20,17 @@
  * It records that an ATTEMPT ended badly, where it stopped, and how far it
  * got. It is not a receipt and never becomes one:
  *
- *   - Nothing reads it to decide what to install. That stays with the
+ *   - Nothing reads it to decide WHAT to install. That stays with the
  *     resolver's re-match, which is evidence from disk rather than a dead
  *     run's opinion.
+ *   - `profileId` alone decides WHERE a resume lands, and only that: without
+ *     it every restart created another Vortex profile, because an
+ *     interrupted run leaves no receipt and so takes fresh-profile mode
+ *     again. One tester restarted five times and got five profiles — and
+ *     since enablement is per-profile, the mods from the earlier four read
+ *     "Disabled" in the newest one. `resumableProfileFromAttempts` checks
+ *     the profile still exists before trusting it, and the mode stays
+ *     fresh-profile: a failed attempt is still not a previous install.
  *   - A later SUCCESS deletes it. A warning about a failure that has since
  *     been fixed is worse than silence, because it teaches people to ignore
  *     the panel.

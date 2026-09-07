@@ -131,7 +131,13 @@ export const util = {
 };
 
 export const actions = {
-  setModEnabled: () => ({ type: "STUB_SET_MOD_ENABLED" }),
+  // Carries its arguments, because WHICH profile a mod is enabled in is the
+  // whole question: enablement is per-profile, and a resume that enabled mods
+  // in the wrong profile looked exactly like installing them disabled.
+  setModEnabled: (profileId: string, modId: string, enabled: boolean) => ({
+    type: "STUB_SET_MOD_ENABLED",
+    payload: { profileId, modId, enabled },
+  }),
   /** Carries its payload so a test can assert WHICH mod a tweak landed on. */
   setINITweakEnabled: (
     gameId: string,

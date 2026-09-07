@@ -386,6 +386,34 @@ export type InstallIntoFreshProfile = {
    * the final name, only the suggestion.
    */
   suggestedProfileName: string;
+  /**
+   * ─── RESUME INTO THE PROFILE THE LAST ATTEMPT MADE ──────────────────
+   * An interrupted install leaves no receipt — correctly, a half-finished
+   * run has not earned the claim that the collection is installed — so the
+   * next run takes this mode again and, until this field existed, created
+   * ANOTHER profile. A tester who restarted five times got five profiles:
+   * five `install.start` lines in one log, five different `profileId`s.
+   *
+   * That is worse than untidy. Enablement is per-profile, so every mod the
+   * earlier runs installed reads "Disabled" in the newest profile until the
+   * resume walks past it again — and Vortex reopens on whichever profile
+   * was last active, so the user is often looking at a different one
+   * entirely. They reasonably reported that Event Horizon installs mods
+   * disabled. It does not; their log showed 1,106 of 1,106 enabled, in a
+   * profile they were not looking at.
+   *
+   * Set only when a recorded attempt for this `package.id` names a profile
+   * that STILL EXISTS for this game — the caller checks, because a user who
+   * deleted it means it, and creating a fresh one is the right answer then.
+   *
+   * The mode stays `fresh-profile` deliberately. This says WHERE the run
+   * lands, not that a previous RELEASE was installed: `previousInstall`
+   * remains undefined and orphan detection stays off, because an interrupted
+   * attempt is not a prior install and its mods are not orphans.
+   */
+  resumeProfileId?: string;
+  /** Display name of {@link resumeProfileId}. UI-only. */
+  resumeProfileName?: string;
 };
 
 // ===========================================================================

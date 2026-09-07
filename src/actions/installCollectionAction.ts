@@ -60,6 +60,7 @@ import {
 } from "../core/installLedger";
 import type { InstallReceipt } from "../types/installLedger";
 import { runInstall } from "../core/installer/runInstall";
+import { listInstallAttempts } from "../core/installer/attemptRecord";
 import {
   type ReadEhcollResult,
   ReadEhcollError,
@@ -71,6 +72,7 @@ import { getEventHorizonDir } from "../core/paths";
 import {
   buildUserSideState,
   pickInstallTarget,
+  resumableProfileFromAttempts,
   resolveDeploymentMethod,
   resolveEnabledExtensions,
   resolveGameVersion,
@@ -301,6 +303,14 @@ const downloadScanNotificationId = "vortex-event-horizon:install-download-scan";
         receipt,
         activeProfileId,
         activeProfileName,
+        // Continue the profile an interrupted attempt was filling, rather
+        // than forking a new one on every restart.
+        resumableProfileFromAttempts(
+          state,
+          activeGameId,
+          manifest.package.id,
+          await listInstallAttempts(appDataPath),
+        ),
       );
 
       // ── 8. resolve install plan ──────────────────────────────────────
