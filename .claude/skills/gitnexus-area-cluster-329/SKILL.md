@@ -1,9 +1,9 @@
 ---
-name: gitnexus-area-cluster-317
-description: "Skill for the Cluster_317 area of Event-Horizon. 5 symbols across 2 files."
+name: gitnexus-area-cluster-329
+description: "Skill for the Cluster_329 area of Event-Horizon. 5 symbols across 2 files."
 ---
 
-# Cluster_317
+# Cluster_329
 
 5 symbols | 2 files | Cohesion: 80%
 
@@ -11,7 +11,7 @@ description: "Skill for the Cluster_317 area of Event-Horizon. 5 symbols across 
 
 - Working with code in `src/`
 - Understanding how opn, opn, opn work
-- Modifying cluster_317-related functionality
+- Modifying cluster_329-related functionality
 
 ## Key Files
 
@@ -42,6 +42,6 @@ description: "Skill for the Cluster_317 area of Event-Horizon. 5 symbols across 
 ## How to Explore
 
 1. `context({name: "opn"})` — see callers and callees
-2. `query({search_query: "cluster_317"})` — find related execution flows
+2. `query({search_query: "cluster_329"})` — find related execution flows
 3. Read key files listed above for implementation details
 4. `explain({target: "<file or symbol>"})` — persisted taint findings (source→sink data flows), when indexed with `--pdg`

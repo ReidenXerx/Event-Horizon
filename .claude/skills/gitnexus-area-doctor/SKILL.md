@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-doctor
-description: "Skill for the Doctor area of Event-Horizon. 21 symbols across 7 files."
+description: "Skill for the Doctor area of Event-Horizon. 23 symbols across 8 files."
 ---
 
 # Doctor
 
-21 symbols | 7 files | Cohesion: 84%
+23 symbols | 8 files | Cohesion: 84%
 
 ## When to Use
 
@@ -18,19 +18,20 @@ description: "Skill for the Doctor area of Event-Horizon. 21 symbols across 7 fi
 | File | Symbols |
 |------|---------|
 | `src/core/doctor/gather.ts` | countModRules, gatherObservations, readEnabledModIds, readInstalledModIds, readProfileIds |
-| `src/core/doctor/health.ts` | countCheck, detailList, evaluateHealth, orderMatches |
 | `src/core/doctor/heal.ts` | describeHeal, rebuildPluginOrder, healNeedsManifest |
 | `src/core/doctor/runHeal.ts` | healImpl, resolveModMaps, runHeal |
+| `src/core/doctor/health.ts` | countCheck, detailList, evaluateHealth |
+| `src/core/doctor/health.test.ts` | drifted, healthy, on |
 | `src/core/identity/compareKey.ts` | nexusModIdOfCompareKey, parseCompareKey |
 | `src/ui/pages/doctor/DoctorPage.tsx` | heal, unavailableHeal |
-| `src/core/doctor/health.test.ts` | drifted, healthy |
+| `src/core/installer/checkPluginOrder.ts` | comparePluginOrder, key |
 
 ## Entry Points
 
 Start here when exploring this area:
 
-- **`describeHeal`** (Function) — `src/core/doctor/heal.ts:59`
-- **`rebuildPluginOrder`** (Function) — `src/core/doctor/heal.ts:136`
+- **`describeHeal`** (Function) — `src/core/doctor/heal.ts:66`
+- **`rebuildPluginOrder`** (Function) — `src/core/doctor/heal.ts:161`
 - **`runHeal`** (Function) — `src/core/doctor/runHeal.ts:98`
 - **`nexusModIdOfCompareKey`** (Function) — `src/core/identity/compareKey.ts:96`
 - **`parseCompareKey`** (Function) — `src/core/identity/compareKey.ts:79`
@@ -39,26 +40,26 @@ Start here when exploring this area:
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `describeHeal` | Function | `src/core/doctor/heal.ts` | 59 |
-| `rebuildPluginOrder` | Function | `src/core/doctor/heal.ts` | 136 |
+| `describeHeal` | Function | `src/core/doctor/heal.ts` | 66 |
+| `rebuildPluginOrder` | Function | `src/core/doctor/heal.ts` | 161 |
 | `runHeal` | Function | `src/core/doctor/runHeal.ts` | 98 |
 | `nexusModIdOfCompareKey` | Function | `src/core/identity/compareKey.ts` | 96 |
 | `parseCompareKey` | Function | `src/core/identity/compareKey.ts` | 79 |
-| `heal` | Function | `src/ui/pages/doctor/DoctorPage.tsx` | 263 |
-| `gatherObservations` | Function | `src/core/doctor/gather.ts` | 108 |
-| `evaluateHealth` | Function | `src/core/doctor/health.ts` | 157 |
-| `healNeedsManifest` | Function | `src/core/doctor/heal.ts` | 39 |
-| `unavailableHeal` | Function | `src/ui/pages/doctor/DoctorPage.tsx` | 430 |
+| `heal` | Function | `src/ui/pages/doctor/DoctorPage.tsx` | 283 |
+| `gatherObservations` | Function | `src/core/doctor/gather.ts` | 115 |
+| `evaluateHealth` | Function | `src/core/doctor/health.ts` | 159 |
+| `comparePluginOrder` | Function | `src/core/installer/checkPluginOrder.ts` | 68 |
+| `healNeedsManifest` | Function | `src/core/doctor/heal.ts` | 42 |
+| `unavailableHeal` | Function | `src/ui/pages/doctor/DoctorPage.tsx` | 450 |
 | `healImpl` | Function | `src/core/doctor/runHeal.ts` | 133 |
 | `resolveModMaps` | Function | `src/core/doctor/runHeal.ts` | 60 |
 | `countModRules` | Function | `src/core/doctor/gather.ts` | 70 |
 | `readEnabledModIds` | Function | `src/core/doctor/gather.ts` | 53 |
 | `readInstalledModIds` | Function | `src/core/doctor/gather.ts` | 37 |
 | `readProfileIds` | Function | `src/core/doctor/gather.ts` | 25 |
-| `countCheck` | Function | `src/core/doctor/health.ts` | 384 |
-| `detailList` | Function | `src/core/doctor/health.ts` | 126 |
-| `orderMatches` | Function | `src/core/doctor/health.ts` | 141 |
-| `drifted` | Function | `src/core/doctor/health.test.ts` | 241 |
+| `countCheck` | Function | `src/core/doctor/health.ts` | 487 |
+| `detailList` | Function | `src/core/doctor/health.ts` | 147 |
+| `key` | Function | `src/core/installer/checkPluginOrder.ts` | 59 |
 
 ## Execution Flows
 

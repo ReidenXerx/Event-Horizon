@@ -5,7 +5,7 @@ description: "Skill for the Install area of Event-Horizon. 73 symbols across 10 
 
 # Install
 
-73 symbols | 10 files | Cohesion: 82%
+73 symbols | 10 files | Cohesion: 81%
 
 ## When to Use
 
@@ -32,26 +32,26 @@ description: "Skill for the Install area of Event-Horizon. 73 symbols across 10 
 
 Start here when exploring this area:
 
-- **`reconcileMods`** (Function) — `src/ui/pages/install/steps.tsx:2991`
-- **`wizardReducer`** (Function) — `src/ui/pages/install/state.ts:196`
-- **`canProceedFromDecisions`** (Function) — `src/ui/pages/install/state.ts:408`
-- **`countUndecidedConflicts`** (Function) — `src/ui/pages/install/state.ts:435`
-- **`defaultConflictChoice`** (Function) — `src/ui/pages/install/state.ts:366`
+- **`reconcileMods`** (Function) — `src/ui/pages/install/steps.tsx:3004`
+- **`wizardReducer`** (Function) — `src/ui/pages/install/state.ts:218`
+- **`canProceedFromDecisions`** (Function) — `src/ui/pages/install/state.ts:437`
+- **`countUndecidedConflicts`** (Function) — `src/ui/pages/install/state.ts:464`
+- **`defaultConflictChoice`** (Function) — `src/ui/pages/install/state.ts:395`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `reconcileMods` | Function | `src/ui/pages/install/steps.tsx` | 2991 |
-| `wizardReducer` | Function | `src/ui/pages/install/state.ts` | 196 |
-| `canProceedFromDecisions` | Function | `src/ui/pages/install/state.ts` | 408 |
-| `countUndecidedConflicts` | Function | `src/ui/pages/install/state.ts` | 435 |
-| `defaultConflictChoice` | Function | `src/ui/pages/install/state.ts` | 366 |
-| `defaultOrphanChoice` | Function | `src/ui/pages/install/state.ts` | 384 |
-| `fillDefaultConflictChoices` | Function | `src/ui/pages/install/state.ts` | 451 |
-| `fillDefaultOrphanChoices` | Function | `src/ui/pages/install/state.ts` | 467 |
-| `selectConflictResolutions` | Function | `src/ui/pages/install/state.ts` | 352 |
-| `DecisionsStep` | Function | `src/ui/pages/install/steps.tsx` | 1067 |
+| `reconcileMods` | Function | `src/ui/pages/install/steps.tsx` | 3004 |
+| `wizardReducer` | Function | `src/ui/pages/install/state.ts` | 218 |
+| `canProceedFromDecisions` | Function | `src/ui/pages/install/state.ts` | 437 |
+| `countUndecidedConflicts` | Function | `src/ui/pages/install/state.ts` | 464 |
+| `defaultConflictChoice` | Function | `src/ui/pages/install/state.ts` | 395 |
+| `defaultOrphanChoice` | Function | `src/ui/pages/install/state.ts` | 413 |
+| `fillDefaultConflictChoices` | Function | `src/ui/pages/install/state.ts` | 480 |
+| `fillDefaultOrphanChoices` | Function | `src/ui/pages/install/state.ts` | 496 |
+| `selectConflictResolutions` | Function | `src/ui/pages/install/state.ts` | 381 |
+| `DecisionsStep` | Function | `src/ui/pages/install/steps.tsx` | 1080 |
 | `blocksInstall` | Function | `src/core/installer/autoDeploy.ts` | 48 |
 | `readsAutoDeploy` | Function | `src/core/installer/autoDeploy.ts` | 33 |
 | `probeDeploymentMethod` | Function | `src/core/installer/probeDeployment.ts` | 60 |
@@ -60,8 +60,8 @@ Start here when exploring this area:
 | `estimateRemainingMs` | Function | `src/ui/pages/install/installProgress.ts` | 89 |
 | `formatDuration` | Function | `src/ui/pages/install/installProgress.ts` | 132 |
 | `trackPhase` | Function | `src/ui/pages/install/installProgress.ts` | 66 |
-| `InstallingStep` | Function | `src/ui/pages/install/steps.tsx` | 2189 |
-| `getInstallSession` | Function | `src/ui/pages/install/installSession.ts` | 843 |
+| `InstallingStep` | Function | `src/ui/pages/install/steps.tsx` | 2202 |
+| `getInstallSession` | Function | `src/ui/pages/install/installSession.ts` | 870 |
 
 ## Execution Flows
 
@@ -69,14 +69,14 @@ Start here when exploring this area:
 |------|------|-------|
 | `Heal → EHRuntime` | cross_community | 6 |
 | `Heal → Notify` | cross_community | 6 |
+| `StartInstall → EHRuntime` | cross_community | 6 |
+| `StartInstall → Notify` | cross_community | 6 |
 | `Heal → GetSnapshot` | cross_community | 5 |
 | `DoneStep → Pill` | cross_community | 5 |
+| `StartInstall → GetSnapshot` | cross_community | 5 |
 | `OnHashProgress → EHRuntime` | cross_community | 5 |
 | `OnHashProgress → Notify` | cross_community | 5 |
 | `OnPhase → EHRuntime` | cross_community | 5 |
-| `OnPhase → Notify` | cross_community | 5 |
-| `OnHashProgress → EHRuntime` | cross_community | 5 |
-| `OnHashProgress → Notify` | cross_community | 5 |
 
 ## How to Explore
 

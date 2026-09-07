@@ -935,12 +935,44 @@ function findInstalledByNexusExact(
   fileId: number,
   sha256: string,
 ): InstalledMod | undefined {
+  /**
+   * ─── AN ABSENT HASH IS UNKNOWN, NOT DIFFERENT ───────────────────────
+   * `InstalledMod.archiveSha256` says so itself: "Optional because
+   * un-enriched snapshots may lack it; absence is treated as 'byte-identity
+   * unknown' not 'different bytes'." This function required it to be present
+   * AND equal, which is the opposite, and the contradiction cost a tester
+   * their evening.
+   *
+   * Vortex does not reliably keep an archive hash on an INSTALLED mod — it is
+   * enriched from the download, and a download that has been cleaned up, or
+   * never hashed, leaves the attribute missing. So a mod this tool had
+   * installed itself minutes earlier failed the check, fell through to
+   * "download it again", and Vortex met it with "X is already installed on
+   * your system — replace, or install as a variant?" for the user to answer
+   * by hand.
+   *
+   * Measured in their log: 1,993 install starts for 1,107 distinct mods, and
+   * only 95 recognised as already installed. On the final resume, 754 mods
+   * were re-installed and 89 recognised. One mod was recognised in run 4 and
+   * re-installed in run 5, which is what makes this an identity bug rather
+   * than a state one.
+   *
+   * `(modId, fileId)` IS the identity — a Nexus file id is immutable and
+   * refers to one uploaded file forever. The hash adds proof that the LOCAL
+   * bytes were not swapped, which is worth having when we have it: a KNOWN
+   * hash that differs still refuses, and falls through to the bytes-diverged
+   * rung below. Only "we never recorded one" now matches.
+   *
+   * The safe direction is this one. A wrong "already installed" is caught by
+   * the verification pass, which compares real files against the manifest. A
+   * wrong "not installed" costs a re-download, a modal, and a mod installed
+   * twice.
+   */
   return installed.find(
     (m) =>
       m.nexusModId === modId &&
       m.nexusFileId === fileId &&
-      typeof m.archiveSha256 === "string" &&
-      m.archiveSha256 === sha256,
+      (m.archiveSha256 === undefined || m.archiveSha256 === sha256),
   );
 }
 

@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-build
-description: "Skill for the Build area of Event-Horizon. 270 symbols across 47 files."
+description: "Skill for the Build area of Event-Horizon. 271 symbols across 47 files."
 ---
 
 # Build
 
-270 symbols | 47 files | Cohesion: 73%
+271 symbols | 47 files | Cohesion: 72%
 
 ## When to Use
 
@@ -19,7 +19,7 @@ description: "Skill for the Build area of Event-Horizon. 270 symbols across 47 f
 |------|---------|
 | `src/ui/pages/build/BuildPage.tsx` | handle, handleDiscardDraft, handleChange, handleDismissDraftBanner, session (+27) |
 | `src/ui/pages/build/buildSession.ts` | queuePosition, isAbortError, _runBuild, begin, discardDraft (+26) |
-| `src/ui/pages/build/engine.ts` | BundleResolutionError, applyPostProcessedDeclarations, buildOutputFileName, declarationsFor, resolveDeploymentMethod (+23) |
+| `src/ui/pages/build/engine.ts` | BuildRefusedError, BundleResolutionError, applyPostProcessedDeclarations, buildOutputFileName, declarationsFor (+24) |
 | `src/ui/pages/build/BuildDashboard.tsx` | slugsInUse, BuildDashboard, handleDismissBuilt, handleOpenBuilt, handleOpenDraft (+17) |
 | `src/ui/pages/build/buildSessionRegistry.ts` | BuildSessionRegistry, getBuildSessionRegistry, ensure, get, makeHooks (+13) |
 | `src/ui/pages/build/buildDiff.test.ts` | findPackages, findPackages, findPackages, findPackages, findPackages (+9) |
@@ -42,7 +42,8 @@ Start here when exploring this area:
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `BundleResolutionError` | Class | `src/ui/pages/build/engine.ts` | 497 |
+| `BuildRefusedError` | Class | `src/ui/pages/build/engine.ts` | 1040 |
+| `BundleResolutionError` | Class | `src/ui/pages/build/engine.ts` | 507 |
 | `describeExternalDrift` | Function | `src/core/manifest/bundleFromStaging.ts` | 549 |
 | `mergeRepackedBundles` | Function | `src/core/manifest/bundleFromStaging.ts` | 608 |
 | `choiceFromEntry` | Function | `src/core/manifest/collectionConfig.ts` | 1128 |
@@ -51,17 +52,16 @@ Start here when exploring this area:
 | `modsNoLongerBundled` | Function | `src/core/manifest/collectionConfig.ts` | 1161 |
 | `applyDependencyOverrides` | Function | `src/core/manifest/externalDependencies.ts` | 554 |
 | `describeUndeclared` | Function | `src/core/manifest/externalHints.ts` | 407 |
-| `describeMachineKept` | Function | `src/core/manifest/gameIni.ts` | 251 |
+| `describeMachineKept` | Function | `src/core/manifest/gameIni.ts` | 353 |
 | `slugsInUse` | Function | `src/ui/pages/build/BuildDashboard.tsx` | 381 |
-| `applyPostProcessedDeclarations` | Function | `src/ui/pages/build/engine.ts` | 456 |
-| `runBuildPipeline` | Function | `src/ui/pages/build/engine.ts` | 995 |
-| `checkAbort` | Function | `src/ui/pages/build/engine.ts` | 1025 |
-| `slugify` | Function | `src/ui/pages/build/engine.ts` | 2219 |
+| `applyPostProcessedDeclarations` | Function | `src/ui/pages/build/engine.ts` | 466 |
+| `runBuildPipeline` | Function | `src/ui/pages/build/engine.ts` | 1049 |
+| `checkAbort` | Function | `src/ui/pages/build/engine.ts` | 1079 |
+| `slugify` | Function | `src/ui/pages/build/engine.ts` | 2365 |
 | `deleteDraft` | Function | `src/core/draftStorage.ts` | 509 |
 | `getAppDataPath` | Function | `src/core/draftStorage.ts` | 543 |
 | `getDraftPath` | Function | `src/core/draftStorage.ts` | 102 |
 | `loadDraft` | Function | `src/core/draftStorage.ts` | 143 |
-| `saveDraft` | Function | `src/core/draftStorage.ts` | 473 |
 
 ## Execution Flows
 

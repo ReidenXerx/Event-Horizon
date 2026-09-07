@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-runtime
-description: "Skill for the Runtime area of Event-Horizon. 11 symbols across 6 files."
+description: "Skill for the Runtime area of Event-Horizon. 21 symbols across 9 files."
 ---
 
 # Runtime
 
-11 symbols | 6 files | Cohesion: 92%
+21 symbols | 9 files | Cohesion: 92%
 
 ## When to Use
 
@@ -17,12 +17,15 @@ description: "Skill for the Runtime area of Event-Horizon. 11 symbols across 6 f
 
 | File | Symbols |
 |------|---------|
-| `src/core/runtime/nodePrereqDeps.ts` | download, go, run |
+| `src/core/runtime/detectRuntimes.ts` | detectRuntimes, probeDirectX9, probeDotNet48, probeDotNetDesktop8, probeVcRedist (+1) |
+| `src/core/runtime/nodePrereqDeps.ts` | run, download, finish, armStall, go |
 | `src/core/curator/bulkUpdate.test.ts` | verify, ok |
 | `src/core/runtime/installPrerequisites.ts` | installPrerequisites, summarisePrereqResults |
 | `src/core/runtime/prerequisites.ts` | classifyExitCode, verdictIsGood |
 | `src/core/curator/bulkUpdate.ts` | verify |
 | `src/core/runtime/installPrerequisites.test.ts` | run |
+| `src/core/runtime/detectRuntimes.test.ts` | only |
+| `src/ui/pages/install/steps.tsx` | runtimeLines |
 
 ## Entry Points
 
@@ -43,12 +46,21 @@ Start here when exploring this area:
 | `summarisePrereqResults` | Function | `src/core/runtime/installPrerequisites.ts` | 217 |
 | `classifyExitCode` | Function | `src/core/runtime/prerequisites.ts` | 154 |
 | `verdictIsGood` | Function | `src/core/runtime/prerequisites.ts` | 186 |
+| `detectRuntimes` | Function | `src/core/runtime/detectRuntimes.ts` | 214 |
+| `describeRuntimeFindings` | Function | `src/core/runtime/detectRuntimes.ts` | 265 |
+| `runtimeLines` | Function | `src/ui/pages/install/steps.tsx` | 671 |
 | `verify` | Function | `src/core/curator/bulkUpdate.test.ts` | 72 |
 | `ok` | Function | `src/core/curator/bulkUpdate.test.ts` | 28 |
-| `run` | Function | `src/core/runtime/installPrerequisites.test.ts` | 151 |
-| `download` | Function | `src/core/runtime/nodePrereqDeps.ts` | 30 |
-| `go` | Function | `src/core/runtime/nodePrereqDeps.ts` | 36 |
-| `run` | Function | `src/core/runtime/nodePrereqDeps.ts` | 90 |
+| `run` | Function | `src/core/runtime/installPrerequisites.test.ts` | 192 |
+| `run` | Function | `src/core/runtime/nodePrereqDeps.ts` | 165 |
+| `only` | Function | `src/core/runtime/detectRuntimes.test.ts` | 41 |
+| `probeDirectX9` | Function | `src/core/runtime/detectRuntimes.ts` | 179 |
+| `probeDotNet48` | Function | `src/core/runtime/detectRuntimes.ts` | 122 |
+| `probeDotNetDesktop8` | Function | `src/core/runtime/detectRuntimes.ts` | 158 |
+| `probeVcRedist` | Function | `src/core/runtime/detectRuntimes.ts` | 87 |
+| `download` | Function | `src/core/runtime/nodePrereqDeps.ts` | 45 |
+| `finish` | Function | `src/core/runtime/nodePrereqDeps.ts` | 53 |
+| `armStall` | Function | `src/core/runtime/nodePrereqDeps.ts` | 89 |
 
 ## How to Explore
 

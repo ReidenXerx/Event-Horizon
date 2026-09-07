@@ -1,16 +1,16 @@
 ---
 name: gitnexus-area-pages
-description: "Skill for the Pages area of Event-Horizon. 165 symbols across 42 files."
+description: "Skill for the Pages area of Event-Horizon. 170 symbols across 43 files."
 ---
 
 # Pages
 
-165 symbols | 42 files | Cohesion: 81%
+170 symbols | 43 files | Cohesion: 81%
 
 ## When to Use
 
 - Working with code in `src/`
-- Understanding how archivesFreedByRemoval, cleanupSubset, describeEvidence work
+- Understanding how describeEnableChanges, planEnableChanges, archivesFreedByRemoval work
 - Modifying pages-related functionality
 
 ## Key Files
@@ -19,7 +19,7 @@ description: "Skill for the Pages area of Event-Horizon. 165 symbols across 42 f
 |------|---------|
 | `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, DoneStep, ExternalDownloadGuide, FailureBody (+17) |
 | `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildWizard, BuildingPanel, DecisionsGate, DraftRestoredBanner (+16) |
-| `src/ui/pages/curator/CuratorPage.tsx` | CuratorBody, endorseAll, freedByRetiring, setFrozen, CuratorPage (+9) |
+| `src/ui/pages/curator/CuratorPage.tsx` | CuratorBody, endorseAll, freedByRetiring, refreshUpdates, setEnabledFor (+12) |
 | `src/ui/pages/CollectionsPage.tsx` | CollectionsList, handleContinueInstall, refresh, DetailTile, EmptyState (+8) |
 | `src/ui/pages/HomePage.tsx` | CuratorPanel, Dashboard, DashboardBody, ErrorPanel, FooterRow (+7) |
 | `src/ui/pages/ModDiffsPage.tsx` | ChangedModList, ChangedModRow, FieldDiffRow, TierBadge, formatFieldValue (+7) |
@@ -32,16 +32,18 @@ description: "Skill for the Pages area of Event-Horizon. 165 symbols across 42 f
 
 Start here when exploring this area:
 
+- **`describeEnableChanges`** (Function) — `src/core/curator/bulkToggles.ts:61`
+- **`planEnableChanges`** (Function) — `src/core/curator/bulkToggles.ts:34`
 - **`archivesFreedByRemoval`** (Function) — `src/core/curator/cleanupPlan.ts:384`
 - **`cleanupSubset`** (Function) — `src/core/curator/cleanupPlan.ts:396`
 - **`describeEvidence`** (Function) — `src/core/curator/cleanupPlan.ts:230`
-- **`formatSize`** (Function) — `src/core/curator/cleanupPlan.ts:350`
-- **`describeEndorseDuration`** (Function) — `src/core/curator/endorsePace.ts:44`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
+| `describeEnableChanges` | Function | `src/core/curator/bulkToggles.ts` | 61 |
+| `planEnableChanges` | Function | `src/core/curator/bulkToggles.ts` | 34 |
 | `archivesFreedByRemoval` | Function | `src/core/curator/cleanupPlan.ts` | 384 |
 | `cleanupSubset` | Function | `src/core/curator/cleanupPlan.ts` | 396 |
 | `describeEvidence` | Function | `src/core/curator/cleanupPlan.ts` | 230 |
@@ -50,8 +52,8 @@ Start here when exploring this area:
 | `endorseDurationMs` | Function | `src/core/curator/endorsePace.ts` | 31 |
 | `endorseIsLong` | Function | `src/core/curator/endorsePace.ts` | 63 |
 | `freezeAttribute` | Function | `src/core/curator/readProfile.ts` | 117 |
-| `healingBlockedReason` | Function | `src/core/doctor/health.ts` | 497 |
-| `overallHealth` | Function | `src/core/doctor/health.ts` | 444 |
+| `healingBlockedReason` | Function | `src/core/doctor/health.ts` | 600 |
+| `overallHealth` | Function | `src/core/doctor/health.ts` | 547 |
 | `describeInstallAttempt` | Function | `src/core/installer/attemptRecord.ts` | 169 |
 | `describeFomodModes` | Function | `src/core/installer/fomodReplayMode.ts` | 78 |
 | `s` | Function | `src/core/installer/fomodReplayMode.ts` | 84 |
@@ -60,8 +62,6 @@ Start here when exploring this area:
 | `Card` | Function | `src/ui/components/Card.tsx` | 31 |
 | `EventHorizonMark` | Function | `src/ui/components/EventHorizonMark.tsx` | 51 |
 | `HashingCard` | Function | `src/ui/components/HashingCard.tsx` | 49 |
-| `Modal` | Function | `src/ui/components/Modal.tsx` | 57 |
-| `Page` | Function | `src/ui/components/Page.tsx` | 26 |
 
 ## Execution Flows
 
@@ -75,12 +75,12 @@ Start here when exploring this area:
 | `RouteOutlet → Ok` | cross_community | 7 |
 | `RouteOutlet → BelongsToGame` | cross_community | 7 |
 | `EndorseAll → GetVortexUserDataPath` | cross_community | 7 |
+| `RefreshUpdates → GetVortexUserDataPath` | cross_community | 7 |
 | `RouteOutlet → GetActiveGameId` | cross_community | 6 |
-| `RouteOutlet → ResolveProfileName` | cross_community | 6 |
 
 ## How to Explore
 
-1. `context({name: "archivesFreedByRemoval"})` — see callers and callees
+1. `context({name: "describeEnableChanges"})` — see callers and callees
 2. `query({search_query: "pages"})` — find related execution flows
 3. Read key files listed above for implementation details
 4. `explain({target: "<file or symbol>"})` — persisted taint findings (source→sink data flows), when indexed with `--pdg`

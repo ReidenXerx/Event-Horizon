@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-manifest
-description: "Skill for the Manifest area of Event-Horizon. 362 symbols across 81 files."
+description: "Skill for the Manifest area of Event-Horizon. 377 symbols across 85 files."
 ---
 
 # Manifest
 
-362 symbols | 81 files | Cohesion: 78%
+377 symbols | 85 files | Cohesion: 78%
 
 ## When to Use
 
@@ -20,7 +20,7 @@ description: "Skill for the Manifest area of Event-Horizon. 362 symbols across 8
 | `src/core/manifest/parseManifest.ts` | ParseManifestError, describe, expectArray, expectBoolean, expectEnum (+43) |
 | `src/core/manifest/packageZip.ts` | describeBytes, isAbortLikeError, packageEhcoll, checkAbort, prepareStagingDir (+13) |
 | `src/core/manifest/readZip.ts` | ZipReadError, extractZipEntryToFile, findDataOffset, findEntry, findZip64Extra (+11) |
-| `src/core/manifest/buildManifest.ts` | buildExternalMod, buildModEntry, buildModInstallSpec, buildModInstallState, buildNexusMod (+11) |
+| `src/core/manifest/buildManifest.ts` | BuildManifestError, buildLoadOrder, buildManifest, buildPackageMetadata, buildUserlist (+11) |
 | `src/core/manifest/collectionConfig.ts` | mode, CollectionConfigError, createDefaultConfig, getCollectionConfigPath, loadOrCreateCollectionConfig (+8) |
 | `src/core/manifest/externalHints.ts` | countBy, downloadsFromState, modsFromState, asMode, collectExternalHints (+8) |
 | `src/core/manifest/readEhcoll.ts` | ReadEhcollError, assertReadableFile, crossCheckBundled, extractManifest, listZipEntries (+7) |
@@ -46,8 +46,8 @@ Start here when exploring this area:
 | `ParseManifestError` | Class | `src/core/manifest/parseManifest.ts` | 121 |
 | `ReadEhcollError` | Class | `src/core/manifest/readEhcoll.ts` | 129 |
 | `ZipReadError` | Class | `src/core/manifest/readZip.ts` | 58 |
-| `CollectionConfigError` | Class | `src/core/manifest/collectionConfig.ts` | 270 |
 | `BuildManifestError` | Class | `src/core/manifest/buildManifest.ts` | 251 |
+| `CollectionConfigError` | Class | `src/core/manifest/collectionConfig.ts` | 270 |
 | `PackageEhcollError` | Class | `src/core/manifest/packageZip.ts` | 163 |
 | `archiveFileCacheKey` | Function | `src/core/archiveHashCache.ts` | 84 |
 | `enrichModsWithArchiveHashes` | Function | `src/core/archiveHashing.ts` | 184 |

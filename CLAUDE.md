@@ -481,4 +481,3 @@ Optional: `GITNEXUS_MODE=guide` (nudge-only). Paths: `.bearing/hooks.json`. Play
 
 Run gated scripts from `package.json` when hooks remind you: `bearing.__gate.*` — they document the enforced playbook for this repo.
 <!-- bearing:END -->
-

@@ -5,7 +5,7 @@ description: "Skill for the E2e area of Event-Horizon. 12 symbols across 5 files
 
 # E2e
 
-12 symbols | 5 files | Cohesion: 64%
+12 symbols | 5 files | Cohesion: 63%
 
 ## When to Use
 
@@ -27,7 +27,7 @@ description: "Skill for the E2e area of Event-Horizon. 12 symbols across 5 files
 
 Start here when exploring this area:
 
-- **`runInstall`** (Function) — `src/core/installer/runInstall.ts:533`
+- **`runInstall`** (Function) — `src/core/installer/runInstall.ts:534`
 - **`makeWorld`** (Function) — `test/e2e/world.ts:78`
 - **`makeFakeVortex`** (Function) — `test/e2e/fakeVortex.ts:44`
 - **`complete`** (Function) — `test/e2e/fakeVortex.ts:121`
@@ -37,7 +37,7 @@ Start here when exploring this area:
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `runInstall` | Function | `src/core/installer/runInstall.ts` | 533 |
+| `runInstall` | Function | `src/core/installer/runInstall.ts` | 534 |
 | `makeWorld` | Function | `test/e2e/world.ts` | 78 |
 | `makeFakeVortex` | Function | `test/e2e/fakeVortex.ts` | 44 |
 | `complete` | Function | `test/e2e/fakeVortex.ts` | 121 |

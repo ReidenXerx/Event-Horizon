@@ -49,10 +49,10 @@ Start here when exploring this area:
 | `target` | Function | `src/ui/components/table/DataTable.tsx` | 175 |
 | `effectiveTarget` | Function | `src/ui/components/table/tableView.ts` | 281 |
 | `nextSort` | Function | `src/ui/components/table/DataTable.tsx` | 86 |
-| `kindOf` | Function | `src/ui/pages/curator/CuratorPage.tsx` | 256 |
-| `stateOf` | Function | `src/ui/pages/curator/CuratorPage.tsx` | 258 |
-| `value` | Function | `src/ui/pages/curator/CuratorPage.tsx` | 270 |
-| `value` | Function | `src/ui/pages/curator/CuratorPage.tsx` | 353 |
+| `kindOf` | Function | `src/ui/pages/curator/CuratorPage.tsx` | 258 |
+| `stateOf` | Function | `src/ui/pages/curator/CuratorPage.tsx` | 260 |
+| `value` | Function | `src/ui/pages/curator/CuratorPage.tsx` | 272 |
+| `value` | Function | `src/ui/pages/curator/CuratorPage.tsx` | 375 |
 | `comparable` | Function | `src/ui/components/table/tableView.ts` | 106 |
 | `text` | Function | `src/ui/components/table/tableView.ts` | 75 |
 | `many` | Function | `src/ui/components/table/tableView.test.ts` | 148 |

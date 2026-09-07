@@ -54,4 +54,3 @@ This repo is GitNexus-indexed as `Event-Horizon`: 7391 symbols, 17846 edges, 401
 **Index freshness:** every tool reports staleness. On a stale-warning, run `npx gitnexus analyze` (preserves embeddings) and retry the failed tool.
 
 For the full reference (Cypher recipes, disambiguation discipline, per-task workflows), see `.cursor/rules/gitnexus.mdc`.
-
