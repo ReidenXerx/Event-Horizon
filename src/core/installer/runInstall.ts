@@ -881,7 +881,14 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         profileId: activeProfileId,
         profileName: activeProfileName,
         ...(resumeId === undefined
-          ? { whyNotResumed: plan.installTarget.resumeRefusedWhy ?? "no-attempt" }
+          ? {
+              whyNotResumed: plan.installTarget.resumeRefusedWhy ?? "no-attempt",
+              // Name the profile we went looking for, so "it was deleted" is
+              // a claim the reader can check against their own profile list.
+              ...(plan.installTarget.resumeRefusedProfileId !== undefined
+                ? { attemptProfileId: plan.installTarget.resumeRefusedProfileId }
+                : {}),
+            }
           : {}),
       });
 

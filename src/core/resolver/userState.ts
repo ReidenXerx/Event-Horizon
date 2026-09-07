@@ -214,6 +214,10 @@ export function pickInstallTarget(
           // WHY it forked, instead of leaving five distinct reasons as the
           // same silence.
           resumeRefusedWhy: interruptedProfile?.why ?? "no-attempt",
+          ...(interruptedProfile?.kind === "refused" &&
+          interruptedProfile.attemptProfileId !== undefined
+            ? { resumeRefusedProfileId: interruptedProfile.attemptProfileId }
+            : {}),
         }),
   };
 }
@@ -235,6 +239,16 @@ export type ResumableProfile =
   | { kind: "resume"; id: string; name: string }
   | {
       kind: "refused";
+      /**
+       * The profile the attempt record named, when it named one.
+       *
+       * Without it "profile-deleted" is a claim the reader cannot check. A
+       * tester forked a fourth profile and the log said only that the third
+       * was gone — leaving "they deleted it" and "we looked for the wrong id"
+       * indistinguishable, which is the difference between a user habit and a
+       * bug in this function.
+       */
+      attemptProfileId?: string;
       why:
         | "no-attempt"
         | "attempt-has-no-profile"
@@ -290,13 +304,13 @@ export function resumableProfileFromAttempts(
   ).persistent?.profiles;
   const profile = profiles?.[profileId];
   if (profile === undefined) {
-    return { kind: "refused", why: "profile-deleted" };
+    return { kind: "refused", why: "profile-deleted", attemptProfileId: profileId };
   }
   // Belonging to this game is checked, not assumed: a profile id that has
   // been reused by another game would send the whole install somewhere the
   // user never asked for.
   if (profile.gameId !== gameId) {
-    return { kind: "refused", why: "profile-other-game" };
+    return { kind: "refused", why: "profile-other-game", attemptProfileId: profileId };
   }
 
   return { kind: "resume", id: profileId, name: profile.name ?? profileId };

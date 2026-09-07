@@ -90,7 +90,14 @@ describe("resumableProfileFromAttempts", () => {
       resumableProfileFromAttempts(stateWith({}), "skyrimse", PACKAGE_ID, VERSION, [
         attempt(),
       ]),
-    ).toEqual({ kind: "refused", why: "profile-deleted" });
+    ).toEqual({
+      kind: "refused",
+      why: "profile-deleted",
+      // Names the profile it went looking for. Without it the claim is
+      // unfalsifiable from a log: a tester forked a fourth profile and we
+      // could not tell "they deleted it" from "we looked for the wrong id".
+      attemptProfileId: PROFILE_ID,
+    });
   });
 
   it("refuses a profile belonging to another game", () => {
@@ -102,7 +109,11 @@ describe("resumableProfileFromAttempts", () => {
         VERSION,
         [attempt()],
       ),
-    ).toEqual({ kind: "refused", why: "profile-other-game" });
+    ).toEqual({
+      kind: "refused",
+      why: "profile-other-game",
+      attemptProfileId: PROFILE_ID,
+    });
   });
 
   it("handles an attempt that stopped before it made a profile", () => {
@@ -148,9 +159,13 @@ describe("resumableProfileFromAttempts", () => {
     // have the fix" in a tester's log.
     const target = pickInstallTarget(manifest, undefined, "a", "A", {
       kind: "refused",
-      why: "version-changed",
+      why: "profile-deleted",
+      attemptProfileId: PROFILE_ID,
     });
-    expect(target).toMatchObject({ resumeRefusedWhy: "version-changed" });
+    expect(target).toMatchObject({
+      resumeRefusedWhy: "profile-deleted",
+      resumeRefusedProfileId: PROFILE_ID,
+    });
     expect("resumeProfileId" in target).toBe(false);
   });
 

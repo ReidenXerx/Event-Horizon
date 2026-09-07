@@ -423,6 +423,15 @@ export type InstallIntoFreshProfile = {
    * attempt record had no profile id" was indistinguishable from "this build
    * does not have the fix".
    */
+  /**
+   * The profile id the attempt record named, when the resume was refused
+   * because of it.
+   *
+   * So a reader can check the claim. "profile-deleted" without the id is
+   * unfalsifiable: the curator cannot tell whether the profile really is gone
+   * or whether we looked for the wrong one.
+   */
+  resumeRefusedProfileId?: string;
   resumeRefusedWhy?:
     | "no-attempt"
     | "attempt-has-no-profile"
