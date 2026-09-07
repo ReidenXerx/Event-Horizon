@@ -28,6 +28,7 @@ describe("what each answer actually writes", () => {
       postProcessed: true,
       mirrored: false,
       bundled: false,
+      dropped: false,
     });
   });
 
@@ -42,6 +43,7 @@ describe("what each answer actually writes", () => {
       treatAsExternal: true,
       mirrored: false,
       postProcessed: false,
+      dropped: false,
     });
   });
 
@@ -50,6 +52,7 @@ describe("what each answer actually writes", () => {
       bundled: true,
       mirrored: false,
       postProcessed: false,
+      dropped: false,
     });
   });
 
@@ -235,11 +238,13 @@ describe("the mirror choice", () => {
       mirrored: true,
       bundled: false,
       postProcessed: false,
+      dropped: false,
     });
     expect(overrideForChoice("mirror", { isNexusMod: false })).toEqual({
       mirrored: true,
       bundled: false,
       postProcessed: false,
+      dropped: false,
     });
   });
 
@@ -264,8 +269,19 @@ describe("the panel offers mirroring first, and only when it works", () => {
     src.indexOf("function BuildingPanel"),
   );
 
-  it("lists mirror ahead of declare and bundle", () => {
-    expect(body).toContain('["mirror", "declare", "bundle"]');
+  it("lists mirror first and DROP last", () => {
+    /**
+     * Order is the cheapest safety property this screen has. Mirror leads
+     * because it is the answer whose worst case is a bigger download; drop
+     * trails because it is the only one that does not ship the mod, and a
+     * curator clicking down a column of 57 cards should not meet it on the
+     * way to the ones that do.
+     */
+    const order = ["mirror", "declare", "bundle", "drop"].map((k) =>
+      body.indexOf(`"${k}"`),
+    );
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 
   it("blocks it when the build recorded no hashes to reconcile against", () => {

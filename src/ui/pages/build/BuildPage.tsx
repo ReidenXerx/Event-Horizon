@@ -3141,7 +3141,14 @@ function PostProcessingDecisions(props: {
                   }}
                 >
                   {(
-                    ["mirror", "declare", "bundle"] as PostProcessingChoice[]
+                    [
+                      "mirror",
+                      "declare",
+                      "bundle",
+                      // Last: it is the only answer that does not ship the
+                      // mod, so it does not belong among the three that do.
+                      "drop",
+                    ] as PostProcessingChoice[]
                   ).map((k) => {
                     const copy = describeChoice(k, c.unexplained, countKinds(c.files));
                     // Mirroring reconciles against per-file hashes, which a

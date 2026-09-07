@@ -132,6 +132,26 @@ export type ExternalModConfigEntry = {
    * Meaningless on a bundled mod, which ships its staging verbatim.
    */
   postProcessed?: boolean;
+  /**
+   * Leave this mod out of the collection entirely.
+   *
+   * The fourth answer, and the only one that is not about HOW to deliver the
+   * mod. Some mods should not be delivered: one in a real 1,755-mod
+   * collection staged a single 74-byte placeholder — the curator's own copy
+   * was empty — so it contributed nothing to the game, and reproducing it
+   * meant asking a stranger to complete a FOMOD that produces no files, which
+   * Vortex fails outright.
+   *
+   * The build already detected that shape and rendered a paragraph saying the
+   * useful answer was to remove the mod. Then it offered mirror, declare and
+   * bundle — all three of which would faithfully ship the placeholder. This
+   * is the answer that was missing.
+   *
+   * A dropped mod is excluded from the manifest, from bundling and from
+   * mirroring. Nothing is deleted from the curator's own Vortex: they keep
+   * the mod, the collection simply stops carrying it.
+   */
+  dropped?: boolean;
   /** Free-form text shown to the user when the mod isn't bundled. */
   instructions?: string;
   /**
@@ -926,6 +946,13 @@ const EXTERNAL_MOD_FIELDS: {
     }
     return raw;
   },
+  dropped: (raw, path, errors) => {
+    if (typeof raw !== "boolean") {
+      errors.push(`${path} must be a boolean.`);
+      return undefined;
+    }
+    return raw;
+  },
   mode: (raw, path, errors) => {
     if (typeof raw !== "string") {
       // Not a string is corruption, and worth refusing.
@@ -1123,7 +1150,7 @@ export async function listNeverBuiltConfigs(
  * more is a worse trade than trusting an answer that was right when given.
  * ──────────────────────────────────────────────────────────────────────
  */
-export type DecidedChoice = "mirror" | "declare" | "bundle";
+export type DecidedChoice = "mirror" | "declare" | "bundle" | "drop";
 
 export type PostProcessingAnswer = {
   choice: DecidedChoice;
@@ -1145,6 +1172,10 @@ export type PostProcessingAnswer = {
 export function choiceFromEntry(
   entry: ExternalModConfigEntry | undefined,
 ): DecidedChoice | undefined {
+  // First, because it is not a way of shipping the mod — it is the answer
+  // that there is nothing worth shipping. Everything below describes HOW to
+  // deliver a mod that is staying.
+  if (entry?.dropped === true) return "drop";
   if (entry?.bundled === true) return "bundle";
   if (entry?.mirrored === true) return "mirror";
   if (entry?.postProcessed === true) return "declare";

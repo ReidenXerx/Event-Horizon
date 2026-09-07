@@ -496,9 +496,27 @@ export function applyPostProcessedDeclarations(
   mods: readonly AuditorMod[],
   config: CollectionConfig,
 ): AuditorMod[] {
-  return mods.map((m) =>
-          declarationsFor(config.externalMods[m.id], m),
-  );
+  /**
+   * ─── A DROPPED MOD LEAVES HERE ──────────────────────────────────────
+   * The fourth answer, applied at the one point every later phase reads
+   * from: the manifest, bundling, mirroring and the self-check all work off
+   * this list, so removing the mod here removes it from all of them without
+   * four separate filters that could disagree.
+   *
+   * Nothing is removed from the curator's Vortex. They keep the mod; the
+   * collection stops carrying it.
+   */
+  const kept = mods.filter((m) => config.externalMods[m.id]?.dropped !== true);
+  if (kept.length !== mods.length) {
+    ehLog("info", "build.mods-dropped", {
+      count: mods.length - kept.length,
+      mods: mods
+        .filter((m) => config.externalMods[m.id]?.dropped === true)
+        .slice(0, 20)
+        .map((m) => m.name),
+    });
+  }
+  return kept.map((m) => declarationsFor(config.externalMods[m.id], m));
 }
 
 export interface BuildOverrides {

@@ -45,6 +45,17 @@ export type PostProcessingChoice =
   | "mirror"
   /** The files are the curator's own. Users install the archive without them. */
   | "declare"
+  /**
+   * Leave this mod out of the collection.
+   *
+   * The one answer that is not about HOW to ship the mod. Offered because
+   * some mods should not be shipped at all: a mod whose entire staging folder
+   * is files its archive cannot produce ships nothing a user can obtain, and
+   * the other three answers would all faithfully deliver that nothing.
+   *
+   * Nothing is removed from the curator's own Vortex.
+   */
+  | "drop"
   /** The files matter. Pack the staging folder and ship it. */
   | "bundle";
 
@@ -98,7 +109,15 @@ export function overrideForChoice(
     mirrored: choice === "mirror",
     postProcessed: choice === "declare",
     bundled: choice === "bundle",
+    dropped: choice === "drop",
   };
+  if (choice === "drop") {
+    // Nothing else applies: the mod is not being shipped, so how it would
+    // have been shipped is not a question any more. Clearing the others also
+    // means un-dropping it later returns it to an unanswered state rather
+    // than to a stale decision made about different files.
+    return { ...exclusive, ...about };
+  }
   if (choice === "mirror") {
     // Deliberately NOT treatAsExternal. A mirrored mod is a normal Nexus mod
     // that gets corrected after install — flagging it external would stop the
@@ -211,13 +230,33 @@ export function describeChoice(
         `nobody can regenerate those, and users would silently go without.`,
     };
   }
+  if (choice === "drop") {
+    return {
+      label: "Leave this mod out of the collection",
+      /**
+       * Says what it does NOT do, first. "Drop" next to three buttons that
+       * ship files reads like deletion, and a curator hesitating over whether
+       * they are about to lose a mod will pick one of the other three
+       * instead — which is how the mod that broke a tester's install got
+       * answered "declare".
+       */
+      consequence:
+        `Removes it from the collection only — your own Vortex is untouched ` +
+        `and you keep the mod. Right when there is nothing worth shipping: a ` +
+        `staging folder that holds only a placeholder or a leftover, or a ` +
+        `mod you no longer want in this build. Users never see it, and it ` +
+        `cannot ask them anything.`,
+    };
+  }
   return {
     label: "These files matter — ship my copy",
     consequence:
       `Packs your whole staging folder into the collection so users get the ` +
       `${n} too. Right for xLODGen or DynDOLOD output — generated from YOUR ` +
       `exact mod list, so nobody can reproduce it — or a patch you dropped ` +
-      `in. Makes the download bigger by the size of the folder.`,
+      `in. Makes the download bigger by the size of the folder. It also ` +
+      `means no installer runs on the user's machine, which is the answer ` +
+      `for a mod whose FOMOD questions cannot be replayed.`,
   };
 }
 
