@@ -52,14 +52,39 @@ const LEGACY_CHOICE_TYPE = "fomod";
  */
 export function choicesFor(entry: EhcollMod | undefined): VortexInstallerChoices | undefined {
   const selections = entry?.install?.fomodSelections ?? [];
-  if (selections.length === 0) return undefined;
 
-  // A step with no chosen option in any group answers nothing; sending it
-  // would claim the curator made a choice they did not make.
-  const answered = selections.some((step) =>
-    step.groups.some((group) => group.choices.length > 0),
-  );
-  if (!answered) return undefined;
+  /**
+   * ─── NO STEPS AT ALL IS THE ONLY "NO ANSWER" ────────────────────────
+   * This is the whole distinction, and it used to be drawn one level too
+   * deep.
+   *
+   * An EMPTY `fomodSelections` means the build never observed an installer
+   * for this mod — there is genuinely nothing to replay, and the caller must
+   * make the same call it made before replay existed.
+   *
+   * Steps PRESENT with every `choices` array empty is a different thing
+   * entirely: the build watched the curator go through the installer and
+   * recorded what they did, which was tick nothing and press Finish. That is
+   * an answer. FOMOD groups are frequently optional — `SelectAny`,
+   * `SelectAtMostOne` — and "none of these" is a perfectly ordinary way to
+   * install a mod.
+   *
+   * The old code rejected that case with the reasoning that sending it "would
+   * claim the curator made a choice they did not make". It is the opposite:
+   * sending a step whose groups are empty claims exactly what happened, that
+   * no option was picked. What actually claimed something false was
+   * DISCARDING it, because the installer then had no answer, ran attended,
+   * and asked the player a question the curator had already answered.
+   *
+   * Six mods on the reference profile behave this way — iWant Status Bars,
+   * iWant Widgets, Rock Traps Trigger Fixes and others — and a tester who had
+   * chosen "install automatically" was stopped by a dialog for each.
+   *
+   * Worst case this is no worse than before: if Vortex decides it cannot run
+   * a given selection unattended it falls back to asking, which is precisely
+   * what happened without it.
+   */
+  if (selections.length === 0) return undefined;
 
   return {
     type: entry?.install?.installerChoicesType ?? LEGACY_CHOICE_TYPE,

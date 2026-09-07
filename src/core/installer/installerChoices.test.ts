@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { choicesFor, installOptions,
+import { choicesFor, installOptions, replayArgs,
 } from "./installerChoices";
 import type { EhcollMod } from "../../types/ehcoll";
 
@@ -58,17 +58,33 @@ describe("choicesFor", () => {
     expect(choicesFor(entry({ fomodSelections: [] }))).toBeUndefined();
   });
 
-  it("returns undefined when the steps answer nothing", () => {
-    // A recorded step whose groups hold no chosen option asserts a choice the
-    // curator never made; sending it would tell Vortex to pick "nothing".
-    const empty = choicesFor(
+  it("REPLAYS steps whose groups hold no chosen option", () => {
+    /**
+     * ─── THIS TEST USED TO ASSERT THE OPPOSITE ───────────────────────
+     * It required `undefined` here, reasoning that sending such a step
+     * "asserts a choice the curator never made". That reading was inverted,
+     * and a tester found it: FOMOD groups are frequently optional, and
+     * ticking nothing then pressing Finish is an ordinary way to install a
+     * mod. The empty groups ARE the answer.
+     *
+     * Discarding it is what claimed something false — the installer then had
+     * no answer, ran attended, and asked the player a question the curator
+     * had already answered. Six mods on the reference profile do this, and
+     * the tester had chosen "install automatically".
+     *
+     * The line between "no answer" and "answered nothing" is whether any
+     * step was recorded at all, which the test above covers.
+     */
+    const replayed = choicesFor(
       entry({
         fomodSelections: [
-          { name: "Select an option:", groups: [{ name: "Select one:", choices: [] }] },
+          { name: "01. Examples", groups: [{ name: "A. Examples", choices: [] }] },
         ] as never,
       }),
     );
-    expect(empty).toBeUndefined();
+    expect(replayed).toBeDefined();
+    expect(replayed?.options).toHaveLength(1);
+    expect(replayed?.options[0]?.groups[0]?.choices).toEqual([]);
   });
 
   it("is undefined-safe for a mod that is not in the manifest", () => {
@@ -115,5 +131,51 @@ describe("silent FOMOD replay", () => {
     // enabled while trying to change what gets shown.
     const opts = installOptions({ type: "fomod", options: [] }, false);
     expect(opts.allowAutoEnable).toBe(true);
+  });
+});
+
+describe("the mod that stopped a tester mid-install", () => {
+  /**
+   * Captured verbatim from the curator's shipped package. The curator went
+   * through this installer, ticked nothing in either group, and pressed
+   * Finish — so both `choices` arrays are empty, and that IS what they chose.
+   *
+   * Kept as a fixture rather than a synthetic one because the shape is the
+   * whole point: two groups, both empty, inside a step that was definitely
+   * observed.
+   */
+  const IWANT_STATUS_BARS = [
+    {
+      name: "01. Examples",
+      groups: [
+        { name: "A. Examples", choices: [] },
+        { name: "Z. Legacy Edition", choices: [] },
+      ],
+    },
+  ];
+
+  it("replays instead of asking", () => {
+    const choices = choicesFor(
+      entry({ fomodSelections: IWANT_STATUS_BARS as never }),
+    );
+    expect(choices).toBeDefined();
+    expect(choices?.type).toBe("fomod");
+  });
+
+  it("goes out with unattended set, which is what stops the dialog", () => {
+    // choicesFor returning something is only half of it: `replayArgs` sends
+    // `unattended` alongside, and without the pair Vortex still asks.
+    const args = replayArgs(
+      entry({ fomodSelections: IWANT_STATUS_BARS as never }),
+      "silent",
+    );
+    expect(args.choices).toBeDefined();
+    expect(args.unattended).toBe(true);
+  });
+
+  it("still sends nothing at all for a mod with no recorded installer", () => {
+    // The other side of the line, restated here so the pair cannot drift:
+    // never observed is not the same as answered nothing.
+    expect(replayArgs(entry({ fomodSelections: [] }), "silent")).toEqual({});
   });
 });
