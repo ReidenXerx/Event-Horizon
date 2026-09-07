@@ -79,6 +79,20 @@ export type RepackResult = {
   mods: AuditorMod[];
   bundles: RepackedBundle[];
   warnings: string[];
+  /**
+   * Mods flagged for bundling whose repack FAILED.
+   *
+   * The caller has to know these by id, because the warning it used to get
+   * said "It will not ship" and that was false. A failed repack leaves the mod
+   * out of `bundles`, and the packaging step's filter keys off `bundles` — so
+   * the mod fell through to being resolved by its ORIGINAL `archiveSha256` and
+   * the untouched Nexus archive shipped in its place, from inside the package,
+   * so the user never even downloaded from Nexus.
+   *
+   * A curator who answered "ship my copy" for a mod with a hand-added patch
+   * was told it would not ship, and shipped the version without the patch.
+   */
+  failedRepackModIds: string[];
 };
 
 export type RepackOptions = {
@@ -154,7 +168,7 @@ export async function repackBundledExternals(args: {
   );
   if (wanted.length === 0) {
     ehLog("debug", "bundle.repack.skip", { reason: "no-mods-flagged" });
-    return { mods, bundles: [], warnings: [] };
+    return { mods, bundles: [], warnings: [], failedRepackModIds: [] };
   }
 
   const op = beginOp("bundle.repack", { gameId, candidates: wanted.length });
@@ -169,8 +183,10 @@ export async function repackBundledExternals(args: {
       bundles: [],
       warnings: [
         `Could not resolve Vortex's staging folder for "${gameId}", so no ` +
-          `bundled mod could be repacked. They will not ship.`,
+          `bundled mod could be repacked. None of them ship, so rebuild ` +
+          `before releasing.`,
       ],
+      failedRepackModIds: wanted.map((m) => m.id),
     };
   }
 
@@ -178,6 +194,7 @@ export async function repackBundledExternals(args: {
 
   const bundles: RepackedBundle[] = [];
   const warnings: string[] = [];
+  const failedRepackModIds: string[] = [];
   const newSha = new Map<string, string>();
   /** modId → the archive this build is using, so older ones can be swept. */
   const keptByMod = new Map<string, string>();
@@ -307,10 +324,12 @@ export async function repackBundledExternals(args: {
         ms: Date.now() - modStartedAt,
         err,
       });
+      failedRepackModIds.push(mod.id);
       warnings.push(
-        `"${mod.name}" is flagged for bundling but could not be packed from its ` +
-          `staging folder: ${err instanceof Error ? err.message : String(err)}. ` +
-          `It will not ship.`,
+        `"${mod.name}" is flagged for bundling but could not be packed from ` +
+          `its staging folder: ${err instanceof Error ? err.message : String(err)}. ` +
+          `It has been left out of this package — nothing for this mod ships, ` +
+          `so rebuild before releasing.`,
       );
     }
   }
@@ -328,10 +347,11 @@ export async function repackBundledExternals(args: {
   });
 
   if (newSha.size === 0) {
-    return { mods, bundles, warnings };
+    return { mods, bundles, warnings, failedRepackModIds };
   }
 
   return {
+    failedRepackModIds,
     // Identity follows the bytes: the repacked archive is what the user gets,
     // so it is what the manifest must name.
     mods: mods.map((m) => {

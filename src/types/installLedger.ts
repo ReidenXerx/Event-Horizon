@@ -366,6 +366,17 @@ export type ModVerificationSkipReason =
   | "verification-level-none"
   | "vortex-mod-missing-from-state"
   | "install-path-unresolvable"
+  /**
+   * The curator answered "ship my files" for this mod, so the package carries
+   * its exact bytes and a later phase writes them.
+   *
+   * Not "ok" and not "fail": at the moment verification runs, the folder is
+   * genuinely wrong AND is genuinely about to be corrected. Calling it "fail"
+   * cost an uninstall, a re-download and a curator report for a mod nobody
+   * needed to fix; calling it "ok" would claim a check that had not happened.
+   * The mirror pass reports what it actually did.
+   */
+  | "pending-mirror"
   | "errored";
 
 export type ModVerificationFailReceipt = {

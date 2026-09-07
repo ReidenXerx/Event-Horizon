@@ -7,6 +7,7 @@ import type { types } from "@nexusmods/vortex-api";
 import type { AuditorMod } from "../getModsListForProfile";
 import type { EhcollStagingFile, VerificationLevel } from "../../types/ehcoll";
 import { AbortError } from "../../utils/abortError";
+import { ehLog } from "../logging/ehLog";
 import { installRootFor, installationPathFromState, stagingRootFromFolder } from "../stagingPath";
 import {
   getDefaultHashConcurrency,
@@ -90,6 +91,16 @@ export type CaptureStagingOptions = {
 export type StagingEnrichedAuditorMod = AuditorMod & {
   installationPath?: string;
   stagingFiles?: EhcollStagingFile[];
+  /**
+   * Part of this mod's staging folder could not be read, so `stagingFiles` is
+   * a SHORT list rather than a wrong one.
+   *
+   * The distinction matters to exactly one consumer and matters enormously
+   * there: mirroring deletes a user's files that the curator's listing does
+   * not mention. An incomplete listing turns that into deleting files the
+   * curator does have and simply could not see.
+   */
+  stagingCaptureIncomplete?: boolean;
 };
 
 export async function captureStagingFiles(
@@ -167,7 +178,18 @@ export async function captureStagingFiles(
     }
 
     try {
-      const files = await walkStagingFolder(stagingRoot, signal);
+      /**
+       * ─── DID WE SEE THE WHOLE FOLDER? ─────────────────────────────────
+       * The walk skips what it cannot read, and a skipped subtree leaves no
+       * entry at all — so its absence is indistinguishable from "the curator
+       * does not have that file". Downstream, `planMirror` DELETES the user's
+       * files that this listing does not mention, on the reasoning that the
+       * listing is complete. It has to be told when it is not.
+       */
+      const unreadable: string[] = [];
+      const files = await walkStagingFolder(stagingRoot, signal, (entry) => {
+        unreadable.push(`${entry.kind} ${entry.path}: ${entry.why}`);
+      });
       const stagingFiles = await hashStagingFiles(
         stagingRoot,
         files,
@@ -178,6 +200,21 @@ export async function captureStagingFiles(
         hashCache,
       );
       enriched.stagingFiles = stagingFiles;
+      if (unreadable.length > 0) {
+        enriched.stagingCaptureIncomplete = true;
+        ehLog("warn", "capture.staging.incomplete", {
+          mod: mod.name,
+          unreadable: unreadable.length,
+          examples: unreadable.slice(0, 5),
+        });
+        onWarn?.(
+          mod,
+          `${unreadable.length} path(s) under this mod's staging folder ` +
+            `could not be read, so its file list is incomplete. It will not ` +
+            `be offered for mirroring, and nothing will be deleted from a ` +
+            `user's copy on its behalf. First: ${unreadable[0]}`,
+        );
+      }
     } catch (err) {
       if (err instanceof AbortError) throw err;
       onWarn?.(

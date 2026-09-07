@@ -81,14 +81,49 @@ export type WalkedFile = {
  * Returns an empty array if `root` doesn't exist (mod was concurrently
  * uninstalled — non-fatal, the build snapshot won't include it anyway).
  */
+/**
+ * ─── A FILE WE NEVER SAW LEAVES NO TRACE, AND THAT WAS LOAD-BEARING ─────
+ * Three paths below give up on part of the tree: a directory that cannot be
+ * listed, a symlink that cannot be resolved, a file that cannot be stat-ed.
+ * Each used to `continue` in silence, so the walk returned a SHORTER list and
+ * nothing anywhere said it was short.
+ *
+ * That is fine for a report and catastrophic for a mirror. `planMirror` only
+ * deletes the user's extra files when the curator's listing is "provably
+ * whole", and the proof it used was "every recorded entry carries a hash" — a
+ * gap that only appears for a file that WAS walked and could not be READ. A
+ * subtree that was never walked produces no entry, so no gap, so the guard
+ * stays quiet and every one of those files is classified as the user's own
+ * junk and deleted. A single unlistable `textures/` — a path over MAX_PATH, a
+ * cloud placeholder, an AV handle — is enough to amputate a mod on every
+ * user's machine and then certify the result as verified.
+ *
+ * So incompleteness is now REPORTED rather than inferred from an absence.
+ * Callers that only summarise may ignore it; the ones that delete may not.
+ */
+export type UnreadablePath = {
+  path: string;
+  /** "dir" — a subtree was skipped whole. "file" — one entry was skipped. */
+  kind: "dir" | "file" | "symlink";
+  why: string;
+};
+
 export async function walkStagingFolder(
   root: string,
   signal: AbortSignal | undefined,
+  /**
+   * Called for every path the walk had to skip. A caller that receives none
+   * knows the listing is complete; that is the only way to know it.
+   */
+  onUnreadable?: (entry: UnreadablePath) => void,
 ): Promise<WalkedFile[]> {
   const out: WalkedFile[] = [];
 
   const stat = await fs.promises.stat(root).catch(() => undefined);
   if (stat === undefined || !stat.isDirectory()) {
+    // The root itself. Not reported as unreadable: "the mod has no staging
+    // folder" is a different fact, and every caller already handles an empty
+    // list. Reporting it here would make every uninstalled mod look damaged.
     return out;
   }
 
@@ -102,7 +137,13 @@ export async function walkStagingFolder(
     let entries: fs.Dirent[];
     try {
       entries = await fs.promises.readdir(dir, { withFileTypes: true });
-    } catch {
+    } catch (err) {
+      // The whole subtree, gone. The most consequential of the three.
+      onUnreadable?.({
+        path: dir,
+        kind: "dir",
+        why: err instanceof Error ? err.message : String(err),
+      });
       continue;
     }
 
@@ -119,13 +160,21 @@ export async function walkStagingFolder(
         const realPath = await fs.promises
           .realpath(abs)
           .catch(() => undefined);
-        if (
-          realPath === undefined ||
-          !realPath.startsWith(root) ||
-          visited.has(realPath)
-        ) {
+        if (realPath === undefined) {
+          onUnreadable?.({
+            path: abs,
+            kind: "symlink",
+            why: "the link target could not be resolved",
+          });
           continue;
         }
+        if (!realPath.startsWith(root)) {
+          // Deliberate and not a gap: a link out of the staging folder is not
+          // part of this mod, and following it would capture someone else's
+          // files. `visited` is loop protection, equally deliberate.
+          continue;
+        }
+        if (visited.has(realPath)) continue;
         visited.add(realPath);
         const lstat = await fs.promises.stat(realPath).catch(() => undefined);
         if (lstat === undefined || !lstat.isFile()) continue;
@@ -141,7 +190,14 @@ export async function walkStagingFolder(
 
       if (entry.isFile()) {
         const lstat = await fs.promises.stat(abs).catch(() => undefined);
-        if (lstat === undefined) continue;
+        if (lstat === undefined) {
+          onUnreadable?.({
+            path: abs,
+            kind: "file",
+            why: "the file could not be stat-ed",
+          });
+          continue;
+        }
         out.push({
           relativePath: toPosix(path.relative(root, abs)),
           absolutePath: abs,

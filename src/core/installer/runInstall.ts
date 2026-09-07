@@ -1417,6 +1417,43 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         // of those was being uninstalled, reinstalled from the archive,
         // compared against the same post-processed reference, failing again,
         // and recorded as broken — twice the work for files that were correct.
+        /**
+         * ─── A MIRRORED MOD IS ABOUT TO BE CORRECTED ────────────────────
+         * Verification runs here; the mirror runs 600 lines below. So a
+         * mirrored mod fails HERE by construction — the curator's added
+         * files are exactly what the archive cannot produce — and the judge,
+         * which has never heard of mirroring, answered "reinstall".
+         *
+         * What that cost, per affected mod: an uninstall, a re-download, a
+         * second identical failure, a "broken mod" in the receipt, and a
+         * report telling the user to go and bother the curator — about a mod
+         * the curator had already answered for, and which the very next phase
+         * makes byte-perfect.
+         *
+         * That is the ~11%-of-mods waste loop `judgeReinstall` was written to
+         * eliminate, reintroduced for the one flag that should be the
+         * strongest excuse of the three. The package CARRIES these bytes.
+         */
+        if (manifestEntry?.state?.mirrored === true) {
+          ehLog("info", "verify.pending-mirror", {
+            name: installEntry.name,
+            compareKey: installEntry.compareKey,
+            missing: verifyResult.missingFiles.length,
+            differing:
+              verifyResult.sizeMismatches.length +
+              verifyResult.hashMismatches.length,
+            why: "the curator ships these files; the mirror pass settles this mod",
+          });
+          verifications.push({
+            kind: "skip",
+            vortexModId: installEntry.vortexModId,
+            compareKey: installEntry.compareKey,
+            name: installEntry.name,
+            reason: "pending-mirror",
+          });
+          continue;
+        }
+
         const judgement = await judgeReinstall({
           missingFiles: verifyResult.missingFiles,
           differingPaths: [
@@ -2052,20 +2089,70 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     // fires on its own.
     const mirrorLines: string[] = [];
     const mirrorFailures: string[] = [];
+    const mirrorSkipped: string[] = [];
+    const mirroredWanted = plan.manifest.mods.filter(
+      (m) => m.state.mirrored === true,
+    ).length;
+    // A phase that produces no line when it does nothing is a phase you
+    // cannot tell from one that never ran. Both are normal; only one is a bug.
+    if (mirroredWanted > 0) {
+      ehLog("info", "install.mirror.phase.start", { mods: mirroredWanted });
+    }
     for (const mod of plan.manifest.mods) {
       if (mod.state.mirrored !== true) continue;
       if (ctx.abortSignal?.aborted === true) break;
       const vortexModId = installedMods.find(
         (m) => m.compareKey === mod.compareKey,
       )?.vortexModId;
-      if (vortexModId === undefined) continue;
+      if (vortexModId === undefined) {
+        // Not installed by this run: it failed, or the user chose to keep
+        // their own copy at a divergence prompt and it lives in carriedMods.
+        // Both are legitimate; neither should be silent.
+        mirrorSkipped.push(`"${mod.name}" — not installed by this run`);
+        continue;
+      }
+
+      /**
+       * ─── ONLY MIRROR WHAT WE PUT THERE ──────────────────────────────
+       * `applyMirrorPlan` overwrites files and DELETES the ones the curator's
+       * listing does not mention. Pointed at a mod the user already had, that
+       * is not reconciliation, it is destroying their work — and it was
+       * reachable: a mod adopted as already-installed keeps the USER's
+       * vortexModId in `installedMods`, and this loop looks the target up
+       * from exactly there.
+       *
+       * The path that made it live: their copy fails verification, the repair
+       * refuses it because the journal has no record of us installing it,
+       * `tryInstallAlongside` cannot obtain the curator's archive, and this
+       * loop then rewrites their folder anyway. One log line, no
+       * confirmation, no undo. `installPlan.ts` promises the opposite two
+       * phases earlier: "Old profile is byte-untouched".
+       *
+       * The repair already answers this question from the install journal.
+       * The mirror asks the same question from the same source.
+       */
+      if (!ownedByUs.has(vortexModId)) {
+        mirrorSkipped.push(
+          `"${mod.name}" — this is the user's own copy of the mod, not one ` +
+            `Event Horizon installed, so its files were left untouched`,
+        );
+        ehLog("warn", "install.mirror.skipped-not-ours", {
+          mod: mod.name,
+          compareKey: mod.compareKey,
+          vortexModId,
+        });
+        continue;
+      }
 
       const stagingRoot = stagingRootForModId(
         ctx.api.getState(),
         plan.manifest.game.id,
         vortexModId,
       );
-      if (stagingRoot === undefined) continue;
+      if (stagingRoot === undefined) {
+        mirrorSkipped.push(`"${mod.name}" — staging folder could not be resolved`);
+        continue;
+      }
 
       try {
         const current = await hashStagingFiles(
@@ -2129,12 +2216,25 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         );
       }
     }
-    if (mirrorLines.length > 0) {
-      ehLog("info", "install.mirrors-applied", {
-        mods: mirrorLines.length,
-        failed: mirrorFailures.length,
-        lines: mirrorLines.slice(0, 10),
-      });
+    /**
+     * Unconditional when anything was meant to be mirrored. The old line fired
+     * only when something CHANGED, so "50 mods mirrored perfectly", "50 mods
+     * skipped", and "the phase never ran" were the same empty log — and the
+     * empty case is the failure case.
+     */
+    if (mirroredWanted > 0) {
+      ehLog(
+        mirrorFailures.length > 0 || mirrorSkipped.length > 0 ? "warn" : "info",
+        "install.mirror.phase.done",
+        {
+          wanted: mirroredWanted,
+          applied: mirrorLines.length,
+          failed: mirrorFailures.length,
+          skipped: mirrorSkipped.length,
+          lines: mirrorLines.slice(0, 10),
+          skippedExamples: mirrorSkipped.slice(0, 10),
+        },
+      );
     }
 
     // ── 7. deploy ───────────────────────────────────────────────────
@@ -2635,6 +2735,17 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         : {}),
       ...(damagedArchives.length > 0
         ? { damagedArchiveNotice: damagedArchives }
+        : {}),
+      // Only the exceptions. A mirror that reconciled everything it was asked
+      // to needs no sentence; one that skipped a mod, or left it half done,
+      // is the thing the user has to know.
+      ...(mirrorFailures.length > 0 || mirrorSkipped.length > 0
+        ? {
+            mirrorNotice: [
+              ...mirrorLines.filter((l) => l.includes("could not")),
+              ...mirrorSkipped,
+            ],
+          }
         : {}),
       ...(rulesPurgeNotice !== undefined
         ? { rulesPurgeNotice }

@@ -1140,3 +1140,75 @@ describe("a mod we did not install is never destroyed to repair it", () => {
     expect(result.verifications?.[0]?.modRemoved).toBeFalsy();
   });
 });
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * Mirroring is the only phase that can DELETE a file from a user's disk,
+ * and it must only ever point at a mod THIS TOOL installed.
+ *
+ * The phase resolves its target from `installedMods` by compareKey. For a mod
+ * merely ADOPTED — the user already had it — that is the USER's mod id, and
+ * `applyMirrorPlan` then overwrites their differing files and removes their
+ * extras. The route was live: their copy fails verification, the repair
+ * refuses it because the journal has no record of us installing it, the
+ * alongside install cannot obtain the curator's archive, and the mirror
+ * rewrote their folder anyway — no confirmation, no undo, one log line.
+ *
+ * `installPlan.ts` promises the opposite two phases earlier: "Old profile is
+ * byte-untouched".
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("mirroring never rewrites a mod the user brought", () => {
+  const THEIRS = "the-users-own-copy";
+
+  it("leaves their extra file alone", async () => {
+    world = makeWorld({ mods: [MOD] });
+    const manifest = await packageFrom(world);
+    // The curator answered "ship my files" for this mod.
+    (manifest.mods[0]!.state as { mirrored?: boolean }).mirrored = true;
+
+    const fake = makeFakeVortex({
+      gameId: world.gameId,
+      stagingRoot: world.stagingRoot,
+    });
+
+    // Their copy: the curator's files, PLUS one of their own that the
+    // curator's listing does not mention. That extra file is exactly what
+    // the mirror deletes.
+    const dir = nodePath.join(world.stagingRoot, THEIRS);
+    fs.mkdirSync(nodePath.join(dir, "Textures"), { recursive: true });
+    fs.mkdirSync(nodePath.join(dir, "Data"), { recursive: true });
+    fs.writeFileSync(
+      nodePath.join(dir, "Textures", "rock.dds"),
+      "the bytes the curator shipped",
+    );
+    fs.writeFileSync(nodePath.join(dir, "Data", "rock.esp"), "a plugin");
+    fs.writeFileSync(nodePath.join(dir, "Data", "MY_TWEAK.ini"), "mine");
+
+    const mods = (
+      fake.api.getState().persistent as {
+        mods: Record<string, Record<string, unknown>>;
+      }
+    ).mods[world.gameId]!;
+    mods[THEIRS] = {
+      id: THEIRS,
+      installationPath: THEIRS,
+      type: "",
+      attributes: { name: "Rock Textures", version: "1.0.0" },
+    };
+
+    // No journal entry: we never installed this.
+    const result = (await install(manifest, fake, [
+      { id: THEIRS, name: "Rock Textures", nexusModId: 100, nexusFileId: 200 },
+    ])) as { kind: string; mirrorNotice?: string[] };
+
+    expect(result.kind, why(result)).toBe("success");
+
+    // THE assertion. Without the ownership gate the mirror deleted this.
+    expect(fs.existsSync(nodePath.join(dir, "Data", "MY_TWEAK.ini"))).toBe(true);
+
+    // And the skip is SAID, not silent — a phase that can delete files must
+    // report when it declines to.
+    expect(result.mirrorNotice?.join(" ")).toMatch(/user's own copy/i);
+  });
+});

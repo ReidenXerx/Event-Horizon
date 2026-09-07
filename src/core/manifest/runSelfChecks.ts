@@ -523,15 +523,32 @@ export async function runSelfChecks(
     );
   const undeclaredWarning = describeUndeclaredPostProcessing(reports, decided);
   if (undeclaredWarning !== undefined) warnings.push(undeclaredWarning);
-  // A mod can only be mirrored when every one of its staged files carries a
-  // hash — i.e. when the build ran `thorough`. Offering the choice otherwise
-  // accepts an answer the build cannot honour.
+  /**
+   * A mod can only be mirrored when its file list is BOTH fully hashed and
+   * KNOWN TO BE COMPLETE.
+   *
+   * The hash half was here already: mirroring reconciles against per-file
+   * hashes, so a file without one cannot be reconciled.
+   *
+   * The completeness half is the one that was missing, and its absence was a
+   * data-loss path. Mirroring deletes the user's files that this listing does
+   * not mention. A subtree the walk could not read produces no entries at
+   * all — so no missing hash, no gap, nothing to notice — and every real file
+   * under it is then classified as the user's own junk and deleted from their
+   * machine, after which the mirror certifies the folder as proven. One
+   * unlistable `textures/` on the curator's disk was enough.
+   *
+   * `stagingCaptureIncomplete` exists so that absence can be stated instead
+   * of inferred. A mod that carries it is never offered the choice.
+   */
   const mirrorable = new Set(
     mods
       .filter(
         (m) =>
           (m.stagingFiles?.length ?? 0) > 0 &&
-          m.stagingFiles!.every((f) => f.sha256 !== undefined),
+          m.stagingFiles!.every((f) => f.sha256 !== undefined) &&
+          (m as { stagingCaptureIncomplete?: boolean })
+            .stagingCaptureIncomplete !== true,
       )
       .map((m) => m.id),
   );

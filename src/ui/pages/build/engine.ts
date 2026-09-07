@@ -1312,6 +1312,16 @@ export async function runBuildPipeline(
   // and bundling packs the staging folder rather than the stale archive.
   const driftOp = beginOp("build.external-drift", {});
   let repackedBundles: RepackedBundle[] = [];
+  /**
+   * Mods flagged for bundling whose repack failed.
+   *
+   * They must be excluded from `resolveBundledArchives` explicitly. The filter
+   * there keys off SUCCESSFUL repacks, so a failed one fell through and was
+   * resolved by its original `archiveSha256` — shipping the untouched Nexus
+   * archive, from inside the package, for a mod whose whole point was the
+   * files the curator added to it. The warning said "It will not ship".
+   */
+  const failedRepackIds = new Set<string>();
   const bundleWarnings: string[] = [];
   bundleWarnings.push(...renameWarnings);
   bundleWarnings.push(...membership.warnings);
@@ -1389,6 +1399,7 @@ export async function runBuildPipeline(
     });
     mods = repacked.mods;
     repackedBundles = repacked.bundles;
+    for (const id of repacked.failedRepackModIds) failedRepackIds.add(id);
     bundleWarnings.push(...repacked.warnings);
 
     driftOp.ok({
@@ -1566,6 +1577,7 @@ export async function runBuildPipeline(
            * one more — which is the ordinary case for this feature.
            */
           repackedBundles = mergeRepackedBundles(repackedBundles, again.bundles);
+          for (const id of again.failedRepackModIds) failedRepackIds.add(id);
           bundleWarnings.push(...again.warnings);
         } catch (err) {
           // A failed second pass must not lose the build. The decision is
@@ -1857,7 +1869,12 @@ export async function runBuildPipeline(
         ...collectionConfig,
         externalMods: Object.fromEntries(
           Object.entries(collectionConfig.externalMods).filter(
-            ([modId]) => !repackedIds.has(modId),
+            // Successful repacks are already carried below. FAILED ones are
+            // excluded because falling through here resolved them to their
+            // ORIGINAL archive — shipping the version without the curator's
+            // changes, under a warning that said nothing would ship at all.
+            ([modId]) =>
+              !repackedIds.has(modId) && !failedRepackIds.has(modId),
           ),
         ),
       },

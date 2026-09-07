@@ -537,6 +537,52 @@ describe("mirroring, through the real driver", () => {
     expect(fs.existsSync(path.join(dir, "Data", "Leftover.txt"))).toBe(false);
   });
 
+  it("is NOT uninstalled and reinstalled on its way to being mirrored", async () => {
+    /**
+     * ─── VERIFICATION RUNS BEFORE THE MIRROR ────────────────────────────
+     * So a mirrored mod fails verification by construction: the curator's
+     * added files are exactly what the archive cannot produce.
+     *
+     * `judgeReinstall` had never heard of mirroring and answered "reinstall".
+     * Per affected mod that cost an uninstall, a re-download, a second
+     * identical failure, a "broken mod" in the receipt, and a curator report
+     * telling the user to go and bother the author — about a mod the very
+     * next phase makes byte-perfect. It is the ~11%-of-mods waste loop
+     * `judgeReinstall` exists to eliminate, reintroduced for the one flag
+     * that should be its strongest excuse.
+     *
+     * One install means no repair cycle ran.
+     */
+    const manifest = await mirroredWorld();
+    const fake = makeFakeVortex({
+      gameId: "fallout4",
+      stagingRoot: world!.stagingRoot,
+      installProduces: () => FROM_ARCHIVE,
+    });
+
+    const result = (await install(manifest, fake)) as {
+      verifications?: Array<{ kind: string; reason?: string }>;
+      curatorReports?: string[];
+    };
+
+    expect(fake.installed).toHaveLength(1);
+
+    // Reported as pending rather than as a pass or a failure: at that moment
+    // the folder genuinely is wrong AND genuinely about to be corrected.
+    expect(result.verifications?.[0]?.kind).toBe("skip");
+    expect(result.verifications?.[0]?.reason).toBe("pending-mirror");
+
+    // And no report handed to the user about a mod the curator already
+    // answered for.
+    expect(result.curatorReports ?? []).toHaveLength(0);
+
+    // The mirror still did its job.
+    const dir = path.join(world!.stagingRoot, fake.installed[0]!.vortexModId);
+    expect(fs.readFileSync(path.join(dir, "Data", "MyPatch.ini"), "utf8")).toBe(
+      CURATOR["Data/MyPatch.ini"],
+    );
+  });
+
   it("does not touch a mod the curator did not mark", async () => {
     // Mirroring is opt-in per mod. A driver that reconciled everything would
     // pass the test above and quietly rewrite 900 other mods.

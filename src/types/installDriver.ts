@@ -344,6 +344,16 @@ export type InstallSuccess = {
    */
   damagedArchiveNotice?: string[];
   /**
+   * What the "ship my files" pass did, and what it declined to do.
+   *
+   * Mirroring is the only phase that can DELETE a file from the user's disk,
+   * and its outcome used to reach `ehLog` and stop — so a mod left half
+   * reconciled, or skipped because it was the user's own copy, told the person
+   * in front of the screen nothing at all. Every other correction phase has a
+   * notice; this one is the one that most needs it.
+   */
+  mirrorNotice?: string[];
+  /**
    * What clearing the user's own conflict and LOOT rules removed.
    *
    * The collection's rules replace the user's rather than merging with them:
