@@ -2,7 +2,7 @@
   "mcpServers": {
     "gitnexus": {
       "type": "http",
-      "url": "http://127.0.0.1:3737/mcp"
+      "url": "http://127.0.0.1:39100/mcp"
     }
   }
 }

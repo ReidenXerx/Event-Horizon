@@ -57,16 +57,11 @@ better does not prevent.
   broken harness fails in exactly the shape of a broken feature. When a result is surprising, suspect
   the measurement first. When the result changes and the code under
   test did not, suspect the ENVIRONMENT before the subject — a suite that suddenly fails everywhere
-  is describing its surroundings, not its subject. A MUTATION THAT NEVER APPLIED is this rule's
-  commonest disguise: the replacement silently matched nothing, every test passed, and it reads as a
-  surviving mutant — i.e. as a gap in the tests rather than a gap in the probe. Print the before and
-  after. *Scar: a hook run without its project-directory variable operated on the wrong root and
-  "proved" a working fix was broken; three probe harnesses reported confident numbers that were
-  artefacts of shell quoting; two runs regressed to "nothing found" through two edits chasing it,
-  because the dev server had exited and another project's server had taken the port, so every
-  request 404'd; and a build that FAILED its version-sync gate was followed by a smoke test that
-  printed OK, because the smoke loaded the artefact the previous build had left behind — a green
-  check on a stale artefact is not a green check.*
+  is describing its surroundings, not its subject. *Scar: a hook run without its project-directory
+  variable operated on the wrong root and "proved" a working fix was broken; three probe harnesses
+  reported confident numbers that were artefacts of shell quoting; and two runs regressed to "nothing
+  found" through two edits chasing it, because the dev server had exited and another project's server
+  had taken the port, so every request 404'd.*
 
 - **GP-8** — **Every line you print is a claim, and a command's exit status is the only evidence it
   worked.** `cmd; echo "done"` prints "done" when cmd failed — the shell moved on. In a pipeline `$?`
