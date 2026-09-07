@@ -348,3 +348,22 @@ project rather than this one, it belongs upstream — say so and it can be promo
   was a type error and none failed a build; two were caught only by running the code against a
   machine whose real answer was already known. *Scar: a runtime detector reported all four
   Microsoft runtimes missing on a machine that plainly had them.*
+
+- **PP-1** — **Optional-chained dispatch is a silent no-op wearing the shape of an action.**
+  `api.store?.dispatch(setModEnabled(...))` returns `undefined` and reports success when `store` is
+  absent, so "enable this mod" enables nothing, for every mod, with no error and no log. Check the
+  optional thing explicitly and SAY when it is missing; `?.` belongs on reads, not on the call that
+  IS the effect. *Scar: four exported functions in the profile spine — create, switch, enable,
+  disable — every one of them a no-op under a missing store, and the module had no test file at all.
+  The user-visible symptom is "Event Horizon installed the mods but they are all still disabled",
+  which is indistinguishable from an install that never ran.*
+
+- **PP-2** — **`vi.spyOn` on an already-spied method returns the SAME spy, call history and all.**
+  A `beforeEach` that re-spies without `mockClear()` lets test N find test N-1's line, so an
+  assertion passes against the wrong evidence — and it passes, which is why nothing points at it.
+  Clear the spy, and prefer `expect(spy).toHaveBeenCalled()` alongside the payload check so an
+  assertion that finds nothing fails instead of vacuously succeeding. *Scar: a test asserting a
+  no-store profile creation logs at `error` read the `info` line from the previous test's
+  successful creation, and only failed because the LEVEL happened to differ. Had both been `info`
+  it would have passed while testing nothing.*
+
