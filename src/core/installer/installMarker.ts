@@ -30,6 +30,8 @@
  */
 
 import * as fsp from "fs/promises";
+
+import { ehLog } from "../logging/ehLog";
 import * as path from "path";
 
 export interface InstallMarker {
@@ -80,8 +82,16 @@ export async function writeInstallMarker(
     const tmp = `${target}.tmp`;
     await fsp.writeFile(tmp, JSON.stringify(marker, null, 2), "utf8");
     await fsp.rename(tmp, target);
-  } catch {
-    // Deliberately silent.
+  } catch (err) {
+    // Still never thrown; just no longer invisible. Without a marker, an
+    // install killed mid-run leaves nothing behind at all, and the next launch
+    // reports a clean slate for a machine that is halfway through a collection.
+    ehLog("error", "marker.write.failed", {
+      packageId: marker.packageId,
+      consequence:
+        "an interruption of this run will not be detected on the next launch",
+      err,
+    });
   }
 }
 
@@ -119,6 +129,7 @@ export async function listInterruptedInstalls(
   }
 
   const out: InstallMarker[] = [];
+  let unreadable = 0;
   for (const name of names) {
     if (!name.endsWith(".json")) continue; // skip .tmp leftovers
     try {
@@ -127,10 +138,24 @@ export async function listInterruptedInstalls(
         "utf8",
       );
       const parsed = parseMarker(JSON.parse(raw) as unknown);
-      if (parsed !== undefined) out.push(parsed);
+      if (parsed !== undefined) {
+        out.push(parsed);
+      } else {
+        // Present but not a marker we can read: the shape check rejected it.
+        // Distinct from a parse throw, and the two have different causes.
+        unreadable += 1;
+      }
     } catch {
       // Skip; a corrupt marker is not worth a failure at startup.
+      unreadable += 1;
     }
+  }
+  if (unreadable > 0) {
+    ehLog("warn", "marker.list.unreadable", {
+      unreadable,
+      usable: out.length,
+      consequence: "those interrupted installs will not be reported",
+    });
   }
   return out.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }

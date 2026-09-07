@@ -45,6 +45,8 @@
 
 import { actions, types } from "@nexusmods/vortex-api";
 
+import { ehLog } from "../logging/ehLog";
+
 import type { EhcollRule, ModRuleType } from "../../types/ehcoll";
 import { AbortError } from "../../utils/abortError";
 import { parseModReference } from "../identity/compareKey";
@@ -218,11 +220,19 @@ export function applyModRules(input: ApplyModRulesInput): ApplyModRulesResult {
         } catch (err) {
           // Removing a rule the store doesn't have is not catastrophic
           // — Vortex's reducer will no-op. Logging keeps the trail.
-          console.warn(
-            `[Vortex Event Horizon] Failed to remove pre-existing user rule on ` +
-              `modId="${sourceModId}" (type=${userRule.type}). Continuing. ` +
-              `Reason: ${err instanceof Error ? err.message : String(err)}`,
-          );
+          //
+          // In the FILE, not devtools: a user rule that survives here keeps
+          // fighting the curator's rule for the rest of the session, and the
+          // symptom shows up much later as a conflict order that will not
+          // stick. This line is the only thing that connects the two.
+          ehLog("warn", "rules.user-rule.remove-failed", {
+            sourceModId,
+            type: userRule.type,
+            consequence:
+              "the user's own rule stays in place and competes with the " +
+              "curator's",
+            err,
+          });
         }
       }
     }

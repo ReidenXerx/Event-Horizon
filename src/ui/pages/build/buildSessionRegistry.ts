@@ -42,6 +42,7 @@
  *     `queuePosition` displayed by everyone behind it.
  */
 
+import { ehLog } from "../../../core/logging/ehLog";
 import { getEHRuntime } from "../../runtime/ehRuntime";
 import { BuildSession, type BuildSessionRegistryHooks } from "./buildSession";
 
@@ -215,8 +216,16 @@ class BuildSessionRegistry {
         // The session's own _runBuild handles errors via its state
         // machine. Anything thrown here would be a programming bug
         // — log it and free the slot so we don't deadlock.
-        // eslint-disable-next-line no-console
-        console.error("[Event Horizon] build slot promotion failed:", err);
+        //
+        // The user-visible symptom is a queued build that never starts, with
+        // no error anywhere: the session was promoted, threw, and got dropped.
+        // Without this line that is indistinguishable from "nothing happened".
+        ehLog("error", "build.queue.promotion.failed", {
+          queueRemaining: this.queue.length,
+          consequence:
+            "the promoted build never started and its slot was released",
+          err,
+        });
         this.currentBuilder = undefined;
       }
     }

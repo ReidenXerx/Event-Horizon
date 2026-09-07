@@ -27,6 +27,7 @@
 import { randomBytes, randomUUID } from "crypto";
 import { actions, types } from "@nexusmods/vortex-api";
 
+import { ehLog } from "../logging/ehLog";
 import { looksLikeWine } from "./checkSevenZipHealth";
 import { countMods, profileSwitchBudgetMs } from "./timeBudgets";
 
@@ -54,7 +55,31 @@ export function createFreshProfile(
     lastActivated: 0,
   };
 
+  /**
+   * `api.store` is optional on Vortex's own typings, and `?.` turns a missing
+   * store into a SILENT no-op that returns a profile id nothing was ever
+   * created under. Every later step then addresses a profile that does not
+   * exist, which is indistinguishable from "Vortex forgot the profile".
+   */
+  const dispatched = api.store !== undefined;
   api.store?.dispatch(actions.setProfile(profile));
+
+  // "Event Horizon made a new profile and went there" was a real report, and
+  // nothing in the log said which profile, under what name, or whether the
+  // name it wanted was already taken. All three are here now.
+  ehLog(dispatched ? "info" : "error", "profile.created", {
+    id,
+    name: finalName,
+    suggestedName,
+    // A renamed profile means one with the wanted name ALREADY EXISTED, which
+    // is usually a previous install of the same collection.
+    nameCollided: finalName !== suggestedName,
+    gameId,
+    dispatched,
+    ...(dispatched
+      ? {}
+      : { consequence: "no Vortex store - the profile was NOT created" }),
+  });
 
   return { id, name: finalName };
 }
@@ -89,7 +114,13 @@ export async function switchToProfile(
     state.settings?.profiles?.activeProfileId ?? state.settings?.profiles?.nextProfileId;
 
   if (currentProfileId === profileId) {
-    return; // already active — no-op
+    // Not silent: "we never switched" and "we switched instantly" look the
+    // same in a log that says nothing, and only one of them is a bug.
+    ehLog("info", "profile.switch.skipped", {
+      profileId,
+      reason: "already active",
+    });
+    return;
   }
 
   // Pre-check abort before we even dispatch — saves a wasted round-trip.
@@ -101,10 +132,21 @@ export async function switchToProfile(
   // the collection; under Wine it scales again. Like the deploy ceiling this
   // is a race against `profile-did-change`, so a larger budget costs nothing
   // when the switch is quick — it only delays giving up on a stuck one.
-  const budgetMs = profileSwitchBudgetMs(countMods(state), {
-    wine: looksLikeWine(),
+  const modCount = countMods(state);
+  const wine = looksLikeWine();
+  const budgetMs = profileSwitchBudgetMs(modCount, { wine });
+
+  // The timeout message a user pastes says only "did not complete within Ns".
+  // These are the numbers that decide whether N was ever going to be enough.
+  ehLog("info", "profile.switch.start", {
+    from: currentProfileId ?? "none",
+    to: profileId,
+    budgetMs,
+    modCount,
+    wine,
   });
 
+  const startedAt = Date.now();
   await new Promise<void>((resolve, reject) => {
     let settled = false;
     let onAbort: (() => void) | undefined;
@@ -132,11 +174,36 @@ export async function switchToProfile(
         finalState.settings?.profiles?.activeProfileId ??
         finalState.settings?.profiles?.nextProfileId;
       if (finalActiveId === profileId) {
+        // The switch DID happen; we only missed the event. Worth a line - a
+        // run that reaches here is one listener away from a false timeout.
+        ehLog("warn", "profile.switch.ok-via-state", {
+          to: profileId,
+          ms: Date.now() - startedAt,
+          budgetMs,
+          note:
+            "budget expired but Vortex state shows the switch completed; " +
+            "the profile-did-change event was missed",
+        });
         settled = true;
         finalize();
         resolve();
         return;
       }
+
+      // The failure the tester actually hit. Everything needed to tell "Vortex
+      // was stuck" from "we gave up too early" from "it went somewhere else".
+      ehLog("error", "profile.switch.timeout", {
+        from: currentProfileId ?? "none",
+        to: profileId,
+        activeNow: finalActiveId ?? "none",
+        budgetMs,
+        modCount,
+        wine,
+        // A different id here is the whole answer: the switch worked, just not
+        // to us - something else redirected it.
+        switchedElsewhere:
+          finalActiveId !== undefined && finalActiveId !== profileId,
+      });
 
       settled = true;
       finalize();
@@ -150,9 +217,27 @@ export async function switchToProfile(
     }, budgetMs);
 
     const onChange = (newProfileId: string): void => {
-      if (newProfileId !== profileId || settled) return;
+      if (newProfileId !== profileId) {
+        // Vortex switched to a profile that is not ours while we were waiting
+        // for ours. We keep waiting (it may still arrive), but this is the
+        // single most useful line for "why did it end up in another profile".
+        if (!settled) {
+          ehLog("warn", "profile.switch.other-profile-activated", {
+            waitingFor: profileId,
+            activated: newProfileId,
+            ms: Date.now() - startedAt,
+          });
+        }
+        return;
+      }
+      if (settled) return;
       settled = true;
       finalize();
+      ehLog("info", "profile.switch.ok", {
+        to: profileId,
+        ms: Date.now() - startedAt,
+        budgetMs,
+      });
       resolve();
     };
 
@@ -163,11 +248,29 @@ export async function switchToProfile(
         if (settled) return;
         settled = true;
         finalize();
+        // Vortex's switch is already in flight and cannot be recalled; we stop
+        // waiting on it. Which profile ends up active is then decided by
+        // Vortex, not us, and that is worth having written down.
+        ehLog("warn", "profile.switch.aborted", {
+          to: profileId,
+          ms: Date.now() - startedAt,
+          note:
+            "Vortex's switch was already dispatched and continues in the " +
+            "background",
+        });
         reject(makeAbortError("profile switch"));
       };
       signal.addEventListener("abort", onAbort);
     }
 
+    if (api.store === undefined) {
+      // Without this the promise simply waits out the full budget and reports
+      // a timeout, blaming Vortex for a switch that was never dispatched.
+      ehLog("error", "profile.switch.no-store", {
+        to: profileId,
+        consequence: "the switch was never dispatched; this will time out",
+      });
+    }
     api.store?.dispatch(actions.setNextProfile(profileId));
   });
 }
@@ -193,7 +296,18 @@ export function enableModInProfile(
   profileId: string,
   modId: string,
 ): void {
-  api.store?.dispatch(actions.setModEnabled(profileId, modId, true));
+  if (api.store === undefined) {
+    // "EH installed the mods but they are all still disabled" was a real
+    // report. If the store is missing, this call is a no-op for EVERY mod and
+    // that is exactly what the user sees - so it must not be silent.
+    ehLog("error", "profile.enable.no-store", {
+      profileId,
+      modId,
+      consequence: "the mod was NOT enabled",
+    });
+    return;
+  }
+  api.store.dispatch(actions.setModEnabled(profileId, modId, true));
 }
 
 // ===========================================================================
@@ -259,5 +373,15 @@ export function disableModInProfile(
   profileId: string,
   modId: string,
 ): void {
-  api.store?.dispatch(actions.setModEnabled(profileId, modId, false));
+  if (api.store === undefined) {
+    // The alongside install depends on this: without it BOTH copies of the
+    // mod stay enabled and they fight over the same files.
+    ehLog("error", "profile.disable.no-store", {
+      profileId,
+      modId,
+      consequence: "the mod was NOT disabled",
+    });
+    return;
+  }
+  api.store.dispatch(actions.setModEnabled(profileId, modId, false));
 }

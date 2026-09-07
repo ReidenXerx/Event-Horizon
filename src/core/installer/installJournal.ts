@@ -113,8 +113,26 @@ export async function appendJournalEntry(
       `${JSON.stringify(entry)}\n`,
       "utf8",
     );
-  } catch {
-    // Deliberately silent — see the header. A lost line costs a redone mod.
+  } catch (err) {
+    /**
+     * The WRITE is best-effort; the REPORT of it failing is not.
+     *
+     * A journal line that never lands means the next run cannot tell this mod
+     * apart from one the user installed themselves, and NS-2 then correctly
+     * refuses to touch it — so a mod Event Horizon created gets treated as
+     * off-limits forever. That is a silent, permanent loss of a repair right,
+     * and it must not be diagnosed by inference.
+     */
+    ehLog("error", "journal.append.failed", {
+      packageId,
+      compareKey: entry.compareKey,
+      vortexModId: entry.vortexModId,
+      kind: entry.kind,
+      consequence:
+        "this mod will not be recognised as ours on the next run and will " +
+        "not be repairable",
+      err,
+    });
   }
 }
 
@@ -138,6 +156,7 @@ export async function readJournal(
   }
 
   const out: JournalEntry[] = [];
+  let unreadableLines = 0;
   for (const line of raw.split("\n")) {
     if (line.length === 0) continue;
     try {
@@ -146,6 +165,7 @@ export async function readJournal(
         typeof parsed.compareKey !== "string" ||
         typeof parsed.vortexModId !== "string"
       ) {
+        unreadableLines += 1;
         continue;
       }
       out.push({
@@ -160,7 +180,26 @@ export async function readJournal(
       });
     } catch {
       // A truncated tail line. Everything before it still counts.
+      unreadableLines += 1;
     }
+  }
+  if (unreadableLines > 0) {
+    /**
+     * One unreadable line is the expected shape of a killed run: the last
+     * record was half-written. SEVERAL means the file is damaged, and every
+     * damaged line is a mod we installed that we can no longer prove we
+     * installed. The count is what separates those two readings, so it is
+     * logged once rather than per line.
+     */
+    ehLog(unreadableLines > 1 ? "warn" : "info", "journal.read.unreadable-lines", {
+      packageId,
+      unreadableLines,
+      usable: out.length,
+      consequence:
+        unreadableLines > 1
+          ? "those mods cannot be proven ours and will not be repaired"
+          : "expected after an interrupted run - the final record was truncated",
+    });
   }
   return out;
 }

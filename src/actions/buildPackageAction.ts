@@ -145,7 +145,12 @@ export default function createBuildPackageAction(
 
       const curator = await promptCuratorMetadata(context.api);
       if (curator === undefined) {
-        // Curator hit Cancel. Silent exit, no error notification.
+        // Curator hit Cancel. Silent to the UI, NOT to the log: an op that
+        // ends without ok/fail leaves a `build.start` with no end, and from
+        // the log alone that is indistinguishable from a build that hung on
+        // the metadata prompt. Say which one it was.
+        ehLog("info", "build.cancelled", { where: "curator-metadata-prompt" });
+        op.ok({ outcome: "cancelled", where: "curator-metadata-prompt" });
         return;
       }
 
@@ -186,9 +191,16 @@ export default function createBuildPackageAction(
       mods = await captureStagingFiles(state, gameId, mods, {
         level: "thorough",
         onWarn: (mod, message) => {
-          console.warn(
-            `[Vortex Event Horizon] inspect ${mod.name}: ${message}`,
-          );
+          // A capture warning means THIS mod's staging inspection degraded, so
+          // the package it lands in verifies that mod more weakly than the rest.
+          // The curator has no other way to learn that, and devtools output is
+          // gone by the time anyone asks — so it goes in the file.
+          ehLog("warn", "build.capture.warn", {
+            mod: mod.name,
+            message,
+            consequence:
+              "this mod ships with a weaker staging record than the others",
+          });
         },
       });
 
@@ -348,19 +360,29 @@ export default function createBuildPackageAction(
         outputPath,
       });
 
-      console.log(
-        `[Vortex Event Horizon] Built collection package | ${curator.name} v${curator.version} | ` +
-          `mods=${manifest.mods.length} | rules=${manifest.rules.length} | ` +
-          `plugins=${manifest.plugins.order.length} | ` +
-          `loadOrder=${manifest.loadOrder.length} | ` +
-          `userlist={plugins:${manifest.userlist.plugins.length},groups:${manifest.userlist.groups.length}} | ` +
-          `bundled=${result.bundledCount} | bytes=${result.outputBytes} | ` +
-          `warnings=${warnings.length + result.warnings.length} | ` +
-          `configFile=${loaded.configPath}${loaded.created ? " (NEW)" : ""}`,
-      );
+      // The one line that says what shipped. Structured rather than a formatted
+      // string, because the question asked of it later is always "how many X"
+      // for some X, and a grep for a number inside prose is not an answer.
+      ehLog("info", "build.package.built", {
+        collection: curator.name,
+        version: curator.version,
+        mods: manifest.mods.length,
+        rules: manifest.rules.length,
+        plugins: manifest.plugins.order.length,
+        loadOrder: manifest.loadOrder.length,
+        userlistPlugins: manifest.userlist.plugins.length,
+        userlistGroups: manifest.userlist.groups.length,
+        bundled: result.bundledCount,
+        bytes: result.outputBytes,
+        warnings: warnings.length + result.warnings.length,
+        configPath: loaded.configPath,
+        configCreated: loaded.created,
+      });
 
       for (const warning of [...warnings, ...result.warnings]) {
-        console.warn(`[Vortex Event Horizon] ${warning}`);
+        // Every warning here is a way the package is less than it claims. The
+        // notification shows a COUNT; only the log shows which ones.
+        ehLog("warn", "build.package.warning", { warning });
       }
 
       const bundledLabel =

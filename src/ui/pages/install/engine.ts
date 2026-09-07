@@ -38,6 +38,7 @@ import {
 } from "../../../core/manifest/readEhcoll";
 import { enrichInstalledModsWithStagingSetHashes } from "../../../core/resolver/enrichStagingSetHashes";
 import { listInstallAttempts } from "../../../core/installer/attemptRecord";
+import { logInstallPlan } from "../../../core/resolver/logInstallPlan";
 import { resolveInstallPlan } from "../../../core/resolver/resolveInstallPlan";
 // Shared with the Vortex action pipeline in src/actions. It used to live here
 // as a private helper, and the other pipeline kept passing `undefined` — see
@@ -295,6 +296,7 @@ export async function runLoadingPipeline(args: {
   );
 
   const plan = resolveInstallPlan(manifest, userState, installTarget);
+  logInstallPlan(plan, userState, "wizard-preview");
 
   const runtimeFindings = await checkSystemRuntimes();
 
@@ -490,6 +492,7 @@ export async function runLoadingPipelineWithReceipt(args: {
   );
 
   const plan = resolveInstallPlan(manifest, userState, installTarget);
+  logInstallPlan(plan, userState, "wizard-stale-receipt-rerun");
 
   // Re-checked, not carried: this is the stale-receipt re-run and it is a
   // separate route into the confirm step. Skipping it would leave one path

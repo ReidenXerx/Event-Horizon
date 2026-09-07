@@ -130,6 +130,21 @@ export async function captureStagingFiles(
 
   const installRoot = installRootFor(state, gameId);
   if (installRoot === undefined) {
+    /**
+     * EVERY mod in the build loses its staging record here, not one.
+     *
+     * This was reported only through `onWarn`, attributed to `mods[0]` as if a
+     * single mod had a problem, and not at all when no `onWarn` was passed. A
+     * package built past this point verifies nothing on the user's side, and
+     * its own build log said nothing about why.
+     */
+    ehLog("error", "capture.staging.no-install-root", {
+      gameId,
+      mods: mods.length,
+      consequence:
+        "NO mod in this build gets a staging record; user-side integrity " +
+        "verification is disabled for the whole package",
+    });
     if (onWarn !== undefined && mods.length > 0) {
       onWarn(
         mods[0]!,
@@ -142,6 +157,8 @@ export async function captureStagingFiles(
 
   const out: StagingEnrichedAuditorMod[] = new Array(mods.length);
   let done = 0;
+  /** Mods that end up with no staging record, by reason. */
+  const skipped = { noInstallationPath: 0, noStagingRoot: 0, walkFailed: 0 };
 
   for (let i = 0; i < mods.length; i++) {
     if (signal?.aborted) throw new AbortError();
@@ -154,6 +171,7 @@ export async function captureStagingFiles(
     }
 
     if (enriched.installationPath === undefined) {
+      skipped.noInstallationPath += 1;
       onWarn?.(
         mod,
         `Mod "${mod.name}" has no installationPath in Vortex state. ` +
@@ -171,6 +189,24 @@ export async function captureStagingFiles(
       enriched.installationPath,
     );
     if (stagingRoot === undefined) {
+      /**
+       * The one exit here that produced NO diagnostic of any kind: not a
+       * warning, not a log line, not a field on the mod. Vortex knows an
+       * installation path for this mod but it does not resolve under the
+       * install root, so the mod ships with no file list and cannot be
+       * verified or mirrored — looking, from the manifest, exactly like a mod
+       * that legitimately has no files.
+       */
+      ehLog("warn", "capture.staging.no-staging-root", {
+        mod: mod.name,
+        modId: mod.id,
+        installationPath: enriched.installationPath,
+        installRoot,
+        consequence:
+          "this mod ships with no staging record: not verifiable, not " +
+          "mirrorable",
+      });
+      skipped.noStagingRoot += 1;
       out[i] = enriched;
       done += 1;
       onProgress?.(done, mods.length, mod);
@@ -217,6 +253,14 @@ export async function captureStagingFiles(
       }
     } catch (err) {
       if (err instanceof AbortError) throw err;
+      ehLog("error", "capture.staging.walk-failed", {
+        mod: mod.name,
+        modId: mod.id,
+        stagingRoot,
+        consequence: "this mod ships with no staging record",
+        err,
+      });
+      skipped.walkFailed += 1;
       onWarn?.(
         mod,
         `Failed to walk staging folder for "${mod.name}": ${
@@ -229,6 +273,30 @@ export async function captureStagingFiles(
     done += 1;
     onProgress?.(done, mods.length, mod);
   }
+
+  /**
+   * The number a curator should be able to read off the log without counting:
+   * how much of this build can actually be verified on a user's machine.
+   * Individual skips above say which mods; this says how big the hole is.
+   */
+  const withFiles = out.filter((m) => m.stagingFiles !== undefined).length;
+  const incomplete = out.filter(
+    (m) => m.stagingCaptureIncomplete === true,
+  ).length;
+  ehLog(
+    withFiles === mods.length ? "info" : "warn",
+    "capture.staging.summary",
+    {
+      gameId,
+      level,
+      mods: mods.length,
+      withStagingFiles: withFiles,
+      withoutStagingFiles: mods.length - withFiles,
+      // Captured, but known to be missing paths the walk could not read.
+      incompleteCaptures: incomplete,
+      skipped,
+    },
+  );
 
   return out;
 }

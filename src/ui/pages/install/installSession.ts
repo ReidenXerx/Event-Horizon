@@ -34,6 +34,7 @@
 import type { types } from "@nexusmods/vortex-api";
 
 import { AbortError } from "../../../core/archiveHashing";
+import { ehLog as logFailure } from "../../../core/logging/ehLog";
 import { runInstall } from "../../../core/installer/runInstall";
 import { getEHRuntime } from "../../runtime/ehRuntime";
 import {
@@ -839,6 +840,32 @@ class InstallSession {
     },
   ): void {
     const formatted: FormattedError = formatError(err, opts);
+
+    /**
+     * ─── THE ERROR THE USER READS MUST BE IN THE LOG THEY SEND ─────────
+     * This dispatched to UI state and stopped. So every failure the install
+     * wizard has ever shown — the modal, the report the tester copies out by
+     * hand — existed only on screen.
+     *
+     * Measured on a real report: a tester pasted "Install driver crashed /
+     * Profile switch did not complete within 64s" AND attached the log from
+     * the same session. That message appears in the log ZERO times. The one
+     * error that mattered was the one thing missing from the file whose whole
+     * purpose is to explain it, and answering him meant reading a screenshot.
+     *
+     * Logged before the dispatch, so a render that throws cannot lose it.
+     */
+    logFailure("error", "install.wizard.failed", {
+      title: formatted.title,
+      message: formatted.message,
+      className: formatted.className,
+      severity: formatted.severity,
+      ...(formatted.context !== undefined ? { context: formatted.context } : {}),
+      // The original, before any friendly rewriting — `truncate` keeps the
+      // first frames of the stack, which is what names the failing call.
+      err,
+    });
+
     this.dispatch({ type: "set-error", error: formatted });
   }
 

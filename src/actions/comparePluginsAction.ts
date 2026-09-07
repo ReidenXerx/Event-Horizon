@@ -30,6 +30,9 @@ export function createComparePluginsAction(
       const referenceFilePath = await pickTxtFile(context.api);
 
       if (!referenceFilePath) {
+        // Settle the op: a `compare-plugins.start` with no end reads as
+        // "the compare hung", not "the user closed the file picker".
+        op.ok({ cancelled: "file-picker" });
         return;
       }
 

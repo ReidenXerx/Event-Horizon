@@ -1454,11 +1454,17 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           }
           // Non-fatal: record as a skip-with-error so the user can
           // see SOMETHING happened but the install carries on.
-          console.warn(
-            `[Vortex Event Horizon] verifyModInstall threw for ` +
-              `"${installEntry.name}": ` +
-              (err instanceof Error ? err.message : String(err)),
-          );
+          //
+          // `ehLog`, not `console.warn`: this mod is now UNVERIFIED, and the
+          // receipt says "skip" without saying why. Devtools output dies with
+          // the session, so the reason left no trace in the file a tester sends.
+          ehLog("error", "verify.threw", {
+            name: installEntry.name,
+            compareKey: installEntry.compareKey,
+            vortexModId: installEntry.vortexModId,
+            consequence: "this mod was not verified",
+            err,
+          });
           verifications.push({
             kind: "skip",
             vortexModId: installEntry.vortexModId,
@@ -1591,10 +1597,15 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
 
         // Reinstall warranted, or we could not tell — try ONE recovery cycle.
         const failSummary = summarizeVerifyFail(verifyResult);
-        console.warn(
-          `[Vortex Event Horizon] integrity check failed for ` +
-            `"${installEntry.name}" (${failSummary}). Attempting reinstall...`,
-        );
+        ehLog("warn", "verify.failed", {
+          name: installEntry.name,
+          compareKey: installEntry.compareKey,
+          summary: failSummary,
+          missing: verifyResult.missingFiles.length,
+          sizeMismatches: verifyResult.sizeMismatches.length,
+          hashMismatches: verifyResult.hashMismatches.length,
+          next: "judging whether a reinstall could change anything",
+        });
         reportProgress(
           "verifying-mods",
           i + 1,
@@ -2013,14 +2024,18 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               "Install aborted while applying mod rules.",
             );
         }
-        // Mod-rule failures are non-fatal — they don't block install.
-        // We log and continue; the receipt's skippedRules list will
-        // still surface the issue in the post-install summary.
-        console.warn(
-          `[Vortex Event Horizon] applyModRules threw unexpectedly: ` +
-            (err instanceof Error ? err.message : String(err)) +
-            `. Continuing without rule application.`,
-        );
+        /**
+         * Mod-rule failures are non-fatal — they do not block the install.
+         * But "continuing without rule application" means the collection's
+         * CONFLICT ORDER is not reproduced, which is most of what a
+         * collection is. That belongs in the log, not in devtools.
+         */
+        ehLog("error", "rules.apply.threw", {
+          consequence:
+            "continuing without rule application — the curator's conflict " +
+            "order is NOT reproduced on this machine",
+          err,
+        });
       }
 
       aborted = checkAbort("applying-mod-rules");
@@ -2096,13 +2111,14 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               "Install aborted while applying LOOT userlist.",
             );
         }
-        // Non-fatal — log and continue. Receipt's
-        // skippedUserlistEntries surfaces the issue.
-        console.warn(
-          `[Vortex Event Horizon] applyUserlist threw unexpectedly: ` +
-            (err instanceof Error ? err.message : String(err)) +
-            `. Continuing without userlist application.`,
-        );
+        // Non-fatal — but the curator's LOOT rules are then absent, and the
+        // user's load order is whatever LOOT decides on its own.
+        ehLog("error", "userlist.apply.threw", {
+          consequence:
+            "continuing without userlist application — the curator's LOOT " +
+            "rules are NOT applied",
+          err,
+        });
       }
 
       aborted = checkAbort("applying-userlist");
@@ -2403,12 +2419,14 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               "Install aborted while applying load order.",
             );
         }
-        // Non-fatal — log and continue to receipt.
-        console.warn(
-          `[Vortex Event Horizon] applyLoadOrder threw unexpectedly: ` +
-            (err instanceof Error ? err.message : String(err)) +
-            `. Continuing without LoadOrder application.`,
-        );
+        // Non-fatal — but the load order is then the user's, not the
+        // curator's, which for a Bethesda game decides whether it starts.
+        ehLog("error", "loadorder.apply.threw", {
+          consequence:
+            "continuing without load-order application — the curator's " +
+            "order is NOT reproduced",
+          err,
+        });
       }
 
       aborted = checkAbort("applying-load-order");

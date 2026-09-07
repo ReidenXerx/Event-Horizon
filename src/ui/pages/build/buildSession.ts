@@ -1264,7 +1264,16 @@ class BuildSession {
             },
           },
         );
-        if (this.controller !== controller) return;
+        if (this.controller !== controller) {
+          // A newer build superseded this one. The package it produced is real
+          // and on disk, but this session will never show it — so say so,
+          // rather than leaving a finished build with no visible outcome.
+          ehLog("warn", "build.result.discarded", {
+            reason: "session superseded by a newer build",
+            outputPath: result.outputPath,
+          });
+          return;
+        }
         this.controller = undefined;
         this.pendingBuildInput = undefined;
         this.setState({
@@ -1277,7 +1286,16 @@ class BuildSession {
         // Successful build → wipe the in-flight draft. Best-effort.
         void deleteDraft(getAppDataPath(), "build", this.draftId);
       } catch (err) {
-        if (this.controller !== controller) return;
+        if (this.controller !== controller) {
+          // Superseded AND failed. Without this the log holds a
+          // `build.pipeline.start` with no end of any kind — the one shape
+          // that reads as "it is still running".
+          ehLog("error", "build.failure.discarded", {
+            reason: "session superseded by a newer build",
+            err,
+          });
+          return;
+        }
         this.controller = undefined;
         this.pendingBuildInput = undefined;
         if (isAbortError(err)) {
@@ -1307,6 +1325,10 @@ class BuildSession {
         if (refused) {
           ehLog("info", "build.refused.to-form", {
             code: (err as { code?: string }).code,
+            // The code alone does not say WHICH plugin limit, or which mod had
+            // no order. The message the curator is about to read is the only
+            // place that detail exists.
+            message: (err as Error).message,
           });
           this.setState({
             ...formSnapshot,

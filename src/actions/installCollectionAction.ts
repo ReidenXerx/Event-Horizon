@@ -66,6 +66,7 @@ import {
   ReadEhcollError,
   readEhcoll,
 } from "../core/manifest/readEhcoll";
+import { logInstallPlan } from "../core/resolver/logInstallPlan";
 import { resolveInstallPlan } from "../core/resolver/resolveInstallPlan";
 import { scanAvailableDownloads } from "../core/resolver/scanAvailableDownloads";
 import { getEventHorizonDir } from "../core/paths";
@@ -98,6 +99,7 @@ import type {
   ModResolution,
   OrphanedModDecision,
   PlanSummary,
+  UserSideState,
 } from "../types/installPlan";
 import { pickEhcollFile, pickModArchiveFile } from "../utils/utils";
 import { getVortexUserDataPath } from "../core/paths";
@@ -195,7 +197,9 @@ const downloadScanNotificationId = "vortex-event-horizon:install-download-scan";
             appDataPath,
           );
           if (resolution === "cancel") {
-            return; // user declined; abort the install entirely
+            // user declined; abort the install entirely
+            op.ok({ cancelled: "stale-receipt-dialog" });
+            return;
           }
           if (resolution === "delete") {
             // Receipt is gone now; fall through to fresh-profile mode
@@ -326,7 +330,7 @@ const downloadScanNotificationId = "vortex-event-horizon:install-download-scan";
       const plan = resolveInstallPlan(manifest, userState, installTarget);
 
       // ── 9. log + render preview dialog ───────────────────────────────
-      logPlanSummary(plan, zipPath);
+      logPlanSummary(plan, userState, zipPath);
 
       const installable = isPlanInstallable(plan);
       const dialogResult = await renderPlanDialog(
@@ -391,20 +395,22 @@ const downloadScanNotificationId = "vortex-event-horizon:install-download-scan";
 // Logging
 // ===========================================================================
 
-function logPlanSummary(plan: InstallPlan, sourcePath: string): void {
+function logPlanSummary(
+  plan: InstallPlan,
+  userState: UserSideState,
+  sourcePath: string,
+): void {
   const m = plan.manifest;
   const s = plan.summary;
-  console.log(
-    `[Vortex Event Horizon] Install preview | ${m.package.name} v${m.package.version} | ` +
-      `target=${plan.installTarget.kind} | ` +
-      `mods=${s.totalMods} (already=${s.alreadyInstalled}, ` +
-      `silent=${s.willInstallSilently}, confirm=${s.needsUserConfirmation}, ` +
-      `missing=${s.missing}, orphans=${s.orphans}) | ` +
-      `canProceed=${s.canProceed} | source=${sourcePath}`,
-  );
-  // Mirrored into the persistent log: console.log never survives past the
-  // devtools session, and this is the one line that answers "what did the
-  // plan actually resolve to" for a user who cannot be watched live.
+
+  // The totals AND the per-mod decisions AND the shape of the inputs those
+  // decisions were made from. Shared with the install wizard, which resolves
+  // the same plan by a different route — two call sites that disagree are a
+  // real bug, and they can only be compared if both write the same line.
+  logInstallPlan(plan, userState, `action:${path.basename(sourcePath)}`);
+
+  // Kept alongside it: the ids the shared logger deliberately does not carry,
+  // because they are this route's own identifiers rather than the plan's.
   ehLog("info", "install.plan.summary", {
     packageId: m.package.id,
     packageVersion: m.package.version,
@@ -416,26 +422,8 @@ function logPlanSummary(plan: InstallPlan, sourcePath: string): void {
     missing: s.missing,
     orphans: s.orphans,
     canProceed: s.canProceed,
+    source: sourcePath,
   });
-
-  for (const w of plan.compatibility.warnings) {
-    console.warn(`[Vortex Event Horizon] compat warn: ${w}`);
-  }
-  if (plan.compatibility.warnings.length > 0) {
-    ehLog("warn", "install.plan.compat-warnings", {
-      count: plan.compatibility.warnings.length,
-      warnings: plan.compatibility.warnings,
-    });
-  }
-  for (const e of plan.compatibility.errors) {
-    console.warn(`[Vortex Event Horizon] compat error: ${e}`);
-  }
-  if (plan.compatibility.errors.length > 0) {
-    ehLog("error", "install.plan.compat-errors", {
-      count: plan.compatibility.errors.length,
-      errors: plan.compatibility.errors,
-    });
-  }
 }
 
 // ===========================================================================

@@ -290,8 +290,15 @@ describe("the budgets are actually WIRED to the call sites", () => {
 
   it("switchToProfile sizes its ceiling instead of hard-coding one", async () => {
     const src = await read("profile.ts");
-    expect(src).toMatch(/profileSwitchBudgetMs\(countMods\(state\)/);
+    // The mod count is READ FROM STATE and FED TO the budget function. Asserted
+    // as two facts rather than one spelling, because the call was legitimately
+    // split across two lines to log the inputs and the old single-line regex
+    // then failed on a refactor that changed nothing about the budget.
+    expect(src).toMatch(/countMods\(state\)/);
+    expect(src).toMatch(/profileSwitchBudgetMs\(modCount/);
     expect(src).not.toMatch(/PROFILE_SWITCH_TIMEOUT_MS/);
+    // Still catches the thing the test exists for: a literal ceiling.
+    expect(src).not.toMatch(/budgetMs\s*=\s*\d/);
   });
 
   it("the stall watchdog is armed per phase, not from a constant", async () => {

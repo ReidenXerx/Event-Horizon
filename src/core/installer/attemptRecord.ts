@@ -41,6 +41,8 @@
  */
 
 import * as fsp from "fs/promises";
+
+import { ehLog } from "../logging/ehLog";
 import * as path from "path";
 
 export interface InstallAttempt {
@@ -93,8 +95,26 @@ export async function writeInstallAttempt(
       JSON.stringify(attempt, null, 2),
       "utf8",
     );
-  } catch {
-    // Deliberately silent. See the header.
+  } catch (err) {
+    /**
+     * The write stays best-effort; its FAILURE does not stay quiet.
+     *
+     * This record is what makes a failed install resumable — it carries the
+     * profile the run was using. Without it the next attempt has no profile to
+     * go back to and starts a fresh one, which is precisely the "Event Horizon
+     * made another new profile" report. Diagnosing that from the outside means
+     * proving a file was never written; this line says so directly.
+     */
+    ehLog("error", "attempt.write.failed", {
+      packageId: attempt.packageId,
+      profileId: attempt.profileId ?? "none",
+      outcome: attempt.outcome,
+      phase: attempt.phase,
+      consequence:
+        "this attempt is not resumable - the next run will not find the " +
+        "profile it was using",
+      err,
+    });
   }
 }
 
@@ -127,6 +147,7 @@ export async function listInstallAttempts(
   }
 
   const out: InstallAttempt[] = [];
+  let unreadable = 0;
   for (const name of names) {
     if (!name.endsWith(".json")) continue;
     try {
@@ -142,6 +163,7 @@ export async function listInstallAttempts(
         typeof parsed.packageName !== "string" ||
         typeof parsed.endedAt !== "string"
       ) {
+        unreadable += 1;
         continue;
       }
       out.push({
@@ -163,7 +185,18 @@ export async function listInstallAttempts(
       });
     } catch {
       // One unreadable record must not hide the others.
+      unreadable += 1;
     }
+  }
+  if (unreadable > 0) {
+    // Each unreadable record is one install that CANNOT be offered as
+    // resumable. Skipping it is right; skipping it silently is what makes
+    // "resume was never offered" look like a missing feature.
+    ehLog("warn", "attempt.list.unreadable", {
+      unreadable,
+      usable: out.length,
+      consequence: "those attempts cannot be offered for resume",
+    });
   }
   return out.sort((a, b) => (a.endedAt < b.endedAt ? 1 : -1));
 }
