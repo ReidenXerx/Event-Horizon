@@ -26,16 +26,33 @@ allow = [
     "ISC",
     "Unicode-3.0",
     "Zlib",
+    # Reached via zip's bzip2 backend. BSD-style, permissive, no copyleft.
+    "bzip2-1.0.6",
+    # Public-domain-equivalent dedications. Weaker obligations than MIT, not
+    # stronger - safe to combine.
+    "CC0-1.0",
+    "MIT-0",
 ]
 
 [bans]
-# Belt and braces: even if a licence were misdetected, these names never
-# belong in this workspace. They belong in the separate GPL-3 sorter binary.
 deny = [
+    # GPL-3. These belong in the separate sorter binary, never linked here.
+    # Even if a licence were misdetected, the NAME never belongs in this tree.
     { name = "libloot" },
     { name = "esplugin" },
     { name = "libloadorder" },
     { name = "loot-condition-interpreter" },
+
+    # THE LICENCE CHECK CANNOT SEE THIS ONE. Verified 2026-09-07: with
+    # `--all-features`, `cargo deny check licenses` reports "licenses ok" and
+    # lists unrar_sys@0.5.8 as MIT/Apache-2.0 - because that is its metadata.
+    # The vendored `unrar_sys-0.5.8/vendor/unrar/license.txt` is the UnRAR
+    # licence, which deny never opens. Banning by NAME is therefore the only
+    # gate that actually fires. Enabling eh-archive's `rar` feature requires
+    # deleting these two lines, which is the point: a licence decision should
+    # cost a deliberate edit, not a flag nobody reads.
+    { name = "unrar" },
+    { name = "unrar_sys" },
 ]
 
 [advisories]

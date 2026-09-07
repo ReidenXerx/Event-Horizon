@@ -25,3 +25,20 @@
 //! STATUS: skeleton. No behaviour yet.
 
 #![forbid(unsafe_code)]
+
+use eh_progress::Task;
+use std::path::Path;
+
+/// Unpack one archive into a directory.
+///
+/// A passthrough today, and it exists so the CLI does not reach past the
+/// engine into `eh-archive` (NS-4). When extraction grows the things a real
+/// install needs — retry on a partial read, quarantining a mod whose archive
+/// refused entries — it grows HERE, and every shell gets it for free.
+pub fn unpack(
+    archive: &Path,
+    dest: &Path,
+    task: &Task,
+) -> Result<eh_archive::Extraction, eh_archive::ArchiveError> {
+    eh_archive::extract(archive, dest, task)
+}

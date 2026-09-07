@@ -10,12 +10,58 @@
 mod render;
 
 use eh_progress::Unit;
+use std::path::Path;
 use std::process::ExitCode;
+
+/// Extract one archive, reporting through whichever renderer fits the
+/// environment. All logic lives in the engine; this formats the outcome.
+fn unpack(archive: &Path, dest: &Path) -> ExitCode {
+    let progress = render::for_environment();
+    let task = progress.task(
+        archive.file_name().unwrap_or_default().to_string_lossy(),
+        None,
+        Unit::Files,
+    );
+    match eh_engine::unpack(archive, dest, &task) {
+        Ok(result) => {
+            task.done();
+            println!(
+                "{} files, {} directories, {} bytes via {}",
+                result.files,
+                result.directories,
+                result.bytes,
+                result.via.as_str()
+            );
+            // Refusals are not fatal, but they are never silent.
+            for refusal in &result.refused {
+                eprintln!("refused {:?}: {}", refusal.raw, refusal.why.as_str());
+            }
+            for collision in &result.case_collisions {
+                eprintln!(
+                    "case collision: {:?} and {:?} are one file on Windows",
+                    collision.first, collision.second
+                );
+            }
+            if result.refused.is_empty() {
+                ExitCode::SUCCESS
+            } else {
+                // Something in the archive tried to write outside the target.
+                ExitCode::from(3)
+            }
+        }
+        Err(e) => {
+            task.failed(e.to_string());
+            eprintln!("eh unpack: {e}");
+            ExitCode::from(70)
+        }
+    }
+}
 
 fn usage() {
     eprintln!(
         "eh <subcommand>\n\n\
            verify <package.ehcoll>   check archives against recorded hashes\n\
+           unpack <archive> <dest>   extract a zip/7z archive\n\
            demo-progress             exercise the loader (development aid)\n"
     );
 }
@@ -26,6 +72,13 @@ fn main() -> ExitCode {
         Some("verify") => {
             eprintln!("eh verify: not implemented yet (Stage 1 skeleton).");
             ExitCode::from(70)
+        }
+        Some("unpack") => {
+            let (Some(archive), Some(dest)) = (args.next(), args.next()) else {
+                eprintln!("eh unpack <archive> <dest>");
+                return ExitCode::from(2);
+            };
+            unpack(Path::new(&archive), Path::new(&dest))
         }
         Some("demo-progress") => {
             demo_progress();

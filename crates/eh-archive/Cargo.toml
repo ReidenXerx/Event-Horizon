@@ -8,3 +8,16 @@ rust-version.workspace = true
 
 [dependencies]
 eh-progress = { workspace = true }
+sevenz-rust2 = "0.22"
+unrar = { version = "0.5", optional = true }
+zip = { version = "8", default-features = false, features = ["deflate", "deflate64", "bzip2", "lzma", "zstd"] }
+
+[features]
+# OFF BY DEFAULT ON PURPOSE. `unrar` declares MIT OR Apache-2.0, but
+# `unrar_sys` vendors the UnRAR C++ source under the UnRAR licence, which
+# cargo-deny cannot see because it reads crate metadata. Enabling this is a
+# licence decision, so it is spelled out rather than inherited.
+rar = ["dep:unrar"]
+
+[dev-dependencies]
+tempfile = "3.27.0"
