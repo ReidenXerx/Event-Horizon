@@ -8,6 +8,7 @@ import type { EhcollManifest } from "../../types/ehcoll";
 import { ehLog } from "../logging/ehLog";
 import { AbortError } from "../../utils/abortError";
 import { computeStagingSetHash } from "../manifest/stagingSetHash";
+import { bundledArchiveFileName } from "../installer/modInstall";
 import {
   installRootFor,
   installationPathFromState,
@@ -167,11 +168,26 @@ export async function enrichInstalledModsWithStagingSetHashes(
     }
   }
   if (candidateIndices.length === 0) {
-    ehLog("debug", "resolver.staging-hashes.done", {
+    /**
+     * ─── WANTED > 0 AND NOT ONE CANDIDATE IS A BROKEN INVARIANT ────────
+     * This exact line, at `debug`, was the whole diagnosis of a bug that ran
+     * for months: `{"wanted":29,"candidates":0,"enriched":0}` on a machine
+     * with 1,105 installed mods, every run. Twenty-nine external mods, never
+     * a single candidate — a total failure of an identity rung, whispered
+     * one level below its own `.start`.
+     *
+     * It is a warning, and it names what it was looking for. Comparing those
+     * names against what is actually installed IS the diagnosis; without them
+     * the next occurrence needs a curator to reason about temp filenames.
+     */
+    ehLog("warn", "resolver.staging-hashes.done", {
       ms: Date.now() - startedAt,
       wanted: wanted.size,
       candidates: 0,
       enriched: 0,
+      why: "no installed mod name matched any external manifest entry",
+      sampleWanted: [...wanted].slice(0, 5),
+      sampleInstalled: out.slice(0, 5).map((m) => m.name),
     });
     return out;
   }
@@ -348,6 +364,17 @@ export async function enrichInstalledModsWithStagingSetHashes(
  * (archive-only externals or all Nexus mods) are excluded — their
  * identity is established cheaply via archive sha alone.
  */
+/**
+ * Exported for the round-trip test: this set IS the fix, and asserting the
+ * sanitiser's output instead of this membership is what let the original bug
+ * ship green.
+ */
+export function collectStagingSetHashTargetsForTest(
+  manifest: EhcollManifest,
+): Set<string> {
+  return collectExternalStagingSetHashTargets(manifest);
+}
+
 function collectExternalStagingSetHashTargets(
   manifest: EhcollManifest,
 ): Set<string> {
@@ -358,13 +385,51 @@ function collectExternalStagingSetHashTargets(
       typeof mod.source.stagingSetHash === "string" &&
       mod.source.stagingSetHash.length === 64
     ) {
-      const normalized = normalizeName(mod.name);
-      if (normalized.length > 0) {
-        names.add(normalized);
+      /**
+       * ─── BOTH SPELLINGS OF THE NAME ─────────────────────────────────
+       * A bundled external mod is extracted under a SANITISED form of this
+       * name (see `bundledArchiveFileName`), because the file name becomes
+       * the Vortex mod name. `normalizeName` does not undo that sanitising,
+       * so every transform it applies used to put the mod straight back into
+       * the `candidates: 0` hole this matcher exists to climb out of:
+       *
+       *     "Skyrim: Special Edition Patch" -> "Skyrim_ Special Edition Patch"
+       *     "A|B"                           -> "A_B"
+       *     a name over 120 chars           -> truncated
+       *
+       * Colons and pipes are ordinary in mod titles, so this was not an edge
+       * case. Registering the sanitised spelling ALONGSIDE the raw one makes
+       * the match independent of what the sanitiser does now or later,
+       * instead of depending on it being the identity function.
+       */
+      for (const candidate of [
+        mod.name,
+        bundledInstallName(mod.name),
+      ]) {
+        const normalized = normalizeName(candidate);
+        if (normalized.length > 0) {
+          names.add(normalized);
+        }
       }
     }
   }
   return names;
+}
+
+/**
+ * The name Vortex will give a mod installed from its bundled archive.
+ *
+ * `bundledArchiveFileName` decides the file name; Vortex derives the mod name
+ * from it by dropping the extension. Reproducing that here — rather than
+ * re-deriving the rules — means the two can never drift apart silently, which
+ * is the failure mode that made this matcher return zero for months.
+ */
+function bundledInstallName(modName: string): string {
+  // The entry's extension is irrelevant to the STEM, and any archive
+  // extension produces the same stem, so a representative one is enough.
+  const fileName = bundledArchiveFileName("bundled/x.zip", modName);
+  const lastDot = fileName.lastIndexOf(".");
+  return lastDot <= 0 ? fileName : fileName.slice(0, lastDot);
 }
 
 /**

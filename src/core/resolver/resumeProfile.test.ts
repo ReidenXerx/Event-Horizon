@@ -38,8 +38,11 @@ const stateWith = (
   profiles: Record<string, { gameId: string; name: string }>,
 ): never => ({ persistent: { profiles } }) as never;
 
+const VERSION = "1.0.10";
+
 const attempt = (over: Record<string, unknown> = {}) => ({
   packageId: PACKAGE_ID,
+  packageVersion: VERSION,
   profileId: PROFILE_ID,
   ...over,
 });
@@ -55,9 +58,11 @@ describe("resumableProfileFromAttempts", () => {
         stateWith(skyrimProfiles),
         "skyrimse",
         PACKAGE_ID,
+        VERSION,
         [attempt()],
       ),
     ).toEqual({
+      kind: "resume",
       id: PROFILE_ID,
       name: "Meridia Panties (Event Horizon v1.0.10)",
     });
@@ -71,9 +76,10 @@ describe("resumableProfileFromAttempts", () => {
         stateWith(skyrimProfiles),
         "skyrimse",
         PACKAGE_ID,
+        VERSION,
         [attempt({ packageId: "some-other-package" })],
       ),
-    ).toBeUndefined();
+    ).toEqual({ kind: "refused", why: "no-attempt" });
   });
 
   it("gives up when the user deleted the profile", () => {
@@ -81,10 +87,10 @@ describe("resumableProfileFromAttempts", () => {
     // dangling id would send every enable dispatch into a profile that is
     // not there — invisible, and indistinguishable from installing disabled.
     expect(
-      resumableProfileFromAttempts(stateWith({}), "skyrimse", PACKAGE_ID, [
+      resumableProfileFromAttempts(stateWith({}), "skyrimse", PACKAGE_ID, VERSION, [
         attempt(),
       ]),
-    ).toBeUndefined();
+    ).toEqual({ kind: "refused", why: "profile-deleted" });
   });
 
   it("refuses a profile belonging to another game", () => {
@@ -93,9 +99,10 @@ describe("resumableProfileFromAttempts", () => {
         stateWith({ [PROFILE_ID]: { gameId: "fallout4", name: "FO4" } }),
         "skyrimse",
         PACKAGE_ID,
+        VERSION,
         [attempt()],
       ),
-    ).toBeUndefined();
+    ).toEqual({ kind: "refused", why: "profile-other-game" });
   });
 
   it("handles an attempt that stopped before it made a profile", () => {
@@ -106,9 +113,45 @@ describe("resumableProfileFromAttempts", () => {
         stateWith(skyrimProfiles),
         "skyrimse",
         PACKAGE_ID,
+        VERSION,
         [attempt({ profileId: undefined })],
       ),
-    ).toBeUndefined();
+    ).toEqual({ kind: "refused", why: "attempt-has-no-profile" });
+  });
+
+  it("REFUSES a different release — that is not a resume", () => {
+    /**
+     * The attempt record carried `packageVersion` all along and this ignored
+     * it, matching on `packageId` alone. So a failed v1.0.0 install made
+     * v1.0.1 resume into v1.0.0's profile — where orphan detection is off by
+     * construction and nothing ever dispatches `enabled: false`. Every mod
+     * v1.0.1 dropped would stay installed AND enabled, and the receipt would
+     * then claim an exact reproduction of a profile that is a superset of it.
+     *
+     * For a tool whose product is a reproducible profile, that is a silent
+     * correctness failure, not untidiness.
+     */
+    expect(
+      resumableProfileFromAttempts(
+        stateWith(skyrimProfiles),
+        "skyrimse",
+        PACKAGE_ID,
+        "1.0.11",
+        [attempt()],
+      ),
+    ).toEqual({ kind: "refused", why: "version-changed" });
+  });
+
+  it("carries the refusal reason into the plan, so the log can say why", () => {
+    // Five distinct reasons used to be the same silence, which made "the
+    // attempt had no profile id" indistinguishable from "this build does not
+    // have the fix" in a tester's log.
+    const target = pickInstallTarget(manifest, undefined, "a", "A", {
+      kind: "refused",
+      why: "version-changed",
+    });
+    expect(target).toMatchObject({ resumeRefusedWhy: "version-changed" });
+    expect("resumeProfileId" in target).toBe(false);
   });
 
   it("handles no attempts at all — the first install", () => {
@@ -117,9 +160,10 @@ describe("resumableProfileFromAttempts", () => {
         stateWith(skyrimProfiles),
         "skyrimse",
         PACKAGE_ID,
+        VERSION,
         [],
       ),
-    ).toBeUndefined();
+    ).toEqual({ kind: "refused", why: "no-attempt" });
   });
 });
 
@@ -133,6 +177,7 @@ describe("pickInstallTarget with a resumable profile", () => {
      * throw. This says WHERE, not WHAT.
      */
     const target = pickInstallTarget(manifest, undefined, "active-1", "Active", {
+      kind: "resume",
       id: PROFILE_ID,
       name: "Meridia Panties (Event Horizon v1.0.10)",
     });
@@ -153,22 +198,49 @@ describe("pickInstallTarget with a resumable profile", () => {
     expect("resumeProfileId" in target).toBe(false);
   });
 
-  it("a receipt still wins — that is an upgrade, not a resume", () => {
-    // A finished previous install goes into the ACTIVE profile as before.
-    // Letting a stale attempt record override that would move a user's
-    // upgrade into an abandoned profile.
+  it("a receipt for the SAME release wins — in place, not a resume", () => {
+    // Re-running the release you already have is a repair, and it happens in
+    // the profile you are on. Letting a stale attempt record override that
+    // would move a user's re-run into an abandoned profile.
     const target = pickInstallTarget(
       manifest,
-      { packageId: PACKAGE_ID } as InstallReceipt,
+      { packageId: PACKAGE_ID, packageVersion: "1.0.10" } as InstallReceipt,
       "active-1",
       "Active",
-      { id: PROFILE_ID, name: "Old attempt" },
+      { kind: "resume", id: PROFILE_ID, name: "Old attempt" },
     );
 
     expect(target).toEqual({
       kind: "current-profile",
       profileId: "active-1",
       profileName: "Active",
+    });
+  });
+
+  it("a receipt for a DIFFERENT release gets its own profile", () => {
+    /**
+     * The user's rule, in one assertion: "new profile we create only if its
+     * new revision of collection in new ehcoll."
+     *
+     * It is also the fix for a real hazard. `current-profile` installs into
+     * the ACTIVE profile, never the one the receipt names — so upgrading
+     * while sitting on a vanilla profile merged 1,700 mods, a rules purge and
+     * a plugins.txt rewrite into it. A new profile per revision sidesteps
+     * that and leaves the working release switchable.
+     */
+    const target = pickInstallTarget(
+      manifest,
+      { packageId: PACKAGE_ID, packageVersion: "1.0.9" } as InstallReceipt,
+      "active-1",
+      "Active",
+    );
+
+    expect(target).toMatchObject({
+      kind: "fresh-profile",
+      // Named for the release being installed, so the two are told apart in
+      // Vortex's profile list.
+      suggestedProfileName: "Meridia Panties (Event Horizon v1.0.10)",
+      resumeRefusedWhy: "version-changed",
     });
   });
 });

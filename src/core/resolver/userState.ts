@@ -167,9 +167,34 @@ export function pickInstallTarget(
    * The CALLER checks the profile still exists. A user who deleted it meant
    * to, and a fresh profile is the right answer then.
    */
-  interruptedProfile?: { id: string; name: string },
+  interruptedProfile?: ResumableProfile,
 ): InstallTarget {
   if (receipt !== undefined) {
+    /**
+     * ─── A NEW REVISION GETS ITS OWN PROFILE ──────────────────────────
+     * Re-running the SAME release is an in-place operation: a repair, or a
+     * resumed upgrade. A DIFFERENT release is a new thing, and it gets a new
+     * profile so the version that was working stays switchable.
+     *
+     * That costs almost nothing. In Vortex a mod lives in one pool per game
+     * and a profile is only enablement, so a second profile is a row, not a
+     * second copy of 40 GB of mods — and the mods the new revision shares
+     * with the old are recognised and simply enabled.
+     *
+     * It also closes a hazard the in-place path had: `current-profile` uses
+     * the ACTIVE profile, never the one the receipt names, so upgrading while
+     * sitting on a vanilla profile merged the whole collection — plus a rules
+     * purge and a plugins.txt rewrite — into it. The Doctor already called
+     * that state "drifted" and offered to fix it while the installer walked
+     * into it.
+     */
+    if (receipt.packageVersion !== manifest.package.version) {
+      return {
+        kind: "fresh-profile",
+        suggestedProfileName: buildSuggestedProfileName(manifest),
+        resumeRefusedWhy: "version-changed",
+      };
+    }
     return {
       kind: "current-profile",
       profileId: activeProfileId,
@@ -179,12 +204,17 @@ export function pickInstallTarget(
   return {
     kind: "fresh-profile",
     suggestedProfileName: buildSuggestedProfileName(manifest),
-    ...(interruptedProfile !== undefined
+    ...(interruptedProfile?.kind === "resume"
       ? {
           resumeProfileId: interruptedProfile.id,
           resumeProfileName: interruptedProfile.name,
         }
-      : {}),
+      : {
+          // Carried so the driver's one profile-resolution log line can say
+          // WHY it forked, instead of leaving five distinct reasons as the
+          // same silence.
+          resumeRefusedWhy: interruptedProfile?.why ?? "no-attempt",
+        }),
   };
 }
 
@@ -201,15 +231,57 @@ export function pickInstallTarget(
  * no attempt, an attempt that never got as far as making one, a profile the
  * user has since deleted, or one belonging to a different game.
  */
+export type ResumableProfile =
+  | { kind: "resume"; id: string; name: string }
+  | {
+      kind: "refused";
+      why:
+        | "no-attempt"
+        | "attempt-has-no-profile"
+        | "profile-deleted"
+        | "profile-other-game"
+        | "version-changed";
+    };
+
 export function resumableProfileFromAttempts(
   state: types.IState,
   gameId: string,
   packageId: string,
-  attempts: ReadonlyArray<{ packageId: string; profileId?: string }>,
-): { id: string; name: string } | undefined {
+  packageVersion: string,
+  attempts: ReadonlyArray<{
+    packageId: string;
+    packageVersion?: string;
+    profileId?: string;
+  }>,
+): ResumableProfile {
   const attempt = attempts.find((a) => a.packageId === packageId);
-  const profileId = attempt?.profileId;
-  if (profileId === undefined) return undefined;
+  if (attempt === undefined) return { kind: "refused", why: "no-attempt" };
+
+  /**
+   * ─── A DIFFERENT RELEASE IS NOT A RESUME ────────────────────────────
+   * The attempt record carries `packageVersion` and this used to ignore it,
+   * matching on `packageId` alone. So a failed v1.0.0 install made v1.0.1
+   * resume into v1.0.0's profile — where orphan detection is off by
+   * construction (fresh-profile mode) and nothing ever dispatches
+   * `enabled: false`. The mods v1.0.1 dropped would stay installed AND
+   * enabled, and the receipt would then claim an exact reproduction of a
+   * profile that is a strict superset of it.
+   *
+   * For a tool whose product is a reproducible profile, that is a silent
+   * correctness failure rather than untidiness. A new release gets its own
+   * profile; the old one stays switchable.
+   */
+  if (
+    attempt.packageVersion !== undefined &&
+    attempt.packageVersion !== packageVersion
+  ) {
+    return { kind: "refused", why: "version-changed" };
+  }
+
+  const profileId = attempt.profileId;
+  if (profileId === undefined) {
+    return { kind: "refused", why: "attempt-has-no-profile" };
+  }
 
   const profiles = (
     state as unknown as {
@@ -217,12 +289,17 @@ export function resumableProfileFromAttempts(
     }
   ).persistent?.profiles;
   const profile = profiles?.[profileId];
+  if (profile === undefined) {
+    return { kind: "refused", why: "profile-deleted" };
+  }
   // Belonging to this game is checked, not assumed: a profile id that has
   // been reused by another game would send the whole install somewhere the
   // user never asked for.
-  if (profile === undefined || profile.gameId !== gameId) return undefined;
+  if (profile.gameId !== gameId) {
+    return { kind: "refused", why: "profile-other-game" };
+  }
 
-  return { id: profileId, name: profile.name ?? profileId };
+  return { kind: "resume", id: profileId, name: profile.name ?? profileId };
 }
 
 /**

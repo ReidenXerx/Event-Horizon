@@ -36,15 +36,53 @@ import { ehLog } from "../logging/ehLog";
  * Records types and lengths, never contents: an archive path is a filesystem
  * path from the user's machine and has no business in a log.
  */
+/**
+ * How many times each (event, argc, shape) has been seen this session, so the
+ * summary can report what the per-call lines no longer do.
+ */
+const shapeCounts = new Map<string, number>();
+
+/**
+ * Report every call shape observed, once, at the end of a run.
+ *
+ * Without this the de-duplication above would LOSE information — a shape seen
+ * 1,649 times and one seen twice would look identical, and "how many installs
+ * went through the choices-carrying call?" is a real question.
+ */
+export function logInstallCallShapes(): void {
+  if (shapeCounts.size === 0) return;
+  ehLog("info", "installer.api-call-shapes", {
+    shapes: [...shapeCounts.entries()].map(([key, count]) => ({ key, count })),
+  });
+}
+
 export function watchInstallCalls(api: types.IExtensionApi): void {
   for (const name of INSTALL_EVENTS) {
     try {
       api.events.on(name, (...args: unknown[]) => {
-        ehLog("debug", "installer.api-call", {
-          event: name,
-          argc: args.length,
-          shape: args.map(describeArg),
-        });
+        /**
+         * ─── ONE LINE PER SHAPE, NOT PER CALL ───────────────────────────
+         * This was 23% of a real 1.3 MB tester log — 1,895 lines carrying no
+         * mod name and collapsing to FOUR distinct shapes. It is a per-call
+         * trace of a fact established once, and it crowded out the events
+         * that actually answer questions.
+         *
+         * The shape is what we wanted to know: whether Vortex's untyped
+         * events arrive as we assume. Seeing it once, with a count, proves
+         * that; seeing it 1,895 times proves it 1,894 more times.
+         */
+        const shape = args.map(describeArg);
+        const key = `${name}|${args.length}|${shape.join(",")}`;
+        const seen = (shapeCounts.get(key) ?? 0) + 1;
+        shapeCounts.set(key, seen);
+        if (seen === 1) {
+          ehLog("debug", "installer.api-call", {
+            event: name,
+            argc: args.length,
+            shape,
+            note: "first call of this shape; later ones are counted, not logged",
+          });
+        }
       });
     } catch {
       /* a listener we could not attach is not worth failing over */

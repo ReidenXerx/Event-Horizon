@@ -51,7 +51,7 @@ import { enrichModsWithArchiveHashes } from "../core/archiveHashing";
 import {
   getActiveGameId,
   getActiveProfileIdFromState,
-  getModsForProfile,
+  getModsForGame,
 } from "../core/getModsListForProfile";
 import {
   InstallLedgerError,
@@ -214,7 +214,15 @@ const downloadScanNotificationId = "vortex-event-horizon:install-download-scan";
       // to work — without it every mod degrades to "looks like fresh
       // download" even for collections the user already has installed.
       // This is the slow step (potentially many MB read).
-      const rawMods = getModsForProfile(state, activeGameId, activeProfileId);
+      /**
+       * ─── THE POOL, NOT THE ACTIVE PROFILE ─────────────────────────────
+       * "Do you already have this mod?" is a question about Vortex's per-game
+       * mod pool. Reading it through the active profile answered "is it enabled
+       * where you happen to be standing", and on a resume that profile is often
+       * new or someone else's — so the candidate list was empty and everything
+       * was reinstalled. See getModsForGame.
+           */
+      const rawMods = getModsForGame(state, activeGameId, activeProfileId);
 
       context.api.sendNotification?.({
         id: hashingNotificationId,
@@ -309,6 +317,7 @@ const downloadScanNotificationId = "vortex-event-horizon:install-download-scan";
           state,
           activeGameId,
           manifest.package.id,
+          manifest.package.version,
           await listInstallAttempts(appDataPath),
         ),
       );
@@ -512,10 +521,19 @@ function formatPlanText(
     // install, and the one thing they most want to know is exactly what
     // happens to their load order.
     if (plan.installTarget.kind === "fresh-profile") {
+      // A resume CONTINUES a profile. Saying "a new profile will be created"
+      // there is not a nicety — it is wrong, and wrong in exactly the area a
+      // tester already reported being confused about.
+      const resumeName = plan.installTarget.resumeProfileName;
       lines.push(
-        "Clicking Install will create a new Vortex profile, install all mods " +
-          "into Vortex's global pool, apply the collection's mod conflict and " +
-          "LOOT rules, and deploy.",
+        resumeName !== undefined
+          ? `Clicking Install will CONTINUE the profile your interrupted ` +
+              `install was filling ("${resumeName}"), install the remaining ` +
+              `mods into Vortex's global pool, apply the collection's mod ` +
+              `conflict and LOOT rules, and deploy.`
+          : "Clicking Install will create a new Vortex profile, install all mods " +
+              "into Vortex's global pool, apply the collection's mod conflict and " +
+              "LOOT rules, and deploy.",
       );
       lines.push(
         "Plugin order is set by those rules plus your own LOOT sort, not " +
@@ -523,7 +541,13 @@ function formatPlanText(
           "is reported at the end.",
       );
       lines.push(
-        "Your existing profile is NOT modified. You can switch back at any time.",
+        plan.installTarget.resumeProfileId !== undefined
+          ? // Vortex reopens on the profile the last run switched into, so
+            // that profile is usually the ACTIVE one when the user retries.
+            // Claiming their current profile is untouched is false there.
+            "This profile already holds the mods earlier attempts installed. " +
+              "Your other profiles are NOT modified."
+          : "Your existing profile is NOT modified. You can switch back at any time.",
       );
     } else {
       lines.push(
@@ -581,9 +605,22 @@ function formatInstallTarget(plan: InstallPlan): string {
       `  ${lineage}`
     );
   }
+  // This is the PASTEABLE diagnostic — the artifact a tester sends back when
+  // something goes wrong — so a wrong profile name here becomes a wrong bug
+  // report. It named `suggestedProfileName` on a resume: the one name that
+  // will NOT be used.
+  if (t.resumeProfileId !== undefined) {
+    return (
+      `Install target: RESUMED PROFILE — "${t.resumeProfileName ?? t.resumeProfileId}"\n` +
+      `  id ${t.resumeProfileId}\n` +
+      `  Continuing the profile an interrupted install of this collection was ` +
+      `filling, rather than creating another one. Your OTHER profiles are not modified.`
+    );
+  }
   return (
     `Install target: FRESH PROFILE (forced — no install receipt for this collection)\n` +
     `  Suggested name: "${t.suggestedProfileName}"\n` +
+    `  Not resumed because: ${t.resumeRefusedWhy ?? "no-attempt"}\n` +
     `  Your current profile WILL NOT be modified. The collection's mods are added to ` +
     `Vortex's global pool but are only enabled in the new profile.`
   );

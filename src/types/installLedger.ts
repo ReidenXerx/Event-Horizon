@@ -390,6 +390,17 @@ export type ModVerificationFailReceipt = {
    * representing genuine post-retry failures.
    */
   retrySucceeded: boolean;
+  /**
+   * The repair uninstalled this mod and could not reinstall it, so it is no
+   * longer on the machine.
+   *
+   * Its own field because it collapsed into `retryAttempted: true` alongside
+   * two outcomes that mean the opposite — "reinstalled, still mismatching"
+   * and "reinstalled under a new id, re-check errored" both leave a working
+   * mod on disk. Only this one means the user lost it, and a receipt that
+   * cannot tell those apart is not a report.
+   */
+  modRemoved?: boolean;
 };
 
 export type ModVerificationFailExample = {

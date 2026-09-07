@@ -28,7 +28,7 @@ import {
 import {
   getActiveGameId,
   getActiveProfileIdFromState,
-  getModsForProfile,
+  getModsForGame,
 } from "../../../core/getModsListForProfile";
 import { readReceipt } from "../../../core/installLedger";
 import type { AvailableDownload } from "../../../types/installPlan";
@@ -203,7 +203,15 @@ export async function runLoadingPipeline(args: {
 
   // ── 4. snapshot pipeline (hash archive bytes) ────────────────────
   checkAbort();
-  const rawMods = getModsForProfile(state, activeGameId, activeProfileId);
+  /**
+   * ─── THE POOL, NOT THE ACTIVE PROFILE ─────────────────────────────
+   * "Do you already have this mod?" is a question about Vortex's per-game
+   * mod pool. Reading it through the active profile answered "is it enabled
+   * where you happen to be standing", and on a resume that profile is often
+   * new or someone else's — so the candidate list was empty and everything
+   * was reinstalled. See getModsForGame.
+   */
+  const rawMods = getModsForGame(state, activeGameId, activeProfileId);
   events.onPhase("hashing-mods", rawMods.length);
   const archiveHashed = await enrichModsWithArchiveHashes(
     state,
@@ -281,6 +289,7 @@ export async function runLoadingPipeline(args: {
       state,
       activeGameId,
       manifest.package.id,
+      manifest.package.version,
       await listInstallAttempts(appDataPath),
     ),
   );
@@ -392,7 +401,15 @@ export async function runLoadingPipelineWithReceipt(args: {
   }
 
   checkAbort();
-  const rawMods = getModsForProfile(state, activeGameId, activeProfileId);
+  /**
+   * ─── THE POOL, NOT THE ACTIVE PROFILE ─────────────────────────────
+   * "Do you already have this mod?" is a question about Vortex's per-game
+   * mod pool. Reading it through the active profile answered "is it enabled
+   * where you happen to be standing", and on a resume that profile is often
+   * new or someone else's — so the candidate list was empty and everything
+   * was reinstalled. See getModsForGame.
+   */
+  const rawMods = getModsForGame(state, activeGameId, activeProfileId);
   events.onPhase("hashing-mods", rawMods.length);
   const archiveHashed = await enrichModsWithArchiveHashes(
     state,
@@ -467,6 +484,7 @@ export async function runLoadingPipelineWithReceipt(args: {
       state,
       activeGameId,
       manifest.package.id,
+      manifest.package.version,
       await listInstallAttempts(appDataPath),
     ),
   );

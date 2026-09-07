@@ -803,6 +803,27 @@ describe("a broken mod is repaired even when we skipped installing it", () => {
     },
   ];
 
+  /**
+   * Record that a previous run of this collection installed this mod, the way
+   * an interrupted run would have. Without this the mod is, correctly,
+   * somebody else's and must not be touched.
+   */
+  async function journalOurs(w: World, compareKey: string) {
+    const { appendJournalEntry } = await import(
+      "../../src/core/installer/installJournal"
+    );
+    await appendJournalEntry(
+      w.appDataPath,
+      "00000000-0000-4000-8000-000000000000",
+      {
+        compareKey,
+        vortexModId: EXISTING_ID,
+        decision: "nexus-download",
+        at: new Date().toISOString(),
+      },
+    );
+  }
+
   it("reinstalls it, rather than reporting it and moving on", async () => {
     world = makeWorld({ mods: [MOD] });
     const manifest = await packageFrom(world);
@@ -817,6 +838,8 @@ describe("a broken mod is repaired even when we skipped installing it", () => {
       }),
     });
     seedHalfInstalled(world, fake);
+    // An earlier run of this collection put it here — so it is ours to fix.
+    await journalOurs(world, manifest.mods[0]!.compareKey);
 
     const result = (await install(manifest, fake, alreadyInstalled)) as {
       kind: string;
@@ -977,5 +1000,81 @@ describe("resuming an interrupted install", () => {
         (a) => (a as { type?: string })?.type === "STUB_SET_PROFILE",
       ).length,
     ).toBe(1);
+  });
+});
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * A mod the USER installed is never uninstalled to make it match.
+ *
+ * Two changes combined into data loss. Relaxing the Nexus match so an absent
+ * archive hash still counts widened "already installed" from the mods we
+ * installed to every mod whose Vortex attributes CLAIM those ids — attributes
+ * an importer or a hand edit can set. Making already-installed mods eligible
+ * for repair then pointed `util.removeMods` at that population.
+ *
+ * The path is short: the user's copy carries their OWN FOMOD answers, the
+ * resolver adopts it without replaying the curator's, verification fails
+ * because the curator's answers selected files this copy does not have, and
+ * `judgeReinstall` returns `reinstall` for missing files before it even opens
+ * the archive. Then we delete the mod — staging folder and all — from a
+ * profile `installPlan.ts` promises is "byte-untouched".
+ *
+ * The install journal is what makes the question answerable from evidence
+ * rather than from base rates.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("a mod we did not install is never destroyed to repair it", () => {
+  const THEIR_ID = "a-mod-the-user-installed-themselves";
+
+  it("reports the mismatch and leaves the mod alone", async () => {
+    world = makeWorld({ mods: [MOD] });
+    const manifest = await packageFrom(world);
+    const fake = makeFakeVortex({
+      gameId: world.gameId,
+      downloads: { [ARCHIVE_ID]: "mod.zip" },
+      stagingRoot: world.stagingRoot,
+    });
+
+    // Their copy: the curator's plugin, but missing a file the curator has —
+    // the shape a different FOMOD answer produces, and the one judgeReinstall
+    // refuses to excuse.
+    const dir = nodePath.join(world.stagingRoot, THEIR_ID);
+    fs.mkdirSync(nodePath.join(dir, "Data"), { recursive: true });
+    fs.writeFileSync(nodePath.join(dir, "Data", "rock.esp"), "a plugin");
+    const mods = (
+      fake.api.getState().persistent as {
+        mods: Record<string, Record<string, unknown>>;
+      }
+    ).mods[world.gameId]!;
+    mods[THEIR_ID] = {
+      id: THEIR_ID,
+      installationPath: THEIR_ID,
+      type: "",
+      archiveId: ARCHIVE_ID,
+      attributes: { name: "Rock Textures", version: "1.0.0" },
+    };
+
+    // NO journal entry — we have no record of ever installing this.
+    const result = (await install(manifest, fake, [
+      { id: THEIR_ID, name: "Rock Textures", nexusModId: 100, nexusFileId: 200 },
+    ])) as {
+      kind: string;
+      verifications?: Array<{ kind: string; retryAttempted?: boolean }>;
+    };
+
+    expect(result.kind, why(result)).toBe("success");
+
+    // THE assertion: nothing was installed, so nothing was uninstalled. With
+    // the guard removed this ran a full uninstall + reinstall cycle.
+    expect(fake.installed).toHaveLength(0);
+
+    // Their file is still on disk, exactly as they left it.
+    expect(fs.existsSync(nodePath.join(dir, "Data", "rock.esp"))).toBe(true);
+
+    // And the finding is still REPORTED — refusing to destroy their work is
+    // not the same as pretending the mod matches.
+    expect(result.verifications?.[0]?.kind).toBe("fail");
+    expect(result.verifications?.[0]?.retryAttempted).toBeFalsy();
   });
 });

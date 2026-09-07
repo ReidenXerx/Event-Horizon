@@ -544,17 +544,67 @@ export function getModsForProfile(
   gameId: string,
   profileId: string,
 ): AuditorMod[] {
+  return readMods(state, gameId, profileId, "profile");
+}
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * Every mod Vortex has for this game, whatever profile tracks it.
+ *
+ * In Vortex a mod lives in ONE pool per game; a profile only records which of
+ * them are enabled. So "does this machine already have these bytes?" is a
+ * POOL question, and asking it through a profile answers a different one.
+ *
+ * The install resolver was asking it through the active profile, and that —
+ * not the archive-hash predicate — is what made a resumed install reinstall
+ * everything. From the tester's log, pairing each run's snapshot with its
+ * decisions:
+ *
+ *     snapshot 1 -> 1 already-installed      snapshot 5  -> 5
+ *     snapshot 1 -> 1                        snapshot 99 -> 99
+ *     snapshot 0 -> 0
+ *
+ * Five runs, exact every time: EVERY mod that reached the matcher was
+ * recognised. Nothing was ever rejected. The candidate list was simply empty,
+ * because each interrupted run created a fresh profile and a fresh profile
+ * tracks no mods — while 1,105 of them sat in the pool.
+ *
+ * The `enabled` flag still comes from the profile passed in, so callers that
+ * care about enablement get the same answer as before; it is only the SET
+ * that widens.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+export function getModsForGame(
+  state: types.IState,
+  gameId: string,
+  /**
+   * Profile to read `enabled` from. Mods outside it report `enabled: false`,
+   * which is true of them in that profile.
+   */
+  enablementProfileId: string | undefined,
+): AuditorMod[] {
+  return readMods(state, gameId, enablementProfileId, "game");
+}
+
+function readMods(
+  state: types.IState,
+  gameId: string,
+  profileId: string | undefined,
+  scope: "profile" | "game",
+): AuditorMod[] {
   const modsByGame = (state as any)?.persistent?.mods?.[gameId] ?? {};
-  const profile = (state as any)?.persistent?.profiles?.[profileId];
+  const profile =
+    profileId === undefined
+      ? undefined
+      : (state as any)?.persistent?.profiles?.[profileId];
 
   const enabledMods = profile?.modState ?? {};
 
-  // Only include mods that this profile explicitly tracks (have a modState
-  // entry). Mods installed for the game but never added to this profile have
-  // no entry in profile.modState and are excluded — they belong to a
-  // different profile or were never associated with this one.
+  // "profile" scope keeps only mods this profile explicitly tracks (they have
+  // a modState entry). "game" scope keeps the whole pool — see
+  // {@link getModsForGame} for why the resolver needs that.
   const mods: AuditorMod[] = Object.entries(modsByGame)
-    .filter(([modId]) => enabledMods[modId] !== undefined)
+    .filter(([modId]) => scope === "game" || enabledMods[modId] !== undefined)
     .map(([modId, rawMod]) => {
     const mod = rawMod as any;
     const attributes = (mod?.attributes ?? {}) as Record<string, unknown>;

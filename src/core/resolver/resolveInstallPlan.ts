@@ -151,16 +151,22 @@ function enforceInstallTargetInvariant(
         "previousInstall (see docs/business/INSTALL_PLAN_SCHEMA.md).",
     );
   }
-  if (
-    installTarget.kind === "fresh-profile" &&
-    userState.previousInstall
-  ) {
-    throw new Error(
-      "resolveInstallPlan: installTarget is fresh-profile but " +
-        "userState.previousInstall is defined. Caller must clear " +
-        "previousInstall when picking fresh-profile.",
-    );
-  }
+  /**
+   * fresh-profile WITH a previousInstall is legal, and means one thing: a NEW
+   * REVISION of a collection the user already has.
+   *
+   * This used to throw. The pairing it protected — current-profile <=>
+   * previousInstall — is still enforced above, because that direction is what
+   * keeps a caller from doing an in-place upgrade it has no lineage for. The
+   * reverse is not a desync: the receipt is real, we know exactly which
+   * release preceded this one, and we are deliberately giving the new one its
+   * own profile so the old release stays switchable.
+   *
+   * Orphan detection stays off in this mode (`resolveOrphanedMods` returns []
+   * for fresh-profile) and that is CORRECT here rather than a gap: mods the
+   * new revision dropped are not orphans to uninstall, they simply stay
+   * enabled in the OLD profile, which is what makes rollback work.
+   */
 }
 
 // ===========================================================================

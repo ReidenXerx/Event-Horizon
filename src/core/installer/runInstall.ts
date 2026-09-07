@@ -241,6 +241,14 @@ import {
   BundledPrefetchPool,
   type PrefetchRequest,
 } from "./bundledPrefetch";
+import { logInstallCallShapes } from "./probeInstallerApi";
+import {
+  appendJournalEntry,
+  clearJournal,
+  logJournalSummary,
+  ownedModIds,
+  readJournal,
+} from "./installJournal";
 import { repairDecisionFor } from "../resolver/resolveInstallPlan";
 // NOTE: there used to be a `pluginsTxt.ts` writer module here. It
 // was deleted along with the `writing-plugins-txt` driver phase
@@ -556,6 +564,9 @@ async function recordAttemptOutcome(
   try {
     if (result.kind === "success") {
       await clearInstallAttempt(ctx.appDataPath, pkg.id);
+      // The receipt is now the record of what is installed. Leaving the
+      // journal behind would leave two answers to one question.
+      await clearJournal(ctx.appDataPath, pkg.id);
       return;
     }
     // Both remaining kinds carry `installedSoFar` — the list exists precisely
@@ -615,7 +626,18 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
   const tempArchivesToCleanup: string[] = [];
   let activeProfileId: string | undefined;
   let activeProfileName: string | undefined;
-  let createdProfileId: string | undefined;
+  /**
+   * The Event-Horizon-owned profile this run is filling — created by it, or
+   * continued from an interrupted one.
+   *
+   * It was `createdProfileId` and set ONLY when a profile was created, on the
+   * reasoning that a resumed profile is not ours to offer to delete. Nothing
+   * in this codebase deletes a profile, so that bought nothing — and it cost
+   * the resume fix outright: every failure path writes the attempt record
+   * from this, so a resumed run that failed recorded NO profile, and the run
+   * after it forked a new one. Five restarts became three.
+   */
+  let ehProfileId: string | undefined;
 
   // Lookup manifest entries by compareKey rather than by index.
   // The resolver currently produces a 1:1 index alignment, but that
@@ -763,7 +785,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
   /**
    * The one way this driver reports an abort. See {@link buildAbortedResult}.
    *
-   * `installedMods` and `createdProfileId` are read at the moment of the abort
+   * `installedMods` and `ehProfileId` are read at the moment of the abort
    * rather than captured earlier — that is the entire point, and a closure is
    * how these two mutable locals stay live at six different call sites.
    */
@@ -771,7 +793,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     buildAbortedResult({
       phase,
       reason,
-      partialProfileId: createdProfileId,
+      partialProfileId: ehProfileId,
       installedMods,
     });
 
@@ -842,23 +864,36 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         activeProfileId = resumeId;
         activeProfileName =
           plan.installTarget.resumeProfileName ?? resumeId;
-        // NOT recorded as `createdProfileId`: we did not create it, so the
-        // abort path must not offer to delete it. It holds the mods of every
-        // earlier attempt.
-        ehLog("info", "install.profile.resumed", {
-          profileId: activeProfileId,
-          profileName: activeProfileName,
-        });
+        // Recorded exactly like a created one. It IS the profile this run is
+        // filling, and the attempt record has to carry it or the NEXT resume
+        // has nothing to find.
+        ehProfileId = resumeId;
       } else {
         const created = createFreshProfile(
           api,
           plan.manifest.game.id,
           plan.installTarget.suggestedProfileName,
         );
-        createdProfileId = created.id;
+        ehProfileId = created.id;
         activeProfileId = created.id;
         activeProfileName = created.name;
       }
+
+      /**
+       * ONE event for both branches, always. The create branch used to log
+       * nothing at all, so a log without `install.profile.resumed` was equally
+       * consistent with "created a profile", "upgraded in place" and "this
+       * build does not have the fix" — and absence of a line is not a
+       * diagnosis.
+       */
+      ehLog("info", "install.profile.resolved", {
+        mode: resumeId !== undefined ? "resumed" : "created",
+        profileId: activeProfileId,
+        profileName: activeProfileName,
+        ...(resumeId === undefined
+          ? { whyNotResumed: plan.installTarget.resumeRefusedWhy ?? "no-attempt" }
+          : {}),
+      });
 
       aborted = checkAbort("creating-profile");
       if (aborted) return aborted;
@@ -924,7 +959,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           return {
             kind: "failed",
             phase: "removing-mods",
-            partialProfileId: createdProfileId,
+            partialProfileId: ehProfileId,
             error:
               `Failed removing "${item.name}" (${item.reason}): ` +
               formatError(err),
@@ -992,7 +1027,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         return {
           kind: "failed",
           phase: "installing-mods",
-          partialProfileId: createdProfileId,
+          partialProfileId: ehProfileId,
           error:
             `Internal error: resolution for "${resolution.name}" ` +
             `(compareKey=${resolution.compareKey}) has no matching manifest entry.`,
@@ -1095,7 +1130,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           return {
             kind: "failed",
             phase,
-            partialProfileId: createdProfileId,
+            partialProfileId: ehProfileId,
             error: describeMissingDeploymentMethod({
               modName: resolution.name,
               atIndex: i + 1,
@@ -1144,7 +1179,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           return {
             kind: "failed",
             phase,
-            partialProfileId: createdProfileId,
+            partialProfileId: ehProfileId,
             error: describeSystemicFailure({
               streak: consecutiveFailures,
               lastModName: resolution.name,
@@ -1170,6 +1205,27 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       consecutiveFailures = 0;
       consecutiveTimeouts = 0;
       enableModInProfile(api, activeProfileId, installEntry.vortexModId);
+
+      /**
+       * ─── RECORD WHAT WE CREATED, AS WE CREATE IT ──────────────────
+       * Only mods this run actually INSTALLED. An `*-already-installed`
+       * arm produced no mod — it adopted one — and journaling that would
+       * launder a match into evidence that we put it there, which is the
+       * exact confusion the journal exists to end.
+       *
+       * Awaited rather than fired-and-forgotten so the ordering matches
+       * reality: a kill between the install and the append costs one
+       * redone mod, a kill between the append and the install would claim
+       * a mod that does not exist.
+       */
+      if (!installEntry.fromDecision.endsWith("already-installed")) {
+        await appendJournalEntry(ctx.appDataPath, plan.manifest.package.id, {
+          compareKey: installEntry.compareKey,
+          vortexModId: installEntry.vortexModId,
+          decision: installEntry.fromDecision,
+          at: new Date().toISOString(),
+        });
+      }
 
       aborted = checkAbort("installing-mods");
       if (aborted) return aborted;
@@ -1213,11 +1269,41 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     // built with `"none"` we skip the entire phase fast (zero disk
     // walks). The receipt still records `kind: "skip"` per mod so
     // the audit trail is uniform.
+    /**
+     * ─── WHICH MODS DID *WE* PUT HERE? ────────────────────────────────
+     * The repair below uninstalls before reinstalling, so this set is the
+     * difference between fixing our own half-extracted mod and DELETING
+     * one the user brought. It is read from the journal — our own record of
+     * what this collection's runs created — and every id is confirmed
+     * against live Vortex state, because a mod the user has since removed
+     * must not be reported as ours.
+     *
+     * Freshly-installed mods of THIS run are owned by construction; the
+     * journal is what carries that fact across a restart.
+     */
+    const journal = await readJournal(ctx.appDataPath, plan.manifest.package.id);
+    const liveModIds = new Set(
+      Object.keys(
+        ((api.getState() as unknown as {
+          persistent?: { mods?: Record<string, Record<string, unknown>> };
+        }).persistent?.mods ?? {})[plan.manifest.game.id] ?? {},
+      ),
+    );
+    const ownedByUs = ownedModIds(journal, liveModIds);
+    logJournalSummary(plan.manifest.package.id, journal, ownedByUs);
+
     const declaredLevel = plan.manifest.package.verificationLevel ?? "none";
     if (
       installedMods.length > 0 &&
       declaredLevel !== "none"
     ) {
+      // A log with no verify lines used to be equally consistent with "1755
+      // mods verified clean", "the curator built with verificationLevel none"
+      // and "the run died before this phase". Say which.
+      ehLog("info", "verify.phase.start", {
+        level: declaredLevel,
+        modCount: installedMods.length,
+      });
       reportProgress(
         "verifying-mods",
         0,
@@ -1379,15 +1465,44 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           activeProfileId: activeProfileId!,
           expectedFiles,
           level: declaredLevel,
+          // Ours by construction if this run installed it, or by the journal
+          // if an earlier run of this collection did.
+          weInstalledIt:
+            !installEntry.fromDecision.endsWith("already-installed") ||
+            ownedByUs.has(installEntry.vortexModId),
+          onTempArchive: (tempDir) => tempArchivesToCleanup.push(tempDir),
         });
+
+        /**
+         * ─── ADOPT THE NEW ID WHENEVER ONE EXISTS ───────────────────────
+         * The repair uninstalled the old mod, so `installEntry.vortexModId`
+         * now names something that is gone. Only the `recovered` branch used
+         * to write the replacement back, which left `retry-failed` and a
+         * failed re-verify pointing at a dead id — and EVERY later phase is
+         * built from this array: the rules map, ini tweaks, modType restore,
+         * the staging mirror, the receipt. Rules got dispatched at a deleted
+         * mod and counted as applied, while the mod actually on disk received
+         * none of them. Every file verified and the load order was wrong.
+         */
+        if (retried.kind !== "not-eligible" && retried.installEntry !== undefined) {
+          installedMods[i] = retried.installEntry;
+          // The repair created this mod, so it is ours for any later run.
+          if (!retried.installEntry.fromDecision.endsWith("already-installed")) {
+            await appendJournalEntry(ctx.appDataPath, plan.manifest.package.id, {
+              compareKey: retried.installEntry.compareKey,
+              vortexModId: retried.installEntry.vortexModId,
+              decision: retried.installEntry.fromDecision,
+              at: new Date().toISOString(),
+            });
+          }
+        }
 
         if (retried.kind === "recovered") {
           // Re-verified and passed, so the same proof holds as on the clean
           // path above.
           noteVerifiedOk(retried.installEntry.compareKey, expectedFiles);
-          // Update installedMods entry with the (potentially new)
-          // vortexModId. Vortex assigns fresh ids for each install.
-          installedMods[i] = retried.installEntry;
+          // installedMods[i] was already updated above, for every outcome
+          // that produced a mod rather than only this one.
           verifications.push({
             kind: "ok",
             vortexModId: retried.installEntry.vortexModId,
@@ -1442,14 +1557,16 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           );
           verifications.push(
             buildFailReceipt({
-              installEntry,
+              // The repair may have replaced this mod; name the one that is
+              // actually on disk, not the id we deleted.
+              installEntry: installedMods[i]!,
               verifyResult,
               level: declaredLevel === "thorough" ? "thorough" : "fast",
-              // `errored` means the reinstall threw AFTER the uninstall, so
-              // the mod is gone and an attempt very much was made. Reporting
-              // that as "not attempted" understated what happened to the
-              // user's disk.
+              // `errored` means the repair threw AFTER the uninstall, so an
+              // attempt very much was made. Reporting that as "not attempted"
+              // understated what happened to the user's disk.
               retryAttempted: retried.kind !== "not-eligible",
+              modRemoved: retried.kind === "errored" && retried.modRemoved,
             }),
           );
           continue;
@@ -1495,12 +1612,13 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         // Keep the original mod entry and record the failure.
         verifications.push(
           buildFailReceipt({
-            installEntry,
+            installEntry: installedMods[i]!,
             verifyResult,
             level: declaredLevel === "thorough" ? "thorough" : "fast",
             // Same reasoning as the damaged-archive receipt above: `errored`
             // is an attempt that reached the uninstall and then failed.
             retryAttempted: retried.kind !== "not-eligible",
+            modRemoved: retried.kind === "errored" && retried.modRemoved,
           }),
         );
       }
@@ -1947,7 +2065,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       return {
         kind: "failed",
         phase: "deploying",
-        partialProfileId: createdProfileId,
+        partialProfileId: ehProfileId,
         error: `Deployment failed: ${formatError(err)}`,
         installedSoFar: installedMods.map((m) => m.vortexModId),
       };
@@ -2313,7 +2431,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       return {
         kind: "failed",
         phase: "writing-receipt",
-        partialProfileId: createdProfileId,
+        partialProfileId: ehProfileId,
         error:
           `${installedMods.length} of ${total} mods installed, but ` +
           `${failedMods.length} could not be: ${names}` +
@@ -2350,6 +2468,12 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       // was no way to tell which from the artefact the user sends you. A
       // tester's run ended exactly there and the question could not be
       // answered at all.
+      /**
+       * The counts that answer "did it work", not only "how much did it do".
+       * A successful run used to report how MANY mods it touched and never
+       * how many were PROVEN correct — which is the product's actual claim.
+       */
+      logInstallCallShapes();
       ehLog("info", "install.complete", {
         packageId: plan.manifest.package.id,
         packageVersion: plan.manifest.package.version,
@@ -2357,6 +2481,17 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         carried: carriedMods.length,
         skipped: skippedMods.length,
         removed: removedMods.length,
+        profileId: activeProfileId,
+        installTargetMode: plan.installTarget.kind,
+        verified: verifications.filter((v) => v.kind === "ok").length,
+        verifyFailed: verifications.filter((v) => v.kind === "fail").length,
+        verifySkipped: verifications.filter((v) => v.kind === "skip").length,
+        repaired: verifications.filter(
+          (v) => v.kind === "ok" && v.retryAttempted === true,
+        ).length,
+        modsRemovedByFailedRepair: verifications.filter(
+          (v) => v.kind === "fail" && v.modRemoved === true,
+        ).length,
         durationMs: Date.now() - runStartedAtMs,
         receiptPath,
       });
@@ -2368,7 +2503,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       return {
         kind: "failed",
         phase: "writing-receipt",
-        partialProfileId: createdProfileId,
+        partialProfileId: ehProfileId,
         error: `Failed writing install receipt: ${errMsg}`,
         installedSoFar: installedMods.map((m) => m.vortexModId),
       };
@@ -3951,9 +4086,29 @@ type RecoverResult =
       verifiedCount: number;
       extraFileCount: number;
     }
-  | { kind: "retry-failed" }
+  /**
+   * The reinstall ran and the mod is on disk under a NEW id, but it still
+   * does not match the manifest.
+   *
+   * `installEntry` is why this is not just a status. The old id was deleted by
+   * the uninstall, so a caller that keeps it leaves every later phase — mod
+   * rules, ini tweaks, modType restore, the staging mirror, the receipt —
+   * pointing at a mod that no longer exists, while the real one gets none of
+   * them. Files verify; the load order silently does not reproduce.
+   */
+  | { kind: "retry-failed"; installEntry: InstalledModReportEntry }
   | { kind: "not-eligible" }
-  | { kind: "errored" };
+  /**
+   * The repair threw. `installEntry` is present only when the reinstall had
+   * already produced a mod; `modRemoved` says whether the uninstall took the
+   * user's copy with it, which is the difference between "nothing happened"
+   * and "the mod is gone".
+   */
+  | {
+      kind: "errored";
+      installEntry?: InstalledModReportEntry;
+      modRemoved: boolean;
+    };
 
 async function tryRecoverFailedMod(args: {
   ctx: DriverContext;
@@ -3962,9 +4117,28 @@ async function tryRecoverFailedMod(args: {
   activeProfileId: string;
   expectedFiles: import("../../types/ehcoll").EhcollStagingFile[] | undefined;
   level: import("../../types/ehcoll").VerificationLevel;
+  /**
+   * Did THIS TOOL put this mod on the disk? The repair uninstalls before it
+   * reinstalls, so this is the difference between repairing our own work and
+   * destroying the user's.
+   */
+  weInstalledIt: boolean;
+  /**
+   * Where to register a temp directory the repair created, so the driver
+   * removes it at the end of the run like every other one.
+   */
+  onTempArchive?: (p: string) => void;
 }): Promise<RecoverResult> {
-  const { ctx, installEntry, manifestEntry, activeProfileId, expectedFiles, level } =
-    args;
+  const {
+    ctx,
+    installEntry,
+    manifestEntry,
+    activeProfileId,
+    expectedFiles,
+    level,
+    weInstalledIt,
+    onTempArchive,
+  } = args;
 
   // Find the resolution so we can re-execute the original decision.
   // Resolutions are keyed by compareKey; we already validated all
@@ -3983,7 +4157,65 @@ async function tryRecoverFailedMod(args: {
   // BEFORE the uninstall rather than after it.
   let retryResolution = resolution;
   if (installEntry.fromDecision.endsWith("already-installed")) {
+    /**
+     * ─── NEVER UNINSTALL A MOD WE DID NOT INSTALL ───────────────────────
+     * Removing the guard entirely was too far. The argument for it —
+     * "on a resume, already-installed mostly means we installed it" — is a
+     * statement about base rates, and the code applied it universally.
+     *
+     * What that reached: a mod the user installed themselves with their OWN
+     * FOMOD answers, whose archive hash Vortex never kept. The resolver
+     * matches it on Nexus ids, adopts it WITHOUT replaying the curator's
+     * choices, verification fails because the curator's choices selected
+     * files this copy does not have, and `judgeReinstall` returns `reinstall`
+     * for missing files before it even opens the archive. Then this function
+     * called `util.removeMods` — a global delete, staging folder and all — on
+     * a mod the user brought. `installPlan.ts` promises the opposite:
+     * "Old profile is byte-untouched… Zero collision risk by construction."
+     *
+     * So the question is answered by evidence now, not by likelihood: the
+     * install journal records what we created, confirmed against live Vortex
+     * state. Everything else is reported and left alone. A user who
+     * deliberately deleted a texture, merged a plugin or repacked a BA2 keeps
+     * their work; they get a receipt entry saying what differs.
+     */
+    if (!weInstalledIt) {
+      ehLog("info", "verify.repair.not-ours", {
+        name: installEntry.name,
+        compareKey: installEntry.compareKey,
+        vortexModId: installEntry.vortexModId,
+        why: "no journal record that this tool installed this mod",
+      });
+      return { kind: "not-eligible" };
+    }
+
+    /**
+     * ─── CAN WE ACTUALLY FETCH IT BACK? ─────────────────────────────────
+     * `repairDecisionFor` returns `nexus-download` for every Nexus mod, and
+     * the account preflight cannot warn about it: `checkNexusAccount` counts
+     * eligibility from `nexus-download` decisions IN THE PLAN, and a resume
+     * plan is almost entirely `already-installed`. So the run tells the user
+     * no downloads are needed, then the repair manufactures some.
+     *
+     * On a signed-out or free account `nexusDownload` is absent or sends the
+     * user to a browser, `installNexusViaApi` burns its retries and throws —
+     * AFTER the uninstall. The mod is then gone with no way to get it back,
+     * which is exactly the outcome the pre-uninstall refusal exists to avoid.
+     * It just was not applied to this arm.
+     */
     const repair = repairDecisionFor(manifestEntry);
+    if (
+      repair?.kind === "nexus-download" &&
+      typeof (ctx.api as { ext?: { nexusDownload?: unknown } }).ext
+        ?.nexusDownload !== "function"
+    ) {
+      ehLog("warn", "verify.repair.not-possible", {
+        name: installEntry.name,
+        compareKey: installEntry.compareKey,
+        why: "Nexus downloading is unavailable — signed out, or the Nexus extension is disabled",
+      });
+      return { kind: "not-eligible" };
+    }
     if (repair === undefined) {
       ehLog("info", "verify.repair.not-possible", {
         name: installEntry.name,
@@ -4009,12 +4241,18 @@ async function tryRecoverFailedMod(args: {
       modId: installEntry.vortexModId,
     });
   } catch (err) {
-    console.warn(
-      `[Vortex Event Horizon] retry uninstall failed for ` +
-        `"${installEntry.name}": ` +
-        (err instanceof Error ? err.message : String(err)),
-    );
-    return { kind: "errored" };
+    // The mod is untouched: the removal is what failed. This is the benign
+    // arm of `errored`, and saying so is the whole reason `modRemoved` exists.
+    ehLog("error", "verify.repair.done", {
+      name: installEntry.name,
+      compareKey: installEntry.compareKey,
+      outcome: "errored",
+      stage: "uninstall",
+      modRemoved: false,
+      vortexModId: installEntry.vortexModId,
+      err,
+    });
+    return { kind: "errored", modRemoved: false };
   }
 
   // Step 2: re-execute the decision. We reuse the executeDecision
@@ -4038,12 +4276,15 @@ async function tryRecoverFailedMod(args: {
       // already produced — same mod, same picked file, same mismatch — and a
       // user told twice about one thing reasonably assumes it happened twice.
       onNotice: () => undefined,
-      onTempArchive: (p) => {
-        // Best-effort re-thread; if the driver caller exposed
-        // tempArchivesToCleanup we'd pipe it here, but the closure
-        // ownership is private. For now the OS temp GC handles it.
-        void p;
-      },
+      /**
+       * A bundled repair extracts the mod's whole archive into a fresh temp
+       * dir. This used to discard the path with "the OS temp GC handles it",
+       * which is not true on Windows — Storage Sense is opt-in and age-gated.
+       * Each bundled repair leaked one archive-sized directory, hundreds of MB
+       * for a mesh or voice pack, on machines already at risk of running out
+       * of space mid-install.
+       */
+      onTempArchive: onTempArchive ?? ((p) => void p),
       onSkip: () => {
         /* should not happen on a retry — install arm only */
       },
@@ -4058,12 +4299,22 @@ async function tryRecoverFailedMod(args: {
     ) {
       throw err;
     }
-    console.warn(
-      `[Vortex Event Horizon] retry reinstall failed for ` +
-        `"${installEntry.name}": ` +
-        (err instanceof Error ? err.message : String(err)),
-    );
-    return { kind: "errored" };
+    /**
+     * The uninstall SUCCEEDED and the reinstall did not, so the mod is gone
+     * from this machine. This is the most destructive outcome the driver has
+     * and it used to reach `console.warn` only — Electron devtools, which dies
+     * with the session and never appears in the file a tester sends.
+     */
+    ehLog("error", "verify.repair.done", {
+      name: installEntry.name,
+      compareKey: installEntry.compareKey,
+      outcome: "errored",
+      stage: "reinstall",
+      modRemoved: true,
+      removedVortexModId: installEntry.vortexModId,
+      err,
+    });
+    return { kind: "errored", modRemoved: true };
   }
 
   if (newEntry === undefined) {
@@ -4071,7 +4322,19 @@ async function tryRecoverFailedMod(args: {
     // skip / carry. Defensive: original decision must've changed
     // between attempts (impossible by construction, but the type
     // system can't enforce that). Treat as a hard recovery failure.
-    return { kind: "errored" };
+    //
+    // The uninstall already happened, so the mod is gone. This branch logged
+    // nothing at all before — not even to devtools.
+    ehLog("error", "verify.repair.done", {
+      name: installEntry.name,
+      compareKey: installEntry.compareKey,
+      outcome: "errored",
+      stage: "reinstall",
+      modRemoved: true,
+      removedVortexModId: installEntry.vortexModId,
+      why: "the decision arm produced no mod",
+    });
+    return { kind: "errored", modRemoved: true };
   }
 
   enableModInProfile(ctx.api, activeProfileId, newEntry.vortexModId);
@@ -4094,10 +4357,31 @@ async function tryRecoverFailedMod(args: {
     ) {
       throw err;
     }
-    return { kind: "errored" };
+    // The reinstall SUCCEEDED; only the re-check failed. The mod exists under
+    // `newEntry` and the caller must adopt that id, or every later phase aims
+    // at the one we deleted.
+    ehLog("error", "verify.repair.done", {
+      name: installEntry.name,
+      compareKey: installEntry.compareKey,
+      outcome: "errored",
+      stage: "reverify",
+      modRemoved: false,
+      oldVortexModId: installEntry.vortexModId,
+      newVortexModId: newEntry.vortexModId,
+      err,
+    });
+    return { kind: "errored", installEntry: newEntry, modRemoved: false };
   }
 
   if (secondResult.kind === "ok") {
+    ehLog("info", "verify.repair.done", {
+      name: installEntry.name,
+      compareKey: installEntry.compareKey,
+      outcome: "recovered",
+      oldVortexModId: installEntry.vortexModId,
+      newVortexModId: newEntry.vortexModId,
+      verifiedCount: secondResult.verifiedCount,
+    });
     return {
       kind: "recovered",
       installEntry: newEntry,
@@ -4109,7 +4393,17 @@ async function tryRecoverFailedMod(args: {
   // skip on retry shouldn't happen (we passed the same expectedFiles
   // and level), but defensively treat it as a retry failure rather
   // than masking it as a recovery.
-  return { kind: "retry-failed" };
+  //
+  // The entry travels with it: the mod EXISTS, under this new id, and the
+  // only open question is whether its files match.
+  ehLog("warn", "verify.repair.done", {
+    name: installEntry.name,
+    compareKey: installEntry.compareKey,
+    outcome: "retry-failed",
+    oldVortexModId: installEntry.vortexModId,
+    newVortexModId: newEntry.vortexModId,
+  });
+  return { kind: "retry-failed", installEntry: newEntry };
 }
 
 /**
@@ -4123,8 +4417,17 @@ function buildFailReceipt(args: {
   verifyResult: Extract<VerifyResult, { kind: "fail" }>;
   level: "fast" | "thorough";
   retryAttempted: boolean;
+  /**
+   * The repair removed the mod and could not put it back.
+   *
+   * Without this, "reinstalled and still mismatching" and "deleted from your
+   * machine" were the same receipt row — and they are opposite situations for
+   * the person reading it.
+   */
+  modRemoved?: boolean;
 }): ModVerificationReceipt {
   const { installEntry, verifyResult, level, retryAttempted } = args;
+  const modRemoved = args.modRemoved === true;
   const examples: ModVerificationFailExample[] = [];
 
   for (const p of verifyResult.missingFiles.slice(0, 10)) {
@@ -4159,6 +4462,7 @@ function buildFailReceipt(args: {
     hashMismatchCount: verifyResult.hashMismatches.length,
     examples,
     retryAttempted,
+    ...(modRemoved ? { modRemoved: true } : {}),
     retrySucceeded: false,
   };
 }

@@ -414,6 +414,21 @@ export type InstallIntoFreshProfile = {
   resumeProfileId?: string;
   /** Display name of {@link resumeProfileId}. UI-only. */
   resumeProfileName?: string;
+  /**
+   * Why no profile is being resumed, when none is.
+   *
+   * Set on the CREATE path so the log can say which of the reasons applied.
+   * There are five, and all of them used to be the same silence — so a tester
+   * who still got a new profile every run produced a log in which "the
+   * attempt record had no profile id" was indistinguishable from "this build
+   * does not have the fix".
+   */
+  resumeRefusedWhy?:
+    | "no-attempt"
+    | "attempt-has-no-profile"
+    | "profile-deleted"
+    | "profile-other-game"
+    | "version-changed";
 };
 
 // ===========================================================================

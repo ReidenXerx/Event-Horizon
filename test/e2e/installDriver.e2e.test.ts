@@ -514,7 +514,18 @@ describe("mirroring, through the real driver", () => {
 
     await install(manifest, fake);
 
-    const dir = path.join(world!.stagingRoot, fake.installed[0]!.vortexModId);
+    /**
+     * The LAST install, not the first. A mod that fails verification is
+     * uninstalled and reinstalled, which gives it a NEW Vortex mod id — and a
+     * mirrored mod fails verification by construction, because its staging
+     * deliberately differs from the archive it came from.
+     *
+     * Reading the first id passed only while the driver kept pointing at the
+     * mod it had just deleted. It no longer does, so the mirror follows the
+     * mod that actually exists — which is the point of that fix.
+     */
+    const finalModId = fake.installed[fake.installed.length - 1]!.vortexModId;
+    const dir = path.join(world!.stagingRoot, finalModId);
     const read = (rel: string): string =>
       fs.readFileSync(path.join(dir, ...rel.split("/")), "utf8");
 

@@ -630,7 +630,18 @@ function findEntry(
 ): ZipEntry {
   const entry = entries.find((e) => e.name === entryName);
   if (entry === undefined) {
-    ehLog("error", "zip.entry.not-found", {
+    /**
+     * DEBUG, not error. This primitive cannot know whether the caller
+     * recovers, and the main caller does: `extractBundledFromEhcoll` looks the
+     * entry up by sha and almost always finds it, because the two sides derive
+     * the extension from different strings.
+     *
+     * Measured on one tester's log: 7 of 14 `error` lines were this, and 4 of
+     * those 7 succeeded within 3 ms. The failure shouted while the repair that
+     * fixed it whispered at `warn`. That ratio is what teaches a maintainer to
+     * skip the errors. Callers that genuinely cannot recover log their own.
+     */
+    ehLog("debug", "zip.entry.not-found", {
       file: path.basename(filePath),
       entry: entryName,
     });

@@ -793,12 +793,29 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
                 lineHeight: "var(--eh-leading-relaxed)",
               }}
             >
-              A new Vortex profile (suggested name{" "}
-              <strong className="eh-strong">
-                {target.suggestedProfileName}
-              </strong>
-              ) will be created. Your current profile is not modified — you
-              can switch back at any time from Vortex's profile selector.
+              {target.resumeProfileId !== undefined ? (
+                <>
+                  {/* A resume continues a profile. Promising a new one here —
+                      and naming the profile that will NOT be used — reproduced
+                      the "which profile am I in?" confusion this whole change
+                      exists to end, in the screen the user actually reads. */}
+                  Continuing the profile your interrupted install was filling:{" "}
+                  <strong className="eh-strong">
+                    {target.resumeProfileName ?? target.resumeProfileId}
+                  </strong>
+                  . The mods earlier attempts installed are already there. Your
+                  other profiles are not modified.
+                </>
+              ) : (
+                <>
+                  A new Vortex profile (suggested name{" "}
+                  <strong className="eh-strong">
+                    {target.suggestedProfileName}
+                  </strong>
+                  ) will be created. Your current profile is not modified — you
+                  can switch back at any time from Vortex's profile selector.
+                </>
+              )}
             </p>
           </div>
         ) : (
@@ -1964,7 +1981,12 @@ export function ConfirmStep(props: ConfirmStepProps): JSX.Element {
           <li>
             <strong>Target:</strong>{" "}
             {isFresh
-              ? `Fresh profile (suggested name: ${target.suggestedProfileName})`
+              ? target.resumeProfileId !== undefined
+                ? // Last chance to review — so it has to name the profile the
+                  // install will actually land in, not the one we would have
+                  // created had this not been a resume.
+                  `Resuming profile: ${target.resumeProfileName ?? target.resumeProfileId}`
+                : `Fresh profile (suggested name: ${target.suggestedProfileName})`
               : `Current profile: ${target.profileName}`}
           </li>
           <li>
