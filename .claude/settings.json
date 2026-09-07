@@ -9,7 +9,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/bearing-grep-guard.mjs"
+            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-grep-guard.mjs').href)\""
           }
         ]
       },
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/bearing-read-guard.mjs"
+            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-read-guard.mjs').href)\""
           }
         ]
       },
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/bearing-edit-guard.mjs"
+            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-edit-guard.mjs').href)\""
           }
         ]
       },
@@ -36,7 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/bearing-bash-guard.mjs"
+            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-bash-guard.mjs').href)\""
           }
         ]
       },
@@ -45,7 +45,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/bearing-mcp-guard.mjs"
+            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-mcp-guard.mjs').href)\""
           }
         ]
       }
@@ -55,7 +55,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/bearing-session.mjs"
+            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-session.mjs').href)\""
           }
         ]
       }
@@ -65,7 +65,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/bearing-precompact.mjs"
+            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-precompact.mjs').href)\""
           }
         ]
       }
@@ -75,7 +75,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/bearing-taskcore-nudge.mjs"
+            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-taskcore-nudge.mjs').href)\""
           }
         ]
       },
@@ -83,7 +83,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/bearing-minion-nudge.mjs"
+            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-minion-nudge.mjs').href)\""
           }
         ]
       },
@@ -91,7 +91,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/bearing-consult-nudge.mjs"
+            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-consult-nudge.mjs').href)\""
           }
         ]
       },
@@ -99,7 +99,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/bearing-microscope-nudge.mjs"
+            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-microscope-nudge.mjs').href)\""
           }
         ]
       },
@@ -107,7 +107,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/bearing-northstar-anchor.mjs"
+            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-northstar-anchor.mjs').href)\""
           }
         ]
       },
@@ -116,7 +116,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/bearing-impact-audit.mjs"
+            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-impact-audit.mjs').href)\""
           }
         ]
       }
