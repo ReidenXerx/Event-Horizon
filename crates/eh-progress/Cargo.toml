@@ -1,0 +1,13 @@
+[package]
+name = "eh-progress"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# NO DEPENDENCIES, DELIBERATELY.
+# This is a leaf crate that every other crate reports into. The moment it
+# depends on a renderer, every crate in the workspace links a terminal
+# library it has no business knowing about — and Tauri inherits indicatif.
+[dependencies]

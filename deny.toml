@@ -14,6 +14,9 @@
 [licenses]
 version = 2
 confidence-threshold = 0.93
+# Allow-list entries we have not hit yet are fine; a warning per unused entry
+# would train everyone to ignore this tool's output.
+unused-allowed-license = "allow"
 allow = [
     "MIT",
     "Apache-2.0",

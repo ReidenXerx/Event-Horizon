@@ -19,6 +19,7 @@
 resolver = "2"
 members = [
     "crates/ehcoll",
+    "crates/eh-progress",
     "crates/eh-identity",
     "crates/eh-archive",
     "crates/eh-fomod",
@@ -39,6 +40,7 @@ rust-version = "1.75"
 
 [workspace.dependencies]
 ehcoll        = { path = "crates/ehcoll" }
+eh-progress   = { path = "crates/eh-progress" }
 eh-identity   = { path = "crates/eh-identity" }
 eh-archive    = { path = "crates/eh-archive" }
 eh-fomod      = { path = "crates/eh-fomod" }

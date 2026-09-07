@@ -5,10 +5,10 @@
 and is being promoted here rather than rewritten, so that the spec sits beside
 the fixtures that enforce it and is not owned by either implementation's tree.
 
-Do not fork the prose. Until the promotion is done this file is a pointer, and
-`docs/business/MANIFEST_SCHEMA.md` plus `src/types/ehcoll.ts` remain the
-definition. See [`../README.md`](../README.md) for the unresolved question of
-which of those two is normative.
+Do not fork the prose. This file is a pointer; `src/types/ehcoll.ts` is
+**normative** and `docs/business/MANIFEST_SCHEMA.md` describes it. Settled
+2026-09-07 — see [`../README.md`](../README.md). `crates/ehcoll` is a faithful
+port of the TypeScript types, so that one `.ehcoll` file works on both sides.
 
 ## Invariants already established (do not re-litigate)
 

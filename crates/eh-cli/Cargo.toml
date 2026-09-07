@@ -12,3 +12,5 @@ path = "src/main.rs"
 
 [dependencies]
 eh-engine = { workspace = true }
+eh-progress = { workspace = true }
+indicatif = "0.18"

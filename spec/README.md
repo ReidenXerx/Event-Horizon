@@ -25,31 +25,48 @@ fixtures/archives/          tiny SYNTHETIC archives — never real mods
 conformance/                how each implementation consumes the corpus
 ```
 
-## UNRESOLVED — what is normative?
+## SETTLED — TypeScript is normative for v1
 
-`docs/business/MANIFEST_SCHEMA.md` currently says:
+`docs/business/MANIFEST_SCHEMA.md` says:
 
 > The TypeScript source of truth is `src/types/ehcoll.ts`. When prose
 > disagrees with the types: **the types are the spec**.
 
-That was the right call with one implementation. With two it is a trap: it
-makes every TypeScript bug normative by definition, so the Rust implementation
-would be obliged to reproduce them and the conformance suite would become an
-expensive way to agree with ourselves.
+**That stands.** Decided 2026-09-07: `crates/ehcoll` is a faithful port of
+`src/types/ehcoll.ts`, not an independent re-derivation from prose. The goal
+is that the same `.ehcoll` file works on both sides, and the cheapest way to
+guarantee that is to have one definition and one translation of it.
 
-**This has not been changed unilaterally.** It is a decision for the project
-owner, and until it is made, treat `src/types/ehcoll.ts` as normative and
-treat any Rust/TypeScript disagreement as unresolved rather than as a Rust bug.
+What this buys, and what it costs — both are real, and the trade was made
+deliberately:
 
-The proposed replacement is NS-5 in `.bearing/northstars.md`.
+* **Buys:** a manifest written by the extension parses in Rust and back, with
+  no class of disagreement that has to be argued about. Stage 1 gets much
+  smaller: transliterate, do not redesign.
+* **Costs:** Rust inherits TypeScript's v1 bugs by construction. That is
+  acceptable *because* a bug both sides share is a compatibility property
+  rather than a divergence — but it means fixing one is a coordinated change
+  to `src/types/ehcoll.ts`, `crates/ehcoll` and the fixtures together, never
+  to one side alone.
 
-## Golden files are authored, not generated
+The job of conformance here is therefore to catch **drift over time**, not to
+adjudicate today's behaviour. If the two ever disagree, the Rust side is wrong
+until proven otherwise.
 
-Whatever is normative, expected outputs in `fixtures/` are written **from the
-spec**, by hand, for the cases that matter. Generating them by running one
-implementation teaches the other that implementation's bugs and produces a
-green suite that proves nothing.
+## Two kinds of fixture, and only one may be generated
 
-Where hand-authoring is impractical, run the case **differentially**: both
-implementations must agree, and a disagreement is a ticket resolved by reading
-the spec — not by picking whichever side is more convenient.
+Because TypeScript is normative, the rule about generated fixtures splits:
+
+* **Compatibility fixtures** — "does Rust read what TypeScript writes, and
+  vice versa?" These *should* be generated from the TypeScript implementation.
+  It is the definition, so its output is by construction correct, and
+  hand-writing them would only introduce transcription errors.
+* **Behavioural fixtures** — what must be *rejected*: unknown `schemaVersion`,
+  a missing mandatory top-level field, an external mod with no
+  `archiveSha256`. These are **hand-authored**, because "TypeScript happens to
+  reject this today" is not the same claim as "this must always be rejected",
+  and only the second one is worth a test.
+
+Every fixture in `manifests/invalid/` and `manifests/adversarial/` carries a
+comment saying what it attacks. A fixture whose purpose is unrecorded gets
+"fixed" by the next person who sees it fail.

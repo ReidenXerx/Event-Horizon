@@ -15,3 +15,4 @@ eh-plugin = { workspace = true }
 eh-loadorder = { workspace = true }
 eh-resolver = { workspace = true }
 eh-deploy = { workspace = true }
+eh-progress = { workspace = true }
