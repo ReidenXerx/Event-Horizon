@@ -53,12 +53,47 @@ describe("manifest round-trip", () => {
         },
       ],
     });
+    // A mod rule, so `rules` is not compared empty-to-empty. Pointing at a
+    // mod that IS in the collection, or buildRules drops it as unresolvable.
+    (world.mods[0] as { rules?: unknown[] }).rules = [
+      { type: "after", reference: { id: "ext-mod" } },
+    ];
     const scope = scopeCollectionMods(world.mods);
     const enriched = await captureStagingFiles(
       world.state as never, world.gameId, scope.included, { level: "thorough" },
     );
     const { manifest } = buildManifest({
-      snapshot: { gameId: world.gameId, mods: enriched } as never,
+      /**
+       * ─── EVERY SHIPPED AREA, POPULATED ──────────────────────────────
+       * This deep-compares build output against parse output, so it guards
+       * exactly the fields the fixture happens to fill — and it said so in
+       * its own header while `plugins.order` sat empty and `light` was
+       * dropped for the whole life of the ESL feature.
+       *
+       * userlist, loadOrder, gameIni and externalDependencies were all
+       * unpopulated too. Each is parsed by its own validator that builds a
+       * FRESH object from known fields and discards the rest, so any of them
+       * could lose a field exactly the same way. Filling them is what turns
+       * this from a test of one area into a test of the format.
+       */
+      snapshot: {
+        gameId: world.gameId,
+        mods: enriched,
+        loadOrder: [
+          { modId: "nexus-mod", pos: 0, enabled: true },
+          { modId: "ext-mod", pos: 1, enabled: false, locked: true },
+        ],
+        userlist: {
+          plugins: [
+            // Every optional edge kind, and a group-only entry — the shape
+            // that dominates a real profile (501 of 501 on the reference
+            // package were group assignments with no edges).
+            { name: "Light.esp", group: "Early" },
+            { name: "Regular.esp", after: ["Light.esp"], req: ["Light.esp"], inc: ["Unrecorded.esp"] },
+          ],
+          groups: [{ name: "Early", after: ["default"] }],
+        },
+      } as never,
       package: {
         id: "00000000-0000-4000-8000-000000000000",
         name: "RT", version: "1.0.0", author: "a", verificationLevel: "thorough",
@@ -83,6 +118,28 @@ describe("manifest round-trip", () => {
         String.fromCharCode(10),
       ),
       pluginLightFlags: { "light.esp": true, "regular.esp": false },
+      gameIni: {
+        files: [
+          {
+            fileName: "Fallout4Custom.ini",
+            settings: [
+              { section: "Archive", key: "bInvalidateOlderFiles", value: "1" },
+            ],
+          },
+        ],
+      },
+      externalDependencies: [
+        {
+          id: "f4se",
+          name: "Fallout 4 Script Extender",
+          category: "script-extender",
+          version: "0.6.23",
+          destination: "<gameDir>",
+          files: [{ relPath: "f4se_loader.exe", sha256: "b".repeat(64) }],
+          instructions: "Download the build matching your game version.",
+          instructionsUrl: "https://f4se.silverlock.org/",
+        },
+      ],
       externalMods: {
         "ext-mod": {
           instructions: "Get it here",
@@ -93,10 +150,21 @@ describe("manifest round-trip", () => {
       },
     } as never);
 
-    // The fixture must actually exercise what it claims to protect: an empty
-    // plugin list is how this test missed `light` in the first place.
+    /**
+     * The fixture must actually exercise what it claims to protect: an empty
+     * list compares equal to an empty list, which is how this test missed
+     * `light` in the first place. Every area is asserted non-empty BEFORE
+     * the deep compare, so a builder change that silently stops emitting one
+     * fails here rather than passing vacuously.
+     */
     expect(manifest.plugins.order).toHaveLength(3);
     expect(manifest.plugins.order.filter((p) => p.light !== undefined)).toHaveLength(2);
+    expect(manifest.userlist.plugins.length).toBeGreaterThan(0);
+    expect(manifest.userlist.groups.length).toBeGreaterThan(0);
+    expect(manifest.loadOrder.length).toBeGreaterThan(0);
+    expect(manifest.gameIni?.files.length ?? 0).toBeGreaterThan(0);
+    expect(manifest.externalDependencies.length).toBeGreaterThan(0);
+    expect(manifest.rules.length).toBeGreaterThan(0);
 
     const parsed = parseManifest(JSON.stringify(manifest)).manifest;
     // The real assertion: nothing the builder produced was eaten on the way in.
