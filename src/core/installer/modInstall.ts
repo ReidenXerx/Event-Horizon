@@ -46,7 +46,7 @@ import * as path from "path";
 
 import { getModArchivePath } from "../archiveHashing";
 
-import { util } from "@nexusmods/vortex-api";
+import { selectors, util } from "@nexusmods/vortex-api";
 import type { types } from "@nexusmods/vortex-api";
 
 import { adoptLocalArchive } from "./adoptLocalArchive";
@@ -1551,4 +1551,91 @@ function delayRespectingAbort(
     const timer = setTimeout(done, ms);
     signal?.addEventListener("abort", done, { once: true });
   });
+}
+
+/**
+ * Download a Nexus file WITHOUT installing it, and return its path on disk.
+ *
+ * `installNexusViaApi` downloads and installs; the alongside path cannot use
+ * it, because Vortex derives both the install name and the archive id from the
+ * file Vortex itself downloaded — and those are exactly the two things that
+ * have to differ for a second copy to install without the replace-or-variant
+ * dialog. So this stops one step earlier and hands back the bytes.
+ *
+ * `allowInstall = false` is the documented fifth argument of `nexusDownload`,
+ * and the same flag `installNexusViaApi` already passes when it has installer
+ * choices to replay.
+ *
+ * Returns `undefined` rather than throwing when the download cannot be made —
+ * the caller's fallback is to report a mismatch, which is a worse outcome than
+ * a second copy but a far better one than an exception mid-install.
+ */
+export async function downloadNexusArchiveOnly(
+  api: types.IExtensionApi,
+  args: {
+    gameId: string;
+    nexusModId: number;
+    nexusFileId: number;
+    fileName?: string;
+    signal?: AbortSignal;
+  },
+): Promise<string | undefined> {
+  if (typeof api.ext?.nexusDownload !== "function") return undefined;
+  if (args.signal?.aborted) throw makeAbortErrorLocal("nexus download");
+
+  let archiveId: string | undefined;
+  try {
+    const id = await api.ext.nexusDownload(
+      args.gameId,
+      args.nexusModId,
+      args.nexusFileId,
+      args.fileName,
+      false, // download only
+    );
+    archiveId = typeof id === "string" && id.length > 0 ? id : undefined;
+  } catch (err) {
+    if (isAbortErrorLocal(err)) throw err;
+    ehLog("warn", "nexus.download-only.failed", {
+      modId: args.nexusModId,
+      fileId: args.nexusFileId,
+      err,
+    });
+    return undefined;
+  }
+  if (archiveId === undefined) return undefined;
+
+  // The download record holds a name relative to the game's download folder.
+  const state = api.getState() as unknown as {
+    persistent?: {
+      downloads?: { files?: Record<string, { localPath?: string }> };
+    };
+  };
+  const localPath = state.persistent?.downloads?.files?.[archiveId]?.localPath;
+  if (typeof localPath !== "string" || localPath.length === 0) {
+    ehLog("warn", "nexus.download-only.no-path", {
+      archiveId,
+      modId: args.nexusModId,
+    });
+    return undefined;
+  }
+
+  const dir = downloadFolderFor(api, args.gameId);
+  return dir === undefined ? undefined : path.join(dir, localPath);
+}
+
+/** Vortex's download folder for a game, or `undefined` if it cannot be read. */
+function downloadFolderFor(
+  api: types.IExtensionApi,
+  gameId: string,
+): string | undefined {
+  try {
+    const dir = (
+      selectors as unknown as {
+        downloadPathForGame?: (state: unknown, game: string) => unknown;
+      }
+    ).downloadPathForGame?.(api.getState(), gameId);
+    return typeof dir === "string" && dir.length > 0 ? dir : undefined;
+  } catch {
+    return undefined;
+  }
 }

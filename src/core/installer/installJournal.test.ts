@@ -27,13 +27,15 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-const entry = (over: Record<string, unknown> = {}) => ({
-  compareKey: "nexus:116422:576517",
-  vortexModId: "mod-1",
-  decision: "nexus-download",
-  at: "2026-09-07T12:00:00Z",
-  ...over,
-});
+const entry = (over: Record<string, unknown> = {}) =>
+  ({
+    compareKey: "nexus:116422:576517",
+    vortexModId: "mod-1",
+    kind: "installed",
+    decision: "nexus-download",
+    at: "2026-09-07T12:00:00Z",
+    ...over,
+  }) as import("./installJournal").JournalEntry;
 
 describe("appendJournalEntry / readJournal", () => {
   it("records what a run installed, in order", async () => {
@@ -117,5 +119,25 @@ describe("ownedModIds", () => {
 
   it("owns nothing when the journal is empty", () => {
     expect(ownedModIds([], new Set(["mod-1"]))).toEqual(new Set());
+  });
+
+  it("does NOT own a mod it merely adopted", () => {
+    /**
+     * The safety property. An adopted mod matched the curator's bytes when we
+     * looked, so we used the user's copy instead of installing a second one —
+     * but it is still THEIRS. Byte-identical today is an edited mod next
+     * month, and ownership here authorises an uninstall.
+     */
+    expect(
+      ownedModIds([entry({ kind: "adopted" })], new Set(["mod-1"])),
+    ).toEqual(new Set());
+  });
+
+  it("treats a record with an unreadable kind as adopted", () => {
+    // The reading that withholds deletion rights. A record we cannot parse is
+    // exactly the one not to act destructively on.
+    expect(
+      ownedModIds([entry({ kind: "something-new" })], new Set(["mod-1"])),
+    ).toEqual(new Set());
   });
 });

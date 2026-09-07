@@ -49,13 +49,34 @@ import * as path from "path";
 
 import { ehLog } from "../logging/ehLog";
 
-/** One mod, as this tool created it. */
+/**
+ * How this mod came to satisfy the collection. The distinction is the whole
+ * safety property of the journal, so it is not a label:
+ *
+ *   "installed" — WE created this Vortex mod. It is ours to uninstall and
+ *                 reinstall if it fails verification.
+ *   "adopted"   — the user already had it and its bytes matched the curator's,
+ *                 so we used theirs instead of installing a second copy.
+ *                 Worth remembering (a resume can skip it without re-hashing,
+ *                 and the resolver can prefer it over an unrelated namesake)
+ *                 and NOT ours to destroy.
+ *
+ * A byte-identical mod today can be an edited mod next month. Recording an
+ * adoption as though we installed it would quietly convert "the user's mod
+ * that happens to match" into "our mod we may delete", and their edit would
+ * be reverted by a repair they never asked for.
+ */
+export type JournalEntryKind = "installed" | "adopted";
+
+/** One mod, as this tool created or adopted it. */
 export type JournalEntry = {
   /** Stable manifest identity, so a re-plan can find this again. */
   compareKey: string;
-  /** The Vortex mod id we produced. Confirmed against live state on read. */
+  /** The Vortex mod id. Confirmed against live state on read. */
   vortexModId: string;
-  /** Which decision arm created it — for diagnosis, never for matching. */
+  /** See {@link JournalEntryKind}. Only "installed" grants repair rights. */
+  kind: JournalEntryKind;
+  /** Which decision arm produced it — for diagnosis, never for matching. */
   decision: string;
   /** ISO-8601 UTC. */
   at: string;
@@ -130,6 +151,10 @@ export async function readJournal(
       out.push({
         compareKey: parsed.compareKey,
         vortexModId: parsed.vortexModId,
+        // Anything that is not explicitly "installed" is treated as adopted —
+        // the reading that withholds deletion rights. A record whose kind we
+        // cannot read is exactly the one not to act destructively on.
+        kind: parsed.kind === "installed" ? "installed" : "adopted",
         decision: typeof parsed.decision === "string" ? parsed.decision : "",
         at: typeof parsed.at === "string" ? parsed.at : "",
       });
@@ -175,6 +200,30 @@ export function ownedModIds(
 ): Set<string> {
   const out = new Set<string>();
   for (const entry of journal) {
+    // ADOPTED mods are excluded on purpose: we remember them, we prefer them,
+    // we never destroy them.
+    if (entry.kind !== "installed") continue;
+    if (liveModIds.has(entry.vortexModId)) out.add(entry.vortexModId);
+  }
+  return out;
+}
+
+/**
+ * Every mod id this collection's runs have recorded, installed OR adopted,
+ * that still exists.
+ *
+ * Used to disambiguate, never to authorise. When the user has two copies of a
+ * mod with the same Nexus ids — theirs and the one we installed alongside it —
+ * `Array.find` in the resolver picks whichever Vortex happens to list first.
+ * Without this, a resume can adopt THEIRS again, fail verification again, and
+ * install a THIRD copy; repeat per restart.
+ */
+export function knownModIds(
+  journal: readonly JournalEntry[],
+  liveModIds: ReadonlySet<string>,
+): Set<string> {
+  const out = new Set<string>();
+  for (const entry of journal) {
     if (liveModIds.has(entry.vortexModId)) out.add(entry.vortexModId);
   }
   return out;
@@ -196,6 +245,8 @@ export function logJournalSummary(
   ehLog("info", "install.journal.read", {
     packageId,
     entries: journal.length,
+    installedByUs: journal.filter((e) => e.kind === "installed").length,
+    adopted: journal.filter((e) => e.kind === "adopted").length,
     stillPresent: owned.size,
     // A large gap means the user removed mods between runs, which changes what
     // a resume should expect to find.

@@ -242,3 +242,22 @@ export function pickNonCollidingName(
 }
 
 const COLLIDING_NAME_PROBE_LIMIT = 1000;
+
+/**
+ * Turn a mod OFF in one specific profile.
+ *
+ * The mirror of {@link enableModInProfile}, and the reason it exists is the
+ * alongside install: when the curator's copy of a mod goes in beside the
+ * user's, exactly one of the two should be active in the collection's profile.
+ *
+ * Profile-scoped by construction — `setModEnabled` takes a profile id — so the
+ * user's other profiles keep the mod enabled exactly as they left it. This is
+ * NOT an uninstall and must never be used as a substitute for one.
+ */
+export function disableModInProfile(
+  api: types.IExtensionApi,
+  profileId: string,
+  modId: string,
+): void {
+  api.store?.dispatch(actions.setModEnabled(profileId, modId, false));
+}

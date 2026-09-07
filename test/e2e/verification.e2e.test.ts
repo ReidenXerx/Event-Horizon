@@ -818,6 +818,7 @@ describe("a broken mod is repaired even when we skipped installing it", () => {
       {
         compareKey,
         vortexModId: EXISTING_ID,
+        kind: "installed",
         decision: "nexus-download",
         at: new Date().toISOString(),
       },
@@ -1030,10 +1031,23 @@ describe("a mod we did not install is never destroyed to repair it", () => {
   it("reports the mismatch and leaves the mod alone", async () => {
     world = makeWorld({ mods: [MOD] });
     const manifest = await packageFrom(world);
+    // The curator's archive is fetchable, which is what lets a second copy be
+    // installed at all. Without it the tool can only report — see the next test.
+    const { writeStoredZip } = await import(
+      "../../src/core/manifest/storedZip.testutil"
+    );
+    writeStoredZip(nodePath.join(world.downloadRoot, "mod.zip"), [
+      { name: "Textures/rock.dds", body: "the bytes the curator shipped" },
+      { name: "Data/rock.esp", body: "a plugin" },
+    ]);
     const fake = makeFakeVortex({
       gameId: world.gameId,
       downloads: { [ARCHIVE_ID]: "mod.zip" },
       stagingRoot: world.stagingRoot,
+      installProduces: () => ({
+        "Textures/rock.dds": "the bytes the curator shipped",
+        "Data/rock.esp": "a plugin",
+      }),
     });
 
     // Their copy: the curator's plugin, but missing a file the curator has —
@@ -1065,16 +1079,64 @@ describe("a mod we did not install is never destroyed to repair it", () => {
 
     expect(result.kind, why(result)).toBe("success");
 
-    // THE assertion: nothing was installed, so nothing was uninstalled. With
-    // the guard removed this ran a full uninstall + reinstall cycle.
-    expect(fake.installed).toHaveLength(0);
-
-    // Their file is still on disk, exactly as they left it.
+    // THEIR mod is untouched — this is the assertion the whole guard exists
+    // for. Their staging folder still holds the file they left in it, and its
+    // Vortex record is still there.
     expect(fs.existsSync(nodePath.join(dir, "Data", "rock.esp"))).toBe(true);
+    const modsAfter = (
+      fake.api.getState().persistent as {
+        mods: Record<string, Record<string, unknown>>;
+      }
+    ).mods[world!.gameId]!;
+    expect(modsAfter[THEIR_ID]).toBeDefined();
 
-    // And the finding is still REPORTED — refusing to destroy their work is
-    // not the same as pretending the mod matches.
+    /**
+     * And the curator's copy went in BESIDE it, so the collection is actually
+     * reproduced. Reporting the mismatch and stopping was the safe half of
+     * the answer; it still shipped the user's build of the mod as though it
+     * were the curator's.
+     */
+    expect(fake.installed).toHaveLength(1);
+    expect(result.verifications?.[0]?.kind).toBe("ok");
+  });
+
+  it("reports the mismatch and still leaves the mod alone when it cannot", async () => {
+    // No archive, nothing bundled, no Nexus download available — the
+    // alongside install is impossible. The floor is unchanged: their mod is
+    // not touched, and the finding is reported rather than hidden.
+    world = makeWorld({ mods: [MOD] });
+    const manifest = await packageFrom(world);
+    const fake = makeFakeVortex({
+      gameId: world.gameId,
+      stagingRoot: world.stagingRoot,
+    });
+
+    const dir = nodePath.join(world.stagingRoot, THEIR_ID);
+    fs.mkdirSync(nodePath.join(dir, "Data"), { recursive: true });
+    fs.writeFileSync(nodePath.join(dir, "Data", "rock.esp"), "a plugin");
+    const mods = (
+      fake.api.getState().persistent as {
+        mods: Record<string, Record<string, unknown>>;
+      }
+    ).mods[world.gameId]!;
+    mods[THEIR_ID] = {
+      id: THEIR_ID,
+      installationPath: THEIR_ID,
+      type: "",
+      attributes: { name: "Rock Textures", version: "1.0.0" },
+    };
+
+    const result = (await install(manifest, fake, [
+      { id: THEIR_ID, name: "Rock Textures", nexusModId: 100, nexusFileId: 200 },
+    ])) as {
+      kind: string;
+      verifications?: Array<{ kind: string; modRemoved?: boolean }>;
+    };
+
+    expect(result.kind, why(result)).toBe("success");
+    expect(fs.existsSync(nodePath.join(dir, "Data", "rock.esp"))).toBe(true);
     expect(result.verifications?.[0]?.kind).toBe("fail");
-    expect(result.verifications?.[0]?.retryAttempted).toBeFalsy();
+    // Never removed. That is the one thing this path must never do.
+    expect(result.verifications?.[0]?.modRemoved).toBeFalsy();
   });
 });

@@ -195,10 +195,13 @@ import {
 } from "./applyUserlist";
 import {
   createFreshProfile,
+  disableModInProfile,
   enableModInProfile,
   switchToProfile,
 } from "./profile";
 import {
+  downloadNexusArchiveOnly,
+  extractBundledFromEhcoll,
   installFromBundledArchive,
   installFromExistingDownload,
   installFromLocalArchive,
@@ -242,6 +245,7 @@ import {
   type PrefetchRequest,
 } from "./bundledPrefetch";
 import { logInstallCallShapes } from "./probeInstallerApi";
+import { installAlongside } from "./installAlongside";
 import {
   appendJournalEntry,
   clearJournal,
@@ -1218,14 +1222,25 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
        * redone mod, a kill between the append and the install would claim
        * a mod that does not exist.
        */
-      if (!installEntry.fromDecision.endsWith("already-installed")) {
-        await appendJournalEntry(ctx.appDataPath, plan.manifest.package.id, {
-          compareKey: installEntry.compareKey,
-          vortexModId: installEntry.vortexModId,
-          decision: installEntry.fromDecision,
-          at: new Date().toISOString(),
-        });
-      }
+      await appendJournalEntry(ctx.appDataPath, plan.manifest.package.id, {
+        compareKey: installEntry.compareKey,
+        vortexModId: installEntry.vortexModId,
+        /**
+         * An `*-already-installed` arm ADOPTED a mod the user already had —
+         * matched byte-for-byte, so their copy is the curator's. Worth
+         * remembering: a later run can prefer this exact mod over an
+         * unrelated namesake, and can skip re-deciding it.
+         *
+         * It does NOT make the mod ours. Only "installed" grants the repair
+         * path permission to uninstall, because a mod that is byte-identical
+         * today can be an edited mod next month.
+         */
+        kind: installEntry.fromDecision.endsWith("already-installed")
+          ? "adopted"
+          : "installed",
+        decision: installEntry.fromDecision,
+        at: new Date().toISOString(),
+      });
 
       aborted = checkAbort("installing-mods");
       if (aborted) return aborted;
@@ -1484,17 +1499,83 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
          * mod and counted as applied, while the mod actually on disk received
          * none of them. Every file verified and the load order was wrong.
          */
-        if (retried.kind !== "not-eligible" && retried.installEntry !== undefined) {
+        if (
+          retried.kind !== "not-eligible" &&
+          retried.kind !== "not-ours" &&
+          retried.installEntry !== undefined
+        ) {
           installedMods[i] = retried.installEntry;
           // The repair created this mod, so it is ours for any later run.
           if (!retried.installEntry.fromDecision.endsWith("already-installed")) {
             await appendJournalEntry(ctx.appDataPath, plan.manifest.package.id, {
               compareKey: retried.installEntry.compareKey,
               vortexModId: retried.installEntry.vortexModId,
+              // The repair created this mod, so it is ours for any later run.
+              kind: "installed",
               decision: retried.installEntry.fromDecision,
               at: new Date().toISOString(),
             });
           }
+        }
+
+        /**
+         * ─── THEIR MOD STAYS; OURS GOES IN BESIDE IT ────────────────────
+         * The mod is the user's and its files are not the curator's. We will
+         * not touch it — but shipping their version as if it were the
+         * collection's is the other way to be wrong, and it is silent.
+         *
+         * So the curator's copy is installed as a SECOND mod, named for this
+         * collection and revision, and it is the one enabled in this profile.
+         * Theirs is disabled HERE only; every other profile it belongs to is
+         * untouched, because enablement is per-profile.
+         */
+        if (retried.kind === "not-ours") {
+          const alongside = await tryInstallAlongside({
+            ctx,
+            installEntry,
+            manifestEntry,
+            activeProfileId: activeProfileId!,
+            onTempArchive: (tempDir) => tempArchivesToCleanup.push(tempDir),
+          });
+
+          if (alongside !== undefined) {
+            installedMods[i] = alongside;
+            await appendJournalEntry(ctx.appDataPath, plan.manifest.package.id, {
+              compareKey: alongside.compareKey,
+              vortexModId: alongside.vortexModId,
+              kind: "installed",
+              decision: alongside.fromDecision,
+              at: new Date().toISOString(),
+            });
+            // Re-verify OUR copy: an alongside install is a normal install and
+            // earns no exemption from the check this project exists to run.
+            const check = await verifyModInstall({
+              api,
+              gameId: plan.manifest.game.id,
+              vortexModId: alongside.vortexModId,
+              expectedFiles,
+              level: declaredLevel,
+              signal: ctx.abortSignal,
+            }).catch(() => undefined);
+
+            if (check?.kind === "ok") {
+              noteVerifiedOk(alongside.compareKey, expectedFiles);
+              verifications.push({
+                kind: "ok",
+                vortexModId: alongside.vortexModId,
+                compareKey: alongside.compareKey,
+                name: alongside.name,
+                level: declaredLevel === "thorough" ? "thorough" : "fast",
+                verifiedFileCount: check.verifiedCount,
+                extraFileCount: check.extraFiles.length,
+                retryAttempted: true,
+              });
+              continue;
+            }
+          }
+          // Could not install a second copy — no archive, or the install
+          // failed. Fall through to the honest failure report below; the
+          // user's mod is still exactly where it was.
         }
 
         if (retried.kind === "recovered") {
@@ -4099,6 +4180,13 @@ type RecoverResult =
   | { kind: "retry-failed"; installEntry: InstalledModReportEntry }
   | { kind: "not-eligible" }
   /**
+   * The mod is the USER's, not ours. Distinct from `not-eligible` because the
+   * caller acts on it: it installs the curator's copy alongside theirs rather
+   * than giving up. Collapsing the two would silently ship a collection that
+   * differs from the curator's.
+   */
+  | { kind: "not-ours" }
+  /**
    * The repair threw. `installEntry` is present only when the reinstall had
    * already produced a mod; `modRemoved` says whether the uninstall took the
    * user's copy with it, which is the difference between "nothing happened"
@@ -4175,9 +4263,12 @@ async function tryRecoverFailedMod(args: {
      *
      * So the question is answered by evidence now, not by likelihood: the
      * install journal records what we created, confirmed against live Vortex
-     * state. Everything else is reported and left alone. A user who
-     * deliberately deleted a texture, merged a plugin or repacked a BA2 keeps
-     * their work; they get a receipt entry saying what differs.
+     * state.
+     *
+     * The caller does not merely report the rest. It installs the curator's
+     * copy ALONGSIDE the user's — see `installAlongside` — so the collection
+     * is reproduced exactly and their work survives untouched. This function
+     * only refuses to be the thing that destroys it.
      */
     if (!weInstalledIt) {
       ehLog("info", "verify.repair.not-ours", {
@@ -4185,8 +4276,9 @@ async function tryRecoverFailedMod(args: {
         compareKey: installEntry.compareKey,
         vortexModId: installEntry.vortexModId,
         why: "no journal record that this tool installed this mod",
+        next: "install the curator's copy alongside it",
       });
-      return { kind: "not-eligible" };
+      return { kind: "not-ours" };
     }
 
     /**
@@ -4493,4 +4585,169 @@ function mergeUserlistResult(
       })),
     ],
   };
+}
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * Install the curator's copy of a mod the user already has, beside theirs.
+ *
+ * Reached only when the user's copy is verifiably NOT the curator's and the
+ * journal says we did not install it. The alternative to this function is a
+ * collection that quietly ships the user's build of a mod, which every file
+ * check then passes.
+ *
+ * Where the bytes come from, in order of what costs the user least:
+ *
+ *   1. the archive Vortex already has for THEIR mod, but only once its sha256
+ *      is confirmed to be the curator's. A Nexus file id names one uploaded
+ *      file forever, so this is usually the same archive — and when it is, we
+ *      re-extract it locally with the curator's installer answers instead of
+ *      downloading a byte-identical copy.
+ *   2. the archive bundled in the `.ehcoll`, for external mods.
+ *   3. a fresh Nexus download, without installing it, so we control the file
+ *      name and therefore the install name.
+ *
+ * Returns `undefined` when none of those can produce the bytes. That is not a
+ * failure to hide: the caller reports the mismatch, and the user's mod is
+ * still untouched — nothing here uninstalls anything, ever.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+async function tryInstallAlongside(args: {
+  ctx: DriverContext;
+  installEntry: InstalledModReportEntry;
+  manifestEntry: EhcollMod | undefined;
+  activeProfileId: string;
+  onTempArchive: (p: string) => void;
+}): Promise<InstalledModReportEntry | undefined> {
+  const { ctx, installEntry, manifestEntry, activeProfileId, onTempArchive } =
+    args;
+  if (manifestEntry === undefined) return undefined;
+
+  const pkg = ctx.plan.manifest.package;
+  const gameId = ctx.plan.manifest.game.id;
+
+  try {
+    const archivePath = await resolveCuratorArchive({
+      ctx,
+      installEntry,
+      manifestEntry,
+      onTempArchive,
+    });
+    if (archivePath === undefined) {
+      ehLog("warn", "install.alongside.no-archive", {
+        name: installEntry.name,
+        compareKey: installEntry.compareKey,
+        why: "the curator's bytes are not obtainable on this machine",
+      });
+      return undefined;
+    }
+
+    const result = await installAlongside(ctx.api, {
+      gameId,
+      archivePath,
+      modName: installEntry.name,
+      collectionName: pkg.name,
+      collectionVersion: pkg.version,
+      ...replayArgs(manifestEntry, ctx.decisions.fomodReplayMode),
+      ...(ctx.abortSignal !== undefined ? { signal: ctx.abortSignal } : {}),
+    });
+    onTempArchive(result.tempDir);
+
+    /**
+     * Ours on, theirs off — in THIS profile only. `setModEnabled` is
+     * profile-scoped, so the user's other profiles keep their mod enabled
+     * exactly as before. Both are still installed; only this collection's
+     * profile expresses a preference between them.
+     */
+    enableModInProfile(ctx.api, activeProfileId, result.vortexModId);
+    disableModInProfile(ctx.api, activeProfileId, installEntry.vortexModId);
+
+    ehLog("info", "install.alongside.swapped", {
+      name: installEntry.name,
+      compareKey: installEntry.compareKey,
+      theirModId: installEntry.vortexModId,
+      ourModId: result.vortexModId,
+      installName: result.installName,
+      profileId: activeProfileId,
+    });
+
+    return {
+      compareKey: installEntry.compareKey,
+      name: result.installName,
+      vortexModId: result.vortexModId,
+      source: installEntry.source,
+      fromDecision: installEntry.fromDecision,
+    };
+  } catch (err) {
+    if ((err as Error)?.name === "AbortError" || ctx.abortSignal?.aborted) {
+      throw err;
+    }
+    // Their mod is untouched — this path never uninstalls. Report and move on.
+    ehLog("error", "install.alongside.failed", {
+      name: installEntry.name,
+      compareKey: installEntry.compareKey,
+      theirModRemoved: false,
+      err,
+    });
+    return undefined;
+  }
+}
+
+/**
+ * A path to the curator's archive bytes for this mod, or `undefined`.
+ *
+ * The first rung is the interesting one: the user's OWN archive, accepted only
+ * when its hash equals the manifest's. That is a genuine byte proof rather than
+ * an assumption that a Nexus file id means what it says, and when it holds it
+ * saves a download of a file already on the disk.
+ */
+async function resolveCuratorArchive(args: {
+  ctx: DriverContext;
+  installEntry: InstalledModReportEntry;
+  manifestEntry: EhcollMod;
+  onTempArchive: (p: string) => void;
+}): Promise<string | undefined> {
+  const { ctx, installEntry, manifestEntry, onTempArchive } = args;
+  const gameId = ctx.plan.manifest.game.id;
+  const expectedSha = manifestEntry.source.sha256;
+
+  // 1. Their archive, if it IS the curator's file.
+  const theirArchive = archivePathForMod(ctx.api, gameId, installEntry);
+  if (theirArchive !== undefined && expectedSha !== undefined) {
+    const identity = await checkArchiveIdentity({
+      archivePath: theirArchive,
+      expectedSha256: expectedSha,
+      ...(ctx.abortSignal !== undefined ? { signal: ctx.abortSignal } : {}),
+    });
+    if (identity.kind === "matches") return theirArchive;
+  }
+
+  // 2. Bundled in the package.
+  if (
+    manifestEntry.source.kind === "external" &&
+    manifestEntry.source.bundled === true &&
+    expectedSha !== undefined
+  ) {
+    const extracted = await extractBundledFromEhcoll(
+      ctx.ehcollZipPath,
+      findBundledZipEntry(ctx, manifestEntry as ExternalEhcollMod),
+      installEntry.name,
+    );
+    onTempArchive(extracted.tempDir);
+    return extracted.extractedPath;
+  }
+
+  // 3. Download it without installing, so the file name stays ours to choose.
+  if (manifestEntry.source.kind === "nexus") {
+    const downloaded = await downloadNexusArchiveOnly(ctx.api, {
+      gameId,
+      nexusModId: manifestEntry.source.modId,
+      nexusFileId: manifestEntry.source.fileId,
+      fileName: manifestEntry.source.archiveName,
+      ...(ctx.abortSignal !== undefined ? { signal: ctx.abortSignal } : {}),
+    });
+    return downloaded;
+  }
+
+  return undefined;
 }
