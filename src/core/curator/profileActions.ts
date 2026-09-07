@@ -50,8 +50,21 @@ export type CuratorMod = {
   newestVersion?: string;
   nexusModId?: number;
   nexusFileId?: number;
-  /** Newest file id Nexus knows about. The only thing update logic reads. */
+  /** Newest file id Nexus knows about, when it is a number. */
   newestFileId?: number;
+  /**
+   * Vortex recorded the newest file id as the literal string `"unknown"`.
+   *
+   * That is not missing data — it is Vortex asserting THERE IS AN UPDATE and
+   * that it cannot name the file. Its own `updateState` tests this FIRST, and
+   * renders the mod with the go-to-the-site icon rather than the download one.
+   *
+   * It used to vanish on the way in: the attribute is read with a numeric
+   * coercion, `Number("unknown")` is NaN, and NaN became `undefined` — so a
+   * mod Vortex was actively flagging arrived here looking like a mod with no
+   * update information at all, and neither update list could see it.
+   */
+  newestFileUnknown?: boolean;
   /** Vortex's endorsement state: "Undecided" | "Endorsed" | "Abstained". */
   endorsed?: string;
   /**
@@ -161,6 +174,62 @@ export type ManualUpdate = {
  * nullable file id: the bulk updater must never receive one of these, and a
  * separate type makes that a compile error instead of a runtime check.
  */
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * Vortex's own answer to "does this mod have an update?", transcribed.
+ *
+ * Read out of the shipped bundle rather than inferred, because the curator
+ * compares our list against Vortex's "Update available" filter and any mod in
+ * theirs and not ours reads as us being broken — which, twice now, we were.
+ *
+ *     updateState(attributes):
+ *       if (!truthy(attributes.source)) return "current";
+ *       hasNewerVersion = versionClean(newestVersion) !== versionClean(version)
+ *       return  newestFileId === "unknown"
+ *            || (truthy(newestFileId) && truthy(fileId)
+ *                && newestFileId.toString() !== fileId.toString())
+ *            || hasNewerVersion
+ *
+ * THREE independent signals, ORed. We only ever read the second, and read it
+ * as a NUMBER — so the first was destroyed by the coercion (`Number("unknown")`
+ * is NaN) and the third only reached us through a separate list that needs a
+ * `newestVersion` Vortex does not always have.
+ *
+ * Deliberately NOT transcribed: the `source` check. Vortex uses it to keep
+ * non-Nexus mods out of a Nexus-shaped question; every mod that reaches these
+ * lists is already scoped to a Nexus page by its caller, and adding it here
+ * would only drop mods for a reason we cannot see from this data.
+ *
+ * The version comparison is looser here than Vortex's `versionClean`, which
+ * runs semver coercion. Looser errs toward SHOWING a mod, and a curator who
+ * sees one extra row loses a glance; a curator who sees one fewer ships a
+ * collection with a stale mod in it. That asymmetry decides it.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+export function vortexReportsUpdate(mod: CuratorMod): boolean {
+  // 1. "There is an update; I cannot name the file."
+  if (mod.newestFileUnknown === true) return true;
+
+  // 2. A different file id. DIFFERENT, not newer — see findUpdatable for why
+  //    the automated path additionally demands newer.
+  if (
+    mod.newestFileId !== undefined &&
+    mod.nexusFileId !== undefined &&
+    mod.newestFileId !== mod.nexusFileId
+  ) {
+    return true;
+  }
+
+  // 3. A different version string.
+  const newest = mod.newestVersion?.trim();
+  const current = mod.version?.trim();
+  if (newest !== undefined && newest.length > 0) {
+    if (current === undefined) return true;
+    if (newest.toLowerCase() !== current.toLowerCase()) return true;
+  }
+  return false;
+}
+
 export function findManualUpdates(
   mods: readonly CuratorMod[],
 ): ManualUpdate[] {
@@ -177,16 +246,17 @@ export function findManualUpdates(
     ) {
       continue;
     }
-    const newest = mod.newestVersion?.trim();
-    const current = mod.version?.trim();
-    if (newest === undefined || newest.length === 0) continue;
-    // Vortex only records a `newestVersion` when it believes one exists, so
-    // "differs" is the signal. Compared case-insensitively because "1.0A"
-    // and "1.0a" are the same release and reporting that as an update would
-    // be noise on every refresh.
-    if (current !== undefined && newest.toLowerCase() === current.toLowerCase()) {
-      continue;
-    }
+    /**
+     * Vortex's own predicate, whole — not just the version half.
+     *
+     * This used to require a `newestVersion` that differed, which covered one
+     * of Vortex's three signals and silently dropped the other two. The one
+     * that hurt: `newestFileId === "unknown"` means "there is an update, go
+     * to the page", which is EXACTLY a manual update and exactly what this
+     * list is for. Those mods appeared in Vortex's filter with the
+     * go-to-the-site icon and in neither of our lists.
+     */
+    if (!vortexReportsUpdate(mod)) continue;
 
     // One per page, like the automated list, so several installs of the same
     // mod do not each demand a visit to the same page.
@@ -198,7 +268,9 @@ export function findManualUpdates(
     out.push({
       mod,
       fromVersion: shown(mod.version),
-      toVersion: newest,
+      // Vortex does not always know the version — that is what "unknown"
+      // means — so this says what is true rather than inventing a number.
+      toVersion: shown(mod.newestVersion),
       ...(mod.nexusModId !== undefined && mod.downloadGame !== undefined
         ? {
             url: `https://www.nexusmods.com/${mod.downloadGame}/mods/${mod.nexusModId}`,

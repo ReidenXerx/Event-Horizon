@@ -87,6 +87,13 @@ export function readCuratorMods(
       ...opt("nexusModId", asNumber(attributes.modId ?? attributes.nexusId)),
       ...opt("nexusFileId", asNumber(attributes.fileId)),
       ...opt("newestFileId", asNumber(attributes.newestFileId)),
+      // `"unknown"` is a VALUE, not an absence: Vortex uses it to say an
+      // update exists whose file it cannot name. asNumber turns it into
+      // undefined, which is indistinguishable from "no update known", so the
+      // fact is preserved separately.
+      ...(attributes.newestFileId === "unknown"
+        ? { newestFileUnknown: true }
+        : {}),
       ...opt("endorsed", asString(attributes.endorsed)),
       // The FILE's name, which is what separates two different files on
       // one Nexus page from two versions of the same file.

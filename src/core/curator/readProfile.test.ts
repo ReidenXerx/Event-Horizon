@@ -184,3 +184,60 @@ describe("the archive reference the cleanup depends on", () => {
     expect("archiveId" in m!).toBe(false);
   });
 });
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * `newestFileId: "unknown"` is a VALUE, and it was being destroyed here.
+ *
+ * Vortex writes the literal string when it knows a mod has an update but
+ * cannot name the file, and its own `updateState` tests for it FIRST — those
+ * mods render with the go-to-the-site icon in the Mods table.
+ *
+ * This reader coerces the attribute with `Number(...)`, and `Number("unknown")`
+ * is NaN, which became `undefined`. So an assertion that an update EXISTS
+ * arrived downstream indistinguishable from "no update information", and a mod
+ * Vortex was actively flagging appeared in neither of our update lists.
+ *
+ * The tests for the two lists could not catch this: they build the mod shape
+ * directly and never run the coercion. This is the one that does.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("newestFileId that Vortex could not resolve to a number", () => {
+  const readOne = (attributes: Record<string, unknown>) =>
+    readCuratorMods(
+      state({ "vortex-local-id": { attributes } }),
+      "skyrimse",
+      new Set(["vortex-local-id"]),
+    )[0]!;
+
+  it("preserves the fact when the value is the string \"unknown\"", () => {
+    const m = readOne({ name: "A Mod", modId: 1, fileId: 5, newestFileId: "unknown" });
+    expect(m.newestFileUnknown).toBe(true);
+    // And still no number, because there is no number — the two facts are
+    // separate on purpose.
+    expect(m.newestFileId).toBeUndefined();
+  });
+
+  it("does NOT claim it for a mod with no newestFileId at all", () => {
+    // The ordinary case, and by far the most common: nothing known about a
+    // newer file. Flagging these would put most of a 1,007-mod profile into
+    // the manual-update list.
+    const m = readOne({ name: "A Mod", modId: 1, fileId: 5 });
+    expect(m.newestFileUnknown).toBeUndefined();
+  });
+
+  it("does NOT claim it for an ordinary numeric newestFileId", () => {
+    const m = readOne({ name: "A Mod", modId: 1, fileId: 5, newestFileId: 77 });
+    expect(m.newestFileUnknown).toBeUndefined();
+    expect(m.newestFileId).toBe(77);
+  });
+
+  it("reads a numeric-looking STRING as the number Vortex meant", () => {
+    // Vortex's own comparison is `newestFileId.toString() !== fileId.toString()`,
+    // so it treats "77" and 77 alike. Dropping the string form would lose a
+    // real update rather than a confusing one.
+    const m = readOne({ name: "A Mod", modId: 1, fileId: 5, newestFileId: "77" });
+    expect(m.newestFileId).toBe(77);
+    expect(m.newestFileUnknown).toBeUndefined();
+  });
+});
