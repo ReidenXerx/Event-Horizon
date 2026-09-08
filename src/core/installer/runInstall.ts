@@ -2392,9 +2392,11 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     for (const mod of plan.manifest.mods) {
       if (mod.state.mirrored !== true) continue;
       if (ctx.abortSignal?.aborted === true) break;
-      const vortexModId = installedMods.find(
+      const installedIndex = installedMods.findIndex(
         (m) => m.compareKey === mod.compareKey,
-      )?.vortexModId;
+      );
+      let vortexModId =
+        installedIndex >= 0 ? installedMods[installedIndex]!.vortexModId : undefined;
       if (vortexModId === undefined) {
         // Not installed by this run: it failed, or the user chose to keep
         // their own copy at a divergence prompt and it lives in carriedMods.
@@ -2423,16 +2425,73 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
        * The mirror asks the same question from the same source.
        */
       if (!ownedByUs.has(vortexModId)) {
-        mirrorSkipped.push(
-          `"${mod.name}" — this is the user's own copy of the mod, not one ` +
-            `Event Horizon installed, so its files were left untouched`,
+        /**
+         * ─── SO INSTALL OUR OWN COPY AND MIRROR INTO THAT ─────────────────
+         * Refusing outright was correct about the danger and wrong about the
+         * remedy. Mirroring exists to give the user the curator's edited files
+         * while the mod stays a real Nexus mod (NS-5) — and on any machine
+         * that already owns the mods, EVERY mirrored mod is adopted, so the
+         * feature did nothing at all. One real install: 26 mods wanted, 0
+         * applied, 26 skipped, and a Done card that said "skipped" rather than
+         * "this feature is off for you".
+         *
+         * The alongside install is the answer, and it already exists for the
+         * repair path: stage the curator's archive under our own name, let
+         * Vortex install it as a SECOND mod, then enable ours and disable
+         * theirs in this collection's profile only. The user's copy is not
+         * touched, not overwritten and not deleted — it is simply not the one
+         * this collection loads — so NS-2 holds in the strongest form, by not
+         * writing to their mod at all rather than by writing carefully.
+         *
+         * The new copy IS ours, so the mirror below then runs against it with
+         * full rights, and the journal records it so the next run knows.
+         */
+        const ours = await tryInstallAlongside({
+          ctx,
+          installEntry: installedMods[installedIndex]!,
+          manifestEntry: mod,
+          activeProfileId,
+          onTempArchive: (dir) => tempArchivesToCleanup.push(dir),
+        });
+        if (ours === undefined) {
+          mirrorSkipped.push(
+            `"${mod.name}" — this is your own copy of the mod, and the ` +
+              `curator's version of its archive could not be obtained on this ` +
+              `machine, so nothing was changed`,
+          );
+          ehLog("warn", "install.mirror.skipped-not-ours", {
+            mod: mod.name,
+            compareKey: mod.compareKey,
+            vortexModId,
+            why: "alongside install could not obtain the curator's archive",
+          });
+          continue;
+        }
+
+        await appendJournalEntry(ctx.appDataPath, plan.manifest.package.id, {
+          compareKey: ours.compareKey,
+          vortexModId: ours.vortexModId,
+          kind: "installed",
+          decision: "mirror-alongside",
+          at: new Date().toISOString(),
+        });
+        // Captured BEFORE the slot is overwritten — reading it after would
+        // log our own new id as "theirs" and make the swap unreadable.
+        const theirModId = vortexModId;
+        ownedByUs.add(ours.vortexModId);
+        installedMods[installedIndex] = ours;
+        vortexModId = ours.vortexModId;
+
+        mirrorLines.push(
+          `"${mod.name}" — your own copy was left untouched; the collection ` +
+            `installed its own copy beside it and uses that one.`,
         );
-        ehLog("warn", "install.mirror.skipped-not-ours", {
+        ehLog("info", "install.mirror.alongside", {
           mod: mod.name,
           compareKey: mod.compareKey,
-          vortexModId,
+          theirModId,
+          ourModId: ours.vortexModId,
         });
-        continue;
       }
 
       const stagingRoot = stagingRootForModId(

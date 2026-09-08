@@ -24,6 +24,8 @@ import * as nodePath from "path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import * as vortexApi from "@nexusmods/vortex-api";
+
 import { runInstall } from "../../src/core/installer/runInstall";
 import { parseManifest } from "../../src/core/manifest/parseManifest";
 import { resolveInstallPlan } from "../../src/core/resolver/resolveInstallPlan";
@@ -1245,6 +1247,21 @@ describe("mirroring never rewrites a mod the user brought", () => {
       attributes: { name: "Rock Textures", version: "1.0.0" },
     };
 
+    /**
+     * Watch the log, to prove the ATTEMPT is made.
+     *
+     * The mirror no longer gives up on a mod the user brought — it installs
+     * the curator's copy ALONGSIDE and mirrors into that, leaving theirs
+     * untouched. In this world the curator's archive is not obtainable, so it
+     * correctly falls through to the skip; without this spy the test cannot
+     * tell "tried and could not" from "never tried", and the whole point of
+     * the change is that it now tries.
+     */
+    const logSpy = vi
+      .spyOn(vortexApi, "log")
+      .mockImplementation(() => undefined);
+    logSpy.mockClear();
+
     // No journal entry: we never installed this.
     const result = (await install(manifest, fake, [
       { id: THEIRS, name: "Rock Textures", nexusModId: 100, nexusFileId: 200 },
@@ -1255,8 +1272,24 @@ describe("mirroring never rewrites a mod the user brought", () => {
     // THE assertion. Without the ownership gate the mirror deleted this.
     expect(fs.existsSync(nodePath.join(dir, "Data", "MY_TWEAK.ini"))).toBe(true);
 
-    // And the skip is SAID, not silent — a phase that can delete files must
-    // report when it declines to.
-    expect(result.mirrorNotice?.join(" ")).toMatch(/user's own copy/i);
+    /**
+     * And the skip is SAID, not silent — a phase that can delete files must
+     * report when it declines to.
+     *
+     * Asserted on MEANING, not on a sentence. The notice used to read "the
+     * user's own copy"; it now addresses the reader directly, and a test that
+     * pins the exact wording fails on a rewrite that improved it. What has to
+     * hold is that the message names whose copy it is and says nothing was
+     * changed.
+     */
+    const notice = result.mirrorNotice?.join(" ") ?? "";
+    expect(notice).toMatch(/your own copy|user's own copy/i);
+    expect(notice).toMatch(/nothing was changed|left untouched/i);
+
+    // And it TRIED the alongside install first. Mutating that call away leaves
+    // every assertion above green, because "declined to touch their mod" looks
+    // identical whether we looked for an alternative or not.
+    const events = logSpy.mock.calls.map((c) => String(c[1]));
+    expect(events).toContain("[Event Horizon] install.alongside.no-archive");
   });
 });
