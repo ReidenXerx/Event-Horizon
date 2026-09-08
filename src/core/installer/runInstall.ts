@@ -1151,6 +1151,9 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     await writeInstallMarker(ctx.appDataPath, {
       packageId: plan.manifest.package.id,
       packageName: plan.manifest.package.name,
+      // Carried so a crash-recovered marker can be used for RESUME: the
+      // resume guard refuses a profile built for a different release.
+      packageVersion: plan.manifest.package.version,
       startedAt: new Date().toISOString(),
       profileId: activeProfileId,
       gameId: plan.manifest.game.id,

@@ -18,6 +18,7 @@
  *     action can be deleted or trimmed to a thin shim.
  */
 
+import { resumeCandidates } from "../../../core/installer/resumeSources";
 import { selectors, util } from "@nexusmods/vortex-api";
 import type { types } from "@nexusmods/vortex-api";
 
@@ -38,6 +39,7 @@ import {
 } from "../../../core/manifest/readEhcoll";
 import { enrichInstalledModsWithStagingSetHashes } from "../../../core/resolver/enrichStagingSetHashes";
 import { listInstallAttempts } from "../../../core/installer/attemptRecord";
+import { listInterruptedInstalls } from "../../../core/installer/installMarker";
 import { logInstallPlan } from "../../../core/resolver/logInstallPlan";
 import { resolveInstallPlan } from "../../../core/resolver/resolveInstallPlan";
 // Shared with the Vortex action pipeline in src/actions. It used to live here
@@ -291,7 +293,16 @@ export async function runLoadingPipeline(args: {
       activeGameId,
       manifest.package.id,
       manifest.package.version,
-      await listInstallAttempts(appDataPath),
+      /**
+       * Markers as well as attempts. A KILLED run — force-quit, power loss —
+       * writes no attempt, because no `finally` runs; its marker survives
+       * with the profile id in it, and nothing read it. That is the case the
+       * marker was written for.
+       */
+      resumeCandidates(
+        await listInstallAttempts(appDataPath),
+        await listInterruptedInstalls(appDataPath),
+      ),
     ),
   );
 
@@ -487,7 +498,16 @@ export async function runLoadingPipelineWithReceipt(args: {
       activeGameId,
       manifest.package.id,
       manifest.package.version,
-      await listInstallAttempts(appDataPath),
+      /**
+       * Markers as well as attempts. A KILLED run — force-quit, power loss —
+       * writes no attempt, because no `finally` runs; its marker survives
+       * with the profile id in it, and nothing read it. That is the case the
+       * marker was written for.
+       */
+      resumeCandidates(
+        await listInstallAttempts(appDataPath),
+        await listInterruptedInstalls(appDataPath),
+      ),
     ),
   );
 

@@ -39,6 +39,18 @@ export interface InstallMarker {
   packageId: string;
   /** Display name, so the warning can name the collection. */
   packageName: string;
+  /**
+   * The release this run was installing.
+   *
+   * Added so the marker can feed the RESUME decision, which refuses to resume
+   * a profile built for a different version. Without it a crash-recovered
+   * marker could only be trusted blindly or not at all.
+   *
+   * Optional: absent on a marker written before this field existed. Absent
+   * means UNKNOWN, and the resume guard treats unknown as "do not refuse on
+   * version grounds" — the same reading it already uses for a legacy attempt.
+   */
+  packageVersion?: string;
   /** ISO timestamp of when the run began. */
   startedAt: string;
   /** The profile the run was installing into — usually one it created. */
@@ -194,6 +206,10 @@ function parseMarker(raw: unknown): InstallMarker | undefined {
     profileId,
     gameId,
     totalMods: typeof o.totalMods === "number" ? o.totalMods : 0,
+    // Absence is preserved, never coerced to "" — see the field's own note.
+    ...(typeof o.packageVersion === "string"
+      ? { packageVersion: o.packageVersion }
+      : {}),
   };
 }
 
