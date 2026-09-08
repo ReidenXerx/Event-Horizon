@@ -76,3 +76,30 @@ describe("nobody re-grows a private path helper", () => {
     expect(/split\(\s*\/\[\\\/\]\/\s*\)/.test(sample2)).toBe(true);
   });
 });
+
+describe("the deleting function is never left on the default case mode", () => {
+  /**
+   * `planMirror`'s `caseMode` defaults to `insensitive` so the callers that
+   * existed before the service kept their behaviour. That default is a
+   * migration aid, and leaving the DRIVER on it would put the one function
+   * that deletes a user's files on a hard-coded Windows answer — merging two
+   * files that both really exist on a Proton install and removing the wrong
+   * one.
+   *
+   * It was left on the default in the commit that introduced the service, and
+   * nothing caught it: every test passed, because a Windows developer's
+   * filesystem gives the same answer either way.
+   */
+  it("runInstall passes a detected mode to planMirror", () => {
+    const src = fs.readFileSync(
+      path.join(SRC, "core", "installer", "runInstall.ts"),
+      "utf8",
+    );
+    const call = src.slice(
+      src.indexOf("planMirror({"),
+      src.indexOf("planMirror({") + 300,
+    );
+    expect(call).toContain("caseMode");
+    expect(call).toContain("detectCaseSensitivity");
+  });
+});

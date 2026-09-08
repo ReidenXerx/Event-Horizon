@@ -169,6 +169,7 @@ import {
   describePluginFlagRepair,
   type PluginFlagRepair,
 } from "./applyPluginLightFlags";
+import { detectCaseSensitivity } from "../paths";
 import { describeSkippedFinishing } from "./runPhase";
 import {
   orderDiffers,
@@ -2513,9 +2514,20 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           ctx.abortSignal,
           () => undefined,
         );
+        /**
+         * The DETECTED mode, not the default.
+         *
+         * `planMirror` decides which of the user's files get deleted, and its
+         * `caseMode` defaults to `insensitive` so existing callers kept the
+         * behaviour they were written against. Leaving this call on that
+         * default would have put the one deleting function in the codebase on
+         * a hard-coded Windows answer — on a Proton install, merging two files
+         * that both really exist and removing the wrong one.
+         */
         const mirrorPlan = planMirror({
           target: mod.state.stagingFiles ?? [],
           current,
+          caseMode: await detectCaseSensitivity(stagingRoot),
         });
         const outcome = await applyMirrorPlan({
           stagingRoot,
