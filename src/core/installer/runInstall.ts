@@ -162,11 +162,14 @@ import {
 import {
   applyPluginOrder,
   describePluginOrderApplication,
+  type PluginOrderApplication,
 } from "./applyPluginOrder";
 import {
   applyPluginLightFlags,
   describePluginFlagRepair,
+  type PluginFlagRepair,
 } from "./applyPluginLightFlags";
+import { describeSkippedFinishing } from "./runPhase";
 import { getGameDirectory } from "../manifest/externalDependencies";
 import {
   applyModRules,
@@ -2491,7 +2494,53 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       };
     }
 
-    aborted = checkAbort("deploying");
+    /**
+     * ─── PAST HERE, A STOP CANNOT UNDO ANYTHING ─────────────────────────
+     * The deploy has run: the collection is on disk and linked into the game
+     * folder. What follows is finishing work — pinning the plugin order,
+     * restoring ESL flags, writing the game INI — and the receipt that records
+     * the whole install comes last.
+     *
+     * That made an abort here genuinely awkward, and the code answered it by
+     * not asking: FIVE phases ran with no signal check at all, two of them not
+     * even taking the signal, so pressing Stop in the last quarter of an
+     * install did nothing and said nothing.
+     *
+     * Unwinding instead would be worse — a fully deployed collection with no
+     * receipt is the one state provenance depends on not existing (NS-2). So
+     * the answer is the third one: stop WRITING to the user's machine, carry
+     * on to the receipt, and name the steps that were skipped.
+     *
+     * The two remaining post-deploy phases are read-only checks (did the order
+     * come out right, did each mod install as the right kind) and are left to
+     * run: they cost a file read, they change nothing, and skipping them would
+     * only make the receipt less informative.
+     */
+    const finishingSkipped: string[] = [];
+    const stopBeforeWriting = (phase: string): boolean => {
+      if (ctx.abortSignal?.aborted !== true) return false;
+      finishingSkipped.push(phase);
+      ehLog("info", "install.finishing.skipped-after-stop", {
+        phase,
+        why: "the user stopped the run; the mods are already deployed",
+      });
+      return true;
+    };
+
+    /**
+     * NO `checkAbort("deploying")` here, and that is the point.
+     *
+     * It used to sit exactly here — immediately after `deployAndWait` — and
+     * returned `kind: "aborted"` with no receipt. But the deploy has just
+     * COMPLETED: every mod is installed, enabled, and linked into the game
+     * folder. Abandoning at this line left a fully installed collection that
+     * Vortex has no record of, which is the state provenance depends on not
+     * existing (NS-2) and the one a user cannot recover from by re-running.
+     *
+     * So this is the point of no return. A stop from here on stops the
+     * remaining WRITES (see `stopBeforeWriting`) and the run finishes its
+     * bookkeeping, reporting which steps it skipped.
+     */
     if (aborted) return aborted;
 
     // ── 7b. apply Vortex per-game LoadOrder ─────────────────────────
@@ -2603,7 +2652,15 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       1,
       `Applying the collection's plugin order (${plan.manifest.plugins.order.length})...`,
     );
-    const pluginOrderApplication = await applyPluginOrder({
+    const pluginOrderApplication = stopBeforeWriting("plugin order")
+      ? ({
+          pinned: false,
+          sorted: false,
+          writeRequested: false,
+          enabledCorrections: 0,
+          notes: ["skipped: you stopped the install"],
+        } as PluginOrderApplication)
+      : await applyPluginOrder({
       api,
       gameId: plan.manifest.game.id,
       collectionId: plan.manifest.package.id,
@@ -2635,7 +2692,23 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     //
     // After the order is applied, because both write files the game reads and
     // this one must land on the deployed copy.
-    const pluginFlagRepair = await applyPluginLightFlags({
+    const pluginFlagRepair = stopBeforeWriting("ESL flags")
+      ? // Typed, NOT cast. An `as unknown as` here hid a shape mismatch —
+        // `failures` was missing and `missing` had the wrong type — and the
+        // driver threw on the very path this guard exists to make safe.
+        ({
+          corrected: 0,
+          set: 0,
+          cleared: 0,
+          correctedNames: [],
+          alreadyCorrect: 0,
+          unknown: 0,
+          missing: 0,
+          unreadable: [],
+          failures: [],
+          regularAfter: 0,
+        } satisfies PluginFlagRepair)
+      : await applyPluginLightFlags({
       order: plan.manifest.plugins.order,
       dataDir: gameDataDirFor(api, plan.manifest.game.id),
       ...(ctx.abortSignal !== undefined ? { signal: ctx.abortSignal } : {}),
@@ -2778,7 +2851,14 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     ) {
       reportProgress("writing-receipt", 0, 1, "Applying game settings...");
       try {
-        gameIniApplication = await applyGameIni({
+        gameIniApplication = stopBeforeWriting("game settings")
+          ? {
+              appliedCount: 0,
+              alreadyMatchedCount: 0,
+              changes: [],
+              failed: [],
+            }
+          : await applyGameIni({
           gameIni: plan.manifest.gameIni!,
           gameId: plan.manifest.game.id,
           documentsPath:
@@ -2983,6 +3063,13 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         : {}),
       ...(driftNotice !== undefined ? { stagingDriftNotice: driftNotice } : {}),
       ...(curatorReports.length > 0 ? { curatorReports } : {}),
+      ...(finishingSkipped.length > 0
+        ? {
+            finishingSkippedNotice: [
+              describeSkippedFinishing(finishingSkipped),
+            ],
+          }
+        : {}),
       ...(externalNotices.length > 0
         ? { externalArchiveNotice: externalNotices }
         : {}),

@@ -374,6 +374,16 @@ export type InstallSuccess = {
    */
   rulesPurgeNotice?: string[];
   /**
+   * Finishing steps skipped because the user pressed Stop after the deploy.
+   *
+   * Past the deploy a stop cannot undo anything, and unwinding would leave a
+   * fully installed collection with no receipt (NS-2). So the run stops
+   * WRITING to the user's machine, finishes its record, and names what it did
+   * not do — rather than ignoring the stop entirely, which is what five
+   * post-deploy phases used to do.
+   */
+  finishingSkippedNotice?: string[];
+  /**
    * Present only when applying the curator's plugin order did not fully work.
    *
    * The install pins the curator's order, asks LOOT to sort the user's own
