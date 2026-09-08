@@ -156,3 +156,46 @@ describe("install receipt round-trip", () => {
     expect(twice).toEqual(once);
   });
 });
+
+describe("what the run did NOT do, and what it changed in the game folder", () => {
+  /**
+   * Both fields were added because the receipt was silent about them, and
+   * both are read back later — so both are exactly the shape this file
+   * exists to guard. A parser branch that is missing does not fail loudly; it
+   * writes a receipt without the field and everything downstream reads a
+   * complete, healthy install.
+   */
+  it("keeps finishingSkipped, so a stopped run does not read as a clean one", () => {
+    const r = base();
+    r.finishingSkipped = ["plugin order", "ESL flags", "game settings"];
+    expect(throughDisk(r).finishingSkipped).toEqual([
+      "plugin order",
+      "ESL flags",
+      "game settings",
+    ]);
+  });
+
+  it("keeps pluginFlagChanges, which is the only record of an undo", () => {
+    // The ESL repair rewrites bytes inside the user's game folder, and under
+    // hardlink deployment those bytes belong to the owning mod — which is
+    // usually a mod Event Horizon did not install. Losing this on the way to
+    // disk means the change is permanent and unattributable.
+    const r = base();
+    r.pluginFlagChanges = [
+      { plugin: "Foo.esp", wasLight: false },
+      { plugin: "Bar.esp", wasLight: true },
+    ];
+    expect(throughDisk(r).pluginFlagChanges).toEqual([
+      { plugin: "Foo.esp", wasLight: false },
+      { plugin: "Bar.esp", wasLight: true },
+    ]);
+  });
+
+  it("leaves both absent when the run did everything", () => {
+    // Presence IS the signal for finishingSkipped, so an empty array written
+    // on every ordinary run would make it meaningless.
+    const clean = throughDisk(base());
+    expect(clean.finishingSkipped).toBeUndefined();
+    expect(clean.pluginFlagChanges).toBeUndefined();
+  });
+});

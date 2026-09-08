@@ -385,6 +385,9 @@ export function previousInstallFromReceipt(
 ): PreviousCollectionInstall | undefined {
   if (receipt === undefined) return undefined;
   return {
+    ...(receipt.gameIniApplication !== undefined
+      ? { gameIniApplication: receipt.gameIniApplication }
+      : {}),
     packageId: receipt.packageId,
     packageVersion: receipt.packageVersion,
     installedAt: receipt.installedAt,

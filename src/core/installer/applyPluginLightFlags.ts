@@ -58,6 +58,14 @@ export type PluginFlagRepair = {
    * to record a count and nothing else.
    */
   correctedNames: string[];
+  /**
+   * The same corrections, with the flag each plugin had BEFORE.
+   *
+   * `correctedNames` says which files were rewritten; this says how to put
+   * them back. Recorded into the receipt so the change this step makes inside
+   * the user's game folder is reversible rather than merely logged.
+   */
+  changes: { plugin: string; wasLight: boolean }[];
   /** Already correct — the common case when the mod author shipped it light. */
   alreadyCorrect: number;
   /** The manifest did not record a flag: older package, or unreadable at build. */
@@ -108,6 +116,7 @@ export async function applyPluginLightFlags(args: {
     set: 0,
     cleared: 0,
     correctedNames: [],
+    changes: [],
     alreadyCorrect: 0,
     unknown: 0,
     missing: 0,
@@ -172,6 +181,9 @@ export async function applyPluginLightFlags(args: {
       if (changed) {
         result.corrected += 1;
         result.correctedNames.push(plugin.name);
+        // `changed` is true only when the flag DIFFERED, so the prior value is
+        // the opposite of what we just wrote.
+        result.changes.push({ plugin: plugin.name, wasLight: !plugin.light });
         if (plugin.light) result.set += 1;
         else result.cleared += 1;
       } else {

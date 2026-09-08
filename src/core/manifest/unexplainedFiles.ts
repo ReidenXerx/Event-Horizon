@@ -72,12 +72,21 @@ export type UnexplainedFile = {
 /**
  * A comparison key over staging paths.
  *
- * Fixed to the Windows reading rather than probed: this runs on the CURATOR's
- * machine during a build, comparing two lists that both came from the same
- * walk of the same folder, so the two sides cannot disagree about case in the
- * way a curator-to-user comparison can. Kept as a call into the service so
- * there is one definition of "the same path" to change if that stops being
- * true.
+ * Fixed to the Windows reading rather than probed — but NOT for the reason
+ * this comment used to give. It claimed the two sides "came from the same walk
+ * of the same folder, so they cannot disagree about case". They did not: one
+ * side is the ARCHIVE's internal namespace (`listing.entries`) and the other
+ * is a staging walk, and an archive built on Linux can legitimately hold
+ * `Textures/Foo.dds` and `textures/foo.dds` as two entries. Folding them makes
+ * the first-entry-wins lookups below pick one size arbitrarily, so a reported
+ * `delta` can be computed against the wrong entry.
+ *
+ * It stays folded anyway, deliberately: this is a build-time REPORT (the only
+ * caller is `selfCheckMod`), the folded reading is the right one for the
+ * Windows archives that make up essentially all of them, and being wrong costs
+ * a slightly-off number in a diagnostic rather than a wrong file anywhere.
+ * Written down so the next reader is deciding with the real reason rather than
+ * trusting one that was not true.
  */
 const norm = (p: string): string => pathKey(p, "insensitive");
 

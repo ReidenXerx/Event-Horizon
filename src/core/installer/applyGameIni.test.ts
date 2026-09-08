@@ -267,3 +267,91 @@ describe("shouldApplyGameIni", () => {
     expect(shouldApplyGameIni({ gameIni: { files: [] }, packageVersion: "1.0.0" })).toBe(false);
   });
 });
+
+describe("once per version, and the projection that has to carry it", () => {
+  /**
+   * `shouldApplyGameIni` promises, in the user-facing text right below it,
+   * that settings are "done once per version and never re-applied". The guard
+   * read `previous.gameIniApplication`, the parameter was typed `unknown`, and
+   * `PreviousCollectionInstall` — the only thing ever passed to it — had no
+   * such field. So it compared `undefined !== undefined`, was always false,
+   * and every re-run of the same release rewrote the user's INI and reverted
+   * every edit they had made since. The one behaviour the comment calls
+   * unforgivable, guarded by a check that could not fire.
+   *
+   * These test the RULE and the PROJECTION separately, because the rule was
+   * always right — it was the data path that was empty.
+   */
+  const gameIni = { files: [{ path: "Skyrim.ini", settings: [] }] } as never;
+  const applied = {
+    appliedCount: 3,
+    alreadyMatchedCount: 0,
+    changes: [],
+    failed: [],
+  };
+
+  it("applies when nothing was installed before", () => {
+    expect(shouldApplyGameIni({ gameIni, packageVersion: "1.0.0" })).toBe(true);
+  });
+
+  it("does NOT re-apply for a version that already applied them", () => {
+    expect(
+      shouldApplyGameIni({
+        gameIni,
+        packageVersion: "1.0.0",
+        previous: { packageVersion: "1.0.0", gameIniApplication: applied },
+      }),
+    ).toBe(false);
+  });
+
+  it("applies again for a NEW version", () => {
+    expect(
+      shouldApplyGameIni({
+        gameIni,
+        packageVersion: "1.0.1",
+        previous: { packageVersion: "1.0.0", gameIniApplication: applied },
+      }),
+    ).toBe(true);
+  });
+
+  it("applies when the previous run SKIPPED them", () => {
+    // A stop past the deploy records no `gameIniApplication` at all, which is
+    // what keeps "running the install again picks them up" true. Recording a
+    // zeroed receipt there would suppress the settings permanently.
+    expect(
+      shouldApplyGameIni({
+        gameIni,
+        packageVersion: "1.0.0",
+        previous: { packageVersion: "1.0.0" },
+      }),
+    ).toBe(true);
+  });
+
+  it("carries gameIniApplication through previousInstallFromReceipt", async () => {
+    /**
+     * The half that was actually missing. Testing the rule alone would have
+     * stayed green for the entire time the bug existed, because the rule was
+     * never wrong — nothing ever handed it the field.
+     */
+    const { previousInstallFromReceipt } = await import(
+      "../resolver/userState"
+    );
+    const projected = previousInstallFromReceipt({
+      packageId: "p",
+      packageVersion: "1.0.0",
+      installedAt: "2026-01-01T00:00:00.000Z",
+      mods: [],
+      gameIniApplication: applied,
+    } as never);
+    expect(projected?.gameIniApplication).toEqual(applied);
+
+    // And absence stays absence, so a skipped run does not read as applied.
+    const withoutIt = previousInstallFromReceipt({
+      packageId: "p",
+      packageVersion: "1.0.0",
+      installedAt: "2026-01-01T00:00:00.000Z",
+      mods: [],
+    } as never);
+    expect(withoutIt?.gameIniApplication).toBeUndefined();
+  });
+});

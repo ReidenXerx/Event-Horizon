@@ -45,6 +45,7 @@ import type {
   SupportedGameId,
   VortexDeploymentMethod,
 } from "./ehcoll";
+import type { GameIniApplicationReceipt } from "./installLedger";
 
 // ===========================================================================
 // USER-SIDE STATE (resolver input)
@@ -281,6 +282,22 @@ export type PreviousCollectionInstall = {
   installedAt: string;
   /** Number of mods the ledger says were installed. UI-only. */
   modCount: number;
+  /**
+   * What the previous install did to the user's game INI, if anything.
+   *
+   * Read by `shouldApplyGameIni` to keep the promise its own user-facing text
+   * makes — "this is done once per version and never re-applied". The field
+   * did not exist, so that check compared `undefined !== undefined`, was
+   * always false, and every re-run of the same release rewrote the user's INI
+   * and reverted every edit they had made since. The parameter was typed
+   * `unknown`, so nothing caught it.
+   *
+   * Absent means the previous install did NOT apply settings — including when
+   * the phase was skipped because the user stopped the run, which must stay
+   * distinguishable from "applied", or the fix turns into permanent
+   * suppression.
+   */
+  gameIniApplication?: GameIniApplicationReceipt;
 };
 
 export type AvailableDownload = {

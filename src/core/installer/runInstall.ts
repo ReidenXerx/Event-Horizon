@@ -2979,6 +2979,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           set: 0,
           cleared: 0,
           correctedNames: [],
+    changes: [],
           alreadyCorrect: 0,
           unknown: 0,
           missing: 0,
@@ -3292,13 +3293,22 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     ) {
       reportProgress("writing-receipt", 0, 1, "Applying game settings...");
       try {
+        /**
+         * A skipped phase records NOTHING, rather than a zeroed receipt.
+         *
+         * `shouldApplyGameIni` treats a recorded `gameIniApplication` for this
+         * version as "already done, do not touch their INI again". A zeroed
+         * stub written because the user pressed Stop would satisfy that
+         * forever, so the settings this collection needs would never be
+         * applied and nothing would ever say why.
+         *
+         * Leaving it undefined is the honest record: this run did not apply
+         * them. `finishingSkippedNotice` is what tells the user, and running
+         * the install again picks them up — which is exactly what that notice
+         * promises.
+         */
         gameIniApplication = stopBeforeWriting("game settings")
-          ? {
-              appliedCount: 0,
-              alreadyMatchedCount: 0,
-              changes: [],
-              failed: [],
-            }
+          ? undefined
           : await applyGameIni({
           gameIni: plan.manifest.gameIni!,
           gameId: plan.manifest.game.id,
@@ -3411,6 +3421,8 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       verifiedOkKeys,
       expectedFilesByCompareKey,
       ownedByUs,
+      finishingSkipped,
+      pluginFlagChanges: pluginFlagRepair.changes,
     });
 
     let receiptPath: string;
@@ -4553,6 +4565,16 @@ function buildReceipt(args: {
    * the receipt was the last copy.
    */
   ownedByUs: ReadonlySet<string>;
+  /**
+   * Finishing steps this run did NOT perform, because the user stopped it
+   * after the deploy. Empty on an ordinary run.
+   */
+  finishingSkipped: readonly string[];
+  /**
+   * Light-flag rewrites this run made inside the user's game folder, with the
+   * value each plugin had before — so the change is reversible.
+   */
+  pluginFlagChanges: readonly { plugin: string; wasLight: boolean }[];
 }): InstallReceipt {
   const {
     ctx,
@@ -4566,6 +4588,8 @@ function buildReceipt(args: {
     verifiedOkKeys,
     expectedFilesByCompareKey,
     ownedByUs,
+    finishingSkipped,
+    pluginFlagChanges,
   } = args;
   const { manifest } = ctx.plan;
   const now = new Date().toISOString();
@@ -4664,6 +4688,21 @@ function buildReceipt(args: {
     verifications,
     ...(args.gameIniApplication !== undefined
       ? { gameIniApplication: args.gameIniApplication }
+      : {}),
+    /**
+     * Absent on an ordinary run, so its presence IS the signal.
+     *
+     * The receipt is the claim "this collection is installed at this version",
+     * and the Doctor, the Collections page and every later upgrade read it as
+     * a complete healthy install. A run the user stopped after the deploy is
+     * installed but unfinished, and the only place that said so was a notice
+     * on a screen they have since closed.
+     */
+    ...(finishingSkipped.length > 0
+      ? { finishingSkipped: [...finishingSkipped] }
+      : {}),
+    ...(pluginFlagChanges.length > 0
+      ? { pluginFlagChanges: [...pluginFlagChanges] }
       : {}),
   };
 }

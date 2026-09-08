@@ -286,6 +286,28 @@ export function parseReceipt(raw: string): InstallReceipt {
   if (rulesApplication !== undefined) out.rulesApplication = rulesApplication;
   if (userlistApplication !== undefined)
     out.userlistApplication = userlistApplication;
+
+  /**
+   * Carried through, not validated field-by-field: both are records this tool
+   * wrote about its own run, and dropping one silently is the failure mode
+   * these two exist to prevent. An unknown shape is preserved as-is rather
+   * than discarded — a receipt that quietly loses what a run did NOT do is
+   * worse than one carrying a field it cannot fully parse.
+   */
+  if (Array.isArray(obj.finishingSkipped)) {
+    out.finishingSkipped = obj.finishingSkipped.filter(
+      (x: unknown): x is string => typeof x === "string",
+    );
+  }
+  if (Array.isArray(obj.pluginFlagChanges)) {
+    out.pluginFlagChanges = obj.pluginFlagChanges.filter(
+      (x: unknown): x is { plugin: string; wasLight: boolean } =>
+        typeof x === "object" &&
+        x !== null &&
+        typeof (x as { plugin?: unknown }).plugin === "string" &&
+        typeof (x as { wasLight?: unknown }).wasLight === "boolean",
+    );
+  }
   if (verifications !== undefined) out.verifications = verifications;
   if (gameIniApplication !== undefined)
     out.gameIniApplication = gameIniApplication;

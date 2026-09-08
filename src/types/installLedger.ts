@@ -128,6 +128,38 @@ export type InstallReceipt = {
    */
   gameIniApplication?: GameIniApplicationReceipt;
   /**
+   * Finishing steps this install did NOT perform, by name.
+   *
+   * Present only when the user pressed Stop after the deploy — the point of no
+   * return, past which the run stops WRITING but still finishes its
+   * bookkeeping. Without this the receipt is a flat claim that the collection
+   * is installed at this version, and the Doctor, the Collections page and
+   * every later upgrade read a complete healthy install whose plugin order was
+   * never pinned and whose ESL flags were never restored. The only place that
+   * knew was a notice on a screen the user has since closed.
+   *
+   * A receipt is a claim; a claim with unperformed steps behind it should say
+   * so where the claim lives.
+   */
+  finishingSkipped?: string[];
+  /**
+   * Light ("ESL") flags this install CHANGED, and what they were before.
+   *
+   * The ESL repair is the only step in the whole install that rewrites bytes
+   * inside the user's game folder, and under hardlink deployment those bytes
+   * belong to the owning mod's staging folder — which, on a machine that
+   * already owns the mods, is a mod Event Horizon did not install. It is
+   * permanent, it applies across all of that user's profiles, and it survives
+   * a purge.
+   *
+   * It is not something we can simply refuse to do: the flag must be right or
+   * the game will not start, and reproducing the curator's setup is the whole
+   * product (NS-1). What was missing is the ability to UNDO it. Recording the
+   * prior value makes the change recoverable and makes the log able to answer
+   * "what did this tool change in my game folder".
+   */
+  pluginFlagChanges?: PluginFlagChangeReceipt[];
+  /**
    * Slice 6d — LOOT userlist application summary.
    *
    * Optional and additive: receipts written before slice 6d shipped
@@ -511,6 +543,14 @@ export type InstallReceiptMod = {
 };
 
 /** What the install wrote into the user's INI files, and what it left. */
+/** One light-flag rewrite, with the value it had before. */
+export type PluginFlagChangeReceipt = {
+  /** Plugin filename as it appears in the Data folder. */
+  plugin: string;
+  /** The flag BEFORE this install touched it — what an undo restores. */
+  wasLight: boolean;
+};
+
 export type GameIniApplicationReceipt = {
   /** Settings whose value this install changed or added. */
   appliedCount: number;

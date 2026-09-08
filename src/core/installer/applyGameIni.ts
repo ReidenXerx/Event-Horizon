@@ -320,7 +320,12 @@ export function shouldApplyGameIni(args: {
   /** The previous receipt for this collection, if any. */
   previous?: {
     packageVersion: string;
-    gameIniApplication?: unknown;
+    /**
+     * Typed, not `unknown`. As `unknown` this compiled happily against a
+     * `PreviousCollectionInstall` that had no such field at all, so the guard
+     * below was structurally inert for as long as it existed.
+     */
+    gameIniApplication?: GameIniApplicationReceipt;
   };
 }): boolean {
   if (args.gameIni === undefined || args.gameIni.files.length === 0) return false;

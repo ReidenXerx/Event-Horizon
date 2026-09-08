@@ -35,6 +35,7 @@ import * as path from "path";
 import {
   type CaseMode,
   basenameKey,
+  detectCaseSensitivity,
   toPosix,
 } from "../paths";
 
@@ -105,11 +106,6 @@ export type ReinstallJudgement =
   | { kind: "undecidable"; why: string };
 
 /** Last path segment, for a "/"-separated archive or staging path. */
-function baseName(p: string): string {
-  const cut = toPosix(p).lastIndexOf("/");
-  return cut === -1 ? p : p.slice(cut + 1);
-}
-
 export type JudgeInput = {
   /**
    * The curator declared this mod's staging deliberately post-processed.
@@ -248,10 +244,13 @@ export async function judgeReinstall(
   const excusedMissing: string[] = [];
   if (input.missingFiles.length > 0) {
     const archiveNames = new Set(
-      listing.entries.map((e) => baseName(e.path).toLowerCase()),
+      // Folded deliberately, and it is monotone in the SAFE direction: a fold
+      // can only GROW this set, so it can only add a reinstall, never excuse a
+      // real omission. See the verdict below.
+      listing.entries.map((e) => basenameKey(e.path, "insensitive")),
     );
     const reproducible = input.missingFiles.filter((rel) =>
-      archiveNames.has(baseName(rel).toLowerCase()),
+      archiveNames.has(basenameKey(rel, "insensitive")),
     );
     if (reproducible.length > 0) {
       ehLog("info", "judge-reinstall.verdict", {
@@ -341,7 +340,26 @@ export async function judgeReinstall(
      * different contents under one basename, "the bytes are in the archive"
      * stops meaning "the archive would produce these bytes at this path".
      */
-    const ambiguous = ambiguousVariantPaths(refs, listing);
+    /**
+     * The DETECTED mode, not the migration default.
+     *
+     * Structurally the same omission that shipped in `planMirror`: a
+     * `caseMode` parameter left on `"insensitive"` at a call site that had the
+     * real directory in scope the whole time. Under the default, an archive
+     * holding `2K/Foo.dds` and `4K/foo.dds` with different content folds to
+     * one name on ext4 and the mod is reported `variant-ambiguous` — "this may
+     * be a different installer option" — about an archive that is not
+     * ambiguous at all.
+     *
+     * Only the wording and `okReason` differ (both verdicts decline to
+     * reinstall), so this is honesty rather than safety — but the probe is
+     * already cached for this directory by `verifyModInstall`, so it is free.
+     */
+    const ambiguous = ambiguousVariantPaths(
+      refs,
+      listing,
+      await detectCaseSensitivity(input.stagingRoot),
+    );
     if (ambiguous.length > 0) {
       ehLog("warn", "judge-reinstall.verdict", {
         kind: "variant-ambiguous",
