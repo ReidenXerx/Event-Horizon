@@ -37,6 +37,15 @@ export type FakeVortex = {
   installed: Array<{ vortexModId: string; archiveId: string }>;
   /** Make the next install fail through Vortex's callback. */
   failNextInstall: (message: string) => void;
+  /**
+   * Refuse EVERY install attempt, not just the next one.
+   *
+   * The driver retries failed mods once the collection is deployed and its
+   * plugins are active, because some FOMODs refuse until then. A fake that
+   * only refuses once therefore models a RECOVERABLE refusal — which is worth
+   * testing, and is not the same thing as an installer that simply says no.
+   */
+  failAllInstalls: (message: string) => void;
   /** Make deployment fail — the step after every mod is installed. */
   failDeployment: (message: string) => void;
   state: Record<string, unknown>;
@@ -90,6 +99,8 @@ export function makeFakeVortex(args: {
   const dispatched: unknown[] = [];
   const installed: Array<{ vortexModId: string; archiveId: string }> = [];
   let failure: string | undefined;
+  /** When set, every install attempt refuses. See `failAllInstalls`. */
+  let permanentFailure: string | undefined;
   let deployFailure: string | undefined;
   let modSeq = 0;
 
@@ -123,6 +134,15 @@ export function makeFakeVortex(args: {
     // Asynchronous on purpose: the driver subscribes, emits, then awaits.
     // Completing synchronously would let a driver that never subscribed pass.
     setTimeout(() => {
+      if (permanentFailure !== undefined) {
+        // Through the CALLBACK, like a one-shot failure. Throwing out of this
+        // timeout leaves the driver waiting on an install that never answers,
+        // which the harness reports as a stall rather than a refusal.
+        if (typeof cb === "function") {
+          (cb as (e: Error) => void)(new Error(permanentFailure));
+        }
+        return;
+      }
       if (failure !== undefined) {
         const message = failure;
         failure = undefined;
@@ -289,6 +309,9 @@ export function makeFakeVortex(args: {
     state,
     failNextInstall: (message: string): void => {
       failure = message;
+    },
+    failAllInstalls: (message: string): void => {
+      permanentFailure = message;
     },
     failDeployment: (message: string): void => {
       deployFailure = message;

@@ -538,6 +538,17 @@ export type InstallFailed = {
   kind: "failed";
   /** Phase the failure happened in. */
   phase: DriverPhase;
+  /**
+   * Where the PARTIAL receipt was written, when the run got far enough to
+   * write one.
+   *
+   * A run that installs 978 of 979 mods and deploys them has done real work
+   * that must be recorded — without it those mods have no provenance, cannot
+   * be uninstalled by the tool that installed them (NS-2), and the next run
+   * starts from nothing. Present means a retry can RESUME; absent means the
+   * run failed before it had anything to claim.
+   */
+  receiptPath?: string;
   /** Profile the driver had created at the time of failure, if any. */
   partialProfileId?: string;
   /** One-line error summary. */

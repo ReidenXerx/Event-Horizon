@@ -299,6 +299,16 @@ export function parseReceipt(raw: string): InstallReceipt {
       (x: unknown): x is string => typeof x === "string",
     );
   }
+  if (Array.isArray(obj.failedMods)) {
+    out.failedMods = obj.failedMods.filter(
+      (x: unknown): x is { compareKey: string; name: string; reason: string } =>
+        typeof x === "object" &&
+        x !== null &&
+        typeof (x as { compareKey?: unknown }).compareKey === "string" &&
+        typeof (x as { name?: unknown }).name === "string" &&
+        typeof (x as { reason?: unknown }).reason === "string",
+    );
+  }
   if (Array.isArray(obj.pluginFlagChanges)) {
     out.pluginFlagChanges = obj.pluginFlagChanges.filter(
       (x: unknown): x is { plugin: string; wasLight: boolean } =>

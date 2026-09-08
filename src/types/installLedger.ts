@@ -143,6 +143,33 @@ export type InstallReceipt = {
    */
   finishingSkipped?: string[];
   /**
+   * Mods this install could NOT put on disk, and why.
+   *
+   * Its presence makes the receipt a PARTIAL claim: "this collection is
+   * installed at this version, except these". Absent means the reproduction
+   * was complete.
+   *
+   * ─── WHY A PARTIAL RECEIPT EXISTS AT ALL ───────────────────────────────
+   * A failed mod used to mean NO receipt, on the reasoning that a receipt
+   * asserts the collection IS installed and cross-release lineage is built on
+   * that claim. The reasoning is right and the consequence was not: a real
+   * tester run installed 978 of 979 mods, deployed them, applied and re-pinned
+   * the plugin order to zero drift — and then recorded nothing. Those 978 mods
+   * had no provenance, so "Uninstall this collection" could not find them
+   * (NS-2), the next run forked another profile, and Doctor had nothing to
+   * read.
+   *
+   * The old failure message told the user to "source the missing ones and run
+   * this again to finish", which assumes every failure is sourceable. That
+   * one was not: the mod's FOMOD required a plugin to be ACTIVE, and plugins
+   * only become active when the plugin order is written at the very end — so
+   * the same mod failed at the same point on every re-run, forever.
+   *
+   * Recording what IS installed is the honest claim, and it is the one that
+   * lets a retry resume rather than start over.
+   */
+  failedMods?: InstallReceiptFailedMod[];
+  /**
    * Light ("ESL") flags this install CHANGED, and what they were before.
    *
    * The ESL repair is the only step in the whole install that rewrites bytes
@@ -543,6 +570,19 @@ export type InstallReceiptMod = {
 };
 
 /** What the install wrote into the user's INI files, and what it left. */
+/**
+ * A mod the install could not put on disk.
+ *
+ * Carries enough to RETRY it without re-resolving the whole collection: the
+ * compareKey names the manifest entry, and the reason is what the user reads.
+ */
+export type InstallReceiptFailedMod = {
+  compareKey: string;
+  name: string;
+  /** The error as it happened, verbatim. Never a category. */
+  reason: string;
+};
+
 /** One light-flag rewrite, with the value it had before. */
 export type PluginFlagChangeReceipt = {
   /** Plugin filename as it appears in the Data folder. */

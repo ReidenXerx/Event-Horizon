@@ -3371,12 +3371,179 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     // keeps everything that installed and gets the exact list of what did not,
     // which is the difference between "re-run after you source these" and
     // "start again and hope".
+    /**
+     * ─── 7e. RETRY THE MODS WHOSE INSTALLER NEEDED THE COLLECTION ───────
+     * Some installers refuse until the collection they belong to exists. A
+     * real run died on this:
+     *
+     *     AAF_VanillaKinkyCreatureAnimations_Themes  (mod 801 of 979)
+     *     Installer Prerequisits not fulfilled:
+     *     File 'aaf.esm' is Active OR File 'aaf.esp' is Active
+     *
+     * The FOMOD wanted a PLUGIN to be ACTIVE. Plugins become active when
+     * plugins.txt is written, and this driver writes it once, after every mod
+     * is installed and deployed — forty-two minutes later in that run. So no
+     * position in the install loop could have satisfied it: the mod would
+     * have failed first, last, or anywhere between, and re-running the whole
+     * install fails at the same place forever.
+     *
+     * The fix is not ordering, it is TIMING. By here the collection is
+     * installed, deployed, and its plugin order applied — the world the
+     * curator's machine was in when they installed this mod. So try again.
+     *
+     * Anything that fails a second time here fails for a real reason, and is
+     * reported as it was before.
+     */
+    if (failedMods.length > 0 && !stopBeforeWriting("retrying failed mods")) {
+      const carryForward: FailedModReportEntry[] = [];
+      let retriedOk = 0;
+      const retryStartedAt = Date.now();
+      ehLog("info", "install.retry.start", {
+        mods: failedMods.length,
+        why:
+          "the collection is now installed, deployed and its plugins active " +
+          "— an installer that refused for a missing prerequisite may pass now",
+      });
+
+      for (const failed of failedMods) {
+        if (ctx.abortSignal?.aborted === true) {
+          carryForward.push(failed);
+          continue;
+        }
+        const resolution = plan.modResolutions.find(
+          (r) => r.compareKey === failed.compareKey,
+        );
+        const manifestEntry = manifestByCompareKey.get(failed.compareKey);
+        if (resolution === undefined || manifestEntry === undefined) {
+          carryForward.push(failed);
+          continue;
+        }
+        try {
+          const entry = await executeDecision({
+            ctx,
+            resolution,
+            manifestEntry,
+            profileId: activeProfileId,
+            onTempArchive: (tp) => tempArchivesToCleanup.push(tp),
+            onSkip: (e) => skippedMods.push(e),
+            onCarry: (e) => carriedMods.push(e),
+            onNotice: (line) => externalNotices.push(line),
+          });
+          if (entry === undefined) {
+            carryForward.push(failed);
+            continue;
+          }
+          installedMods.push(entry);
+          ctx.onModInstalled?.(entry.vortexModId);
+          enableModInProfile(api, activeProfileId, entry.vortexModId);
+          // Journalled exactly like a first-pass install: this run created it,
+          // so the repair path may uninstall it and uninstall must find it
+          // (NS-2). Skipping this would make a retried mod invisible to every
+          // provenance question.
+          await appendJournalEntry(ctx.appDataPath, plan.manifest.package.id, {
+            compareKey: entry.compareKey,
+            vortexModId: entry.vortexModId,
+            kind: entry.fromDecision.endsWith("already-installed")
+              ? "adopted"
+              : "installed",
+            decision: entry.fromDecision,
+            at: new Date().toISOString(),
+          });
+          retriedOk += 1;
+          ehLog("info", "install.retry.mod.ok", {
+            name: entry.name,
+            compareKey: entry.compareKey,
+            firstError: failed.error,
+          });
+        } catch (err) {
+          carryForward.push({ ...failed, error: formatError(err) });
+          ehLog("warn", "install.retry.mod.failed", {
+            name: failed.name,
+            compareKey: failed.compareKey,
+            firstError: failed.error,
+            secondError: formatError(err),
+          });
+        }
+      }
+
+      // In place: `failedMods` is a const the whole driver reads from.
+      failedMods.length = 0;
+      failedMods.push(...carryForward);
+
+      ehLog(retriedOk > 0 ? "info" : "warn", "install.retry.done", {
+        recovered: retriedOk,
+        stillFailing: failedMods.length,
+        ms: Date.now() - retryStartedAt,
+      });
+
+      if (retriedOk > 0) {
+        /**
+         * New files exist that nothing has linked into the game folder yet, so
+         * the deploy has to run again — and any plugin those mods ship arrived
+         * AFTER the order was written, so Vortex has appended it to the tail.
+         * Re-applying the curator's order puts it where they had it.
+         */
+        try {
+          await deployAndWait(api, activeProfileId);
+          const rePin = await applyPluginOrder({
+            api,
+            gameId: plan.manifest.game.id,
+            collectionId: plan.manifest.package.id,
+            order: plan.manifest.plugins.order,
+            ...(ctx.abortSignal !== undefined
+              ? { signal: ctx.abortSignal }
+              : {}),
+          });
+          ehLog("info", "install.retry.redeployed", {
+            recovered: retriedOk,
+            pluginOrderPinned: rePin.pinned,
+            writeRequested: rePin.writeRequested,
+          });
+        } catch (err) {
+          // Non-fatal: the mods ARE installed, and saying the deploy failed is
+          // more useful than losing the retry that succeeded.
+          ehLog("error", "install.retry.redeploy.failed", {
+            recovered: retriedOk,
+            consequence:
+              "the retried mods are installed but may not be linked into the " +
+              "game folder — deploy in Vortex, or run the install again",
+            err,
+          });
+        }
+      }
+    }
+
+    /**
+     * ─── A PARTIAL RUN STILL EARNS A RECEIPT ────────────────────────────
+     * This block used to RETURN here, before `buildReceipt` — so one failed
+     * mod meant no receipt at all. The reasoning was sound (a receipt asserts
+     * the collection IS installed) and the consequence was not: a real run
+     * installed 978 of 979, deployed them, and re-pinned the plugin order to
+     * zero drift, then recorded nothing. Those 978 had no provenance —
+     * uninstall could not find them (NS-2), the next run forked another
+     * profile, Doctor had nothing to read — and the failure message told the
+     * user to "source the missing ones and run this again", which for a mod
+     * whose FOMOD demands an ACTIVE plugin can never work.
+     *
+     * So the receipt is written either way and CARRIES the failures, which
+     * makes it a partial claim rather than a false one. The run still reports
+     * `failed`, because it is; what changed is that the work it did survives.
+     */
     if (failedMods.length > 0) {
       ehLog("warn", "install.partial", {
         installed: installedMods.length,
         failed: failedMods.length,
         total,
       });
+    }
+    const partialFailure = failedMods.length > 0;
+    const failedForReceipt = failedMods.map((f) => ({
+      compareKey: f.compareKey,
+      name: f.name,
+      reason: f.error,
+    }));
+
+    const deferredFailure = (receiptPath?: string): InstallResult => {
       const names = failedMods
         .slice(0, 5)
         .map((f) => f.name)
@@ -3405,8 +3572,9 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         ...(damagedArchives.length > 0
           ? { damagedArchiveNotice: damagedArchives }
           : {}),
+        ...(receiptPath !== undefined ? { receiptPath } : {}),
       };
-    }
+    };
 
     const receipt = buildReceipt({
       ctx,
@@ -3423,6 +3591,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       ownedByUs,
       finishingSkipped,
       pluginFlagChanges: pluginFlagRepair.changes,
+      failedMods: failedForReceipt,
     });
 
     let receiptPath: string;
@@ -3475,6 +3644,15 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         error: `Failed writing install receipt: ${errMsg}`,
         installedSoFar: installedMods.map((m) => m.vortexModId),
       };
+    }
+
+    /**
+     * Now — with the receipt on disk, so the retry has something to resume
+     * from and the 978 that DID install are recorded as ours.
+     */
+    if (partialFailure) {
+      reportProgress("complete", 1, 1, "Install finished with failures.");
+      return deferredFailure(receiptPath);
     }
 
     // ── 9. done ─────────────────────────────────────────────────────
@@ -4575,6 +4753,14 @@ function buildReceipt(args: {
    * value each plugin had before — so the change is reversible.
    */
   pluginFlagChanges: readonly { plugin: string; wasLight: boolean }[];
+  /**
+   * Mods this run could NOT install. Empty on a complete reproduction.
+   *
+   * Their presence makes the receipt a PARTIAL claim — "installed except
+   * these" — which is true, where writing nothing at all left 978 deployed
+   * mods with no provenance and no way to resume.
+   */
+  failedMods: readonly { compareKey: string; name: string; reason: string }[];
 }): InstallReceipt {
   const {
     ctx,
@@ -4590,6 +4776,7 @@ function buildReceipt(args: {
     ownedByUs,
     finishingSkipped,
     pluginFlagChanges,
+    failedMods,
   } = args;
   const { manifest } = ctx.plan;
   const now = new Date().toISOString();
@@ -4704,6 +4891,8 @@ function buildReceipt(args: {
     ...(pluginFlagChanges.length > 0
       ? { pluginFlagChanges: [...pluginFlagChanges] }
       : {}),
+    // Absent on a complete run, so its presence IS the partial signal.
+    ...(failedMods.length > 0 ? { failedMods: [...failedMods] } : {}),
   };
 }
 

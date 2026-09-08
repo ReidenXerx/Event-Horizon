@@ -259,6 +259,19 @@ function InstallWizard(props: InstallPageProps): JSX.Element {
           result={state.result}
           bundle={state.bundle}
           onStartOver={(): void => session.finish()}
+          /**
+           * Re-run the SAME package. Not "start over": the partial receipt
+           * this run just wrote means the resolver recognises everything that
+           * did install, so the second pass only does what failed — minutes
+           * instead of the hour the first run took.
+           *
+           * Goes back through the loading pipeline rather than calling
+           * `startInstall` directly, because that only runs from the confirm
+           * state and would be a dead button here.
+           */
+          onRetryFailed={(): void =>
+            session.pickFile(api, state.bundle.zipPath)
+          }
           onGoCollections={(): void => props.onNavigate("collections")}
           onSwitchProfile={(profileId, profileName): void => {
             // Fire-and-forget: profile activation is async (Vortex

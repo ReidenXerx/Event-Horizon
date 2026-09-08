@@ -303,12 +303,56 @@ describe("install driver, end to end", () => {
     });
     const manifest = await packageFrom(world);
     const fake = makeFakeVortex({ gameId: "fallout4" });
-    fake.failNextInstall("installer said no");
+    // PERSISTENT, not one-shot. A single refusal is now recovered by the
+    // retry pass (see the test below), so `failNextInstall` here would assert
+    // the opposite of what this test is about.
+    fake.failAllInstalls("installer said no");
 
     const result = await install(manifest, fake);
     // However the driver classifies it, the refusal must reach the result and
     // the run must end. Silence here is a 90-second stall in the real app.
     expect(JSON.stringify(result)).toMatch(/installer said no/);
+  });
+
+  it("retries a mod whose installer refused, once the collection is deployed", async () => {
+    /**
+     * The real failure this exists for:
+     *
+     *     AAF_VanillaKinkyCreatureAnimations_Themes  (mod 801 of 979)
+     *     Installer Prerequisits not fulfilled:
+     *     File 'aaf.esm' is Active OR File 'aaf.esp' is Active
+     *
+     * The FOMOD wanted a PLUGIN to be ACTIVE, and plugins only become active
+     * when plugins.txt is written — which this driver does once, after every
+     * mod is installed and deployed. So the mod could not have succeeded at
+     * any position in the install loop, and re-running the whole install
+     * failed at the same mod forever.
+     *
+     * `failNextInstall` models exactly that shape: refuses on the first
+     * attempt, succeeds once the world has moved on.
+     */
+    // Same world as the refusal test above, so the ONLY difference between
+    // them is whether the installer refuses once or always.
+    world = makeWorld({
+      mods: [
+        {
+          id: "fomod-mod",
+          nexus: { modId: 111, fileId: 222 },
+          archiveSha256: "a".repeat(64),
+          files: { "Data/chosen.esp": "chosen" },
+          installerChoices: FOMOD_CHOICES,
+        },
+      ],
+    });
+    const manifest = await packageFrom(world);
+    const fake = makeFakeVortex({ gameId: "fallout4" });
+    fake.failNextInstall("Installer Prerequisits not fulfilled");
+
+    const result = (await install(manifest, fake)) as { kind: string };
+
+    // Recovered: the run succeeds and the mod is on disk.
+    expect(result.kind).toBe("success");
+    expect(fake.installed).toHaveLength(1);
   });
 
   it("stops the whole run when Vortex cannot deploy, instead of grinding on", async () => {

@@ -199,3 +199,38 @@ describe("what the run did NOT do, and what it changed in the game folder", () =
     expect(clean.pluginFlagChanges).toBeUndefined();
   });
 });
+
+describe("a partial install, recorded rather than discarded", () => {
+  /**
+   * One failed mod used to mean NO receipt. A real run installed 978 of 979,
+   * deployed them, and re-pinned the plugin order to zero drift — then wrote
+   * nothing, so those 978 had no provenance, uninstall could not find them
+   * (NS-2), and the next run forked another profile.
+   *
+   * The receipt now carries the failures, which makes it an honest partial
+   * claim and gives the retry something to resume from. Like every other
+   * optional field here, it has to survive `serializeReceipt` — which
+   * validates through `parseReceipt`, so an unknown field is destroyed on the
+   * way to disk rather than lost on read.
+   */
+  it("keeps failedMods, which is what the retry resumes from", () => {
+    const r = base();
+    r.failedMods = [
+      {
+        compareKey: "external:abc",
+        name: "AAF_VanillaKinkyCreatureAnimations_Themes",
+        reason:
+          "Installer Prerequisits not fulfilled: File 'aaf.esm' is Active",
+      },
+    ];
+    const back = throughDisk(r).failedMods;
+    expect(back).toHaveLength(1);
+    expect(back?.[0]?.name).toBe("AAF_VanillaKinkyCreatureAnimations_Themes");
+    expect(back?.[0]?.reason).toMatch(/Prerequisits/);
+    expect(back?.[0]?.compareKey).toBe("external:abc");
+  });
+
+  it("leaves it absent on a complete run, so presence IS the signal", () => {
+    expect(throughDisk(base()).failedMods).toBeUndefined();
+  });
+});

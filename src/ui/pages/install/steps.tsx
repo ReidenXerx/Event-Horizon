@@ -2502,6 +2502,17 @@ export interface DoneStepProps {
   result: InstallResult;
   bundle: PreviewBundle;
   onStartOver: () => void;
+  /**
+   * Run the install again to pick up the mods that failed.
+   *
+   * Not the same button as "install another collection". A partial run now
+   * writes a receipt carrying its failures, so a second run resolves every
+   * mod that DID install as already-installed and only does the rest — which
+   * is minutes rather than the hour the first run took, and is the only way
+   * to finish a collection whose installer refused before the collection
+   * existed.
+   */
+  onRetryFailed?: () => void;
   onGoCollections: () => void;
   /**
    * Optional. When provided AND the install succeeded, the success
@@ -2513,7 +2524,14 @@ export interface DoneStepProps {
 }
 
 export function DoneStep(props: DoneStepProps): JSX.Element {
-  const { result, bundle, onStartOver, onGoCollections, onSwitchProfile } = props;
+  const {
+    result,
+    bundle,
+    onStartOver,
+    onGoCollections,
+    onSwitchProfile,
+    onRetryFailed,
+  } = props;
 
   let badge: JSX.Element;
   let headline: string;
@@ -2606,6 +2624,27 @@ export function DoneStep(props: DoneStepProps): JSX.Element {
       <div
         className="eh-actions"
       >
+        {/*
+          FIRST, and primary, because it is the only action that finishes what
+          the user came here to do. Everything else on this row navigates away
+          from an install that is not done.
+        */}
+        {result.kind === "failed" &&
+          (result.failedMods?.length ?? 0) > 0 &&
+          onRetryFailed !== undefined && (
+            <Button
+              intent="primary"
+              onClick={onRetryFailed}
+              title={
+                `Run the install again. The ${result.installedSoFar?.length ?? 0} ` +
+                `mod(s) already installed are recognised rather than ` +
+                `re-downloaded, so this only does the ones that failed.`
+              }
+            >
+              Retry {result.failedMods?.length ?? 0} failed mod
+              {(result.failedMods?.length ?? 0) === 1 ? "" : "s"}
+            </Button>
+          )}
         <Button intent="ghost" onClick={onStartOver}>
           Install another collection
         </Button>
