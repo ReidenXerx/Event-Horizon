@@ -45,6 +45,7 @@
  */
 
 import { util } from "@nexusmods/vortex-api";
+import { discoveredStore } from "../core/comparePlugins";
 import type { types } from "@nexusmods/vortex-api";
 
 import { enrichModsWithArchiveHashes } from "../core/archiveHashing";
@@ -322,6 +323,9 @@ const downloadScanNotificationId = "vortex-event-horizon:install-download-scan";
         gameVersion: resolveGameVersion(state, activeGameId),
         vortexVersion: resolveVortexVersion(state),
         deploymentMethod: resolveDeploymentMethod(state, activeGameId),
+        ...(discoveredStore(state, activeGameId) !== undefined
+          ? { store: discoveredStore(state, activeGameId)! }
+          : {}),
         enabledExtensions: resolveEnabledExtensions(state),
         activeProfileId,
         activeProfileName,

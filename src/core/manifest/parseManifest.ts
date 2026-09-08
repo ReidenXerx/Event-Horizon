@@ -325,7 +325,22 @@ function validateGame(
     return undefined;
   }
 
-  return { id, version, versionPolicy };
+  /**
+   * Optional, and absence is preserved. A package built before the store was
+   * recorded carries no opinion about it, which is not the same as "built on
+   * an unnamed store".
+   */
+  const store =
+    obj.store === undefined
+      ? undefined
+      : expectString(obj.store, "game.store", errors);
+
+  return {
+    id,
+    version,
+    versionPolicy,
+    ...(store !== undefined && store.length > 0 ? { store } : {}),
+  };
 }
 
 function validateVortex(

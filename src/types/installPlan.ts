@@ -86,6 +86,17 @@ export type UserSideState = {
   deploymentMethod?: VortexDeploymentMethod;
 
   /**
+   * Which store's copy of the game the USER has — `steam`, `gog`, …
+   *
+   * Compared against `manifest.game.store`. The two stores ship identical
+   * version numbers and different executables, so a script-extender plugin
+   * built for one does not load on the other and an `exact` version check
+   * passes regardless. Absent means Vortex could not say, and an unknown is
+   * never reported as a mismatch.
+   */
+  store?: string;
+
+  /**
    * Vortex extensions currently enabled (id + version when known).
    * Cross-checked against `manifest.vortex.requiredExtensions`.
    */

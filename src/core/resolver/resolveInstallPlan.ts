@@ -52,6 +52,7 @@
  */
 
 import { gameVersionGuidance } from "./gameVersionGuidance";
+import { describeStoreMismatch } from "../manifest/storeCompatibility";
 import type {
   EhcollExternalDependency,
   EhcollManifest,
@@ -197,6 +198,29 @@ export function resolveCompatibility(
   const extensions = checkExtensions(manifest, userState, errors);
   const vortexVersion = checkVortexVersion(manifest, userState, warnings);
   const deploymentMethod = checkDeploymentMethod(manifest, userState, warnings);
+
+  /**
+   * ─── THE AXIS THE VERSION CHECK CANNOT SEE ────────────────────────────
+   * GOG and Steam ship the same game at the same version numbers with
+   * DIFFERENT executables, and a script-extender plugin is a DLL compiled
+   * against one runtime's memory layout. A tester on GOG installed a
+   * Steam-built collection, passed `versionPolicy: "exact"` on 1.6.1179.0,
+   * and got "HonedMetal.dll: disabled, incompatible with current version of
+   * the game" — with nothing in the install to explain it.
+   *
+   * A WARNING, not an error: everything that is not an extender plugin
+   * installs across stores perfectly well, and the fix is to re-download a
+   * handful of mods rather than to abandon the install. The message names
+   * them, because "which ones do I re-download" is the question that gets
+   * asked over and over.
+   */
+  warnings.push(
+    ...describeStoreMismatch({
+      curatorStore: manifest.game.store,
+      userStore: userState.store,
+      mods: manifest.mods,
+    }),
+  );
 
   return {
     gameMatches,

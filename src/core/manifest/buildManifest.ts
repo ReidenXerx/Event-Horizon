@@ -180,6 +180,8 @@ export type BuildManifestInput = {
     version: string;
     /** Default `"exact"`. */
     versionPolicy?: GameVersionPolicy;
+    /** Vortex's discovered store for this game, when it knows one. */
+    store?: string;
   };
 
   vortex: {
@@ -456,6 +458,11 @@ export function buildManifest(input: BuildManifestInput): BuildManifestResult {
       id: gameId,
       version: input.game.version,
       versionPolicy: input.game.versionPolicy ?? "exact",
+      // Absent stays absent rather than becoming "": the install treats an
+      // unknown store as "say nothing", and an empty string is not unknown.
+      ...(input.game.store !== undefined && input.game.store.length > 0
+        ? { store: input.game.store }
+        : {}),
     },
     vortex: {
       version: input.vortex.version,

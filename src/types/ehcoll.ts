@@ -149,6 +149,24 @@ export type GameMetadata = {
   /** Exact game version string the curator built on. */
   version: string;
   versionPolicy: GameVersionPolicy;
+  /**
+   * Which store's copy of the game the curator built on — `steam`, `gog`, …
+   *
+   * A compatibility axis the VERSION cannot express. GOG and Steam ship
+   * Skyrim Special Edition at identical version numbers and different
+   * executables, and an SKSE plugin DLL is compiled against one runtime's
+   * memory layout through Address Library. A tester on GOG installed a
+   * Steam-built collection, passed a `versionPolicy: "exact"` check on
+   * 1.6.1179.0, and got "HonedMetal.dll: disabled, incompatible with current
+   * version of the game".
+   *
+   * Optional: absent on every package built before this existed, and absent
+   * means UNKNOWN. The install warns only when both sides are known AND
+   * differ AND the package actually ships extender plugins — warning on an
+   * unknown would fire for every existing collection and teach people to
+   * ignore the one case that matters.
+   */
+  store?: string;
 };
 
 /**

@@ -19,6 +19,7 @@
  */
 
 import { resumeCandidates } from "../../../core/installer/resumeSources";
+import { discoveredStore } from "../../../core/comparePlugins";
 import { selectors, util } from "@nexusmods/vortex-api";
 import type { types } from "@nexusmods/vortex-api";
 
@@ -272,6 +273,9 @@ export async function runLoadingPipeline(args: {
     gameVersion: resolveGameVersion(state, activeGameId),
     vortexVersion: resolveVortexVersion(state),
     deploymentMethod: resolveDeploymentMethod(state, activeGameId),
+    ...(discoveredStore(state, activeGameId) !== undefined
+      ? { store: discoveredStore(state, activeGameId)! }
+      : {}),
     enabledExtensions: resolveEnabledExtensions(state),
     activeProfileId,
     activeProfileName,
@@ -477,6 +481,9 @@ export async function runLoadingPipelineWithReceipt(args: {
     gameVersion: resolveGameVersion(state, activeGameId),
     vortexVersion: resolveVortexVersion(state),
     deploymentMethod: resolveDeploymentMethod(state, activeGameId),
+    ...(discoveredStore(state, activeGameId) !== undefined
+      ? { store: discoveredStore(state, activeGameId)! }
+      : {}),
     enabledExtensions: resolveEnabledExtensions(state),
     activeProfileId,
     activeProfileName,

@@ -1937,6 +1937,88 @@ export async function runBuildPipeline(
     throw new BuildRefusedError(refusal.code, refusal.message);
   }
 
+  /**
+   * ─── CAN THESE PLUGINS ACTUALLY LOAD? ───────────────────────────────
+   * A Bethesda plugin declares the masters it was built against, and the game
+   * refuses to load one whose masters are absent. Nothing checked that, so a
+   * collection could ship internally inconsistent and only a tester's game
+   * refusing to start would say so.
+   *
+   * It did. On a real 1,755-mod package `RaceCompatibility.esm` was provided
+   * by zero mods and appeared nowhere in the 1,607-entry plugin order, while
+   * two plugins requiring it shipped enabled — working on the curator's
+   * machine because they had the master from outside the collection's scope.
+   *
+   * Refused rather than warned: the curator is the only person who can fix it,
+   * and a warning in a long build log is how it shipped the first time.
+   */
+  const { readPluginMasters } = await import(
+    "../../../core/manifest/pluginMasters"
+  );
+  const {
+    checkMasters,
+    describeMissingMasters,
+    describeUserOwnedMasters,
+  } = await import("../../../core/manifest/checkMasters");
+
+  const enabledPlugins =
+    pluginsTxtContent === undefined
+      ? []
+      : parsePluginsTxt(pluginsTxtContent).filter((e) => e.enabled);
+  const dataDir =
+    flagGameDir === undefined ? undefined : path.join(flagGameDir, "Data");
+
+  const pluginsWithMasters = [];
+  for (const entry of enabledPlugins) {
+    checkAbort();
+    if (dataDir === undefined) {
+      // No Data folder means no headers to read. Recorded as UNKNOWN rather
+      // than as "needs nothing", so the check reports that it could not run.
+      pluginsWithMasters.push({
+        name: entry.name,
+        enabled: true,
+        masters: undefined,
+      });
+      continue;
+    }
+    const read = await readPluginMasters(path.join(dataDir, entry.name));
+    pluginsWithMasters.push({
+      name: entry.name,
+      enabled: true,
+      masters: read.kind === "ok" ? read.masters : undefined,
+    });
+  }
+
+  const masterCheck = checkMasters(pluginsWithMasters, gameId);
+  ehLog(
+    masterCheck.missing.length > 0 ? "error" : "info",
+    "build.masters.checked",
+    {
+      checked: masterCheck.checked,
+      missing: masterCheck.missing.length,
+      userOwned: masterCheck.userOwned.length,
+      unreadable: masterCheck.unreadable.length,
+      examples: masterCheck.missing.slice(0, 5),
+    },
+  );
+  if (masterCheck.missing.length > 0) {
+    throw new BuildRefusedError(
+      "missing-masters",
+      describeMissingMasters(masterCheck),
+    );
+  }
+  bundleWarnings.push(...describeUserOwnedMasters(masterCheck));
+  if (masterCheck.unreadable.length > 0) {
+    // The check did not fully run, and saying so is the difference between a
+    // pass and a pass nobody verified.
+    bundleWarnings.push(
+      `${masterCheck.unreadable.length} plugin(s) could not be read, so their ` +
+        `master requirements were not checked: ` +
+        `${masterCheck.unreadable.slice(0, 3).join(", ")}` +
+        `${masterCheck.unreadable.length > 3 ? ", and more" : ""}.`,
+    );
+  }
+
   // ── 3. Build the manifest ──────────────────────────────────────────────
   checkAbort();
   onProgress?.({ phase: "building-manifest" });
@@ -2015,6 +2097,17 @@ export async function runBuildPipeline(
       // Vortex misreports) and they may have loosened the policy.
       version: curator.gameVersion,
       versionPolicy: curator.gameVersionPolicy,
+      /**
+       * Which store's copy this was built on — a compatibility axis the
+       * VERSION cannot express. GOG and Steam ship the same version numbers
+       * and different executables, so an SKSE plugin built for one does not
+       * load on the other, and an `exact` version check passes anyway.
+       *
+       * Recorded unconditionally; the INSTALL decides whether it matters.
+       */
+      ...(discoveredStore(state, gameId) !== undefined
+        ? { store: discoveredStore(state, gameId)! }
+        : {}),
     },
     vortex: {
       version: resolveVortexVersion(state),
