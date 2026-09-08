@@ -170,21 +170,39 @@ describe("the line above the diff", () => {
 });
 
 describe("projecting the manifest down", () => {
-  it("keeps the four fields and drops the rest", () => {
+  it("drops the HEAVY fields and keeps the installer answers", () => {
+    /**
+     * The rule is about weight, not about a count. `stagingFiles` is every
+     * file of every mod — megabytes of React state to answer "what changed".
+     * A mod's FOMOD answers are a handful of names, and without them the diff
+     * cannot see a re-install through the wizard at all.
+     *
+     * Asserted as the PROPERTY (heavy out, answers in) rather than as an
+     * exact object, which is what made this test fail on a field it was never
+     * really about.
+     */
     const [row] = summarizeBuiltMods([
       {
         compareKey: "nexus:7:1",
         name: "A",
         version: "1.0",
         state: { enabled: true, stagingFiles: [{ path: "x", size: 1 }] },
+        install: {
+          fomodSelections: [
+            { name: "Step", groups: [{ name: "G", choices: [{ name: "C" }] }] },
+          ],
+        },
       } as never,
     ]);
-    expect(row).toEqual({
+    expect(row).toMatchObject({
       compareKey: "nexus:7:1",
       name: "A",
       version: "1.0",
       enabled: true,
     });
+    expect(row?.fomodSelections).toHaveLength(1);
+    expect(row).not.toHaveProperty("state");
+    expect(JSON.stringify(row)).not.toContain("stagingFiles");
   });
 
   it("treats an absent enabled flag as enabled", () => {

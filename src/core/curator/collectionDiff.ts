@@ -27,9 +27,13 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { compareSelections } from "./fomodSelectionDiff";
 import { nexusCompareKey } from "../identity/compareKey";
 import { isNexusSourced } from "../identity/nexusSourced";
-import type { AuditorMod } from "../getModsListForProfile";
+import type {
+  AuditorMod,
+  FomodSelectionStep,
+} from "../getModsListForProfile";
 import type { EhcollMod } from "../../types/ehcoll";
 
 /**
@@ -45,6 +49,20 @@ export type BuiltModSummary = {
   name: string;
   version?: string;
   enabled: boolean;
+  /**
+   * The curator's FOMOD answers at build time.
+   *
+   * Included despite this type's rule against heavy fields, because it is not
+   * one: a mod's answers are a handful of step/group/choice names, where
+   * `stagingFiles` is every file of every mod. The whole point of the
+   * exclusion above is that the diff must not hold megabytes; this is bytes.
+   *
+   * Without it the diff cannot see a re-install through the installer wizard
+   * — same mod, same file, same version, different contents.
+   */
+  fomodSelections: FomodSelectionStep[];
+  /** The build PROVED an empty answer set. See `compareSelections` (NS-8). */
+  emptySelectionVerified?: boolean;
 };
 
 /** Project a manifest down to what the diff reads. */
@@ -54,6 +72,10 @@ export function summarizeBuiltMods(
   return mods.map((mod) => ({
     compareKey: mod.compareKey,
     name: mod.name,
+    fomodSelections: mod.install?.fomodSelections ?? [],
+    ...(mod.install?.emptySelectionVerified === true
+      ? { emptySelectionVerified: true }
+      : {}),
     ...(mod.version !== undefined ? { version: mod.version } : {}),
     // Absent means enabled: the manifest omits `false` only for mods that
     // were on, and an older package may not carry the field at all.
@@ -87,6 +109,25 @@ export type CollectionDiff = {
   updated: UpdatedEntry[];
   /** Same mod, but switched on or off since the build. */
   toggled: ToggledEntry[];
+  /**
+   * Same mod and same file, re-installed with DIFFERENT installer options.
+   *
+   * The axis the first four miss entirely. Added, removed, updated and toggled
+   * are all about a mod's IDENTITY, and re-running a FOMOD wizard changes none
+   * of them — so the dashboard reported "your profile still matches the
+   * published version" about a collection whose contents had changed, and a
+   * rebuild would have shipped the new files under the old version number.
+   */
+  reconfigured: DiffEntry[];
+  /**
+   * Mods whose installer answers could not be compared either way.
+   *
+   * One side has answers and the other does not, and nothing proves the empty
+   * side means "picked nothing" rather than "Vortex discarded them" (NS-8).
+   * Counted rather than hidden, so "no changes" is never read as stronger than
+   * the evidence — the same rule as `approximate`.
+   */
+  selectionsUnknown: number;
   /** Matched and identical. Counted, because it is the boring majority. */
   unchanged: number;
   /**
@@ -157,6 +198,8 @@ export function diffCollectionAgainstProfile(args: {
     removed: [],
     updated: [],
     toggled: [],
+    reconfigured: [],
+    selectionsUnknown: 0,
     unchanged: 0,
     approximate: 0,
   };
@@ -206,9 +249,32 @@ export function diffCollectionAgainstProfile(args: {
   ): void => {
     claimed.add(match.compareKey);
     if (approximate) diff.approximate += 1;
+
+    /**
+     * Both axes, not one or the other. A mod can be switched off AND
+     * re-configured, and the old `if/else` counted the second as unchanged
+     * whenever the first fired.
+     */
+    let changed = false;
     if (match.enabled !== mod.enabled) {
       diff.toggled.push({ name: mod.name, nowEnabled: mod.enabled });
-    } else {
+      changed = true;
+    }
+    const verdict = compareSelections(
+      match.fomodSelections,
+      mod.fomodSelections,
+      match.emptySelectionVerified === true,
+    );
+    if (verdict === "differ") {
+      diff.reconfigured.push({
+        name: mod.name,
+        ...(mod.version !== undefined ? { version: mod.version } : {}),
+      });
+      changed = true;
+    } else if (verdict === "unknown") {
+      diff.selectionsUnknown += 1;
+    }
+    if (!changed) {
       diff.unchanged += 1;
     }
   };
@@ -302,7 +368,8 @@ export function isUnchanged(diff: CollectionDiff): boolean {
     diff.added.length === 0 &&
     diff.removed.length === 0 &&
     diff.updated.length === 0 &&
-    diff.toggled.length === 0
+    diff.toggled.length === 0 &&
+    diff.reconfigured.length === 0
   );
 }
 
@@ -314,20 +381,44 @@ export function isUnchanged(diff: CollectionDiff): boolean {
  */
 export function describeCollectionDiff(diff: CollectionDiff): string {
   if (isUnchanged(diff)) {
-    return (
+    const line =
       `Your profile still matches the published version — ${diff.unchanged} ` +
-      `mod(s), nothing added, removed, updated or toggled.`
-    );
+      `mod(s), nothing added, removed, updated, toggled or re-configured.`;
+    /**
+     * Never a bare "matches" when something could not be checked. A curator
+     * reads this line to decide whether to rebuild, and an unqualified match
+     * is a stronger claim than the evidence when part of it was unreadable.
+     */
+    return diff.selectionsUnknown > 0
+      ? `${line} ${diff.selectionsUnknown} mod(s) had installer answers on ` +
+          `one side only, so whether their options changed could not be ` +
+          `determined — a rebuild would settle it.`
+      : line;
   }
   const parts: string[] = [];
   if (diff.added.length > 0) parts.push(`${diff.added.length} added`);
   if (diff.removed.length > 0) parts.push(`${diff.removed.length} removed`);
   if (diff.updated.length > 0) parts.push(`${diff.updated.length} updated`);
   if (diff.toggled.length > 0) parts.push(`${diff.toggled.length} toggled`);
+  if (diff.reconfigured.length > 0) {
+    parts.push(
+      `${diff.reconfigured.length} re-installed with different options`,
+    );
+  }
   const head = `Rebuilding would ship ${parts.join(", ")}.`;
-  return diff.approximate > 0
-    ? `${head} ${diff.approximate} external mod(s) could only be matched by ` +
-        `name — their real identity is a hash of the archive, which is only ` +
-        `computed during a build.`
-    : head;
+  const notes: string[] = [];
+  if (diff.approximate > 0) {
+    notes.push(
+      `${diff.approximate} external mod(s) could only be matched by name — ` +
+        `their real identity is a hash of the archive, which is only computed ` +
+        `during a build.`,
+    );
+  }
+  if (diff.selectionsUnknown > 0) {
+    notes.push(
+      `${diff.selectionsUnknown} mod(s) had installer answers on one side ` +
+        `only, so whether their options changed could not be determined.`,
+    );
+  }
+  return [head, ...notes].join(" ");
 }

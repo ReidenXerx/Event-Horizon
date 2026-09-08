@@ -1573,6 +1573,27 @@ export function BuildDiffView(props: {
             ))}
           </DiffLines>
           </DiffSectionBlock>
+          {/*
+            Above "Enabled or disabled" on purpose. A toggle is a decision the
+            curator remembers making; a re-installed mod is one they may not
+            realise changed the collection at all, which is exactly why it went
+            unnoticed until a stranger's install differed from the curator's.
+          */}
+          <DiffSectionBlock
+            title="Re-installed with different options"
+            count={diff.reconfigured.length}
+            intent="warning"
+          >
+            <DiffLines>
+              {diff.reconfigured.map((e) => (
+                <DiffLine
+                  key={`r${e.name}`}
+                  name={e.name}
+                  detail="installer options changed"
+                />
+              ))}
+            </DiffLines>
+          </DiffSectionBlock>
           <DiffSectionBlock
             title="Enabled or disabled"
             count={diff.toggled.length}

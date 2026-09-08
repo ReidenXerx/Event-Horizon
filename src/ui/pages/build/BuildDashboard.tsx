@@ -1566,6 +1566,11 @@ function PublishedDetailsPanel(props: {
                       ~ {e.name} {e.fromVersion} &rarr; {e.toVersion}
                     </div>
                   ))}
+                  {diff.reconfigured.slice(0, 40).map((e) => (
+                    <div key={`r${e.name}`} style={{ color: "var(--eh-warning)" }}>
+                      ! {e.name} installer options changed
+                    </div>
+                  ))}
                   {diff.toggled.slice(0, 40).map((e) => (
                     <div key={`t${e.name}`} style={{ color: "var(--eh-text-secondary)" }}>
                       {e.nowEnabled ? "on " : "off"} {e.name}
