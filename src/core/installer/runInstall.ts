@@ -170,6 +170,10 @@ import {
   type PluginFlagRepair,
 } from "./applyPluginLightFlags";
 import { describeSkippedFinishing } from "./runPhase";
+import {
+  orderDiffers,
+  repinCuratorOrder,
+} from "./repinPluginOrder";
 import { RunAccumulator } from "./runAccumulator";
 import { getGameDirectory } from "../manifest/externalDependencies";
 import {
@@ -2146,6 +2150,18 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           signal: ctx.abortSignal,
         });
         rulesApplication = mergeRuleResult(rulesApplication, ruleResult);
+        /**
+         * A phase that RAN and a phase that was skipped used to look identical
+         * in the log — both silent. Tracing whether a curator's rules had
+         * actually been applied meant opening the receipt JSON, which is not
+         * something a tester sends first.
+         */
+        ehLog("info", "rules.applied", {
+          applied: ruleResult.applied,
+          skipped: ruleResult.skipped.length,
+          overwrittenUserRules: ruleResult.overwrittenUserRules,
+          ofManifest: plan.manifest.rules.length,
+        });
         // Advance the bar to N/N so the UI doesn't sit at "0 of 137"
         // for the entire phase. applyModRules is currently a single
         // synchronous pass; if it ever grows incremental progress
@@ -2232,6 +2248,27 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           userlistApplication,
           ulResult,
         );
+        /**
+         * Same reason as `rules.applied`: a phase that ran and one that was
+         * skipped looked identical in the log, and this is the phase that
+         * decides load order. Diagnosing whether a curator's LOOT rules had
+         * been applied meant opening the receipt JSON.
+         *
+         * The breakdown matters, not just a total: a package with 501 GROUP
+         * assignments and zero plugin RULES constrains LOOT only coarsely,
+         * which is most of why one install came out 686 plugins adrift.
+         */
+        ehLog("info", "userlist.applied", {
+          rules: ulResult.appliedRuleCount,
+          groupAssignments: ulResult.appliedGroupAssignmentCount,
+          newGroups: ulResult.appliedNewGroupCount,
+          groupRules: ulResult.appliedGroupRuleCount,
+          skipped: ulResult.skipped.length,
+          ofManifest: {
+            plugins: plan.manifest.userlist.plugins.length,
+            groups: plan.manifest.userlist.groups.length,
+          },
+        });
         const ulApplied =
           ulResult.appliedRuleCount +
           ulResult.appliedGroupAssignmentCount +
@@ -2773,6 +2810,73 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           plan.manifest.plugins.order,
           actual,
         );
+
+        /**
+         * ─── PIN, SORT, THEN GIVE THE CURATOR THEIR ORDER BACK ───────────
+         * The sort exists because the user has plugins the curator never had,
+         * and LOOT knows where those belong. But it does not know it is
+         * finishing someone else's work, so it re-sorts everything — and on a
+         * real 1,755-mod install that left 686 of 1,600 plugins in a different
+         * relative order from the curator's, after the pin had already run.
+         *
+         * So the slots LOOT gave to the COLLECTION's plugins are refilled with
+         * the curator's sequence, and every other plugin stays exactly where
+         * LOOT put it. Neither side loses: LOOT places what the curator never
+         * saw, the curator wins on everything they did.
+         *
+         * Only when it would change something — re-pinning an order that
+         * already matches costs a Vortex round trip and a plugins.txt rewrite
+         * for nothing.
+         */
+        if (pluginOrderDrift.misordered.length > 0 && !stopBeforeWriting(
+          "plugin order re-pin",
+        )) {
+          const actualNames = actual.filter((pl) => pl.enabled).map((pl) => pl.name);
+          const merged = repinCuratorOrder(
+            plan.manifest.plugins.order
+              .filter((pl) => pl.enabled)
+              .map((pl) => pl.name),
+            actualNames,
+          );
+          if (orderDiffers(merged, actualNames)) {
+            const repin = await applyPluginOrder({
+              api,
+              gameId: plan.manifest.game.id,
+              collectionId: plan.manifest.package.id,
+              // The merged sequence, and NO second sort — sorting again would
+              // undo exactly what this step just restored.
+              order: merged.map((name) => ({ name, enabled: true })),
+              skipSort: true,
+              ...(ctx.abortSignal !== undefined
+                ? { signal: ctx.abortSignal }
+                : {}),
+            });
+            ehLog("info", "plugins.order-repinned", {
+              misorderedBefore: pluginOrderDrift.misordered.length,
+              entries: merged.length,
+              pinned: repin.pinned,
+              writeRequested: repin.writeRequested,
+              notes: repin.notes,
+            });
+
+            // Re-measure against what is actually on disk now. Reporting the
+            // BEFORE number would claim a fix nobody verified.
+            const after = await readUserPluginsTxt(
+              plan.manifest.game.id,
+              discoveredStore(api.getState(), plan.manifest.game.id),
+            );
+            if (after !== undefined) {
+              pluginOrderDrift = comparePluginOrder(
+                plan.manifest.plugins.order,
+                after,
+              );
+              ehLog("info", "plugins.order-drift.after-repin", {
+                compared: pluginOrderDrift.compared,
+                misordered: pluginOrderDrift.misordered.length,
+              });
+            }
+          }
+        }
         /**
          * ─── THE ONE NUMBER THAT SAYS WHETHER REPRODUCTION WORKED ───────
          * This comment used to say the line was "for a support conversation

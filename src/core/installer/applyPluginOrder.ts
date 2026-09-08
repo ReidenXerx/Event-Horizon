@@ -100,6 +100,15 @@ export type ApplyPluginOrderInput = {
   order: readonly EhcollPluginEntry[];
   /** Overridable so a test does not wait ten minutes on a fake that never calls back. */
   sortTimeoutMs?: number;
+  /**
+   * Pin and write, but do NOT run LOOT's sort.
+   *
+   * For the RE-PIN that follows the ordinary pin-sort pass: that pass exists
+   * to let LOOT place plugins the curator never had, and the re-pin then gives
+   * the collection's own plugins the curator's order back. Sorting again would
+   * undo exactly what it just restored.
+   */
+  skipSort?: boolean;
   signal?: AbortSignal;
 };
 
@@ -210,7 +219,11 @@ export async function applyPluginOrder(
   }
 
   // ── 2. sort ───────────────────────────────────────────────────────────
-  if (input.signal?.aborted !== true) {
+  if (input.skipSort === true) {
+    ehLog("debug", "plugin-order.sort.skipped", {
+      why: "re-pin: this order is the sort's result with the curator's own plugins restored",
+    });
+  } else if (input.signal?.aborted !== true) {
     const sortNote = await runLootSort(
       events.emit.bind(events),
       input.sortTimeoutMs ?? SORT_TIMEOUT_MS,

@@ -1,6 +1,6 @@
 {
   "name": "Event Horizon",
   "author": "DuduPhudu and Bluuuk",
-  "version": "0.1.0-alpha.119",
+  "version": "0.1.0-alpha.120",
   "description": "Snapshot a curator's exact mod state — mod rules, plugin order, ESL flags, archive hashes — into a portable package, then rebuild and verify it on another machine."
 }
