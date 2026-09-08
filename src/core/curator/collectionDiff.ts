@@ -28,6 +28,7 @@
  */
 
 import { compareSelections } from "./fomodSelectionDiff";
+import { compareShapes, stagingShapeOf } from "./stagingShape";
 import { nexusCompareKey } from "../identity/compareKey";
 import { isNexusSourced } from "../identity/nexusSourced";
 import type {
@@ -63,6 +64,18 @@ export type BuiltModSummary = {
   fomodSelections: FomodSelectionStep[];
   /** The build PROVED an empty answer set. See `compareSelections` (NS-8). */
   emptySelectionVerified?: boolean;
+  /**
+   * A stat-only fingerprint of what this mod staged at build time.
+   *
+   * Derived from `state.stagingFiles` and then that array is DROPPED — the
+   * reduction is the point. A hash is 64 characters; the file list it came
+   * from is, across a 1,755-mod collection, hundreds of thousands of entries
+   * this view must never hold.
+   *
+   * Absent when the package recorded no staged files for the mod, which is a
+   * real state and must not read as "nothing staged".
+   */
+  stagingShape?: string;
 };
 
 /** Project a manifest down to what the diff reads. */
@@ -73,6 +86,10 @@ export function summarizeBuiltMods(
     compareKey: mod.compareKey,
     name: mod.name,
     fomodSelections: mod.install?.fomodSelections ?? [],
+    ...(mod.state?.stagingFiles !== undefined &&
+    mod.state.stagingFiles.length > 0
+      ? { stagingShape: stagingShapeOf(mod.state.stagingFiles) }
+      : {}),
     ...(mod.install?.emptySelectionVerified === true
       ? { emptySelectionVerified: true }
       : {}),
@@ -93,6 +110,19 @@ export type UpdatedEntry = {
   name: string;
   fromVersion: string;
   toVersion: string;
+};
+
+/**
+ * A mod whose CONTENTS changed while its identity did not.
+ *
+ * The reason is carried because the two causes call for different actions: a
+ * curator who re-ran an installer chose that, while one whose staging folder
+ * drifted may not know it happened at all.
+ */
+export type ReconfiguredEntry = {
+  name: string;
+  version?: string;
+  reason: "installer-options" | "staged-files";
 };
 
 export type ToggledEntry = {
@@ -118,7 +148,7 @@ export type CollectionDiff = {
    * published version" about a collection whose contents had changed, and a
    * rebuild would have shipped the new files under the old version number.
    */
-  reconfigured: DiffEntry[];
+  reconfigured: ReconfiguredEntry[];
   /**
    * Mods whose installer answers could not be compared either way.
    *
@@ -128,6 +158,13 @@ export type CollectionDiff = {
    * the evidence — the same rule as `approximate`.
    */
   selectionsUnknown: number;
+  /**
+   * Mods whose staged FILES could not be compared.
+   *
+   * Either the package recorded none or the folder could not be walked. Like
+   * `selectionsUnknown`, counted and stated rather than folded into a match.
+   */
+  stagingUnknown: number;
   /** Matched and identical. Counted, because it is the boring majority. */
   unchanged: number;
   /**
@@ -190,8 +227,16 @@ function nexusModIdOf(compareKey: string): string | undefined {
 export function diffCollectionAgainstProfile(args: {
   built: readonly BuiltModSummary[];
   current: readonly AuditorMod[];
+  /**
+   * Vortex mod id → stat-only shape of that mod's staging folder RIGHT NOW.
+   *
+   * Optional, and the function stays pure: walking a thousand folders is the
+   * caller's job and its cost. Omit it and the staged-files axis does not run,
+   * which is reported rather than assumed.
+   */
+  liveShapes?: ReadonlyMap<string, string>;
 }): CollectionDiff {
-  const { built, current } = args;
+  const { built, current, liveShapes } = args;
 
   const diff: CollectionDiff = {
     added: [],
@@ -200,6 +245,7 @@ export function diffCollectionAgainstProfile(args: {
     toggled: [],
     reconfigured: [],
     selectionsUnknown: 0,
+    stagingUnknown: 0,
     unchanged: 0,
     approximate: 0,
   };
@@ -268,11 +314,41 @@ export function diffCollectionAgainstProfile(args: {
     if (verdict === "differ") {
       diff.reconfigured.push({
         name: mod.name,
+        reason: "installer-options",
         ...(mod.version !== undefined ? { version: mod.version } : {}),
       });
       changed = true;
     } else if (verdict === "unknown") {
       diff.selectionsUnknown += 1;
+    }
+
+    /**
+     * And the files themselves, when the caller could afford to look.
+     *
+     * `liveShapes` is optional: producing it means walking every staging
+     * folder, which the pure diff has no business doing and some callers
+     * cannot afford. Absent, this axis simply does not run — it is never
+     * silently reported as "unchanged".
+     *
+     * Only when the installer answers did NOT already explain the change: a
+     * re-run installer changes the staged files too, and reporting one mod
+     * twice for one event is noise.
+     */
+    if (liveShapes !== undefined && verdict !== "differ") {
+      const shapeVerdict = compareShapes(
+        match.stagingShape,
+        liveShapes.get(mod.id),
+      );
+      if (shapeVerdict === "differ") {
+        diff.reconfigured.push({
+          name: mod.name,
+          reason: "staged-files",
+          ...(mod.version !== undefined ? { version: mod.version } : {}),
+        });
+        changed = true;
+      } else if (shapeVerdict === "unknown") {
+        diff.stagingUnknown += 1;
+      }
     }
     if (!changed) {
       diff.unchanged += 1;
@@ -389,10 +465,10 @@ export function describeCollectionDiff(diff: CollectionDiff): string {
      * reads this line to decide whether to rebuild, and an unqualified match
      * is a stronger claim than the evidence when part of it was unreadable.
      */
-    return diff.selectionsUnknown > 0
-      ? `${line} ${diff.selectionsUnknown} mod(s) had installer answers on ` +
-          `one side only, so whether their options changed could not be ` +
-          `determined — a rebuild would settle it.`
+    const unresolved = diff.selectionsUnknown + diff.stagingUnknown;
+    return unresolved > 0
+      ? `${line} ${unresolved} check(s) could not be completed — a rebuild ` +
+          `reads every file and would settle it.`
       : line;
   }
   const parts: string[] = [];
@@ -400,10 +476,15 @@ export function describeCollectionDiff(diff: CollectionDiff): string {
   if (diff.removed.length > 0) parts.push(`${diff.removed.length} removed`);
   if (diff.updated.length > 0) parts.push(`${diff.updated.length} updated`);
   if (diff.toggled.length > 0) parts.push(`${diff.toggled.length} toggled`);
-  if (diff.reconfigured.length > 0) {
-    parts.push(
-      `${diff.reconfigured.length} re-installed with different options`,
-    );
+  const byOptions = diff.reconfigured.filter(
+    (r) => r.reason === "installer-options",
+  ).length;
+  const byFiles = diff.reconfigured.length - byOptions;
+  if (byOptions > 0) {
+    parts.push(`${byOptions} re-installed with different options`);
+  }
+  if (byFiles > 0) {
+    parts.push(`${byFiles} with edited staging folders`);
   }
   const head = `Rebuilding would ship ${parts.join(", ")}.`;
   const notes: string[] = [];
@@ -418,6 +499,12 @@ export function describeCollectionDiff(diff: CollectionDiff): string {
     notes.push(
       `${diff.selectionsUnknown} mod(s) had installer answers on one side ` +
         `only, so whether their options changed could not be determined.`,
+    );
+  }
+  if (diff.stagingUnknown > 0) {
+    notes.push(
+      `${diff.stagingUnknown} mod(s) had no staged file list to compare ` +
+        `against, so an edit to their folder would not show here.`,
     );
   }
   return [head, ...notes].join(" ");

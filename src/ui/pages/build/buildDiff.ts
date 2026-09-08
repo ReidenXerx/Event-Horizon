@@ -71,6 +71,15 @@ export async function loadBuildDiff(args: {
   current: readonly AuditorMod[];
   findPackages: FindPackages;
   readPackage: ReadPackage;
+  /**
+   * Stat-only shapes of the live staging folders, keyed by Vortex mod id.
+   *
+   * Injected rather than computed here for two reasons: this module is
+   * testable without a filesystem, and walking a thousand folders is a cost
+   * the CALLER should decide to pay. Omitted, the staged-files axis does not
+   * run — and the diff says so rather than implying those mods matched.
+   */
+  liveShapes?: () => Promise<ReadonlyMap<string, string>>;
 }): Promise<BuildDiffOutcome> {
   // Guard the NAME, not the slug. `slugifyPackageName` falls back to the
   // literal "collection" for anything that slugs to nothing, so an unnamed
@@ -95,6 +104,9 @@ export async function loadBuildDiff(args: {
       diff: diffCollectionAgainstProfile({
         built: summarizeBuiltMods(read.manifest.mods),
         current: args.current,
+        ...(args.liveShapes !== undefined
+          ? { liveShapes: await args.liveShapes() }
+          : {}),
       }),
       againstVersion: read.manifest.package.version,
       fileName: newest.fileName,

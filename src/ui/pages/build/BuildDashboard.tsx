@@ -1568,7 +1568,10 @@ function PublishedDetailsPanel(props: {
                   ))}
                   {diff.reconfigured.slice(0, 40).map((e) => (
                     <div key={`r${e.name}`} style={{ color: "var(--eh-warning)" }}>
-                      ! {e.name} installer options changed
+                      ! {e.name}{" "}
+                      {e.reason === "installer-options"
+                        ? "installer options changed"
+                        : "staged files changed"}
                     </div>
                   ))}
                   {diff.toggled.slice(0, 40).map((e) => (

@@ -39,6 +39,7 @@ import {
   isUnchanged,
 } from "../../../core/curator/collectionDiff";
 import { loadBuildDiff, type BuildDiffOutcome } from "./buildDiff";
+import { liveStagingShapes } from "../../../core/curator/liveStagingShapes";
 import type { AuditorMod } from "../../../core/getModsListForProfile";
 import { ErrorBoundary, useErrorReporter, useErrorReporterFormatted } from "../../errors";
 import type { EventHorizonRoute } from "../../routes";
@@ -1436,12 +1437,23 @@ function Dot(props: { color: string }): JSX.Element {
 function BuildDiffCard(props: {
   collectionName: string;
   current: readonly AuditorMod[];
+  /** Needed to resolve each mod's staging folder for the staged-files axis. */
+  gameId: string;
 }): JSX.Element | null {
   const [outcome, setOutcome] = React.useState<BuildDiffOutcome | undefined>();
-  const { collectionName, current } = props;
+  const { collectionName, current, gameId } = props;
+  const api = useApi();
 
   React.useEffect(() => {
     let alive = true;
+    /**
+     * Stops the staging walk when the curator navigates away.
+     *
+     * `alive` alone only suppresses the setState; the walk would keep the disk
+     * busy across a few hundred thousand directory entries for a card nobody
+     * is looking at any more.
+     */
+    const walkAbort = new AbortController();
     setOutcome(undefined);
     void (async (): Promise<void> => {
       try {
@@ -1474,6 +1486,25 @@ function BuildDiffCard(props: {
           current,
           findPackages: findBuiltPackages,
           readPackage: readEhcoll as never,
+          /**
+           * Walk the staging folders so a hand-edited mod shows up.
+           *
+           * Identity and installer answers between them still miss the case
+           * where a curator edits a staging folder directly — deleting a mesh,
+           * dropping in a patched script — which for an external mod they
+           * maintain themselves is ordinary practice, not an accident.
+           *
+           * `stat` only, no file contents, so this is a directory walk rather
+           * than the gigabytes the exact check would read. It runs behind the
+           * same await that already reads the previous package.
+           */
+          liveShapes: async () =>
+            liveStagingShapes(
+              api.getState(),
+              gameId,
+              current.map((m) => m.id),
+              walkAbort.signal,
+            ),
         });
         if (alive) setOutcome(result);
       } catch (err) {
@@ -1488,6 +1519,7 @@ function BuildDiffCard(props: {
     })();
     return (): void => {
       alive = false;
+      walkAbort.abort();
     };
   }, [collectionName, current]);
 
@@ -1580,7 +1612,7 @@ export function BuildDiffView(props: {
             unnoticed until a stranger's install differed from the curator's.
           */}
           <DiffSectionBlock
-            title="Re-installed with different options"
+            title="Contents changed"
             count={diff.reconfigured.length}
             intent="warning"
           >
@@ -1589,7 +1621,11 @@ export function BuildDiffView(props: {
                 <DiffLine
                   key={`r${e.name}`}
                   name={e.name}
-                  detail="installer options changed"
+                  detail={
+                    e.reason === "installer-options"
+                      ? "installer options changed"
+                      : "staged files changed"
+                  }
                 />
               ))}
             </DiffLines>
@@ -1891,7 +1927,11 @@ function FormPanel(props: FormPanelProps): JSX.Element {
           </div>
         </div>
       )}
-      <BuildDiffCard collectionName={curator.name} current={ctx.mods} />
+      <BuildDiffCard
+        collectionName={curator.name}
+        current={ctx.mods}
+        gameId={ctx.gameId}
+      />
 
       <Card title="Collection metadata">
         <div
