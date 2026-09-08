@@ -367,3 +367,30 @@ project rather than this one, it belongs upstream — say so and it can be promo
   successful creation, and only failed because the LEVEL happened to differ. Had both been `info`
   it would have passed while testing nothing.*
 
+- **PP-3** — **`Promise.race` does not stop the loser; it only stops listening to it.** The losing
+  promise keeps every timer, subscription and watchdog it owns, and when one of those fires it
+  rejects a promise nobody is awaiting — an unhandled rejection, arbitrarily long after the work it
+  was watching finished. Stand the loser down explicitly in a `finally`, and attach the catch BEFORE
+  cancelling, because cancelling settles by rejecting. *Scar: three race sites in the installer each
+  abandoned a completion waiter. Ten of them fired in the same millisecond during the verify phase
+  of a 1755-mod install, reporting `install.stalled` for mods that had gone in hours earlier. A
+  fourth site had already been fixed and its `cancel()` doc described the bug; the comment at one of
+  the three claimed "the other settles silently", which was simply false.*
+
+- **PP-4** — **Build an exclusion list from the data, not from what sounds excludable — and test
+  the KEEPS.** Every entry on such a list is verification given up, and the failure mode is silent:
+  an over-broad rule stops checking real content and looks exactly like success. Read the real
+  corpus first. *Scar: filtering unverifiable files out of a 354,819-file capture, two confident
+  guesses were both wrong — `.bak` and `.old` are shipped content (a FaceGen mesh, an MCM settings
+  backup), and `.0`–`.3` are not rotated logs but OpenSSL CA files Nemesis ships. Both are now
+  pinned as tests that fail if the rule widens. Scope the rule by what it IS, too: the log that
+  proved the case lived at `textures/aatj/armor/debug.log`, so a path rule scoped to `SKSE/Plugins`
+  would have missed it — and matching by name instead covered Fallout 4 for free.*
+
+- **PP-5** — **A derived count is a claim, and the wrong subtraction lies confidently.** Check what
+  each operand actually contains before reporting a difference between them. *Scar:
+  `goneSinceRecorded: journal.length - owned.size` reported "the user removed 1591 mods between
+  runs" on a machine where nothing had been removed — `owned` deliberately excludes adopted entries
+  and `journal.length` counts them, so the figure was exactly the adopted count every time. The
+  function had no test.*
+
