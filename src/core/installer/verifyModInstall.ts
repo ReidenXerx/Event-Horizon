@@ -1,5 +1,6 @@
 import * as fs from "fs";
 
+import { stagingPathKey } from "../stagingPathKey";
 import { isVolatileFile, volatileReason } from "../volatileFiles";
 import * as path from "path";
 
@@ -262,11 +263,31 @@ export async function verifyModInstall(
     });
   }
 
+  /**
+   * ─── KEYED BY IDENTITY, NOT BY SPELLING ─────────────────────────────────
+   * These are Windows paths from two different machines and two different
+   * extractions. `scripts/Foo.pex` and `Scripts/Foo.pex` are the same file;
+   * the filesystem thinks so, the Creation Engine thinks so, and the mirror
+   * pass in this very install already thought so — it has keyed by
+   * lowercased path since it was written.
+   *
+   * Verification did not, and it cost a real run four false "could not be
+   * reproduced" reports out of eight. The signature is unmistakable: missing
+   * and extra counts identical, 30/30, 1/1, 16/16, 28/28, every pair the same
+   * path in different case. Each told a user their mod was broken and handed
+   * them a report to send the curator about a file that was present and
+   * correct.
+   *
+   * The ORIGINAL spelling is still what gets reported — the key decides
+   * sameness and nothing else.
+   */
   const onDiskByPath = new Map<string, OnDiskFile>();
-  for (const f of onDisk) onDiskByPath.set(f.relativePath, f);
+  for (const f of onDisk) onDiskByPath.set(stagingPathKey(f.relativePath), f);
 
   const expectedByPath = new Map<string, EhcollStagingFile>();
-  for (const f of expectedVerifiable) expectedByPath.set(f.path, f);
+  for (const f of expectedVerifiable) {
+    expectedByPath.set(stagingPathKey(f.path), f);
+  }
 
   const missingFiles: string[] = [];
   const sizeMismatches: VerifyFail["sizeMismatches"] = [];
@@ -274,7 +295,7 @@ export async function verifyModInstall(
     [];
 
   for (const expected of expectedVerifiable) {
-    const actual = onDiskByPath.get(expected.path);
+    const actual = onDiskByPath.get(stagingPathKey(expected.path));
     if (actual === undefined) {
       missingFiles.push(expected.path);
       continue;
@@ -331,7 +352,10 @@ export async function verifyModInstall(
 
   const extraFiles: string[] = [];
   for (const f of onDisk) {
-    if (!expectedByPath.has(f.relativePath)) extraFiles.push(f.relativePath);
+    // Reported with the spelling that is actually on disk; matched by identity.
+    if (!expectedByPath.has(stagingPathKey(f.relativePath))) {
+      extraFiles.push(f.relativePath);
+    }
   }
 
   const hasFailures =

@@ -40,6 +40,8 @@
 
 import type { EhcollStagingFile } from "../../types/ehcoll";
 
+import { stagingPathKey } from "../stagingPathKey";
+
 export type MirrorRestore = {
   /** POSIX-style path relative to the staging root, in the curator's casing. */
   path: string;
@@ -68,8 +70,15 @@ export type MirrorPlan = {
   removalWithheld?: { count: number; why: string };
 };
 
-/** Windows staging paths differ in case and separator; identity does not. */
-const key = (p: string): string => p.replace(/\\/g, "/").toLowerCase();
+/**
+ * Windows staging paths differ in case and separator; identity does not.
+ *
+ * This module had the rule right from the start and kept it to itself, while
+ * verification compared paths verbatim and reported four healthy mods as
+ * broken. Shared now, so the two halves of one install cannot disagree about
+ * whether two paths are the same file.
+ */
+const key = stagingPathKey;
 
 /**
  * Plan the reconciliation. Pure: no filesystem, no Vortex, no package.
