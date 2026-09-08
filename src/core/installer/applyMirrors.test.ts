@@ -16,9 +16,14 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { applyMirrorPlan, describeMirrorOutcome, mirrorEntryFor } from "./applyMirrors";
+import {
+  applyMirrorPlan,
+  describeMirrorOutcome,
+  mirrorEntryFor,
+  replaceFile,
+} from "./applyMirrors";
 import { planMirror } from "./mirrorStaging";
 import { makeZip } from "../../../test/makeZip";
 
@@ -200,5 +205,74 @@ describe("what the user is told", () => {
     expect(
       describeMirrorOutcome("Mod", { restored: 0, removed: 0, failures: [] }),
     ).toBeUndefined();
+  });
+});
+
+describe("a filesystem where rename cannot replace an existing file", () => {
+  /**
+   * A tester's mirror reported, verbatim:
+   *
+   *   "Rebecca Rose - TWB - Bodyslide Presets": 1 could NOT be mirrored, so
+   *   this mod does not match the curator's copy:
+   *   Tools/BodySlide/SliderPresets/Rebecca_Rose_TWB_Nude.xml
+   *   (EPERM: operation not permitted, rename
+   *   '...xml.ehcoll-restore-tmp' -> '...xml')
+   *
+   * That temp file is ours. The restore had been `rm(dest)` then
+   * `copyFile(staged, dest)`, which leaves a TRUNCATED file if the copy dies
+   * part-way, so it became copy-to-temp-then-rename. POSIX rename replaces the
+   * destination and Windows mostly does too — that tester's Proton staging
+   * folder does not.
+   */
+  it("prefers the atomic rename when the filesystem allows it", async () => {
+    const calls: string[] = [];
+    await replaceFile("from.tmp", "to.txt", {
+      rename: async () => {
+        calls.push("rename");
+      },
+      rm: async () => {
+        calls.push("rm");
+      },
+    });
+    // One rename, and NOTHING removed: the destination is never unlinked on a
+    // filesystem that can replace it, which is the whole point of the temp.
+    expect(calls).toEqual(["rename"]);
+  });
+
+  it("removes the destination and retries when rename refuses", async () => {
+    const calls: string[] = [];
+    let refused = false;
+    await replaceFile("from.tmp", "to.txt", {
+      rename: async () => {
+        if (!refused) {
+          refused = true;
+          calls.push("rename-refused");
+          throw Object.assign(
+            new Error("EPERM: operation not permitted, rename"),
+            { code: "EPERM" },
+          );
+        }
+        calls.push("rename-ok");
+      },
+      rm: async () => {
+        calls.push("rm");
+      },
+    });
+    // The order matters: the destination goes only AFTER the atomic attempt
+    // failed, and the file that lands is the already-complete temp.
+    expect(calls).toEqual(["rename-refused", "rm", "rename-ok"]);
+  });
+
+  it("still throws when the retry also fails, rather than reporting success", async () => {
+    // A mirror that silently swallowed this would report the mod as matching
+    // the curator's copy when it does not.
+    await expect(
+      replaceFile("from.tmp", "to.txt", {
+        rename: async () => {
+          throw Object.assign(new Error("EPERM"), { code: "EPERM" });
+        },
+        rm: async () => undefined,
+      }),
+    ).rejects.toThrow(/EPERM/);
   });
 });

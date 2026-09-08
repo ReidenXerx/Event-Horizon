@@ -31,6 +31,7 @@
 import * as fsp from "fs/promises";
 
 import { segmentsOf } from "../paths";
+import { ehLog } from "../logging/ehLog";
 
 import {
   isSafeRelativePath,
@@ -204,13 +205,64 @@ async function restoreOne(
     const tmp = `${dest}.ehcoll-restore-tmp`;
     try {
       await fsp.copyFile(staged, tmp);
-      await fsp.rename(tmp, dest);
+      await replaceFile(tmp, dest);
     } catch (err) {
       await fsp.rm(tmp, { force: true }).catch(() => undefined);
       throw err;
     }
   } finally {
     await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+/**
+ * Move a fully-written temp file onto its destination.
+ *
+ * ─── RENAME-OVER-EXISTING IS NOT UNIVERSAL ──────────────────────────────────
+ * POSIX rename replaces the destination, and Windows mostly does too — a
+ * Proton/Wine staging folder does not. A tester's mirror failed with:
+ *
+ *   EPERM: operation not permitted, rename
+ *   '...\Rebecca_Rose_TWB_Nude.xml.ehcoll-restore-tmp'
+ *   -> '...\Rebecca_Rose_TWB_Nude.xml'
+ *
+ * So the atomic path is tried first and taken wherever the filesystem supports
+ * it; on refusal the destination is removed and the rename retried. That
+ * window — between the unlink and the rename — is a metadata operation on a
+ * file that is ALREADY fully written, and still strictly safer than the form
+ * this replaced (`rm(dest)` then `copyFile`), where the gap spanned the whole
+ * copy and a failure part-way left a TRUNCATED file behind.
+ *
+ * `ops` exists so a test can supply a rename that refuses the way that
+ * tester's filesystem does. Production never passes it.
+ */
+export async function replaceFile(
+  tmp: string,
+  dest: string,
+  ops: {
+    rename: (from: string, to: string) => Promise<void>;
+    rm: (target: string) => Promise<void>;
+  } = {
+    rename: async (from, to) => {
+      await fsp.rename(from, to);
+    },
+    rm: async (target) => {
+      await fsp.rm(target, { force: true });
+    },
+  },
+): Promise<void> {
+  try {
+    await ops.rename(tmp, dest);
+  } catch (renameErr) {
+    await ops.rm(dest);
+    await ops.rename(tmp, dest);
+    ehLog("debug", "mirror.restore.rename-fallback", {
+      dest,
+      why: (renameErr as NodeJS.ErrnoException)?.code ?? "unknown",
+      note:
+        "rename could not replace an existing file on this filesystem; " +
+        "removed it first and renamed the completed temp into place",
+    });
   }
 }
 
