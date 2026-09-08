@@ -187,18 +187,47 @@ export function makeFakeVortex(args: {
         }, 0);
       }
     } else if (event === "deploy-mods") {
-      // Vortex deploys asynchronously and reports through `did-deploy`; the
-      // callback is only for failures. A double that acknowledged neither
-      // left the driver waiting on a deployment that never happened.
+      /**
+       * ─── THE REAL SIGNATURE, NOT OURS ──────────────────────────────────
+       * Vortex registers this, verbatim from `app.asar`:
+       *
+       *   events.on("deploy-mods",
+       *     (callback, profileId, progressCB, deployOptions) =>
+       *       callback.called || deploymentTimer.runNow(callback, ...))
+       *
+       * The CALLBACK IS FIRST. This double used to read `rest[0]` as the
+       * profile id and `rest[1]` as the callback — modelling the driver's
+       * call rather than Vortex's contract — so it agreed with a bug instead
+       * of catching it. The driver passed the profile id where the callback
+       * belonged, Vortex's debouncer stored the string and later ran
+       * `cb(err)` on it, and two testers got "TypeError: cb is not a
+       * function" thirty seconds after a successful install.
+       *
+       * So the double now enforces the contract rather than tolerating it: a
+       * non-function first argument throws HERE, loudly and synchronously,
+       * instead of quietly hanging until the deploy budget expires.
+       */
+      const cb = rest[0];
+      const profileId = rest[1];
+      if (typeof cb !== "function") {
+        throw new TypeError(
+          `deploy-mods expects the callback FIRST — got ${typeof cb}. ` +
+            `Vortex would store this and later call it, throwing ` +
+            `"cb is not a function" once the deployment settled.`,
+        );
+      }
       setTimeout(() => {
         if (deployFailure !== undefined) {
           const message = deployFailure;
           deployFailure = undefined;
-          const cb = rest[1];
-          if (typeof cb === "function") (cb as (e: Error) => void)(new Error(message));
+          (cb as (e: Error) => void)(new Error(message));
           return;
         }
-        realEmit("did-deploy", rest[0]);
+        realEmit("did-deploy", profileId);
+        // Vortex calls the callback with `null` when the deployment settles,
+        // as well as emitting the event. Both, because the driver accepts
+        // either and a double that models only one hides a dependence.
+        (cb as (e: null) => void)(null);
       }, 0);
     }
     return realEmit(event, ...rest);

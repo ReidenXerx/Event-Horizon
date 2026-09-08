@@ -3742,7 +3742,7 @@ function collectInvalidOrphanChoices(
  * Vortex emits `did-deploy` when activation completes (either after a
  * `deploy-mods` call or after a profile switch's auto-deploy).
  */
-async function deployAndWait(
+export async function deployAndWait(
   api: types.IExtensionApi,
   /** The profile this run has been filling. */
   expectedProfileId: string,
@@ -3824,9 +3824,33 @@ async function deployAndWait(
 
     api.events.on("did-deploy", onDidDeploy);
 
+    /**
+     * ─── CALLBACK FIRST. THIS ORDER IS NOT A STYLE CHOICE. ──────────────────
+     * Vortex registers the handler as
+     *
+     *     events.on("deploy-mods", (callback, profileId, progressCB, opts) =>
+     *       callback.called || deploymentTimer.runNow(callback, …))
+     *
+     * — verified in `app.asar`, and every one of Vortex's own call sites
+     * passes the callback first (`emit("deploy-mods", cb)`).
+     *
+     * We passed `(profileId, callback)`. Vortex therefore took our profile-id
+     * STRING as its callback and pushed it into the deployment debouncer's
+     * callback list — `Debouncer.schedule` rejects `undefined` and `null` but
+     * not a string. When the deployment settled, `invokeCallbacks` ran
+     * `localCallbacks.forEach((cb) => cb(err))` against it and threw
+     *
+     *     TypeError: cb is not a function
+     *
+     * which Vortex reports as "An unrecoverable error occurred". Two testers
+     * on two machines hit it, both roughly thirty seconds after a SUCCESSFUL
+     * install — because the deploy really did run, and the crash is what
+     * happens when it finishes. Our own callback, meanwhile, sat unused in
+     * the `profileId` slot, so a genuine deploy failure could only ever
+     * surface as the timeout below.
+     */
     api.events.emit(
       "deploy-mods",
-      profileId,
       (err: Error | null | undefined) => {
         if (settled) return;
         if (err) {
@@ -3834,8 +3858,17 @@ async function deployAndWait(
           clearTimeout(timeout);
           api.events.removeListener("did-deploy", onDidDeploy);
           reject(err);
+          return;
         }
+        // Vortex calls this with `null` when the deployment completed, which
+        // is a second, independent completion signal. `did-deploy` stays the
+        // primary one; this stops a missed event costing the full budget.
+        settled = true;
+        clearTimeout(timeout);
+        api.events.removeListener("did-deploy", onDidDeploy);
+        resolve();
       },
+      profileId,
     );
   });
 }
