@@ -405,3 +405,22 @@ project rather than this one, it belongs upstream — say so and it can be promo
   success too. `fakeVortex` read `rest[0]` as the profile id and `rest[1]` as the callback, so
   200 driver tests passed against the broken order for weeks. The double now throws on a
   non-function first argument.*
+
+- **PP-7** — **A rule that differs by platform must take the platform as an ARGUMENT, and the
+  answer must be probed, not inferred from `process.platform`.** Case folding is the live example:
+  right on NTFS, and on ext4 it merges two files that both exist. `process.platform` does not
+  settle it either — a Wine prefix on ext4 reports `win32` while the directory underneath is
+  case-sensitive, and macOS reports `darwin` while APFS usually is not. Ask the directory: one
+  file create and one stat, cached. And make the FALLBACK asymmetric in the safe direction, in
+  writing. *Scar: verification compared staging paths verbatim and reported four healthy mods as
+  broken; the fix folded case unconditionally, which would have let `planMirror` — a function that
+  DELETES — act on the wrong one of two real files under Proton. The cosmetic Windows fix was one
+  commit away from data loss on a platform nobody had tested.*
+
+- **PP-8** — **When you extract a duplicated helper, add a guard that fails the build if someone
+  re-grows it — and prove the guard can fire.** A service is only a service while it is the only
+  copy. *Scar: six independent `toPosix` implementations, two disagreeing basename idioms and
+  three comparison keys, one of which folded case while another did not. That disagreement is
+  what reported four healthy mods as broken, and nothing in the codebase could have noticed it.
+  The guard names the offending file in its failure message and asserts its own regex against a
+  sample, because a guard that matches nothing passes forever.*
