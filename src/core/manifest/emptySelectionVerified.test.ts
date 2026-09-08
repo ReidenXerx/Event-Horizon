@@ -99,6 +99,35 @@ describe("emptySelectionVerified", () => {
     expect(r.notes.join(" ")).toMatch(/reinstall this mod, or bundle it/i);
   });
 
+  it("still PROVES it when the only extra is a file the archive cannot produce", async () => {
+    /**
+     * The tester report this exists for. `BeastHHBB - Patches and Addons`
+     * staged ONE file, and the containment pass had already established the
+     * archive cannot produce it at all (`shipsNothing: true` in the build
+     * log). The curator had ticked nothing and pressed Finish.
+     *
+     * The proof used to refuse on any unpredicted staged file, so that single
+     * stray file cost every user of the collection a FOMOD dialog they could
+     * not answer. But selecting an option chooses among the ARCHIVE's files —
+     * a file the archive does not contain cannot have arrived by ticking a
+     * box, so it is silent on the question.
+     *
+     * It is still a real finding, reported by the containment pass under
+     * `unexplained`, where the curator answers for it separately.
+     */
+    const r = await check([
+      { path: "base.esp", size: 100, crc: "11111111" },
+      // Nowhere in ENTRIES: cannot come from this archive by any selection.
+      { path: "placeholder.txt", size: 74, crc: "deadbeef" },
+    ]);
+
+    expect(r.emptySelectionVerified).toBe(true);
+    // And it says so, rather than quietly ignoring the file.
+    expect(r.notes.join(" ")).toMatch(/cannot come from this archive at all/i);
+    // The file is still reported as unexplained — two questions, two answers.
+    expect(r.unexplained ?? 0).toBeGreaterThan(0);
+  });
+
   it("REFUSES when a required file is absent from the curator's folder", async () => {
     // The other direction. Their folder is missing something a no-choice
     // install would create, so "nothing was picked" does not explain it.

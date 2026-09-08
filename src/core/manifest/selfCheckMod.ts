@@ -304,6 +304,16 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
       configEntry,
       listing,
       staged: input.staged,
+      /**
+       * Staged files the ARCHIVE cannot produce, already computed by the
+       * containment pass. They are not evidence about what was ticked — see
+       * `verifyEmptySelection`.
+       */
+      unexplained: new Set(
+        containment.verdicts
+          .filter((v) => v.kind === "unexplained")
+          .map((v) => v.file.path.toLowerCase()),
+      ),
     });
     notes.push(verdict.note);
     return {
@@ -435,6 +445,15 @@ async function verifyEmptySelection(input: {
   configEntry: string;
   listing: ArchiveListing;
   staged: readonly StagedFileRef[];
+  /**
+   * Staged paths (lowercased) the ARCHIVE cannot produce.
+   *
+   * Excluded from the comparison because selecting an installer option chooses
+   * among the archive's own files — so a file the archive does not contain
+   * cannot be evidence that anything was selected. Reported separately by the
+   * containment pass that found it.
+   */
+  unexplained?: ReadonlySet<string>;
 }): Promise<{ emptySelectionReproducesStaging: boolean; note: string }> {
   const no = (note: string) => ({
     emptySelectionReproducesStaging: false,
@@ -473,7 +492,37 @@ async function verifyEmptySelection(input: {
     const predicted = new Set(expected.files.map((f) => f.path.toLowerCase()));
     const actual = new Set(input.staged.map((f) => f.path.toLowerCase()));
     const missing = [...predicted].filter((p) => !actual.has(p));
-    const extra = [...actual].filter((p) => !predicted.has(p));
+    /**
+     * ─── A TICKED BOX CAN ONLY ADD A FILE FROM THE ARCHIVE ───────────────
+     * `extra` used to be every staged file the no-choice replay does not
+     * predict, and any single one of them refused the proof. That is too
+     * strict, and it refused a real case:
+     *
+     *   BeastHHBB - Patches and Addons — staged 1 file, and the containment
+     *   pass had already established the archive cannot produce it at all.
+     *
+     * The curator ticked nothing and pressed Finish. The one file in their
+     * folder came from somewhere else entirely — a placeholder, a manual
+     * addition, a leftover — and a file the archive does not contain cannot
+     * have arrived by selecting an option, because selecting an option is how
+     * you choose among the archive's OWN files.
+     *
+     * So an unexplained file is silent on the question being asked here. It is
+     * still a real finding, and it is still reported — by the containment pass
+     * that identified it, under `unexplained`, where the curator answers for it
+     * separately (declare / bundle / mirror). Conflating the two questions cost
+     * every user of this collection a FOMOD dialog they cannot answer, for a
+     * mod whose options were genuinely all left unticked.
+     *
+     * `missing` stays strict: a file the no-choice replay WOULD produce and the
+     * curator does not have means the replay is not what happened.
+     */
+    const extra = [...actual].filter(
+      (p) => !predicted.has(p) && !(input.unexplained?.has(p) ?? false),
+    );
+    const ignoredUnexplained = [...actual].filter(
+      (p) => !predicted.has(p) && (input.unexplained?.has(p) ?? false),
+    ).length;
 
     if (missing.length === 0 && extra.length === 0) {
       return {
@@ -481,7 +530,12 @@ async function verifyEmptySelection(input: {
         note:
           "No installer choices were recorded, and installing this mod " +
           "WITHOUT selecting anything reproduces your staging folder " +
-          "exactly — so that is what will be replayed, with no dialog.",
+          "exactly — so that is what will be replayed, with no dialog." +
+          (ignoredUnexplained > 0
+            ? ` ${ignoredUnexplained} file(s) in your folder cannot come from ` +
+              `this archive at all, so they say nothing about what was ` +
+              `ticked; they are reported separately as unexplained.`
+            : ""),
       };
     }
     return no(
