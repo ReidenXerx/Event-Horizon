@@ -394,3 +394,14 @@ project rather than this one, it belongs upstream — say so and it can be promo
   and `journal.length` counts them, so the figure was exactly the adopted count every time. The
   function had no test.*
 
+- **PP-6** — **Verify a host's event signature against the HOST, never against your own call
+  site — and make the test double enforce it.** An `emit` is variadic, so nothing type-checks the
+  order, and a double written by reading your own code agrees with your bug instead of catching
+  it. Read the host's registration; where it ships as a bundle, unpack it and quote the line.
+  *Scar: `deploy-mods` is `(callback, profileId, …)` in Vortex and we emitted
+  `(profileId, callback)`. Vortex stored our profile-id string where a callback belonged and ran
+  `cb(err)` on it once the deploy settled — "TypeError: cb is not a function", on two testers'
+  machines, thirty seconds after a SUCCESSFUL install, because the callback list is invoked on
+  success too. `fakeVortex` read `rest[0]` as the profile id and `rest[1]` as the callback, so
+  200 driver tests passed against the broken order for weeks. The double now throws on a
+  non-function first argument.*
