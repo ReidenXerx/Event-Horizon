@@ -367,14 +367,20 @@ export async function verifyModInstall(
   ehLog("info", "verify-install.ok", {
     vortexModId,
     level,
-    verifiedCount: expectedFiles.length,
+    // `expectedVerifiable`, not `expectedFiles`: the volatile filter above
+    // removes runtime logs and OS junk from BOTH sides, and counting the
+    // pre-filter total claims to have checked files that were deliberately
+    // skipped. The fail path already used the filtered count, so the two
+    // disagreed — and the Done card sums these into "files verified".
+    verifiedCount: expectedVerifiable.length,
+    skippedVolatile: expectedFiles.length - expectedVerifiable.length,
     extraCount: extraFiles.length,
     ms: Date.now() - startedAt,
   });
   return {
     kind: "ok",
     extraFiles,
-    verifiedCount: expectedFiles.length,
+    verifiedCount: expectedVerifiable.length,
   };
 }
 

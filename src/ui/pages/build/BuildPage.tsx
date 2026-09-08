@@ -331,7 +331,7 @@ function BuildWizard(props: BuildWizardProps): JSX.Element {
         readme: formState.readme,
         changelog: formState.changelog,
         verificationLevel: formState.verificationLevel,
-      reverifyEverything: formState.reverifyEverything,
+        reverifyEverything: formState.reverifyEverything,
       };
       void saveDraft(getAppDataPath(), "build", session.draftId, payload);
     }, DRAFT_AUTOSAVE_DEBOUNCE_MS);
@@ -347,6 +347,10 @@ function BuildWizard(props: BuildWizardProps): JSX.Element {
     state.kind === "form" ? state.readme : undefined,
     state.kind === "form" ? state.changelog : undefined,
     state.kind === "form" ? state.verificationLevel : undefined,
+    // `reverifyEverything` was written INTO the payload above but never listed
+    // here, so ticking "Re-read every file" on its own scheduled no autosave
+    // and the choice was lost until the next keystroke somewhere else.
+    state.kind === "form" ? state.reverifyEverything : undefined,
   ]);
 
   // ── Restore link-metadata from disk ──────────────────────────────

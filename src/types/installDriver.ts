@@ -536,6 +536,23 @@ export type InstallFailed = {
    * collected and the run continues, so one dead link costs one mod.
    */
   failedMods?: FailedModReportEntry[];
+  /**
+   * What the run DELETED, and where the backup went.
+   *
+   * The rules purge removes every mod rule for the game and clears the LOOT
+   * userlist, and this string is the only thing that names the timestamped
+   * backup. It was carried on the success result and dropped on this one — so
+   * a run that purged the user's rules and then reported a partial failure
+   * told them nothing, and the remedy is useless if unread.
+   */
+  rulesPurgeNotice?: string[];
+  /**
+   * Per-mod curator reports gathered during verification. Computed on this
+   * path too and previously discarded with everything else.
+   */
+  curatorReports?: string[];
+  /** Archives that could not be read. Same reason as above. */
+  damagedArchiveNotice?: string[];
 };
 
 /** One mod that could not be installed, and why. */

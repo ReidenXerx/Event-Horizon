@@ -164,6 +164,27 @@ describe("damaged archives", () => {
     );
   });
 
+  it("catches a corrupted payload it STREAMS to disk, and deletes the result", async () => {
+    /**
+     * The same corruption as the buffered case below, through the path that
+     * handles anything too large to hold in memory — `manifest.json` and every
+     * multi-gigabyte bundled archive. It verified NOTHING: no CRC, no length.
+     * Whole-file truncation is caught because the central directory sits at
+     * the end, but bit rot in the middle of a STORED entry produced a corrupt
+     * archive that was handed straight to Vortex to install.
+     */
+    const p = sevenZip("corrupt-stream.ehcoll", (b) => {
+      b[1000] = b[1000]! ^ 0xff;
+    });
+    const dest = path.join(dir, "streamed.bin");
+    await expect(
+      extractZipEntryToFile(p, "stored.bin", dest),
+    ).rejects.toThrow(/did not survive extraction/);
+    // And it must not be left behind: a corrupt file on disk is one a later
+    // step picks up and trusts, usually under a name that looks verified.
+    expect(fs.existsSync(dest)).toBe(false);
+  });
+
   it("catches a corrupted STORED payload, which only a checksum can see", async () => {
     // The decisive case. stored.bin is method 0, so flipping bytes inside it
     // does not break decompression -- there is none. The read succeeds and

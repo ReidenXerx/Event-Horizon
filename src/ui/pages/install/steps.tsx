@@ -2558,6 +2558,9 @@ export function DoneStep(props: DoneStepProps): JSX.Element {
         partialProfileId={result.partialProfileId}
         message={result.error}
         installedSoFar={result.installedSoFar.length}
+        {...(result.rulesPurgeNotice !== undefined
+          ? { rulesPurgeNotice: result.rulesPurgeNotice }
+          : {})}
       />
     );
   }
@@ -3751,6 +3754,15 @@ function FailureBody(props: {
    * reads as a bug and sends them looking for one.
    */
   stopped?: boolean;
+  /**
+   * What this run DELETED before it failed, and where the backup went.
+   *
+   * A partial failure happens after the rules purge, so the user's mod rules
+   * and LOOT list are already gone. This card used to render phase, profile
+   * and message only, so the one string naming the timestamped backup was
+   * computed and dropped.
+   */
+  rulesPurgeNotice?: string[];
 }): JSX.Element {
   return (
     <div className="eh-stack">
@@ -3783,6 +3795,14 @@ function FailureBody(props: {
           </div>
         )}
       </div>
+
+      {/* Before "what to do": what was already changed. A failure card that
+          omits a deletion the run performed is not a report of what
+          happened. */}
+      {props.rulesPurgeNotice !== undefined &&
+        props.rulesPurgeNotice.length > 0 && (
+          <RulesPurgeNotice lines={props.rulesPurgeNotice} />
+        )}
 
       {/* And last, what to do — which only makes sense once they know what
           happened and what exists. */}

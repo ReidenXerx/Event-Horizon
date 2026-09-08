@@ -67,6 +67,7 @@ import {
   readEhcoll,
 } from "../core/manifest/readEhcoll";
 import { logInstallPlan } from "../core/resolver/logInstallPlan";
+import { enrichInstalledModsWithStagingSetHashes } from "../core/resolver/enrichStagingSetHashes";
 import { resolveInstallPlan } from "../core/resolver/resolveInstallPlan";
 import { scanAvailableDownloads } from "../core/resolver/scanAvailableDownloads";
 import { getEventHorizonDir } from "../core/paths";
@@ -237,11 +238,32 @@ const downloadScanNotificationId = "vortex-event-horizon:install-download-scan";
 
       const hashingStartedAt = Date.now();
       op.step("hashing-start", { archives: rawMods.length });
-      const installedMods = await enrichModsWithArchiveHashes(
+      const archiveHashed = await enrichModsWithArchiveHashes(
         state,
         activeGameId,
         rawMods,
         { concurrency: 4 },
+      );
+      /**
+       * ─── THE SECOND IDENTITY ORACLE, WHICH THIS PATH WAS MISSING ────────
+       * `resolveExternalMod`'s rung 2 matches an installed mod by the hash of
+       * its STAGING SET. It is the only oracle available for an external mod
+       * whose original archive Vortex no longer holds — and on this pipeline
+       * no installed mod ever carried one, because the enrichment ran only in
+       * the install wizard. Every such mod fell through to `use-bundled`
+       * (re-extracted and reinstalled on every run) or, unbundled, to
+       * `external-missing`: asked to supply a file they already have deployed.
+       *
+       * Exactly the shape `scanAvailableDownloads` documents for the other
+       * half of this state — a fix applied to the wizard and not to the
+       * action. NS-3: whether the user already has a mod cannot depend on
+       * which button they pressed.
+       */
+      const installedMods = await enrichInstalledModsWithStagingSetHashes(
+        state,
+        activeGameId,
+        manifest,
+        archiveHashed,
       );
       op.step("hashing-done", {
         ms: Date.now() - hashingStartedAt,

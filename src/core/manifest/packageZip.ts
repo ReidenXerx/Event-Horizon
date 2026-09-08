@@ -542,9 +542,22 @@ async function stageBundledArchives(
       total: archives.length,
     });
 
-    if (verifyHashes) {
-      await verifyArchiveHash(archive);
-    }
+    /**
+     * Unconditional, and `verifyHashes` no longer gates it.
+     *
+     * The flag defaulted to false and NO production caller ever set it, so
+     * `verifyArchiveHash` was dead code in every real build — while the
+     * docblock justifying the mirror re-hash cited it as established
+     * precedent: "Bundled archives have been re-hashed before staging since
+     * the beginning; mirror files were hardlinked and trusted." That was not
+     * true of a single shipped package.
+     *
+     * The window it guards is real and larger here than for mirror files: a
+     * curator can repack or replace a bundled archive during the decisions
+     * gate, and nothing on the read side hashes it either. Under NS-1 the
+     * read costs nothing worth counting.
+     */
+    await verifyArchiveHash(archive);
 
     const ext = stripDot(path.extname(archive.sourcePath));
     const fileName = ext.length > 0

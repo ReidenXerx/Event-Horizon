@@ -242,7 +242,9 @@ export function FailedAttempts(props: {
               >
                 {a.packageName}
               </strong>
-              {a.packageVersion.length > 0 && (
+              {/* Absent on a record written before the field existed — show
+                  no pill rather than an empty one. */}
+              {a.packageVersion !== undefined && a.packageVersion.length > 0 && (
                 <Pill intent="neutral">v{a.packageVersion}</Pill>
               )}
               <Pill intent={a.outcome === "aborted" ? "neutral" : "danger"}>

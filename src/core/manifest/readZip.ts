@@ -34,6 +34,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as zlib from "zlib";
 import { pipeline } from "stream/promises";
+import { Transform, type TransformCallback } from "stream";
 
 import { ehLog } from "../logging/ehLog";
 
@@ -241,15 +242,65 @@ export async function extractZipEntryToFile(
   });
   const sink = fs.createWriteStream(destPath);
 
+  /**
+   * ─── CHECK WHAT CAME OUT ────────────────────────────────────────────────
+   * `readZipEntry` verifies the CRC of what it buffers; this function, which
+   * handles everything too large to buffer, verified nothing at all — and it
+   * is the path used for `manifest.json` and for every multi-gigabyte bundled
+   * archive. Whole-file truncation is caught (the central directory sits at
+   * the end), but bit rot in the middle of a STORED entry produced a corrupt
+   * archive that was handed straight to Vortex to install.
+   *
+   * The check costs a CRC over bytes already streaming past. `entry.crc32` was
+   * parsed out of the central directory before the first byte was read.
+   */
+  let crc = 0 ^ -1;
+  let written = 0;
+  const tally = new Transform({
+    transform(
+      chunk: Buffer,
+      _enc: BufferEncoding,
+      done: TransformCallback,
+    ): void {
+      written += chunk.length;
+      for (let i = 0; i < chunk.length; i += 1) {
+        crc = CRC_TABLE[(crc ^ chunk[i]!) & 0xff]! ^ (crc >>> 8);
+      }
+      done(null, chunk);
+    },
+  });
+
   try {
     if (entry.method === METHOD_STORE) {
-      await pipeline(source, sink);
+      await pipeline(source, tally, sink);
     } else {
-      await pipeline(source, zlib.createInflateRaw(), sink);
+      await pipeline(source, zlib.createInflateRaw(), tally, sink);
     }
   } catch (err) {
     ehLog("error", "zip.extract.fail", { file: name, entry: entryName, err });
+    await fsp.rm(destPath, { force: true }).catch(() => undefined);
     throw err;
+  }
+
+  const actualCrc = (crc ^ -1) >>> 0;
+  if (written !== entry.uncompressedSize || actualCrc !== entry.crc32) {
+    // Delete it. A corrupt extraction left on disk is one a later step picks
+    // up and trusts, and the name it carries is usually a content hash that
+    // makes it look verified.
+    await fsp.rm(destPath, { force: true }).catch(() => undefined);
+    ehLog("error", "zip.extract.corrupt", {
+      file: name,
+      entry: entryName,
+      expectedBytes: entry.uncompressedSize,
+      actualBytes: written,
+      expectedCrc: entry.crc32,
+      actualCrc,
+    });
+    throw new ZipReadError(
+      `"${entryName}" in "${filePath}" did not survive extraction: expected ` +
+        `${entry.uncompressedSize} bytes with CRC ${entry.crc32}, got ` +
+        `${written} bytes with CRC ${actualCrc}. The package is damaged.`,
+    );
   }
   ehLog("debug", "zip.extract.ok", {
     file: name,

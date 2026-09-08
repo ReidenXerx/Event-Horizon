@@ -49,7 +49,16 @@ export interface InstallAttempt {
   /** Stable collection identity, matching the receipt's packageId. */
   packageId: string;
   packageName: string;
-  packageVersion: string;
+  /**
+   * The release this attempt was for.
+   *
+   * OPTIONAL because a record written before this field existed does not have
+   * one, and the resume guard's `!== undefined` arm is what lets such a record
+   * still be resumed. The reader must preserve that absence rather than
+   * normalising it to `""` — a record refused as "version-changed" abandons a
+   * profile holding a half-finished install.
+   */
+  packageVersion?: string;
   gameId: string;
   /** ISO-8601 UTC of when the attempt ended. */
   endedAt: string;
@@ -169,8 +178,20 @@ export async function listInstallAttempts(
       out.push({
         packageId: parsed.packageId,
         packageName: parsed.packageName,
-        packageVersion:
-          typeof parsed.packageVersion === "string" ? parsed.packageVersion : "",
+        /**
+         * ABSENT stays absent — it must not become `""`.
+         *
+         * `resumableProfileFromAttempts` guards with
+         * `packageVersion !== undefined && packageVersion !== packageVersion`,
+         * and the `undefined` half exists so a record written before the field
+         * existed can still resume. Normalising to `""` made that guard dead
+         * code: every such record was refused as "version-changed", the
+         * profile it named was abandoned, and the log asserted a release
+         * change that had not happened.
+         */
+        ...(typeof parsed.packageVersion === "string"
+          ? { packageVersion: parsed.packageVersion }
+          : {}),
         gameId: typeof parsed.gameId === "string" ? parsed.gameId : "",
         endedAt: parsed.endedAt,
         outcome: parsed.outcome === "aborted" ? "aborted" : "failed",

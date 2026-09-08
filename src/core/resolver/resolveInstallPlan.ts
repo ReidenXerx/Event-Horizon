@@ -974,11 +974,32 @@ function findInstalledByNexusExact(
    * wrong "not installed" costs a re-download, a modal, and a mod installed
    * twice.
    */
+  /**
+   * Two passes, and the order is the point.
+   *
+   * One `.find` over the disjunction treats "sha proves this is it" and "sha
+   * unknown, not contradicted" as equally acceptable, so with two copies of
+   * the same (modId, fileId) — the user's own and one an earlier run put in
+   * beside it — whichever Vortex happens to list first wins. Adopting the
+   * UNVERIFIED copy while a proven one sits unused is the wrong way round,
+   * and it feeds the not-ours/alongside path that installs a third copy.
+   *
+   * The relaxation itself is unchanged: absence still never means "different"
+   * (NS-4). It is only ranked below proof.
+   */
+  const proven = installed.find(
+    (m) =>
+      m.nexusModId === modId &&
+      m.nexusFileId === fileId &&
+      m.archiveSha256 === sha256,
+  );
+  if (proven !== undefined) return proven;
+
   return installed.find(
     (m) =>
       m.nexusModId === modId &&
       m.nexusFileId === fileId &&
-      (m.archiveSha256 === undefined || m.archiveSha256 === sha256),
+      m.archiveSha256 === undefined,
   );
 }
 

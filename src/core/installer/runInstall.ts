@@ -1442,6 +1442,13 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
      * journal is what carries that fact across a restart.
      */
     const journal = await readJournal(ctx.appDataPath, plan.manifest.package.id);
+    /**
+     * The previous run's receipt, for provenance only. A failure to read one
+     * is not a failure here — it just means the journal is the sole source,
+     * which is what it was before.
+     */
+    const previousReceiptMods =
+      (await readReceipt(ctx.appDataPath, plan.manifest.package.id))?.mods ?? [];
     const liveModIds = new Set(
       Object.keys(
         ((api.getState() as unknown as {
@@ -1449,7 +1456,43 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         }).persistent?.mods ?? {})[plan.manifest.game.id] ?? {},
       ),
     );
+    /**
+     * ─── PROVENANCE OUTLIVES THE JOURNAL ────────────────────────────────
+     * The journal is DELETED on a successful install — the receipt takes over
+     * as the record of what is installed. But `ownedModIds` was the only
+     * source of "did we put this here", so on the NEXT run of the same
+     * collection the set came back empty and every mod this tool had
+     * installed read as the user's own:
+     *
+     *   - the mirror pass skips every mirrored mod as "not ours" (NS-2 firing
+     *     on our own work), leaving drifted mirrors uncorrected;
+     *   - a failed verification takes the `not-ours` arm and installs a THIRD
+     *     copy alongside a mod we ourselves created.
+     *
+     * The receipt can answer it now that it carries `ownership`, so both
+     * records feed one set. Journal first (it covers the run in progress),
+     * receipt second (it covers every run before this one). Absent ownership
+     * on an older receipt contributes NOTHING — unknown is not ours, which is
+     * the only safe reading (NS-2).
+     */
     const ownedByUs = ownedModIds(journal, liveModIds);
+    let ownedFromReceipt = 0;
+    for (const m of previousReceiptMods) {
+      if (m.ownership !== "installed") continue;
+      if (!liveModIds.has(m.vortexModId)) continue;
+      if (ownedByUs.has(m.vortexModId)) continue;
+      ownedByUs.add(m.vortexModId);
+      ownedFromReceipt += 1;
+    }
+    ehLog("info", "install.provenance.resolved", {
+      fromJournal: ownedByUs.size - ownedFromReceipt,
+      fromReceipt: ownedFromReceipt,
+      receiptEntries: previousReceiptMods.length,
+      receiptWithoutOwnership: previousReceiptMods.filter(
+        (m) => m.ownership === undefined,
+      ).length,
+      total: ownedByUs.size,
+    });
     // The live pool, not `ownedByUs`: the summary counts installed and adopted
     // entries against it separately, and handing it an installed-only set is
     // what made it report every adopted mod as deleted.
@@ -2787,6 +2830,18 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           `missing ones and run this again to finish.`,
         installedSoFar: installedMods.map((m) => m.vortexModId),
         failedMods,
+        /**
+         * This return happens AFTER every downstream phase has run — the
+         * rules were purged, the mirror applied, the deploy done. All of the
+         * notices describing that work were computed and then thrown away
+         * here, including the one naming the backup of the mod rules this run
+         * deleted. A partial failure is exactly when the user needs them.
+         */
+        ...(rulesPurgeNotice !== undefined ? { rulesPurgeNotice } : {}),
+        ...(curatorReports.length > 0 ? { curatorReports } : {}),
+        ...(damagedArchives.length > 0
+          ? { damagedArchiveNotice: damagedArchives }
+          : {}),
       };
     }
 

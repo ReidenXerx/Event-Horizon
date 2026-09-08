@@ -1117,6 +1117,26 @@ export class BuildRefusedError extends Error {
   }
 }
 
+/**
+ * One line for the whole build, not one per mod.
+ *
+ * A 900-mod build can produce forty-five of these, and forty-five near-
+ * identical warnings in a summary is the same as none: the curator scrolls
+ * past. The count is the fact — "45 mods ship without a staging record" — and
+ * three examples are enough to find the cause.
+ */
+function summariseCaptureWarnings(warnings: readonly string[]): string[] {
+  if (warnings.length === 0) return [];
+  const examples = warnings.slice(0, 3).join("; ");
+  return [
+    `${warnings.length} mod${warnings.length === 1 ? "" : "s"} could not be ` +
+      `fully inspected, so ${warnings.length === 1 ? "it ships" : "they ship"} ` +
+      `with a weaker file record and will be verified only partially on a ` +
+      `user's machine. First: ${examples}` +
+      (warnings.length > 3 ? ` (+${warnings.length - 3} more)` : ""),
+  ];
+}
+
 export async function runBuildPipeline(
   api: types.IExtensionApi,
   context: BuildContext,
@@ -1343,7 +1363,24 @@ export async function runBuildPipeline(
         });
       },
       onWarn: (mod, message) => {
-        console.warn(`[event-horizon] inspect ${mod.name}: ${message}`);
+        /**
+         * These are the four ways a mod loses its staging record — no
+         * installationPath, a path that will not resolve, a failed walk, an
+         * incomplete one — and every one of them means the shipped package
+         * cannot verify that mod on a user's machine.
+         *
+         * They used to reach `console.warn` and nothing else, so a build could
+         * report success with a proud `stagingFileCount` while forty-five mods
+         * shipped un-verifiable and the curator was never told. Into the log
+         * AND into the warnings the build summary actually shows.
+         */
+        ehLog("warn", "build.capture.warn", {
+          mod: mod.name,
+          message,
+          consequence:
+            "this mod ships with a weaker staging record than the rest",
+        });
+        captureWarnings.push(`${mod.name}: ${message}`);
       },
     });
     // `stagingFiles` populated here is what buildManifest turns into
@@ -1392,6 +1429,12 @@ export async function runBuildPipeline(
    */
   const failedRepackIds = new Set<string>();
   const bundleWarnings: string[] = [];
+  /**
+   * Per-mod staging-capture problems, aggregated rather than one warning per
+   * mod: on a 900-mod build the individual lines are unreadable, and the
+   * number is the thing that matters.
+   */
+  const captureWarnings: string[] = [];
   bundleWarnings.push(...renameWarnings);
   bundleWarnings.push(...membership.warnings);
 
@@ -1484,7 +1527,49 @@ export async function runBuildPipeline(
       })),
     });
   } catch (err) {
-    // Neither of these is worth failing a build over.
+    /**
+     * Drift detection and undeclared-dependency reporting really are not worth
+     * failing a build over — they are diagnostics. REPACKING IS NOT: it is the
+     * only thing in this block that changes the bytes that ship.
+     *
+     * A throw before the per-mod loop — `fsp.mkdir(workDir)` on a full volume,
+     * a `.repack` path left as a file by an antivirus quarantine — left
+     * `failedRepackIds` EMPTY. `resolveBundledArchives` then found each mod's
+     * original archive on disk and bundled that, and because no repack had
+     * changed any `archiveSha256` the packaging bijection matched and the
+     * build succeeded. The curator shipped, from inside the .ehcoll, the exact
+     * untouched Nexus archive they ticked "bundle" to avoid.
+     *
+     * So the catch now marks every mod the curator flagged for bundling as a
+     * failed repack. `resolveBundledArchives` excludes those while the
+     * manifest still says `bundled: true`, and packageZip's existing
+     * bijection check turns that into the hard, named failure it already
+     * knows how to raise — instead of a silent wrong package.
+     */
+    let flagged = 0;
+    for (const [modId, entry] of Object.entries(collectionConfig.externalMods)) {
+      if (entry?.bundled === true) {
+        failedRepackIds.add(modId);
+        flagged += 1;
+      }
+    }
+    if (flagged > 0) {
+      bundleWarnings.push(
+        `Repacking the bundled mods did not run (${
+          err instanceof Error ? err.message : String(err)
+        }). ${flagged} mod${flagged === 1 ? "" : "s"} marked "bundle" cannot ` +
+          `ship their staging folder, so this build will refuse rather than ` +
+          `quietly ship the original archives.`,
+      );
+    }
+    ehLog("error", "build.repack.block-failed", {
+      flaggedForBundling: flagged,
+      consequence:
+        flagged > 0
+          ? "the build will fail rather than ship stale archives"
+          : "drift/undeclared diagnostics only — nothing that ships changed",
+      err,
+    });
     driftOp.fail(err);
   }
 
@@ -2095,6 +2180,7 @@ export async function runBuildPipeline(
     warnings: [
       ...context.scopeWarnings,
       ...bundleWarnings,
+      ...summariseCaptureWarnings(captureWarnings),
       ...manifestWarnings,
       ...result.warnings,
       ...selfCheckWarnings,
@@ -2114,6 +2200,7 @@ export async function runBuildPipeline(
     warnings: [
       ...context.scopeWarnings,
       ...bundleWarnings,
+      ...summariseCaptureWarnings(captureWarnings),
       ...manifestWarnings,
       ...result.warnings,
       ...selfCheckWarnings,
