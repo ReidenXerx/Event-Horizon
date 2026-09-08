@@ -164,4 +164,75 @@ for (const a of registered.actions) {
   if (dupes.has(key)) { console.error(`WARN: duplicate toolbar slot ${key}`); bad++; }
   dupes.set(key, true);
 }
+/**
+ * ─── THE MODULE GRAPH, NOT JUST THE ENTRY POINT ─────────────────────────────
+ * Everything above proves `index.js` loads and registers what it should. That
+ * is not the same as proving the code behind it RESOLVES, and the difference
+ * shipped:
+ *
+ *     Couldn't read meridia-panties-1.0.10.ehcoll, so there is nothing to
+ *     compare against: (0 , paths_1.toPosix) is not a function
+ *
+ * `src/core/paths.ts` had become the directory `src/core/paths/`, and `tsc`
+ * left the old `dist/core/paths.js` behind. Node resolves `require("../paths")`
+ * to the FILE before the DIRECTORY, so every path helper in the project bound
+ * to a module that no longer had them. `tsc` was clean, 2,110 tests passed —
+ * they run from `src/` — and this smoke test said SMOKE OK, because requiring
+ * a module never calls into it.
+ *
+ * So: reach into the built graph and CALL something. These are cheap, pure,
+ * and each one is a binding that a stale or shadowed module would break.
+ */
+const graphChecks = [
+  {
+    module: "../dist/core/paths",
+    fn: (m) => m.toPosix("a\\b"),
+    expect: "a/b",
+    why: "the path service — shadowed by a stale dist/core/paths.js once",
+  },
+  {
+    module: "../dist/core/paths",
+    fn: (m) => m.basenameOf("a/b/c.txt"),
+    expect: "c.txt",
+  },
+  {
+    module: "../dist/core/paths",
+    fn: (m) => m.pathKey("A/B.TXT", "insensitive"),
+    expect: "a/b.txt",
+  },
+  {
+    module: "../dist/core/volatileFiles",
+    fn: (m) => String(m.isVolatileFile("Thumbs.db")),
+    expect: "true",
+    why: "imports the path service; proves the barrel resolves for consumers",
+  },
+  {
+    module: "../dist/core/manifest/storeCompatibility",
+    fn: (m) => String(m.isScriptExtenderPlugin("SKSE/Plugins/x.dll")),
+    expect: "true",
+  },
+];
+
+for (const check of graphChecks) {
+  let actual;
+  try {
+    actual = check.fn(require(check.module));
+  } catch (err) {
+    console.error(
+      `FAIL: ${check.module} — ${err && err.message ? err.message : err}` +
+        (check.why ? `\n      (${check.why})` : ""),
+    );
+    bad++;
+    continue;
+  }
+  if (actual !== check.expect) {
+    console.error(
+      `FAIL: ${check.module} returned ${JSON.stringify(actual)}, expected ${JSON.stringify(check.expect)}`,
+    );
+    bad++;
+  }
+}
+console.log("module graph     :", `${graphChecks.length} binding(s) called`);
+
 console.log(bad === 0 ? "\nSMOKE OK" : `\nSMOKE finished with ${bad} warning(s)`);
+if (bad > 0) process.exit(1);
