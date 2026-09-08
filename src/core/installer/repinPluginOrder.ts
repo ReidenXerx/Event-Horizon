@@ -40,11 +40,44 @@ const key = (name: string): string => name.trim().toLowerCase();
  * @param actualOrder  plugin names as LOOT left them, the full list
  * @returns the merged order — same members as `actualOrder`, reordered
  */
+/**
+ * Distinct names, in order, first spelling wins.
+ *
+ * `owned` and `present` are Sets, so multiplicity is erased — and the merge
+ * fills one slot per OWNED position from a queue built through those Sets. Give
+ * it `[A, A, B]` against a curator order of `[B, A]` and there are three owned
+ * slots but only two queue entries: the third read is `undefined`, falls back
+ * to the slot's own name, and the result is `[B, A, B]` — one `A.esp` lost from
+ * the load order and a second `B.esp` invented. Written back, that is a plugin
+ * silently dropped and a name listed twice.
+ *
+ * `parsePluginsTxt` trims and drops blanks and comments but never dedupes, so a
+ * hand-edited or MO2-migrated plugins.txt arrives here exactly as written.
+ *
+ * A merge that cannot prove it preserved membership should not approximate.
+ * This makes the precondition true instead.
+ */
+function distinct(names: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const name of names) {
+    const k = key(name);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(name);
+  }
+  return out;
+}
+
 export function repinCuratorOrder(
   curatorOrder: readonly string[],
   actualOrder: readonly string[],
 ): string[] {
-  const owned = new Set(curatorOrder.map(key));
+  // Deduped, so slot count and queue length are the same number by
+  // construction and the fallback below is provably unreachable. See distinct.
+  const curator = distinct(curatorOrder);
+  const actual = distinct(actualOrder);
+  const owned = new Set(curator.map(key));
 
   /**
    * The curator's sequence, narrowed to plugins that actually exist here.
@@ -53,17 +86,20 @@ export function repinCuratorOrder(
    * that would shift every later one and reintroduce the drift this exists to
    * remove.
    */
-  const present = new Set(actualOrder.map(key));
-  const queue = curatorOrder.filter((n) => present.has(key(n)));
+  const present = new Set(actual.map(key));
+  const queue = curator.filter((n) => present.has(key(n)));
 
   const out: string[] = [];
   let next = 0;
-  for (const name of actualOrder) {
+  for (const name of actual) {
     if (owned.has(key(name))) {
       // A slot the collection owns. Fill it with the next curator plugin,
       // keeping the name spelled as it is on this machine — the merged list is
       // written back to Vortex, and a name it does not recognise is a name it
       // drops.
+      // `queue.length` equals the number of owned slots exactly, because both
+      // are |curator names that are also present|, counted over DISTINCT
+      // names on each side. The fallback is unreachable and stays as a guard.
       const wanted = queue[next];
       next += 1;
       out.push(wanted ?? name);

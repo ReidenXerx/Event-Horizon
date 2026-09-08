@@ -43,7 +43,7 @@ import { actions, selectors } from "@nexusmods/vortex-api";
 import type { types } from "@nexusmods/vortex-api";
 
 import { ehLog } from "../logging/ehLog";
-import { assumedCaseSensitivity, isInside } from "../paths";
+import { detectCaseSensitivity, isInside } from "../paths";
 
 export type AdoptedArchive = {
   /** The download id Vortex now knows this archive by. */
@@ -79,15 +79,28 @@ export async function adoptLocalArchive(
   // Already inside the download folder? Then there is nothing to copy, and
   // copying would produce a second identical archive next to the first.
   /**
-   * `assumedCaseSensitivity`, not a probe: this runs before anything has been
-   * written and the answer is needed for one comparison, where being wrong
-   * costs a redundant copy of an archive rather than a wrong file. The staging
-   * comparisons that CAN destroy something probe the real directory.
+   * PROBED, not assumed.
+   *
+   * The old comment said an assumption was fine here because "being wrong
+   * costs a redundant copy of an archive". That accounts for one of the two
+   * directions. A false NEGATIVE costs a redundant copy; a false POSITIVE —
+   * concluding the file is already inside the download folder when it is not
+   * — skips the copy entirely, leaves `destination` as the user's own path,
+   * and then registers `path.basename(destination)` relative to a folder that
+   * does not contain it. Vortex looks for a file that is not there and the
+   * install stalls.
+   *
+   * It is reachable: under Proton `process.platform` reports `win32` while
+   * the volume is ext4, so a platform ASSUMPTION answers "insensitive"
+   * and `/home/u/downloads/Foo.7z` matches a download folder at
+   * `/home/u/Downloads`. And the premise — "before anything has been written"
+   * — does not hold either: `copyIn` mkdirs and writes into this very folder
+   * moments later, so probing it costs nothing that was not about to happen.
    */
   const inFolder = isInside(
     downloadDir,
     args.archivePath,
-    assumedCaseSensitivity(),
+    await detectCaseSensitivity(downloadDir),
   );
   const destination = inFolder
     ? args.archivePath
@@ -146,10 +159,23 @@ export async function adoptLocalArchive(
  * Not random: the same picked file must not accumulate a new download entry on
  * every retry. Path plus size is enough to be stable within a machine, and the
  * id never leaves it.
+ *
+ * ─── NOT CASE-FOLDED ────────────────────────────────────────────────────────
+ * This used to digest `absolutePath.toLowerCase()`. On a case-sensitive
+ * filesystem `/home/u/mods/Patch.7z` and `/home/u/mods/patch.7z` are two
+ * different archives — a common shape, two variants of one patch — and with
+ * the same byte count they produced the SAME id, so adopting the second was
+ * registered as the first and Vortex installed the wrong file.
+ *
+ * An identity function in a project whose whole premise is content-addressed
+ * archive identity (NS-4) has no business inventing collisions. The path as
+ * the OS reports it is already the stable key: on NTFS the same file is always
+ * handed to us with the same spelling, because it comes from a file picker or
+ * from Vortex's own state, not from a user typing it twice.
  */
 function deriveId(absolutePath: string, size: number): string {
   const digest = createHash("sha256")
-    .update(`${absolutePath.toLowerCase()}|${String(size)}`)
+    .update(`${absolutePath}|${String(size)}`)
     .digest("hex");
   // Vortex's own download ids are 36 characters (a UUID). Matching the shape
   // keeps anything that assumes that length working.

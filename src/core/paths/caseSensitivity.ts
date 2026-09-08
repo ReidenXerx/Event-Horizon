@@ -75,14 +75,48 @@ export async function detectCaseSensitivity(
 
   let mode: CaseMode;
   try {
-    await fsp.mkdir(dir, { recursive: true });
+    /**
+     * The directory must ALREADY EXIST. This used to `mkdir(dir, {recursive:
+     * true})`, which meant asking "how does this folder treat case" CREATED
+     * the folder — including a mod's staging folder that was legitimately
+     * gone, materialising an empty directory inside Vortex's staging area for
+     * a mod that had none.
+     *
+     * A folder that is not there cannot be probed; that is an honest unknown,
+     * not something to manufacture an answer for.
+     */
+    const stats = await fsp.stat(dir);
+    if (!stats.isDirectory()) {
+      throw Object.assign(new Error(`${dir} is not a directory`), {
+        code: "ENOTDIR",
+      });
+    }
     await fsp.writeFile(probe, "");
     try {
       await fsp.stat(lowered);
       // The lowercase name found the mixed-case file: one file, two spellings.
       mode = "insensitive";
-    } catch {
-      mode = "sensitive";
+    } catch (statErr) {
+      /**
+       * ─── ONLY ENOENT MEANS "SENSITIVE" ────────────────────────────────
+       * This used to be a bare `catch {}`, so ANY failure of the lookup was
+       * read as proof of case-sensitivity — including EPERM or EBUSY from a
+       * filter driver (Defender, OneDrive placeholder sync, a backup agent)
+       * holding the handle on a file created microseconds earlier. On NTFS
+       * that is the wrong direction, it emitted no log line at all, and it is
+       * upstream of the mirror: a wrongly-"sensitive" mode is what made one
+       * physical file both a restore and a delete.
+       *
+       * ENOENT is the only code that answers the question. Anything else
+       * means the probe did not run, and an inconclusive probe falls back
+       * like any other failure — loudly.
+       */
+      const statCode = (statErr as NodeJS.ErrnoException).code;
+      if (statCode === "ENOENT") {
+        mode = "sensitive";
+      } else {
+        throw statErr;
+      }
     }
   } catch (err) {
     mode = fallbackFor(platform);
@@ -97,25 +131,29 @@ export async function detectCaseSensitivity(
       err,
     });
   } finally {
-    await fsp.rm(probe, { force: true }).catch(() => undefined);
+    /**
+     * `force` swallows ENOENT, but an EPERM/EBUSY from the same filter driver
+     * REJECTS — and this used to discard that silently. A leaked
+     * `EhCaseProbe-*.tmp` sitting in a curator's staging folder gets captured
+     * into `stagingFiles` on the next build and shipped, and then every user
+     * gets a permanent `missingFiles` entry for a file no archive can
+     * produce. `volatileFiles` also knows the name now, as a second line of
+     * defence.
+     */
+    await fsp.rm(probe, { force: true }).catch((err: unknown) => {
+      ehLog("warn", "paths.case-probe.cleanup-failed", {
+        probe,
+        err,
+        consequence:
+          "a probe file was left behind; it is treated as volatile so a " +
+          "build will not capture it, but it should not be there",
+      });
+    });
   }
 
   cache.set(dir, mode);
   ehLog("info", "paths.case-sensitivity", { dir, mode, platform });
   return mode;
-}
-
-/**
- * The answer without asking the disk, for a caller that has no directory.
- *
- * Prefer {@link detectCaseSensitivity}. This exists for pure code paths that
- * must still make the comparison, and it carries the platform guess with all
- * the caveats in the header — including that a Wine prefix reports `win32`.
- */
-export function assumedCaseSensitivity(
-  platform: string = process.platform,
-): CaseMode {
-  return fallbackFor(platform);
 }
 
 /** Test seam: forget every probed answer. */

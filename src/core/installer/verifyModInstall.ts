@@ -1,6 +1,6 @@
 import * as fs from "fs";
 
-import { detectCaseSensitivity, pathKey } from "../paths";
+import { detectCaseSensitivity, pathKey, toPosix } from "../paths";
 import { isVolatileFile, volatileReason } from "../volatileFiles";
 import * as path from "path";
 
@@ -508,10 +508,6 @@ async function collectOnDiskFiles(
         : 0,
   );
   return out;
-}
-
-function toPosix(p: string): string {
-  return p.split(path.sep).join("/");
 }
 
 /**

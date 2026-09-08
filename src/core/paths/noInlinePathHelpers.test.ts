@@ -49,6 +49,37 @@ describe("nobody re-grows a private path helper", () => {
     ).toEqual([]);
   });
 
+  it("has no private split-on-path.sep", () => {
+    /**
+     * The spelling the first two guards could not see, and it was live in
+     * `verifyModInstall` and `stagingFileWalker` the whole time this file
+     * claimed the codebase had one definition of separator normalisation.
+     *
+     * A guard that is green while the thing it guards against is present is
+     * worse than no guard: it retires the question. The two regexes above
+     * matched only the idiom that had already been removed, and their
+     * self-tests fed them that same idiom — a fixture drawn from the case
+     * that cannot fail (GP-4).
+     *
+     * It also is not merely a style difference. `p.split(path.sep).join("/")`
+     * is a NO-OP wherever `path.sep === "/"`, while `toPosix` converts a
+     * backslash on every platform — so the two disagree on Linux, in the two
+     * modules that produce the paths everything else compares.
+     */
+    const offenders: string[] = [];
+    for (const file of sourceFiles(SRC)) {
+      if (file.includes(path.join("core", "paths"))) continue;
+      const text = fs.readFileSync(file, "utf8");
+      if (/split\(\s*path\.sep\s*\)/.test(text)) {
+        offenders.push(path.relative(SRC, file));
+      }
+    }
+    expect(
+      offenders,
+      `use toPosix() from core/paths instead — see ${offenders.join(", ")}`,
+    ).toEqual([]);
+  });
+
   it("has no private split-on-either-separator", () => {
     const offenders: string[] = [];
     for (const file of sourceFiles(SRC)) {

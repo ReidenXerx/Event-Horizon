@@ -14,7 +14,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   __resetCaseSensitivityCache,
-  assumedCaseSensitivity,
   detectCaseSensitivity,
 } from "./caseSensitivity";
 
@@ -80,10 +79,17 @@ describe("when the directory cannot be asked", () => {
   });
 });
 
-describe("the platform guess, for pure code that has no directory", () => {
-  it("says insensitive for win32 and sensitive for everything else", () => {
-    expect(assumedCaseSensitivity("win32")).toBe("insensitive");
-    expect(assumedCaseSensitivity("linux")).toBe("sensitive");
-    expect(assumedCaseSensitivity("darwin")).toBe("sensitive");
-  });
-});
+/**
+ * `assumedCaseSensitivity` was deleted, and this is where its test used to be.
+ *
+ * Its last production caller was `adoptLocalArchive`, which now probes the
+ * real download folder — being wrong in the false-POSITIVE direction there
+ * stalls an install rather than costing a redundant copy, which is what the
+ * old comment had accounted for. A helper with no callers is how this
+ * codebase has repeatedly ended up with a documented guarantee that nothing
+ * enforces.
+ *
+ * The platform fallback still exists as the private `fallbackFor`, and the
+ * probe-failure cases above are what exercise it: they drive the probe at a
+ * directory that is not there and assert the platform answer comes back.
+ */

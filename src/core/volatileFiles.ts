@@ -63,7 +63,17 @@ export type VolatileReason =
   /** Windows folder-view metadata. */
   | "windows-folder-metadata"
   /** macOS Finder metadata, which reaches Windows inside archives. */
-  | "macos-finder-metadata";
+  | "macos-finder-metadata"
+  /**
+   * Event Horizon's own case-detection probe.
+   *
+   * `detectCaseSensitivity` writes one of these into the directory it is
+   * asking about and removes it immediately — but the removal can fail (a
+   * filter driver holding the handle), and a curator who rebuilt afterwards
+   * would capture it into the manifest and ship a file no archive can ever
+   * produce, giving every user a permanent `missingFiles` entry.
+   */
+  | "eh-case-probe";
 
 /** Filenames that are written by the OS, never by a mod. Compared lowercased. */
 const OS_ARTIFACTS: ReadonlyMap<string, VolatileReason> = new Map([
@@ -78,6 +88,9 @@ const OS_ARTIFACTS: ReadonlyMap<string, VolatileReason> = new Map([
  *
  * `relPath` is relative to the mod's staging root, with either separator.
  */
+/** Ours, by construction, and never content. See `eh-case-probe`. */
+const EH_PROBE = /^ehcaseprobe-[a-z0-9]+\.tmp$/;
+
 export function volatileReason(relPath: string): VolatileReason | undefined {
   // Separator-agnostic: staging paths arrive with "/" from the manifest and
   // "\" from a Windows walk, and a rule that only matches one of them is a
@@ -106,6 +119,8 @@ export function volatileReason(relPath: string): VolatileReason | undefined {
    * 354,819, every one of them a runtime log.
    */
   if (name.endsWith(".log")) return "runtime-log";
+
+  if (EH_PROBE.test(name)) return "eh-case-probe";
 
   return undefined;
 }

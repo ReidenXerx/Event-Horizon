@@ -1,6 +1,7 @@
 import * as crypto from "crypto";
 
 import { isVolatileFile } from "../volatileFiles";
+import { toPosix } from "../paths";
 
 import type { EhcollStagingFile } from "../../types/ehcoll";
 
@@ -85,13 +86,36 @@ export function computeStagingSetHash(
     }
   }
 
-  const sorted = [...stable].sort((a, b) =>
-    a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
+  /**
+   * ─── SEPARATORS NORMALISED, CASE DELIBERATELY NOT ───────────────────────
+   * This digest is compared ACROSS MACHINES — the curator's hash from
+   * `buildManifest` against the user's from `enrichStagingSetHashes` — so
+   * anything that can differ between two machines for the same content has to
+   * be normalised out, or the resolver fails to identify a mod that really is
+   * the curator's.
+   *
+   * Separators are exactly that: a Windows walk produces `\` and the manifest
+   * carries `/`. Both walkers go through the path service now, so this is a
+   * no-op today; it is here so the digest does not silently depend on that
+   * staying true.
+   *
+   * CASE is a different question, and folding it would be WRONG. On ext4 under
+   * Proton `Scripts/a.pex` and `scripts/a.pex` are two files that can both
+   * exist with different content, and an identity oracle that merges them
+   * invents a collision — the same defect that was in `deriveId`. Identity is
+   * about what the bytes ARE (NS-4), and two different files are two different
+   * files. A curator and a user who disagree about case genuinely have
+   * different staging sets, and the honest answer is "not identified" rather
+   * than a wrong match.
+   */
+  const keyed = stable.map((f) => ({ ...f, key: toPosix(f.path) }));
+  const sorted = keyed.sort((a, b) =>
+    a.key < b.key ? -1 : a.key > b.key ? 1 : 0,
   );
 
   const hasher = crypto.createHash("sha256");
   for (const f of sorted) {
-    hasher.update(`${f.path}|${f.size}|${f.sha256!}\n`);
+    hasher.update(`${f.key}|${f.size}|${f.sha256!}\n`);
   }
   return hasher.digest("hex");
 }

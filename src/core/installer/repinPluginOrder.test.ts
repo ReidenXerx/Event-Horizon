@@ -10,6 +10,37 @@ import { describe, expect, it } from "vitest";
 
 import { orderDiffers, repinCuratorOrder } from "./repinPluginOrder";
 
+describe("a duplicated entry in plugins.txt", () => {
+  /**
+   * `parsePluginsTxt` trims and drops blanks and comments but never dedupes,
+   * so a hand-edited or MO2-migrated plugins.txt reaches the merge with the
+   * same name twice.
+   *
+   * That used to LOSE a member and INVENT another: `owned` and `present` are
+   * Sets, so multiplicity was erased while slots were still counted per
+   * position — three owned slots against a two-entry queue, the third read
+   * landing past the end and falling back to the slot name. Written back to
+   * Vortex that is a plugin dropped from the load order and another listed
+   * twice.
+   *
+   * The old test asserted member preservation on a duplicate-free fixture:
+   * the case that cannot fail (GP-4).
+   */
+  it("never drops or invents a plugin", () => {
+    const merged = repinCuratorOrder(["B.esp", "A.esp"], ["A.esp", "A.esp", "B.esp"]);
+    // Every name that came in is still there, exactly once.
+    expect([...merged].sort()).toEqual(["A.esp", "B.esp"]);
+    // And the curator's relative order won in the slots it owns.
+    expect(merged).toEqual(["B.esp", "A.esp"]);
+  });
+
+  it("tolerates a duplicate on the CURATOR side too", () => {
+    const merged = repinCuratorOrder(["B.esp", "B.esp", "A.esp"], ["A.esp", "B.esp"]);
+    expect([...merged].sort()).toEqual(["A.esp", "B.esp"]);
+    expect(merged).toEqual(["B.esp", "A.esp"]);
+  });
+});
+
 describe("repinCuratorOrder", () => {
   it("restores the curator's order among the collection's own plugins", () => {
     const curator = ["a.esp", "b.esp", "c.esp"];

@@ -6,6 +6,8 @@ import {
 import * as os from "os";
 import * as path from "path";
 
+import { toPosix } from "../paths";
+
 import type { EhcollStagingFile, VerificationLevel } from "../../types/ehcoll";
 import { hashFileSha256 } from "../archiveHashing";
 import { AbortError } from "../../utils/abortError";
@@ -296,6 +298,3 @@ export async function hashStagingFiles(
   });
 }
 
-function toPosix(p: string): string {
-  return p.split(path.sep).join("/");
-}

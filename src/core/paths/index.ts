@@ -45,6 +45,5 @@ export {
 
 export {
   __resetCaseSensitivityCache,
-  assumedCaseSensitivity,
   detectCaseSensitivity,
 } from "./caseSensitivity";
