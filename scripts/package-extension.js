@@ -163,6 +163,43 @@ if (info.version !== pkg.version) {
 }
 
 const entries = collect();
+
+/**
+ * ─── REFUSE A SHADOWED LAYOUT ───────────────────────────────────────────────
+ * Node resolves `require("./x")` to `x.js` BEFORE `x/index.js`. So if a build
+ * ever contains both, every import of that name silently binds to the file and
+ * the directory's exports vanish — no error, no warning, just functions that
+ * are `undefined` at call time.
+ *
+ * It happened: `src/core/paths.ts` became `src/core/paths/`, `tsc` left the old
+ * `dist/core/paths.js` behind, and alpha.122, .123 and .124 all shipped both.
+ * Testers got "(0 , paths_1.toPosix) is not a function" from a build where the
+ * type-checker was clean and 2,100 tests passed, because both only ever looked
+ * at `src/`.
+ *
+ * `prebuild` now wipes `dist/`, so this cannot arise — which is exactly why the
+ * check belongs here too. The cheap fix removes the cause; this one removes the
+ * possibility of shipping it, and packaging is the last gate before a stranger
+ * installs the result.
+ */
+const packagedNames = new Set(entries.map((e) => e.name.replace(/\\/g, "/")));
+const shadowed = [...packagedNames]
+  .filter((name) => name.endsWith(".js") && !name.endsWith("/index.js"))
+  .filter((name) => {
+    const asDir = `${name.slice(0, -".js".length)}/index.js`;
+    return packagedNames.has(asDir);
+  });
+if (shadowed.length > 0) {
+  throw new Error(
+    `Refusing to package: ${shadowed.length} module(s) exist as BOTH a file ` +
+      `and a directory, and Node resolves the file first — every import of ` +
+      `them would bind to the stale one and its exports would be undefined ` +
+      `at call time:\n` +
+      shadowed.map((n) => `  ${n}  shadows  ${n.slice(0, -3)}/index.js`).join("\n") +
+      `\nRun a clean build (npm run build wipes dist/) and package again.`,
+  );
+}
+
 const zip = buildZip(entries);
 
 const outDir = path.join(repoRoot, "release");
