@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 1,
+  "package": {
+    "id": "00000000-0000-4000-8000-000000000000",
+    "name": "RT",
+    "version": "1.0.0",
+    "author": "a",
+    "createdAt": "2026-09-07T21:32:41.324Z",
+    "description": "d",
+    "strictMissingMods": false,
+    "verificationLevel": "thorough"
+  },
+  "game": {
+    "id": "fallout4",
+    "version": "1.10.163.0",
+    "versionPolicy": "exact"
+  },
+  "vortex": {
+    "version": "2.6.0",
+    "deploymentMethod": "hardlink",
+    "requiredExtensions": []
+  },
+  "mods": [
+    {
+      "compareKey": "nexus:111:222",
+      "name": "Nexus Mod",
+      "version": "1.2.3",
+      "source": {
+        "kind": "nexus",
+        "gameDomain": "fallout4",
+        "modId": 111,
+        "fileId": 222,
+        "archiveName": "Nexus Mod",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "install": {
+        "fomodSelections": [
+          {
+            "name": "Step",
+            "groups": [
+              {
+                "name": "G",
+                "choices": [
+                  {
+                    "name": "C",
+                    "idx": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "installerType": "fomod",
+        "installerChoicesType": "fomod"
+      },
+      "state": {
+        "enabled": true,
+        "installOrder": 0,
+        "deploymentPriority": 0,
+        "modType": "dinput",
+        "stagingFiles": [
+          {
+            "path": "Data/a.esp",
+            "size": 1,
+            "sha256": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb"
+          }
+        ]
+      }
+    },
+    {
+      "compareKey": "external:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "name": "External Mod",
+      "version": "1.0.0",
+      "source": {
+        "kind": "external",
+        "expectedFilename": "External Mod",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "stagingSetHash": "ba6f5e0cda9b97fc49384ae0d66973eef4dc0281e1d8b3d743a74c5d5d2f27e8",
+        "instructions": "Get it here",
+        "url": "https://example.com/p",
+        "downloadMode": "browse",
+        "bundled": false
+      },
+      "install": {
+        "fomodSelections": []
+      },
+      "state": {
+        "enabled": true,
+        "installOrder": 1,
+        "deploymentPriority": 1,
+        "modType": "",
+        "stagingFiles": [
+          {
+            "path": "Data/b.esp",
+            "size": 1,
+            "sha256": "3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d"
+          }
+        ]
+      }
+    }
+  ],
+  "rules": [
+    {
+      "source": "nexus:111:222",
+      "type": "after",
+      "reference": "external:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "plugins": {
+    "order": [
+      {
+        "name": "Light.esp",
+        "enabled": true,
+        "light": true
+      },
+      {
+        "name": "Regular.esp",
+        "enabled": true,
+        "light": false
+      },
+      {
+        "name": "Unrecorded.esp",
+        "enabled": true
+      }
+    ]
+  },
+  "loadOrder": [
+    {
+      "compareKey": "nexus:111:222",
+      "pos": 0,
+      "enabled": true
+    },
+    {
+      "compareKey": "external:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "pos": 1,
+      "enabled": false,
+      "locked": true
+    }
+  ],
+  "userlist": {
+    "plugins": [
+      {
+        "name": "Light.esp",
+        "group": "Early"
+      },
+      {
+        "name": "Regular.esp",
+        "after": [
+          "Light.esp"
+        ],
+        "req": [
+          "Light.esp"
+        ],
+        "inc": [
+          "Unrecorded.esp"
+        ]
+      }
+    ],
+    "groups": [
+      {
+        "name": "Early",
+        "after": [
+          "default"
+        ]
+      }
+    ]
+  },
+  "iniTweaks": [],
+  "externalDependencies": [
+    {
+      "id": "f4se",
+      "name": "Fallout 4 Script Extender",
+      "category": "script-extender",
+      "version": "0.6.23",
+      "destination": "<gameDir>",
+      "files": [
+        {
+          "relPath": "f4se_loader.exe",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "instructions": "Download the build matching your game version.",
+      "instructionsUrl": "https://f4se.silverlock.org/"
+    }
+  ],
+  "gameIni": {
+    "files": [
+      {
+        "fileName": "Fallout4Custom.ini",
+        "settings": [
+          {
+            "section": "Archive",
+            "key": "bInvalidateOlderFiles",
+            "value": "1"
+          }
+        ]
+      }
+    ]
+  }
+}
