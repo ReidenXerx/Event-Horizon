@@ -144,3 +144,58 @@ describe("a plugin whose header could not be read", () => {
     expect(check.unreadable).toEqual(["locked.esp"]);
   });
 });
+
+describe("a Creation Club master the CURATOR happens to own", () => {
+  /**
+   * The classification order used to be: is it shipped and enabled? → is it
+   * base-game? → is it Creation Club? That absorbed a whole class of
+   * prerequisite. A curator who owns `ccBGSSSE001-Fish.esm` has it enabled in
+   * their own plugin list, so `available.has(key)` matched and the check said
+   * nothing — while the installing user, who never bought that Creation Club
+   * content, gets a game that will not load and a collection that reported
+   * itself perfectly healthy.
+   *
+   * "Does the collection ship this" and "can the user be expected to have
+   * this" are different questions, and the second has to be answered first.
+   */
+  it("is reported as the user's prerequisite, not silently absorbed", () => {
+    const check = checkMasters(
+      [
+        // The curator has it, enabled, in their own load order.
+        { name: "ccBGSSSE001-Fish.esm", enabled: true, masters: [] },
+        { name: "MyPatch.esp", enabled: true, masters: ["ccBGSSSE001-Fish.esm"] },
+      ],
+      "skyrimse",
+    );
+    expect(check.missing).toEqual([]);
+    expect(check.userOwned).toEqual([
+      { plugin: "MyPatch.esp", master: "ccBGSSSE001-Fish.esm" },
+    ]);
+  });
+
+  it("still says nothing about a base-game master the curator has", () => {
+    // Every user has these, so they are neither missing nor a prerequisite.
+    const check = checkMasters(
+      [
+        { name: "Skyrim.esm", enabled: true, masters: [] },
+        { name: "MyPatch.esp", enabled: true, masters: ["Skyrim.esm"] },
+      ],
+      "skyrimse",
+    );
+    expect(check.missing).toEqual([]);
+    expect(check.userOwned).toEqual([]);
+  });
+
+  it("still passes a master the collection genuinely ships", () => {
+    // The ordering change must not turn ordinary shipped masters into noise.
+    const check = checkMasters(
+      [
+        { name: "SomeMod.esm", enabled: true, masters: [] },
+        { name: "MyPatch.esp", enabled: true, masters: ["SomeMod.esm"] },
+      ],
+      "skyrimse",
+    );
+    expect(check.missing).toEqual([]);
+    expect(check.userOwned).toEqual([]);
+  });
+});

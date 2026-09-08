@@ -51,6 +51,7 @@
 
 import { isNexusSourced } from "../core/identity/nexusSourced";
 
+import { resolveBundledArchives } from "../core/manifest/resolveBundledArchives";
 import {
   classifyMissingConfigEntry,
   describeDroppedEntry,
@@ -731,125 +732,15 @@ function collectExternalMods(
 const isNexusMod = isNexusSourced;
 
 /**
- * Walk the curator's per-mod overrides; for each entry flagged
- * `bundled: true`, resolve the source archive on disk so 7z can pick
- * it up. Per-mod failures are accumulated rather than throwing
- * eagerly — curators get one report covering every problem.
+ * Moved to `core/manifest/resolveBundledArchives.ts`.
+ *
+ * This file and the OTHER build path each held a copy with the same
+ * signature and the same rules, and the action's copy carried a comment
+ * saying so — attributing a shipped bug to the duplication while leaving
+ * both copies in place. They diverged again anyway, on the error text a
+ * curator actually reads.
  */
-function resolveBundledArchives(
-  state: types.IState,
-  gameId: string,
-  config: CollectionConfig,
-  mods: AuditorMod[],
-): {
-  bundledArchives: BundledArchiveSpec[];
-  errors: string[];
-  /** Curator-facing notes about answers that were dropped. */
-  warnings: string[];
-  /** Config keys whose mod no longer exists; safe to prune. */
-  droppedModIds: string[];
-} {
-  const errors: string[] = [];
-  const warnings: string[] = [];
-  const droppedModIds: string[] = [];
-  const bundledArchives: BundledArchiveSpec[] = [];
-  const modById = new Map(mods.map((m) => [m.id, m]));
-  const inCollection = new Set(modById.keys());
-  /**
-   * Every mod id Vortex holds for this game, enabled or not (NS-3).
-   *
-   * This is what separates "the curator deleted the mod" from "the curator
-   * switched it off", and those two get different answers.
-   */
-  const inGamePool = new Set(
-    Object.keys(
-      (
-        state as unknown as {
-          persistent?: { mods?: Record<string, Record<string, unknown>> };
-        }
-      )?.persistent?.mods?.[gameId] ?? {},
-    ),
-  );
 
-  for (const [modId, entry] of Object.entries(config.externalMods)) {
-    if (entry.bundled !== true) continue;
-
-    const mod = modById.get(modId);
-    if (mod === undefined) {
-      const kind = classifyMissingConfigEntry(modId, inCollection, inGamePool);
-      if (kind === "deleted") {
-        /**
-         * The mod is gone from Vortex entirely, so this answer refers to
-         * nothing and can never be satisfied. Failing here blocked every
-         * future build until someone hand-edited a JSON file — for a mod the
-         * curator had deliberately deleted. Drop it, say so, and prune the
-         * entry so it does not come back.
-         */
-        warnings.push(describeDroppedEntry(modId, entry.name, "bundle"));
-        droppedModIds.push(modId);
-        ehLog("warn", "build.config.stale-entry-dropped", {
-          modId,
-          name: entry.name,
-          answer: "bundled",
-          why: "the mod is no longer in Vortex's mod pool for this game",
-        });
-        continue;
-      }
-      /**
-       * `disabled` — still installed, just not in this collection's scope.
-       * The answer is live and the absence is almost certainly an oversight:
-       * a mod marked to ship that is not shipping. Keep failing.
-       */
-      errors.push(
-        `Config flags modId "${modId}" as bundled, but that mod is installed ` +
-          `and NOT enabled in this profile, so it is not in the collection. ` +
-          `Enable it, or set bundled=false.`,
-      );
-      continue;
-    }
-
-    // See engine.resolveBundledArchives — the same rule, and it must stay the
-    // same rule. This copy is why marking a mod external fixed the manifest
-    // and not the build.
-    if (!mayBundle(isNexusMod(mod), entry)) {
-      errors.push(
-        `Config flags Nexus mod "${mod.name}" (id="${modId}") as bundled, ` +
-          `but it is not marked as an external dependency. Nexus mods are ` +
-          `downloaded with the user's own API key, so bundling one only ` +
-          `makes sense once its file is gone from Nexus.`,
-      );
-      continue;
-    }
-
-    if (
-      typeof mod.archiveSha256 !== "string" ||
-      mod.archiveSha256.length === 0
-    ) {
-      errors.push(
-        `External mod "${mod.name}" (id="${modId}") is flagged for bundling but has no archiveSha256. ` +
-          `Re-export the snapshot or check the archive is on disk; the export pipeline should have hashed it.`,
-      );
-      continue;
-    }
-
-    const sourcePath = resolveModArchivePath(state, mod, gameId);
-    if (sourcePath === undefined) {
-      errors.push(
-        `External mod "${mod.name}" (id="${modId}") is flagged for bundling but its source archive ` +
-          `cannot be located on disk (archiveId="${mod.archiveId ?? "<unset>"}"). ` +
-          `The archive may have been deleted from the Vortex downloads folder.`,
-      );
-      continue;
-    }
-
-    bundledArchives.push({
-      sourcePath,
-      sha256: mod.archiveSha256,
-    });
-  }
-
-  return { bundledArchives, errors, warnings, droppedModIds };
-}
 
 function formatError(err: unknown): string {
   if (err instanceof BuildManifestError) {

@@ -26,7 +26,7 @@
 
 import {
   isBaseGameMaster,
-  isCreationClubMaster,
+  isUserOwnedMaster,
 } from "./pluginMasters";
 
 /** One plugin and the masters it declares. */
@@ -101,12 +101,30 @@ export function checkMasters(
     for (const master of plugin.masters) {
       const key = master.trim().toLowerCase();
       if (key.length === 0) continue;
-      if (available.has(key)) continue;
+
+      /**
+       * ─── CLASSIFY BEFORE ASKING WHETHER WE SHIP IT ────────────────────
+       * `available.has(key)` used to come FIRST, which quietly absorbed a
+       * whole class of prerequisite: a Creation Club master the CURATOR
+       * happens to own and have enabled is present in their plugin list, so
+       * the check found it and said nothing — and the installing user, who
+       * has not bought that Creation Club content, gets a game that will not
+       * load and a collection that reported itself healthy.
+       *
+       * The question "does the collection ship this" and the question "can
+       * the user be expected to have this" are different, and the second one
+       * has to be answered first. Base-game masters are the exception that
+       * proves it: every user has them, so they need no report either way.
+       */
       if (isBaseGameMaster(master, gameId)) continue;
-      if (isCreationClubMaster(master)) {
+      if (isUserOwnedMaster(master, gameId)) {
         userOwned.push({ plugin: plugin.name, master });
         continue;
       }
+
+      // Shipped and enabled by this collection: nothing to say.
+      if (available.has(key)) continue;
+
       missing.push({ plugin: plugin.name, master });
     }
   }

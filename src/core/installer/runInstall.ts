@@ -170,13 +170,13 @@ import {
   type PluginFlagRepair,
 } from "./applyPluginLightFlags";
 import { detectCaseSensitivity } from "../paths";
-import { describeSkippedFinishing } from "./runPhase";
+import { describeSkippedFinishing } from "./finishingNotice";
 import {
   orderDiffers,
   repinCuratorOrder,
 } from "./repinPluginOrder";
 import type { PluginOrderEntry } from "./checkPluginOrder";
-import { RunAccumulator } from "./runAccumulator";
+import { InstallStreaks } from "./installStreaks";
 import { getGameDirectory } from "../manifest/externalDependencies";
 import {
   applyModRules,
@@ -748,7 +748,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
    * it with a RULE rather than storage — a success resets both, and that reset
    * used to be two assignments forty lines from the increments they undo.
    */
-  const run = new RunAccumulator();
+  const run = new InstallStreaks();
   const SYSTEMIC_FAILURE_STREAK = 8;
   // A timing-out mod costs ~70 seconds; eight of them burn ten minutes proving
   // what four already proved. Fast failures are cheap, so they keep the
