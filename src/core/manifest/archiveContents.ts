@@ -31,6 +31,8 @@
 
 import * as path from "path";
 
+import { toPosix } from "../paths";
+
 import { sevenZipList } from "./sevenZip";
 import type { SevenZipApi, SevenZipListEntry } from "./sevenZip";
 
@@ -96,7 +98,7 @@ function isDirectoryEntry(entry: SevenZipListEntry): boolean {
 
 /** Normalise an archive-internal path for stable comparison across platforms. */
 export function normalizeArchivePath(p: string): string {
-  return p.replace(/\\/g, "/").replace(/^\.\//, "").trim();
+  return toPosix(p).replace(/^\.\//, "").trim();
 }
 
 /**

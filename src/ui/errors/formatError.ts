@@ -24,6 +24,8 @@
  */
 
 import { describeForeignError, isForeignError } from "./foreignError";
+
+import { toPosix } from "../../core/paths";
 import {
   BuildManifestError,
 } from "../../core/manifest/buildManifest";
@@ -511,7 +513,7 @@ function cleanStack(stack: string | undefined): string | undefined {
   return stack.replace(
     /\(?([A-Za-z]:[\\/][^()\n]+|\/[^()\n]+)\)?/g,
     (full) => {
-      const cleaned = full.replace(/\\/g, "/");
+      const cleaned = toPosix(full);
       const idx = cleaned.indexOf("/dist/");
       if (idx >= 0) return cleaned.slice(idx + 1);
       const idx2 = cleaned.indexOf("/src/");

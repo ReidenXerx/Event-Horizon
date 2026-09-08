@@ -40,7 +40,7 @@
 
 import type { EhcollStagingFile } from "../../types/ehcoll";
 
-import { stagingPathKey } from "../stagingPathKey";
+import { type CaseMode, pathKey } from "../paths";
 
 export type MirrorRestore = {
   /** POSIX-style path relative to the staging root, in the curator's casing. */
@@ -71,14 +71,16 @@ export type MirrorPlan = {
 };
 
 /**
- * Windows staging paths differ in case and separator; identity does not.
+ * Staging paths differ in separator everywhere and in CASE only on some
+ * filesystems, so the mode is an argument rather than a constant.
  *
  * This module had the rule right from the start and kept it to itself, while
  * verification compared paths verbatim and reported four healthy mods as
- * broken. Shared now, so the two halves of one install cannot disagree about
- * whether two paths are the same file.
+ * broken. Shared now — and no longer hard-coded to lowercase, because this is
+ * the function that decides which of the user's files get DELETED, and on a
+ * case-sensitive filesystem merging two real files here is data loss.
  */
-const key = stagingPathKey;
+const key = (p: string, mode: CaseMode): string => pathKey(p, mode);
 
 /**
  * Plan the reconciliation. Pure: no filesystem, no Vortex, no package.
@@ -90,11 +92,26 @@ const key = stagingPathKey;
 export function planMirror(args: {
   target: readonly EhcollStagingFile[];
   current: readonly EhcollStagingFile[];
+  /**
+   * How the filesystem holding this mod treats case.
+   *
+   * An argument rather than a constant because this function decides which of
+   * the user's files get DELETED. On NTFS `Scripts/a.pex` and `scripts/a.pex`
+   * are one file and folding them is required; on the ext4 under a Proton
+   * install they are two, and folding them would delete one of them on the
+   * strength of the other's presence.
+   *
+   * Defaults to `insensitive` so existing callers keep the behaviour they
+   * were written against — the Windows answer, and the one every shipped
+   * package was built on.
+   */
+  caseMode?: CaseMode;
 }): MirrorPlan {
   const { target, current } = args;
+  const mode: CaseMode = args.caseMode ?? "insensitive";
 
   const currentByPath = new Map<string, EhcollStagingFile>();
-  for (const file of current) currentByPath.set(key(file.path), file);
+  for (const file of current) currentByPath.set(key(file.path, mode), file);
 
   const restore: MirrorRestore[] = [];
   const unverifiable: string[] = [];
@@ -102,7 +119,7 @@ export function planMirror(args: {
   let matched = 0;
 
   for (const want of target) {
-    wanted.add(key(want.path));
+    wanted.add(key(want.path, mode));
 
     if (want.sha256 === undefined) {
       // No recorded hash: we cannot say whether this machine's copy is right,
@@ -112,7 +129,7 @@ export function planMirror(args: {
       continue;
     }
 
-    const have = currentByPath.get(key(want.path));
+    const have = currentByPath.get(key(want.path, mode));
     if (have === undefined) {
       restore.push({
         path: want.path,
@@ -137,7 +154,7 @@ export function planMirror(args: {
   }
 
   const extra = current
-    .filter((file) => !wanted.has(key(file.path)))
+    .filter((file) => !wanted.has(key(file.path, mode)))
     .map((file) => file.path);
 
   if (extra.length === 0) {
@@ -252,8 +269,12 @@ export function describeMirrorPlan(
 export function filesNeedingPayload(
   target: readonly EhcollStagingFile[],
   explainedByArchive: ReadonlySet<string>,
+  /** Must match the mode the `explainedByArchive` keys were built with. */
+  caseMode: CaseMode = "insensitive",
 ): EhcollStagingFile[] {
   return target.filter(
-    (file) => file.sha256 !== undefined && !explainedByArchive.has(key(file.path)),
+    (file) =>
+      file.sha256 !== undefined &&
+      !explainedByArchive.has(key(file.path, caseMode)),
   );
 }

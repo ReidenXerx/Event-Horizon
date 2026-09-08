@@ -38,6 +38,8 @@
  */
 
 import type { AuditorMod } from "../getModsListForProfile";
+
+import { toPosix } from "../paths";
 import type { EhcollExternalDependency } from "../../types/ehcoll";
 
 export type RootFolderMod = {
@@ -196,7 +198,7 @@ export function describeUnaccountedRootBinaries(args: {
 
 /** Last path segment, for a "/"- or "\\"-separated path. */
 function baseName(p: string): string {
-  const cut = p.replace(/\\/g, "/").lastIndexOf("/");
+  const cut = toPosix(p).lastIndexOf("/");
   return cut === -1 ? p : p.slice(cut + 1);
 }
 

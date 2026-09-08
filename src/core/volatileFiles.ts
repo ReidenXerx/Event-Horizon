@@ -49,6 +49,8 @@
  * what makes this fix land without a repack.
  */
 
+import { basenameOf } from "./paths";
+
 /**
  * Why a path was excluded. Carried into the log so an exclusion is visible
  * rather than a silent hole in what was checked.
@@ -80,7 +82,15 @@ export function volatileReason(relPath: string): VolatileReason | undefined {
   // Separator-agnostic: staging paths arrive with "/" from the manifest and
   // "\" from a Windows walk, and a rule that only matches one of them is a
   // rule that works on the build side and not the install side.
-  const name = relPath.split(/[\\/]/).pop()?.toLowerCase() ?? "";
+  /**
+   * Lowercased UNCONDITIONALLY, unlike a path comparison.
+   *
+   * This is name recognition, not identity: `THUMBS.DB` on a case-sensitive
+   * filesystem is a different file from `Thumbs.db`, and it is still Windows
+   * Explorer's thumbnail cache. The question here is "what KIND of file is
+   * this", which has the same answer on every platform.
+   */
+  const name = basenameOf(relPath).toLowerCase();
   if (name.length === 0) return undefined;
 
   const osArtifact = OS_ARTIFACTS.get(name);

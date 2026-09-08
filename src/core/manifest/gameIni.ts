@@ -39,6 +39,8 @@
 
 import { existsSync, statSync } from "fs";
 
+import { toPosix } from "../paths";
+
 import { ehLog } from "../logging/ehLog";
 import * as fsp from "fs/promises";
 import * as path from "path";
@@ -231,7 +233,7 @@ export function iniLocationFor(
 
   const candidates = myGamesFolderCandidates(gameId, store);
   const dirFor = (folder: string): string =>
-    `${documentsPath}/My Games/${folder}`.replace(/\\/g, "/");
+    toPosix(`${documentsPath}/My Games/${folder}`);
 
   if (store !== undefined || candidates.length === 1) {
     return { dir: dirFor(candidates[0] ?? spec.folder), files: spec.files };

@@ -20,6 +20,8 @@
  */
 
 import { shipsAsExternal } from "./shipsAsExternal";
+
+import { toPosix } from "../paths";
 import type {
   AuditorMod,
   CapturedModRule,
@@ -875,7 +877,7 @@ function canonicalRuleSortKey(a: EhcollRule, b: EhcollRule): number {
 
 
 function toPosixPath(p: string): string {
-  return p.replace(/\\/g, "/");
+  return toPosix(p);
 }
 
 // ---------------------------------------------------------------------------

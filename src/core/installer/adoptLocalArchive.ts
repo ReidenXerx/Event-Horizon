@@ -43,6 +43,7 @@ import { actions, selectors } from "@nexusmods/vortex-api";
 import type { types } from "@nexusmods/vortex-api";
 
 import { ehLog } from "../logging/ehLog";
+import { assumedCaseSensitivity, isInside } from "../paths";
 
 export type AdoptedArchive = {
   /** The download id Vortex now knows this archive by. */
@@ -77,7 +78,17 @@ export async function adoptLocalArchive(
 
   // Already inside the download folder? Then there is nothing to copy, and
   // copying would produce a second identical archive next to the first.
-  const inFolder = isInside(downloadDir, args.archivePath);
+  /**
+   * `assumedCaseSensitivity`, not a probe: this runs before anything has been
+   * written and the answer is needed for one comparison, where being wrong
+   * costs a redundant copy of an archive rather than a wrong file. The staging
+   * comparisons that CAN destroy something probe the real directory.
+   */
+  const inFolder = isInside(
+    downloadDir,
+    args.archivePath,
+    assumedCaseSensitivity(),
+  );
   const destination = inFolder
     ? args.archivePath
     : await copyIn(downloadDir, args.archivePath, fileName);
@@ -195,14 +206,17 @@ async function sameSize(a: string, b: string): Promise<boolean> {
   }
 }
 
-/** True when `child` sits under `parent`. Case-insensitive: this is Windows. */
-export function isInside(parent: string, child: string): boolean {
-  const rel = path.relative(
-    path.resolve(parent).toLowerCase(),
-    path.resolve(child).toLowerCase(),
-  );
-  return rel.length > 0 && !rel.startsWith("..") && !path.isAbsolute(rel);
-}
+/**
+ * Moved to the path service.
+ *
+ * It said "Case-insensitive: this is Windows", which was true of the machines
+ * it was written on and false under Proton, where `/home/u/Downloads` and
+ * `/home/u/downloads` are two directories. The service takes the case mode as
+ * an argument instead of assuming one.
+ *
+ * Re-exported because this module's own tests address it here.
+ */
+export { isInside } from "../paths";
 
 function downloadFolder(
   api: types.IExtensionApi,

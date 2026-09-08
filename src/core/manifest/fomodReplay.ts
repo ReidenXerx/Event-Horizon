@@ -36,6 +36,8 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { toPosix } from "../paths";
+
 /** One selected choice, as Vortex records it (`IChoices`). */
 export type RecordedChoice = { name: string; idx?: number };
 export type RecordedGroup = { name: string; choices: RecordedChoice[] };
@@ -110,7 +112,10 @@ export type FomodReplayResult = {
 
 /** Case- and separator-insensitive key for matching names across sources. */
 function norm(s: string): string {
-  return s.trim().toLowerCase().replace(/\\/g, "/");
+  // Lowercased unconditionally: this keys FOMOD option and plugin NAMES for
+  // recognition, not files for identity, and a curator's "Textures" is the
+  // user's "textures" on every platform.
+  return toPosix(s.trim().toLowerCase());
 }
 
 /**

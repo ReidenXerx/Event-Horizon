@@ -1,6 +1,6 @@
 import * as fs from "fs";
 
-import { stagingPathKey } from "../stagingPathKey";
+import { detectCaseSensitivity, pathKey } from "../paths";
 import { isVolatileFile, volatileReason } from "../volatileFiles";
 import * as path from "path";
 
@@ -281,12 +281,26 @@ export async function verifyModInstall(
    * The ORIGINAL spelling is still what gets reported — the key decides
    * sameness and nothing else.
    */
+  /**
+   * ASK the filesystem rather than assuming.
+   *
+   * Folding case is right on NTFS — a FOMOD writing `Scripts/` where the
+   * curator recorded `scripts/` is the same file, and comparing verbatim
+   * reported four healthy mods as broken on a real install. It is WRONG on the
+   * ext4 under a Proton install, where those are two files that can both
+   * exist: folding them there would pass verification on bytes the curator
+   * never shipped.
+   */
+  const caseMode = await detectCaseSensitivity(stagingRoot);
+
   const onDiskByPath = new Map<string, OnDiskFile>();
-  for (const f of onDisk) onDiskByPath.set(stagingPathKey(f.relativePath), f);
+  for (const f of onDisk) {
+    onDiskByPath.set(pathKey(f.relativePath, caseMode), f);
+  }
 
   const expectedByPath = new Map<string, EhcollStagingFile>();
   for (const f of expectedVerifiable) {
-    expectedByPath.set(stagingPathKey(f.path), f);
+    expectedByPath.set(pathKey(f.path, caseMode), f);
   }
 
   const missingFiles: string[] = [];
@@ -295,7 +309,7 @@ export async function verifyModInstall(
     [];
 
   for (const expected of expectedVerifiable) {
-    const actual = onDiskByPath.get(stagingPathKey(expected.path));
+    const actual = onDiskByPath.get(pathKey(expected.path, caseMode));
     if (actual === undefined) {
       missingFiles.push(expected.path);
       continue;
@@ -353,7 +367,7 @@ export async function verifyModInstall(
   const extraFiles: string[] = [];
   for (const f of onDisk) {
     // Reported with the spelling that is actually on disk; matched by identity.
-    if (!expectedByPath.has(stagingPathKey(f.relativePath))) {
+    if (!expectedByPath.has(pathKey(f.relativePath, caseMode))) {
       extraFiles.push(f.relativePath);
     }
   }

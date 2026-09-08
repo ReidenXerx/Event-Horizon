@@ -30,6 +30,8 @@
 
 import * as fsp from "fs/promises";
 
+import { segmentsOf } from "../paths";
+
 import {
   isSafeRelativePath,
   unsafePathReason,
@@ -138,7 +140,10 @@ async function restoreOne(
           `refused`,
       );
     }
-    const dest = path.join(stagingRoot, ...relativePath.split(/[\\/]/));
+    // `segmentsOf` rather than a private split: one module decides what a
+            // path separator is, and this is the line that turns a string from
+            // someone else's package into a write on this machine.
+    const dest = path.join(stagingRoot, ...segmentsOf(relativePath));
     await fsp.mkdir(path.dirname(dest), { recursive: true });
     // Replace rather than write in place: a partial write over a good file is
     // the one outcome worse than not restoring it.

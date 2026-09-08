@@ -44,6 +44,8 @@
  */
 
 import * as fsp from "fs/promises";
+
+import { toPosix } from "../paths";
 import * as os from "os";
 import * as path from "path";
 
@@ -490,7 +492,7 @@ function isDirectoryEntry(entry: SevenZipListEntry): boolean {
  * stay sane.
  */
 function normalizePath(p: string): string {
-  return p.replace(/\\/g, "/");
+  return toPosix(p);
 }
 
 /**

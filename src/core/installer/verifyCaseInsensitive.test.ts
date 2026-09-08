@@ -24,8 +24,9 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import * as vortexApi from "@nexusmods/vortex-api";
 import { __testPaths } from "@nexusmods/vortex-api";
 import type { types } from "@nexusmods/vortex-api";
 
@@ -187,5 +188,40 @@ describe("what must STILL fail", () => {
     if (result.kind === "ok") {
       expect(result.extraFiles).toEqual(["textures/mine.dds"]);
     }
+  });
+});
+
+describe("the filesystem is ASKED, not assumed", () => {
+  /**
+   * The Proton half. Folding case is right on NTFS and wrong on ext4, where
+   * `Scripts/a.pex` and `scripts/a.pex` are two files that can both exist —
+   * folding them there would pass verification on bytes the curator never
+   * shipped, and let the mirror pass delete the wrong one.
+   *
+   * So verification probes the real staging root. This asserts the probe
+   * actually runs: with it removed, a hard-coded mode still passes every test
+   * above on a Windows developer's machine and is wrong on a user's Steam Deck.
+   */
+  it("probes the staging root and records what it found", async () => {
+    const s = vi.spyOn(vortexApi, "log").mockImplementation(() => undefined);
+    s.mockClear();
+    place("Scripts/x.pex", "bytes");
+
+    await verifyModInstall({
+      api: api(),
+      gameId: GAME,
+      vortexModId: MOD,
+      expectedFiles: [expected("scripts/x.pex", "bytes")],
+      level: "thorough",
+    });
+
+    const probe = s.mock.calls.find(
+      (c) => String(c[1]) === "[Event Horizon] paths.case-sensitivity",
+    );
+    expect(probe).toBeDefined();
+    // And it reports a real answer for a real directory, not a guess.
+    expect(["insensitive", "sensitive"]).toContain(
+      (probe![2] as { mode: string }).mode,
+    );
   });
 });

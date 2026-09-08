@@ -1,5 +1,7 @@
 import { createHash } from "crypto";
 
+import { pathKey } from "../paths";
+
 /**
  * ──────────────────────────────────────────────────────────────────────
  * Two different things wear the same verdict, and the curator can't see which.
@@ -67,7 +69,17 @@ export type UnexplainedFile = {
 };
 
 /** Case-insensitive, separator-normalised, for matching a staged path. */
-const norm = (p: string): string => p.replace(/\\/g, "/").toLowerCase();
+/**
+ * A comparison key over staging paths.
+ *
+ * Fixed to the Windows reading rather than probed: this runs on the CURATOR's
+ * machine during a build, comparing two lists that both came from the same
+ * walk of the same folder, so the two sides cannot disagree about case in the
+ * way a curator-to-user comparison can. Kept as a call into the service so
+ * there is one definition of "the same path" to change if that stops being
+ * true.
+ */
+const norm = (p: string): string => pathKey(p, "insensitive");
 
 /** Last path segment of an already-normalised path. */
 function baseName(p: string): string {

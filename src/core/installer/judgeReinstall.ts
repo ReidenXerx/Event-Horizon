@@ -32,6 +32,12 @@
 
 import * as path from "path";
 
+import {
+  type CaseMode,
+  basenameKey,
+  toPosix,
+} from "../paths";
+
 import { listArchiveNativeFirst } from "../manifest/listArchive";
 import { crc32File } from "../manifest/readZip";
 import {
@@ -100,7 +106,7 @@ export type ReinstallJudgement =
 
 /** Last path segment, for a "/"-separated archive or staging path. */
 function baseName(p: string): string {
-  const cut = p.replace(/\\/g, "/").lastIndexOf("/");
+  const cut = toPosix(p).lastIndexOf("/");
   return cut === -1 ? p : p.slice(cut + 1);
 }
 
@@ -409,13 +415,21 @@ export async function judgeReinstall(
 export function ambiguousVariantPaths(
   staged: readonly StagedFileRef[],
   listing: ArchiveListing,
+  /**
+   * Two archive entries called `Foo.dds` and `foo.dds` are one name on NTFS
+   * and two on a case-sensitive filesystem — and "does this archive hold two
+   * different contents under one name" is exactly the question here, so the
+   * answer differs. Defaults to the Windows reading, which is what every
+   * shipped package was built against.
+   */
+  caseMode: CaseMode = "insensitive",
 ): string[] {
   /** basename (lowercased) → the distinct contents the archive holds for it. */
   const contentsByName = new Map<string, Set<string>>();
   for (const entry of listing.entries) {
     if (entry.size === undefined) continue;
-    const name = entry.path.split(/[\\/]/).pop()?.toLowerCase();
-    if (name === undefined || name.length === 0) continue;
+    const name = basenameKey(entry.path, caseMode);
+    if (name.length === 0) continue;
     // A missing crc cannot be shown to DIFFER from anything, so it is keyed by
     // size alone — the conservative direction here is to under-report, not to
     // invent an ambiguity out of an entry we could not read.
@@ -427,8 +441,8 @@ export function ambiguousVariantPaths(
 
   const out: string[] = [];
   for (const file of staged) {
-    const name = file.path.split(/[\\/]/).pop()?.toLowerCase();
-    if (name === undefined) continue;
+    const name = basenameKey(file.path, caseMode);
+    if (name.length === 0) continue;
     if ((contentsByName.get(name)?.size ?? 0) > 1) out.push(file.path);
   }
   return out;
