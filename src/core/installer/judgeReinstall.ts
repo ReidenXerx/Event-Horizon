@@ -40,6 +40,8 @@ import {
 } from "../manifest/verifyAgainstArchive";
 import { ehLog } from "../logging/ehLog";
 
+import type { ArchiveListing } from "../manifest/archiveContents";
+
 export type ReinstallJudgement =
   /**
    * Reinstalling could genuinely change the result.
@@ -72,6 +74,28 @@ export type ReinstallJudgement =
    * reinstalling — the behaviour that existed before this check — rather than
    * pretending an absent second opinion is a clean bill of health.
    */
+  /**
+   * The differing files all match archive content, but at PATHS the archive
+   * could fill more than one way — the shape of a FOMOD variant.
+   *
+   * `verifyStagingAgainstArchive` matches purely on (size, crc) and never
+   * compares paths, so a texture mod offering "2K" and "4K" at the same
+   * relative paths produced `matched === refs.length` and was excused as
+   * `curator-diverged`: "reinstalling would reproduce what is already on
+   * disk". For a variant mismatch that is false — the user is running a
+   * DIFFERENT build of the mod than the curator, and was told it verified.
+   *
+   * Reported rather than reinstalled, deliberately. A reinstall replays the
+   * curator's recorded choices, and when those cannot be replayed (NS-8) it
+   * would land the same variant again and again without converging. The
+   * honest move is to name it and let the user decide.
+   */
+  | {
+      kind: "variant-ambiguous";
+      why: string;
+      /** Staged paths the archive can fill with more than one content. */
+      paths: string[];
+    }
   | { kind: "undecidable"; why: string };
 
 /** Last path segment, for a "/"-separated archive or staging path. */
@@ -306,6 +330,31 @@ export async function judgeReinstall(
           `reinstall could produce them`,
       };
     }
+    /**
+     * Everything matched — but matched WHERE? If the archive holds two
+     * different contents under one basename, "the bytes are in the archive"
+     * stops meaning "the archive would produce these bytes at this path".
+     */
+    const ambiguous = ambiguousVariantPaths(refs, listing);
+    if (ambiguous.length > 0) {
+      ehLog("warn", "judge-reinstall.verdict", {
+        kind: "variant-ambiguous",
+        explainedCount: result.matched,
+        ambiguousPaths: ambiguous.slice(0, 5),
+        ambiguousCount: ambiguous.length,
+      });
+      return {
+        kind: "variant-ambiguous",
+        paths: ambiguous,
+        why:
+          `all ${result.matched} differing file(s) exist in the archive, but ` +
+          `${ambiguous.length} of them sit at path(s) the archive can fill ` +
+          `with more than one version — this looks like a different installer ` +
+          `option (a texture size, an optional patch) rather than a damaged ` +
+          `install, and reinstalling may simply land the same choice again`,
+      };
+    }
+
     ehLog("info", "judge-reinstall.verdict", {
       kind: "curator-diverged",
       explainedCount: result.matched,
@@ -336,4 +385,51 @@ export async function judgeReinstall(
     // archive either".
     archiveConsulted: true,
   };
+}
+
+/**
+ * Staged paths the archive could fill with more than one content.
+ *
+ * ─── WHY BASENAME, AND WHY "MORE THAN ONE CONTENT" ─────────────────────────
+ * A FOMOD does not ship its options at the paths they land on. It ships
+ * `2K/textures/foo.dds` and `4K/textures/foo.dds` and the installer copies one
+ * of them to `textures/foo.dds`. So the staged path never appears in the
+ * archive at all, and comparing full paths would find nothing.
+ *
+ * What IS visible is that the archive holds two entries called `foo.dds` with
+ * different (size, crc). That is the signal: whatever produced the user's copy
+ * had a choice to make at this name, and the fact that the bytes exist
+ * somewhere in the archive no longer proves the archive would produce THESE
+ * bytes HERE.
+ *
+ * Deliberately narrow. Two entries with the SAME content under one name are
+ * not ambiguous — a FOMOD that ships identical files in two option folders
+ * offers no real choice. Only differing content counts.
+ */
+export function ambiguousVariantPaths(
+  staged: readonly StagedFileRef[],
+  listing: ArchiveListing,
+): string[] {
+  /** basename (lowercased) → the distinct contents the archive holds for it. */
+  const contentsByName = new Map<string, Set<string>>();
+  for (const entry of listing.entries) {
+    if (entry.size === undefined) continue;
+    const name = entry.path.split(/[\\/]/).pop()?.toLowerCase();
+    if (name === undefined || name.length === 0) continue;
+    // A missing crc cannot be shown to DIFFER from anything, so it is keyed by
+    // size alone — the conservative direction here is to under-report, not to
+    // invent an ambiguity out of an entry we could not read.
+    const key = entry.crc !== undefined ? `${entry.size}:${entry.crc}` : `s${entry.size}`;
+    const set = contentsByName.get(name);
+    if (set === undefined) contentsByName.set(name, new Set([key]));
+    else set.add(key);
+  }
+
+  const out: string[] = [];
+  for (const file of staged) {
+    const name = file.path.split(/[\\/]/).pop()?.toLowerCase();
+    if (name === undefined) continue;
+    if ((contentsByName.get(name)?.size ?? 0) > 1) out.push(file.path);
+  }
+  return out;
 }

@@ -371,11 +371,25 @@ describe("the driver acts on the difference, and the user sees it", () => {
     // and sending it to them asks them to hunt a mod they never changed.
     const src = read("runInstall.ts");
     const damaged = src.indexOf('archiveIdentity.kind === "damaged"');
-    const report = src.indexOf("curatorReports.push(");
     expect(damaged).toBeGreaterThan(-1);
-    expect(damaged).toBeLessThan(report);
-    // …and it must SHORT-CIRCUIT, not merely run first.
-    expect(src.slice(damaged, report)).toContain("continue;");
+    /**
+     * Scoped to the branch, not to the whole file.
+     *
+     * This used to compare `indexOf("curatorReports.push(")` across all of
+     * runInstall.ts, so it asserted "the damaged check appears before the
+     * FIRST curator report anywhere in five thousand lines". Adding an
+     * unrelated curator report earlier in the file broke it while the
+     * property it protects was untouched — the third source-text guard in
+     * this suite to fail on a spelling it was never testing.
+     *
+     * The real property is local: from the damaged check, the NEXT thing that
+     * happens is a short-circuit, and no curator report is reached before it.
+     */
+    const nextReport = src.indexOf("curatorReports.push(", damaged);
+    expect(nextReport).toBeGreaterThan(-1);
+    // The original assertion, anchored to the report that FOLLOWS the damaged
+    // check rather than to the first one in the file.
+    expect(src.slice(damaged, nextReport)).toContain("continue;");
   });
 
   it("surfaces it as its own notice rather than logging it into the void", () => {

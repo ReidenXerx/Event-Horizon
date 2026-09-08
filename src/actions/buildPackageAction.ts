@@ -50,6 +50,11 @@
  */
 
 import { isNexusSourced } from "../core/identity/nexusSourced";
+
+import {
+  classifyMissingConfigEntry,
+  describeDroppedEntry,
+} from "../core/manifest/staleConfigEntries";
 import { mayBundle } from "../core/manifest/shipsAsExternal";
 import * as fsp from "fs/promises";
 import * as path from "path";
@@ -326,11 +331,17 @@ export default function createBuildPackageAction(
       // bundled. Mismatches (mod not in snapshot, missing archive,
       // missing hash) are accumulated as fatal errors and reported as
       // one error notification — the curator gets the full list.
-      const { bundledArchives, errors: bundleErrors } =
-        resolveBundledArchives(state, gameId, collectionConfig, mods);
+      const {
+        bundledArchives,
+        errors: bundleErrors,
+        warnings: staleConfigWarnings,
+      } = resolveBundledArchives(state, gameId, collectionConfig, mods);
       if (bundleErrors.length > 0) {
         throw new BundleResolutionError(bundleErrors);
       }
+      // The legacy action does not rewrite the config, so it reports the
+      // dropped answers without pruning them. The wizard prunes.
+      warnings.push(...staleConfigWarnings);
 
       const result = await packageEhcoll({
         manifest,
@@ -695,19 +706,69 @@ function resolveBundledArchives(
   gameId: string,
   config: CollectionConfig,
   mods: AuditorMod[],
-): { bundledArchives: BundledArchiveSpec[]; errors: string[] } {
+): {
+  bundledArchives: BundledArchiveSpec[];
+  errors: string[];
+  /** Curator-facing notes about answers that were dropped. */
+  warnings: string[];
+  /** Config keys whose mod no longer exists; safe to prune. */
+  droppedModIds: string[];
+} {
   const errors: string[] = [];
+  const warnings: string[] = [];
+  const droppedModIds: string[] = [];
   const bundledArchives: BundledArchiveSpec[] = [];
   const modById = new Map(mods.map((m) => [m.id, m]));
+  const inCollection = new Set(modById.keys());
+  /**
+   * Every mod id Vortex holds for this game, enabled or not (NS-3).
+   *
+   * This is what separates "the curator deleted the mod" from "the curator
+   * switched it off", and those two get different answers.
+   */
+  const inGamePool = new Set(
+    Object.keys(
+      (
+        state as unknown as {
+          persistent?: { mods?: Record<string, Record<string, unknown>> };
+        }
+      )?.persistent?.mods?.[gameId] ?? {},
+    ),
+  );
 
   for (const [modId, entry] of Object.entries(config.externalMods)) {
     if (entry.bundled !== true) continue;
 
     const mod = modById.get(modId);
     if (mod === undefined) {
+      const kind = classifyMissingConfigEntry(modId, inCollection, inGamePool);
+      if (kind === "deleted") {
+        /**
+         * The mod is gone from Vortex entirely, so this answer refers to
+         * nothing and can never be satisfied. Failing here blocked every
+         * future build until someone hand-edited a JSON file — for a mod the
+         * curator had deliberately deleted. Drop it, say so, and prune the
+         * entry so it does not come back.
+         */
+        warnings.push(describeDroppedEntry(modId, entry.name, "bundle"));
+        droppedModIds.push(modId);
+        ehLog("warn", "build.config.stale-entry-dropped", {
+          modId,
+          name: entry.name,
+          answer: "bundled",
+          why: "the mod is no longer in Vortex's mod pool for this game",
+        });
+        continue;
+      }
+      /**
+       * `disabled` — still installed, just not in this collection's scope.
+       * The answer is live and the absence is almost certainly an oversight:
+       * a mod marked to ship that is not shipping. Keep failing.
+       */
       errors.push(
-        `Config flags modId "${modId}" as bundled, but no such mod is in the active profile right now. ` +
-          `Either install the mod, remove the entry from the config, or set bundled=false.`,
+        `Config flags modId "${modId}" as bundled, but that mod is installed ` +
+          `and NOT enabled in this profile, so it is not in the collection. ` +
+          `Enable it, or set bundled=false.`,
       );
       continue;
     }
@@ -752,7 +813,7 @@ function resolveBundledArchives(
     });
   }
 
-  return { bundledArchives, errors };
+  return { bundledArchives, errors, warnings, droppedModIds };
 }
 
 function formatError(err: unknown): string {

@@ -351,6 +351,16 @@ export type ModVerificationOkReceipt = {
    * warning ("we re-installed mod X to fix lost files").
    */
   retryAttempted?: boolean;
+  /**
+   * Why this mod passed, when it did not pass by matching exactly.
+   *
+   * `kind: "ok"` covered three different facts: every file matched; the
+   * curator's own staging had drifted from their archive; and the user has a
+   * different installer variant. A support session reading the receipt could
+   * not tell them apart, and the type's own docs claimed ok meant everything
+   * matched. Absent means it really did.
+   */
+  okReason?: "curator-diverged" | "curator-only" | "variant-ambiguous";
 };
 
 export type ModVerificationSkipReceipt = {

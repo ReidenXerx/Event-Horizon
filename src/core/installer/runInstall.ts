@@ -1674,6 +1674,36 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           why: judgement.why,
         });
 
+        /**
+          * ─── A DIFFERENT INSTALLER VARIANT IS NOT A PASS ────────────────
+          * Reported, never reinstalled. The bytes ARE in the archive, so a
+          * reinstall is not obviously wrong — but it replays the curator's
+          * recorded choices, and where those cannot be replayed (NS-8) it
+          * lands the same variant again, forever. So the user is told, and
+          * decides.
+          */
+         if (judgement.kind === "variant-ambiguous") {
+           curatorReports.push(
+             `"${installEntry.name}" may be a different installer option than ` +
+               `the curator's: ${judgement.paths.length} file(s) differ at ` +
+               `path(s) this mod's archive can fill more than one way ` +
+               `(for example ${judgement.paths.slice(0, 3).join(", ")}). ` +
+               `Nothing is damaged — reinstalling would replay the curator's ` +
+               `recorded answers, which may or may not change it.`,
+           );
+           verifications.push({
+             kind: "ok",
+             vortexModId: installEntry.vortexModId,
+             compareKey: installEntry.compareKey,
+             name: installEntry.name,
+             level: declaredLevel === "thorough" ? "thorough" : "fast",
+             verifiedFileCount: verifyResult.expectedCount,
+             extraFileCount: verifyResult.extraFiles.length,
+             okReason: "variant-ambiguous",
+           });
+           continue;
+         }
+
         if (
           judgement.kind === "curator-diverged" ||
           judgement.kind === "curator-only"
@@ -1690,6 +1720,8 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             level: declaredLevel === "thorough" ? "thorough" : "fast",
             verifiedFileCount: verifyResult.expectedCount,
             extraFileCount: verifyResult.extraFiles.length,
+            // The receipt now says WHICH of the three "ok"s this is.
+            okReason: judgement.kind,
           });
           continue;
         }

@@ -24,6 +24,11 @@ import {
   shipsAsExternal,
 } from "../../../core/manifest/shipsAsExternal";
 import * as fsp from "fs/promises";
+
+import {
+  classifyMissingConfigEntry,
+  describeDroppedEntry,
+} from "../../../core/manifest/staleConfigEntries";
 import * as path from "path";
 import { util } from "@nexusmods/vortex-api";
 import type { types } from "@nexusmods/vortex-api";
@@ -2034,8 +2039,12 @@ export async function runBuildPipeline(
   // the NEW archive's hash — so the archive-based resolver must not also try
   // to bundle the stale original for the same mod.
   const repackedIds = new Set(repackedBundles.map((b) => b.modId));
-  const { bundledArchives: archiveBundles, errors: bundleErrors } =
-    resolveBundledArchives(
+  const {
+    bundledArchives: archiveBundles,
+    errors: bundleErrors,
+    warnings: staleConfigWarnings,
+    droppedModIds: staleConfigModIds,
+  } = resolveBundledArchives(
       state,
       gameId,
       {
@@ -2055,6 +2064,33 @@ export async function runBuildPipeline(
     );
   if (bundleErrors.length > 0) {
     throw new BundleResolutionError(bundleErrors);
+  }
+  /**
+   * Prune answers whose mod no longer exists, so the next build does not have
+   * to re-discover them. Best-effort: a config we cannot rewrite is not worth
+   * failing a finished build over, and the warning has already been recorded.
+   */
+  if (staleConfigModIds.length > 0) {
+    bundleWarnings.push(...staleConfigWarnings);
+    const pruned = { ...collectionConfig.externalMods };
+    for (const id of staleConfigModIds) delete pruned[id];
+    try {
+      await saveCollectionConfig({
+        configDir,
+        slug,
+        config: { ...collectionConfig, externalMods: pruned },
+      });
+      ehLog("info", "build.config.pruned", {
+        removed: staleConfigModIds.length,
+        remaining: Object.keys(pruned).length,
+      });
+    } catch (err) {
+      ehLog("warn", "build.config.prune-failed", {
+        removed: staleConfigModIds.length,
+        consequence: "the same warning will appear on the next build",
+        err,
+      });
+    }
   }
   const bundledArchives = [
     ...archiveBundles,
@@ -2249,19 +2285,69 @@ function resolveBundledArchives(
   gameId: string,
   config: CollectionConfig,
   mods: AuditorMod[],
-): { bundledArchives: BundledArchiveSpec[]; errors: string[] } {
+): {
+  bundledArchives: BundledArchiveSpec[];
+  errors: string[];
+  /** Curator-facing notes about answers that were dropped. */
+  warnings: string[];
+  /** Config keys whose mod no longer exists; safe to prune. */
+  droppedModIds: string[];
+} {
   const errors: string[] = [];
+  const warnings: string[] = [];
+  const droppedModIds: string[] = [];
   const bundledArchives: BundledArchiveSpec[] = [];
   const modById = new Map(mods.map((m) => [m.id, m]));
+  const inCollection = new Set(modById.keys());
+  /**
+   * Every mod id Vortex holds for this game, enabled or not (NS-3).
+   *
+   * This is what separates "the curator deleted the mod" from "the curator
+   * switched it off", and those two get different answers.
+   */
+  const inGamePool = new Set(
+    Object.keys(
+      (
+        state as unknown as {
+          persistent?: { mods?: Record<string, Record<string, unknown>> };
+        }
+      )?.persistent?.mods?.[gameId] ?? {},
+    ),
+  );
 
   for (const [modId, entry] of Object.entries(config.externalMods)) {
     if (entry.bundled !== true) continue;
 
     const mod = modById.get(modId);
     if (mod === undefined) {
+      const kind = classifyMissingConfigEntry(modId, inCollection, inGamePool);
+      if (kind === "deleted") {
+        /**
+         * The mod is gone from Vortex entirely, so this answer refers to
+         * nothing and can never be satisfied. Failing here blocked every
+         * future build until someone hand-edited a JSON file — for a mod the
+         * curator had deliberately deleted. Drop it, say so, and prune the
+         * entry so it does not come back.
+         */
+        warnings.push(describeDroppedEntry(modId, entry.name, "bundle"));
+        droppedModIds.push(modId);
+        ehLog("warn", "build.config.stale-entry-dropped", {
+          modId,
+          name: entry.name,
+          answer: "bundled",
+          why: "the mod is no longer in Vortex's mod pool for this game",
+        });
+        continue;
+      }
+      /**
+       * `disabled` — still installed, just not in this collection's scope.
+       * The answer is live and the absence is almost certainly an oversight:
+       * a mod marked to ship that is not shipping. Keep failing.
+       */
       errors.push(
-        `Config flags modId "${modId}" as bundled, but no such mod is in the active profile right now. ` +
-          `Either install the mod, remove the entry from the config, or set bundled=false.`,
+        `Config flags modId "${modId}" as bundled, but that mod is installed ` +
+          `and NOT enabled in this profile, so it is not in the collection. ` +
+          `Enable it, or set bundled=false.`,
       );
       continue;
     }
@@ -2305,7 +2391,7 @@ function resolveBundledArchives(
     });
   }
 
-  return { bundledArchives, errors };
+  return { bundledArchives, errors, warnings, droppedModIds };
 }
 
 async function readPluginsTxtIfPresent(
