@@ -1952,72 +1952,19 @@ export async function runBuildPipeline(
    * Refused rather than warned: the curator is the only person who can fix it,
    * and a warning in a long build log is how it shipped the first time.
    */
-  const { readPluginMasters } = await import(
-    "../../../core/manifest/pluginMasters"
+  const { gateOnMasters } = await import(
+    "../../../core/manifest/gateOnMasters"
   );
-  const {
-    checkMasters,
-    describeMissingMasters,
-    describeUserOwnedMasters,
-  } = await import("../../../core/manifest/checkMasters");
-
-  const enabledPlugins =
-    pluginsTxtContent === undefined
-      ? []
-      : parsePluginsTxt(pluginsTxtContent).filter((e) => e.enabled);
-  const dataDir =
-    flagGameDir === undefined ? undefined : path.join(flagGameDir, "Data");
-
-  const pluginsWithMasters = [];
-  for (const entry of enabledPlugins) {
-    checkAbort();
-    if (dataDir === undefined) {
-      // No Data folder means no headers to read. Recorded as UNKNOWN rather
-      // than as "needs nothing", so the check reports that it could not run.
-      pluginsWithMasters.push({
-        name: entry.name,
-        enabled: true,
-        masters: undefined,
-      });
-      continue;
-    }
-    const read = await readPluginMasters(path.join(dataDir, entry.name));
-    pluginsWithMasters.push({
-      name: entry.name,
-      enabled: true,
-      masters: read.kind === "ok" ? read.masters : undefined,
-    });
+  const masterGate = await gateOnMasters({
+    gameId,
+    gameDir: flagGameDir,
+    pluginsTxtContent,
+    checkAbort,
+  });
+  if (masterGate.refusal !== undefined) {
+    throw new BuildRefusedError("missing-masters", masterGate.refusal);
   }
-
-  const masterCheck = checkMasters(pluginsWithMasters, gameId);
-  ehLog(
-    masterCheck.missing.length > 0 ? "error" : "info",
-    "build.masters.checked",
-    {
-      checked: masterCheck.checked,
-      missing: masterCheck.missing.length,
-      userOwned: masterCheck.userOwned.length,
-      unreadable: masterCheck.unreadable.length,
-      examples: masterCheck.missing.slice(0, 5),
-    },
-  );
-  if (masterCheck.missing.length > 0) {
-    throw new BuildRefusedError(
-      "missing-masters",
-      describeMissingMasters(masterCheck),
-    );
-  }
-  bundleWarnings.push(...describeUserOwnedMasters(masterCheck));
-  if (masterCheck.unreadable.length > 0) {
-    // The check did not fully run, and saying so is the difference between a
-    // pass and a pass nobody verified.
-    bundleWarnings.push(
-      `${masterCheck.unreadable.length} plugin(s) could not be read, so their ` +
-        `master requirements were not checked: ` +
-        `${masterCheck.unreadable.slice(0, 3).join(", ")}` +
-        `${masterCheck.unreadable.length > 3 ? ", and more" : ""}.`,
-    );
-  }
+  bundleWarnings.push(...masterGate.warnings);
 
   // ── 3. Build the manifest ──────────────────────────────────────────────
   checkAbort();

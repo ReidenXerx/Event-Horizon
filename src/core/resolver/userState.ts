@@ -85,6 +85,13 @@ export type BuildUserSideStateInput = {
   vortexVersion: string;
   /** Resolved deployment method. Optional — resolver downgrades to "unknown". */
   deploymentMethod?: VortexDeploymentMethod;
+  /**
+   * Which store's copy of the game this user has — `steam`, `gog`, …
+   *
+   * Absent when Vortex cannot say, and absence is preserved: the store check
+   * reports a mismatch only when BOTH sides are known.
+   */
+  store?: string;
   /** Vortex extensions currently enabled. */
   enabledExtensions: EnabledExtension[];
   /** Active profile id at the time the action ran. */
@@ -126,6 +133,7 @@ export function buildUserSideState(
     gameVersion: input.gameVersion,
     vortexVersion: input.vortexVersion,
     deploymentMethod: input.deploymentMethod,
+    store: input.store,
     enabledExtensions: input.enabledExtensions,
     activeProfileId: input.activeProfileId,
     activeProfileName: input.activeProfileName,

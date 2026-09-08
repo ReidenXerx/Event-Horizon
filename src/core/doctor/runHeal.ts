@@ -264,18 +264,53 @@ async function healImpl(
           gameId,
           discoveredStore(deps.api.getState(), gameId),
         )) ?? [];
-      // Names only. The receipt's own enabled flags are dropped on purpose:
-      // they describe install time, and re-pinning with them would undo every
-      // plugin the user has toggled since.
-      const order = rebuildPluginOrder(
-        recorded.map((e) => e.name),
-        current,
+      /**
+       * ─── THE SAME MERGE THE INSTALL USES, AND NO SECOND SORT ──────────
+       * This heal used to call `rebuildPluginOrder` — the curator's plugins
+       * first, every plugin of the user's own APPENDED AT THE END — and then
+       * let `applyPluginOrder` run LOOT on the result, because it did not pass
+       * `skipSort`.
+       *
+       * Both halves were wrong, and together they made the button actively
+       * destructive. The sort is the operation that was measured leaving 686
+       * of 1,600 plugins out of the curator's order in the first place, so
+       * clicking "restore the recorded order" right after a successful install
+       * UNDID the install's re-pin and then reported "Set the recorded order
+       * for N plugins" — the order strictly worse than before the click, and
+       * the message saying it was restored. Meanwhile the append-at-end
+       * rebuild produced exactly the stranded-at-the-end placement that the
+       * install's three-step dance exists to avoid.
+       *
+       * `repinCuratorOrder` is the install's rule: the curator's plugins take
+       * the curator's relative order in the slots they already occupy, and
+       * every plugin of the user's own keeps the position LOOT gave it.
+       * Nothing moves to the end, and nothing is re-sorted afterwards.
+       *
+       * Enabled flags come from the CURRENT file, never from the receipt —
+       * the receipt describes install time, and asserting those would undo
+       * every plugin the user has toggled since.
+       */
+      const { repinCuratorOrder } = await import(
+        "../installer/repinPluginOrder"
       );
+      const enabledByName = new Map(
+        current.map((pl) => [pl.name.toLowerCase(), pl.enabled] as const),
+      );
+      const merged = repinCuratorOrder(
+        recorded.map((e) => e.name),
+        current.map((pl) => pl.name),
+      );
+      const order = merged.map((name) => ({
+        name,
+        enabled: enabledByName.get(name.toLowerCase()) ?? true,
+      }));
       const result = await applyPluginOrder({
         api,
         gameId,
         collectionId: receipt.packageId,
         order,
+        // No second sort: sorting is what displaced the curator's order.
+        skipSort: true,
         ...(deps.signal !== undefined ? { signal: deps.signal } : {}),
       });
       // applyPluginOrder never throws — a load order it could not set is a

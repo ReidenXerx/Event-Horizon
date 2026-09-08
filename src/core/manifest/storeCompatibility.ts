@@ -56,10 +56,37 @@ export type ScriptExtenderMod = {
  */
 const EXTENDER_DIRS = ["skse/plugins/", "f4se/plugins/"];
 
+/**
+ * Extensions that are store-bound INSIDE those directories.
+ *
+ * `.dll` is the obvious one. `.bin` is Address Library's version database
+ * (`versionlib-1-6-1170-0.bin`) — the file every other plugin resolves its
+ * addresses THROUGH, so a user who re-downloads forty DLLs and keeps the
+ * wrong version-lib has fixed nothing. It lives nowhere but these folders.
+ */
+const EXTENDER_PAYLOAD_EXTS = [".dll", ".bin"];
+
+/**
+ * The script extender's own files, which live at the GAME ROOT, not under
+ * `SKSE/Plugins`.
+ *
+ * SKSE64 is staged as a `dinput` mod deploying to the root — measured, on a
+ * real 1,753-mod Skyrim profile exactly one mod is `dinput` and it is SKSE64.
+ * Its files are `skse64_loader.exe`, `skse64_1_6_1170.dll`,
+ * `skse64_steam_loader.dll`, and the loader is the most store-specific thing
+ * in the whole collection: with the wrong one the game does not launch at
+ * all. Matching only `SKSE/Plugins/*.dll` named forty mods to re-download and
+ * omitted the one that has to be done first.
+ */
+const EXTENDER_BINARY = /^(skse64|skse|f4se)[_.]/i;
+
 /** Does this staged path look like a script-extender plugin? */
 export function isScriptExtenderPlugin(relPath: string): boolean {
   const posix = toPosix(relPath).toLowerCase();
-  if (!posix.endsWith(".dll")) return false;
+  const base = basenameOf(posix);
+  // The extender itself, wherever it sits — it deploys to the game root.
+  if (EXTENDER_BINARY.test(base)) return true;
+  if (!EXTENDER_PAYLOAD_EXTS.some((ext) => posix.endsWith(ext))) return false;
   return EXTENDER_DIRS.some((dir) => posix.includes(dir));
 }
 

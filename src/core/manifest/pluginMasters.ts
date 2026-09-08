@@ -33,7 +33,7 @@ import * as fsp from "fs/promises";
 
 /** Bytes of a TES4 record header before its subrecord data begins. */
 const RECORD_HEADER_BYTES = 24;
-/** Type tag (4) + data size (4). */
+/** Type tag (4) + data size (2). */
 const SUBRECORD_HEADER_BYTES = 6;
 /**
  * Refuse to read a header larger than this.
@@ -96,6 +96,25 @@ export async function readPluginMasters(
     }
 
     const masters: string[] = [];
+    /**
+     * Did we actually understand this record?
+     *
+     * `dataSize` is a number from the file and the subrecord walk is bounded
+     * by it, so a size that is too SMALL is invisible to the truncation guard
+     * above — the walk simply stops early and returns `{kind: "ok", masters:
+     * []}`. That is the one answer this function must never give for a file it
+     * failed to parse: "needs nothing" passes the build gate, so a plugin
+     * whose masters were lost to a bad size field ships silently.
+     *
+     * Measured: a file with `TES4` and a zero size, and a well-formed plugin
+     * declaring two masters with `dataSize` written as 12, both returned `ok`
+     * with an empty list.
+     *
+     * Every TES4 header opens with a `HEDR` subrecord. Seeing one is proof the
+     * walk was reading real structure rather than stopping before it started,
+     * so its absence turns a silent pass into an honest unknown.
+     */
+    let sawHedr = false;
     let at = 0;
     while (at + SUBRECORD_HEADER_BYTES <= data.length) {
       const type = data.toString("latin1", at, at + 4);
@@ -103,6 +122,7 @@ export async function readPluginMasters(
       const start = at + SUBRECORD_HEADER_BYTES;
       const end = start + size;
       if (end > data.length) break; // truncated subrecord: stop, keep what we have
+      if (type === "HEDR") sawHedr = true;
       if (type === "MAST") {
         // NUL-terminated, and latin1 because that is what the engine writes.
         const raw = data.toString("latin1", start, end);
@@ -110,6 +130,15 @@ export async function readPluginMasters(
         if (name.length > 0) masters.push(name);
       }
       at = end;
+    }
+
+    if (!sawHedr) {
+      return {
+        kind: "not-a-plugin",
+        why:
+          `the TES4 header has no HEDR subrecord within the ${dataSize} ` +
+          `bytes it declares, so its contents could not be read`,
+      };
     }
 
     return { kind: "ok", masters };
@@ -167,12 +196,44 @@ export function isBaseGameMaster(name: string, gameId: string): boolean {
   return (BASE_MASTERS[gameId] ?? []).includes(name.trim().toLowerCase());
 }
 
-/** Creation Club content: bought per account, never shipped by a collection. */
+/**
+ * Creation Club content: bought per account, never shipped by a collection.
+ *
+ * ─── MEASURED AGAINST REAL FILENAMES ───────────────────────────────────────
+ * The shape is `cc` + a 2-4 letter publisher code + the GAME code + digits +
+ * a HYPHEN: `ccBGSSSE001-Fish.esm`, `ccQDRSSE001-SurvivalMode.esl`,
+ * `ccBGSFO4001-PipBoy(Black).esl`, `ccFSVFO4001-ModularMilitary.esl`.
+ *
+ * The first two attempts at this both missed. `/^cc[a-z0-9]+_/` required an
+ * UNDERSCORE and every real name uses a hyphen, so it matched nothing that
+ * ships. `/^cc[a-z]{3}sse\d/` hardcoded `sse`, so it matched all seven Skyrim
+ * names tried and none of the eight Fallout 4 ones — and the test fixture was
+ * two Skyrim names, the half that worked (GP-4).
+ *
+ * Getting this wrong is expensive in the blocking direction: an unrecognised
+ * CC master is neither base-game nor user-owned, so the build is REFUSED with
+ * "add the mod that provides each master" — an instruction the curator cannot
+ * follow, because Creation Club content is not shippable.
+ */
 export function isCreationClubMaster(name: string): boolean {
-  return /^cc[a-z0-9]+_/i.test(name.trim()) || /^cc[a-z]{3}sse\d/i.test(name.trim());
+  return /^cc[a-z]{2,4}(sse|fo4)\d/i.test(name.trim());
 }
+
+/**
+ * Anniversary Edition's consolidated Creation Club pack.
+ *
+ * Not in `BASE_MASTERS` — not every Skyrim user has AE — and it does not match
+ * the `cc*` shape either, so without naming it a plugin mastered on it hard-
+ * refuses the build over a file the curator cannot ship and the user may
+ * already own.
+ */
+const AE_RESOURCE_PACK = "_resourcepack.esl";
 
 /** Neither the collection's job to ship nor a sign of a broken package. */
 export function isUserOwnedMaster(name: string, gameId: string): boolean {
-  return isBaseGameMaster(name, gameId) || isCreationClubMaster(name);
+  return (
+    isBaseGameMaster(name, gameId) ||
+    isCreationClubMaster(name) ||
+    name.trim().toLowerCase() === AE_RESOURCE_PACK
+  );
 }

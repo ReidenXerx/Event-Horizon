@@ -267,6 +267,31 @@ export default function createBuildPackageAction(
         userlist,
       };
 
+      /**
+       * ─── THE SAME GATE AS THE BUILD PAGE ────────────────────────────
+       * This action produces a real `.ehcoll` through the same
+       * `buildManifest` → `packageEhcoll` pipeline, so a collection whose
+       * plugins cannot load must not ship from here either. It did: the gate
+       * was written into the build page only, which is how six other rules in
+       * this file diverged before it.
+       *
+       * `gateOnMasters` is the single home for the rule; both doors call it.
+       */
+      const { gateOnMasters } = await import(
+        "../core/manifest/gateOnMasters"
+      );
+      const { getGameDirectory } = await import(
+        "../core/manifest/externalDependencies"
+      );
+      const masterGate = await gateOnMasters({
+        gameId,
+        gameDir: getGameDirectory(state, gameId),
+        pluginsTxtContent,
+      });
+      if (masterGate.refusal !== undefined) {
+        throw new Error(masterGate.refusal);
+      }
+
       const { manifest, warnings } = buildManifest({
         snapshot,
         package: {
@@ -285,6 +310,16 @@ export default function createBuildPackageAction(
         },
         game: {
           version: resolveGameVersion(state, gameId),
+          /**
+           * The store, for the same reason the build page records it: GOG and
+           * Steam ship identical version numbers with different executables,
+           * so an `exact` version check passes while every script-extender
+           * DLL refuses to load. Absent stays absent — unknown is not a
+           * mismatch.
+           */
+          ...(discoveredStore(state, gameId) !== undefined
+            ? { store: discoveredStore(state, gameId)! }
+            : {}),
         },
         vortex: {
           version: resolveVortexVersion(state),

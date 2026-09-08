@@ -2042,6 +2042,97 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     // `installedMods`), and orphan-keep carries. The map is the
     // single source of truth — `applyModRules` does not look anywhere
     // else.
+    /**
+     * ─── 5a2. OUR OWN COPY OF A MIRRORED MOD THE USER ALREADY OWNS ──────
+     * This has to happen BEFORE `modIdByCompareKey` is built, and that
+     * ordering is the whole point of it being a separate pass.
+     *
+     * It used to live inside the mirror loop (6c), which runs after the mod
+     * rules, the INI tweaks, the modType restore and the Vortex LoadOrder
+     * dispatch — all four of which resolve their target through the map built
+     * on the line below. So for every mirrored mod the user already had, the
+     * map still held THEIR mod id when those phases ran, and the swap
+     * happened afterwards. The consequences were all silent:
+     *
+     *  - `applyModRules` attached the collection's conflict rules to their
+     *    mod, which 6c then DISABLED — so our enabled copy carried no rules,
+     *    the curator's conflict order was not reproduced, and `rules.applied`
+     *    counted them as applied (NS-1).
+     *  - `applyIniTweaks` enabled the tweak on their mod: a write into a mod
+     *    Event Horizon did not install, which then never took effect because
+     *    that mod is off.
+     *  - `applyModTypeChanges` dispatched the curator's hand-set modType —
+     *    `dinput` for SSE Engine Fixes, which deploys to the GAME ROOT — at
+     *    their mod. Our copy kept Vortex's derived `""`, so the loose DLLs
+     *    went to `Data`, nothing loaded them, and every file check still
+     *    passed. And their mod's type stayed permanently changed, in all of
+     *    the user's other profiles.
+     *
+     * The repair path already learned this lesson and writes
+     * `installedMods[i] = retried.installEntry` BEFORE those phases; the
+     * comment there names the same five consumers. This pass puts the
+     * alongside install on the same side of the line.
+     *
+     * 6c is left with what it is actually for: reconciling the bytes.
+     */
+    const mirrorLines: string[] = [];
+    const mirrorFailures: string[] = [];
+    const mirrorSkipped: string[] = [];
+    for (const mod of plan.manifest.mods) {
+      if (mod.state.mirrored !== true) continue;
+      if (ctx.abortSignal?.aborted === true) break;
+      const idx = installedMods.findIndex(
+        (m) => m.compareKey === mod.compareKey,
+      );
+      if (idx < 0) continue;
+      const theirModId = installedMods[idx]!.vortexModId;
+      // Already ours — installed by this run, or by an earlier one and
+      // recovered from the journal or the receipt. Nothing to do.
+      if (ownedByUs.has(theirModId)) continue;
+
+      const ours = await tryInstallAlongside({
+        ctx,
+        installEntry: installedMods[idx]!,
+        manifestEntry: mod,
+        activeProfileId,
+        onTempArchive: (dir) => tempArchivesToCleanup.push(dir),
+      });
+      if (ours === undefined) {
+        // 6c will find it still not-ours and report the skip there, so the
+        // reason reaches the user exactly once.
+        ehLog("warn", "install.alongside.unavailable", {
+          mod: mod.name,
+          compareKey: mod.compareKey,
+          theirModId,
+          consequence:
+            "the curator's archive could not be obtained, so this mod is " +
+            "left exactly as the user had it and is NOT mirrored",
+        });
+        continue;
+      }
+
+      await appendJournalEntry(ctx.appDataPath, plan.manifest.package.id, {
+        compareKey: ours.compareKey,
+        vortexModId: ours.vortexModId,
+        kind: "installed",
+        decision: "mirror-alongside",
+        at: new Date().toISOString(),
+      });
+      ownedByUs.add(ours.vortexModId);
+      installedMods[idx] = ours;
+
+      mirrorLines.push(
+        `"${mod.name}" — your own copy was left untouched; the collection ` +
+          `installed its own copy beside it and uses that one.`,
+      );
+      ehLog("info", "install.mirror.alongside", {
+        mod: mod.name,
+        compareKey: mod.compareKey,
+        theirModId,
+        ourModId: ours.vortexModId,
+      });
+    }
+
     const modIdByCompareKey = buildPostInstallModIdMap(
       installedMods,
       carriedMods,
@@ -2379,9 +2470,6 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     //
     // A mod is mirrored only when its curator answered for it — this never
     // fires on its own.
-    const mirrorLines: string[] = [];
-    const mirrorFailures: string[] = [];
-    const mirrorSkipped: string[] = [];
     const mirroredWanted = plan.manifest.mods.filter(
       (m) => m.state.mirrored === true,
     ).length;
@@ -2427,72 +2515,28 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
        */
       if (!ownedByUs.has(vortexModId)) {
         /**
-         * ─── SO INSTALL OUR OWN COPY AND MIRROR INTO THAT ─────────────────
-         * Refusing outright was correct about the danger and wrong about the
-         * remedy. Mirroring exists to give the user the curator's edited files
-         * while the mod stays a real Nexus mod (NS-5) — and on any machine
-         * that already owns the mods, EVERY mirrored mod is adopted, so the
-         * feature did nothing at all. One real install: 26 mods wanted, 0
-         * applied, 26 skipped, and a Done card that said "skipped" rather than
-         * "this feature is off for you".
+         * Still theirs, so the alongside pass could not obtain the curator's
+         * archive for it. Mirroring here would overwrite files and DELETE the
+         * ones the curator's listing does not mention, in a mod Event Horizon
+         * did not install — not reconciliation, destroying their work (NS-2).
          *
-         * The alongside install is the answer, and it already exists for the
-         * repair path: stage the curator's archive under our own name, let
-         * Vortex install it as a SECOND mod, then enable ours and disable
-         * theirs in this collection's profile only. The user's copy is not
-         * touched, not overwritten and not deleted — it is simply not the one
-         * this collection loads — so NS-2 holds in the strongest form, by not
-         * writing to their mod at all rather than by writing carefully.
-         *
-         * The new copy IS ours, so the mirror below then runs against it with
-         * full rights, and the journal records it so the next run knows.
+         * The install happens in pass 5a2, well before this loop, because
+         * every phase that resolves a mod by compareKey — rules, INI tweaks,
+         * modType, Vortex LoadOrder — runs between there and here and must
+         * see OUR id, not theirs.
          */
-        const ours = await tryInstallAlongside({
-          ctx,
-          installEntry: installedMods[installedIndex]!,
-          manifestEntry: mod,
-          activeProfileId,
-          onTempArchive: (dir) => tempArchivesToCleanup.push(dir),
-        });
-        if (ours === undefined) {
-          mirrorSkipped.push(
-            `"${mod.name}" — this is your own copy of the mod, and the ` +
-              `curator's version of its archive could not be obtained on this ` +
-              `machine, so nothing was changed`,
-          );
-          ehLog("warn", "install.mirror.skipped-not-ours", {
-            mod: mod.name,
-            compareKey: mod.compareKey,
-            vortexModId,
-            why: "alongside install could not obtain the curator's archive",
-          });
-          continue;
-        }
-
-        await appendJournalEntry(ctx.appDataPath, plan.manifest.package.id, {
-          compareKey: ours.compareKey,
-          vortexModId: ours.vortexModId,
-          kind: "installed",
-          decision: "mirror-alongside",
-          at: new Date().toISOString(),
-        });
-        // Captured BEFORE the slot is overwritten — reading it after would
-        // log our own new id as "theirs" and make the swap unreadable.
-        const theirModId = vortexModId;
-        ownedByUs.add(ours.vortexModId);
-        installedMods[installedIndex] = ours;
-        vortexModId = ours.vortexModId;
-
-        mirrorLines.push(
-          `"${mod.name}" — your own copy was left untouched; the collection ` +
-            `installed its own copy beside it and uses that one.`,
+        mirrorSkipped.push(
+          `"${mod.name}" — this is your own copy of the mod, and the ` +
+            `curator's version of its archive could not be obtained on this ` +
+            `machine, so nothing was changed`,
         );
-        ehLog("info", "install.mirror.alongside", {
+        ehLog("warn", "install.mirror.skipped-not-ours", {
           mod: mod.name,
           compareKey: mod.compareKey,
-          theirModId,
-          ourModId: ours.vortexModId,
+          vortexModId,
+          why: "alongside install could not obtain the curator's archive",
         });
+        continue;
       }
 
       const stagingRoot = stagingRootForModId(
@@ -2660,8 +2704,14 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
      * So this is the point of no return. A stop from here on stops the
      * remaining WRITES (see `stopBeforeWriting`) and the run finishes its
      * bookkeeping, reporting which steps it skipped.
+     *
+     * There is deliberately no `if (aborted) return aborted;` here. One
+     * survived the removal of its assignment and sat under this very comment,
+     * reading as a live guard — an invitation for the next person to add a
+     * pre-deploy `aborted =` without an immediate return and resurrect the
+     * abandoned-deploy bug one line below the paragraph explaining why it
+     * must not exist.
      */
-    if (aborted) return aborted;
 
     // ── 7b. apply Vortex per-game LoadOrder ─────────────────────────
     // Distinct from plugins.txt: this is Vortex's generic LoadOrder
@@ -2678,7 +2728,23 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         entries: plan.manifest.loadOrder.length,
       });
     }
-    if (plan.manifest.loadOrder.length > 0 && activeProfileId !== undefined) {
+    /**
+     * ─── A WRITER, GATED LIKE THE OTHER WRITERS ─────────────────────────
+     * `applyLoadOrder` dispatches into Vortex's per-game LoadOrder hive, so
+     * it writes. The point-of-no-return comment above used to describe the
+     * two remaining post-deploy phases as read-only, and this one is not —
+     * which is why it still carried abort returns of its own long after the
+     * deploy's had been removed.
+     *
+     * Now a stop skips it and NAMES it, like plugin order, ESL flags and game
+     * settings, instead of abandoning a deployed collection with no receipt
+     * (NS-2).
+     */
+    if (
+      plan.manifest.loadOrder.length > 0 &&
+      activeProfileId !== undefined &&
+      !stopBeforeWriting("Vortex load order")
+    ) {
       reportProgress(
         "applying-load-order",
         0,
@@ -2710,27 +2776,58 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             ".",
         );
       } catch (err) {
-        if (
+        /**
+         * No `return abortedResult(...)` here either, and this was the more
+         * dangerous of the two abort returns in this phase: the condition was
+         * `AbortError` OR `ctx.abortSignal?.aborted`, so once the user had
+         * pressed Stop, ANY throw out of `applyLoadOrder` — not just a
+         * genuine abort — returned `kind: "aborted"` for a collection that
+         * was already deployed, with no receipt written.
+         *
+         * Past the deploy an abort is not an unwind. It is a skipped write,
+         * and the run still owes the user a receipt.
+         */
+        const stopped =
           (err as Error)?.name === "AbortError" ||
-          ctx.abortSignal?.aborted
-        ) {
-          return abortedResult(
-              "applying-load-order",
-              "Install aborted while applying load order.",
-            );
+          ctx.abortSignal?.aborted === true;
+        if (stopped) {
+          finishingSkipped.push("Vortex load order");
+          ehLog("warn", "loadorder.apply.stopped", {
+            consequence:
+              "you stopped the install while the load order was being " +
+              "applied — the curator's order is NOT reproduced, and running " +
+              "the install again applies it",
+          });
+        } else {
+          // Non-fatal — but the load order is then the user's, not the
+          // curator's, which for a Bethesda game decides whether it starts.
+          ehLog("error", "loadorder.apply.threw", {
+            consequence:
+              "continuing without load-order application — the curator's " +
+              "order is NOT reproduced",
+            err,
+          });
         }
-        // Non-fatal — but the load order is then the user's, not the
-        // curator's, which for a Bethesda game decides whether it starts.
-        ehLog("error", "loadorder.apply.threw", {
-          consequence:
-            "continuing without load-order application — the curator's " +
-            "order is NOT reproduced",
-          err,
-        });
       }
 
-      aborted = checkAbort("applying-load-order");
-      if (aborted) return aborted;
+      /**
+       * ─── NO ABORT CHECK HERE ────────────────────────────────────────
+       * This ran AFTER `deployAndWait`. Returning `aborted` past the deploy
+       * abandons a collection that is installed, enabled and linked into the
+       * game folder, with NO receipt — so nothing knows the mods are ours,
+       * "Uninstall this collection" cannot find them, and the next run
+       * resolves a fresh profile (NS-2).
+       *
+       * That is the exact hole alpha.116 was written to close, and it closed
+       * the one at `checkAbort("deploying")` while leaving this one, one
+       * phase later, doing the same thing. The e2e written alongside it could
+       * not catch it: its fixture's `loadOrder` is empty, so the test never
+       * enters this block.
+       *
+       * Past the deploy a stop skips the remaining WRITES and the run
+       * finishes its bookkeeping — see `stopBeforeWriting`. The load order is
+       * a write, so it is gated there, not here.
+       */
     }
 
     // Record the curator's plugin order in the receipt.
@@ -2902,11 +2999,38 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         if (pluginOrderDrift.misordered.length > 0 && !stopBeforeWriting(
           "plugin order re-pin",
         )) {
-          const actualNames = actual.filter((pl) => pl.enabled).map((pl) => pl.name);
+          /**
+           * ─── THE FULL LISTS, AND THE REAL ENABLED FLAGS ─────────────
+           * Both sides were filtered to ENABLED, and the merged result was
+           * then handed to `applyPluginOrder` with every entry marked
+           * `enabled: true`. Two separate faults came out of that:
+           *
+           *  1. `set-plugin-list` APPENDS anything the list omits, so every
+           *     DISABLED plugin — the curator's and the user's alike — was
+           *     swept to the tail of plugins.txt. Invisible, because
+           *     `comparePluginOrder` only compares enabled plugins, so the
+           *     drift report said the order matched. The user who later ticks
+           *     an optional patch the curator shipped disabled gets it loading
+           *     last instead of where the curator put it.
+           *
+           *  2. The fabricated `enabled: true` fed `applyPluginOrder`'s
+           *     enabled-corrections step, which dispatches whenever the flag
+           *     it is given differs from Vortex's stored one. A plugin the
+           *     curator had deliberately switched OFF would be switched back
+           *     ON and written to disk — one such plugin is enough to change
+           *     what the game does, and that is the exact hazard the pin step
+           *     passes `setEnabled: false` to avoid.
+           *
+           * The re-pin is an ORDERING operation. It has no business asserting
+           * enabled state at all, so it now carries each plugin's real flag
+           * and its assertion is a no-op by construction.
+           */
+          const actualNames = actual.map((pl) => pl.name);
+          const enabledByName = new Map(
+            actual.map((pl) => [pl.name.toLowerCase(), pl.enabled] as const),
+          );
           const merged = repinCuratorOrder(
-            plan.manifest.plugins.order
-              .filter((pl) => pl.enabled)
-              .map((pl) => pl.name),
+            plan.manifest.plugins.order.map((pl) => pl.name),
             actualNames,
           );
           if (orderDiffers(merged, actualNames)) {
@@ -2916,7 +3040,13 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               collectionId: plan.manifest.package.id,
               // The merged sequence, and NO second sort — sorting again would
               // undo exactly what this step just restored.
-              order: merged.map((name) => ({ name, enabled: true })),
+              order: merged.map((name) => ({
+                name,
+                // Vortex's own answer for this plugin, not an assertion of
+                // ours. `?? true` covers a name Vortex has no entry for, and
+                // the corrections step skips those anyway.
+                enabled: enabledByName.get(name.toLowerCase()) ?? true,
+              })),
               skipSort: true,
               ...(ctx.abortSignal !== undefined
                 ? { signal: ctx.abortSignal }
@@ -3156,6 +3286,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       gameIniApplication,
       verifiedOkKeys,
       expectedFilesByCompareKey,
+      ownedByUs,
     });
 
     let receiptPath: string;
@@ -4269,6 +4400,18 @@ function buildReceipt(args: {
    */
   verifiedOkKeys: ReadonlySet<string>;
   expectedFilesByCompareKey: ReadonlyMap<string, EhcollStagingFile[]>;
+  /**
+   * Every mod id this run knows to be ours — the journal for this run, plus
+   * the previous receipt for every run before it.
+   *
+   * The receipt used to derive ownership from `fromDecision` alone, which
+   * describes only THIS run's decision. On a second run of the same release
+   * every mod we installed resolves as `nexus-already-installed`, so a run
+   * that changed nothing rewrote all of them as `adopted` and destroyed the
+   * provenance the first run recorded. The journal is cleared on success, so
+   * the receipt was the last copy.
+   */
+  ownedByUs: ReadonlySet<string>;
 }): InstallReceipt {
   const {
     ctx,
@@ -4281,6 +4424,7 @@ function buildReceipt(args: {
     verifications,
     verifiedOkKeys,
     expectedFilesByCompareKey,
+    ownedByUs,
   } = args;
   const { manifest } = ctx.plan;
   const now = new Date().toISOString();
@@ -4300,9 +4444,21 @@ function buildReceipt(args: {
        * all ours despite its name — and the receipt is what "Uninstall this
        * collection" reads.
        */
-      ownership: m.fromDecision.endsWith("already-installed")
-        ? ("adopted" as const)
-        : ("installed" as const),
+      /**
+       * Ours if we know it is ours, whoever installed it and whenever.
+       *
+       * `ownedByUs` is consulted FIRST and it is monotone: a mod recorded as
+       * ours by any earlier run stays ours here, because ownership is a fact
+       * about the past that this run cannot revoke. Only when no record
+       * claims it does the decision decide, and an `*-already-installed`
+       * decision hands back the USER'S mod id — so `installedMods` is not all
+       * ours despite its name (NS-2).
+       */
+      ownership: ownedByUs.has(m.vortexModId)
+        ? ("installed" as const)
+        : m.fromDecision.endsWith("already-installed")
+          ? ("adopted" as const)
+          : ("installed" as const),
       // Fingerprint of what we left on disk, for drift detection on a later
       // update.
       //
@@ -5400,7 +5556,24 @@ async function tryInstallAlongside(args: {
       name: result.installName,
       vortexModId: result.vortexModId,
       source: installEntry.source,
-      fromDecision: installEntry.fromDecision,
+      /**
+       * OUR decision, not the one belonging to the mod we installed beside.
+       *
+       * `installEntry` describes the USER's copy, and for a mirrored mod it
+       * came from the `*-already-installed` arm. Passing that through made
+       * `buildReceipt` record a mod Event Horizon had just created as
+       * `ownership: "adopted"` — so the next run rebuilt `ownedByUs` without
+       * it, took the not-ours arm again, and called this function a second
+       * time with the same deterministic install name: Vortex's
+       * replace-or-variant dialog, per mod, in an unattended install. And
+       * "adopted" means "MUST NOT be removed", so our own copies were
+       * stranded, enabled and unremovable by the tool that made them.
+       *
+       * This string is the one already journalled at the call site, and it
+       * does not end in `already-installed`, which is the test the receipt
+       * uses.
+       */
+      fromDecision: "mirror-alongside",
     };
   } catch (err) {
     if ((err as Error)?.name === "AbortError" || ctx.abortSignal?.aborted) {

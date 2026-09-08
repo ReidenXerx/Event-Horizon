@@ -59,7 +59,24 @@ async function packageFrom(w: World): Promise<EhcollManifest> {
     { level: "thorough" },
   );
   const { manifest } = buildManifest({
-    snapshot: { gameId: w.gameId, mods: enriched } as never,
+    /**
+     * ─── THE `loadOrder` ENTRY IS LOad-BEARING ─────────────────────────
+     * This fixture used to omit it, so `buildManifest` produced
+     * `loadOrder: []`, the driver's phase 7b is guarded on
+     * `plan.manifest.loadOrder.length > 0`, and the test walked straight past
+     * the block it most needed to enter.
+     *
+     * Inside that block sat a surviving `checkAbort("applying-load-order")`
+     * — AFTER the deploy — returning `kind: "aborted"` with no receipt for a
+     * collection that was fully installed and linked into the game folder.
+     * That is the exact NS-2 hole this file was written to prove closed, and
+     * the fixture chose the one shape that cannot fail (GP-4).
+     */
+    snapshot: {
+      gameId: w.gameId,
+      mods: enriched,
+      loadOrder: [{ modId: MOD.id, pos: 0, enabled: true }],
+    } as never,
     package: {
       id: "00000000-0000-4000-8000-000000000000",
       name: "Stop E2E",
@@ -138,6 +155,10 @@ describe("Stop, pressed after the mods are already deployed", () => {
     // And it must SAY so. A stop that is silently downgraded to "success"
     // with no explanation is the behaviour this replaced.
     expect(result.finishingSkippedNotice).toBeDefined();
+    // The collection is deployed, so a receipt MUST exist whatever the user
+    // pressed — a fully installed collection with no record of itself is the
+    // state provenance depends on not existing (NS-2).
+    expect(result.kind).toBe("success");
     const notice = result.finishingSkippedNotice!.join(" ");
     expect(notice).toMatch(/stopped/i);
     expect(notice).toMatch(/plugin order|ESL flags|game settings/);

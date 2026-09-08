@@ -116,10 +116,35 @@ export function planMirror(args: {
   const restore: MirrorRestore[] = [];
   const unverifiable: string[] = [];
   const wanted = new Set<string>();
+  /**
+   * The same target paths, folded case-INSENSITIVELY, whatever `mode` says.
+   *
+   * This exists to make the DELETE decision independent of the case mode, and
+   * that is not belt-and-braces — it closes a way to destroy a mod's content
+   * and then certify it as perfect.
+   *
+   * `wanted` is keyed with `mode`. Under `"sensitive"`, a curator's
+   * `scripts/foo.pex` and this machine's `Scripts/foo.pex` are two different
+   * keys, so the file is BOTH a missing restore and an unwanted extra. On a
+   * filesystem that is really case-insensitive they are one physical file, and
+   * `applyMirrorPlan` deletes last: it writes the curator's bytes and then
+   * removes them. Zero failures, so `mirrorProvesTarget` returns true and the
+   * receipt records a drift reference for a folder we just emptied.
+   *
+   * The mode can be wrong in that direction — the probe falls back to
+   * `"sensitive"` whenever it cannot answer, deliberately, because that is the
+   * safe guess for a COMPARISON. It is the unsafe guess for a DELETION, and
+   * the fix is not a better probe but a rule that does not depend on one: a
+   * file whose name matches a target under case folding is never provably
+   * extra, on any filesystem. Under `"insensitive"` this set is identical to
+   * `wanted` and the filter is a no-op.
+   */
+  const wantedInsensitive = new Set<string>();
   let matched = 0;
 
   for (const want of target) {
     wanted.add(key(want.path, mode));
+    wantedInsensitive.add(key(want.path, "insensitive"));
 
     if (want.sha256 === undefined) {
       // No recorded hash: we cannot say whether this machine's copy is right,
@@ -155,6 +180,8 @@ export function planMirror(args: {
 
   const extra = current
     .filter((file) => !wanted.has(key(file.path, mode)))
+    // Never delete a file that only looks extra because of letter case.
+    .filter((file) => !wantedInsensitive.has(key(file.path, "insensitive")))
     .map((file) => file.path);
 
   if (extra.length === 0) {
@@ -214,7 +241,14 @@ export function planMirror(args: {
  *
  *   - nothing unverifiable — every target file had a hash to check against;
  *   - nothing failed       — every write landed and was verified on arrival;
- *   - no removal withheld  — no extra files were left in place.
+ *   - no removal withheld  — no extra files were left in place;
+ *   - not aborted          — the plan ran to the end.
+ *
+ * The last one is not redundant. `applyMirrorPlan` returns early on a stop
+ * with whatever it had done so far and an EMPTY failure list, because nothing
+ * failed — it simply never happened. Without this condition a user pressing
+ * Stop twelve files into a four-hundred-file mirror certifies the other three
+ * hundred and eighty-eight as byte-perfect.
  *
  * Any one of them and the disk is merely nearer the target, and a drift
  * reference for a disk nobody proved is the fiction the receipt rules refuse
@@ -222,12 +256,13 @@ export function planMirror(args: {
  */
 export function mirrorProvesTarget(
   plan: MirrorPlan,
-  outcome: { failures: readonly unknown[] },
+  outcome: { failures: readonly unknown[]; aborted?: boolean },
 ): boolean {
   return (
     plan.unverifiable.length === 0 &&
     plan.removalWithheld === undefined &&
-    outcome.failures.length === 0
+    outcome.failures.length === 0 &&
+    outcome.aborted !== true
   );
 }
 

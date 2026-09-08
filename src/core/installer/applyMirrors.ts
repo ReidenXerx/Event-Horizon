@@ -48,6 +48,22 @@ export type MirrorOutcome = {
   removed: number;
   /** What could not be done, and why. Never thrown away. */
   failures: { path: string; why: string }[];
+  /**
+   * The run stopped early instead of finishing the plan.
+   *
+   * Distinct from a failure, and the distinction is the point: an aborted run
+   * has an empty `failures` list because nothing went wrong — it just did not
+   * happen. `mirrorProvesTarget` reads this so a stopped mirror cannot be
+   * certified as an exact reproduction.
+   */
+  aborted?: boolean;
+  /**
+   * Deletions the plan called for and this run deliberately did not perform.
+   *
+   * Set when a restore failed: see the delete loop for why proceeding would
+   * be worse than stopping.
+   */
+  removalsSkipped?: number;
 };
 
 /** Where a mirrored file lives inside the package. The name is its hash. */
@@ -69,7 +85,10 @@ export async function applyMirrorPlan(args: {
   const out: MirrorOutcome = { restored: 0, removed: 0, failures: [] };
 
   for (const file of plan.restore) {
-    if (signal?.aborted === true) return out;
+    if (signal?.aborted === true) {
+      out.aborted = true;
+      return out;
+    }
     try {
       await restoreOne(stagingRoot, ehcollPath, file.path, file.sha256);
       out.restored += 1;
@@ -84,8 +103,30 @@ export async function applyMirrorPlan(args: {
   // Deletions last. `planMirror` has already withheld them entirely unless the
   // curator's listing is provably complete, so reaching here means the extra
   // files are known to be extra rather than merely unmentioned.
+  //
+  // ─── BUT NOT AFTER A FAILED RESTORE ──────────────────────────────────────
+  // The two loops are not independent. A restore that failed means the bytes
+  // meant to replace something are NOT on disk, and deleting on top of that
+  // turns "this mod does not match the curator's copy" into "this mod is
+  // missing files it had before Event Horizon ran" — a file the user owned,
+  // gone, with nothing put in its place.
+  //
+  // It is not a hypothetical pairing either: a rename or a case change makes
+  // one file both a restore and a delete, so the failed write and the delete
+  // are frequently the SAME file. Being closer to the target is always better
+  // than being short of where we started, so the whole pass stands down and
+  // says so; `mirrorProvesTarget` already refuses to certify this mod because
+  // `failures` is non-empty.
+  if (out.failures.length > 0) {
+    out.removalsSkipped = plan.remove.length;
+    return out;
+  }
+
   for (const rel of plan.remove) {
-    if (signal?.aborted === true) return out;
+    if (signal?.aborted === true) {
+      out.aborted = true;
+      return out;
+    }
     try {
       await fsp.rm(path.join(stagingRoot, ...rel.split("/")), { force: true });
       out.removed += 1;
@@ -141,14 +182,33 @@ async function restoreOne(
       );
     }
     // `segmentsOf` rather than a private split: one module decides what a
-            // path separator is, and this is the line that turns a string from
-            // someone else's package into a write on this machine.
+    // path separator is, and this is the line that turns a string from
+    // someone else's package into a write on this machine.
     const dest = path.join(stagingRoot, ...segmentsOf(relativePath));
     await fsp.mkdir(path.dirname(dest), { recursive: true });
-    // Replace rather than write in place: a partial write over a good file is
-    // the one outcome worse than not restoring it.
-    await fsp.rm(dest, { force: true });
-    await fsp.copyFile(staged, dest);
+    /**
+     * Land it atomically: copy BESIDE the destination, then rename over it.
+     *
+     * The previous form was `rm(dest)` then `copyFile(staged, dest)`, under a
+     * comment claiming it avoided "a partial write over a good file". It did
+     * not — it guaranteed the good file was gone first, so an ENOSPC or a
+     * kill part-way through `copyFile` left a TRUNCATED file where a correct
+     * one had been, and a truncated file passes a size check no more than a
+     * missing one but looks present to anything that only lists names.
+     *
+     * The temp lives in the destination's own directory so the rename is a
+     * same-filesystem metadata operation rather than a second copy, and it
+     * carries the target's name so a leaked one is obvious in a support log.
+     * On any failure the original is still there, untouched.
+     */
+    const tmp = `${dest}.ehcoll-restore-tmp`;
+    try {
+      await fsp.copyFile(staged, tmp);
+      await fsp.rename(tmp, dest);
+    } catch (err) {
+      await fsp.rm(tmp, { force: true }).catch(() => undefined);
+      throw err;
+    }
   } finally {
     await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
   }
@@ -168,14 +228,26 @@ export function describeMirrorOutcome(
   if (
     outcome.restored === 0 &&
     outcome.removed === 0 &&
-    outcome.failures.length === 0
+    outcome.failures.length === 0 &&
+    outcome.aborted !== true &&
+    outcome.removalsSkipped === undefined
   ) {
     return undefined;
   }
   const parts: string[] = [];
   if (outcome.restored > 0) parts.push(`${outcome.restored} file(s) written`);
   if (outcome.removed > 0) parts.push(`${outcome.removed} removed`);
+  if (parts.length === 0) parts.push("nothing applied");
   let line = `"${modName}": ${parts.join(", ")}.`;
+  if (outcome.aborted === true) {
+    line += ` STOPPED before the plan finished, so this mod is part-mirrored.`;
+  }
+  if (outcome.removalsSkipped !== undefined) {
+    line +=
+      ` ${outcome.removalsSkipped} deletion(s) were NOT performed because a ` +
+      `file could not be restored first — nothing was removed that we could ` +
+      `not replace.`;
+  }
   if (outcome.failures.length > 0) {
     const named = outcome.failures
       .slice(0, 3)

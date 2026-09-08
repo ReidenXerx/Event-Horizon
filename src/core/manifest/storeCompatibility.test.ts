@@ -37,6 +37,20 @@ describe("spotting a script-extender plugin", () => {
     // and listing it would send the user re-downloading the wrong mods.
     expect(isScriptExtenderPlugin("bin/whatever.dll")).toBe(false);
     expect(isScriptExtenderPlugin("SKSE/Plugins/readme.txt")).toBe(false);
+    // A mod merely NAMED after the extender is not the extender. The binary
+    // rule matches the `skse64_`/`skse.`/`f4se_` prefix shape, not the word.
+    expect(isScriptExtenderPlugin("textures/sksemenu/icon.dds")).toBe(false);
+  });
+
+  it("recognises the extender's own binaries and Address Library's .bin", () => {
+    expect(isScriptExtenderPlugin("skse64_loader.exe")).toBe(true);
+    expect(isScriptExtenderPlugin("skse64_steam_loader.dll")).toBe(true);
+    expect(isScriptExtenderPlugin("f4se_loader.exe")).toBe(true);
+    expect(
+      isScriptExtenderPlugin("SKSE/Plugins/versionlib-1-6-1170-0.bin"),
+    ).toBe(true);
+    // Still directory-scoped for payloads: a .bin elsewhere is not ours.
+    expect(isScriptExtenderPlugin("meshes/foo.bin")).toBe(false);
   });
 });
 
@@ -46,9 +60,45 @@ describe("which mods the user has to re-download", () => {
     const mods = [
       mod("Honed Metal", ["SKSE/Plugins/HonedMetal.dll", "readme.txt"]),
       mod("Some Textures", ["textures/a.dds"]),
-      mod("Address Library", ["SKSE/Plugins/versionlib.bin"]),
     ];
     expect(scriptExtenderMods(mods).map((m) => m.name)).toEqual(["Honed Metal"]);
+  });
+
+  it("includes Address Library, whose payload is .bin and not .dll", () => {
+    /**
+     * This test asserted the OPPOSITE until an audit caught it: the original
+     * `.dll`-only rule excluded `versionlib-*.bin`, and the test pinned that
+     * exclusion as correct.
+     *
+     * It is not. Address Library is the version database every other SKSE
+     * plugin resolves its addresses THROUGH, and it is built per runtime — so
+     * a user who re-downloads forty DLLs and keeps the Steam version-lib has
+     * fixed nothing, and the list that omitted it was the least useful list
+     * possible: everything except the file that binds the rest.
+     */
+    const mods = [mod("Address Library", ["SKSE/Plugins/versionlib-1-6-1170-0.bin"])];
+    expect(scriptExtenderMods(mods).map((m) => m.name)).toEqual([
+      "Address Library",
+    ]);
+  });
+
+  it("includes the script extender ITSELF, which lives at the game root", () => {
+    /**
+     * SKSE64 deploys to the game root as a `dinput` mod, so none of its files
+     * is under `SKSE/Plugins` and the directory rule could never see it. It is
+     * the most store-specific thing in the collection — with the wrong build
+     * the game does not launch at all — so naming forty plugin mods while
+     * omitting the loader tells the user to do everything except the one step
+     * that has to come first.
+     */
+    const mods = [
+      mod("SKSE64", [
+        "skse64_loader.exe",
+        "skse64_1_6_1170.dll",
+        "skse64_steam_loader.dll",
+      ]),
+    ];
+    expect(scriptExtenderMods(mods).map((m) => m.name)).toEqual(["SKSE64"]);
   });
 
   it("sorts them, so two reports can be compared", () => {

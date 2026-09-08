@@ -2518,13 +2518,32 @@ export function DoneStep(props: DoneStepProps): JSX.Element {
   let accent: string;
 
   if (result.kind === "success") {
-    badge = (
+    /**
+     * A run the user STOPPED after the deploy still returns `success`, and
+     * correctly — the mods are installed and the receipt is written, which is
+     * the whole reason the driver refuses to unwind past that point (NS-2).
+     * But it did not do everything, and a green "Success" pill is a claim
+     * that it did.
+     *
+     * `finishingSkippedNotice` is present only on that path, so it is also
+     * the test for it.
+     */
+    const stoppedLate =
+      result.finishingSkippedNotice !== undefined &&
+      result.finishingSkippedNotice.length > 0;
+    badge = stoppedLate ? (
+      <Pill intent="warning" withDot>
+        Stopped
+      </Pill>
+    ) : (
       <Pill intent="success" withDot>
         Success
       </Pill>
     );
-    headline = `Installed ${bundle.plan.manifest.package.name} v${bundle.plan.manifest.package.version}`;
-    accent = "var(--eh-success)";
+    headline = stoppedLate
+      ? `Installed ${bundle.plan.manifest.package.name} v${bundle.plan.manifest.package.version} — finishing steps skipped`
+      : `Installed ${bundle.plan.manifest.package.name} v${bundle.plan.manifest.package.version}`;
+    accent = stoppedLate ? "var(--eh-warning)" : "var(--eh-success)";
     body = (
       <SuccessBody
         result={result}
@@ -2857,6 +2876,61 @@ function PluginFlagNotice(props: {
  * collection that will play wrong — and that is invisible from the file list,
  * which is exactly why it needs saying.
  */
+/**
+ * What a stop past the point of no return did NOT do.
+ *
+ * The driver has produced this since alpha.116 and nothing rendered it, so
+ * the entire user-facing half of that change was missing: a user who pressed
+ * Stop at 90% saw a green "Success" and was never told that the plugin order,
+ * the ESL flags and the game settings had been skipped — the three steps that
+ * decide whether the game launches and whether it launches as the curator
+ * intended.
+ *
+ * First in the stack. It is the frame for every other card below it, because
+ * a phase that was skipped reports itself as a phase that found nothing.
+ */
+function FinishingSkippedNotice(props: {
+  lines: readonly string[];
+}): JSX.Element | null {
+  if (props.lines.length === 0) return null;
+  const [summary, ...rest] = props.lines;
+  return (
+    <NoticeCard
+      label="Stopped before finishing"
+      intent="warning"
+      summary={summary ?? ""}
+      accentBorder="var(--eh-warning)"
+    >
+      <NoticeLines lines={rest} moreLabel="What was skipped" />
+    </NoticeCard>
+  );
+}
+
+/**
+ * What the staging mirror did, and what it could not.
+ *
+ * Also produced and never rendered. Mirroring is the one pass that WRITES
+ * INTO and DELETES FROM a mod folder, so a mod it could not fully reconcile
+ * is a mod that does not match the curator's copy — and the user has no other
+ * way to learn which.
+ */
+function MirrorNotice(props: {
+  lines: readonly string[];
+}): JSX.Element | null {
+  if (props.lines.length === 0) return null;
+  const [summary, ...rest] = props.lines;
+  return (
+    <NoticeCard
+      label="Mirrored files"
+      intent="warning"
+      summary={summary ?? ""}
+      accentBorder="var(--eh-warning)"
+    >
+      <NoticeLines lines={rest} moreLabel="Per mod" />
+    </NoticeCard>
+  );
+}
+
 function PluginOrderNotAppliedNotice(props: {
   lines: readonly string[];
 }): JSX.Element | null {
@@ -3205,6 +3279,13 @@ function SuccessBody(props: {
         First of everything. This is the only card that can mean the game will
         not launch at all; a broken download is recoverable by comparison.
       */}
+      {/*
+        ABOVE the plugin-flag card, because it explains why that one is empty.
+        A stop past the deploy skips the ESL-flag repair, and a skipped repair
+        describes itself as "0 corrected" — indistinguishable from "checked,
+        all correct" unless this card says the check never ran.
+      */}
+      <FinishingSkippedNotice lines={result.finishingSkippedNotice ?? []} />
       <PluginFlagNotice lines={result.pluginFlagNotice ?? []} />
       <DamagedArchiveNotice lines={result.damagedArchiveNotice ?? []} />
       {/*
@@ -3221,6 +3302,7 @@ function SuccessBody(props: {
       />
       <ModTypeNotice lines={result.modTypeNotice ?? []} />
       <PluginOrderNotice lines={result.pluginOrderNotice ?? []} />
+      <MirrorNotice lines={result.mirrorNotice ?? []} />
       <StagingDriftNotice lines={result.stagingDriftNotice ?? []} />
       <CuratorReportsNotice reports={result.curatorReports ?? []} />
       <div

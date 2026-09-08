@@ -1,6 +1,6 @@
 {
   "name": "vortex-event-horizon",
-  "version": "0.1.0-alpha.124",
+  "version": "0.1.0-alpha.125",
   "description": "Vortex extension – Event Horizon: capture and reproduce a curator's exact mod state before Vortex's collection black hole loses it.",
   "repository": {
     "type": "git",
