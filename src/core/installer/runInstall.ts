@@ -175,6 +175,7 @@ import {
   orderDiffers,
   repinCuratorOrder,
 } from "./repinPluginOrder";
+import type { PluginOrderEntry } from "./checkPluginOrder";
 import { RunAccumulator } from "./runAccumulator";
 import { getGameDirectory } from "../manifest/externalDependencies";
 import {
@@ -606,9 +607,14 @@ export async function runInstall(ctx: DriverContext): Promise<InstallResult> {
    * `escapedProfileId` is how the profile id gets out: `runInstallImpl` owns
    * it as a local, and on a throw there is no result to carry it.
    */
-  const escaped: { profileId?: string } = {};
+  const escaped: { profileId?: string; installed: string[] } = {
+    installed: [],
+  };
   ctx.onProfileResolved = (profileId: string): void => {
     escaped.profileId = profileId;
+  };
+  ctx.onModInstalled = (vortexModId: string): void => {
+    escaped.installed.push(vortexModId);
   };
 
   let result: InstallResult;
@@ -625,7 +631,17 @@ export async function runInstall(ctx: DriverContext): Promise<InstallResult> {
         ? { partialProfileId: escaped.profileId }
         : {}),
       error: formatError(err),
-      installedSoFar: [],
+      /**
+       * What actually got installed before the throw, not an empty list.
+       *
+       * `installedMods` is a local of `runInstallImpl` and an exception
+       * carries none of it out, so this used to be `[]` unconditionally —
+       * and `describeInstallAttempt` leads with that number, because how far
+       * a run got is what decides what the user does next. It read "0 of 954
+       * mods were installed before it stopped. Those mods are still on your
+       * machine" in the same sentence, and pointed at "start again".
+       */
+      installedSoFar: [...escaped.installed],
     });
     throw err;
   }
@@ -742,6 +758,15 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
   const removedMods: RemovedModReportEntry[] = [];
   const carriedMods: CarriedModReportEntry[] = [];
   const tempArchivesToCleanup: string[] = [];
+  /**
+   * Did THIS run write the install marker?
+   *
+   * The `finally` that clears it covers thirteen return paths, and several of
+   * them return before the marker is ever written. Since the marker is keyed
+   * by packageId rather than by run, clearing one this run did not create
+   * destroys the record left by a previous, killed run.
+   */
+  let markerWritten = false;
   let activeProfileId: string | undefined;
   let activeProfileName: string | undefined;
   /**
@@ -1161,6 +1186,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     // finally known. Nothing reads it to decide what to install — that stays
     // with the resolver's re-match, which is evidence-based. It only lets the
     // next launch explain itself.
+    markerWritten = true;
     await writeInstallMarker(ctx.appDataPath, {
       packageId: plan.manifest.package.id,
       packageName: plan.manifest.package.name,
@@ -1372,6 +1398,9 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       }
 
       installedMods.push(installEntry);
+      // Also out through the escape hatch, so a throw can still say how far
+      // this run got. See `escaped` in `runInstall`.
+      ctx.onModInstalled?.(installEntry.vortexModId);
       run.noteModSucceeded();
       enableModInProfile(api, activeProfileId, installEntry.vortexModId);
 
@@ -2643,6 +2672,24 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       );
     }
 
+    /**
+     * ─── THE LAST CHANCE TO STOP ────────────────────────────────────────
+     * The mirror loop `break`s on a stop, leaving the remaining mods
+     * unreconciled — and there was NO abort observation between that break
+     * and the deploy below. So a user who pressed Stop during mirroring got
+     * the half-mirrored bytes linked into their game folder and a full
+     * success receipt claiming all of them were installed, and
+     * `finishingSkipped` could not name it because that array does not exist
+     * until after the deploy.
+     *
+     * The last pre-deploy check before this was `applying-userlist`, roughly
+     * three hundred lines and two write phases earlier. Here it is safe and
+     * correct to unwind: nothing is deployed yet, so returning `aborted`
+     * abandons nothing (NS-2).
+     */
+    aborted = checkAbort("mirroring");
+    if (aborted) return aborted;
+
     // ── 7. deploy ───────────────────────────────────────────────────
     reportProgress("deploying", 0, 1, "Deploying mods...");
 
@@ -2909,7 +2956,21 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     //
     // After the order is applied, because both write files the game reads and
     // this one must land on the deployed copy.
-    const pluginFlagRepair = stopBeforeWriting("ESL flags")
+    /**
+     * Whether the repair actually RAN.
+     *
+     * The skipped value is a zeroed `PluginFlagRepair`, and a zeroed struct is
+     * indistinguishable from "checked, and every flag was already correct" —
+     * which is the wrong default for the one step that decides whether the
+     * game starts at all. `describePluginFlagRepair` falls through every
+     * branch on it and returns no notice, and the log said `corrected: 0` as
+     * though it were a finding.
+     *
+     * The user now learns it from `finishingSkippedNotice`, which names "ESL
+     * flags"; this flag keeps the LOG honest about the same thing.
+     */
+    const pluginFlagRepairRan = !stopBeforeWriting("ESL flags");
+    const pluginFlagRepair = !pluginFlagRepairRan
       ? // Typed, NOT cast. An `as unknown as` here hid a shape mismatch —
         // `failures` was missing and `missing` had the wrong type — and the
         // driver threw on the very path this guard exists to make safe.
@@ -2945,6 +3006,14 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
      * produced a log that could not name a single file, and the two directions
      * (which have opposite consequences) were one number.
      */
+    if (!pluginFlagRepairRan) {
+      ehLog("warn", "plugins.light-flags.skipped", {
+        consequence:
+          "you stopped the install, so the ESL flags were NOT checked. This " +
+          "is not the same as finding them all correct: if the game refuses " +
+          "to start, run the install again and let it finish.",
+      });
+    } else
     ehLog("info", "plugins.light-flags", {
       corrected: pluginFlagRepair.corrected,
       set: pluginFlagRepair.set,
@@ -2996,6 +3065,9 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
          * already matches costs a Vortex round trip and a plugins.txt rewrite
          * for nothing.
          */
+        // Set when the re-pin's write could not be confirmed on disk, so
+        // the drift number reported afterwards is the pre-re-pin one.
+        let repinUnconfirmed = false;
         if (pluginOrderDrift.misordered.length > 0 && !stopBeforeWriting(
           "plugin order re-pin",
         )) {
@@ -3060,13 +3132,53 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               notes: repin.notes,
             });
 
-            // Re-measure against what is actually on disk now. Reporting the
-            // BEFORE number would claim a fix nobody verified.
-            const after = await readUserPluginsTxt(
-              plan.manifest.game.id,
-              discoveredStore(api.getState(), plan.manifest.game.id),
-            );
-            if (after !== undefined) {
+            /**
+             * ─── WAIT FOR THE WRITE, THEN MEASURE ───────────────────────
+             * Re-measuring against disk is right; doing it immediately was
+             * not. `applyPluginOrder` with `skipSort: true` emits
+             * `set-plugin-list` and `collection-postprocess-complete` and
+             * returns without awaiting anything — the emits are
+             * fire-and-forget, and Vortex's persistor flushes to plugins.txt
+             * asynchronously. So the read landed a few microtasks later and
+             * returned the file LOOT had left.
+             *
+             * The result was the worst available: `pluginOrderDrift` was
+             * overwritten with the BEFORE number, the log recorded the re-pin
+             * as having achieved nothing, and the user notice built from it
+             * told them to sort their plugins in Vortex — the one action that
+             * destroys the order the re-pin had just restored.
+             *
+             * (The FIRST drift read gets away with an immediate read only by
+             * accident: `applyPluginLightFlags` does hundreds of file reads
+             * between that emit and it.)
+             *
+             * So poll until the file on disk matches what we asked for, and
+             * if it never does, say the number is UNVERIFIED rather than
+             * reporting a measurement of a write that had not happened.
+             */
+            const repinDeadline = Date.now() + 15_000;
+            let after: PluginOrderEntry[] | undefined;
+            let repinLanded = false;
+            for (;;) {
+              after = await readUserPluginsTxt(
+                plan.manifest.game.id,
+                discoveredStore(api.getState(), plan.manifest.game.id),
+              );
+              if (
+                after !== undefined &&
+                !orderDiffers(
+                  after.map((pl) => pl.name),
+                  merged,
+                )
+              ) {
+                repinLanded = true;
+                break;
+              }
+              if (Date.now() >= repinDeadline) break;
+              await delay(250);
+            }
+
+            if (repinLanded && after !== undefined) {
               pluginOrderDrift = comparePluginOrder(
                 plan.manifest.plugins.order,
                 after,
@@ -3074,6 +3186,18 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               ehLog("info", "plugins.order-drift.after-repin", {
                 compared: pluginOrderDrift.compared,
                 misordered: pluginOrderDrift.misordered.length,
+              });
+            } else {
+              repinUnconfirmed = true;
+              ehLog("warn", "plugins.order-repin.unconfirmed", {
+                waitedMs: 15_000,
+                readBack: after === undefined ? "unreadable" : "did-not-match",
+                consequence:
+                  "the re-pinned order was written to Vortex but plugins.txt " +
+                  "did not come back matching it within the wait, so the " +
+                  "drift number below is NOT a measurement of the re-pin — " +
+                  "it is the number from before it, and may be wrong in " +
+                  "either direction",
               });
             }
           }
@@ -3431,7 +3555,24 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     // In the `finally` deliberately: runInstall has THIRTEEN return paths,
     // and clearing at each of them is a guarantee that lasts exactly until
     // someone adds a fourteenth.
-    await clearInstallMarker(ctx.appDataPath, plan.manifest.package.id);
+    /**
+     * Only if THIS run wrote one.
+     *
+     * The marker is keyed by packageId, not by run, so an unconditional clear
+     * here deleted the marker left by a previously KILLED run — which is the
+     * only record that run leaves, because no `finally` executes on a power
+     * cut and no attempt is written.
+     *
+     * The path: power cut at mod 700, marker survives holding the profile
+     * with 700 mods. The user reopens Vortex, starts the install again, and
+     * cancels during "Validating install plan…" — which returns BEFORE
+     * `writeInstallMarker`. This `finally` then deleted the only pointer to
+     * their 700 mods, and the attempt written alongside it names no profile
+     * either, so the next run forks a fresh one and orphans all of it.
+     */
+    if (markerWritten) {
+      await clearInstallMarker(ctx.appDataPath, plan.manifest.package.id);
+    }
 
     // Cleanup of bundled-extract temp dirs is fire-and-forget. Each
     // entry is the **directory** returned by extractBundledFromEhcoll

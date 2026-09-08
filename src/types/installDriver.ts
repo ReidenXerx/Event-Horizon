@@ -150,6 +150,17 @@ export type DriverContext = {
    * by callers.
    */
   onProfileResolved?: (profileId: string) => void;
+  /**
+   * Set by the harness, not by callers.
+   *
+   * The companion to `onProfileResolved`, and for the same reason: on a THROW
+   * there is no result to carry anything out of the driver. Without it a
+   * crash after nine hundred successful installs recorded
+   * `installedSoFar: []`, and the Collections panel told the user "0 of 954
+   * mods were installed before it stopped" while 954 sat installed and
+   * deployed on their disk.
+   */
+  onModInstalled?: (vortexModId: string) => void;
   /** Vortex API. The driver dispatches actions and emits events through it. */
   api: import("@nexusmods/vortex-api").types.IExtensionApi;
   /** The fully-resolved plan from `resolveInstallPlan`. */
@@ -224,6 +235,7 @@ export type DriverPhase =
   | "applying-mod-rules"
   | "applying-load-order"
   | "applying-userlist"
+  | "mirroring"
   | "deploying"
   | "writing-receipt"
   | "complete"

@@ -49,6 +49,7 @@ import {
 } from "../../core/installer/installMarker";
 import type { EventHorizonRoute } from "../routes";
 import { useApi } from "../state";
+import { useEHRuntime } from "../runtime/useEHRuntime";
 import { EXTENSION_VERSION } from "../version";
 import { getVortexUserDataPath } from "../../core/paths";
 
@@ -294,6 +295,8 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
   const reportError = useErrorReporter();
   const showToast = useToast();
   const api = useApi();
+  // Whether an install is running RIGHT NOW — see the interrupted panel below.
+  const { installBusy } = useEHRuntime();
 
   const [state, setState] = React.useState<PageState>({ kind: "loading" });
   const [selected, setSelected] = React.useState<InstallReceipt | undefined>(
@@ -500,10 +503,26 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
 
   return (
     <div className="eh-page">
-      <InterruptedInstalls
-        markers={state.interrupted}
-        onResume={(): void => props.onNavigate("install")}
-      />
+      {/*
+        ─── NOT WHILE ONE IS ACTUALLY RUNNING ──────────────────────────────
+        An `InstallMarker` is written when the run starts and cleared when it
+        ends, and it carries no pid, no session token and no heartbeat — so
+        the marker of a run that is HAPPILY IN PROGRESS is byte-identical to
+        one left by a crash. Forty minutes into a 1,755-mod install this panel
+        told the user "Installing X was interrupted 40 minutes ago — Vortex
+        closed before it finished" and offered them a "Run the install again"
+        button, which is how you get two concurrent installs of one collection
+        — the shape sequential installation exists to prevent.
+
+        `installBusy` is the live answer, and it is already tracked; it simply
+        was not consulted here.
+      */}
+      {!installBusy && (
+        <InterruptedInstalls
+          markers={state.interrupted}
+          onResume={(): void => props.onNavigate("install")}
+        />
+      )}
       <FailedAttempts
         attempts={state.failedAttempts}
         onRetry={(): void => props.onNavigate("install")}
@@ -905,6 +924,43 @@ function ReceiptDetailModal(props: {
       unknownOwnership: receipt.mods.filter((m) => m.ownership === undefined)
         .length,
     });
+    /**
+     * ─── NOTHING TO REMOVE IS AN ANSWER, NOT A NO-OP ────────────────────
+     * `ownership` is absent on every receipt written before alpha.111, and
+     * absent means UNKNOWN, which this correctly treats as theirs (NS-2). So
+     * on a legacy receipt `ours` is empty — and the handler used to run an
+     * empty loop, DELETE THE RECEIPT anyway, and close the modal. The user
+     * had just been told 1,755 mods would be removed; nothing was; the
+     * collection vanished from the list; and the receipt — the only record
+     * linking those 1,755 mods to this collection, and after the ownership
+     * fix the only surviving provenance — was gone.
+     *
+     * The docblock above already said "the remedy for being too careful is a
+     * message". This is that message.
+     */
+    if (ours.length === 0) {
+      ehLog("warn", "collection.uninstall.refused-nothing-ours", {
+        packageId: receipt.packageId,
+        total: receipt.mods.length,
+      });
+      reportError(
+        new Error(
+          `This receipt records ${receipt.mods.length} mod(s) but does not say ` +
+            `which of them Event Horizon installed, so none can be safely ` +
+            `removed — every one of them may be a mod you already had. ` +
+            `Receipts written before this tracking existed are in that state. ` +
+            `Re-installing the collection produces a receipt that records it, ` +
+            `and the receipt has been LEFT IN PLACE so nothing is lost.`,
+        ),
+        {
+          title: "Nothing can be safely uninstalled",
+          context: { step: "uninstall", packageId: receipt.packageId },
+        },
+      );
+      setBusy(false);
+      return;
+    }
+
     setBusy(true);
     setProgress({ current: 0, total: ours.length });
     try {
@@ -928,7 +984,26 @@ function ReceiptDetailModal(props: {
         }
       }
       const appData = getVortexUserDataPath();
-      await deleteReceipt(appData, receipt.packageId);
+      /**
+       * Only when the receipt no longer describes anything on disk.
+       *
+       * Mods left alone are mods the user still has, and this file is the one
+       * thing that can identify them as belonging to this collection later.
+       * Deleting it while any of them survive throws away the ability to
+       * answer "where did these come from" for good.
+       */
+      if (notOurs === 0) {
+        await deleteReceipt(appData, receipt.packageId);
+      } else {
+        ehLog("info", "collection.uninstall.receipt-kept", {
+          packageId: receipt.packageId,
+          removed: ours.length,
+          leftAlone: notOurs,
+          why:
+            "mods this receipt covers are still installed, and it is the " +
+            "only record of where they came from",
+        });
+      }
       onUninstalled();
     } catch (err) {
       reportError(err, {
@@ -1156,12 +1231,39 @@ function UninstallConfirmModal(props: {
           lineHeight: "var(--eh-leading-relaxed)",
         }}
       >
-        Event Horizon will remove every mod recorded in this receipt
-        {props.receipt !== undefined &&
-          ` (${props.receipt.mods.length} mod${props.receipt.mods.length === 1 ? "" : "s"})`}{" "}
-        and delete the receipt file. The Vortex profile itself is NOT
-        deleted — switch to it manually if you want to inspect what
-        survives.
+        {(() => {
+          /**
+           * The number that used to be here was `receipt.mods.length` — every
+           * mod in the receipt — while the handler removes only the ones
+           * Event Horizon actually INSTALLED. On a real 1,755-mod install
+           * that is 1,755 promised against 164 removed, and on a receipt
+           * written before ownership was tracked it is 1,755 against none.
+           *
+           * A confirmation dialog is a promise about what the button does.
+           */
+          const mods = props.receipt?.mods ?? [];
+          const ours = mods.filter((m) => m.ownership === "installed").length;
+          const theirs = mods.length - ours;
+          if (mods.length === 0) return "This receipt records no mods.";
+          if (ours === 0) {
+            return (
+              `This receipt records ${mods.length} mod(s) but does not say which ` +
+              `of them Event Horizon installed, so NONE will be removed — each ` +
+              `one may be a mod you already had. The receipt will be kept.`
+            );
+          }
+          return (
+            `Event Horizon will remove the ${ours} mod(s) it installed for this ` +
+            `collection.` +
+            (theirs > 0
+              ? ` The other ${theirs} were already on your machine and will be ` +
+                `left exactly as they are, along with the receipt that records ` +
+                `them.`
+              : ` The receipt file will be deleted.`) +
+            ` The Vortex profile itself is NOT deleted — switch to it manually ` +
+            `if you want to inspect what survives.`
+          );
+        })()}
       </p>
     </Modal>
   );

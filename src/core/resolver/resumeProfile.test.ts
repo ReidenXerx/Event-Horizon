@@ -51,6 +51,78 @@ const skyrimProfiles = {
   [PROFILE_ID]: { gameId: "skyrimse", name: "Meridia Panties (Event Horizon v1.0.10)" },
 };
 
+describe("an unusable candidate must not hide a usable one behind it", () => {
+  /**
+   * `resumeCandidates` deliberately ranks every ATTEMPT ahead of every
+   * MARKER, and this function used to implement that preference as
+   * `attempts.find(a => a.packageId === packageId)` — the first record with a
+   * matching packageId, then a verdict from that record alone.
+   *
+   * Preference implemented as exclusion. `packageId` is per-COLLECTION, not
+   * per-release, and attempts are cleared only on success, so a stale
+   * unusable record sits in front of a perfectly good one and the good one is
+   * never looked at. Both refusal arms are reachable this way, and each ends
+   * in a forked profile where the user's already-installed mods read
+   * "Disabled" — the exact failure markers exist to prevent.
+   *
+   * The old tests could not see it: every "both records exist" case used an
+   * attempt that was itself fully usable, so the first match was always the
+   * right one (GP-4).
+   */
+  it("resumes past a STALE-VERSION attempt into the marker behind it", () => {
+    const markerProfile = "aaaaaaaa-0000-4000-8000-000000000000";
+    const result = resumableProfileFromAttempts(
+      stateWith({
+        ...skyrimProfiles,
+        [markerProfile]: { gameId: "skyrimse", name: "Marker profile" },
+      }),
+      "skyrimse",
+      PACKAGE_ID,
+      VERSION,
+      [
+        // A failed install of an OLDER release, never cleared.
+        attempt({ packageVersion: "0.9.0", profileId: PROFILE_ID }),
+        // The killed run of the CURRENT release, holding the real work.
+        attempt({ packageVersion: VERSION, profileId: markerProfile }),
+      ],
+    );
+    expect(result).toEqual({
+      kind: "resume",
+      id: markerProfile,
+      name: "Marker profile",
+    });
+  });
+
+  it("resumes past a PROFILE-LESS attempt into the marker behind it", () => {
+    // A run cancelled at preflight records an attempt with no profile at all.
+    const result = resumableProfileFromAttempts(
+      stateWith(skyrimProfiles),
+      "skyrimse",
+      PACKAGE_ID,
+      VERSION,
+      [attempt({ profileId: undefined }), attempt()],
+    );
+    expect(result.kind).toBe("resume");
+  });
+
+  it("still refuses when NO candidate qualifies, and says why", () => {
+    // The preference must not become "resume anything". With every candidate
+    // unusable the answer is still a refusal, and it is the most specific one
+    // available — from the highest-ranked candidate.
+    const result = resumableProfileFromAttempts(
+      stateWith(skyrimProfiles),
+      "skyrimse",
+      PACKAGE_ID,
+      VERSION,
+      [
+        attempt({ packageVersion: "0.9.0" }),
+        attempt({ packageVersion: "0.8.0" }),
+      ],
+    );
+    expect(result).toEqual({ kind: "refused", why: "version-changed" });
+  });
+});
+
 describe("resumableProfileFromAttempts", () => {
   it("finds the profile the interrupted attempt was filling", () => {
     expect(

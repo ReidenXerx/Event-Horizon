@@ -276,9 +276,59 @@ export function resumableProfileFromAttempts(
     profileId?: string;
   }>,
 ): ResumableProfile {
-  const attempt = attempts.find((a) => a.packageId === packageId);
-  if (attempt === undefined) return { kind: "refused", why: "no-attempt" };
+  /**
+   * ─── THE FIRST RESUMABLE ONE, NOT THE FIRST ONE ─────────────────────
+   * This used to be `attempts.find(a => a.packageId === packageId)` and then
+   * return a refusal from whatever that single record said. Preference was
+   * implemented as EXCLUSION: an unusable candidate at the front of the list
+   * silently hid a usable one behind it, and `resumeCandidates` deliberately
+   * puts every attempt before every marker.
+   *
+   * Both refusal arms are reachable that way:
+   *
+   *  - a failed v1.0.0 attempt (attempts are cleared only on SUCCESS) sits in
+   *    front of a v1.0.1 MARKER holding 700 installed mods, and `packageId` is
+   *    per-collection rather than per-release — so the version guard refused
+   *    and the marker was never examined;
+   *  - an attempt written by a run that was cancelled at preflight carries no
+   *    `profileId` at all, and refused the same way.
+   *
+   * Either one forks a fresh profile, and since enablement is per-profile the
+   * user's 700 already-installed mods read as "Disabled" — the exact failure
+   * markers were added to stop.
+   *
+   * So: judge every candidate, take the first that actually resumes, and only
+   * when none does report the refusal from the highest-ranked one — which is
+   * still the most specific claim about why nothing could be resumed.
+   */
+  const matching = attempts.filter((a) => a.packageId === packageId);
+  if (matching.length === 0) return { kind: "refused", why: "no-attempt" };
 
+  let firstRefusal: ResumableProfile | undefined;
+  for (const candidate of matching) {
+    const outcome = judgeResumeCandidate(
+      state,
+      gameId,
+      packageVersion,
+      candidate,
+    );
+    if (outcome.kind === "resume") return outcome;
+    firstRefusal ??= outcome;
+  }
+  return firstRefusal ?? { kind: "refused", why: "no-attempt" };
+}
+
+/** One candidate, judged in isolation. See the caller for why that matters. */
+function judgeResumeCandidate(
+  state: types.IState,
+  gameId: string,
+  packageVersion: string,
+  attempt: {
+    packageId: string;
+    packageVersion?: string;
+    profileId?: string;
+  },
+): ResumableProfile {
   /**
    * ─── A DIFFERENT RELEASE IS NOT A RESUME ────────────────────────────
    * The attempt record carries `packageVersion` and this used to ignore it,
