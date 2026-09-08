@@ -404,8 +404,16 @@ export async function installFromExistingDownload(
     );
   });
 
-  const result = await Promise.race([completed.promise, failed]);
-  return { vortexModId: result.modId };
+  try {
+    const result = await Promise.race([completed.promise, failed]);
+    return { vortexModId: result.modId };
+  } finally {
+    // `finally`, not a trailing statement: the race can REJECT, and a loser
+    // left armed on the failure path leaks exactly as it does on the success
+    // path — with the failure's own error already on its way to the user, so
+    // the later unhandled rejection lands on a screen that has moved on.
+    standDownWaiter(completed);
+  }
 }
 
 /**
@@ -507,8 +515,38 @@ export async function installFromLocalArchive(
     );
   });
 
-  const result = await Promise.race([callbackPromise, completed.promise]);
-  return { vortexModId: result.modId };
+  try {
+    const result = await Promise.race([callbackPromise, completed.promise]);
+    return { vortexModId: result.modId };
+  } finally {
+    standDownWaiter(completed);
+  }
+}
+
+/**
+ * Stand down a completion waiter that LOST a race.
+ *
+ * `Promise.race` resolves from the winner and leaves the loser running. That
+ * loser is not inert: it holds a redux subscription and a re-arming stall
+ * watchdog, and when the watchdog eventually fires it calls `rejectFn` on a
+ * promise nobody is awaiting any more — an unhandled rejection, minutes after
+ * the work it was watching finished.
+ *
+ * A real run showed ten of them firing in the same millisecond, all reporting
+ * `install.stalled` with `idleSec: 600`, during the VERIFY phase of an install
+ * whose last mod had gone in long before. The install itself succeeded; what
+ * the user saw was Vortex's unhandled-rejection crash dialog on top of a
+ * finished job.
+ *
+ * The catch goes on FIRST: `cancel()` settles the promise by rejecting it, so
+ * cancelling without a handler attached creates the very thing this prevents.
+ * Both calls are no-ops when the waiter is the one that won.
+ */
+function standDownWaiter(
+  waiter: ReturnType<typeof waitForInstallCompletion>,
+): void {
+  void waiter.promise.catch(() => undefined);
+  waiter.cancel();
 }
 
 /**
@@ -682,6 +720,13 @@ export async function installFromBundledArchive(
       args.preferredName,
     ));
 
+  /**
+   * Declared out here, not inside the `try`, so `finally` can stand it down.
+   * It is only assigned on the path that creates it; the early exits above it
+   * leave it `undefined` and the teardown is then a no-op.
+   */
+  let completed: ReturnType<typeof waitForInstallCompletion> | undefined;
+
   try {
     if (args.signal?.aborted) {
       // User aborted between extraction and start-install; skip the
@@ -711,7 +756,7 @@ export async function installFromBundledArchive(
       return { vortexModId: installed.vortexModId, extractedPath, tempDir };
     }
 
-    const completed = waitForInstallCompletion(api, {
+    completed = waitForInstallCompletion(api, {
       gameId: args.gameId,
       // start-install registers a NEW archiveId we cannot know in
       // advance. acceptAny: true makes the did-install-mod listener a
@@ -748,7 +793,9 @@ export async function installFromBundledArchive(
       },
     );
 
-    // Whichever resolves first wins. The other settles silently.
+    // Whichever resolves first wins; the loser is stood down in `finally`.
+    // It does NOT settle on its own — that assumption is what left a watchdog
+    // running here for ten minutes after the mod was already installed.
     const result = await Promise.race([callbackPromise, completed.promise]);
 
     return { vortexModId: result.modId, extractedPath, tempDir };
@@ -759,6 +806,8 @@ export async function installFromBundledArchive(
     // until OS temp GC.
     await safeRmTempDir(tempDir);
     throw err;
+  } finally {
+    if (completed !== undefined) standDownWaiter(completed);
   }
 }
 

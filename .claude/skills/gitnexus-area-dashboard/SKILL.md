@@ -1,24 +1,24 @@
 ---
 name: gitnexus-area-dashboard
-description: "Skill for the Dashboard area of Event-Horizon. 6 symbols across 2 files."
+description: "Skill for the Dashboard area of Event-Horizon. 8 symbols across 2 files."
 ---
 
 # Dashboard
 
-6 symbols | 2 files | Cohesion: 57%
+8 symbols | 2 files | Cohesion: 59%
 
 ## When to Use
 
 - Working with code in `src/`
-- Understanding how getCollectionsConfigDir, getCollectionsDir, loadDashboardData work
+- Understanding how getCollectionsConfigDir, getCollectionsDir, getEventHorizonDir work
 - Modifying dashboard-related functionality
 
 ## Key Files
 
 | File | Symbols |
 |------|---------|
+| `src/core/paths.ts` | getCollectionsConfigDir, getCollectionsDir, getEventHorizonDir, getEventHorizonRoot |
 | `src/ui/pages/dashboard/data.ts` | loadBuiltPackages, loadCuratorConfigs, loadDashboardData, loadReceipts |
-| `src/core/paths.ts` | getCollectionsConfigDir, getCollectionsDir |
 
 ## Entry Points
 
@@ -26,6 +26,8 @@ Start here when exploring this area:
 
 - **`getCollectionsConfigDir`** (Function) — `src/core/paths.ts:71`
 - **`getCollectionsDir`** (Function) — `src/core/paths.ts:66`
+- **`getEventHorizonDir`** (Function) — `src/core/paths.ts:53`
+- **`getEventHorizonRoot`** (Function) — `src/core/paths.ts:43`
 - **`loadDashboardData`** (Function) — `src/ui/pages/dashboard/data.ts:108`
 
 ## Key Symbols
@@ -34,6 +36,8 @@ Start here when exploring this area:
 |--------|------|------|------|
 | `getCollectionsConfigDir` | Function | `src/core/paths.ts` | 71 |
 | `getCollectionsDir` | Function | `src/core/paths.ts` | 66 |
+| `getEventHorizonDir` | Function | `src/core/paths.ts` | 53 |
+| `getEventHorizonRoot` | Function | `src/core/paths.ts` | 43 |
 | `loadDashboardData` | Function | `src/ui/pages/dashboard/data.ts` | 108 |
 | `loadBuiltPackages` | Function | `src/ui/pages/dashboard/data.ts` | 249 |
 | `loadCuratorConfigs` | Function | `src/ui/pages/dashboard/data.ts` | 184 |
@@ -43,16 +47,16 @@ Start here when exploring this area:
 
 | Flow | Type | Steps |
 |------|------|-------|
+| `ExecutePromptUserChoice → GetEventHorizonDir` | cross_community | 10 |
+| `RunInstallImpl → GetEventHorizonRoot` | cross_community | 10 |
+| `ReadZipEntry → GetVortexUserDataPath` | cross_community | 10 |
+| `PublishedDetailsPanel → GetEventHorizonDir` | cross_community | 10 |
 | `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
-| `LoadDashboardData → GetVortexUserDataPath` | cross_community | 10 |
-| `HomePage → Truncate` | cross_community | 8 |
-| `Dashboard → GetVortexUserDataPath` | cross_community | 8 |
-| `RouteOutlet → Fail` | cross_community | 7 |
-| `RouteOutlet → Ok` | cross_community | 7 |
-| `RouteOutlet → BelongsToGame` | cross_community | 7 |
-| `RouteOutlet → GetActiveGameId` | cross_community | 6 |
-| `RouteOutlet → ResolveProfileName` | cross_community | 6 |
-| `RouteOutlet → ResolveVortexVersion` | cross_community | 6 |
+| `RunSelfChecks → GetVortexUserDataPath` | cross_community | 10 |
+| `Act → GetEventHorizonDir` | cross_community | 10 |
+| `LoadPublishedDetails → GetEventHorizonRoot` | cross_community | 10 |
+| `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
+| `RunLoadingPipeline → GetEventHorizonRoot` | cross_community | 10 |
 
 ## How to Explore
 

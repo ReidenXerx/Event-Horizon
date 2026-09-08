@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-installer
-description: "Skill for the Installer area of Event-Horizon. 274 symbols across 61 files."
+description: "Skill for the Installer area of Event-Horizon. 295 symbols across 68 files."
 ---
 
 # Installer
 
-274 symbols | 61 files | Cohesion: 84%
+295 symbols | 68 files | Cohesion: 80%
 
 ## When to Use
 
@@ -18,15 +18,15 @@ description: "Skill for the Installer area of Event-Horizon. 274 symbols across 
 | File | Symbols |
 |------|---------|
 | `src/core/installer/runInstall.ts` | buildAbortedResult, buildDisplayNameByModId, buildFailReceipt, buildManifestIndex, buildNexusModIdMap (+52) |
-| `src/core/installer/modInstall.ts` | uninstallMod, delayRespectingAbort, installFromBundledArchive, installFromExistingDownload, installFromLocalArchive (+18) |
-| `src/core/installLedger.ts` | InstallLedgerError, expectString, getInstallLedgerDir, getReceiptPath, isIso8601 (+10) |
+| `src/core/installer/modInstall.ts` | uninstallMod, delayRespectingAbort, downloadFolderFor, downloadNexusArchiveOnly, extractBundledFromEhcoll (+24) |
+| `src/core/installLedger.ts` | InstallLedgerError, expectString, getInstallLedgerDir, getReceiptPath, isIso8601 (+9) |
 | `src/core/installer/applyUserlist.ts` | applyGroupDefinition, applyGroupRule, applyPluginEntry, applyPluginGroup, applyPluginRuleWithCollectionWins (+8) |
 | `src/core/installer/installMarker.ts` | clearInstallMarker, getMarkerDir, listInterruptedInstalls, markerPath, parseMarker (+4) |
-| `src/core/installer/profile.ts` | createFreshProfile, enableModInProfile, makeAbortError, pickNonCollidingName, switchToProfile (+3) |
-| `src/core/installer/bundledPrefetch.ts` | BundledPrefetchPool, prime, pump, runExtraction, startExtraction (+2) |
+| `src/core/installer/bundledPrefetch.ts` | BundledPrefetchPool, dispose, prime, pump, runExtraction (+2) |
+| `src/core/installer/installJournal.ts` | logJournalSummary, ownedModIds, clearJournal, appendJournalEntry, getJournalDir (+2) |
 | `src/core/installer/checkNexusAccount.ts` | hasNexusSlice, nexusSlice, readNexusAccount, readUserInfo, readViaSelectors (+2) |
+| `src/core/installer/profile.ts` | createFreshProfile, enableModInProfile, makeAbortError, pickNonCollidingName, switchToProfile (+1) |
 | `src/core/installer/timeBudgets.ts` | countMods, clamp, deployBudgetMs, profileSwitchBudgetMs, scale (+1) |
-| `src/core/installer/adoptLocalArchive.ts` | adoptLocalArchive, copyIn, deriveId, downloadFolder, isInside (+1) |
 
 ## Entry Points
 
@@ -42,7 +42,7 @@ Start here when exploring this area:
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `BundledPrefetchPool` | Class | `src/core/installer/bundledPrefetch.ts` | 102 |
+| `BundledPrefetchPool` | Class | `src/core/installer/bundledPrefetch.ts` | 117 |
 | `InstallLedgerError` | Class | `src/core/installLedger.ts` | 72 |
 | `describeGameIniApplication` | Function | `src/core/installer/applyGameIni.ts` | 335 |
 | `shouldApplyGameIni` | Function | `src/core/installer/applyGameIni.ts` | 315 |

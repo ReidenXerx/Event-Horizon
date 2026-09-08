@@ -1,4 +1,6 @@
 import * as fs from "fs";
+
+import { isVolatileFile, volatileReason } from "../volatileFiles";
 import * as path from "path";
 
 import { selectors } from "@nexusmods/vortex-api";
@@ -227,21 +229,51 @@ export async function verifyModInstall(
     return { kind: "skip", reason: "vortex-mod-missing-from-state" };
   }
 
-  const onDisk = await collectOnDiskFiles(stagingRoot, signal);
+  const onDiskAll = await collectOnDiskFiles(stagingRoot, signal);
   if (signal?.aborted) throw new AbortError();
+
+  /**
+   * ─── DROP WHAT NOTHING INSTALLS, ON BOTH SIDES ──────────────────────────
+   * A runtime log or a `Thumbs.db` differs on every machine, so comparing it
+   * only ever produces a failure nobody can act on — and that failure then
+   * drives a reinstall of a mod that is perfectly healthy.
+   *
+   * Filtered on BOTH sides deliberately. The curator's side is what makes
+   * this land without a repack: packages already in testers' hands still
+   * record these files, and dropping them only from the on-disk side would
+   * turn every one of them into a `missing` instead of a `sizeMismatch`.
+   */
+  const onDisk = onDiskAll.filter((f) => !isVolatileFile(f.relativePath));
+  const expectedVerifiable = expectedFiles.filter((f) => !isVolatileFile(f.path));
+
+  const skippedOnDisk = onDiskAll.length - onDisk.length;
+  const skippedExpected = expectedFiles.length - expectedVerifiable.length;
+  if (skippedOnDisk > 0 || skippedExpected > 0) {
+    // Never a silent hole: an exclusion is a thing we chose not to check, and
+    // the log has to say so or "verified" overstates what was verified.
+    ehLog("debug", "verify-install.volatile-skipped", {
+      vortexModId,
+      fromManifest: skippedExpected,
+      fromDisk: skippedOnDisk,
+      examples: expectedFiles
+        .filter((f) => isVolatileFile(f.path))
+        .slice(0, 5)
+        .map((f) => ({ path: f.path, why: volatileReason(f.path) })),
+    });
+  }
 
   const onDiskByPath = new Map<string, OnDiskFile>();
   for (const f of onDisk) onDiskByPath.set(f.relativePath, f);
 
   const expectedByPath = new Map<string, EhcollStagingFile>();
-  for (const f of expectedFiles) expectedByPath.set(f.path, f);
+  for (const f of expectedVerifiable) expectedByPath.set(f.path, f);
 
   const missingFiles: string[] = [];
   const sizeMismatches: VerifyFail["sizeMismatches"] = [];
   const hashCandidates: Array<{ expected: EhcollStagingFile; actual: OnDiskFile }> =
     [];
 
-  for (const expected of expectedFiles) {
+  for (const expected of expectedVerifiable) {
     const actual = onDiskByPath.get(expected.path);
     if (actual === undefined) {
       missingFiles.push(expected.path);
@@ -311,7 +343,7 @@ export async function verifyModInstall(
     ehLog("info", "verify-install.fail", {
       vortexModId,
       level,
-      expectedCount: expectedFiles.length,
+      expectedCount: expectedVerifiable.length,
       missingCount: missingFiles.length,
       sizeMismatchCount: sizeMismatches.length,
       hashMismatchCount: hashMismatches.length,
@@ -327,7 +359,7 @@ export async function verifyModInstall(
       sizeMismatches,
       hashMismatches,
       extraFiles,
-      expectedCount: expectedFiles.length,
+      expectedCount: expectedVerifiable.length,
       stagingRoot,
     };
   }

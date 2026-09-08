@@ -1,4 +1,6 @@
 import * as path from "path";
+
+import { isVolatileFile } from "../volatileFiles";
 import type { ArchiveHashLookup } from "../archiveHashCache";
 
 import { selectors } from "@nexusmods/vortex-api";
@@ -159,6 +161,8 @@ export async function captureStagingFiles(
   let done = 0;
   /** Mods that end up with no staging record, by reason. */
   const skipped = { noInstallationPath: 0, noStagingRoot: 0, walkFailed: 0 };
+  /** Files deliberately not recorded because nothing installs them. */
+  let volatileSkipped = 0;
 
   for (let i = 0; i < mods.length; i++) {
     if (signal?.aborted) throw new AbortError();
@@ -223,9 +227,24 @@ export async function captureStagingFiles(
        * listing is complete. It has to be told when it is not.
        */
       const unreadable: string[] = [];
-      const files = await walkStagingFolder(stagingRoot, signal, (entry) => {
+      const walked = await walkStagingFolder(stagingRoot, signal, (entry) => {
         unreadable.push(`${entry.kind} ${entry.path}: ${entry.why}`);
       });
+      /**
+       * Never record a file nothing installs.
+       *
+       * These are written by the game or by Windows into the curator's own
+       * staging folder — a `.log` an SKSE plugin appends to on every launch, a
+       * `Thumbs.db` Explorer left behind. Recording them makes a promise the
+       * package cannot keep: no user's copy can match, so every one of them is
+       * a guaranteed verification failure on every machine.
+       *
+       * Excluded at capture rather than only at verify so a new package is
+       * honest about what it claims. Verify filters them too, which is what
+       * covers the packages already shipped.
+       */
+      const files = walked.filter((f) => !isVolatileFile(f.relativePath));
+      volatileSkipped += walked.length - files.length;
       const stagingFiles = await hashStagingFiles(
         stagingRoot,
         files,
@@ -295,6 +314,9 @@ export async function captureStagingFiles(
       // Captured, but known to be missing paths the walk could not read.
       incompleteCaptures: incomplete,
       skipped,
+      // Deliberately not recorded: runtime logs and OS folder junk, which
+      // differ on every machine and can only ever fail verification.
+      volatileFilesSkipped: volatileSkipped,
     },
   );
 

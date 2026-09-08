@@ -51,10 +51,10 @@ Start here when exploring this area:
 | `describeEndorseDuration` | Function | `src/core/curator/endorsePace.ts` | 44 |
 | `endorseDurationMs` | Function | `src/core/curator/endorsePace.ts` | 31 |
 | `endorseIsLong` | Function | `src/core/curator/endorsePace.ts` | 63 |
-| `freezeAttribute` | Function | `src/core/curator/readProfile.ts` | 117 |
+| `freezeAttribute` | Function | `src/core/curator/readProfile.ts` | 124 |
 | `healingBlockedReason` | Function | `src/core/doctor/health.ts` | 600 |
 | `overallHealth` | Function | `src/core/doctor/health.ts` | 547 |
-| `describeInstallAttempt` | Function | `src/core/installer/attemptRecord.ts` | 169 |
+| `describeInstallAttempt` | Function | `src/core/installer/attemptRecord.ts` | 210 |
 | `describeFomodModes` | Function | `src/core/installer/fomodReplayMode.ts` | 78 |
 | `s` | Function | `src/core/installer/fomodReplayMode.ts` | 84 |
 | `mustAskReplayMode` | Function | `src/core/installer/fomodReplayMode.ts` | 183 |

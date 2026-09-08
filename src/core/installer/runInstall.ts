@@ -1397,7 +1397,10 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       ),
     );
     const ownedByUs = ownedModIds(journal, liveModIds);
-    logJournalSummary(plan.manifest.package.id, journal, ownedByUs);
+    // The live pool, not `ownedByUs`: the summary counts installed and adopted
+    // entries against it separately, and handing it an installed-only set is
+    // what made it report every adopted mod as deleted.
+    logJournalSummary(plan.manifest.package.id, journal, liveModIds);
 
     const declaredLevel = plan.manifest.package.verificationLevel ?? "none";
     if (

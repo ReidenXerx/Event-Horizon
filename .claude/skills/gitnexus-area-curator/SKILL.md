@@ -1,32 +1,32 @@
 ---
 name: gitnexus-area-curator
-description: "Skill for the Curator area of Event-Horizon. 142 symbols across 26 files."
+description: "Skill for the Curator area of Event-Horizon. 134 symbols across 27 files."
 ---
 
 # Curator
 
-142 symbols | 26 files | Cohesion: 83%
+134 symbols | 27 files | Cohesion: 85%
 
 ## When to Use
 
 - Working with code in `src/`
-- Understanding how getEHRuntime, runtime, profileDriftSince work
+- Understanding how getEHRuntime, runtime, fileIdentity work
 - Modifying curator-related functionality
 
 ## Key Files
 
 | File | Symbols |
 |------|---------|
-| `src/ui/pages/curator/CuratorPage.tsx` | act, setTypeFor, update, confirm, reinstall (+28) |
-| `src/core/getModsListForProfile.ts` | assignInstallOrder, getModsForProfile, hasAnySelectedFomodChoices, normalizeCollectionIds, normalizeFomodSelections (+6) |
+| `src/ui/pages/curator/CuratorPage.tsx` | manualUpdates, shadowed, updatable, act, setTypeFor (+28) |
+| `src/core/curator/profileActions.ts` | fileIdentity, findManualUpdates, findUpdatable, findUpdateShadowed, shown (+6) |
 | `src/ui/pages/curator/curatorSession.ts` | begin, cancel, dismiss, finish, progress (+4) |
-| `src/core/curator/profileActions.ts` | findDuplicates, findEndorsable, findFrozen, summarizeProfile, fileIdentity (+4) |
 | `src/core/curator/collectionDiff.ts` | diffCollectionAgainstProfile, candidate, firstUnclaimed, settle, nexusModIdOf (+3) |
 | `src/core/curator/updateOneMod.ts` | UpdateTimeout, installedIdentityReader, asNum, updateOneAndWait, finish (+2) |
 | `src/core/curator/cleanupPlan.ts` | findSupersededMods, consider, planCleanup, orphanArchives, provenSupersedes (+2) |
-| `src/ui/pages/build/BuildDashboard.tsx` | recentlyBuilt, diff, DetailRow, PublishedDetailsPanel, RecentlyBuiltCard (+1) |
 | `src/core/curator/bulkUpdate.test.ts` | update, update, update, wait, candidate (+1) |
 | `src/core/curator/runCleanup.ts` | dependsOnFailedRemoval, describeCleanupOutcome, gb, runCleanup, asNumber (+1) |
+| `src/core/curator/readProfile.ts` | asNumber, asString, opt, readCuratorMods, readEnabledModIds |
+| `src/ui/pages/build/BuildDashboard.tsx` | diff, DetailRow, PublishedDetailsPanel, RecentlyBuiltCard, formatBytes |
 
 ## Entry Points
 
@@ -34,9 +34,9 @@ Start here when exploring this area:
 
 - **`getEHRuntime`** (Function) — `src/ui/runtime/ehRuntime.ts:79`
 - **`runtime`** (Function) — `src/ui/runtime/useEHRuntime.ts:14`
-- **`profileDriftSince`** (Function) — `src/core/curator/profileDrift.ts:51`
-- **`getModsForProfile`** (Function) — `src/core/getModsListForProfile.ts:541`
-- **`recentlyBuilt`** (Function) — `src/ui/pages/build/BuildDashboard.tsx:668`
+- **`fileIdentity`** (Function) — `src/core/curator/profileActions.ts:517`
+- **`findManualUpdates`** (Function) — `src/core/curator/profileActions.ts:232`
+- **`findUpdatable`** (Function) — `src/core/curator/profileActions.ts:311`
 
 ## Key Symbols
 
@@ -46,9 +46,12 @@ Start here when exploring this area:
 | `CannotReinstall` | Class | `src/core/curator/reinstallMod.ts` | 45 |
 | `getEHRuntime` | Function | `src/ui/runtime/ehRuntime.ts` | 79 |
 | `runtime` | Function | `src/ui/runtime/useEHRuntime.ts` | 14 |
-| `profileDriftSince` | Function | `src/core/curator/profileDrift.ts` | 51 |
-| `getModsForProfile` | Function | `src/core/getModsListForProfile.ts` | 541 |
-| `recentlyBuilt` | Function | `src/ui/pages/build/BuildDashboard.tsx` | 668 |
+| `fileIdentity` | Function | `src/core/curator/profileActions.ts` | 517 |
+| `findManualUpdates` | Function | `src/core/curator/profileActions.ts` | 232 |
+| `findUpdatable` | Function | `src/core/curator/profileActions.ts` | 311 |
+| `findUpdateShadowed` | Function | `src/core/curator/profileActions.ts` | 353 |
+| `updateGroupKey` | Function | `src/core/curator/profileActions.ts` | 305 |
+| `vortexReportsUpdate` | Function | `src/core/curator/profileActions.ts` | 208 |
 | `describeTypeChanges` | Function | `src/core/curator/bulkToggles.ts` | 72 |
 | `label` | Function | `src/core/curator/bulkToggles.ts` | 76 |
 | `planTypeChanges` | Function | `src/core/curator/bulkToggles.ts` | 50 |
@@ -59,9 +62,6 @@ Start here when exploring this area:
 | `asNum` | Function | `src/core/curator/updateOneMod.ts` | 195 |
 | `updateOneAndWait` | Function | `src/core/curator/updateOneMod.ts` | 78 |
 | `finish` | Function | `src/core/curator/updateOneMod.ts` | 94 |
-| `onAbort` | Function | `src/core/curator/updateOneMod.ts` | 129 |
-| `onInstalled` | Function | `src/core/curator/updateOneMod.ts` | 103 |
-| `describeBulkUpdate` | Function | `src/core/curator/bulkUpdate.ts` | 167 |
 
 ## Execution Flows
 

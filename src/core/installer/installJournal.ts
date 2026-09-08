@@ -279,16 +279,52 @@ export function knownModIds(
 export function logJournalSummary(
   packageId: string,
   journal: readonly JournalEntry[],
-  owned: ReadonlySet<string>,
+  liveModIds: ReadonlySet<string>,
 ): void {
+  /**
+   * ─── COUNT THE TWO KINDS SEPARATELY ──────────────────────────────────
+   * The previous version reported `journal.length - owned.size` as
+   * `goneSinceRecorded`, where `owned` is deliberately INSTALLED-ONLY
+   * (`ownedModIds` skips adopted entries by design, because we never destroy
+   * an adopted mod). Subtracting an installed-only set from a total that also
+   * counts adopted ones makes every adopted mod look deleted.
+   *
+   * A real run showed it: 1755 entries, 164 installed, 1591 adopted, and the
+   * log claimed `goneSinceRecorded: 1591` — "the user removed 1591 mods
+   * between runs" — when in truth every one of the 164 we installed was still
+   * there and nothing had been removed at all. A confidently wrong number is
+   * worse than no number, because someone acts on it.
+   *
+   * So each kind is counted against the live pool on its own terms, and no
+   * figure here mixes them.
+   */
+  let installedByUs = 0;
+  let installedStillPresent = 0;
+  let adopted = 0;
+  let adoptedStillPresent = 0;
+  for (const entry of journal) {
+    const live = liveModIds.has(entry.vortexModId);
+    if (entry.kind === "installed") {
+      installedByUs += 1;
+      if (live) installedStillPresent += 1;
+    } else {
+      adopted += 1;
+      if (live) adoptedStillPresent += 1;
+    }
+  }
+
   ehLog("info", "install.journal.read", {
     packageId,
     entries: journal.length,
-    installedByUs: journal.filter((e) => e.kind === "installed").length,
-    adopted: journal.filter((e) => e.kind === "adopted").length,
-    stillPresent: owned.size,
-    // A large gap means the user removed mods between runs, which changes what
-    // a resume should expect to find.
-    goneSinceRecorded: journal.length - owned.size,
+    installedByUs,
+    installedStillPresent,
+    // Mods WE created that have since disappeared. This is the number that
+    // changes what a resume should expect to find.
+    installedGone: installedByUs - installedStillPresent,
+    adopted,
+    adoptedStillPresent,
+    // Mods we merely recognised that are gone. Informational: we never had
+    // the right to touch these, so their absence changes nothing we may do.
+    adoptedGone: adopted - adoptedStillPresent,
   });
 }

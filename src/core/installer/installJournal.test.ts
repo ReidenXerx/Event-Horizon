@@ -7,12 +7,15 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import * as vortexApi from "@nexusmods/vortex-api";
 
 import {
   appendJournalEntry,
   clearJournal,
   getJournalDir,
+  logJournalSummary,
   ownedModIds,
   readJournal,
 } from "./installJournal";
@@ -139,5 +142,92 @@ describe("ownedModIds", () => {
     expect(
       ownedModIds([entry({ kind: "something-new" })], new Set(["mod-1"])),
     ).toEqual(new Set());
+  });
+});
+
+describe("logJournalSummary", () => {
+  let logSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    logSpy = vi.spyOn(vortexApi, "log").mockImplementation(() => undefined);
+    // Re-spying an already-spied method hands back the SAME spy with its call
+    // history, so without this a later test reads an earlier test's line.
+    logSpy.mockClear();
+  });
+
+  /** The payload of the one `install.journal.read` line this call produced. */
+  const summary = (): Record<string, unknown> => {
+    const call = logSpy.mock.calls.find(
+      (c) => c[1] === "[Event Horizon] install.journal.read",
+    );
+    expect(call).toBeDefined();
+    return call![2] as Record<string, unknown>;
+  };
+
+  it("does not count ADOPTED mods as deleted", () => {
+    /**
+     * The shape of a real run: 1 mod we installed, 3 we merely recognised, and
+     * every one of them still present. The old arithmetic subtracted an
+     * installed-only set from the full journal length and reported the three
+     * adopted mods as `goneSinceRecorded: 3` — "the user deleted three mods" —
+     * about a machine where nothing had been deleted at all.
+     */
+    const journal = [
+      entry({ vortexModId: "ours-1", kind: "installed" }),
+      entry({ vortexModId: "theirs-1", kind: "adopted" }),
+      entry({ vortexModId: "theirs-2", kind: "adopted" }),
+      entry({ vortexModId: "theirs-3", kind: "adopted" }),
+    ];
+    const live = new Set(["ours-1", "theirs-1", "theirs-2", "theirs-3"]);
+
+    logJournalSummary(PKG, journal, live);
+
+    expect(summary()).toMatchObject({
+      entries: 4,
+      installedByUs: 1,
+      installedStillPresent: 1,
+      installedGone: 0,
+      adopted: 3,
+      adoptedStillPresent: 3,
+      adoptedGone: 0,
+    });
+  });
+
+  it("counts a mod WE installed that has since disappeared", () => {
+    // The case the number exists for, and the only one that changes what a
+    // resume may do: our own mod is gone, so its repair right is gone with it.
+    const journal = [
+      entry({ vortexModId: "ours-1", kind: "installed" }),
+      entry({ vortexModId: "ours-2", kind: "installed" }),
+      entry({ vortexModId: "theirs-1", kind: "adopted" }),
+    ];
+
+    logJournalSummary(PKG, journal, new Set(["ours-1", "theirs-1"]));
+
+    expect(summary()).toMatchObject({
+      installedByUs: 2,
+      installedStillPresent: 1,
+      installedGone: 1,
+      adopted: 1,
+      adoptedStillPresent: 1,
+      adoptedGone: 0,
+    });
+  });
+
+  it("reports an adopted mod that vanished separately, not as one of ours", () => {
+    logJournalSummary(
+      PKG,
+      [
+        entry({ vortexModId: "ours-1", kind: "installed" }),
+        entry({ vortexModId: "theirs-1", kind: "adopted" }),
+      ],
+      new Set(["ours-1"]),
+    );
+
+    const s = summary();
+    expect(s).toMatchObject({ adoptedGone: 1, installedGone: 0 });
+    // The two must never be summed into one figure: only ours carries a
+    // consequence, and a combined number cannot be acted on.
+    expect(s.installedGone).not.toBe(s.adoptedGone);
   });
 });

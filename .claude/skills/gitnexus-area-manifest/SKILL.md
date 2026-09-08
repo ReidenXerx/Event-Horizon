@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-manifest
-description: "Skill for the Manifest area of Event-Horizon. 377 symbols across 85 files."
+description: "Skill for the Manifest area of Event-Horizon. 392 symbols across 89 files."
 ---
 
 # Manifest
 
-377 symbols | 85 files | Cohesion: 78%
+392 symbols | 89 files | Cohesion: 77%
 
 ## When to Use
 
@@ -18,7 +18,7 @@ description: "Skill for the Manifest area of Event-Horizon. 377 symbols across 8
 | File | Symbols |
 |------|---------|
 | `src/core/manifest/parseManifest.ts` | ParseManifestError, describe, expectArray, expectBoolean, expectEnum (+43) |
-| `src/core/manifest/packageZip.ts` | describeBytes, isAbortLikeError, packageEhcoll, checkAbort, prepareStagingDir (+13) |
+| `src/core/manifest/packageZip.ts` | describeBytes, isAbortLikeError, packageEhcoll, checkAbort, prepareStagingDir (+14) |
 | `src/core/manifest/readZip.ts` | ZipReadError, extractZipEntryToFile, findDataOffset, findEntry, findZip64Extra (+11) |
 | `src/core/manifest/buildManifest.ts` | BuildManifestError, buildLoadOrder, buildManifest, buildPackageMetadata, buildUserlist (+11) |
 | `src/core/manifest/collectionConfig.ts` | mode, CollectionConfigError, createDefaultConfig, getCollectionConfigPath, loadOrCreateCollectionConfig (+8) |
@@ -43,12 +43,12 @@ Start here when exploring this area:
 | Symbol | Type | File | Line |
 |--------|------|------|------|
 | `AbortError` | Class | `src/utils/abortError.ts` | 22 |
-| `ParseManifestError` | Class | `src/core/manifest/parseManifest.ts` | 121 |
 | `ReadEhcollError` | Class | `src/core/manifest/readEhcoll.ts` | 129 |
 | `ZipReadError` | Class | `src/core/manifest/readZip.ts` | 58 |
+| `ParseManifestError` | Class | `src/core/manifest/parseManifest.ts` | 121 |
 | `BuildManifestError` | Class | `src/core/manifest/buildManifest.ts` | 251 |
-| `CollectionConfigError` | Class | `src/core/manifest/collectionConfig.ts` | 270 |
-| `PackageEhcollError` | Class | `src/core/manifest/packageZip.ts` | 163 |
+| `CollectionConfigError` | Class | `src/core/manifest/collectionConfig.ts` | 290 |
+| `PackageEhcollError` | Class | `src/core/manifest/packageZip.ts` | 171 |
 | `archiveFileCacheKey` | Function | `src/core/archiveHashCache.ts` | 84 |
 | `enrichModsWithArchiveHashes` | Function | `src/core/archiveHashing.ts` | 184 |
 | `hashFileSha256` | Function | `src/core/archiveHashing.ts` | 39 |
@@ -75,7 +75,7 @@ Start here when exploring this area:
 | `RunSelfChecks → GetVortexUserDataPath` | cross_community | 10 |
 | `Act → GetEventHorizonDir` | cross_community | 10 |
 | `LoadPublishedDetails → GetEventHorizonRoot` | cross_community | 10 |
-| `SelfCheckMod → GetVortexUserDataPath` | cross_community | 10 |
+| `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
 | `RunLoadingPipeline → GetEventHorizonRoot` | cross_community | 10 |
 
 ## How to Explore

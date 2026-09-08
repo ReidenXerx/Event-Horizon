@@ -19,7 +19,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { types } from "@nexusmods/vortex-api";
 
-import { installFromExistingDownload, isAwaitingUserInput } from "./modInstall";
+import * as vortexApi from "@nexusmods/vortex-api";
+
+import {
+  installFromExistingDownload,
+  installFromLocalArchive,
+  isAwaitingUserInput,
+} from "./modInstall";
 
 describe("knowing when Vortex is waiting on a person", () => {
   const withSession = (base: unknown): types.IExtensionApi =>
@@ -194,6 +200,109 @@ describe("the watchdog while a dialog is open", () => {
     // They clicked through; nothing else ever happens.
     state.session.base.visibleDialog = "";
     await vi.advanceTimersByTimeAsync(2 * 60 * 60_000);
+    expect(settled).toHaveBeenCalled();
+  });
+});
+
+/**
+ * ─── THE LOSER OF A RACE IS NOT INERT ──────────────────────────────────────
+ * `installFromLocalArchive` and its two siblings resolve from whichever of
+ * Vortex's two completion signals arrives first, via `Promise.race`. The loser
+ * keeps a redux subscription and a re-arming stall watchdog, and when that
+ * watchdog eventually fires it logs `install.stalled` and rejects a promise
+ * nobody is awaiting.
+ *
+ * A real 1755-mod run showed ten of them going off in the same millisecond,
+ * `idleSec: 600`, during the VERIFY phase — long after the last mod was in.
+ * The install itself succeeded; what the user got was Vortex's crash dialog on
+ * top of a finished job.
+ */
+describe("a completion waiter that lost the race", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /** A Vortex whose synchronous callback answers at once, then goes quiet. */
+  const promptVortex = () => {
+    const state = {
+      session: { base: { visibleDialog: "", overlayOpen: false } },
+      persistent: { downloads: { files: {} }, mods: { fallout4: {} } },
+    };
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { EventEmitter } = require("events") as typeof import("events");
+    const events = new EventEmitter();
+    events.on(
+      "start-install",
+      (_p: string, cb: (e: null, id: string) => void) => cb(null, "mod-7"),
+    );
+    return {
+      getState: () => state,
+      events,
+      store: {
+        getState: () => state,
+        dispatch: () => undefined,
+        subscribe: () => () => undefined,
+      },
+    } as unknown as types.IExtensionApi;
+  };
+
+  it("does not report a stall hours after the install already finished", async () => {
+    const logSpy = vi
+      .spyOn(vortexApi, "log")
+      .mockImplementation(() => undefined);
+
+    const out = await installFromLocalArchive(promptVortex(), {
+      gameId: "fallout4",
+      archivePath: "C:\dl\a.7z",
+    } as never);
+    expect(out.vortexModId).toBe("mod-7");
+
+    // The install is DONE. Nothing this waiter watches will ever move again.
+    logSpy.mockClear();
+    await vi.advanceTimersByTimeAsync(3 * 60 * 60_000);
+
+    const stalls = logSpy.mock.calls.filter((c) =>
+      String(c[1]).includes("install.stalled"),
+    );
+    expect(stalls).toEqual([]);
+  });
+
+  it("still reports a stall for an install that is genuinely stuck", async () => {
+    // The other half: standing down the LOSER must not stand down a waiter
+    // that is still the only thing anyone is waiting on. Without this, the
+    // fix above would be indistinguishable from deleting the watchdog.
+    const state = {
+      session: { base: { visibleDialog: "", overlayOpen: false } },
+      persistent: {
+        downloads: {
+          files: { "dl-1": { localPath: "a.zip", state: "finished", received: 1, size: 1 } },
+        },
+        mods: { fallout4: {} },
+      },
+    };
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { EventEmitter } = require("events") as typeof import("events");
+    const api = {
+      getState: () => state,
+      events: new EventEmitter(), // never answers
+      store: {
+        getState: () => state,
+        dispatch: () => undefined,
+        subscribe: () => () => undefined,
+      },
+    } as unknown as types.IExtensionApi;
+
+    const settled = vi.fn();
+    void installFromExistingDownload(api, {
+      gameId: "fallout4",
+      archiveId: "dl-1",
+    } as never).catch((err: Error) => settled(err.message));
+
+    await vi.advanceTimersByTimeAsync(3 * 60 * 60_000);
     expect(settled).toHaveBeenCalled();
   });
 });
