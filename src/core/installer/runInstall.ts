@@ -4380,7 +4380,12 @@ function collectRemovalPlan(
 // Preflight (slice 6b)
 // ===========================================================================
 
-function preflight(
+/**
+ * Exported for tests. It is a pure function of the plan and the user's
+ * answers, and it is the gate that refused a tester's entire 979-mod retry —
+ * so it is worth driving directly rather than only through the whole driver.
+ */
+export function preflight(
   plan: DriverContext["plan"],
   decisions: UserConfirmedDecisions,
 ): string | undefined {
@@ -4421,10 +4426,18 @@ function preflight(
   }
 
   // Every supplied choice must be valid for the decision it covers.
-  const invalidChoices = collectInvalidConflictChoices(
-    plan.modResolutions,
-    decisions,
-  );
+  const { invalid: invalidChoices, obsolete: obsoleteChoices } =
+    collectInvalidConflictChoices(plan.modResolutions, decisions);
+  if (obsoleteChoices.length > 0) {
+    // Not a problem — evidence that a previous run's answers took effect.
+    ehLog("info", "preflight.choices.obsolete", {
+      count: obsoleteChoices.length,
+      examples: obsoleteChoices.slice(0, 8),
+      why:
+        "these mods were answered on an earlier run and are now resolved " +
+        "without a question, so their stored answers are ignored",
+    });
+  }
   if (invalidChoices.length > 0) {
     return (
       `Plan contains ${invalidChoices.length} invalid conflictChoice(s): ` +
@@ -4432,16 +4445,19 @@ function preflight(
     );
   }
 
-  // Validate orphan choices reference real orphans.
-  const invalidOrphans = collectInvalidOrphanChoices(
+  // Orphan choices that no longer name an orphan: satisfied, not invalid.
+  const staleOrphans = collectInvalidOrphanChoices(
     plan.orphanedMods,
     decisions,
   );
-  if (invalidOrphans.length > 0) {
-    return (
-      `orphanChoices references unknown orphan mod ids: ` +
-      invalidOrphans.join(", ")
-    );
+  if (staleOrphans.length > 0) {
+    ehLog("info", "preflight.orphan-choices.stale", {
+      count: staleOrphans.length,
+      examples: staleOrphans.slice(0, 8),
+      why:
+        "these mods are no longer orphans — most often because an earlier " +
+        "run already acted on them — so their stored answers are ignored",
+    });
   }
 
   // Defensive: in fresh-profile mode we should not see any orphans.
@@ -4496,25 +4512,59 @@ function needsConflictChoice(decision: ModDecision): boolean {
   );
 }
 
+/**
+ * An answer that has been SATISFIED is not an error.
+ *
+ * ─── THE RUN THIS COMES FROM ────────────────────────────────────────────────
+ * A tester's first install answered ten `external-prompt-user` mods by
+ * pointing at local files, and one mod failed. On the retry, preflight
+ * refused the entire 979-mod plan:
+ *
+ *   Plan contains 7 invalid conflictChoice(s): Render Tattoos
+ *   [external-already-installed]: decision kind "external-already-installed"
+ *   does not accept user choices; ...
+ *
+ * Every one of those seven was answered on the first run, and the answer
+ * WORKED — the mod is installed, which is exactly why the resolver now says
+ * `external-already-installed`. The stored answer had done its job and became
+ * obsolete, and obsolete was being read as invalid.
+ *
+ * The distinction that matters is whether the decision still NEEDS an answer:
+ *
+ *   needs one, and the answer is the wrong shape  → INVALID, refuse
+ *   needs none, and an answer is present          → OBSOLETE, ignore and log
+ *
+ * A run that cannot start because a previous run succeeded is the worst shape
+ * a validation can take, and it made the retry button unusable for exactly the
+ * case it was built for.
+ */
 function collectInvalidConflictChoices(
   resolutions: ModResolution[],
   decisions: UserConfirmedDecisions,
-): string[] {
-  const out: string[] = [];
+): { invalid: string[]; obsolete: string[] } {
+  const invalid: string[] = [];
+  const obsolete: string[] = [];
   for (const r of resolutions) {
     const choice = decisions.conflictChoices?.[r.compareKey];
     if (!choice) continue;
+    if (!needsConflictChoice(r.decision)) {
+      // Answered before, and the answer took effect. Nothing to validate.
+      obsolete.push(`${r.name} [${r.decision.kind}]`);
+      continue;
+    }
     const reason = validateConflictChoice(r.decision, choice);
-    if (reason) out.push(`${r.name} [${r.decision.kind}]: ${reason}`);
+    if (reason) invalid.push(`${r.name} [${r.decision.kind}]: ${reason}`);
   }
-  // Surface stray keys not referenced by any mod (likely bug).
+  // Surface stray keys not referenced by any mod. Still an error: the plan
+  // holds every manifest mod, so a key matching none of them is a real bug
+  // rather than a decision that moved on.
   const validKeys = new Set(resolutions.map((r) => r.compareKey));
   for (const key of Object.keys(decisions.conflictChoices ?? {})) {
     if (!validKeys.has(key)) {
-      out.push(`stray conflictChoice key "${key}" matches no mod in the plan`);
+      invalid.push(`stray conflictChoice key "${key}" matches no mod in the plan`);
     }
   }
-  return out;
+  return { invalid, obsolete };
 }
 
 function validateConflictChoice(
@@ -4544,6 +4594,18 @@ function validateConflictChoice(
   return `decision kind "${decision.kind}" does not accept user choices`;
 }
 
+/**
+ * The same rule for orphans, and it fails the same way.
+ *
+ * An orphan the previous run UNINSTALLED is no longer an orphan, so its stored
+ * answer now names an id the plan has never heard of — and refusing on that
+ * blocks a retry because the earlier retry worked.
+ *
+ * A genuinely bogus id and a satisfied one are indistinguishable from here, so
+ * this weighs the two costs: ignoring a bad id costs a choice that does
+ * nothing, while refusing costs the user a 979-mod install they cannot start.
+ * Ignore, and say so in the log.
+ */
 function collectInvalidOrphanChoices(
   orphans: OrphanedModDecision[],
   decisions: UserConfirmedDecisions,
