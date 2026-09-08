@@ -84,7 +84,23 @@ export async function adoptLocalArchive(
 
   const archiveId = deriveId(destination, stat.size);
 
-  api.store?.dispatch(
+  /**
+   * Registering the download IS this function. `api.store?.dispatch` made it
+   * optional: with no store the dispatch vanished, the log still said
+   * `installer.adopted-local-archive`, and the caller went on to
+   * `start-install-download` with an id Vortex had never heard of — surfacing
+   * ten minutes later as a stall, with the real cause nowhere in the log.
+   * Same shape as the download-folder check above: refuse, do not pretend.
+   */
+  const store = api.store;
+  if (store === undefined) {
+    throw new Error(
+      "Vortex's store is unavailable, so the picked archive cannot be " +
+        "registered as a download.",
+    );
+  }
+
+  store.dispatch(
     (
       actions as unknown as {
         addLocalDownload: (

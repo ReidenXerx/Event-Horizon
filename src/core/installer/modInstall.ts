@@ -288,7 +288,24 @@ export async function installNexusViaApi(
           `fileId=${args.nexusFileId} returned no archiveId.`,
       );
     } catch (err) {
-      if (isAbortErrorLocal(err)) throw err;
+      if (isAbortErrorLocal(err)) {
+        /**
+         * Stand the waiter down BEFORE re-throwing.
+         *
+         * This `throw` used to jump straight past the teardown below, which
+         * is the only place this attempt's waiter is released — so an abort
+         * mid-download left a `did-install-mod` listener subscribed (free to
+         * match a LATER mod's install) and a stall watchdog that fired ten
+         * minutes later against a promise nobody was awaiting. The failure
+         * path cleaned up and the cancel path did not, which is the wrong way
+         * round: cancelling is when nobody is left to await anything.
+         */
+        if (completed !== undefined) {
+          standDownWaiter(completed);
+          completed = undefined;
+        }
+        throw err;
+      }
       lastError = err;
     }
 
@@ -296,8 +313,7 @@ export async function installNexusViaApi(
     // down explicitly: otherwise the listener and its stall watchdog outlive
     // the attempt and fire a bogus "install stalled" long afterwards.
     if (completed !== undefined) {
-      void completed.promise.catch(() => undefined);
-      completed.cancel();
+      standDownWaiter(completed);
       completed = undefined;
     }
 
@@ -384,9 +400,17 @@ export async function installFromExistingDownload(
   });
 
   if (args.choices === undefined) {
-    api.events.emit("start-install-download", args.archiveId);
-    const result = await completed.promise;
-    return { vortexModId: result.modId };
+    try {
+      // `emit` is synchronous and rethrows whatever a listener throws, so an
+      // archiveId Vortex does not know escapes from HERE with the waiter
+      // fully armed. Every other emit in this file is already wrapped; this
+      // branch was the one left bare, and it is the common path.
+      api.events.emit("start-install-download", args.archiveId);
+      const result = await completed.promise;
+      return { vortexModId: result.modId };
+    } finally {
+      standDownWaiter(completed);
+    }
   }
 
   // Observed signature — see installerChoices.ts. Vortex passes a callback of
@@ -708,10 +732,17 @@ export async function installFromBundledArchive(
   // when `util.SevenZip` is missing, so merely reaching this line used to be
   // enough to fail an install on a prefix where 7z is unavailable — before
   // anything had tried to read a single byte.
-  if (args.signal?.aborted) {
-    throw makeAbortErrorLocal("install from bundled archive");
-  }
-
+  /**
+   * NOT an abort check here.
+   *
+   * There used to be one, and it threw before `tempDir` had been destructured
+   * out of `args.preExtracted` — so aborting after the prefetch pool had
+   * already handed this call a multi-gigabyte extracted folder orphaned it
+   * outright: `take()` had removed the slot, so the pool could not clean it,
+   * and the caller only learns the path from a successful return. The check
+   * that matters is the one inside the `try` below, whose `catch` owns the
+   * directory and removes it.
+   */
   const { extractedPath, tempDir } =
     args.preExtracted ??
     (await extractBundledFromEhcoll(

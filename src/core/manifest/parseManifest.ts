@@ -73,6 +73,8 @@ import type {
 } from "../getModsListForProfile";
 import { isFullyPinnedReference as isFullyPinnedModReference } from "../identity/compareKey";
 
+import { isSafeRelativePath, unsafePathReason } from "../safeRelativePath";
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -805,6 +807,20 @@ function validateInstallState(
     obj.modType === undefined
       ? undefined
       : expectString(obj.modType, `${path}.modType`, errors);
+  /**
+   * Written by the build, and until now silently DROPPED here — so every mod
+   * the curator answered "declare" for arrived on the user's machine without
+   * its flag. `judgeReinstall` then applied the strict missing-file rule to
+   * the one mod that had opted out of it, ordered a reinstall that provably
+   * cannot produce those files, and did it again on every machine, forever.
+   *
+   * The same shape as the `light` flag before it: written, shipped, dropped.
+   */
+  const postProcessed =
+    obj.postProcessed === undefined
+      ? undefined
+      : expectBoolean(obj.postProcessed, `${path}.postProcessed`, errors);
+
   const mirrored =
     obj.mirrored === undefined
       ? undefined
@@ -839,6 +855,7 @@ function validateInstallState(
     installOrder,
     deploymentPriority,
     ...(modType !== undefined ? { modType } : {}),
+    ...(postProcessed !== undefined ? { postProcessed } : {}),
     ...(mirrored !== undefined ? { mirrored } : {}),
     ...(enabledINITweaks !== undefined ? { enabledINITweaks } : {}),
     ...(stagingFiles !== undefined ? { stagingFiles } : {}),
@@ -881,6 +898,24 @@ function validateStagingFiles(
         ? undefined
         : expectString(obj.sha256, `${path}[${i}].sha256`, errors);
     if (filePath === undefined || size === undefined) return;
+    /**
+     * A `.ehcoll` comes from a stranger, and this path is joined onto a
+     * folder we own so the mirror pass can write bytes into it. An entry
+     * spelled `../../../../plugins/evil/index.js` lands in Vortex's own
+     * extension directory, which Vortex loads on the next start.
+     *
+     * An ERROR, not a warning: no staging folder contains an entry above
+     * itself, so a package claiming one is not a degraded package — it is
+     * not describing a staging folder at all.
+     */
+    if (!isSafeRelativePath(filePath)) {
+      errors.push(
+        `${path}[${i}].path must be a relative path inside the mod's ` +
+          `staging folder — "${filePath}" was rejected because ` +
+          `${unsafePathReason(filePath)}.`,
+      );
+      return;
+    }
     if (sha256Raw !== undefined && !/^[0-9a-f]{64}$/.test(sha256Raw)) {
       errors.push(
         `${path}[${i}].sha256 must be 64 lowercase hex chars, got "${sha256Raw}".`,

@@ -141,6 +141,15 @@ export type OrphanChoice =
  * of these and hands it in.
  */
 export type DriverContext = {
+  /**
+   * Called the moment the run knows which profile it is filling.
+   *
+   * `runInstall` installs this so that a THROW out of the driver can still
+   * record a resumable attempt: the profile id is a local of the driver body,
+   * and an exception carries no result to put it in. Set by the harness, not
+   * by callers.
+   */
+  onProfileResolved?: (profileId: string) => void;
   /** Vortex API. The driver dispatches actions and emits events through it. */
   api: import("@nexusmods/vortex-api").types.IExtensionApi;
   /** The fully-resolved plan from `resolveInstallPlan`. */

@@ -23,6 +23,7 @@ import {
   deleteReceipt,
   listReceipts,
 } from "../../core/installLedger";
+import { ehLog } from "../../core/logging/ehLog";
 import { uninstallMod } from "../../core/installer/modInstall";
 import { switchToProfile } from "../../core/installer/profile";
 import type { InstallReceipt } from "../../types/installLedger";
@@ -43,7 +44,6 @@ import {
 } from "../../core/installer/attemptRecord";
 import {
   describeInterruptedInstall,
-  getMarkerDir,
   listInterruptedInstalls,
   type InstallMarker,
 } from "../../core/installer/installMarker";
@@ -366,9 +366,14 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
         });
         // Never fatal: an unreadable marker directory must not hide the
         // collections that ARE installed.
-        const interrupted = await listInterruptedInstalls(
-          getMarkerDir(appData),
-        ).catch(() => [] as InstallMarker[]);
+        // `appData`, NOT `getMarkerDir(appData)`: the function joins the
+        // marker directory itself, so passing an already-resolved one looked
+        // for `…/in-progress/event-horizon/installs/in-progress`, which never
+        // exists. `readdir` threw, the catch below returned [], and the
+        // "an install was interrupted" banner could not appear for anyone.
+        const interrupted = await listInterruptedInstalls(appData).catch(
+          () => [] as InstallMarker[],
+        );
         const failedAttempts = await listInstallAttempts(appData).catch(
           () => [] as InstallAttempt[],
         );
@@ -873,26 +878,51 @@ function ReceiptDetailModal(props: {
 
   const handleUninstall = async (): Promise<void> => {
     if (receipt === undefined) return;
+    /**
+     * ─── ONLY MODS WE PUT HERE (NS-2) ──────────────────────────────────────
+     * This loop used to walk `receipt.mods` whole. But the receipt describes
+     * what the collection CONTROLS, not what it created: an
+     * `*-already-installed` decision records the USER'S own Vortex mod id, so
+     * on a real 1,755-mod install 1,591 of those rows were mods Event Horizon
+     * never installed. "Uninstall this collection" would have deleted every
+     * one of them.
+     *
+     * `ownership` is absent on receipts written before it existed, and absent
+     * means UNKNOWN — which is treated as theirs. That leaves an old receipt
+     * uninstalling nothing, and that is the right way round: the remedy for
+     * being too careful is a message, and the remedy for deleting someone's
+     * 1,591 mods is nothing at all.
+     */
+    const ours = receipt.mods.filter((m) => m.ownership === "installed");
+    const notOurs = receipt.mods.length - ours.length;
+    ehLog("info", "collection.uninstall.start", {
+      packageId: receipt.packageId,
+      total: receipt.mods.length,
+      willRemove: ours.length,
+      leftAlone: notOurs,
+      unknownOwnership: receipt.mods.filter((m) => m.ownership === undefined)
+        .length,
+    });
     setBusy(true);
-    setProgress({ current: 0, total: receipt.mods.length });
+    setProgress({ current: 0, total: ours.length });
     try {
       let i = 0;
-      for (const mod of receipt.mods) {
+      for (const mod of ours) {
         i += 1;
-        setProgress({ current: i, total: receipt.mods.length });
+        setProgress({ current: i, total: ours.length });
         try {
           await uninstallMod(api, {
             gameId: receipt.gameId,
             modId: mod.vortexModId,
           });
         } catch (err) {
-          // Continue removing the rest — log per-mod failures, finalize
+          // Continue removing the rest — record per-mod failures, finalize
           // by reporting once at the end.
-          // eslint-disable-next-line no-console
-          console.warn(
-            `[Event Horizon] Failed to uninstall ${mod.name} (${mod.vortexModId}):`,
+          ehLog("warn", "collection.uninstall.mod-failed", {
+            name: mod.name,
+            vortexModId: mod.vortexModId,
             err,
-          );
+          });
         }
       }
       const appData = getVortexUserDataPath();

@@ -580,7 +580,46 @@ export function buildAbortedResult(args: {
  * more than it saves.
  */
 export async function runInstall(ctx: DriverContext): Promise<InstallResult> {
-  const result = await runInstallImpl(ctx);
+  /**
+   * ─── A THROW IS AN OUTCOME TOO ──────────────────────────────────────────
+   * This used to be three lines with no `catch`, so any exception escaping
+   * `runInstallImpl` skipped `recordAttemptOutcome` entirely — and the profile
+   * the run had already created went unrecorded.
+   *
+   * That is not hypothetical: `switchToProfile` rejects with a PLAIN Error
+   * when Vortex misses the switch budget (purging a profile that holds ~1,100
+   * deployed mods), the driver re-throws anything that is not an AbortError,
+   * and Vortex's `setNextProfile` cannot be recalled — so the user is left
+   * sitting in the brand-new profile while nothing on disk remembers it. The
+   * next run finds no attempt record, logs `whyNotResumed: "no-attempt"`, and
+   * forks ANOTHER profile. A tester hit exactly that, twice.
+   *
+   * `escapedProfileId` is how the profile id gets out: `runInstallImpl` owns
+   * it as a local, and on a throw there is no result to carry it.
+   */
+  const escaped: { profileId?: string } = {};
+  ctx.onProfileResolved = (profileId: string): void => {
+    escaped.profileId = profileId;
+  };
+
+  let result: InstallResult;
+  try {
+    result = await runInstallImpl(ctx);
+  } catch (err) {
+    await recordAttemptOutcome(ctx, {
+      kind: "failed",
+      // Not a lie about where it stopped: an exception carries no phase, and
+      // every named phase would be a guess. The log's `install.phase` line is
+      // the record of how far it got.
+      phase: "failed",
+      ...(escaped.profileId !== undefined
+        ? { partialProfileId: escaped.profileId }
+        : {}),
+      error: formatError(err),
+      installedSoFar: [],
+    });
+    throw err;
+  }
   await recordAttemptOutcome(ctx, result);
   return result;
 }
@@ -700,7 +739,16 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
    * from this, so a resumed run that failed recorded NO profile, and the run
    * after it forked a new one. Five restarts became three.
    */
+  /**
+   * The profile this run is filling — created, resumed, or the one already
+   * active. Published to `ctx.onProfileResolved` as soon as it is known so a
+   * THROW can still record a resumable attempt; see {@link runInstall}.
+   */
   let ehProfileId: string | undefined;
+  const setEhProfileId = (id: string): void => {
+    ehProfileId = id;
+    ctx.onProfileResolved?.(id);
+  };
 
   // Lookup manifest entries by compareKey rather than by index.
   // The resolver currently produces a 1:1 index alignment, but that
@@ -916,14 +964,14 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         // Recorded exactly like a created one. It IS the profile this run is
         // filling, and the attempt record has to carry it or the NEXT resume
         // has nothing to find.
-        ehProfileId = resumeId;
+        setEhProfileId(resumeId);
       } else {
         const created = createFreshProfile(
           api,
           plan.manifest.game.id,
           plan.installTarget.suggestedProfileName,
         );
-        ehProfileId = created.id;
+        setEhProfileId(created.id);
         activeProfileId = created.id;
         activeProfileName = created.name;
       }
@@ -1002,6 +1050,11 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       // Current-profile mode: install in-place into the active profile.
       activeProfileId = plan.installTarget.profileId;
       activeProfileName = plan.installTarget.profileName;
+      // Recorded like the other two. This IS the profile the run is filling,
+      // which is what the field means — leaving it unset made every in-place
+      // failure write an unresumable attempt, and that record then OVERWRITES
+      // a good one from an earlier fresh-profile run.
+      setEhProfileId(plan.installTarget.profileId);
     }
 
     /**
@@ -3812,6 +3865,15 @@ function buildReceipt(args: {
       source: m.source,
       name: m.name,
       installedAt: now,
+      /**
+       * The same test the journal uses (NS-2). An `*-already-installed`
+       * decision hands back the USER'S mod id, so `installedMods` is not
+       * all ours despite its name — and the receipt is what "Uninstall this
+       * collection" reads.
+       */
+      ownership: m.fromDecision.endsWith("already-installed")
+        ? ("adopted" as const)
+        : ("installed" as const),
       // Fingerprint of what we left on disk, for drift detection on a later
       // update.
       //
@@ -3836,6 +3898,15 @@ function buildReceipt(args: {
       compareKey: c.compareKey,
       source: c.source,
       name: c.name,
+      /**
+       * Conservative by design (NS-2). A carry is either a keep-existing
+       * choice — the USER'S copy, definitively not ours — or an orphan we
+       * installed under an earlier release. This run cannot tell them apart,
+       * and the only safe reading of "cannot tell" is "not ours": the cost of
+       * being wrong here is that uninstall leaves one of our own mods behind,
+       * against deleting one of theirs.
+       */
+      ownership: "adopted" as const,
       // Carried mods were installed by a previous release; we keep the
       // current release's `installedAt` for simplicity (the receipt's
       // own `installedAt` is "when this receipt was written," not "when

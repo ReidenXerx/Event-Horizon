@@ -29,6 +29,11 @@
  */
 
 import * as fsp from "fs/promises";
+
+import {
+  isSafeRelativePath,
+  unsafePathReason,
+} from "../safeRelativePath";
 import * as os from "os";
 import * as path from "path";
 
@@ -118,7 +123,22 @@ async function restoreOne(
       );
     }
 
-    const dest = path.join(stagingRoot, ...relativePath.split("/"));
+    /**
+     * Re-checked here even though the parser rejects it.
+     *
+     * This is the line that turns a string from someone else's file into a
+     * write on this machine, and a single check at the far end of the chain
+     * is one refactor away from being bypassed by a new call site. The cost
+     * is a string scan per file; the thing it prevents is arbitrary write.
+     */
+    if (!isSafeRelativePath(relativePath)) {
+      throw new Error(
+        `the manifest asked to write "${relativePath}", which is not a path ` +
+          `inside the mod's folder (${unsafePathReason(relativePath)}) — ` +
+          `refused`,
+      );
+    }
+    const dest = path.join(stagingRoot, ...relativePath.split(/[\\/]/));
     await fsp.mkdir(path.dirname(dest), { recursive: true });
     // Replace rather than write in place: a partial write over a good file is
     // the one outcome worse than not restoring it.

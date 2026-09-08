@@ -471,6 +471,33 @@ export type InstallReceiptMod = {
    * means UNKNOWN, and must never be read as "unchanged".
    */
   stagingSetHash?: string;
+
+  /**
+   * Did Event Horizon PUT this mod here, or did it merely recognise one the
+   * user already had?
+   *
+   * ─── WHY THIS EXISTS (NS-2) ───────────────────────────────────────────
+   * The receipt describes "what this collection controls on this machine",
+   * and until now it could not say who created any of it. `buildReceipt`
+   * folds installed and carried mods into one array, and for an
+   * `*-already-installed` decision the entry's `vortexModId` is the USER'S
+   * mod id — so "Uninstall this collection" walked the whole list and
+   * uninstalled every one. On a real run that is 1,755 mods of which 1,591
+   * were adopted: the tool would have deleted 1,591 mods it never installed.
+   *
+   * The install journal knows this, but it is deleted on success, so the
+   * fact has to live somewhere durable. Here.
+   *
+   * `"installed"` — this run (or an earlier run of this collection) created
+   *   the mod. Safe to remove on uninstall.
+   * `"adopted"` — the mod was already in the user's pool and we reused it.
+   *   MUST NOT be removed.
+   *
+   * Optional: absent on receipts written before this field existed. Absent
+   * means UNKNOWN, and an unknown must be treated as adopted — refusing to
+   * delete something we cannot prove is ours is the only safe direction.
+   */
+  ownership?: "installed" | "adopted";
 };
 
 /** What the install wrote into the user's INI files, and what it left. */

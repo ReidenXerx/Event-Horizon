@@ -1,5 +1,7 @@
 import * as crypto from "crypto";
 
+import { isVolatileFile } from "../volatileFiles";
+
 import type { EhcollStagingFile } from "../../types/ehcoll";
 
 /**
@@ -38,6 +40,23 @@ import type { EhcollStagingFile } from "../../types/ehcoll";
  * happen to share the hashable subset, breaking the identity
  * promise the resolver relies on.
  *
+ * VOLATILE FILES ARE EXCLUDED, AND THAT IS LOAD-BEARING:
+ * A runtime log or a `Thumbs.db` changes on its own, so any set hash that
+ * counted one could never match itself twice. This function is BOTH sides of
+ * two different comparisons — the receipt's drift reference against a later
+ * re-hash of the same folder, and a manifest's identity oracle against the
+ * user's staging — so the exclusion has to live HERE, at the single point both
+ * sides pass through, or one side filters and the other does not and every
+ * comparison fails.
+ *
+ * The regression that proved it: excluding volatile files from VERIFICATION
+ * (and only there) made seven previously-failing mods pass, and a receipt
+ * records a drift reference only for mods that PASSED. So they went from
+ * having no drift reference at all to having one computed over a file the game
+ * rewrites on every launch — and the Doctor then offered to reinstall seven
+ * healthy mods, permanently, since reinstalling cannot stop Skyrim writing a
+ * log. Filtering in one place and not the other was worse than not filtering.
+ *
  * WHY NOT MERKLE / TREE HASH:
  * Flat per-line digest is the right choice here. We don't need
  * proof-of-inclusion; we just need set equality. Sorted-line digest
@@ -52,16 +71,21 @@ import type { EhcollStagingFile } from "../../types/ehcoll";
 export function computeStagingSetHash(
   files: readonly EhcollStagingFile[],
 ): string | undefined {
-  if (files.length === 0) {
+  // Before the emptiness check, not after: a mod whose ONLY staged file is a
+  // log has no stable set to hash, and `undefined` is the honest answer rather
+  // than a hash of nothing.
+  const stable = files.filter((f) => !isVolatileFile(f.path));
+
+  if (stable.length === 0) {
     return undefined;
   }
-  for (const f of files) {
+  for (const f of stable) {
     if (typeof f.sha256 !== "string" || f.sha256.length !== 64) {
       return undefined;
     }
   }
 
-  const sorted = [...files].sort((a, b) =>
+  const sorted = [...stable].sort((a, b) =>
     a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
   );
 

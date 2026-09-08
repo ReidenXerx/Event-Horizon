@@ -425,10 +425,34 @@ function declarationsFor(
   mod: AuditorMod,
 ): AuditorMod {
   if (entry?.postProcessed !== true && entry?.mirrored !== true) return mod;
+
+  /**
+   * ─── AN INCOMPLETE CAPTURE REVOKES A STORED "MIRROR" ANSWER (NS-2) ──────
+   * `stagingCaptureIncomplete` used to gate only the QUESTION: `runSelfChecks`
+   * drops such a mod from `mirrorable`, so the curator is never re-asked. But
+   * a mod answered "mirror" in an earlier build is already settled, and this
+   * function copied that answer forward regardless.
+   *
+   * The result shipped a mirror instruction backed by a file list we KNOW is
+   * short. On the user's machine `planMirror` sees nothing unverifiable and a
+   * non-empty target, so neither withholding guard fires, and every real file
+   * under the subtree the curator's walk could not read is classified as the
+   * user's own junk and DELETED — files their archive installed correctly.
+   * `mirrorProvesTarget` then certifies the amputated folder.
+   *
+   * So incompleteness has to veto the outcome, not just the offer. The mod
+   * still ships; it ships un-mirrored, which is the safe direction.
+   */
+  const captureIncomplete =
+    (mod as { stagingCaptureIncomplete?: boolean }).stagingCaptureIncomplete ===
+    true;
+
   return {
     ...mod,
     ...(entry.postProcessed === true ? { postProcessed: true } : {}),
-    ...(entry.mirrored === true ? { mirrored: true } : {}),
+    ...(entry.mirrored === true && !captureIncomplete
+      ? { mirrored: true }
+      : {}),
   };
 }
 

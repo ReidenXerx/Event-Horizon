@@ -568,6 +568,12 @@ function validateModEntries(
       name: name as string,
       installedAt: installedAt as string,
       ...(stagingSetHash !== undefined ? { stagingSetHash } : {}),
+      // Only the two known values are carried through. Anything else — a
+      // future value, a corrupted field — reads as ABSENT, which callers must
+      // treat as "not proven ours" (NS-2). Never coerce it to "installed".
+      ...(entry.ownership === "installed" || entry.ownership === "adopted"
+        ? { ownership: entry.ownership }
+        : {}),
     });
   });
   return out;

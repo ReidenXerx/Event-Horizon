@@ -334,7 +334,13 @@ export class BundledPrefetchPool {
         // The slot was promoted by an inline `take()` already.
         continue;
       }
-      void this.startExtraction(zipEntry);
+      // `.catch`, not a bare `void`: `runExtraction` re-throws after latching
+      // the failure into the slot, and nothing is awaiting this promise yet —
+      // the driver may not call `take()` for minutes. Without the handler that
+      // rejection surfaces as an unhandled-rejection dialog mid-install, for a
+      // mod the driver has not reached. `take()` still re-throws `slot.error`,
+      // so swallowing it here loses nothing.
+      void this.startExtraction(zipEntry).catch(() => undefined);
     }
   }
 
@@ -380,6 +386,23 @@ export class BundledPrefetchPool {
 
       if (tracked) {
         this.inFlight = Math.max(0, this.inFlight - 1);
+        if (this.disposed) {
+          /**
+           * The pool was disposed while this extraction was in flight.
+           *
+           * Storing the result now would REPOPULATE the map `dispose()` just
+           * cleared, and nothing would ever read it — so the extracted folder
+           * stayed on disk until the OS reclaimed it. A real aborted run left
+           * 7.4 GB in %TEMP% that way: `bundled-prefetch.dispose` at 22:13:47,
+           * then a 2,577 MB and a 4,890 MB `extract.ok` after it.
+           */
+          ehLog("info", "bundled-prefetch.discarded-after-dispose", {
+            zipEntry,
+            tempDir: result.tempDir,
+          });
+          await safeRmTempDir(result.tempDir);
+          return result;
+        }
         this.slots.set(zipEntry, {
           state: "ready",
           zipEntry,
