@@ -192,21 +192,31 @@ describe("the driver sets types BEFORE it deploys", () => {
   // source order is asserted directly.
   const src = readFileSync(join(__dirname, "runInstall.ts"), "utf8");
 
+  /**
+   * The deploy CALL, matched without its argument list.
+   *
+   * This was pinned as the literal `await deployAndWait(api);` and broke when
+   * the function gained a second parameter — a change that did not touch the
+   * ordering these tests exist to protect. The anchor is the call; its
+   * arguments are not the property under test.
+   */
+  const DEPLOY_CALL = "await deployAndWait(";
+
   it("finds both anchors it claims to compare", () => {
     expect(src).toContain("applyModTypeChanges(");
-    expect(src).toContain("await deployAndWait(api);");
+    expect(src).toContain(DEPLOY_CALL);
   });
 
   it("restores the curator's types first", () => {
     expect(src.indexOf("applyModTypeChanges(")).toBeLessThan(
-      src.indexOf("await deployAndWait(api);"),
+      src.indexOf(DEPLOY_CALL),
     );
   });
 
   it("still checks for leftovers after the deploy", () => {
     // The post-deploy check keeps its job; its meaning is now "this machine
     // refused the type", not "nobody tried to set it".
-    expect(src.indexOf("await deployAndWait(api);")).toBeLessThan(
+    expect(src.indexOf(DEPLOY_CALL)).toBeLessThan(
       src.indexOf("findModTypeMismatches({"),
     );
   });

@@ -2405,7 +2405,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     reportProgress("deploying", 0, 1, "Deploying mods...");
 
     try {
-      await deployAndWait(api);
+      await deployAndWait(api, activeProfileId);
     } catch (err) {
       return {
         kind: "failed",
@@ -3742,7 +3742,11 @@ function collectInvalidOrphanChoices(
  * Vortex emits `did-deploy` when activation completes (either after a
  * `deploy-mods` call or after a profile switch's auto-deploy).
  */
-async function deployAndWait(api: types.IExtensionApi): Promise<void> {
+async function deployAndWait(
+  api: types.IExtensionApi,
+  /** The profile this run has been filling. */
+  expectedProfileId: string,
+): Promise<void> {
   const state = api.getState();
   const profileId =
     state.settings?.profiles?.activeProfileId ??
@@ -3750,6 +3754,37 @@ async function deployAndWait(api: types.IExtensionApi): Promise<void> {
 
   if (!profileId) {
     throw new Error("No active profile to deploy.");
+  }
+
+  /**
+   * ─── DEPLOY THE PROFILE WE FILLED, OR NOTHING ───────────────────────────
+   * This used to deploy whatever profile Vortex happened to have active,
+   * read fresh from state. Every `enableModInProfile` in the run targets the
+   * profile the plan named, so if the user switches profiles in Vortex during
+   * a multi-hour install the two diverge: the deploy "succeeds" against the
+   * OTHER profile, the receipt is written, and the run reports success for a
+   * collection whose files were never linked into the game folder.
+   *
+   * It is also the wrong profile to touch — re-linking a profile this run has
+   * nothing to do with is exactly what NS-2 is about.
+   *
+   * Fail loudly instead. The mods are installed and enabled in the right
+   * profile; the user can switch back and deploy.
+   */
+  if (profileId !== expectedProfileId) {
+    ehLog("error", "deploy.profile-mismatch", {
+      expected: expectedProfileId,
+      activeNow: profileId,
+      consequence:
+        "refusing to deploy — this run filled a different profile than the " +
+        "one Vortex now has active",
+    });
+    throw new Error(
+      `Vortex's active profile changed during the install (this run filled ` +
+        `"${expectedProfileId}", Vortex now has "${profileId}"). The mods are ` +
+        `installed and enabled; switch back to the collection's profile and ` +
+        `deploy to finish.`,
+    );
   }
 
   // Deployment links or copies every file of every mod, so a flat five
