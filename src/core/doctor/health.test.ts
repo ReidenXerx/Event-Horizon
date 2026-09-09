@@ -281,8 +281,10 @@ describe("healingBlockedReason", () => {
   it("blocks when it cannot tell, rather than assuming safety", () => {
     // If we do not know what the installer is doing, the safe answer is not to
     // also start writing.
-    expect(healingBlockedReason({} as { kind?: unknown })).toBeDefined();
-    expect(healingBlockedReason({ kind: 42 } as { kind?: unknown })).toBeDefined();
+    expect(healingBlockedReason({} as unknown as { kind: unknown })).toBeDefined();
+    expect(
+      healingBlockedReason({ kind: 42 } as unknown as { kind: unknown }),
+    ).toBeDefined();
   });
 });
 

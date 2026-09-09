@@ -704,8 +704,27 @@ export function overallHealth(checks: readonly HealthCheck[]): {
  * Deliberately fails to BLOCKED on an unrecognised shape: if we cannot tell
  * what the installer is doing, the safe answer is not to also start writing.
  */
+/**
+ * ─── `kind` IS REQUIRED HERE ON PURPOSE ────────────────────────────────
+ * It used to be `{ kind?: unknown }`, and optional is what made this
+ * unfalsifiable. The Doctor called it with the install session's SNAPSHOT —
+ * `{ state, errorSeq }` — whose `kind` lives one level down on `.state`.
+ * An absent optional property satisfies that type, so nothing complained,
+ * `kind` was `undefined` on every render, and the guard below returned
+ * "cannot tell" forever.
+ *
+ * The whole healing feature was disabled by it: all seven repair buttons read
+ * "Install in progress" on a machine with nothing installing, and the page
+ * still looked like it was working — a diagnosis, a health score, and every
+ * cure greyed out with a plausible reason.
+ *
+ * Required means the snapshot no longer typechecks and the caller has to say
+ * `.state`. `unknown` rather than `string` keeps the runtime guard honest:
+ * this is called with data from a UI singleton, so a non-string `kind` is
+ * still worth refusing rather than assuming.
+ */
 export function healingBlockedReason(
-  installState: { kind?: unknown } | undefined,
+  installState: { kind: unknown } | undefined,
 ): string | undefined {
   if (installState === undefined) return undefined;
   const kind = installState.kind;

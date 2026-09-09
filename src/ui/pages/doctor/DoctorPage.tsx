@@ -239,8 +239,15 @@ export function DoctorPage(props: DoctorPageProps): JSX.Element {
     };
   }, [api, loaded, drifted, tick, reportError]);
 
-  const installState = getInstallSession().getSnapshot() as { kind?: unknown };
-  const blocked = healingBlockedReason(installState);
+  /**
+   * `.state` — the snapshot is `{ state, errorSeq }` and the wizard's `kind`
+   * is on the state. This was `getSnapshot() as { kind?: unknown }`, and the
+   * cast is what made it compile: the snapshot has no `kind`, the optional
+   * property tolerated that, and every repair button was disabled with
+   * "Install in progress" from the day it was written. No cast now, so the
+   * shape is the compiler's problem rather than a curator's.
+   */
+  const blocked = healingBlockedReason(getInstallSession().getSnapshot().state);
 
   const missingPackage =
     pkg === undefined && pkgSearched
