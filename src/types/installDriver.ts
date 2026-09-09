@@ -586,6 +586,38 @@ export type InstallFailed = {
   curatorReports?: string[];
   /** Archives that could not be read. Same reason as above. */
   damagedArchiveNotice?: string[];
+  /**
+   * ─── WHAT A PARTIAL RUN DID NOT DO ────────────────────────────────────
+   * A failure result used to mean "nothing happened", so it carried almost no
+   * notices. That stopped being true when a partial run started writing a
+   * receipt: 978 of 979 mods can be installed, deployed and load-ordered, and
+   * the run still returns `failed`.
+   *
+   * `finishingSkippedNotice` is the sharpest case. A user who stops the
+   * install after the deploy AND has a failed mod is told to "source the
+   * missing ones and run this again" — and never told their plugin order was
+   * not applied and their ESL flags were not restored. The second of those is
+   * the difference between a working profile and a game that will not start.
+   *
+   * The rest are the same shape: every one describes work the run really did,
+   * computed and then dropped on the floor at the return.
+   */
+  finishingSkippedNotice?: string[];
+  /** The ESL flags this run rewrote, and the record of how to undo them. */
+  pluginFlagNotice?: string[];
+  /** The only phase that DELETES files from a mod folder. */
+  mirrorNotice?: string[];
+  /** Mods whose deploy target was corrected, or could not be. */
+  modTypeNotice?: string[];
+  /** Load-order drift, or the reason it could not be applied. */
+  pluginOrderNotice?: string[];
+  pluginOrderNotApplied?: string[];
+  /** Curator INI tweaks that were ticked. */
+  iniTweakNotice?: string[];
+  /** Mods that changed on disk since a previous install of this collection. */
+  stagingDriftNotice?: string[];
+  /** Archives supplied from outside Nexus, and what was done with them. */
+  externalArchiveNotice?: string[];
 };
 
 /** One mod that could not be installed, and why. */

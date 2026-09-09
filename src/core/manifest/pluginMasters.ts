@@ -160,23 +160,52 @@ export async function readPluginMasters(
  * Lowercased; compare against a lowercased name. Creation Club content is
  * deliberately absent — see {@link isUserOwnedMaster}.
  */
+const SKYRIM_SE_MASTERS: readonly string[] = [
+  "skyrim.esm",
+  "update.esm",
+  "dawnguard.esm",
+  "hearthfires.esm",
+  "dragonborn.esm",
+];
+
+const FALLOUT_4_MASTERS: readonly string[] = [
+  "fallout4.esm",
+  "dlcrobot.esm",
+  "dlcworkshop01.esm",
+  "dlcworkshop02.esm",
+  "dlcworkshop03.esm",
+  "dlccoast.esm",
+  "dlcnukaworld.esm",
+  "dlcultrahighresolution.esm",
+];
+
+/**
+ * ─── EVERY GAME THE GATE ACTUALLY RUNS ON ─────────────────────────────────
+ * This held two entries while the masters gate ran on five. `comparePlugins`
+ * gives Skyrim VR, Fallout 4 VR and Enderal SE the readable Fallout-4
+ * plugins.txt format, and `buildPreflight` judges their plugin budgets — so
+ * `enabledPlugins` is non-empty on all three and the gate genuinely fires.
+ *
+ * A base master missing from here is not in `available` either, because the
+ * whole reason this table exists is that implicit masters are NOT written to
+ * plugins.txt. `checkMasters` then classifies it `missing`, and the gate
+ * REFUSES the build with "add the mod that provides each master" — an
+ * instruction that cannot be followed for a file that ships with the game.
+ *
+ * The VR titles carry their own root master alongside the flat-game one:
+ * a Fallout 4 VR plugin commonly declares both `Fallout4.esm` and
+ * `Fallout4_VR.esm`, and neither was in any list on any code path.
+ */
 const BASE_MASTERS: Readonly<Record<string, readonly string[]>> = {
-  skyrimse: [
-    "skyrim.esm",
-    "update.esm",
-    "dawnguard.esm",
-    "hearthfires.esm",
-    "dragonborn.esm",
-  ],
-  fallout4: [
-    "fallout4.esm",
-    "dlcrobot.esm",
-    "dlcworkshop01.esm",
-    "dlcworkshop02.esm",
-    "dlcworkshop03.esm",
-    "dlccoast.esm",
-    "dlcnukaworld.esm",
-    "dlcultrahighresolution.esm",
+  skyrimse: SKYRIM_SE_MASTERS,
+  skyrimvr: [...SKYRIM_SE_MASTERS, "skyrimvr.esm"],
+  fallout4: FALLOUT_4_MASTERS,
+  fallout4vr: [...FALLOUT_4_MASTERS, "fallout4_vr.esm"],
+  // Enderal SE is a total conversion built on Skyrim SE: it ships its own
+  // master and still declares Skyrim's.
+  enderalspecialedition: [
+    ...SKYRIM_SE_MASTERS,
+    "enderal - forgotten stories.esm",
   ],
 };
 

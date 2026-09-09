@@ -2601,6 +2601,24 @@ export function DoneStep(props: DoneStepProps): JSX.Element {
         {...(result.rulesPurgeNotice !== undefined
           ? { rulesPurgeNotice: result.rulesPurgeNotice }
           : {})}
+        {...(result.finishingSkippedNotice !== undefined
+          ? { finishingSkippedNotice: result.finishingSkippedNotice }
+          : {})}
+        {...(result.pluginFlagNotice !== undefined
+          ? { pluginFlagNotice: result.pluginFlagNotice }
+          : {})}
+        {...(result.mirrorNotice !== undefined
+          ? { mirrorNotice: result.mirrorNotice }
+          : {})}
+        {...(result.damagedArchiveNotice !== undefined
+          ? { damagedArchiveNotice: result.damagedArchiveNotice }
+          : {})}
+        {...(result.curatorReports !== undefined
+          ? { curatorReports: result.curatorReports }
+          : {})}
+        {...(result.receiptPath !== undefined
+          ? { receiptPath: result.receiptPath }
+          : {})}
       />
     );
   }
@@ -3643,11 +3661,37 @@ function IntegritySection(props: {
               lineHeight: "var(--eh-leading-relaxed)",
             }}
           >
-            These mods extracted with missing or corrupt files even after
-            an automatic reinstall. The most common cause is antivirus
-            quarantining files; check your AV history, restore the files,
-            and click <strong>Reinstall</strong> on the mod in Vortex&apos;s
-            Mods tab. The full per-file diff is in the receipt JSON.
+            {/*
+              Two different failures used to share one sentence. A mod whose
+              only defect is its installer ANSWERS verifies byte-for-byte, so
+              its row reads "0 missing, 0 truncated, 0 corrupt" — and it was
+              rendered under prose telling the user to go through their
+              antivirus history. They were sent to hunt corruption that does
+              not exist, and the one fact that would have helped appeared
+              nowhere on the screen.
+            */}
+            {fails.some((f) => f.failReason !== "stale-installer-options") && (
+              <>
+                These mods extracted with missing or corrupt files even after
+                an automatic reinstall. The most common cause is antivirus
+                quarantining files; check your AV history, restore the files,
+                and click <strong>Reinstall</strong> on the mod in
+                Vortex&apos;s Mods tab. The full per-file diff is in the
+                receipt JSON.
+              </>
+            )}
+            {fails.some((f) => f.failReason === "stale-installer-options") && (
+              <>
+                {" "}
+                Mods marked <em>installer options differ</em> below are a
+                different case: every one of their files is correct. They were
+                installed through their FOMOD with different answers than this
+                collection records, so they contain a different SET of correct
+                files. Reinstalling one and choosing the collection&apos;s
+                answers is what fixes it — there is nothing wrong with the
+                files you have.
+              </>
+            )}
           </p>
           <ul
             style={{
@@ -3661,10 +3705,25 @@ function IntegritySection(props: {
               <li key={f.vortexModId} style={{ marginBottom: "var(--eh-sp-2)" }}>
                 <strong>{f.name}</strong>{" "}
                 <em className="eh-muted">
-                  — {f.missingFileCount} missing,{" "}
-                  {f.sizeMismatchCount} truncated,{" "}
-                  {f.hashMismatchCount} corrupt of {f.expectedFileCount}
-                  {f.retryAttempted ? "; reinstall did not help" : ""}
+                  {/*
+                    Three zeroes are not a description of this failure, so a
+                    mod that failed for a non-file reason says what the reason
+                    was instead of reporting counts about files that are fine.
+                  */}
+                  {f.failReason === "stale-installer-options" ? (
+                    <>
+                      — installer options differ from the collection&apos;s;
+                      all {f.expectedFileCount} recorded file(s) verified
+                      {f.retryAttempted ? "; reinstall did not help" : ""}
+                    </>
+                  ) : (
+                    <>
+                      — {f.missingFileCount} missing,{" "}
+                      {f.sizeMismatchCount} truncated,{" "}
+                      {f.hashMismatchCount} corrupt of {f.expectedFileCount}
+                      {f.retryAttempted ? "; reinstall did not help" : ""}
+                    </>
+                  )}
                 </em>
                 {f.examples.length > 0 && (
                   <ul
@@ -3887,6 +3946,29 @@ function FailureBody(props: {
    * computed and dropped.
    */
   rulesPurgeNotice?: string[];
+  /**
+   * ─── AND EVERYTHING ELSE A PARTIAL RUN ACTUALLY DID ───────────────────
+   * A failure card used to be a report about nothing happening. That stopped
+   * being true when a partial run started writing a receipt: 978 of 979 mods
+   * can be installed, deployed and load-ordered and the run still returns
+   * `failed`.
+   *
+   * `finishingSkipped` is the one that costs the most. Stop after the deploy
+   * with a failed mod and the card said "source the missing ones and run this
+   * again" — never that the plugin order was not applied or the ESL flags not
+   * restored. Without the flags, a profile that fits only because most
+   * plugins are light does not start.
+   *
+   * `damagedArchive` is the only branch of the whole ladder that ends in an
+   * action the user can take, and it was computed and dropped here too.
+   */
+  finishingSkippedNotice?: string[];
+  pluginFlagNotice?: string[];
+  mirrorNotice?: string[];
+  damagedArchiveNotice?: string[];
+  curatorReports?: string[];
+  /** Where the receipt landed, so a partial install is findable at all. */
+  receiptPath?: string;
 }): JSX.Element {
   return (
     <div className="eh-stack">
@@ -3927,6 +4009,45 @@ function FailureBody(props: {
         props.rulesPurgeNotice.length > 0 && (
           <RulesPurgeNotice lines={props.rulesPurgeNotice} />
         )}
+
+      {/* What the run did NOT finish. First of the rest, because it is the
+          one that can stop the game starting. */}
+      {props.finishingSkippedNotice !== undefined &&
+        props.finishingSkippedNotice.length > 0 && (
+          <FinishingSkippedNotice lines={props.finishingSkippedNotice} />
+        )}
+
+      {/* The one phase that DELETES files from a mod folder. */}
+      {props.mirrorNotice !== undefined && props.mirrorNotice.length > 0 && (
+        <MirrorNotice lines={props.mirrorNotice} />
+      )}
+
+      {/* Bytes rewritten inside the user's game folder, and the undo. */}
+      {props.pluginFlagNotice !== undefined &&
+        props.pluginFlagNotice.length > 0 && (
+          <PluginFlagNotice lines={props.pluginFlagNotice} />
+        )}
+
+      {/* The only branch of the ladder that ends in something they can do. */}
+      {props.damagedArchiveNotice !== undefined &&
+        props.damagedArchiveNotice.length > 0 && (
+          <DamagedArchiveNotice lines={props.damagedArchiveNotice} />
+        )}
+
+      {props.curatorReports !== undefined &&
+        props.curatorReports.length > 0 && (
+          <CuratorReportsNotice reports={props.curatorReports} />
+        )}
+
+      {/* A partial run DID write a receipt, and nothing on this screen said
+          so — which mattered, because that receipt is what makes the
+          collection uninstallable as a unit and what a retry resumes from. */}
+      {props.receiptPath !== undefined && (
+        <p className="eh-note">
+          A receipt was written for what did install, so this collection can be
+          uninstalled as a unit and a retry will pick up from it.
+        </p>
+      )}
 
       {/* And last, what to do — which only makes sense once they know what
           happened and what exists. */}

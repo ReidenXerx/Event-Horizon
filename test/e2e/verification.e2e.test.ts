@@ -1293,3 +1293,249 @@ describe("mirroring never rewrites a mod the user brought", () => {
     expect(events).toContain("[Event Horizon] install.alongside.no-archive");
   });
 });
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * A mod id is a NAME Vortex reuses, not a handle to an installation.
+ *
+ * Provenance across runs comes from the receipt, because the journal is
+ * deleted on success. The receipt-seeded half of `ownedByUs` was gated on two
+ * things: the entry says `ownership: "installed"`, and the id is still
+ * occupied. Neither proves the SAME installation occupies it.
+ *
+ * Vortex derives a mod's id from its archive basename and reuses it —
+ * `checkModNameExists` only appends a suffix while a mod under that name
+ * currently exists. So a user who deletes our mod and re-downloads the same
+ * Nexus file themselves gets the same id back. That is ordinary Vortex use.
+ *
+ * The next run then claimed their mod as ours. Verification fails, because
+ * their FOMOD answers selected different files; `tryRecoverFailedMod` sees
+ * `weInstalledIt` and its NS-2 guard does not fire; and it UNINSTALLS a mod
+ * Event Horizon did not install. Ownership is monotone, so `buildReceipt`
+ * re-stamps the claim on every later run — wrong permanently, not wrong once.
+ *
+ * `installTime` is what tells the two apart, and it is already on the mod.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * A mod id is a NAME Vortex reuses, not a handle to an installation.
+ *
+ * Provenance across runs comes from the receipt, because the journal is
+ * deleted on success. The receipt-seeded half of `ownedByUs` was gated on two
+ * things: the entry says `ownership: "installed"`, and the id is still
+ * occupied. Neither proves the SAME installation occupies it.
+ *
+ * Vortex derives a mod's id from its archive basename and reuses it —
+ * `checkModNameExists` only appends a suffix while a mod under that name
+ * currently exists. So a user who deletes our copy and re-downloads the same
+ * Nexus file themselves gets that id back. Ordinary Vortex use.
+ *
+ * The next run then claimed their mod as ours. Verification fails, because
+ * their own FOMOD answers selected different files; `tryRecoverFailedMod`
+ * sees `weInstalledIt`, so the NS-2 guard does not fire; and it uninstalls a
+ * mod Event Horizon did not install. Ownership is monotone, so `buildReceipt`
+ * re-stamps the claim on every later run — wrong permanently, not once.
+ *
+ * `installTime` is what tells the two apart, and Vortex already records it.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("a mod that took over an id we used to own (NS-2)", () => {
+  /**
+   * Deliberately NOT the world's own mod id. An earlier draft reused it, so
+   * the curator's staging folder already held both files, verification passed,
+   * and all three cases went green without the repair path running at all —
+   * GP-4, the fixture that tests the case that cannot fail.
+   */
+  const REUSED_ID = "rock-textures-reused-name";
+
+  /** Their copy, under the id our previous run used, missing a file. */
+  function seedTheirCopy(
+    w: World,
+    fake: ReturnType<typeof makeFakeVortex>,
+    installTime: number | undefined,
+  ) {
+    const dir = nodePath.join(w.stagingRoot, REUSED_ID);
+    fs.mkdirSync(nodePath.join(dir, "Data"), { recursive: true });
+    // "Textures/rock.dds" absent: they answered the installer their own way.
+    fs.writeFileSync(nodePath.join(dir, "Data", "rock.esp"), "a plugin");
+
+    const mods = (
+      fake.api.getState().persistent as {
+        mods: Record<string, Record<string, unknown>>;
+      }
+    ).mods[w.gameId]!;
+    mods[REUSED_ID] = {
+      id: REUSED_ID,
+      installationPath: REUSED_ID,
+      type: "",
+      archiveId: ARCHIVE_ID,
+      attributes: {
+        name: "Rock Textures",
+        version: "1.0.0",
+        ...(installTime !== undefined ? { installTime } : {}),
+      },
+    };
+  }
+
+  /** A completed previous run of this collection, as a receipt. */
+  async function receiptOurs(w: World, compareKey: string, installedAt: string) {
+    const { writeReceipt } = await import("../../src/core/installLedger");
+    await writeReceipt(w.appDataPath, {
+      schemaVersion: 1,
+      packageId: "00000000-0000-4000-8000-000000000000",
+      packageVersion: "1.0.0",
+      packageName: "Test Collection",
+      gameId: w.gameId,
+      installedAt,
+      vortexProfileId: "profile-1",
+      vortexProfileName: "Profile",
+      installTargetMode: "fresh-profile",
+      mods: [
+        {
+          vortexModId: REUSED_ID,
+          compareKey,
+          source: "nexus",
+          name: "Rock Textures",
+          installedAt,
+          ownership: "installed",
+        },
+      ],
+    } as never);
+  }
+
+  const alreadyInstalled = [
+    { id: REUSED_ID, name: "Rock Textures", nexusModId: 100, nexusFileId: 200 },
+  ];
+
+  const RECEIPT_AT = "2026-01-01T00:00:00.000Z";
+
+  it("does NOT destroy a mod installed AFTER our receipt was written", async () => {
+    world = makeWorld({ mods: [MOD] });
+    const manifest = await packageFrom(world);
+    /**
+     * A download IS available, and that is what gives this test teeth. With
+     * none, `tryRecoverFailedMod` is not eligible and nothing is removed no
+     * matter whose the mod is — an earlier draft did that and passed against
+     * the unfixed driver, which is the fake pass GP-7 exists to catch.
+     *
+     * With one, the repair CAN uninstall-and-reinstall, and the only thing
+     * standing between the user's mod and deletion is whether we believe it
+     * is ours.
+     */
+    const fake = makeFakeVortex({
+      gameId: world.gameId,
+      downloads: { [ARCHIVE_ID]: "mod.zip" },
+      stagingRoot: world.stagingRoot,
+      installProduces: () => ({
+        "Textures/rock.dds": "the bytes the curator shipped",
+        "Data/rock.esp": "a plugin",
+      }),
+    });
+
+    // They re-downloaded it a week after our run finished.
+    seedTheirCopy(world, fake, Date.parse(RECEIPT_AT) + 7 * 86_400_000);
+    await receiptOurs(world, manifest.mods[0]!.compareKey, RECEIPT_AT);
+
+    const result = (await install(manifest, fake, alreadyInstalled)) as {
+      kind: string;
+      verifications?: Array<{ kind: string; modRemoved?: boolean }>;
+    };
+
+    expect(result.kind, why(result)).toBe("success");
+    /**
+     * Reported as a FAILED verification, which is the honest answer: their
+     * copy does not match the curator's, and it is not ours to correct.
+     *
+     * Measured against the unfixed driver, this assertion reads "ok" — and
+     * that is the whole bug in one word. It reached "ok" by uninstalling
+     * their mod, deleting its staging folder, and reinstalling the curator's
+     * build over the top. A clean verification obtained by destroying the
+     * thing being verified.
+     */
+    expect(result.verifications?.[0]?.kind).toBe("fail");
+    /**
+     * THE assertion, and the one thing this path must never do. `modRemoved`
+     * is what the driver sets when it uninstalls, so a falsy value here is a
+     * claim about behaviour rather than about a variable nobody wrote.
+     */
+    expect(result.verifications?.[0]?.modRemoved).toBeFalsy();
+    // And the evidence on disk agrees.
+    expect(
+      fs.existsSync(
+        nodePath.join(world.stagingRoot, REUSED_ID, "Data", "rock.esp"),
+      ),
+    ).toBe(true);
+    const after = (
+      fake.api.getState().persistent as {
+        mods: Record<string, Record<string, unknown>>;
+      }
+    ).mods[world.gameId]!;
+    expect(after[REUSED_ID]).toBeDefined();
+  });
+
+  it("still repairs one installed BEFORE the receipt, which IS ours", async () => {
+    /**
+     * The other direction, and the reason this cannot simply stop trusting
+     * the receipt: losing that provenance re-opens the failures it was added
+     * for — the mirror skipping our own work as "not ours", and a third copy
+     * installed beside our second.
+     */
+    world = makeWorld({ mods: [MOD] });
+    const manifest = await packageFrom(world);
+    const fake = makeFakeVortex({
+      gameId: world.gameId,
+      downloads: { [ARCHIVE_ID]: "mod.zip" },
+      stagingRoot: world.stagingRoot,
+      installProduces: () => ({
+        "Textures/rock.dds": "the bytes the curator shipped",
+        "Data/rock.esp": "a plugin",
+      }),
+    });
+
+    // Stamped during that run, so before the receipt was written.
+    seedTheirCopy(world, fake, Date.parse(RECEIPT_AT) - 60_000);
+    await receiptOurs(world, manifest.mods[0]!.compareKey, RECEIPT_AT);
+
+    const result = (await install(manifest, fake, alreadyInstalled)) as {
+      kind: string;
+      verifications?: Array<{ kind: string; retryAttempted?: boolean }>;
+    };
+
+    expect(result.kind, why(result)).toBe("success");
+    expect(result.verifications?.[0]?.kind).toBe("ok");
+    expect(result.verifications?.[0]?.retryAttempted).toBe(true);
+  });
+
+  it("keeps provenance when Vortex records no installTime at all", async () => {
+    /**
+     * Absent is UNKNOWN, and here the asymmetry points the other way: a wrong
+     * "not ours" costs an un-mirrored mod and a duplicate copy, both
+     * recoverable, while dropping every unstamped claim would regress the fix
+     * receipt-seeding exists to be. Only positive evidence revokes.
+     */
+    world = makeWorld({ mods: [MOD] });
+    const manifest = await packageFrom(world);
+    const fake = makeFakeVortex({
+      gameId: world.gameId,
+      downloads: { [ARCHIVE_ID]: "mod.zip" },
+      stagingRoot: world.stagingRoot,
+      installProduces: () => ({
+        "Textures/rock.dds": "the bytes the curator shipped",
+        "Data/rock.esp": "a plugin",
+      }),
+    });
+
+    seedTheirCopy(world, fake, undefined);
+    await receiptOurs(world, manifest.mods[0]!.compareKey, RECEIPT_AT);
+
+    const result = (await install(manifest, fake, alreadyInstalled)) as {
+      kind: string;
+      verifications?: Array<{ kind: string; retryAttempted?: boolean }>;
+    };
+
+    expect(result.kind, why(result)).toBe("success");
+    expect(result.verifications?.[0]?.retryAttempted).toBe(true);
+  });
+});

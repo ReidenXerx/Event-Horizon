@@ -199,3 +199,59 @@ describe("which masters a collection is not expected to ship", () => {
     }
   });
 });
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * Every game the masters gate runs on needs a base-master list.
+ *
+ * The table held two entries — Skyrim SE and Fallout 4 — while the gate fires
+ * on five. `comparePlugins` gives Skyrim VR, Fallout 4 VR and Enderal SE the
+ * readable Fallout-4 plugins.txt format, and `buildPreflight` judges their
+ * plugin budgets, so `enabledPlugins` is non-empty on all three.
+ *
+ * A base master missing from here is missing from `available` too — that is
+ * the entire reason the table exists, since implicit masters are not written
+ * to plugins.txt. `checkMasters` then calls it `missing` and the gate REFUSES
+ * the build, telling the curator to "add the mod that provides each master"
+ * about a file that ships with the game.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("the base masters of every supported game", () => {
+  it("knows Skyrim VR's, including its own root master", () => {
+    expect(isBaseGameMaster("Skyrim.esm", "skyrimvr")).toBe(true);
+    expect(isBaseGameMaster("Dragonborn.esm", "skyrimvr")).toBe(true);
+    expect(isBaseGameMaster("SkyrimVR.esm", "skyrimvr")).toBe(true);
+  });
+
+  it("knows Fallout 4 VR's, including Fallout4_VR.esm", () => {
+    // A FO4VR plugin commonly declares both, and neither was in any list on
+    // any code path — so every VR build refused.
+    expect(isBaseGameMaster("Fallout4.esm", "fallout4vr")).toBe(true);
+    expect(isBaseGameMaster("Fallout4_VR.esm", "fallout4vr")).toBe(true);
+    expect(isBaseGameMaster("DLCCoast.esm", "fallout4vr")).toBe(true);
+  });
+
+  it("knows Enderal SE's, which is Skyrim plus its own", () => {
+    // A total conversion built on Skyrim SE: it ships its own master and its
+    // plugins still declare Skyrim's.
+    expect(isBaseGameMaster("Skyrim.esm", "enderalspecialedition")).toBe(true);
+    expect(
+      isBaseGameMaster("Enderal - Forgotten Stories.esm", "enderalspecialedition"),
+    ).toBe(true);
+  });
+
+  it("does not leak one game's masters into another", () => {
+    // The lists are per-game for a reason: treating Fallout's masters as
+    // present on Skyrim would SILENCE a genuinely missing master, which is
+    // the failure the gate exists to catch.
+    expect(isBaseGameMaster("Fallout4.esm", "skyrimse")).toBe(false);
+    expect(isBaseGameMaster("Skyrim.esm", "fallout4")).toBe(false);
+    expect(isBaseGameMaster("SkyrimVR.esm", "skyrimse")).toBe(false);
+    expect(isBaseGameMaster("Fallout4_VR.esm", "fallout4")).toBe(false);
+  });
+
+  it("still answers false for a game it has never heard of", () => {
+    // Unknown stays unknown. Inventing a list would be worse than refusing.
+    expect(isBaseGameMaster("Skyrim.esm", "morrowind")).toBe(false);
+  });
+});

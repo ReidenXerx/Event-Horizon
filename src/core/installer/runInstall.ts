@@ -1567,15 +1567,53 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
      * is not a failure here — it just means the journal is the sole source,
      * which is what it was before.
      */
-    const previousReceiptMods =
-      (await readReceipt(ctx.appDataPath, plan.manifest.package.id))?.mods ?? [];
-    const liveModIds = new Set(
-      Object.keys(
-        ((api.getState() as unknown as {
-          persistent?: { mods?: Record<string, Record<string, unknown>> };
-        }).persistent?.mods ?? {})[plan.manifest.game.id] ?? {},
-      ),
+    const previousReceipt = await readReceipt(
+      ctx.appDataPath,
+      plan.manifest.package.id,
     );
+    const previousReceiptMods = previousReceipt?.mods ?? [];
+    const liveMods = ((api.getState() as unknown as {
+      persistent?: {
+        mods?: Record<
+          string,
+          Record<string, { attributes?: { installTime?: unknown } }>
+        >;
+      };
+    }).persistent?.mods ?? {})[plan.manifest.game.id] ?? {};
+    const liveModIds = new Set(Object.keys(liveMods));
+
+    /**
+     * ─── WHEN DID THE MOD IN THAT SLOT ARRIVE? ──────────────────────────
+     * Vortex derives a mod's id from its archive basename and REUSES it: the
+     * id is not a handle to a particular installation, it is a name that a
+     * later installation can occupy. `checkModNameExists` only appends a
+     * suffix while a mod under that name currently exists, so a user who
+     * deletes a mod and re-downloads the same Nexus file gets the SAME id
+     * back — which is ordinary Vortex use, not an edge case.
+     *
+     * `installTime` is what tells the two apart. The receipt's `installedAt`
+     * is when that RUN completed, so every mod it created was installed
+     * BEFORE it; a live mod stamped later is a different installation
+     * occupying the same name.
+     */
+    const installTimeOf = (modId: string): number | undefined => {
+      const raw = liveMods[modId]?.attributes?.installTime;
+      const ms =
+        typeof raw === "number"
+          ? raw
+          : typeof raw === "string"
+            ? Date.parse(raw)
+            : Number.NaN;
+      return Number.isFinite(ms) ? ms : undefined;
+    };
+    /**
+     * A minute of slack. Both clocks are this process's, so the real skew is
+     * zero — this only exists so a filesystem timestamp rounded up, or a
+     * receipt written a moment before the last mod settled, cannot revoke
+     * provenance for a mod that genuinely is ours.
+     */
+    const REINSTALL_GRACE_MS = 60_000;
+    const receiptWrittenAt = Date.parse(previousReceipt?.installedAt ?? "");
     /**
      * ─── PROVENANCE OUTLIVES THE JOURNAL ────────────────────────────────
      * The journal is DELETED on a successful install — the receipt takes over
@@ -1597,16 +1635,62 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
      */
     const ownedByUs = ownedModIds(journal, liveModIds);
     let ownedFromReceipt = 0;
+    const reinstalledSinceReceipt: string[] = [];
     for (const m of previousReceiptMods) {
       if (m.ownership !== "installed") continue;
       if (!liveModIds.has(m.vortexModId)) continue;
       if (ownedByUs.has(m.vortexModId)) continue;
+      /**
+       * ─── LIVENESS IS NOT IDENTITY (NS-2) ──────────────────────────────
+       * `liveModIds.has()` proves the id is OCCUPIED. It never proved the
+       * same installation occupies it, and ownership is monotone — once
+       * claimed here, `buildReceipt` re-stamps it "installed" on every later
+       * run, so a wrong claim is permanent rather than wrong once.
+       *
+       * What it cost: the user deletes our mod, re-downloads the same Nexus
+       * file themselves and answers the FOMOD their own way. Vortex hands
+       * back the same id. The next run claims it, verification fails because
+       * their choices selected different files, and `tryRecoverFailedMod`
+       * sees `weInstalledIt` and UNINSTALLS a mod Event Horizon did not
+       * install — the exact thing NS-2 exists to prevent, on the code path
+       * written to honour it.
+       *
+       * Only positive evidence revokes the claim. An absent `installTime`
+       * leaves provenance exactly as it was, because losing it re-opens the
+       * failures the receipt seeding was added for (the mirror skipping our
+       * own work, a third copy installed beside our second) and those are
+       * recoverable where a wrong deletion is not.
+       */
+      const installedMs = installTimeOf(m.vortexModId);
+      if (
+        Number.isFinite(receiptWrittenAt) &&
+        installedMs !== undefined &&
+        installedMs > receiptWrittenAt + REINSTALL_GRACE_MS
+      ) {
+        reinstalledSinceReceipt.push(m.vortexModId);
+        continue;
+      }
       ownedByUs.add(m.vortexModId);
       ownedFromReceipt += 1;
+    }
+    if (reinstalledSinceReceipt.length > 0) {
+      ehLog("warn", "install.provenance.reinstalled-since-receipt", {
+        count: reinstalledSinceReceipt.length,
+        examples: reinstalledSinceReceipt.slice(0, 10),
+        receiptInstalledAt: previousReceipt?.installedAt,
+        why:
+          "a mod occupies the id our receipt recorded, but it was installed " +
+          "AFTER that receipt was written — so it is a different " +
+          "installation under a reused name, not ours",
+        consequence:
+          "treated as the user's own: it will not be uninstalled by the " +
+          "repair path and will not be mirrored over (NS-2)",
+      });
     }
     ehLog("info", "install.provenance.resolved", {
       fromJournal: ownedByUs.size - ownedFromReceipt,
       fromReceipt: ownedFromReceipt,
+      reinstalledSinceReceipt: reinstalledSinceReceipt.length,
       receiptEntries: previousReceiptMods.length,
       receiptWithoutOwnership: previousReceiptMods.filter(
         (m) => m.ownership === undefined,
@@ -2152,6 +2236,62 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               // understated what happened to the user's disk.
               retryAttempted: retried.kind !== "not-eligible",
               modRemoved: retried.kind === "errored" && retried.modRemoved,
+              // The file check PASSED. Without this the row reads
+              // "0 missing, 0 truncated, 0 corrupt" under prose telling the
+              // user to check their antivirus history.
+              ...(verifyResult.kind !== "fail"
+                ? { failReason: "stale-installer-options" as const }
+                : {}),
+            }),
+          );
+          continue;
+        }
+
+        /**
+         * ─── A CURATOR REPORT IS FOR A CURATOR TO ACT ON ────────────────
+         * Skipped entirely for a stale-options mod, because the report it
+         * produced was both useless and self-contradicting.
+         *
+         * Useless: it is titled "this mod could not be reproduced" and its
+         * body carries `missingFiles: []` and `differingFiles: []`, because
+         * every file IS correct. There is nothing in the package for the
+         * curator to fix — the mod on the user'''s machine was installed with
+         * different FOMOD answers, which is a fact about that machine.
+         *
+         * Self-contradicting: `archiveChecked` reads `judgement.archiveConsulted`,
+         * which the hand-written stale-options verdict sets false, so the
+         * report said "it was not possible to compare them against the mod'''s
+         * own archive" — and then `archiveNote`, two lines later, printed
+         * "Checked against the mod'''s own archive: installed with different
+         * installer options". Both sentences, same report.
+         *
+         * The USER is the person who can act on this, and the Done screen now
+         * tells them so.
+         */
+        if (verifyResult.kind !== "fail") {
+          ehLog("info", "verify.stale-options.no-curator-report", {
+            mod: installEntry.name,
+            compareKey: installEntry.compareKey,
+            why:
+              "every recorded file verified; the difference is the installer " +
+              "answers on THIS machine, which the curator cannot change",
+          });
+          verifications.push(
+            buildFailReceipt({
+              installEntry: installedMods[i]!,
+              verifyResult: {
+                kind: "fail",
+                missingFiles: [],
+                sizeMismatches: [],
+                hashMismatches: [],
+                extraFiles: verifyResult.extraFiles,
+                expectedCount: expectedFiles?.length ?? 0,
+                stagingRoot: "",
+              },
+              level: declaredLevel === "thorough" ? "thorough" : "fast",
+              retryAttempted: retried.kind !== "not-eligible",
+              modRemoved: retried.kind === "errored" && retried.modRemoved,
+              failReason: "stale-installer-options",
             }),
           );
           continue;
@@ -2211,20 +2351,11 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         verifications.push(
           buildFailReceipt({
             installEntry: installedMods[i]!,
-            // As above: a stale-options mod arrives here with a PASSING file
-            // check, so there is no failure object to report.
-            verifyResult:
-              verifyResult.kind === "fail"
-                ? verifyResult
-                : {
-                    kind: "fail",
-                    missingFiles: [],
-                    sizeMismatches: [],
-                    hashMismatches: [],
-                    extraFiles: verifyResult.extraFiles,
-                    expectedCount: expectedFiles?.length ?? 0,
-                    stagingRoot: "",
-                  },
+            // A real file failure by construction: the stale-options arm
+            // returned above, and tsc proves it — this ternary used to
+            // synthesise an empty failure here, and its else branch is now
+            // uninhabited.
+            verifyResult,
             level: declaredLevel === "thorough" ? "thorough" : "fast",
             // Same reasoning as the damaged-archive receipt above: `errored`
             // is an attempt that reached the uninstall and then failed.
@@ -4109,6 +4240,64 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         ...(curatorReports.length > 0 ? { curatorReports } : {}),
         ...(damagedArchives.length > 0
           ? { damagedArchiveNotice: damagedArchives }
+          : {}),
+        /**
+         * ─── AND THE REST OF WHAT THIS RUN ACTUALLY DID ──────────────────
+         * The docblock above says the fix restored "all of the notices
+         * describing that work". It restored three of eleven. The eight below
+         * were computed by the same phases, on the same run, and dropped at
+         * this return.
+         *
+         * `finishingSkippedNotice` is the one that costs the most. A user who
+         * stopped the install after the deploy AND has a failed mod reads
+         * "source the missing ones and run this again" and is never told the
+         * plugin order was not applied or the ESL flags not restored — and
+         * without the flags a profile that fits only because most plugins are
+         * light will not start.
+         *
+         * `mirrorNotice` is the only phase that DELETES files from a mod
+         * folder, so its exceptions are not optional reading either.
+         */
+        ...(finishingSkipped.length > 0
+          ? {
+              finishingSkippedNotice: [
+                describeSkippedFinishing(finishingSkipped),
+              ],
+            }
+          : {}),
+        ...(describePluginFlagRepair(pluginFlagRepair) !== undefined
+          ? { pluginFlagNotice: describePluginFlagRepair(pluginFlagRepair)! }
+          : {}),
+        ...(mirrorFailures.length > 0 || mirrorSkipped.length > 0
+          ? {
+              mirrorNotice: [
+                ...mirrorLines.filter((l) => l.includes("could not")),
+                ...mirrorSkipped,
+              ],
+            }
+          : {}),
+        ...(describePluginOrderDrift(pluginOrderDrift, repinUnconfirmed).length >
+        0
+          ? {
+              pluginOrderNotice: describePluginOrderDrift(
+                pluginOrderDrift,
+                repinUnconfirmed,
+              ),
+            }
+          : {}),
+        ...(describePluginOrderApplication(pluginOrderApplication) !== undefined
+          ? {
+              pluginOrderNotApplied: describePluginOrderApplication(
+                pluginOrderApplication,
+              )!,
+            }
+          : {}),
+        ...(describeIniTweaks(iniTweakApplication).length > 0
+          ? { iniTweakNotice: describeIniTweaks(iniTweakApplication) }
+          : {}),
+        ...(driftNotice !== undefined ? { stagingDriftNotice: driftNotice } : {}),
+        ...(externalNotices.length > 0
+          ? { externalArchiveNotice: externalNotices }
           : {}),
         ...(receiptPath !== undefined ? { receiptPath } : {}),
       };
@@ -6428,6 +6617,13 @@ function buildFailReceipt(args: {
    * the person reading it.
    */
   modRemoved?: boolean;
+  /**
+   * Set when the files are NOT the reason. See
+   * `ModVerificationFailReceipt.failReason` — without it a mod whose only
+   * defect is its FOMOD answers is rendered as "0 missing, 0 truncated,
+   * 0 corrupt" under prose blaming antivirus.
+   */
+  failReason?: "stale-installer-options";
 }): ModVerificationReceipt {
   const { installEntry, verifyResult, level, retryAttempted } = args;
   const modRemoved = args.modRemoved === true;
@@ -6466,6 +6662,7 @@ function buildFailReceipt(args: {
     examples,
     retryAttempted,
     ...(modRemoved ? { modRemoved: true } : {}),
+    ...(args.failReason !== undefined ? { failReason: args.failReason } : {}),
     retrySucceeded: false,
   };
 }

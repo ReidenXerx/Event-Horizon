@@ -474,6 +474,21 @@ export type ModVerificationFailReceipt = {
   /** True when a reinstall+reverify cycle was attempted. */
   retryAttempted: boolean;
   /**
+   * ─── WHY IT FAILED, WHEN THE FILES ARE NOT THE REASON ─────────────────
+   * Absent means the ordinary case: files are missing, truncated or corrupt,
+   * and the counts below say which.
+   *
+   * `"stale-installer-options"` means the opposite — every file verified,
+   * byte for byte, and the mod is still wrong because it was installed with
+   * different FOMOD answers than the collection records. That row carries
+   * `0 missing, 0 truncated, 0 corrupt`, and the Done screen rendered those
+   * three zeroes under fixed prose reading "These mods extracted with missing
+   * or corrupt files... The most common cause is antivirus quarantining
+   * files; check your AV history". The user was sent to hunt corruption that
+   * does not exist, and the one fact that would have helped appeared nowhere.
+   */
+  failReason?: "stale-installer-options";
+  /**
    * True when retry FIXED the mismatch. When this is true, callers
    * should expect `kind === "ok"` instead — the type system can't
    * narrow that automatically, but the runtime always upgrades the
