@@ -268,3 +268,79 @@ describe("emptySelectionVerified", () => {
     expect(r.emptySelectionVerified).toBeUndefined();
   });
 });
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * Folding case is the filesystem's answer, not ours.
+ *
+ * Every comparison in `selfCheckMod` used `.toLowerCase()` unconditionally,
+ * while `verifyModInstall` — asking the same question on the USER's side —
+ * probes with `detectCaseSensitivity`. `modPath.ts` states the rule that was
+ * being violated: "folding case is a property OF THE FILESYSTEM, probed rather
+ * than assumed", and this repo has already paid for assuming it twice.
+ *
+ * On ext4 under Proton the fold MERGES two files that really are two files.
+ * The build side is where that becomes permanent: the omission ships as the
+ * etalon and every user reproduces it.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("case sensitivity is probed, not assumed", () => {
+  const CASE_ENTRIES: SevenZipListEntry[] = [
+    { name: "fomod/ModuleConfig.xml", size: 10, crc: "0000000a" },
+    { name: "core/Scripts/foo.pex", size: 100, crc: "11111111" },
+  ];
+
+  const CASE_SCRIPT = `<config>
+  <requiredInstallFiles>
+    <folder source="core" destination=""/>
+  </requiredInstallFiles>
+</config>`;
+
+  const checkWithMode = (
+    staged: Array<{ path: string; size: number; crc?: string }>,
+    caseMode: "sensitive" | "insensitive" | undefined,
+  ) =>
+    selfCheckMod({
+      sevenZip: sevenZip(CASE_ENTRIES),
+      modId: "m-case",
+      modName: "A Mod With Scripts",
+      archivePath: "a.7z",
+      staged,
+      recordedChoices: [],
+      readEntry: async () => Buffer.from(CASE_SCRIPT, "utf8"),
+      ...(caseMode !== undefined ? { caseMode } : {}),
+    });
+
+  /** Same file to Windows, two different files to ext4. */
+  const STAGED_LOWER = [{ path: "scripts/foo.pex", size: 100, crc: "11111111" }];
+
+  it("refuses the proof when the filesystem tells case apart", async () => {
+    /**
+     * The no-choice replay predicts `Scripts/foo.pex`. The curator has only
+     * `scripts/foo.pex`, which on ext4 is a DIFFERENT file — so the replay
+     * does NOT reproduce their folder, and claiming it does would ship a
+     * proof about a file set nobody has.
+     */
+    const r = await checkWithMode(STAGED_LOWER, "sensitive");
+
+    expect(r.emptySelectionVerified).toBeUndefined();
+    expect(r.notes.join(" ")).toMatch(/does NOT reproduce your folder/i);
+  });
+
+  it("proves it on a filesystem where they ARE the same file", async () => {
+    // The other direction, and why this cannot simply stop folding: on NTFS
+    // the two paths name one file, so refusing here would fire on every
+    // Windows curator and cost their users a dialog they cannot answer.
+    const r = await checkWithMode(STAGED_LOWER, "insensitive");
+
+    expect(r.emptySelectionVerified).toBe(true);
+  });
+
+  it("defaults to insensitive, so a caller that cannot probe is unchanged", async () => {
+    // Every caller got this before the parameter existed. An unprobed caller
+    // must be no worse off than it was, never newly noisy.
+    const r = await checkWithMode(STAGED_LOWER, undefined);
+
+    expect(r.emptySelectionVerified).toBe(true);
+  });
+});

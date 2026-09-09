@@ -37,6 +37,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { isAbort } from "../../utils/abortError";
 import * as fsp from "fs/promises";
 import * as path from "path";
 
@@ -197,7 +198,7 @@ export async function collectAvailableDownloads(args: {
     try {
       sha256 = await hashFileSha256(localPath, signal);
     } catch (err) {
-      if ((err as Error)?.name === "AbortError") {
+      if (isAbort(err)) {
         ehLog("warn", "resolver.downloads.aborted", {
           ms: Date.now() - startedAt,
           done,

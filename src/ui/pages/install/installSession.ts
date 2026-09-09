@@ -31,6 +31,7 @@
  *     button during installing.
  */
 
+import { isAbort } from "../../../utils/abortError";
 import type { types } from "@nexusmods/vortex-api";
 
 import { AbortError } from "../../../core/archiveHashing";
@@ -987,11 +988,18 @@ export function getInstallSession(): InstallSession {
  * Mirrors the helper in `BuildSession`.
  */
 export function isAbortError(err: unknown): boolean {
-  if (err instanceof AbortError) return true;
+  /**
+   * Broader than the shared predicate ON PURPOSE, and the only one of the
+   * copies that was. Vortex rejects a cancelled operation with a plain Error
+   * whose MESSAGE says "cancelled" and whose name does not — so a session
+   * that used `isAbort` alone would report the user's own Stop as a failure.
+   *
+   * The shared half is delegated so the two cannot drift; the extra clause is
+   * the difference this file is entitled to.
+   */
+  if (isAbort(err)) return true;
   if (err instanceof Error) {
-    if (err.name === "AbortError") return true;
-    const message = err.message ?? "";
-    if (message.toLowerCase().includes("cancelled")) return true;
+    return (err.message ?? "").toLowerCase().includes("cancelled");
   }
   return false;
 }

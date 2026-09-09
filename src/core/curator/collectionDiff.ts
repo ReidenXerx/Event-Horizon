@@ -334,18 +334,32 @@ export function diffCollectionAgainstProfile(args: {
      * re-run installer changes the staged files too, and reporting one mod
      * twice for one event is noise.
      */
-    if (liveShapes !== undefined && verdict !== "differ") {
+    if (liveShapes !== undefined) {
       const shapeVerdict = compareShapes(
         match.stagingShape,
         liveShapes.get(mod.id),
       );
+      /**
+       * The guard used to wrap this whole block, which suppressed the
+       * ACCOUNTING as well as the second finding. A mod whose selections
+       * differ AND whose folder could not be walked was counted nowhere:
+       * `stagingUnknown` did not see it, so `describeCollectionDiff` never
+       * said a check had failed to complete for it, and "we could not tell"
+       * read as "we told you everything".
+       *
+       * Only the duplicate REPORT is suppressed now. A re-run installer
+       * changes the staged files too, so listing one mod twice for one event
+       * is noise — but the unknown is a different fact and it still counts.
+       */
       if (shapeVerdict === "differ") {
-        diff.reconfigured.push({
-          name: mod.name,
-          reason: "staged-files",
-          ...(mod.version !== undefined ? { version: mod.version } : {}),
-        });
-        changed = true;
+        if (verdict !== "differ") {
+          diff.reconfigured.push({
+            name: mod.name,
+            reason: "staged-files",
+            ...(mod.version !== undefined ? { version: mod.version } : {}),
+          });
+          changed = true;
+        }
       } else if (shapeVerdict === "unknown") {
         diff.stagingUnknown += 1;
       }

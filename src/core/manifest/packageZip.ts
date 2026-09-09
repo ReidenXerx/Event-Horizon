@@ -35,6 +35,7 @@
  * manifests highlights actual content changes, not key-order shuffles.
  */
 
+import { isAbort } from "../../utils/abortError";
 import * as fsp from "fs/promises";
 import { ehLog } from "../logging/ehLog";
 import * as os from "os";
@@ -754,9 +755,8 @@ async function safeRmFile(filePath: string): Promise<void> {
  * convention of `.name === "AbortError"`.
  */
 function isAbortLikeError(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    (err as { name?: unknown }).name === "AbortError"
-  );
+  // The shared predicate. This was a fourth private copy of it, and the
+  // reason there are so many is that `abortError.ts` documented the
+  // convention and exported no way to apply it.
+  return isAbort(err);
 }

@@ -68,7 +68,37 @@ export async function liveStagingShapes(
     }
 
     try {
-      const files = await walkStagingFolder(root, signal);
+      /**
+       * ─── A PARTIAL LISTING IS AN ABSENCE, NOT A SHORTER FOLDER ────────
+       * `walkStagingFolder` reports every path it had to skip through
+       * `onUnreadable`, and its own docblock says why: "a file we never saw
+       * leaves no trace, and that was load-bearing... incompleteness is now
+       * REPORTED rather than inferred from an absence."
+       *
+       * This dropped the callback, so a subtree the walk could not list — a
+       * OneDrive placeholder, a path over MAX_PATH, an antivirus filter
+       * holding a handle — simply produced a shorter file list. The shape
+       * then differed from the manifest's and the dashboard told the curator
+       * they had edited a staging folder they had not touched.
+       *
+       * A skipped path does not throw, so the `catch` below never saw it.
+       */
+      let skipped = 0;
+      const files = await walkStagingFolder(root, signal, () => {
+        skipped += 1;
+      });
+      if (skipped > 0) {
+        unreadable += 1;
+        ehLog("warn", "curator.staging-shapes.partial", {
+          modId,
+          skipped,
+          why:
+            "the walk could not list part of this folder, so its file list " +
+            "is short — recording a shape from it would report an edit the " +
+            "curator did not make",
+        });
+        continue;
+      }
       // An EMPTY walk of a folder that exists is a real answer — the mod
       // stages nothing — and differs from a folder that could not be read.
       shapes.set(

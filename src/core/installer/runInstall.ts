@@ -83,6 +83,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { isAbort } from "../../utils/abortError";
 import { actions, types, util } from "@nexusmods/vortex-api";
 import { stagingRootForModId } from "../stagingPath";
 
@@ -1085,7 +1086,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         // (caller has already cleared the active profile in Vortex
         // OR Vortex will eventually catch up and emit
         // profile-did-change; either way the install can't proceed).
-        if ((err as Error)?.name === "AbortError") {
+        if (isAbort(err)) {
           aborted = checkAbort("switching-profile");
           if (aborted) return aborted;
           // Defensive: if the signal isn't aborted but we got an
@@ -1149,7 +1150,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         try {
           await switchToProfile(api, activeProfileId, ctx.abortSignal);
         } catch (err) {
-          if ((err as Error)?.name === "AbortError") {
+          if (isAbort(err)) {
             aborted = checkAbort("switching-profile");
             if (aborted) return aborted;
             return abortedResult(
@@ -1361,7 +1362,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         // the source of truth — the AbortError is only a faster
         // exit path than letting the timeout/watchdog trip.
         if (
-          (err as Error)?.name === "AbortError" ||
+          isAbort(err) ||
           ctx.abortSignal?.aborted
         ) {
           ehLog("info", "install.aborted", {
@@ -1754,7 +1755,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           });
         } catch (err) {
           if (
-            (err as Error)?.name === "AbortError" ||
+            isAbort(err) ||
             ctx.abortSignal?.aborted
           ) {
             return abortedResult(
@@ -2680,7 +2681,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         );
       } catch (err) {
         if (
-          (err as Error)?.name === "AbortError" ||
+          isAbort(err) ||
           ctx.abortSignal?.aborted
         ) {
           return abortedResult(
@@ -2788,7 +2789,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         );
       } catch (err) {
         if (
-          (err as Error)?.name === "AbortError" ||
+          isAbort(err) ||
           ctx.abortSignal?.aborted
         ) {
           return abortedResult(
@@ -3235,7 +3236,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
          * and the run still owes the user a receipt.
          */
         const stopped =
-          (err as Error)?.name === "AbortError" ||
+          isAbort(err) ||
           ctx.abortSignal?.aborted === true;
         if (stopped) {
           finishingSkipped.push("Vortex load order");
@@ -6486,7 +6487,7 @@ async function tryRecoverFailedMod(args: {
     });
   } catch (err) {
     if (
-      (err as Error)?.name === "AbortError" ||
+      isAbort(err) ||
       ctx.abortSignal?.aborted
     ) {
       throw err;
@@ -6544,7 +6545,7 @@ async function tryRecoverFailedMod(args: {
     });
   } catch (err) {
     if (
-      (err as Error)?.name === "AbortError" ||
+      isAbort(err) ||
       ctx.abortSignal?.aborted
     ) {
       throw err;
@@ -6819,7 +6820,7 @@ async function tryInstallAlongside(args: {
       fromDecision: "mirror-alongside",
     };
   } catch (err) {
-    if ((err as Error)?.name === "AbortError" || ctx.abortSignal?.aborted) {
+    if (isAbort(err) || ctx.abortSignal?.aborted) {
       throw err;
     }
     // Their mod is untouched — this path never uninstalls. Report and move on.

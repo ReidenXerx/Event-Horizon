@@ -10,7 +10,7 @@ import { selectors } from "@nexusmods/vortex-api";
 import type { types } from "@nexusmods/vortex-api";
 
 import type { AuditorMod } from "./getModsListForProfile";
-import { AbortError } from "../utils/abortError";
+import { AbortError, isAbort } from "../utils/abortError";
 import { ehLog } from "./logging/ehLog";
 import { getDefaultHashConcurrency } from "./manifest/stagingFileWalker";
 import { pMap } from "../utils/pMap";
@@ -252,10 +252,7 @@ export async function enrichModsWithArchiveHashes(
             // Re-throw cancellation so pMap unwinds cleanly. Otherwise
             // swallow — file missing or unreadable is non-fatal: drift
             // is more useful than a hard stop.
-            if (err instanceof AbortError) {
-              throw err;
-            }
-            if ((err as Error | undefined)?.name === "AbortError") {
+            if (isAbort(err)) {
               throw err;
             }
             failed += 1;
@@ -282,8 +279,7 @@ export async function enrichModsWithArchiveHashes(
     });
     return result;
   } catch (err) {
-    const aborted =
-      err instanceof AbortError || (err as Error | undefined)?.name === "AbortError";
+    const aborted = isAbort(err);
     ehLog(aborted ? "warn" : "error", "archive-hash.batch.fail", {
       mods: mods.length,
       done,

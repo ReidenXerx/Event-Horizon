@@ -29,6 +29,7 @@ import type { SevenZipApi } from "./sevenZip";
 import type { ArchiveListing } from "./archiveContents";
 import { listArchiveContents } from "./archiveContents";
 import { findOmissionLeads } from "./omissionLeads";
+import { type CaseMode, pathKey } from "../paths";
 import type { OmissionLead } from "./omissionLeads";
 import { expandFomodPlan } from "./expandFomodPlan";
 import type { RecordedStep } from "./fomodReplay";
@@ -154,6 +155,20 @@ export type SelfCheckInput = {
    */
   readEntry: (archivePath: string, entryPath: string) => Promise<Buffer | undefined>;
   signal?: AbortSignal;
+  /**
+   * Does this curator'''s filesystem tell two paths apart by letter case?
+   *
+   * Probed by the caller, never assumed here. Every comparison in this module
+   * used to fold case unconditionally while `verifyModInstall` — asking the
+   * same question on the USER side — probes; `modPath.ts` states the rule:
+   * folding is a property OF THE FILESYSTEM.
+   *
+   * Absent means `insensitive`, which is what every caller got before, so a
+   * caller that cannot probe is no worse off. It matters on ext4 under Proton,
+   * where the fold merges two files that really are two files — and the build
+   * side is where that becomes permanent for every user of the package.
+   */
+  caseMode?: CaseMode;
 };
 
 /** Where a FOMOD script lives. Case varies in the wild (`fomod`, `FOMod`). */
@@ -210,6 +225,25 @@ function unexplainedFacts(
 
 export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckReport> {
   const notes: string[] = [];
+  /**
+   * ─── FOLDING CASE IS THE FILESYSTEM'S ANSWER, NOT OURS ─────────────────
+   * Every comparison below used `.toLowerCase()` unconditionally, while
+   * `verifyModInstall` — asking the same question on the user's side — probes
+   * with `detectCaseSensitivity`. `modPath.ts` states the rule this violated:
+   * "folding case is a property OF THE FILESYSTEM, probed rather than
+   * assumed", and this repo has already paid for assuming it twice.
+   *
+   * On a case-sensitive curator machine (ext4 under Proton) the fold MERGES
+   * two real files. A replay that predicts `Scripts/foo.pex` against a folder
+   * holding only `scripts/foo.pex` reported nothing missing — and the build
+   * side is where that becomes permanent, because the omission ships as the
+   * etalon every user reproduces.
+   *
+   * Defaults to `insensitive`, which is what every caller got before, so a
+   * caller that cannot probe is no worse off than it was.
+   */
+  const caseMode: CaseMode = input.caseMode ?? "insensitive";
+  const key = (p: string): string => pathKey(p, caseMode);
   const base = {
     modId: input.modId,
     modName: input.modName,
@@ -337,8 +371,9 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
           listing,
         )
           .filter((f) => f.kind === "added")
-          .map((f) => f.path.toLowerCase()),
+          .map((f) => key(f.path)),
       ),
+      caseMode,
     });
     notes.push(verdict.note);
     return {
@@ -390,9 +425,9 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
     return { ...withLeads, depth: "containment", notes, ...unexplainedFacts(containment, listing) };
   }
 
-  const stagedPaths = new Set(input.staged.map((f) => f.path.toLowerCase()));
+  const stagedPaths = new Set(input.staged.map((f) => key(f.path)));
   const missing = expected.files
-    .filter((f) => !stagedPaths.has(f.path.toLowerCase()))
+    .filter((f) => !stagedPaths.has(key(f.path)))
     .map((f) => f.path);
 
   return {
@@ -479,6 +514,8 @@ async function verifyEmptySelection(input: {
    * containment pass that found it.
    */
   unexplained?: ReadonlySet<string>;
+  /** Probed by the caller; the keys above are built with it. */
+  caseMode?: CaseMode;
 }): Promise<{ emptySelectionReproducesStaging: boolean; note: string }> {
   const no = (note: string) => ({
     emptySelectionReproducesStaging: false,
@@ -514,8 +551,9 @@ async function verifyEmptySelection(input: {
       );
     }
 
-    const predicted = new Set(expected.files.map((f) => f.path.toLowerCase()));
-    const actual = new Set(input.staged.map((f) => f.path.toLowerCase()));
+    const key = (p: string): string => pathKey(p, input.caseMode ?? "insensitive");
+    const predicted = new Set(expected.files.map((f) => key(f.path)));
+    const actual = new Set(input.staged.map((f) => key(f.path)));
     const missing = [...predicted].filter((p) => !actual.has(p));
     /**
      * ─── A TICKED BOX CAN ONLY ADD A FILE FROM THE ARCHIVE ───────────────

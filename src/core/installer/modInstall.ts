@@ -40,6 +40,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { isAbort } from "../../utils/abortError";
 import * as fsp from "fs/promises";
 import * as os from "os";
 import * as path from "path";
@@ -1607,7 +1608,15 @@ function makeAbortErrorLocal(operation: string): Error {
  * and nothing happened" complaint.
  */
 function isAbortErrorLocal(err: unknown): boolean {
-  return err instanceof Error && err.name === "AbortError";
+  /**
+   * Delegates now. The `instanceof Error` guard this used to carry made it
+   * MISS a DOMException from a native AbortSignal — which is exactly what
+   * `fs.promises` throws when a signal fires, and the shape `abortError.ts`
+   * documents being interchangeable with. A missed abort here retries a
+   * cancelled install twice more with ~11 seconds of backoff, which is the
+   * "I pressed stop and nothing happened" complaint above.
+   */
+  return isAbort(err);
 }
 
 /**

@@ -331,17 +331,39 @@ export function getActiveProfileIdFromState(
   return candidates[0][0];
 }
 
-function pickInstallerChoices(attributes: Record<string, unknown>): any {
-  return (
-    attributes.installerChoices ??
-    attributes.installerChoicesData ??
-    attributes.fomodChoices ??
-    attributes.fomod ??
-    attributes.choices ??
-    attributes.installChoices ??
-    attributes.installerOptions ??
-    undefined
-  );
+/**
+ * ─── ONE ANSWER TO "WHAT DID THIS MACHINE PICK" ─────────────────────────────
+ * Two functions used to answer it and they read different data. This one tried
+ * seven attribute keys; `liveFomodSelections` — the INSTALLER's only live read
+ * — tried two. For a mod whose answers Vortex happened to store under one of
+ * the other five, the manifest recorded a real selection while the installer
+ * read `[]`, so `compareSelections` saw exactly one side empty and returned
+ * `"unknown"`, and the stale-options check could never fire for that mod.
+ *
+ * The direction was fail-safe — a blind spot rather than a wrong reinstall —
+ * but one of the two was wrong whichever way it resolved, and a diff whose two
+ * halves read different fields is not a diff.
+ *
+ * Five of the seven are speculation. `installerChoices` is the key actually
+ * observed on real profiles (`installerChoices.ts` establishes it, and every
+ * fixture in this repo uses it); `installerChoicesData` is kept as the one
+ * plausible sibling. The rest were never seen and have no evidence behind
+ * them, so they are gone rather than copied into a second reader — inventing
+ * a fallback is how the two drifted apart in the first place.
+ */
+const INSTALLER_CHOICE_KEYS = [
+  "installerChoices",
+  "installerChoicesData",
+] as const;
+
+export function pickInstallerChoices(
+  attributes: Record<string, unknown> | undefined,
+): any {
+  for (const key of INSTALLER_CHOICE_KEYS) {
+    const value = attributes?.[key];
+    if (value !== undefined && value !== null) return value;
+  }
+  return undefined;
 }
 
 function normalizeCollectionIds(value: unknown): string[] {
@@ -433,10 +455,10 @@ export function liveFomodSelections(
       };
     }
   )?.persistent?.mods?.[gameId]?.[vortexModId];
-  const attributes = mod?.attributes;
-  return normalizeFomodSelections(
-    attributes?.installerChoices ?? attributes?.installerChoicesData,
-  );
+  // The SAME reader the build side uses. Two lists of attribute keys is two
+  // answers to one question, and the halves of a diff cannot disagree about
+  // where the data lives.
+  return normalizeFomodSelections(pickInstallerChoices(mod?.attributes));
 }
 
 function normalizeFomodSelections(installerChoices: any): FomodSelectionStep[] {
