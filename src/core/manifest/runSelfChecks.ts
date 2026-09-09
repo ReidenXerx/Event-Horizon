@@ -733,6 +733,41 @@ export async function runSelfChecks(
     );
   }
 
+  /**
+   * ─── AND WHAT THAT COSTS THE INSTALL ORDER ────────────────────────────
+   * A mod whose archive could not be read has an UNKNOWN installer, and the
+   * epoch planner reads a missing `readsPluginState` as "asks the game
+   * nothing" — which is right for the 842 mods that have no FOMOD at all and
+   * wrong for these.
+   *
+   * Named separately because the remedy is specific and cheap: the archive is
+   * usually still on disk and only Vortex'''s download RECORD is gone, which a
+   * Downloads-tab rescan restores. On the collection this was found in, the
+   * one mod that had actually failed in the wild was in this set, and its
+   * .7z was sitting in the download folder the whole time.
+   */
+  const unexamined = reports.filter((r) => r.installerUnexamined === true);
+  if (unexamined.length > 0) {
+    warnings.push(
+      `${unexamined.length} of those has an installer that could not be ` +
+        `examined, so it is not known whether it asks the game about another ` +
+        `mod'''s plugin. Those mods install in their normal position rather ` +
+        `than after the plugin order, which is what they did before this ` +
+        `check existed. Re-scanning the Downloads tab usually restores the ` +
+        `record and covers them on the next build: ` +
+        `${unexamined.slice(0, 5).map((r) => `"${r.modName}"`).join(", ")}` +
+        `${unexamined.length > 5 ? `, and ${unexamined.length - 5} more` : ""}.`,
+    );
+    ehLog("warn", "self-check.installer-unexamined", {
+      mods: unexamined.length,
+      examples: unexamined.slice(0, 10).map((r) => r.modName),
+      consequence:
+        "their readsPluginState is absent because nothing could be read, not " +
+        "because they ask nothing — the epoch planner cannot tell those apart",
+      remedy: "rescan the Downloads tab and rebuild",
+    });
+  }
+
   if (ownBytesCount > 0) {
     // Said out loud rather than silently omitted: a curator reading a count of
     // checked mods should be able to account for every mod in the collection.

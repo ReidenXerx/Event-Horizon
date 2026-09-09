@@ -114,6 +114,24 @@ export type SelfCheckReport = {
    */
   readsPluginState?: string[];
   /**
+   * ─── WE NEVER GOT TO LOOK ──────────────────────────────────────────────
+   * This mod HAS an installer — Vortex recorded answers for it — and its
+   * archive could not be read, so nothing is known about what that installer
+   * asks the game.
+   *
+   * The distinction matters because `readsPluginState` being absent means two
+   * different things, and only one of them is safe to act on. For 842 mods in
+   * a real collection it means "there is no FOMOD script, so it asks
+   * nothing". For nine of them it means "Vortex has no download record, so we
+   * could not open the archive" — and the mod that actually failed eleven
+   * times across the tester logs is one of those nine.
+   *
+   * Absent-meaning-two-things is the exact shape this codebase keeps paying
+   * for, so it gets its own field rather than being inferred from a missing
+   * one.
+   */
+  installerUnexamined?: boolean;
+  /**
    * The archive carries a FOMOD script and Vortex recorded no answers for it.
    *
    * That combination is what a USER experiences as a dialog they cannot answer
@@ -275,6 +293,14 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
   if (input.archivePath === undefined) {
     return {
       ...base,
+      /**
+       * Recorded answers prove there IS an installer to examine. Without
+       * them this is just a mod with no archive and no questions, which is
+       * ordinary and says nothing about install order.
+       */
+      ...(input.recordedChoices.length > 0
+        ? { installerUnexamined: true }
+        : {}),
       depth: "skipped",
       notes: [
         input.hasArchiveRecord === false

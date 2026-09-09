@@ -31,6 +31,13 @@
 import { describe, expect, it } from "vitest";
 
 import { parseModuleConfig } from "./parseModuleConfig";
+import { selfCheckMod } from "./selfCheckMod";
+import { fakeSevenZip } from "./testing/fakeSevenZip";
+import type { SevenZipApi, SevenZipListEntry } from "./sevenZip";
+import type { RecordedStep } from "./fomodReplay";
+
+const sevenZip = (entries: SevenZipListEntry[]): SevenZipApi =>
+  fakeSevenZip({ entries });
 
 const parse = async (xml: string) =>
   (await parseModuleConfig(xml)).script.pluginStateDependencies;
@@ -182,5 +189,67 @@ describe("plugins a FOMOD script asks the game about", () => {
     </config>`);
 
     expect(deps).toEqual(["alpha.esm", "zeta.esm"]);
+  });
+});
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * "It asks nothing" and "we never looked" are different facts.
+ *
+ * `readsPluginState` is absent for 842 mods in a real collection because they
+ * have no FOMOD script at all — correct, and the epoch planner is right to
+ * treat them as asking nothing. It is ALSO absent for nine mods whose archive
+ * could not be opened, because Vortex had no download record for them.
+ *
+ * The mod that actually failed eleven times across the tester logs was one of
+ * those nine. Its `.7z` was in the download folder the whole time; only the
+ * record was gone. So the epoch planner, reading one absent field, put a mod
+ * that demonstrably asks about `aaf.esm` into the first epoch.
+ *
+ * Absent-meaning-two-things is the shape this codebase keeps paying for —
+ * `state.postProcessed`, `game.store`, `gameIniApplication`, `fomodReplayMode`,
+ * `light`. This is the same error committed inside the fix for it, so the
+ * distinction gets a field of its own rather than being inferred.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("a mod whose installer could not be examined", () => {
+  const skipped = (recordedChoices: RecordedStep[]) =>
+    selfCheckMod({
+      sevenZip: sevenZip([]),
+      modId: "m1",
+      modName: "AAF_VanillaKinkyCreatureAnimations_Themes",
+      // No download record: this is what `resolveModArchivePath` returns for
+      // the nine mods in question.
+      archivePath: undefined,
+      hasArchiveRecord: false,
+      staged: [{ path: "a.esp", size: 1 }],
+      recordedChoices,
+      readEntry: async () => undefined,
+    });
+
+  it("says so when the mod is known to HAVE an installer", async () => {
+    // Recorded answers are the proof: Vortex only stores them for a mod whose
+    // installer actually ran.
+    const r = await skipped([
+      { name: "Themes:", groups: [{ name: "G", choices: [{ name: "Kinky" }] }] },
+    ] as RecordedStep[]);
+
+    expect(r.depth).toBe("skipped");
+    expect(r.installerUnexamined).toBe(true);
+    // And it still claims nothing about what that installer asks.
+    expect(r.readsPluginState).toBeUndefined();
+  });
+
+  it("stays quiet for a mod with no installer to examine", async () => {
+    /**
+     * The far larger population, and the reason this cannot simply flag every
+     * skipped mod: an archive that is missing for a mod with no FOMOD says
+     * nothing about install order, and warning about it would bury the nine
+     * that matter under hundreds that do not.
+     */
+    const r = await skipped([]);
+
+    expect(r.depth).toBe("skipped");
+    expect(r.installerUnexamined).toBeUndefined();
   });
 });
