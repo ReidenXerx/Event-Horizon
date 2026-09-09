@@ -489,13 +489,21 @@ export type ModVerificationFailReceipt = {
    */
   failReason?: "stale-installer-options";
   /**
-   * True when retry FIXED the mismatch. When this is true, callers
-   * should expect `kind === "ok"` instead — the type system can't
-   * narrow that automatically, but the runtime always upgrades the
-   * record on success. Surfaced as `false` here purely for receipts
-   * representing genuine post-retry failures.
+   * ─── DELETED: retrySucceeded ──────────────────────────────────────────
+   * It was a REQUIRED field constructed at exactly one site with the literal
+   * `false`, never set true anywhere, and read by nothing. Its own docblock
+   * described semantics the runtime could not produce: a retry that succeeds
+   * upgrades the record to `kind: "ok"`, so a fail receipt saying
+   * `retrySucceeded: false` was not a claim about the retry at all — it was
+   * the only value the field could ever hold.
+   *
+   * Support reading a receipt to answer "did the reinstall fix this mod?" got
+   * `false` on every row, including for a mod whose retry DID succeed. A field
+   * that always says the same thing is worse than an absent one, because it
+   * looks like an answer.
+   *
+   * `retryAttempted` above is the real signal and stays.
    */
-  retrySucceeded: boolean;
   /**
    * The repair uninstalled this mod and could not reinstall it, so it is no
    * longer on the machine.

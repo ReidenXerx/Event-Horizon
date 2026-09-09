@@ -3724,6 +3724,20 @@ function IntegritySection(props: {
                       {f.retryAttempted ? "; reinstall did not help" : ""}
                     </>
                   )}
+                  {/*
+                    The one outcome where the mod is GONE. It was recorded and
+                    logged and rendered nowhere, so these users were told to
+                    click Reinstall on a mod that is no longer in their list.
+                  */}
+                  {f.modRemoved === true && (
+                    <>
+                      {" "}
+                      <strong style={{ color: "var(--eh-danger)" }}>
+                        — removed during the repair and could not be put back;
+                        it is no longer installed
+                      </strong>
+                    </>
+                  )}
                 </em>
                 {f.examples.length > 0 && (
                   <ul

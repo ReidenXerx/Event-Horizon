@@ -6664,7 +6664,6 @@ function buildFailReceipt(args: {
     retryAttempted,
     ...(modRemoved ? { modRemoved: true } : {}),
     ...(args.failReason !== undefined ? { failReason: args.failReason } : {}),
-    retrySucceeded: false,
   };
 }
 
