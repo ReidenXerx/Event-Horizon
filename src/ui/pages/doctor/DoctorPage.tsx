@@ -97,6 +97,22 @@ function toHealthView(receipt: InstallReceipt): HealthReceiptView {
                     receipt.userlistApplication.appliedRuleCount,
                 }
               : {}),
+            /**
+             * Carried separately from `appliedRuleCount`, because they count
+             * different acts: one ordering rule dispatched, versus one plugin
+             * assigned to a group. Folding them together is what made the
+             * LOOT check report a healthy install as 501 rules added.
+             *
+             * Left absent when the receipt has no number, so the check says
+             * "unknown" rather than comparing against a zero it invented.
+             */
+            ...(receipt.userlistApplication.appliedGroupAssignmentCount !==
+            undefined
+              ? {
+                  appliedGroupAssignmentCount:
+                    receipt.userlistApplication.appliedGroupAssignmentCount,
+                }
+              : {}),
           },
         }
       : {}),

@@ -42,7 +42,7 @@ const receipt = (over: Partial<HealthReceiptView> = {}): HealthReceiptView => ({
       { name: "c.esp", enabled: true },
     ],
   },
-  userlistApplication: { appliedRuleCount: 29 },
+  userlistApplication: { appliedRuleCount: 29, appliedGroupAssignmentCount: 84 },
   ...over,
 });
 
@@ -58,6 +58,7 @@ const healthy = (over: Partial<HealthObservations> = {}): HealthObservations => 
   currentPluginLightFlags: { "a.esp": true, "b.esp": false },
   currentModRuleCount: 291,
   currentUserlistRuleCount: 29,
+  currentUserlistGroupAssignmentCount: 84,
   ...over,
 });
 
@@ -69,6 +70,70 @@ describe("evaluateHealth", () => {
     const checks = evaluateHealth(receipt(), healthy());
     expect(checks.every((c) => c.status === "healthy")).toBe(true);
     expect(overallHealth(checks).status).toBe("healthy");
+  });
+
+  it("does not call a group-only collection's own entries a change", () => {
+    /**
+     * ─── THE REAL RECEIPT THIS SPLIT CAME FROM ────────────────────────
+     * Meridia Panties v1.0.11 on a tester's machine: the install applied 501
+     * group assignments and ZERO ordering rules, and 501 assignments were
+     * still there. Nothing had drifted by any measure.
+     *
+     * The Doctor said "501 LOOT rules have been added since installing" and
+     * counted the collection as not intact, because one check compared
+     * `appliedRuleCount` (0) against the number of plugin ENTRIES (501) —
+     * neither of which is the other. A curator was shown damage that did not
+     * exist, on the page whose whole job is telling them whether it does.
+     */
+    const checks = evaluateHealth(
+      receipt({
+        userlistApplication: {
+          appliedRuleCount: 0,
+          appliedGroupAssignmentCount: 501,
+        },
+      }),
+      healthy({
+        currentUserlistRuleCount: 0,
+        currentUserlistGroupAssignmentCount: 501,
+      }),
+    );
+
+    expect(byId(checks, "userlist").status).toBe("healthy");
+    expect(byId(checks, "userlist-groups").status).toBe("healthy");
+    expect(overallHealth(checks).status).toBe("healthy");
+  });
+
+  it("still notices group assignments that really were lost", () => {
+    // The split must not buy its silence by checking nothing. Losing the
+    // group assignments wrecks load order as thoroughly as losing rules.
+    const checks = evaluateHealth(
+      receipt({
+        userlistApplication: {
+          appliedRuleCount: 0,
+          appliedGroupAssignmentCount: 501,
+        },
+      }),
+      healthy({
+        currentUserlistRuleCount: 0,
+        currentUserlistGroupAssignmentCount: 12,
+      }),
+    );
+
+    const c = byId(checks, "userlist-groups");
+    expect(c.status).not.toBe("healthy");
+    expect(c.heal?.action).toBe("reapply-userlist");
+  });
+
+  it("says UNKNOWN for a receipt written before the group count existed", () => {
+    // An older receipt has no number. Comparing against a zero we invented
+    // would report every assignment as an addition — the same shape of lie
+    // this split exists to remove.
+    const checks = evaluateHealth(
+      receipt({ userlistApplication: { appliedRuleCount: 0 } }),
+      healthy({ currentUserlistGroupAssignmentCount: 501 }),
+    );
+
+    expect(byId(checks, "userlist-groups").status).toBe("unknown");
   });
 
   it("calls missing mods broken, and offers to reinstall exactly those", () => {

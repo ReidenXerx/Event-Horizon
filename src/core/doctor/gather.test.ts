@@ -9,8 +9,32 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
+/**
+ * Real userlist entries, because the two counts this feeds cannot be told
+ * apart by an empty one.
+ *
+ * This was `plugins: [{}, {}, {}]` — three entries carrying no group and no
+ * rule. Every counting rule produces the same answer against it, so the
+ * fixture agreed with a version of `gather` that counted ENTRIES and would
+ * have agreed just as readily with any other (GP-4). The bug it could not
+ * see: a collection that assigns groups and sets no ordering rules had its
+ * own 501 entries reported as the user's additions.
+ *
+ * The three numbers are deliberately all DIFFERENT: 4 entries, 5 ordering
+ * rules, 2 group assignments. A first attempt at this fixture had 4 entries
+ * and 4 rules, which meant the old entry-counting code would have passed the
+ * new test — the same trap one level up, and it took a mutation to notice.
+ */
 vi.mock("../userlist", () => ({
-  captureUserlist: () => ({ plugins: [{}, {}, {}], groups: [{}] }),
+  captureUserlist: () => ({
+    plugins: [
+      { name: "a.esp", group: "Late Loaders" },
+      { name: "b.esp", after: ["a.esp", "z.esp", "y.esp"] },
+      { name: "c.esp", group: "Early", after: ["d.esp"], req: ["e.esp"] },
+      { name: "d.esp" },
+    ],
+    groups: [{ name: "Early" }, { name: "Late Loaders" }],
+  }),
 }));
 vi.mock("../installer/checkPluginOrder", () => ({
   readUserPluginsTxt: async () => [{ name: "a.esp" }, { name: "b.esp" }],
@@ -72,16 +96,34 @@ describe("gatherObservations", () => {
     expect(obs.currentModRuleCount).toBe(3);
   });
 
-  it("counts userlist PLUGINS, matching what the install records", async () => {
-    // The receipt's userlistApplication.appliedRuleCount counts plugin rules.
-    // Adding groups here would compare two different numbers and report
-    // permanent, unfixable drift.
+  it("counts ORDERING RULES, the way the install counts them", async () => {
+    /**
+     * `appliedRuleCount` is incremented once per rule DISPATCHED — one per
+     * `after`, `req` or `inc` reference — not once per entry. This used to
+     * count entries and claimed in a comment that the two matched.
+     */
     const obs = await gatherObservations({
       api: api(fullState),
       gameId: "fallout4",
       receiptProfileId: "prof-1",
     });
-    expect(obs.currentUserlistRuleCount).toBe(3);
+    expect(obs.currentUserlistRuleCount).toBe(5);
+  });
+
+  it("counts GROUP ASSIGNMENTS separately, and does not confuse the two", async () => {
+    /**
+     * The number that matters most here is that it is NOT 4 and NOT the
+     * entry count. A collection can set hundreds of group assignments and no
+     * ordering rules at all — the real one this was found on had 501 and 0 —
+     * and one number cannot carry both without calling a healthy install
+     * drifted.
+     */
+    const obs = await gatherObservations({
+      api: api(fullState),
+      gameId: "fallout4",
+      receiptProfileId: "prof-1",
+    });
+    expect(obs.currentUserlistGroupAssignmentCount).toBe(2);
   });
 
   it("leaves the deep scan undefined unless it was actually run", async () => {

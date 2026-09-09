@@ -48,7 +48,22 @@ export type HealthCheckId =
   | "plugin-order"
   | "plugin-light-flags"
   | "mod-rules"
-  | "userlist";
+  /**
+   * Two ids, because a LOOT userlist holds two different things and the
+   * install writes them with two different counters.
+   *
+   * `userlist` is per-plugin ORDERING rules — after / req / inc.
+   * `userlist-groups` is group ASSIGNMENTS — which group each plugin is in.
+   *
+   * They were one check, comparing rules-applied against plugin-entries-
+   * present. On a real tester's collection that read "501 LOOT rules have
+   * been added since installing" when the install had written all 501 itself
+   * and nothing had drifted at all: `appliedRuleCount` was 0 because the
+   * collection sets no ordering rules, `appliedGroupAssignmentCount` was 501,
+   * and the current side counted entries, which is neither.
+   */
+  | "userlist"
+  | "userlist-groups";
 
 /**
  * Deliberately five states, not "pass/fail".
@@ -121,8 +136,15 @@ export interface HealthObservations {
   currentPluginLightFlags?: Readonly<Record<string, boolean>>;
   /** Mod rules currently set for this game, counted. */
   currentModRuleCount: number | undefined;
-  /** LOOT userlist rules currently set, counted. */
+  /**
+   * Per-plugin ORDERING rules currently set — entries carrying after / req /
+   * inc. NOT the number of plugin entries: an entry that only names a group
+   * carries no rule, and counting it here is what made this check report
+   * permanent drift.
+   */
   currentUserlistRuleCount: number | undefined;
+  /** Plugin entries currently assigned to a LOOT group, counted. */
+  currentUserlistGroupAssignmentCount: number | undefined;
 }
 
 /** The minimum of a receipt these checks read. */
@@ -138,7 +160,16 @@ export interface HealthReceiptView {
       light?: boolean;
     })[];
   };
-  userlistApplication?: { appliedRuleCount?: number };
+  userlistApplication?: {
+    appliedRuleCount?: number;
+    /**
+     * Already written by every install — it just had no reader. A receipt
+     * from before this check still parses; the group check reports
+     * `unknown` for one that genuinely lacks the number, which is the
+     * honest answer rather than a zero.
+     */
+    appliedGroupAssignmentCount?: number;
+  };
   /**
    * How the curator's installer answers were replayed.
    *
@@ -566,14 +597,35 @@ export function evaluateHealth(
     }),
   );
 
-  // ── userlist ─────────────────────────────────────────────────────────
+  /**
+   * ─── USERLIST: TWO COUNTS, TWO CHECKS ───────────────────────────────
+   * Collapsing them compared `appliedRuleCount` against the number of plugin
+   * ENTRIES, and a collection that assigns groups without setting ordering
+   * rules then reported every one of its own entries as the user's addition.
+   * Measured on a real tester's receipt: 501 group assignments, 0 rules, 501
+   * entries present — reported as "501 LOOT rules have been added since
+   * installing", with nothing whatever wrong.
+   *
+   * Both cures are the same button; the diagnosis is what had to split.
+   */
   checks.push(
     countCheck({
       id: "userlist",
-      title: "LOOT rules",
+      title: "LOOT ordering rules",
       applied: receipt.userlistApplication?.appliedRuleCount,
       current: obs.currentUserlistRuleCount,
-      noun: "LOOT rule",
+      noun: "LOOT ordering rule",
+      healAction: "reapply-userlist",
+      healLabel: "Re-apply the collection's LOOT rules",
+    }),
+  );
+  checks.push(
+    countCheck({
+      id: "userlist-groups",
+      title: "LOOT group assignments",
+      applied: receipt.userlistApplication?.appliedGroupAssignmentCount,
+      current: obs.currentUserlistGroupAssignmentCount,
+      noun: "LOOT group assignment",
       healAction: "reapply-userlist",
       healLabel: "Re-apply the collection's LOOT rules",
     }),

@@ -150,16 +150,37 @@ export async function gatherObservations(
     currentPluginOrder = undefined;
   }
 
+  /**
+   * ─── COUNT WHAT EACH COUNTER ACTUALLY COUNTS ─────────────────────────
+   * This was `captured.plugins.length` for both, with a comment saying it
+   * matched `appliedRuleCount`. It does not: the install increments
+   * `appliedRuleCount` once per ORDERING rule dispatched (after / req / inc)
+   * and `appliedGroupAssignmentCount` once per SET_PLUGIN_GROUP, while
+   * `plugins.length` counts ENTRIES — and one entry can carry a group, three
+   * `after` rules, both, or neither.
+   *
+   * A collection that assigns groups and sets no ordering rules therefore
+   * compared 0 against 501 and reported permanent drift on a healthy install.
+   */
   let currentUserlistRuleCount: number | undefined;
+  let currentUserlistGroupAssignmentCount: number | undefined;
   try {
     const captured = captureUserlist(state);
-    // Count PLUGIN entries, matching what the install records as
-    // userlistApplication.appliedRuleCount. Counting groups too would compare
-    // two different numbers and report permanent drift.
-    currentUserlistRuleCount = captured.plugins.length;
+    currentUserlistRuleCount = captured.plugins.reduce(
+      (n, p) =>
+        n +
+        (p.after?.length ?? 0) +
+        (p.req?.length ?? 0) +
+        (p.inc?.length ?? 0),
+      0,
+    );
+    currentUserlistGroupAssignmentCount = captured.plugins.filter(
+      (p) => p.group !== undefined && p.group !== "",
+    ).length;
   } catch (err) {
     ehLog("debug", "doctor.gather.userlist-unreadable", { err });
     currentUserlistRuleCount = undefined;
+    currentUserlistGroupAssignmentCount = undefined;
   }
 
   /**
@@ -220,6 +241,7 @@ export async function gatherObservations(
     currentPluginOrder,
     currentModRuleCount: countModRules(state, gameId),
     currentUserlistRuleCount,
+    currentUserlistGroupAssignmentCount,
     ...(currentPluginLightFlags !== undefined
       ? { currentPluginLightFlags }
       : {}),
