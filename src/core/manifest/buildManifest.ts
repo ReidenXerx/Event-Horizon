@@ -713,6 +713,14 @@ function buildModInstallSpec(
     ...(fomodSelections.length === 0 && mod.emptySelectionVerified === true
       ? { emptySelectionVerified: true }
       : {}),
+    /**
+     * Only when the script actually names one. Most mods ask the game
+     * nothing, and a field present on every entry of a 950-mod manifest is
+     * 950 lines saying nothing.
+     */
+    ...((mod.readsPluginState?.length ?? 0) > 0
+      ? { readsPluginState: mod.readsPluginState! }
+      : {}),
   };
 }
 

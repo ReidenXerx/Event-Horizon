@@ -32,6 +32,8 @@ import type { types } from "@nexusmods/vortex-api";
 import { resolveModArchivePath } from "../archiveHashing";
 import type { AuditorMod } from "../getModsListForProfile";
 import { ehLog } from "../logging/ehLog";
+import { detectCaseSensitivity } from "../paths";
+import { installRootFor } from "../stagingPath";
 import type { SelfCheckReport } from "./selfCheckMod";
 import type { UnexplainedFile } from "./unexplainedFiles";
 import { selfCheckMod, summarizeSelfChecks } from "./selfCheckMod";
@@ -546,6 +548,29 @@ export async function runSelfChecks(
   const total = comparable.length;
   let done = 0;
 
+  /**
+   * ─── PROBED ONCE, FOR THE FOLDER EVERY MOD LIVES UNDER ─────────────────
+   * `selfCheckMod` compares recorded paths and needs to know whether this
+   * filesystem tells two of them apart by letter case. It takes a `caseMode`
+   * and defaults to `insensitive`; this is the caller that supplies the real
+   * answer, and without it the parameter was inert — written, defaulted, and
+   * never given a measurement.
+   *
+   * One probe, not one per mod: every mod of a game stages under the same
+   * install root, and `detectCaseSensitivity` caches per directory anyway.
+   * Undefined root (Vortex has no install path for this game yet) leaves the
+   * default, which is the behaviour every caller had before.
+   */
+  const installRoot = installRootFor(state, gameId);
+  const caseMode =
+    installRoot === undefined
+      ? undefined
+      : await detectCaseSensitivity(installRoot);
+  ehLog("debug", "self-check.case-mode", {
+    installRoot,
+    caseMode: caseMode ?? "(unprobed — defaulting to insensitive)",
+  });
+
   for (const mod of comparable) {
     if (opts?.signal?.aborted === true) break;
     done += 1;
@@ -567,6 +592,7 @@ export async function runSelfChecks(
           staged,
           recordedChoices: mod.fomodSelections ?? [],
           readEntry,
+          ...(caseMode !== undefined ? { caseMode } : {}),
           ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
         }),
       );

@@ -89,6 +89,32 @@ export type FomodScript = {
   requiredInstallFiles: FomodFileSpec[];
   steps: FomodStep[];
   conditionalPatterns: FomodConditionalPattern[];
+  /**
+   * ─── PLUGINS THIS INSTALLER ASKS THE GAME ABOUT ─────────────────────────
+   * Every plugin filename named by a `<fileDependency>` anywhere in the
+   * script, lowercased, sorted and deduped. Empty for the overwhelming
+   * majority of mods, which ask the game nothing.
+   *
+   * This is NOT used by the replay — the replay answers "which files does
+   * this answer set produce", and it deliberately excludes patterns it cannot
+   * evaluate rather than guessing at live state. This is a separate fact, for
+   * a separate question: WHEN can this mod be installed?
+   *
+   * Vortex's FOMOD engine evaluates these against live game state on the
+   * user's machine, through a delegate that reads `loadOrder[name].enabled`.
+   * Pre-filling `installerChoices` does not suppress it — proven by reading
+   * Vortex's shipped bundle: `getAllPlugins(activeOnly)` is registered
+   * unconditionally and `choices` is one argument among six, with no flag
+   * that turns condition evaluation off.
+   *
+   * So a mod naming a plugin here behaves differently depending on whether
+   * that plugin is ACTIVE at the moment it installs — and if the collection
+   * itself provides that plugin, installing in manifest order is a coin toss
+   * decided by position. `moduleDependencies` makes it a loud refusal;
+   * `<visible>` and `conditionalFileInstalls` make it a silently different
+   * file set, which nothing downstream can attribute to install order.
+   */
+  pluginStateDependencies: string[];
 };
 
 export type ReplayConfidence = "high" | "low";

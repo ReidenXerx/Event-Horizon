@@ -35,6 +35,7 @@
 import type {
   EhcollManifest,
   EhcollPluginEntry,
+  ModInstallSpec,
   ModInstallState,
 } from "../../types/ehcoll";
 
@@ -111,6 +112,28 @@ export const MOD_INSTALL_STATE_FATES: {
  * does: `Required<>` turns "someone added a field and nobody reads it" into a
  * compile error instead of a bug report from a stranger.
  */
+export const MOD_INSTALL_SPEC_FATES: {
+  readonly [K in keyof Required<ModInstallSpec>]: FieldFate;
+} = {
+  fomodSelections: { kind: "applied", by: "core/installer/installerChoices.ts" },
+  installerChoicesType: {
+    kind: "applied",
+    by: "core/installer/installerChoices.ts",
+  },
+  emptySelectionVerified: {
+    kind: "applied",
+    by: "core/installer/installerChoices.ts",
+  },
+  readsPluginState: { kind: "applied", by: "core/installer/runInstall.ts" },
+  installerType: {
+    kind: "recorded-only",
+    why:
+      "Vortex decides which installer to run from the archive itself. This " +
+      "is the curator's observed answer, kept for diagnosing a mod that " +
+      "installed differently on two machines; nothing replays it.",
+  },
+};
+
 export const PLUGIN_ENTRY_FATES: {
   readonly [K in keyof Required<EhcollPluginEntry>]: FieldFate;
 } = {

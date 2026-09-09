@@ -406,6 +406,41 @@ export type ModInstallSpec = {
    * instead of letting it ask.
    */
   emptySelectionVerified?: boolean;
+  /**
+   * ─── PLUGINS THIS MOD'S INSTALLER ASKS THE GAME ABOUT ──────────────────
+   * Lowercased plugin filenames named by a `<fileDependency>` anywhere in the
+   * mod's FOMOD script — its `<moduleDependencies>`, an install step's
+   * `<visible>`, a `<conditionalFileInstalls>` pattern, or a plugin's
+   * `<typeDescriptor>`. Absent for the overwhelming majority, which ask the
+   * game nothing.
+   *
+   * ─── WHY IT IS IN THE PACKAGE ──────────────────────────────────────────
+   * Vortex's FOMOD engine evaluates these against LIVE game state when the
+   * mod installs, through a delegate that reads `loadOrder[name].enabled`.
+   * Pre-filling the curator's `installerChoices` does not suppress that —
+   * proven by reading Vortex's shipped bundle, where `getAllPlugins` is
+   * registered unconditionally and `choices` is one argument among six with
+   * no flag that turns condition evaluation off.
+   *
+   * So a mod naming a plugin the COLLECTION ITSELF provides behaves
+   * differently depending on its position in the install order, which is a
+   * coin toss nobody chose. One real mod, 801 of 979, refused eleven times
+   * across the tester logs: "Prerequisits not fulfilled: File 'aaf.esm' is
+   * Active OR File 'aaf.esp' is Active" — with AAF sitting in the same
+   * collection, uninstalled at that moment.
+   *
+   * The refusing case is loud and the retry pass rescues it. The same
+   * dependency in a `<visible>` or a conditional pattern does NOT refuse: it
+   * takes a different branch, installs a different file set, and nothing
+   * fails — so no retry, and verification later reports the mod as
+   * unreproducible while blaming its archive. That is the case this field
+   * exists for, and the build is the only place it can be seen.
+   *
+   * Recorded as evidence, not as an instruction: the installer decides what
+   * to do with it, because only the installer knows which of these plugins
+   * this collection provides and which the user already has.
+   */
+  readsPluginState?: string[];
 };
 
 export type ModInstallState = {

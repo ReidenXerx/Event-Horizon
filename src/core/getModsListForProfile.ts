@@ -113,6 +113,14 @@ export type AuditorMod = {
    * Vortex knows.
    */
   emptySelectionVerified?: boolean;
+  /**
+   * Plugin filenames this mod's installer asks the game about, derived by the
+   * build's self-check. Overlaid onto the mod the same way
+   * `emptySelectionVerified` is — see `engine.ts` — because the fact is only
+   * discoverable by reading the archive's FOMOD script, which the self-check
+   * has already done.
+   */
+  readsPluginState?: string[];
   collectionIds?: string[];
 
   installerType?: string;

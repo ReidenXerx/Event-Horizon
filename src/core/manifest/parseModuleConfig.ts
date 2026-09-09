@@ -111,6 +111,74 @@ function parseStep(node: XmlElement): FomodStep {
 }
 
 /**
+ * ─── EVERY PLUGIN THIS SCRIPT ASKS THE GAME ABOUT ─────────────────────────
+ * `<fileDependency file="aaf.esm" state="Active"/>` can appear in four places,
+ * and this walks all of them rather than the one the replay happened to look
+ * at: `<moduleDependencies>` (a prerequisite — refuses outright), an install
+ * step's `<visible>` (hides the step), `<conditionalFileInstalls>` patterns
+ * (installs a different set), and a plugin's `<typeDescriptor>` (changes
+ * Required / Recommended / NotUsable).
+ *
+ * Only the last two were even reachable before, and `parseConditionals` threw
+ * the FILENAME away — it recorded the literal string `"fileDependency"` so the
+ * replay could exclude that pattern, which is the right call for the replay
+ * and loses the fact entirely for anyone else. `<moduleDependencies>` was
+ * never read at all, which is why the one construct that produces a visible
+ * failure — "Installer Prerequisits not fulfilled: File 'aaf.esm' is Active"
+ * — was invisible to the build.
+ *
+ * `state` is deliberately not recorded. `Active`, `Inactive` and `Missing` all
+ * mean the same thing here: the answer depends on WHEN this mod installs.
+ * Only `.esp`/`.esm`/`.esl` names are kept — a dependency on a loose file is
+ * satisfied by extraction, not by activation, so ordering cannot help it.
+ */
+function collectPluginStateDependencies(root: XmlElement): string[] {
+  const found = new Set<string>();
+
+  const walk = (node: XmlElement | undefined): void => {
+    if (node === undefined) return;
+    for (const dep of children(node, "fileDependency")) {
+      const file = attr(dep, "file");
+      if (file === undefined) continue;
+      const name = file.trim().toLowerCase();
+      if (/\.(esp|esm|esl)$/.test(name)) found.add(name);
+    }
+    // `<dependencies>` nests arbitrarily deep through And/Or composites, and
+    // the real-world case that motivated this is exactly one: the AAF mods
+    // carry `Or(fileDependency aaf.esm, fileDependency aaf.esp)`.
+    for (const nested of children(node, "dependencies")) walk(nested);
+  };
+
+  walk(first(root, "moduleDependencies"));
+
+  for (const step of children(first(root, "installSteps"), "installStep")) {
+    walk(first(step, "visible"));
+    for (const group of children(first(step, "optionalFileGroups"), "group")) {
+      for (const plugin of children(first(group, "plugins"), "plugin")) {
+        for (const type of children(
+          first(plugin, "typeDescriptor"),
+          "dependencyType",
+        )) {
+          for (const pattern of children(first(type, "patterns"), "pattern")) {
+            walk(first(pattern, "dependencies"));
+          }
+        }
+      }
+    }
+  }
+
+  const conditionals = first(
+    first(root, "conditionalFileInstalls"),
+    "patterns",
+  );
+  for (const pattern of children(conditionals, "pattern")) {
+    walk(first(pattern, "dependencies"));
+  }
+
+  return [...found].sort();
+}
+
+/**
  * Parse `conditionalFileInstalls`.
  *
  * Only `flagDependency` is modelled. FOMOD also allows `fileDependency`,
@@ -193,6 +261,7 @@ export async function parseModuleConfig(
       requiredInstallFiles: parseFiles(first(root, "requiredInstallFiles")),
       steps: stepNodes.map(parseStep),
       conditionalPatterns: parseConditionals(root, warnings),
+      pluginStateDependencies: collectPluginStateDependencies(root),
     },
     warnings,
   };

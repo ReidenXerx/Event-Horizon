@@ -108,6 +108,12 @@ export type SelfCheckReport = {
    */
   emptySelectionVerified?: boolean;
   /**
+   * Plugin filenames this mod's FOMOD script asks the game about — see
+   * `FomodScript.pluginStateDependencies`. Absent when the script names none,
+   * which is almost all of them, and when no script could be read at all.
+   */
+  readsPluginState?: string[];
+  /**
    * The archive carries a FOMOD script and Vortex recorded no answers for it.
    *
    * That combination is what a USER experiences as a dialog they cannot answer
@@ -244,6 +250,17 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
    */
   const caseMode: CaseMode = input.caseMode ?? "insensitive";
   const key = (p: string): string => pathKey(p, caseMode);
+  /**
+   * Filled in wherever a FOMOD script actually gets parsed, which is two
+   * different branches. A mutable local and one wrapper is less error-prone
+   * than threading it through four return sites by hand — and the empty
+   * default is honest: a mod whose script could not be read has not been
+   * shown to ask the game anything, which is a different claim from "it asks
+   * nothing".
+   */
+  let readsPluginState: string[] = [];
+  const withDeps = <T extends object>(report: T): T =>
+    readsPluginState.length > 0 ? { ...report, readsPluginState } : report;
   const base = {
     modId: input.modId,
     modName: input.modName,
@@ -376,7 +393,8 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
       caseMode,
     });
     notes.push(verdict.note);
-    return {
+    readsPluginState = verdict.pluginStateDependencies ?? [];
+    return withDeps({
       ...withLeads,
       depth: "containment",
       notes,
@@ -387,7 +405,7 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
         ? { emptySelectionVerified: true }
         : {}),
       ...unexplainedFacts(containment, listing),
-    };
+    });
   }
 
   let raw: Buffer | undefined;
@@ -403,6 +421,9 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
   let expected;
   try {
     const parsed = await parseModuleConfig(raw);
+    // Whatever the replay concludes, the script has now been read and its
+    // dependencies are a fact about this mod.
+    readsPluginState = parsed.script.pluginStateDependencies;
     notes.push(...parsed.warnings);
     const replay = replayFomod(parsed.script, input.recordedChoices);
     notes.push(...replay.warnings);
@@ -418,11 +439,11 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
         `${expected.unmatchedSpecs.length} FOMOD spec(s) matched nothing in the archive; ` +
           `not reporting missing files.`,
       );
-      return { ...withLeads, depth: "containment", notes, ...unexplainedFacts(containment, listing) };
+      return withDeps({ ...withLeads, depth: "containment", notes, ...unexplainedFacts(containment, listing) });
     }
   } catch (err) {
     notes.push(`FOMOD replay failed: ${err instanceof Error ? err.message : String(err)}`);
-    return { ...withLeads, depth: "containment", notes, ...unexplainedFacts(containment, listing) };
+    return withDeps({ ...withLeads, depth: "containment", notes, ...unexplainedFacts(containment, listing) });
   }
 
   const stagedPaths = new Set(input.staged.map((f) => key(f.path)));
@@ -430,14 +451,14 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
     .filter((f) => !stagedPaths.has(key(f.path)))
     .map((f) => f.path);
 
-  return {
+  return withDeps({
     ...withLeads,
     depth: "replayed",
     notes,
     missing,
     ...unexplainedFacts(containment, listing),
     expectedCount: expected.files.length,
-  };
+  });
 }
 
 /** Aggregate for logging and for the build summary. */
@@ -516,10 +537,29 @@ async function verifyEmptySelection(input: {
   unexplained?: ReadonlySet<string>;
   /** Probed by the caller; the keys above are built with it. */
   caseMode?: CaseMode;
-}): Promise<{ emptySelectionReproducesStaging: boolean; note: string }> {
+}): Promise<{
+  emptySelectionReproducesStaging: boolean;
+  note: string;
+  /**
+   * The script this function parsed, on its way past. It reads the
+   * ModuleConfig for its own purpose and the caller needs the same file's
+   * dependencies — re-reading and re-parsing a multi-megabyte archive entry
+   * to learn something already in hand is the kind of waste that turns into a
+   * second, drifting parse site.
+   */
+  pluginStateDependencies?: string[];
+}> {
+  /**
+   * Set the moment the script is parsed below, so EVERY exit — including the
+   * refusals, which are most of them — still reports what the script asks the
+   * game about. A dependency is a fact about the mod, not a reward for the
+   * proof succeeding.
+   */
+  let pluginStateDependencies: string[] = [];
   const no = (note: string) => ({
     emptySelectionReproducesStaging: false,
     note,
+    ...(pluginStateDependencies.length > 0 ? { pluginStateDependencies } : {}),
   });
 
   let raw: Buffer | undefined;
@@ -534,6 +574,7 @@ async function verifyEmptySelection(input: {
 
   try {
     const parsed = await parseModuleConfig(raw);
+    pluginStateDependencies = parsed.script.pluginStateDependencies;
     const replay = replayFomod(parsed.script, []);
     if (replay.confidence === "low") {
       // Same rule as the main replay path: a script we do not fully
@@ -615,6 +656,9 @@ async function verifyEmptySelection(input: {
     if (missing.length === 0 && extra.length === 0) {
       return {
         emptySelectionReproducesStaging: true,
+        ...(pluginStateDependencies.length > 0
+          ? { pluginStateDependencies }
+          : {}),
         note:
           "No installer choices were recorded, and installing this mod " +
           "WITHOUT selecting anything reproduces your staging folder " +

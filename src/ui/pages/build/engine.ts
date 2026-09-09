@@ -1797,6 +1797,40 @@ export async function runBuildPipeline(
       });
     }
 
+    /**
+     * ─── WHICH MODS ASK THE GAME ABOUT ANOTHER MOD'''S PLUGIN ─────────────
+     * Same shape as the overlay above, and for the same reason: the fact is
+     * only discoverable by reading the archive'''s FOMOD script, the self-check
+     * has just done that, and without carrying it onto the mod the manifest
+     * cannot ship it and the installer cannot act on it.
+     *
+     * Vortex evaluates these conditions against LIVE game state when the mod
+     * installs — pre-filling the curator'''s answers does not suppress it — so
+     * a mod naming a plugin this collection itself provides behaves
+     * differently depending on where it happens to sit in the install order.
+     */
+    const pluginStateReaders = new Map(
+      selfCheck.reports
+        .filter((r) => (r.readsPluginState?.length ?? 0) > 0)
+        .map((r) => [r.modId, r.readsPluginState!] as const),
+    );
+    if (pluginStateReaders.size > 0) {
+      mods = mods.map((m) =>
+        pluginStateReaders.has(m.id)
+          ? { ...m, readsPluginState: pluginStateReaders.get(m.id)! }
+          : m,
+      );
+      ehLog("info", "build.plugin-state-readers", {
+        mods: pluginStateReaders.size,
+        examples: [...pluginStateReaders.entries()]
+          .slice(0, 10)
+          .map(([id, plugins]) => ({ id, plugins })),
+        why:
+          "these mods''' installers ask the game whether a plugin is active, " +
+          "so their result depends on WHEN they install",
+      });
+    }
+
     const prompting = findModsThatPromptTheUser(selfCheck.reports);
     if (prompting.length > 0) {
       ehLog("warn", "build.mods-that-prompt-the-user", {

@@ -716,12 +716,34 @@ function validateInstallSpec(
   // "nothing was remembered". Dropping it here would put the ambiguity back.
   const emptySelectionVerified = obj.emptySelectionVerified === true;
 
+  /**
+   * ─── PLUGINS THE INSTALLER ASKS THE GAME ABOUT ────────────────────────
+   * Registered HERE, beside the writer, because this parser is a whitelist:
+   * a field with no branch is not merely unread, it is DROPPED, and the
+   * package then ships a field the user side can never see. `light` lived
+   * that way for the whole life of the feature.
+   *
+   * Filtered rather than trusted. It reaches `runInstall` and decides which
+   * epoch a mod installs in, so a non-string or an empty entry must not get
+   * that far — and an entry that is not a plugin name would defer a mod for
+   * a dependency ordering cannot satisfy.
+   */
+  const readsPluginState = Array.isArray(obj.readsPluginState)
+    ? (obj.readsPluginState as unknown[]).filter(
+        (x): x is string =>
+          typeof x === "string" && /\.(esp|esm|esl)$/i.test(x),
+      )
+    : undefined;
+
   if (fomodSelections === undefined) return undefined;
   return {
     fomodSelections,
     ...(installerType !== undefined ? { installerType } : {}),
     ...(installerChoicesType !== undefined ? { installerChoicesType } : {}),
     ...(emptySelectionVerified ? { emptySelectionVerified: true } : {}),
+    ...(readsPluginState !== undefined && readsPluginState.length > 0
+      ? { readsPluginState }
+      : {}),
   };
 }
 
