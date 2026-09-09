@@ -136,6 +136,53 @@ export async function installAlongside(
     collectionVersion: args.collectionVersion,
   });
 
+  /**
+   * ─── HAVE WE ALREADY MADE THIS EXACT COPY? ──────────────────────────────
+   * The install name is deterministic in (mod, collection, version), and a
+   * Vortex mod's id IS its install name — so a second run of the same release
+   * asks Vortex to create a mod that already exists. Vortex answers with its
+   * replace-or-variant dialog, which cannot be pre-answered, only avoided.
+   * Nobody is watching an unattended install, so it sat there:
+   *
+   *   install.alongside.failed  F4SE / Address Library
+   *   "Mod install stalled — no observable progress for 600s while
+   *    extracting. The install pipeline may be waiting on a stuck dialog"
+   *
+   * Twenty minutes each, and both mods ended up unmirrored.
+   *
+   * A mod under this name is OURS by construction — the name carries our
+   * collection and version, which nothing else writes — so finding one is not
+   * a collision to work around, it is the previous run's answer. Adopt it.
+   *
+   * This is the same hole from the other side: a completed run records the
+   * copy as `ownership: "installed"` and the next run's `ownedByUs` skips the
+   * alongside path entirely. That only helps when a receipt survived, and the
+   * run that made these had been interrupted before writing one.
+   */
+  const existing = (
+    api.getState() as {
+      persistent?: { mods?: Record<string, Record<string, unknown>> };
+    }
+  )?.persistent?.mods?.[args.gameId]?.[installName];
+  if (existing !== undefined) {
+    ehLog("info", "install.alongside.already-ours", {
+      modName: args.modName,
+      installName,
+      why:
+        "a mod under our own deterministic name already exists — an earlier " +
+        "run of this release made it. Adopted instead of asking Vortex to " +
+        "create it again, which raises a dialog nothing can answer.",
+    });
+    return {
+      vortexModId: installName,
+      // Nothing was staged, so there is nothing for the caller to clean up.
+      tempDir: await fsp.mkdtemp(
+        path.join(os.tmpdir(), "event-horizon-alongside-noop-"),
+      ),
+      installName,
+    };
+  }
+
   // Keep the extension: it is what tells Vortex which extractor to use.
   const ext = path.extname(args.archivePath);
   const tempDir = await fsp.mkdtemp(
