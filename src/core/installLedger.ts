@@ -631,6 +631,14 @@ function validateModEntries(
       ...(entry.ownership === "installed" || entry.ownership === "adopted"
         ? { ownership: entry.ownership }
         : {}),
+      // The mod OUR copy displaced, so uninstall can switch the user's own
+      // one back on. Parser branch registered with the writer, not after it:
+      // this parser is a whitelist and `serializeReceipt` validates THROUGH
+      // it, so a field with no branch here is destroyed on the way to disk.
+      ...(typeof entry.displacedModId === "string" &&
+      entry.displacedModId.length > 0
+        ? { displacedModId: entry.displacedModId }
+        : {}),
     });
   });
   return out;

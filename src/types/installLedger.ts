@@ -578,6 +578,28 @@ export type InstallReceiptMod = {
    * delete something we cannot prove is ours is the only safe direction.
    */
   ownership?: "installed" | "adopted";
+
+  /**
+   * ─── THE MOD WE SWITCHED OFF TO MAKE ROOM FOR THIS ONE ────────────────
+   * Set only by the alongside install. When a mirrored mod is one the user
+   * already owns, Event Horizon installs the curator's copy BESIDE theirs and
+   * then, in this collection's profile only, enables ours and disables theirs.
+   *
+   * That pairing was established and never recorded anywhere. Pass 5a2
+   * overwrites `installedMods[i]` with our entry, so the user's mod id
+   * survived only in a log line — and `handleUninstall` correctly removes our
+   * copy (it is the one with `ownership: "installed"`) while nothing
+   * re-enables theirs. The user is left with a mod that is installed, visible
+   * in the list, and switched OFF in the profile they play, with the only
+   * artefact that could explain it deleted along with the receipt.
+   *
+   * In fresh-profile mode the disable lands in a profile we created, so the
+   * loss is cosmetic. Current-profile mode is a first-class install target and
+   * runs the same code unchanged, which is what makes this reachable.
+   *
+   * Absent on every mod that displaced nothing, which is almost all of them.
+   */
+  displacedModId?: string;
 };
 
 /** What the install wrote into the user's INI files, and what it left. */

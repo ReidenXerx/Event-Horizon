@@ -273,6 +273,7 @@ describe("the whole receipt, not a list of fields somebody remembered", () => {
           installedAt: "1970-01-01T00:00:00.000Z",
           stagingSetHash: "a".repeat(64),
           ownership: "installed",
+          displacedModId: "the-users-own-copy",
         },
       ],
       rulesApplication: {
@@ -314,6 +315,28 @@ describe("the whole receipt, not a list of fields somebody remembered", () => {
      * shipping.
      */
     expect(Object.keys(back).sort()).toEqual(Object.keys(full).sort());
+  });
+
+  it("carries every PER-MOD field too", () => {
+    /**
+     * The mod entries go through their own whitelist (`validateModEntries`),
+     * so a top-level key-set check cannot see a per-mod field being dropped.
+     * `displacedModId` lives there, and losing it means uninstall removes our
+     * copy and leaves the user's own one switched off with nothing recording
+     * why.
+     */
+    const full = fullyPopulated();
+    const back = throughDisk(full);
+    expect(Object.keys(back.mods[0]!).sort()).toEqual(
+      Object.keys(full.mods[0]!).sort(),
+    );
+  });
+
+  it("proves the MOD fixture is populated, so that check cannot go vacuous", () => {
+    const keys = Object.keys(fullyPopulated().mods[0]!);
+    for (const name of ["stagingSetHash", "ownership", "displacedModId"]) {
+      expect(keys).toContain(name);
+    }
   });
 
   it("proves the fixture is populated, so the key-set check cannot go vacuous", () => {

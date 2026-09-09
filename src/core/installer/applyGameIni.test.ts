@@ -4,6 +4,9 @@
  * user's own hand-tuned keys — because a collection states a starting
  * configuration, it does not own the file.
  */
+import * as fs from "fs";
+import * as path from "path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -353,5 +356,53 @@ describe("once per version, and the projection that has to carry it", () => {
       mods: [],
     } as never);
     expect(withoutIt?.gameIniApplication).toBeUndefined();
+  });
+});
+
+/**
+ * ─── THE DRIVER MUST NOT RECORD A FAILED ATTEMPT AS AN APPLICATION ──────────
+ * `shouldApplyGameIni` gates on PRESENCE — `previous.gameIniApplication !==
+ * undefined` — not on success. That is correct for its own purpose (a run that
+ * applied nothing because everything already matched should not re-apply), and
+ * it makes any record written after a FAILURE permanently suppressing.
+ *
+ * The driver's catch wrote exactly that: a zeroed receipt with a `failed`
+ * entry. So a user who installed while the game was running, or with OneDrive
+ * holding a lock on Documents\My Games, closed the game, re-ran the same
+ * version to fix it — the natural remedy — and the phase never ran again.
+ * uGridsToLoad, archive invalidation and LOD distances stayed unset, silently,
+ * until a new release.
+ *
+ * The stop path four lines above already recorded `undefined` for this exact
+ * reason and says so in its own docblock. This asserts the catch now agrees.
+ *
+ * FIXTURE-DEBT: a behavioural test needs the whole driver with a throwing
+ * `applyGameIni` and a receipt assertion; that harness does not exist.
+ */
+describe("a game-INI failure is not recorded as an application", () => {
+  const driver = fs.readFileSync(
+    path.join(__dirname, "runInstall.ts"),
+    "utf8",
+  );
+
+  it("has the anchors it locates, so a rename cannot make this vacuous", () => {
+    expect(driver).toContain("let gameIniApplication:");
+    expect(driver).toContain("let gameIniFailure:");
+    expect(driver).toContain('"install.game-ini.failed"');
+  });
+
+  it("puts the catch's record in gameIniFailure, never gameIniApplication", () => {
+    const catchStart = driver.indexOf('"install.game-ini.failed"');
+    expect(catchStart).toBeGreaterThan(-1);
+    // The assignment immediately before that log line is the one under test.
+    const before = driver.slice(Math.max(0, catchStart - 600), catchStart);
+    expect(before).toContain("gameIniFailure = {");
+    expect(before).not.toContain("gameIniApplication = {");
+  });
+
+  it("still tells the user, because the notice reads the attempt", () => {
+    // Suppressing the record must not suppress the message — the user is the
+    // one who can close the game and re-run.
+    expect(driver).toContain("gameIniApplication ?? gameIniFailure");
   });
 });

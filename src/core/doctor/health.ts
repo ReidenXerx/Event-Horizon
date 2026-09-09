@@ -35,6 +35,12 @@ import {
 } from "../installer/checkPluginOrder";
 
 export type HealthCheckId =
+  /**
+   * The run that wrote the receipt did not finish — mods it could not
+   * install, or finishing steps the user stopped it before. Listed FIRST
+   * because it changes what every other check means.
+   */
+  | "install-incomplete"
   | "profile"
   | "mods-present"
   | "mods-enabled"
@@ -140,6 +146,23 @@ export interface HealthReceiptView {
    * ambiguous rather than wrong — see the staging check.
    */
   fomodReplayMode?: FomodReplayMode;
+  /**
+   * ─── WHAT THE RUN THAT WROTE THIS COULD NOT DO ────────────────────────
+   * A receipt used to assert one thing: the collection IS installed. It now
+   * also gets written by a run that installed 978 of 979 mods, or one the
+   * user stopped after the deploy — because 978 mods with provenance beat 978
+   * mods with none (NS-2).
+   *
+   * Both fields were written and read by NOTHING. The Doctor computed
+   * `mods-present` from `receipt.mods`, which only ever held the mods that
+   * DID install, so it reported "All 978 mods are still installed" about a
+   * collection missing one — and the plugin-order check reported drift on an
+   * order the run had deliberately not applied.
+   *
+   * Absent means the run completed; presence IS the signal.
+   */
+  failedMods?: ReadonlyArray<{ name: string; reason: string }>;
+  finishingSkipped?: readonly string[];
 }
 
 const MAX_DETAIL = 25;
@@ -192,6 +215,42 @@ export function evaluateHealth(
       : {}),
   });
 
+  /**
+   * ─── THE RUN THAT WROTE THIS RECEIPT DID NOT FINISH ───────────────────
+   * Before every other check, because it changes what the others MEAN. A
+   * missing plugin order is not drift when the run never applied one, and a
+   * mod that is absent because it failed to install is not a mod that
+   * vanished afterwards.
+   */
+  const failedMods = receipt.failedMods ?? [];
+  const finishingSkipped = receipt.finishingSkipped ?? [];
+  if (failedMods.length > 0 || finishingSkipped.length > 0) {
+    const parts: string[] = [];
+    if (failedMods.length > 0) {
+      parts.push(
+        `${failedMods.length} mod(s) could not be installed, so this ` +
+          `collection is incomplete`,
+      );
+    }
+    if (finishingSkipped.length > 0) {
+      parts.push(
+        `you stopped the install before it finished ` +
+          `${finishingSkipped.join(", ")}`,
+      );
+    }
+    checks.push({
+      id: "install-incomplete",
+      title: "Install did not finish",
+      status: "broken",
+      summary: `${parts.join("; ")}. Run the install again to finish it.`,
+      detail: detailList([
+        ...failedMods.map((m) => `${m.name} — ${m.reason}`),
+        ...finishingSkipped.map((phase) => `not applied: ${phase}`),
+      ]),
+      affectedCount: failedMods.length + finishingSkipped.length,
+    });
+  }
+
   // ── mods present ─────────────────────────────────────────────────────
   const installed = new Set(obs.installedModIds);
   const missing = receipt.mods.filter((m) => !installed.has(m.vortexModId));
@@ -201,7 +260,13 @@ export function evaluateHealth(
     status: missing.length === 0 ? "healthy" : "broken",
     summary:
       missing.length === 0
-        ? `All ${receipt.mods.length} mods are still installed.`
+        ? // Says "the ones it installed", not "all of them", when the run is
+          // known to have left some out. The old wording read as a clean bill
+          // of health for a collection that is short a mod.
+          failedMods.length > 0
+          ? `All ${receipt.mods.length} mods this install placed are still ` +
+            `installed — but ${failedMods.length} more never installed at all.`
+          : `All ${receipt.mods.length} mods are still installed.`
         : `${missing.length} of ${receipt.mods.length} mods are missing.`,
     detail: detailList(missing.map((m) => m.name)),
     affectedCount: missing.length,
@@ -293,7 +358,34 @@ export function evaluateHealth(
 
   // ── plugin order ─────────────────────────────────────────────────────
   const baseline = receipt.rulesApplication?.baselinePluginOrder;
-  if (baseline === undefined || baseline.length === 0) {
+  /**
+   * ─── A PHASE THAT NEVER RAN IS NOT DRIFT ──────────────────────────────
+   * `baselinePluginOrder` is recorded unconditionally, OUTSIDE the
+   * `stopBeforeWriting` gate, so a run the user stopped after the deploy
+   * recorded an order it then deliberately did not apply. Comparing against
+   * it reported the user'''s plugins as "drifted" from a state that never
+   * existed on their machine — and offered to heal it, which would apply the
+   * order they had just stopped.
+   *
+   * "Not applied" and "applied then changed" are different facts with
+   * different remedies, and only one of them is the user'''s doing.
+   */
+  const orderNotApplied = finishingSkipped.some((phase) =>
+    phase.toLowerCase().includes("plugin order"),
+  );
+  if (orderNotApplied) {
+    checks.push({
+      id: "plugin-order",
+      title: "Plugin order",
+      status: "unknown",
+      summary:
+        "You stopped this install before it applied the load order, so " +
+        "there is nothing to compare against yet. Run the install again to " +
+        "finish it.",
+      detail: [],
+      affectedCount: 0,
+    });
+  } else if (baseline === undefined || baseline.length === 0) {
     checks.push({
       id: "plugin-order",
       title: "Plugin order",

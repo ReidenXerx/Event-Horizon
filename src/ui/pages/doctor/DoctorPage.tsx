@@ -100,6 +100,20 @@ function toHealthView(receipt: InstallReceipt): HealthReceiptView {
           },
         }
       : {}),
+    /**
+     * What the run that wrote this receipt could NOT do. Both were written to
+     * disk and projected nowhere, so every check downstream read a partial
+     * install as a complete healthy one — "All 978 mods are still installed"
+     * about a collection missing one, and plugin-order drift against an order
+     * the run deliberately never applied.
+     */
+    ...(receipt.failedMods !== undefined && receipt.failedMods.length > 0
+      ? { failedMods: receipt.failedMods }
+      : {}),
+    ...(receipt.finishingSkipped !== undefined &&
+    receipt.finishingSkipped.length > 0
+      ? { finishingSkipped: receipt.finishingSkipped }
+      : {}),
     ...(receipt.fomodReplayMode !== undefined
       ? { fomodReplayMode: receipt.fomodReplayMode }
       : {}),

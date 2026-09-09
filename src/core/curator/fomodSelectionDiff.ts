@@ -52,20 +52,67 @@ export type SelectionVerdict =
   | "unknown";
 
 /**
- * Does this answer set actually contain a choice?
+ * ─── THREE STATES, NOT TWO ──────────────────────────────────────────────────
+ * What an answer set tells us, which is not the same as what it contains.
  *
+ * This module and `installerChoices.ts` read the SAME recorded shape and, for
+ * a while, meant opposite things by it. `installerChoices` says it plainly:
+ *
+ *   "Steps PRESENT with every `choices` array empty is a different thing
+ *    entirely: the build watched the curator go through the installer and
+ *    recorded what they did, which was tick nothing and press Finish. That is
+ *    an answer."
+ *
+ * It replays that unattended, and names six mods on the reference profile that
+ * behave this way — iWant Status Bars, iWant Widgets, Rock Traps Trigger Fixes
+ * and others. Meanwhile the old `hasChoices` returned `false` for exactly that
+ * shape, so `compareSelections` treated it as an absence and answered
+ * `"unknown"` — meaning the mods Event Horizon replays MOST confidently were
+ * the ones it could never detect drift on.
+ *
+ * That is the Val Serano failure in the one shape where the manifest actually
+ * holds a definite answer: the user re-installs through the wizard and ticks a
+ * patch, the archive is unchanged so the compareKey is unchanged, verification
+ * passes because the curator's files are all present (their extra patch is an
+ * `extraFile`, informational by design), and the only signal left says
+ * "cannot tell".
+ */
+export type SelectionEvidence =
+  /** No installer was ever observed — the NS-8 absence, and nothing else. */
+  | "absent"
+  /** An installer WAS observed and nothing was ticked. That is an answer. */
+  | "recorded-empty"
+  /** At least one option was picked. */
+  | "has-choices";
+
+/**
  * Tolerates `undefined` and ragged shapes throughout. `AuditorMod` declares
  * `fomodSelections` as required and `getModsListForProfile` always supplies
  * it, but this runs in a DASHBOARD view over whatever Vortex state happens to
  * hold — and a diff that throws tells the curator nothing at all, which is
  * strictly worse than the gap it was written to close.
  */
+export function selectionEvidence(
+  steps: readonly FomodSelectionStep[] | undefined,
+): SelectionEvidence {
+  const list = steps ?? [];
+  if (list.length === 0) return "absent";
+  return list.some((step) => (step?.groups ?? []).some((g) => (g?.choices ?? []).length > 0))
+    ? "has-choices"
+    : "recorded-empty";
+}
+
+/**
+ * Does this answer set actually contain a choice?
+ *
+ * Kept because "did they pick something" is still a question worth asking
+ * directly. It is NOT the question `compareSelections` asks — conflating the
+ * two is what shipped the bug above.
+ */
 export function hasChoices(
   steps: readonly FomodSelectionStep[] | undefined,
 ): boolean {
-  return (steps ?? []).some((step) =>
-    (step?.groups ?? []).some((g) => (g?.choices ?? []).length > 0),
-  );
+  return selectionEvidence(steps) === "has-choices";
 }
 
 /**
@@ -114,14 +161,31 @@ export function compareSelections(
   live: readonly FomodSelectionStep[] | undefined,
   builtVerified = false,
 ): SelectionVerdict {
-  const builtHas = hasChoices(built);
-  const liveHas = hasChoices(live);
+  const builtEvidence = selectionEvidence(built);
+  const liveEvidence = selectionEvidence(live);
 
   // Both sides made choices: a real comparison.
-  if (builtHas && liveHas) {
+  if (builtEvidence === "has-choices" && liveEvidence === "has-choices") {
     return canonicalSelections(built) === canonicalSelections(live)
       ? "same"
       : "differ";
+  }
+
+  /**
+   * ─── AN OBSERVED INSTALLER IS COMPARABLE, EVEN WITH NOTHING TICKED ──────
+   * Both sides watched an installer run. One recorded ticks and the other
+   * recorded none — that is two different answers to the same question, not a
+   * missing answer, and `installerChoices.ts` already treats this shape as a
+   * definite answer when it REPLAYS it. Returning "unknown" here made the mods
+   * we replay most confidently the ones we could never detect drift on.
+   *
+   * Both recording none is the same answer twice, and is "same".
+   */
+  if (builtEvidence !== "absent" && liveEvidence !== "absent") {
+    if (builtEvidence === "recorded-empty" && liveEvidence === "recorded-empty") {
+      return "same";
+    }
+    return "differ";
   }
 
   /**
@@ -129,12 +193,13 @@ export function compareSelections(
    * here and the comparison is meaningful in both directions: still empty is
    * unchanged, and now-has-choices is a genuine reconfiguration.
    */
-  if (builtVerified && !builtHas) {
-    return liveHas ? "differ" : "same";
+  if (builtVerified && builtEvidence === "absent") {
+    return liveEvidence === "has-choices" ? "differ" : "same";
   }
 
   /**
-   * Neither side has anything: no evidence of a change, and none to report.
+   * Neither side observed an installer at all: no evidence of a change, and
+   * none to report.
    *
    * This is "same" rather than "unknown" for a blunt reason of proportion.
    * The overwhelming majority of mods have no FOMOD installer at all — on a
@@ -146,13 +211,14 @@ export function compareSelections(
    * NS-8 governs REPLAY, where an empty set has to be handed to an installer
    * and guessing costs the user files. Nothing is being replayed here.
    */
-  if (!builtHas && !liveHas) return "same";
+  if (builtEvidence === "absent" && liveEvidence === "absent") return "same";
 
   /**
-   * Exactly one side is empty, and unproven — the case NS-8 is actually about.
-   * A curator who picked nothing looks identical to one whose answers Vortex
-   * discarded (creating a variant without "Pre-populate installer options"
-   * does exactly that). Rare, and worth surfacing precisely because it is.
+   * Exactly one side never saw an installer, and the built side is unproven —
+   * the case NS-8 is actually about. A mod whose answers Vortex discarded
+   * (creating a variant without "Pre-populate installer options" does exactly
+   * that) is indistinguishable from one that has no installer, and the two
+   * mean opposite things. Rare, and worth surfacing precisely because it is.
    */
   return "unknown";
 }

@@ -15,6 +15,7 @@ import {
   canonicalSelections,
   compareSelections,
   hasChoices,
+  selectionEvidence,
 } from "./fomodSelectionDiff";
 
 import { diffCollectionAgainstProfile } from "./collectionDiff";
@@ -75,8 +76,8 @@ describe("comparing two answer sets", () => {
 });
 
 describe("an empty answer set, which is an absence and not a value (NS-8)", () => {
-  it("refuses to judge when only ONE side is empty", () => {
-    // Vortex records nothing both when a user picked nothing AND when the
+  it("refuses to judge when only ONE side saw no installer", () => {
+    // Vortex records nothing both when a mod HAS no installer AND when the
     // answers were lost — creating a variant without "Pre-populate installer
     // options" discards them. Guessing either way invents a finding.
     expect(compareSelections(pick("2K"), [])).toBe("unknown");
@@ -106,9 +107,79 @@ describe("an empty answer set, which is an absence and not a value (NS-8)", () =
     expect(hasChoices(undefined)).toBe(false);
     expect(canonicalSelections(undefined)).toBe("");
     expect(compareSelections(undefined, undefined)).toBe("same");
-    expect(compareSelections([{ name: "S" }] as never, pick("A"))).toBe(
-      "unknown",
+    // Ragged input still produces a verdict rather than an exception. WHICH
+    // verdict is the subject of the next describe block, not this one.
+    expect(["same", "differ", "unknown"]).toContain(
+      compareSelections([{ name: "S" }] as never, pick("A")),
     );
+  });
+});
+
+/**
+ * ─── AN OBSERVED INSTALLER WITH NOTHING TICKED IS AN ANSWER ─────────────────
+ * The distinction this module got wrong, and the one `installerChoices.ts` had
+ * already drawn in the opposite direction:
+ *
+ *   "Steps PRESENT with every `choices` array empty is a different thing
+ *    entirely: the build watched the curator go through the installer and
+ *    recorded what they did, which was tick nothing and press Finish. That is
+ *    an answer."
+ *
+ * That module REPLAYS this shape unattended, and names six real mods on the
+ * reference profile that carry it — iWant Status Bars, iWant Widgets, Rock
+ * Traps Trigger Fixes among them. `hasChoices` returned `false` for the same
+ * shape, so the diff called it an absence and answered "unknown", which meant
+ * the mods Event Horizon replays MOST confidently were the ones it could never
+ * detect drift on.
+ *
+ * NS-8 is about REPLAY, where an empty set is handed to an installer. Its
+ * absence case is "no installer was ever observed" — not "an installer was
+ * observed and the curator chose nothing".
+ */
+describe("steps recorded with no choices ticked", () => {
+  /** An installer WAS observed. The curator ticked nothing. */
+  const recordedEmpty: FomodSelectionStep[] = [{ name: "S", groups: [] }];
+
+  it("is comparable against a side that DID tick something", () => {
+    /**
+     * The Val Serano failure, in the one shape where the manifest holds a
+     * definite answer. The user re-installs through the wizard and ticks a
+     * patch; the archive is unchanged so the compareKey is unchanged;
+     * verification passes because every file the curator recorded is present
+     * and the user's extra patch is an `extraFile`, informational by design.
+     * This comparison is the only signal left, and it used to say "cannot
+     * tell".
+     */
+    expect(compareSelections(recordedEmpty, pick("2K"))).toBe("differ");
+    expect(compareSelections(pick("2K"), recordedEmpty)).toBe("differ");
+  });
+
+  it("is 'same' against another side that also ticked nothing", () => {
+    // Two observations of the same answer, not two absences.
+    expect(compareSelections(recordedEmpty, [{ name: "S", groups: [] }])).toBe(
+      "same",
+    );
+  });
+
+  it("is still NOT comparable against a side that saw no installer", () => {
+    /**
+     * The real NS-8 case survives. An empty `fomodSelections` means the build
+     * never observed an installer — which is true of the 1,454 mods in a real
+     * collection that simply have no FOMOD, and FALSE for the handful whose
+     * answers Vortex discarded. Those two are indistinguishable and mean
+     * opposite things, so this stays "unknown".
+     */
+    expect(compareSelections(recordedEmpty, [])).toBe("unknown");
+    expect(compareSelections([], recordedEmpty)).toBe("unknown");
+  });
+
+  it("reads as a recorded answer, not as an absence", () => {
+    // The predicate itself, stated directly — this is what the two consumers
+    // were disagreeing about.
+    expect(selectionEvidence(recordedEmpty)).toBe("recorded-empty");
+    expect(selectionEvidence([])).toBe("absent");
+    expect(selectionEvidence(undefined)).toBe("absent");
+    expect(selectionEvidence(pick("2K"))).toBe("has-choices");
   });
 });
 

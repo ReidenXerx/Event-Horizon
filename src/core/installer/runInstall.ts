@@ -1103,7 +1103,8 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       aborted = checkAbort("switching-profile");
       if (aborted) return aborted;
     } else {
-      // Current-profile mode: install in-place into the active profile.
+      // Current-profile mode: install in-place, into the profile the RECEIPT
+      // names — which is usually the active one.
       activeProfileId = plan.installTarget.profileId;
       activeProfileName = plan.installTarget.profileName;
       // Recorded like the other two. This IS the profile the run is filling,
@@ -1111,6 +1112,56 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       // failure write an unresumable attempt, and that record then OVERWRITES
       // a good one from an earlier fresh-profile run.
       setEhProfileId(plan.installTarget.profileId);
+
+      /**
+       * ─── AND GO WHERE THE COLLECTION ACTUALLY LIVES ───────────────────
+       * Set only when the receipt's profile is NOT the one Vortex is on. The
+       * old code took the ACTIVE profile unconditionally, so a same-version
+       * re-run from a vanilla profile enabled 978 mods there, purged the
+       * user's mod rules and rewrote their plugins.txt — the hazard the
+       * version-changed branch of `pickInstallTarget` already refuses for.
+       *
+       * It is reachable by following our own advice: after a partial run the
+       * Done screen says to switch back to your previous profile AND to run
+       * the install again to finish, in that order.
+       *
+       * Enabling mods in a profile Vortex is not on would also deploy
+       * nothing, so the switch is required for correctness and not only for
+       * safety.
+       */
+      const switchFrom = plan.installTarget.switchFromProfileId;
+      if (switchFrom !== undefined) {
+        ehLog("info", "install.profile.switching-to-receipt", {
+          from: switchFrom,
+          to: activeProfileId,
+          profileName: activeProfileName,
+          why:
+            "the receipt records this collection as installed in that " +
+            "profile; installing into the active one instead would merge it " +
+            "where the user did not ask for it",
+        });
+        reportProgress(
+          "switching-profile",
+          0,
+          1,
+          `Switching to "${activeProfileName}"...`,
+        );
+        try {
+          await switchToProfile(api, activeProfileId, ctx.abortSignal);
+        } catch (err) {
+          if ((err as Error)?.name === "AbortError") {
+            aborted = checkAbort("switching-profile");
+            if (aborted) return aborted;
+            return abortedResult(
+              "switching-profile",
+              "Profile switch aborted before completion.",
+            );
+          }
+          throw err;
+        }
+        aborted = checkAbort("switching-profile");
+        if (aborted) return aborted;
+      }
     }
 
     /**
@@ -3509,6 +3560,26 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     // they changed since, and that is the one behaviour they would not
     // forgive.
     let gameIniApplication: GameIniApplicationReceipt | undefined;
+    /**
+     * ─── A FAILED ATTEMPT IS NOT AN APPLICATION ─────────────────────────
+     * Kept OUT of the receipt deliberately, and separate from
+     * `gameIniApplication` for one reason: `shouldApplyGameIni` decides
+     * whether to run at all by testing `previous.gameIniApplication !==
+     * undefined` — presence, not success. So a zeroed record written after a
+     * failure satisfies that guard forever, and the curator's settings are
+     * never applied again for this release.
+     *
+     * The stop path a few lines below already records `undefined` for exactly
+     * this reason, in a docblock that says so. The catch wrote the stub
+     * anyway, and the failure it fires on is the recoverable kind: the game is
+     * running, or OneDrive holds a lock on Documents\My Games. The user closes
+     * the game, re-runs the same version to fix it — which is the natural
+     * remedy — and the phase silently never runs. Only a new release clears it.
+     *
+     * The notice still reads from this, so the user is told what failed. The
+     * receipt simply does not claim the settings were applied.
+     */
+    let gameIniFailure: GameIniApplicationReceipt | undefined;
     if (
       shouldApplyGameIni({
         gameIni: plan.manifest.gameIni,
@@ -3557,12 +3628,23 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       } catch (err) {
         // Never fatal. A collection whose mods all installed is not a failure
         // because one settings file could not be written.
-        gameIniApplication = {
+        //
+        // Into the NOTICE, not the receipt — see `gameIniFailure` above.
+        // Recording it as an application would tell the next run the settings
+        // had already been applied for this version.
+        gameIniFailure = {
           appliedCount: 0,
           alreadyMatchedCount: 0,
           changes: [],
           failed: [{ fileName: "(all)", reason: formatError(err) }],
         };
+        ehLog("warn", "install.game-ini.failed", {
+          err,
+          consequence:
+            "the curator's game settings were NOT applied. This is not " +
+            "recorded as an application, so running this same version again " +
+            "will retry them.",
+        });
       }
     }
 
@@ -4129,8 +4211,14 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       rulesApplication,
       userlistApplication,
       verifications,
-      ...(gameIniApplication !== undefined
-        ? { gameIniNotice: describeGameIniApplication(gameIniApplication) }
+      // The notice reports the ATTEMPT, so a failure the receipt
+      // deliberately does not record is still told to the user.
+      ...((gameIniApplication ?? gameIniFailure) !== undefined
+        ? {
+            gameIniNotice: describeGameIniApplication(
+              (gameIniApplication ?? gameIniFailure)!,
+            ),
+          }
         : {}),
       // Both halves of the same story: what was corrected, and what could not
       // be. A user seeing a mod outside Data deserves the first, and the
@@ -5394,6 +5482,12 @@ function buildReceipt(args: {
       // fiction, and one derived from disk would enshrine a broken install as
       // the reference. Absent means unknown; see InstallReceiptMod.
       ...stagingSetHashFor(m, verifiedOkKeys, expectedFilesByCompareKey),
+      // The user's own copy, which the alongside install switched off in this
+      // profile. Uninstall reads it to switch that copy back on — without it
+      // removing our copy leaves the user with NEITHER active.
+      ...(m.displacedModId !== undefined
+        ? { displacedModId: m.displacedModId }
+        : {}),
     });
   }
 
@@ -6495,6 +6589,19 @@ async function tryInstallAlongside(args: {
       name: result.installName,
       vortexModId: result.vortexModId,
       source: installEntry.source,
+      /**
+       * ─── WHOSE MOD WE SWITCHED OFF ────────────────────────────────────
+       * The line above disables the user's copy in this profile, and until
+       * now that pairing was recorded NOWHERE. Pass 5a2 overwrites
+       * `installedMods[idx]` with this entry, so `installEntry.vortexModId`
+       * — the user's mod — survived only in a log line.
+       *
+       * Uninstall then correctly removed OUR copy and left theirs disabled:
+       * a mod that is installed, visible, and switched off in the profile
+       * they play, with the receipt that could have explained it deleted at
+       * the same moment.
+       */
+      displacedModId: installEntry.vortexModId,
       /**
        * OUR decision, not the one belonging to the mod we installed beside.
        *

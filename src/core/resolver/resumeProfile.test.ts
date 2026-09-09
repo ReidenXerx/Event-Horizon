@@ -331,3 +331,107 @@ describe("pickInstallTarget with a resumable profile", () => {
     });
   });
 });
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * The SAME revision installs where the collection lives, not where you stand.
+ *
+ * The block above closes this hazard for a NEW revision, and its own comment
+ * states the hazard in general terms: "`current-profile` installs into the
+ * ACTIVE profile, never the one the receipt names — so upgrading while
+ * sitting on a vanilla profile merged 1,700 mods, a rules purge and a
+ * plugins.txt rewrite into it."
+ *
+ * That was still true for the same revision, which is the case a repair or a
+ * resumed partial run takes. And it is reachable by following Event Horizon's
+ * own advice: after a partial run the Done screen says to switch back to your
+ * previous profile, and to run the install again to finish — in that order.
+ *
+ * Enabling mods in a profile Vortex is not on would also deploy nothing, so
+ * targeting the receipt's profile is required for correctness as well as
+ * safety.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("a same-version re-run from a different profile", () => {
+  const receipt = {
+    packageId: PACKAGE_ID,
+    packageVersion: VERSION,
+    vortexProfileId: PROFILE_ID,
+    vortexProfileName: "Meridia Panties (Event Horizon)",
+  } as InstallReceipt;
+
+  it("targets the receipt's profile and asks the driver to switch", () => {
+    const target = pickInstallTarget(
+      manifest,
+      receipt,
+      "vanilla-profile",
+      "My Own Setup",
+      undefined,
+      // The caller checked: the collection's profile is still there.
+      true,
+    );
+
+    expect(target).toMatchObject({
+      kind: "current-profile",
+      profileId: PROFILE_ID,
+      profileName: "Meridia Panties (Event Horizon)",
+      // Present ONLY when a switch is actually needed, so the driver does not
+      // pay for a profile switch on the ordinary path.
+      switchFromProfileId: "vanilla-profile",
+    });
+  });
+
+  it("stays in place when you are already on the right profile", () => {
+    const target = pickInstallTarget(
+      manifest,
+      receipt,
+      PROFILE_ID,
+      "Meridia Panties (Event Horizon)",
+      undefined,
+      true,
+    );
+
+    expect(target).toMatchObject({
+      kind: "current-profile",
+      profileId: PROFILE_ID,
+    });
+    expect(
+      (target as { switchFromProfileId?: string }).switchFromProfileId,
+    ).toBeUndefined();
+  });
+
+  it("does NOT resurrect a profile the user deleted", () => {
+    /**
+     * Deleting a profile is deliberate. Switching into one that is gone would
+     * fail, and inventing a replacement would be a different collection's
+     * profile in all but name — so this falls back to installing where the
+     * user is, which is what they can see and undo.
+     */
+    const target = pickInstallTarget(
+      manifest,
+      receipt,
+      "vanilla-profile",
+      "My Own Setup",
+      undefined,
+      false,
+    );
+
+    expect(target).toMatchObject({
+      kind: "current-profile",
+      profileId: "vanilla-profile",
+    });
+  });
+
+  it("treats an UNCHECKED profile as absent, never as present", () => {
+    // A silent profile switch on an unverified assumption is the wrong
+    // default. Omitting the argument must not switch anything.
+    const target = pickInstallTarget(
+      manifest,
+      receipt,
+      "vanilla-profile",
+      "My Own Setup",
+    );
+
+    expect(target).toMatchObject({ profileId: "vanilla-profile" });
+  });
+});

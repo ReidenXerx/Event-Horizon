@@ -397,3 +397,83 @@ describe("the ESL flags, which decide whether the game starts", () => {
     expect(byId(checks, "plugin-light-flags").status).toBe("unknown");
   });
 });
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * A receipt from a run that did not finish.
+ *
+ * The receipt used to assert exactly one thing: this collection IS installed.
+ * It is now also written by a run that installed 978 of 979 mods, or one the
+ * user stopped after the deploy — 978 mods with provenance beat 978 mods with
+ * none (NS-2). Both facts were recorded and read by nothing, so every check
+ * here treated a partial install as a complete healthy one.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("a partial install, seen by the Doctor", () => {
+  const observations = (over: Partial<HealthObservations> = {}) =>
+    healthy(over);
+
+  it("reports the mods that never installed at all", () => {
+    /**
+     * `receipt.mods` only ever held the mods that DID install, so
+     * `mods-present` compared 978 against 978 and answered "healthy". The one
+     * mod genuinely absent from the collection was invisible because it was
+     * never written into the list being checked.
+     */
+    const checks = evaluateHealth(
+      receipt({
+        failedMods: [
+          {
+            name: "AAF_VanillaKinkyCreatureAnimations",
+            reason: "Installer Prerequisits not fulfilled: File 'aaf.esm' is Active",
+          },
+        ],
+      }),
+      observations(),
+    );
+
+    const check = checks.find((c) => c.id === "install-incomplete");
+    expect(check?.status).toBe("broken");
+    expect(check?.summary).toMatch(/could not be installed/i);
+    expect(check?.detail.join(" ")).toMatch(/AAF_VanillaKinky/);
+  });
+
+  it("stops mods-present from reading as a clean bill of health", () => {
+    const checks = evaluateHealth(
+      receipt({ failedMods: [{ name: "X", reason: "why" }] }),
+      observations(),
+    );
+
+    const present = checks.find((c) => c.id === "mods-present");
+    // Still healthy — the mods it placed ARE all there, which is true and
+    // worth saying. What changes is that it no longer claims to speak for the
+    // whole collection.
+    expect(present?.status).toBe("healthy");
+    expect(present?.summary).toMatch(/never installed at all/i);
+  });
+
+  it("does not call an unapplied load order 'drifted'", () => {
+    /**
+     * `baselinePluginOrder` is recorded unconditionally, OUTSIDE the
+     * `stopBeforeWriting` gate — so a stopped run recorded an order it then
+     * deliberately did not apply. Comparing against it reported the user's
+     * plugins as drifted from a state that never existed on their machine,
+     * and offered to heal it by applying the very order they had stopped.
+     */
+    const checks = evaluateHealth(
+      receipt({ finishingSkipped: ["plugin order", "ESL flags"] }),
+      observations({ currentPluginOrder: on("z.esp", "a.esp") }),
+    );
+
+    const order = checks.find((c) => c.id === "plugin-order");
+    expect(order?.status).toBe("unknown");
+    expect(order?.summary).toMatch(/before it applied the load order/i);
+  });
+
+  it("says nothing at all about a run that DID finish", () => {
+    // Presence is the signal. A check that fires on every healthy install is
+    // one people learn to skip.
+    const checks = evaluateHealth(receipt(), observations());
+    expect(checks.find((c) => c.id === "install-incomplete")).toBeUndefined();
+  });
+});

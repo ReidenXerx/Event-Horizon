@@ -176,6 +176,14 @@ export function pickInstallTarget(
    * to, and a fresh profile is the right answer then.
    */
   interruptedProfile?: ResumableProfile,
+  /**
+   * Whether the profile the RECEIPT names still exists for this game.
+   *
+   * The caller answers it because only the caller can see Vortex state.
+   * `undefined` means nobody checked, and is treated as "does not exist" — a
+   * silent profile switch is not something to do on an unverified assumption.
+   */
+  receiptProfileExists?: boolean,
 ): InstallTarget {
   if (receipt !== undefined) {
     /**
@@ -203,6 +211,35 @@ export function pickInstallTarget(
         resumeRefusedWhy: "version-changed",
       };
     }
+    /**
+     * ─── THE COLLECTION LIVES WHERE THE RECEIPT SAYS ────────────────────
+     * Not where the user happens to be standing. `current-profile` used to
+     * mean the ACTIVE profile unconditionally, which is the hazard the
+     * docblock above describes and the version-changed branch already closes:
+     * a same-version re-run from a vanilla profile merged the entire
+     * collection into it, purged the user's mod rules and rewrote plugins.txt.
+     *
+     * It is reachable by following our own advice. After a partial run the
+     * Done screen says to switch back to your previous profile AND to run the
+     * install again to finish — in that order.
+     *
+     * `receiptProfileExists` is the caller's answer, because only it can see
+     * Vortex state. A profile the user deleted is gone on purpose, so we fall
+     * back to where they are rather than resurrecting it.
+     */
+    const receiptProfile = receipt.vortexProfileId;
+    if (
+      receiptProfile !== activeProfileId &&
+      receiptProfileExists === true
+    ) {
+      return {
+        kind: "current-profile",
+        profileId: receiptProfile,
+        profileName: receipt.vortexProfileName,
+        switchFromProfileId: activeProfileId,
+      };
+    }
+
     return {
       kind: "current-profile",
       profileId: activeProfileId,
@@ -355,23 +392,72 @@ function judgeResumeCandidate(
     return { kind: "refused", why: "attempt-has-no-profile" };
   }
 
-  const profiles = (
-    state as unknown as {
-      persistent?: { profiles?: Record<string, { gameId?: string; name?: string }> };
-    }
-  ).persistent?.profiles;
-  const profile = profiles?.[profileId];
+  const profile = profileForGame(state, gameId, profileId);
   if (profile === undefined) {
-    return { kind: "refused", why: "profile-deleted", attemptProfileId: profileId };
-  }
-  // Belonging to this game is checked, not assumed: a profile id that has
-  // been reused by another game would send the whole install somewhere the
-  // user never asked for.
-  if (profile.gameId !== gameId) {
-    return { kind: "refused", why: "profile-other-game", attemptProfileId: profileId };
+    const anyGame = lookupProfile(state, profileId);
+    return anyGame === undefined
+      ? { kind: "refused", why: "profile-deleted", attemptProfileId: profileId }
+      : // Belonging to this game is checked, not assumed: a profile id reused
+        // by another game would send the whole install somewhere the user
+        // never asked for.
+        {
+          kind: "refused",
+          why: "profile-other-game",
+          attemptProfileId: profileId,
+        };
   }
 
   return { kind: "resume", id: profileId, name: profile.name ?? profileId };
+}
+
+/** Whatever Vortex holds for `profileId`, on any game. */
+function lookupProfile(
+  state: types.IState,
+  profileId: string,
+): { gameId?: string; name?: string } | undefined {
+  return (
+    state as unknown as {
+      persistent?: {
+        profiles?: Record<string, { gameId?: string; name?: string }>;
+      };
+    }
+  ).persistent?.profiles?.[profileId];
+}
+
+/**
+ * The profile `profileId` names, but only if it belongs to `gameId`.
+ *
+ * One rule, two callers — the resume judgement and the receipt-profile check
+ * below it. A second copy of "does this profile exist" is how the two would
+ * drift into disagreeing about whether a switch is safe, and this repo has
+ * paid for a duplicated rule twice already (`gateOnMasters`,
+ * `resolveBundledArchives`).
+ */
+function profileForGame(
+  state: types.IState,
+  gameId: string,
+  profileId: string,
+): { gameId?: string; name?: string } | undefined {
+  const profile = lookupProfile(state, profileId);
+  return profile !== undefined && profile.gameId === gameId
+    ? profile
+    : undefined;
+}
+
+/**
+ * Does the profile a RECEIPT names still exist for this game?
+ *
+ * Exported because `pickInstallTarget` is pure and cannot see Vortex state,
+ * and because the answer decides whether a re-run silently switches the user's
+ * profile — which is not something to assume.
+ */
+export function receiptProfileStillExists(
+  state: types.IState,
+  gameId: string,
+  receipt: InstallReceipt | undefined,
+): boolean {
+  if (receipt === undefined) return false;
+  return profileForGame(state, gameId, receipt.vortexProfileId) !== undefined;
 }
 
 /**

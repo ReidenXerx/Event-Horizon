@@ -75,6 +75,7 @@ import { getEventHorizonDir } from "../core/paths";
 import {
   buildUserSideState,
   pickInstallTarget,
+  receiptProfileStillExists,
   resumableProfileFromAttempts,
   resolveDeploymentMethod,
   resolveEnabledExtensions,
@@ -350,6 +351,10 @@ const downloadScanNotificationId = "vortex-event-horizon:install-download-scan";
           manifest.package.version,
           await listInstallAttempts(appDataPath),
         ),
+        // Whether the profile the RECEIPT names still exists. Decides whether
+        // a same-version re-run installs where the collection actually lives,
+        // or merges it into whatever profile the user is standing on.
+        receiptProfileStillExists(state, activeGameId, receipt),
       );
 
       // ── 8. resolve install plan ──────────────────────────────────────

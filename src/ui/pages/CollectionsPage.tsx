@@ -25,6 +25,7 @@ import {
 } from "../../core/installLedger";
 import { ehLog } from "../../core/logging/ehLog";
 import { uninstallMod } from "../../core/installer/modInstall";
+import { enableModInProfile } from "../../core/installer/profile";
 import { switchToProfile } from "../../core/installer/profile";
 import type { InstallReceipt } from "../../types/installLedger";
 import {
@@ -821,6 +822,45 @@ function ReceiptCard(props: {
         </div>
         <div>
           <strong>Mods:</strong> {receipt.mods.length}
+          {/*
+            A receipt is also written by a run that did not finish — 978 mods
+            with provenance beat 978 mods with none (NS-2). Both facts were
+            recorded and rendered nowhere, so a partial install looked exactly
+            like a complete one and the only place it was ever said was the
+            Done screen the user then closed.
+          */}
+          {(receipt.failedMods?.length ?? 0) > 0 && (
+            <span
+              style={{
+                marginLeft: 8,
+                padding: "1px 6px",
+                borderRadius: 3,
+                fontSize: "0.85em",
+                background: "rgba(255,170,0,0.18)",
+                border: "1px solid rgba(255,170,0,0.45)",
+              }}
+              title={receipt.failedMods
+                ?.map((m) => `${m.name} — ${m.reason}`)
+                .join("\n")}
+            >
+              {receipt.failedMods?.length} could not be installed
+            </span>
+          )}
+          {(receipt.finishingSkipped?.length ?? 0) > 0 && (
+            <span
+              style={{
+                marginLeft: 8,
+                padding: "1px 6px",
+                borderRadius: 3,
+                fontSize: "0.85em",
+                background: "rgba(255,170,0,0.18)",
+                border: "1px solid rgba(255,170,0,0.45)",
+              }}
+              title={`Not applied: ${receipt.finishingSkipped?.join(", ")}`}
+            >
+              stopped before finishing
+            </span>
+          )}
         </div>
       </div>
     </Card>
@@ -965,6 +1005,15 @@ function ReceiptDetailModal(props: {
     setProgress({ current: 0, total: ours.length });
     try {
       let i = 0;
+      /**
+       * Counted, not swallowed. Every failure used to be logged and forgotten,
+       * and the receipt was deleted anyway on the `notOurs === 0` branch — so
+       * a staging drive going offline mid-uninstall left hundreds of mods on
+       * disk with the only record of where they came from gone. The refusal
+       * above exists precisely so losing provenance is never silent.
+       */
+      let failed = 0;
+      let restored = 0;
       for (const mod of ours) {
         i += 1;
         setProgress({ current: i, total: ours.length });
@@ -973,15 +1022,45 @@ function ReceiptDetailModal(props: {
             gameId: receipt.gameId,
             modId: mod.vortexModId,
           });
+          /**
+           * ─── GIVE THE USER THEIR OWN MOD BACK ─────────────────────────
+           * When a mirrored mod was one the user already owned, the install
+           * put the curator's copy beside theirs and switched theirs OFF in
+           * this profile. Removing our copy without undoing that leaves them
+           * with NEITHER active: their mod still installed, still listed, and
+           * silently disabled in the profile they play.
+           *
+           * Only after the removal succeeded — re-enabling a mod while ours
+           * is still there would put two copies of the same mod in one
+           * profile, which is the conflict the swap exists to avoid.
+           */
+          if (mod.displacedModId !== undefined) {
+            enableModInProfile(
+              api,
+              receipt.vortexProfileId,
+              mod.displacedModId,
+            );
+            restored += 1;
+          }
         } catch (err) {
           // Continue removing the rest — record per-mod failures, finalize
           // by reporting once at the end.
+          failed += 1;
           ehLog("warn", "collection.uninstall.mod-failed", {
             name: mod.name,
             vortexModId: mod.vortexModId,
             err,
           });
         }
+      }
+      if (restored > 0) {
+        ehLog("info", "collection.uninstall.displaced-restored", {
+          restored,
+          profileId: receipt.vortexProfileId,
+          why:
+            "these mods were the user's own copies, switched off when the " +
+            "collection installed its own beside them",
+        });
       }
       const appData = getVortexUserDataPath();
       /**
@@ -992,17 +1071,34 @@ function ReceiptDetailModal(props: {
        * Deleting it while any of them survive throws away the ability to
        * answer "where did these come from" for good.
        */
-      if (notOurs === 0) {
+      if (notOurs === 0 && failed === 0) {
         await deleteReceipt(appData, receipt.packageId);
       } else {
         ehLog("info", "collection.uninstall.receipt-kept", {
           packageId: receipt.packageId,
-          removed: ours.length,
+          removed: ours.length - failed,
           leftAlone: notOurs,
+          failed,
           why:
-            "mods this receipt covers are still installed, and it is the " +
-            "only record of where they came from",
+            failed > 0
+              ? "some mods could not be removed and are still on disk; this " +
+                "receipt is the only record of where they came from"
+              : "mods this receipt covers are still installed, and it is the " +
+                "only record of where they came from",
         });
+      }
+      if (failed > 0) {
+        // The outer catch never fires for these — each one was caught in the
+        // loop — so without this the user sees a clean finish for an
+        // uninstall that left mods behind.
+        reportError(
+          new Error(
+            `${failed} of ${ours.length} mod(s) could not be removed. They ` +
+              `are still installed, and this collection has been kept in the ` +
+              `list so you can try again.`,
+          ),
+          { title: "Uninstall incomplete" },
+        );
       }
       onUninstalled();
     } catch (err) {

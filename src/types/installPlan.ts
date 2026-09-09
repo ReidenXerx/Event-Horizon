@@ -378,10 +378,29 @@ export type InstallTarget = InstallIntoCurrentProfile | InstallIntoFreshProfile;
  */
 export type InstallIntoCurrentProfile = {
   kind: "current-profile";
-  /** Vortex profile id we'll install into. Equals `userState.activeProfileId`. */
+  /**
+   * Vortex profile id we will install into: the one the RECEIPT names, which
+   * is usually the active profile and is not required to be.
+   *
+   * It used to be defined as "equals `userState.activeProfileId`", and that
+   * definition was the bug. Re-running the same release while sitting on a
+   * different profile merged the whole collection — plus a rules purge and a
+   * plugins.txt rewrite — into wherever the user happened to be. The Done
+   * screen actively invites that: after a partial run it says to switch back
+   * to your previous profile, and the retry it also recommends then landed
+   * 978 mods there.
+   *
+   * The version-changed branch of {@link pickInstallTarget} already refuses
+   * for this reason. The same-version branch did not.
+   */
   profileId: string;
   /** Display name. UI-only. */
   profileName: string;
+  /**
+   * Set when `profileId` is NOT the profile Vortex is currently on, so the
+   * driver switches before touching anything. Absent is the ordinary case.
+   */
+  switchFromProfileId?: string;
 };
 
 /**

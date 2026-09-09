@@ -51,6 +51,7 @@ import { scanAvailableDownloads } from "../../../core/resolver/scanAvailableDown
 import {
   buildUserSideState,
   pickInstallTarget,
+  receiptProfileStillExists,
   resumableProfileFromAttempts,
   resolveDeploymentMethod,
   resolveEnabledExtensions,
@@ -308,6 +309,10 @@ export async function runLoadingPipeline(args: {
         await listInterruptedInstalls(appDataPath),
       ),
     ),
+    // Whether the profile the RECEIPT names still exists. Decides whether a
+    // same-version re-run installs where the collection actually lives, or
+    // merges it into whatever profile the user happens to be standing on.
+    receiptProfileStillExists(state, activeGameId, receipt),
   );
 
   const plan = resolveInstallPlan(manifest, userState, installTarget);
@@ -516,6 +521,10 @@ export async function runLoadingPipelineWithReceipt(args: {
         await listInterruptedInstalls(appDataPath),
       ),
     ),
+    // Whether the profile the RECEIPT names still exists. Decides whether a
+    // same-version re-run installs where the collection actually lives, or
+    // merges it into whatever profile the user happens to be standing on.
+    receiptProfileStillExists(state, activeGameId, receipt),
   );
 
   const plan = resolveInstallPlan(manifest, userState, installTarget);
