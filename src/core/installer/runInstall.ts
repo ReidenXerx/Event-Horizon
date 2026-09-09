@@ -2299,6 +2299,46 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         continue;
       }
 
+      /**
+       * ─── ONE VORTEX MOD, ONE COMPAREKEY — CHECKED, NOT ASSUMED ─────────
+       * A Vortex mod's id IS its install name, and the alongside name is
+       * deterministic. If two manifest mods ever produce the same name, the
+       * second adopts the first's Vortex mod and this line quietly points two
+       * compareKeys at one id — after which `buildPostInstallModIdMap` maps
+       * both to it, modType and rules land on whichever ran last, and the
+       * mirror rewrites that single staging folder to the second mod's file
+       * list, DELETING the first mod's files behind a receipt row that still
+       * says installed and verified.
+       *
+       * `alongsideInstallName` now carries a digest of (package id,
+       * compareKey) inside its marker, so this cannot happen by truncation any
+       * more. That is the fix; this is the assertion that the fix holds. The
+       * failure mode is silent data loss, which is the kind worth paying a
+       * linear scan for — and refusing to mirror one mod costs the user
+       * nothing they cannot recover, which is the direction NS-2 points.
+       */
+      const aliased = installedMods.findIndex(
+        (m, i) => i !== idx && m.vortexModId === ours.vortexModId,
+      );
+      if (aliased >= 0) {
+        mirrorSkipped.push(
+          `"${mod.name}" — its copy would collide with ` +
+            `"${installedMods[aliased]!.name}", so it was left as you had it`,
+        );
+        ehLog("error", "install.alongside.name-collision", {
+          mod: mod.name,
+          compareKey: mod.compareKey,
+          collidesWith: installedMods[aliased]!.name,
+          collidesWithCompareKey: installedMods[aliased]!.compareKey,
+          vortexModId: ours.vortexModId,
+          consequence:
+            "two mods in this collection resolved to ONE Vortex mod id. The " +
+            "second is left exactly as the user had it and is NOT mirrored, " +
+            "rather than overwriting the first mod's staging folder.",
+        });
+        continue;
+      }
+
       await appendJournalEntry(ctx.appDataPath, plan.manifest.package.id, {
         compareKey: ours.compareKey,
         vortexModId: ours.vortexModId,
@@ -2666,9 +2706,22 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     if (mirroredWanted > 0) {
       ehLog("info", "install.mirror.phase.start", { mods: mirroredWanted });
     }
-    for (const mod of plan.manifest.mods) {
-      if (mod.state.mirrored !== true) continue;
-      if (ctx.abortSignal?.aborted === true) break;
+    /**
+     * ─── ONE MOD'S MIRROR, CALLED FROM TWO PLACES ────────────────────────
+     * Named rather than inlined in the loop below because the RETRY pass has
+     * to run it too. A mod recovered after the deploy is installed by the same
+     * `executeDecision` as any other, and it needs the same reconciliation —
+     * but it did not exist when this loop ran, so it silently received none of
+     * it and the receipt recorded a mirrored mod that was never mirrored.
+     *
+     * The body is unchanged from the loop it came out of; only `continue`
+     * became `return`. Everything it touches — `installedMods`, `ownedByUs`,
+     * `mirrorLines`, `mirrorSkipped`, `mirrorFailures`, `noteVerifiedOk` — is
+     * the driver's own state, which is why this is a closure and not a module.
+     */
+    const mirrorOneMod = async (
+      mod: (typeof plan.manifest.mods)[number],
+    ): Promise<void> => {
       const installedIndex = installedMods.findIndex(
         (m) => m.compareKey === mod.compareKey,
       );
@@ -2679,7 +2732,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         // their own copy at a divergence prompt and it lives in carriedMods.
         // Both are legitimate; neither should be silent.
         mirrorSkipped.push(`"${mod.name}" — not installed by this run`);
-        continue;
+        return;
       }
 
       /**
@@ -2724,7 +2777,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           vortexModId,
           why: "alongside install could not obtain the curator's archive",
         });
-        continue;
+        return;
       }
 
       const stagingRoot = stagingRootForModId(
@@ -2734,7 +2787,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       );
       if (stagingRoot === undefined) {
         mirrorSkipped.push(`"${mod.name}" — staging folder could not be resolved`);
-        continue;
+        return;
       }
 
       try {
@@ -2809,6 +2862,12 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           `"${mod.name}": could not be mirrored — ${formatError(err)}`,
         );
       }
+    };
+
+    for (const mod of plan.manifest.mods) {
+      if (mod.state.mirrored !== true) continue;
+      if (ctx.abortSignal?.aborted === true) break;
+      await mirrorOneMod(mod);
     }
     /**
      * Unconditional when anything was meant to be mirrored. The old line fired
@@ -3197,6 +3256,18 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     // newer than theirs — rather than nobody having tried. Read from disk
     // AFTER the write above, so it reports what the game will actually load.
     let pluginOrderDrift = emptyPluginOrderDrift();
+    /**
+     * ─── IS THE NUMBER ABOVE A MEASUREMENT, OR THE ONE FROM BEFORE? ──────
+     * Set when the re-pin's write was dispatched but plugins.txt never came
+     * back matching it. `pluginOrderDrift` then still holds the PRE-re-pin
+     * value, and reporting that unqualified tells the user to press Sort in
+     * Vortex — the single action the re-pin exists to undo.
+     *
+     * Declared out here rather than beside the poll because it was block-
+     * scoped there, which made it unreadable by the notice and the receipt
+     * that need it: assigned in one place, read in none.
+     */
+    let repinUnconfirmed = false;
     try {
       const actual = await readUserPluginsTxt(
         plan.manifest.game.id,
@@ -3225,9 +3296,6 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
          * already matches costs a Vortex round trip and a plugins.txt rewrite
          * for nothing.
          */
-        // Set when the re-pin's write could not be confirmed on disk, so
-        // the drift number reported afterwards is the pre-re-pin one.
-        let repinUnconfirmed = false;
         if (pluginOrderDrift.misordered.length > 0 && !stopBeforeWriting(
           "plugin order re-pin",
         )) {
@@ -3555,6 +3623,13 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
      */
     if (failedMods.length > 0 && !stopBeforeWriting("retrying failed mods")) {
       const carryForward: FailedModReportEntry[] = [];
+      /**
+       * The compareKeys this pass actually put on disk. Everything downstream
+       * is scoped to these: a recovered mod needs the per-mod finishing work
+       * the first pass gave every other mod, and the mods that were already
+       * installed must not have it done to them twice.
+       */
+      const recoveredKeys: string[] = [];
       let retriedOk = 0;
       const retryStartedAt = Date.now();
       ehLog("info", "install.retry.start", {
@@ -3614,6 +3689,20 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             at: new Date().toISOString(),
           });
           retriedOk += 1;
+          recoveredKeys.push(entry.compareKey);
+          /**
+           * One row per installed mod, always. The verify pass ran before this
+           * mod existed, so there is no verdict to record — but an ABSENT row
+           * is indistinguishable from a check that lost one, and the receipt's
+           * integrity count is what a support conversation reads first.
+           */
+          verifications.push({
+            kind: "skip",
+            vortexModId: entry.vortexModId,
+            compareKey: entry.compareKey,
+            name: entry.name,
+            reason: "recovered-after-verification",
+          });
           ehLog("info", "install.retry.mod.ok", {
             name: entry.name,
             compareKey: entry.compareKey,
@@ -3640,29 +3729,219 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         ms: Date.now() - retryStartedAt,
       });
 
-      if (retriedOk > 0) {
+      if (retriedOk > 0 && !stopBeforeWriting("finishing the retried mods")) {
         /**
-         * New files exist that nothing has linked into the game folder yet, so
-         * the deploy has to run again — and any plugin those mods ship arrived
-         * AFTER the order was written, so Vortex has appended it to the tail.
-         * Re-applying the curator's order puts it where they had it.
+         * ─── A RECOVERED MOD IS NOT FINISHED JUST BECAUSE IT INSTALLED ────
+         * `buildPostInstallModIdMap` is built ONCE, roughly 1,200 lines above
+         * this, and every per-mod phase resolves its target through it: mod
+         * rules, the LOOT userlist, INI tweaks, the modType restore, the
+         * mirror, the ESL flag repair. All of them ran before this pass
+         * existed, so a mod recovered here used to receive NONE of them —
+         * installed, enabled, journalled, deployed, and otherwise untouched.
+         *
+         * The worst of those is silent AND game-breaking. SSE Engine Fixes
+         * Part 2 is loose binaries with a curator-set `dinput` modType that
+         * deploys to the game ROOT; without the restore its DLLs go to `Data`,
+         * nothing loads them, and every file check still passes. It is also
+         * exactly the population this pass recovers: installers with
+         * prerequisite logic are the ones that ship modType overrides.
+         *
+         * This is the same defect `alongsideOrdering.test.ts` was written to
+         * prevent, arriving from the other end — that test pins the ALONGSIDE
+         * install above the map and cannot see a second install site below
+         * every consumer.
+         *
+         * Everything below is SCOPED to `recoveredKeys`. Re-running a phase
+         * over every mod would re-plan mirrors for mods already mirrored, and
+         * `planMirror`'s delete arm is the one function here that removes a
+         * user's files (NS-2).
          */
+        const recoveredIds = new Map(
+          installedMods
+            .filter((m) => recoveredKeys.includes(m.compareKey))
+            .map((m) => [m.compareKey, m.vortexModId] as const),
+        );
+        const recoveredManifestMods = plan.manifest.mods.filter((m) =>
+          recoveredIds.has(m.compareKey),
+        );
+
         try {
+          /**
+           * Deploy FIRST. The modType restore and the mirror both act on
+           * staging, but the plugin order below reads what Vortex actually has
+           * — and a plugin these mods ship does not exist for it until the
+           * deploy has linked it in.
+           */
           await deployAndWait(api, activeProfileId);
-          const rePin = await applyPluginOrder({
+
+          // ── modType: the one whose absence is invisible ────────────────
+          const retryModTypes = applyModTypeChanges(
+            ctx.api,
+            plan.manifest.game.id,
+            planModTypeChanges({
+              installed: recoveredIds,
+              currentTypes: readCurrentModTypes(ctx.api, plan.manifest.game.id),
+              manifestMods: recoveredManifestMods,
+            }),
+            actions,
+          );
+
+          // ── INI tweaks: the most invisible thing a collection ships ────
+          const retryTweaks = applyIniTweaks({
             api,
             gameId: plan.manifest.game.id,
-            collectionId: plan.manifest.package.id,
-            order: plan.manifest.plugins.order,
-            ...(ctx.abortSignal !== undefined
-              ? { signal: ctx.abortSignal }
-              : {}),
+            installed: recoveredIds,
+            manifestMods: recoveredManifestMods,
           });
-          ehLog("info", "install.retry.redeployed", {
+
+          /**
+           * ── mod rules, and ONLY the ones that name a recovered mod ─────
+           * A rule is a relation between two mods, so the resolver needs the
+           * FULL map — but re-dispatching every rule would re-do work the
+           * first pass already did and make the receipt's counts a double
+           * count. The user's existing rules were snapshotted and cleared once,
+           * long before this; that is deliberately not repeated.
+           */
+          const fullModIdByCompareKey = buildPostInstallModIdMap(
+            installedMods,
+            carriedMods,
+          );
+          const retryRules = plan.manifest.rules.filter(
+            (r) =>
+              recoveredIds.has(r.source) ||
+              // A reference may be PARTIALLY pinned ("nexus:1234" matches any
+              // file id of that mod), so the boundary matters: without the
+              // colon, "nexus:1234" would also claim "nexus:12345:6".
+              [...recoveredIds.keys()].some(
+                (k) => k === r.reference || k.startsWith(`${r.reference}:`),
+              ),
+          );
+          let retryRulesApplied = 0;
+          if (retryRules.length > 0) {
+            const retryNexusIndex = buildNexusModIdMap(
+              api,
+              plan.manifest.game.id,
+              installedMods,
+              carriedMods,
+            );
+            const retryRuleResult = applyModRules({
+              api,
+              gameId: plan.manifest.game.id,
+              rules: retryRules,
+              modIdByCompareKey: fullModIdByCompareKey,
+              modIdByNexusModId: retryNexusIndex.map,
+              ambiguousNexusModIds: retryNexusIndex.ambiguous,
+              existingRulesBySourceModId: collectExistingRules(
+                api,
+                plan.manifest.game.id,
+                fullModIdByCompareKey,
+              ),
+              signal: ctx.abortSignal,
+            });
+            retryRulesApplied = retryRuleResult.applied;
+          }
+
+          // ── mirror: the curator answered for these files ───────────────
+          let retryMirrored = 0;
+          for (const mod of recoveredManifestMods) {
+            if (mod.state.mirrored !== true) continue;
+            if (ctx.abortSignal?.aborted === true) break;
+            await mirrorOneMod(mod);
+            retryMirrored += 1;
+          }
+
+          ehLog("info", "install.retry.finished-mods", {
             recovered: retriedOk,
-            pluginOrderPinned: rePin.pinned,
-            writeRequested: rePin.writeRequested,
+            modTypesRestored: retryModTypes.length,
+            iniTweaksApplied: retryTweaks.enabled.length,
+            rulesApplied: retryRulesApplied,
+            mirrored: retryMirrored,
+            why:
+              "these mods arrived after every per-mod phase had run, so the " +
+              "phases were replayed for exactly them",
           });
+
+          /**
+           * ─── AND THE ORDER, THE WAY 7b1 DOES IT ─────────────────────────
+           * This used to call `applyPluginOrder` with the raw manifest order
+           * and no `skipSort`, which emits `autosort-plugins` — a full LOOT
+           * re-sort, i.e. precisely the operation the re-pin above exists to
+           * undo. On a real run that re-pin had just taken 686 misordered
+           * plugins to zero, and nothing re-measured afterwards, so the
+           * receipt reported the clean number for a file that had since been
+           * rewritten by LOOT.
+           *
+           * So: read what Vortex actually has, refill the collection's slots
+           * with the curator's sequence, carry each plugin's REAL enabled flag
+           * (asserting `true` switched curator-disabled plugins back on), and
+           * skip the sort. Then re-measure, because a number nobody re-checked
+           * after a write is not a measurement.
+           */
+          const afterRetry = await readUserPluginsTxt(
+            plan.manifest.game.id,
+            discoveredStore(api.getState(), plan.manifest.game.id),
+          );
+          if (afterRetry !== undefined) {
+            const afterNames = afterRetry.map((pl) => pl.name);
+            const enabledAfter = new Map(
+              afterRetry.map((pl) => [pl.name.toLowerCase(), pl.enabled] as const),
+            );
+            const mergedAfter = repinCuratorOrder(
+              plan.manifest.plugins.order.map((pl) => pl.name),
+              afterNames,
+            );
+            if (orderDiffers(mergedAfter, afterNames)) {
+              const rePin = await applyPluginOrder({
+                api,
+                gameId: plan.manifest.game.id,
+                collectionId: plan.manifest.package.id,
+                order: mergedAfter.map((name) => ({
+                  name,
+                  enabled: enabledAfter.get(name.toLowerCase()) ?? true,
+                })),
+                skipSort: true,
+                ...(ctx.abortSignal !== undefined
+                  ? { signal: ctx.abortSignal }
+                  : {}),
+              });
+              ehLog("info", "install.retry.redeployed", {
+                recovered: retriedOk,
+                pluginOrderPinned: rePin.pinned,
+                writeRequested: rePin.writeRequested,
+                entries: mergedAfter.length,
+              });
+            }
+            /**
+             * Re-measured from disk either way — including when the merge
+             * changed nothing, because that IS the measurement in that case.
+             * `repinUnconfirmed` is cleared only by a fresh read that agrees.
+             */
+            const settled = await readUserPluginsTxt(
+              plan.manifest.game.id,
+              discoveredStore(api.getState(), plan.manifest.game.id),
+            );
+            if (settled !== undefined) {
+              pluginOrderDrift = comparePluginOrder(
+                plan.manifest.plugins.order,
+                settled,
+              );
+              repinUnconfirmed = false;
+              ehLog("info", "plugins.order-drift.after-retry", {
+                compared: pluginOrderDrift.compared,
+                misordered: pluginOrderDrift.misordered.length,
+              });
+            } else {
+              repinUnconfirmed = true;
+            }
+          } else {
+            repinUnconfirmed = true;
+            ehLog("warn", "install.retry.order-unverified", {
+              why: "plugins.txt could not be read after the retry deploy",
+              consequence:
+                "the load-order numbers in this receipt describe the state " +
+                "BEFORE the retried mods' plugins arrived",
+            });
+          }
         } catch (err) {
           // Non-fatal: the mods ARE installed, and saying the deploy failed is
           // more useful than losing the retry that succeeded.
@@ -3674,6 +3953,19 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             err,
           });
         }
+      } else if (retriedOk > 0) {
+        /**
+         * A Stop landed mid-retry. The recovered mods are installed, enabled
+         * and journalled — which is the state NS-2 cares about — but nothing
+         * after them ran, and `stopBeforeWriting` has recorded that so the
+         * user is told rather than left to find out.
+         */
+        ehLog("warn", "install.retry.finishing-skipped", {
+          recovered: retriedOk,
+          consequence:
+            "these mods are installed but were not deployed, typed, tweaked " +
+            "or mirrored, and the load order was not re-applied",
+        });
       }
     }
 
@@ -3854,8 +4146,14 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       ...(describeIniTweaks(iniTweakApplication).length > 0
         ? { iniTweakNotice: describeIniTweaks(iniTweakApplication) }
         : {}),
-      ...(describePluginOrderDrift(pluginOrderDrift).length > 0
-        ? { pluginOrderNotice: describePluginOrderDrift(pluginOrderDrift) }
+      ...(describePluginOrderDrift(pluginOrderDrift, repinUnconfirmed).length >
+      0
+        ? {
+            pluginOrderNotice: describePluginOrderDrift(
+              pluginOrderDrift,
+              repinUnconfirmed,
+            ),
+          }
         : {}),
       ...(driftNotice !== undefined ? { stagingDriftNotice: driftNotice } : {}),
       ...(curatorReports.length > 0 ? { curatorReports } : {}),
@@ -6167,6 +6465,8 @@ async function tryInstallAlongside(args: {
       modName: installEntry.name,
       collectionName: pkg.name,
       collectionVersion: pkg.version,
+      packageId: pkg.id,
+      compareKey: installEntry.compareKey,
       ...replayArgs(manifestEntry, ctx.decisions.fomodReplayMode),
       ...(ctx.abortSignal !== undefined ? { signal: ctx.abortSignal } : {}),
     });

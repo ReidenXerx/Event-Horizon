@@ -318,6 +318,31 @@ export function parseReceipt(raw: string): InstallReceipt {
         typeof (x as { wasLight?: unknown }).wasLight === "boolean",
     );
   }
+  /**
+   * ─── THE FIELD THAT DECIDES WHETHER A HEAL OVERWRITES THE USER ──────────
+   * This parser is a WHITELIST: `out` is built field by field, so a member of
+   * `InstallReceipt` with no branch here is destroyed — and because
+   * `serializeReceipt` validates THROUGH this function, it is destroyed on the
+   * way to disk, not on the way back. tsc cannot see it: the type says
+   * optional, and absent is a legal value.
+   *
+   * `fomodReplayMode` shipped without one. `health.ts` reads it to decide
+   * whether the Doctor says "some of these differences may be answers you
+   * changed on purpose" before offering to reinstall — so with the field gone,
+   * a supervised install's deliberate FOMOD choices were reverted by a heal
+   * that never warned. Third time this exact shape has shipped
+   * (`state.postProcessed`, `gameIniApplication`, now this), which is why
+   * `receiptRoundTrip.test.ts` no longer enumerates fields by hand.
+   *
+   * Validated, not passed through: an unrecognised string here would reach
+   * `choicesFor` and decide how a stranger's installer runs.
+   */
+  if (
+    obj.fomodReplayMode === "supervised" ||
+    obj.fomodReplayMode === "silent"
+  ) {
+    out.fomodReplayMode = obj.fomodReplayMode;
+  }
   if (verifications !== undefined) out.verifications = verifications;
   if (gameIniApplication !== undefined)
     out.gameIniApplication = gameIniApplication;

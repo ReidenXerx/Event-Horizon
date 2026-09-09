@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-installer
-description: "Skill for the Installer area of Event-Horizon. 295 symbols across 68 files."
+description: "Skill for the Installer area of Event-Horizon. 337 symbols across 80 files."
 ---
 
 # Installer
 
-295 symbols | 68 files | Cohesion: 80%
+337 symbols | 80 files | Cohesion: 76%
 
 ## When to Use
 
@@ -17,12 +17,12 @@ description: "Skill for the Installer area of Event-Horizon. 295 symbols across 
 
 | File | Symbols |
 |------|---------|
-| `src/core/installer/runInstall.ts` | buildAbortedResult, buildDisplayNameByModId, buildFailReceipt, buildManifestIndex, buildNexusModIdMap (+52) |
-| `src/core/installer/modInstall.ts` | uninstallMod, delayRespectingAbort, downloadFolderFor, downloadNexusArchiveOnly, extractBundledFromEhcoll (+24) |
-| `src/core/installLedger.ts` | InstallLedgerError, expectString, getInstallLedgerDir, getReceiptPath, isIso8601 (+9) |
+| `src/core/installer/runInstall.ts` | buildAbortedResult, buildDisplayNameByModId, buildFailReceipt, buildManifestIndex, buildNexusModIdMap (+60) |
+| `src/core/installer/modInstall.ts` | safeRmTempDir, uninstallMod, delayRespectingAbort, downloadFolderFor, downloadNexusArchiveOnly (+24) |
+| `src/core/installLedger.ts` | InstallLedgerError, deleteReceipt, expectString, getInstallLedgerDir, getReceiptPath (+11) |
 | `src/core/installer/applyUserlist.ts` | applyGroupDefinition, applyGroupRule, applyPluginEntry, applyPluginGroup, applyPluginRuleWithCollectionWins (+8) |
-| `src/core/installer/installMarker.ts` | clearInstallMarker, getMarkerDir, listInterruptedInstalls, markerPath, parseMarker (+4) |
 | `src/core/installer/bundledPrefetch.ts` | BundledPrefetchPool, dispose, prime, pump, runExtraction (+2) |
+| `src/core/installer/applyGameIni.ts` | describeGameIniApplication, shouldApplyGameIni, applyGameIni, describeIniChanges, isSectionHeader (+2) |
 | `src/core/installer/installJournal.ts` | logJournalSummary, ownedModIds, clearJournal, appendJournalEntry, getJournalDir (+2) |
 | `src/core/installer/checkNexusAccount.ts` | hasNexusSlice, nexusSlice, readNexusAccount, readUserInfo, readViaSelectors (+2) |
 | `src/core/installer/profile.ts` | createFreshProfile, enableModInProfile, makeAbortError, pickNonCollidingName, switchToProfile (+1) |
@@ -32,7 +32,7 @@ description: "Skill for the Installer area of Event-Horizon. 295 symbols across 
 
 Start here when exploring this area:
 
-- **`describeGameIniApplication`** (Function) — `src/core/installer/applyGameIni.ts:335`
+- **`describeGameIniApplication`** (Function) — `src/core/installer/applyGameIni.ts:340`
 - **`shouldApplyGameIni`** (Function) — `src/core/installer/applyGameIni.ts:315`
 - **`applyIniTweaks`** (Function) — `src/core/installer/applyIniTweaks.ts:53`
 - **`describeIniTweaks`** (Function) — `src/core/installer/applyIniTweaks.ts:114`
@@ -43,30 +43,31 @@ Start here when exploring this area:
 | Symbol | Type | File | Line |
 |--------|------|------|------|
 | `BundledPrefetchPool` | Class | `src/core/installer/bundledPrefetch.ts` | 117 |
+| `InstallStreaks` | Class | `src/core/installer/installStreaks.ts` | 59 |
 | `InstallLedgerError` | Class | `src/core/installLedger.ts` | 72 |
-| `describeGameIniApplication` | Function | `src/core/installer/applyGameIni.ts` | 335 |
+| `describeGameIniApplication` | Function | `src/core/installer/applyGameIni.ts` | 340 |
 | `shouldApplyGameIni` | Function | `src/core/installer/applyGameIni.ts` | 315 |
 | `applyIniTweaks` | Function | `src/core/installer/applyIniTweaks.ts` | 53 |
 | `describeIniTweaks` | Function | `src/core/installer/applyIniTweaks.ts` | 114 |
 | `emptyIniTweakApplication` | Function | `src/core/installer/applyIniTweaks.ts` | 41 |
 | `applyLoadOrder` | Function | `src/core/installer/applyLoadOrder.ts` | 113 |
-| `applyMirrorPlan` | Function | `src/core/installer/applyMirrors.ts` | 54 |
-| `describeMirrorOutcome` | Function | `src/core/installer/applyMirrors.ts` | 138 |
-| `mirrorEntryFor` | Function | `src/core/installer/applyMirrors.ts` | 46 |
 | `describeModTypeChanges` | Function | `src/core/installer/applyModTypes.ts` | 159 |
 | `label` | Function | `src/core/installer/applyModTypes.ts` | 163 |
 | `planModTypeChanges` | Function | `src/core/installer/applyModTypes.ts` | 63 |
 | `readCurrentModTypes` | Function | `src/core/installer/applyModTypes.ts` | 106 |
-| `describePluginFlagRepair` | Function | `src/core/installer/applyPluginLightFlags.ts` | 199 |
-| `describePluginOrderApplication` | Function | `src/core/installer/applyPluginOrder.ts` | 370 |
+| `describePluginFlagRepair` | Function | `src/core/installer/applyPluginLightFlags.ts` | 211 |
+| `describePluginOrderApplication` | Function | `src/core/installer/applyPluginOrder.ts` | 383 |
 | `describeModTypeMismatches` | Function | `src/core/installer/checkModTypes.ts` | 83 |
 | `label` | Function | `src/core/installer/checkModTypes.ts` | 88 |
 | `findModTypeMismatches` | Function | `src/core/installer/checkModTypes.ts` | 41 |
+| `describePluginOrderDrift` | Function | `src/core/installer/checkPluginOrder.ts` | 113 |
+| `emptyPluginOrderDrift` | Function | `src/core/installer/checkPluginOrder.ts` | 55 |
 
 ## Execution Flows
 
 | Flow | Type | Steps |
 |------|------|-------|
+| `InstallNexusViaApi → GetEventHorizonRoot` | cross_community | 10 |
 | `ExecutePromptUserChoice → GetEventHorizonDir` | cross_community | 10 |
 | `RunInstallImpl → GetEventHorizonRoot` | cross_community | 10 |
 | `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
@@ -76,7 +77,6 @@ Start here when exploring this area:
 | `ExecutePromptUserChoice → Truncate` | cross_community | 9 |
 | `Act → Clamp` | cross_community | 8 |
 | `Act → Scale` | cross_community | 8 |
-| `HomePage → Truncate` | cross_community | 8 |
 
 ## How to Explore
 

@@ -234,3 +234,127 @@ describe("a partial install, recorded rather than discarded", () => {
     expect(throughDisk(base()).failedMods).toBeUndefined();
   });
 });
+
+/**
+ * ─── THE HAND-MAINTAINED LIST IS THE BUG ────────────────────────────────────
+ * Every test above names one field. That is why this file was green while
+ * `fomodReplayMode` — added after them — was being destroyed on the way to
+ * disk: a test that enumerates cannot see what nobody remembered to enumerate,
+ * and the header above promises exactly the coverage it did not have.
+ *
+ * The Doctor reads `fomodReplayMode` to decide whether to say "some of these
+ * differences may be answers you changed on purpose" before offering to
+ * reinstall. With the field gone, a supervised install's deliberate FOMOD
+ * choices were silently reverted by a heal that never warned — the third time
+ * this exact shape shipped, after `state.postProcessed` and
+ * `gameIniApplication`.
+ *
+ * So the guard is now STRUCTURAL: populate every field the type declares and
+ * assert the key set survives. A field added to `InstallReceipt` without a
+ * parser branch fails here, by construction, without anyone remembering.
+ */
+describe("the whole receipt, not a list of fields somebody remembered", () => {
+  /**
+   * Every optional member of `InstallReceipt`, populated. Values are the real
+   * shapes — `parseReceipt` validates several of them, so a placeholder would
+   * be dropped for being malformed and the assertion would fail for the wrong
+   * reason.
+   */
+  const fullyPopulated = (): InstallReceipt =>
+    ({
+      ...base(),
+      fomodReplayMode: "supervised",
+      mods: [
+        {
+          vortexModId: "mod-1",
+          compareKey: "nexus:1:2",
+          source: "nexus",
+          name: "A Mod",
+          installedAt: "1970-01-01T00:00:00.000Z",
+          stagingSetHash: "a".repeat(64),
+          ownership: "installed",
+        },
+      ],
+      rulesApplication: {
+        appliedRuleCount: 1,
+        overwrittenUserRuleCount: 0,
+        skippedRules: [],
+        appliedLoadOrderCount: 1,
+        skippedLoadOrderEntries: [],
+        baselinePluginOrder: [{ name: "Foo.esp", enabled: true }],
+      },
+      userlistApplication: {
+        appliedRuleCount: 1,
+        appliedGroupAssignmentCount: 0,
+        overwrittenGroupAssignmentCount: 0,
+        appliedNewGroupCount: 0,
+        appliedGroupRuleCount: 0,
+        skippedUserlistEntries: [],
+      },
+      gameIniApplication: {
+        appliedCount: 1,
+        alreadyMatchedCount: 0,
+        changes: ["Fallout4.ini: bInvalidateOlderFiles 0 -> 1"],
+        failed: [],
+      },
+      verifications: [{ compareKey: "nexus:1:2", name: "A Mod", outcome: "ok" }],
+      finishingSkipped: ["plugin order"],
+      failedMods: [{ compareKey: "external:abc", name: "B Mod", reason: "why" }],
+      pluginFlagChanges: [{ plugin: "Foo.esp", wasLight: false }],
+    }) as unknown as InstallReceipt;
+
+  it("carries EVERY field it was given to disk, by key set", () => {
+    const full = fullyPopulated();
+    const back = throughDisk(full);
+    /**
+     * Sorted key sets, not a deep equal: this is the assertion about the
+     * WHITELIST specifically. A field whose value the parser reshapes is a
+     * different (and separately tested) question; a field the parser has never
+     * heard of vanishes from the key set, which is the failure that keeps
+     * shipping.
+     */
+    expect(Object.keys(back).sort()).toEqual(Object.keys(full).sort());
+  });
+
+  it("proves the fixture is populated, so the key-set check cannot go vacuous", () => {
+    /**
+     * GP-7. If `fullyPopulated` ever drifts to omit an optional field, the
+     * assertion above still passes — it would compare two identically
+     * incomplete sets and report success. This is the anchor that makes the
+     * previous test mean something, and it is why the count is written down.
+     */
+    const keys = Object.keys(fullyPopulated());
+    for (const name of [
+      "fomodReplayMode",
+      "rulesApplication",
+      "userlistApplication",
+      "gameIniApplication",
+      "verifications",
+      "finishingSkipped",
+      "failedMods",
+      "pluginFlagChanges",
+    ]) {
+      expect(keys).toContain(name);
+    }
+  });
+
+  it("keeps fomodReplayMode, which decides whether a heal warns first", () => {
+    // Named as well as covered structurally: this is the one whose absence
+    // reverted a user's deliberate FOMOD answers, and a named failure says so
+    // where a key-set diff does not.
+    const r = base();
+    r.fomodReplayMode = "supervised";
+    expect(throughDisk(r).fomodReplayMode).toBe("supervised");
+  });
+
+  it("drops a replay mode that is not one of the two", () => {
+    // Validated rather than passed through: this value reaches `choicesFor`
+    // and decides how a stranger's installer runs. An unrecognised string must
+    // read as "not recorded", never as a mode.
+    const r = {
+      ...base(),
+      fomodReplayMode: "whatever",
+    } as unknown as InstallReceipt;
+    expect(throughDisk(r).fomodReplayMode).toBeUndefined();
+  });
+});

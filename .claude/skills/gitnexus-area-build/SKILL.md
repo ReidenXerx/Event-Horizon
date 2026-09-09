@@ -1,32 +1,32 @@
 ---
 name: gitnexus-area-build
-description: "Skill for the Build area of Event-Horizon. 274 symbols across 53 files."
+description: "Skill for the Build area of Event-Horizon. 253 symbols across 41 files."
 ---
 
 # Build
 
-274 symbols | 53 files | Cohesion: 72%
+253 symbols | 41 files | Cohesion: 73%
 
 ## When to Use
 
 - Working with code in `src/`
-- Understanding how deleteDraft, getAppDataPath, getDraftsRoot work
+- Understanding how deleteDraft, getAppDataPath, getDraftPath work
 - Modifying build-related functionality
 
 ## Key Files
 
 | File | Symbols |
 |------|---------|
-| `src/ui/pages/build/BuildPage.tsx` | handle, handleDiscardDraft, handleChange, handleDismissDraftBanner, session (+27) |
-| `src/ui/pages/build/buildSession.ts` | queuePosition, _runBuild, discardDraft, releaseBuild, onDecisions (+26) |
-| `src/ui/pages/build/engine.ts` | BuildRefusedError, BundleResolutionError, applyPostProcessedDeclarations, buildOutputFileName, collectMirrorPayload (+25) |
-| `src/ui/pages/build/BuildDashboard.tsx` | BuildDashboard, handleCleanupUnbuilt, handleDeletePublished, handleDiscardDraft, handleDismissBuilt (+19) |
+| `src/ui/pages/build/BuildPage.tsx` | handle, handleDiscardDraft, handleChange, handleDismissDraftBanner, session (+26) |
+| `src/ui/pages/build/buildSession.ts` | queuePosition, isAbortError, _runBuild, begin, discardDraft (+26) |
+| `src/ui/pages/build/engine.ts` | BuildRefusedError, BundleResolutionError, applyPostProcessedDeclarations, buildOutputFileName, collectMirrorPayload (+24) |
+| `src/ui/pages/build/BuildDashboard.tsx` | BuildDashboard, handleCleanupUnbuilt, handleDeletePublished, handleDiscardDraft, handleDismissBuilt (+17) |
 | `src/ui/pages/build/buildSessionRegistry.ts` | BuildSessionRegistry, getBuildSessionRegistry, ensure, get, makeHooks (+13) |
 | `src/ui/pages/build/buildDiff.test.ts` | findPackages, findPackages, findPackages, findPackages, findPackages (+9) |
 | `src/core/manifest/collectionConfig.ts` | deleteCollectionConfig, deletePublishedCollection, isUuid, listNeverBuiltConfigs, listPublishedCollections (+7) |
+| `src/core/draftStorage.ts` | deleteDraft, getAppDataPath, getDraftPath, getDraftsRoot, isPlainObject (+6) |
 | `src/core/build/nexusAvailability.ts` | categoryOf, checkNexusAvailability, classifyFile, currentMainFile, fileIdOf (+6) |
 | `src/core/archiveHashCache.ts` | archiveHashCacheKey, emptyArchiveHashCache, isHex64, loadArchiveHashCache, rememberArchiveHash (+4) |
-| `src/core/build/nexusAvailability.test.ts` | entry, f, f, f, entries (+3) |
 
 ## Entry Points
 
@@ -34,20 +34,22 @@ Start here when exploring this area:
 
 - **`deleteDraft`** (Function) — `src/core/draftStorage.ts:509`
 - **`getAppDataPath`** (Function) — `src/core/draftStorage.ts:543`
+- **`getDraftPath`** (Function) — `src/core/draftStorage.ts:102`
 - **`getDraftsRoot`** (Function) — `src/core/draftStorage.ts:122`
 - **`listDrafts`** (Function) — `src/core/draftStorage.ts:163`
-- **`saveDraft`** (Function) — `src/core/draftStorage.ts:473`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `BuildRefusedError` | Class | `src/ui/pages/build/engine.ts` | 1086 |
-| `BundleResolutionError` | Class | `src/ui/pages/build/engine.ts` | 553 |
+| `BuildRefusedError` | Class | `src/ui/pages/build/engine.ts` | 1116 |
+| `BundleResolutionError` | Class | `src/ui/pages/build/engine.ts` | 583 |
 | `deleteDraft` | Function | `src/core/draftStorage.ts` | 509 |
 | `getAppDataPath` | Function | `src/core/draftStorage.ts` | 543 |
+| `getDraftPath` | Function | `src/core/draftStorage.ts` | 102 |
 | `getDraftsRoot` | Function | `src/core/draftStorage.ts` | 122 |
 | `listDrafts` | Function | `src/core/draftStorage.ts` | 163 |
+| `loadDraft` | Function | `src/core/draftStorage.ts` | 143 |
 | `saveDraft` | Function | `src/core/draftStorage.ts` | 473 |
 | `beginOp` | Function | `src/core/logging/ehLog.ts` | 153 |
 | `deleteCollectionConfig` | Function | `src/core/manifest/collectionConfig.ts` | 1046 |
@@ -60,8 +62,6 @@ Start here when exploring this area:
 | `handleDiscardDraft` | Function | `src/ui/pages/build/BuildDashboard.tsx` | 488 |
 | `handleDismissBuilt` | Function | `src/ui/pages/build/BuildDashboard.tsx` | 717 |
 | `handleOpenBuilt` | Function | `src/ui/pages/build/BuildDashboard.tsx` | 712 |
-| `handleOpenDraft` | Function | `src/ui/pages/build/BuildDashboard.tsx` | 472 |
-| `handleUpdatePublished` | Function | `src/ui/pages/build/BuildDashboard.tsx` | 575 |
 
 ## Execution Flows
 
@@ -69,14 +69,14 @@ Start here when exploring this area:
 |------|------|-------|
 | `PublishedDetailsPanel → GetEventHorizonDir` | cross_community | 10 |
 | `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
-| `LoadPublishedDetails → GetEventHorizonRoot` | cross_community | 10 |
 | `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
+| `LoadPublishedDetails → GetEventHorizonRoot` | cross_community | 10 |
 | `PublishedDetailsPanel → GetVortexUserDataPath` | cross_community | 10 |
 | `BuildPage → GetVortexUserDataPath` | cross_community | 10 |
 | `BuildWizard → GetVortexUserDataPath` | cross_community | 10 |
 | `OnRecovered → GetVortexUserDataPath` | cross_community | 10 |
 | `LoadDashboardData → GetVortexUserDataPath` | cross_community | 10 |
-| `Init → GetVortexUserDataPath` | cross_community | 9 |
+| `BuildDiffCard → ToPosix` | cross_community | 9 |
 
 ## How to Explore
 

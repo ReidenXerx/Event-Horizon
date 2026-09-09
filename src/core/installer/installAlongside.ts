@@ -40,6 +40,8 @@ import * as path from "path";
 
 import type { types } from "@nexusmods/vortex-api";
 
+import { createHash } from "node:crypto";
+
 import { ehLog } from "../logging/ehLog";
 import { adoptLocalArchive } from "./adoptLocalArchive";
 import { installFromExistingDownload, safeRmTempDir } from "./modInstall";
@@ -55,12 +57,44 @@ import type { VortexInstallerChoices } from "./installerChoices";
  * ambiguous the moment a second collection wanted it, and the two installs
  * would collide on the install name and bring the dialog straight back.
  *
- * Shape: `<mod> - <collection> v<version> - Event Horizon`.
+ * ─── AND WHY THERE IS A HASH IN IT ────────────────────────────────────────
+ * The marker is assembled first and the MOD NAME is truncated to whatever
+ * budget remains, so on a long collection title the distinguishing half is the
+ * half that gets cut. Two ordinary mods then produce byte-identical names:
+ *
+ *   collection "Skyrim Special Edition - Ultimate Immersion Overhaul" v1.2.0
+ *     "Unofficial Skyrim Special Edition Patch - German Translation"
+ *     "Unofficial Skyrim Special Edition Patch - Chinese Translation"
+ *   both -> "Unofficial Skyrim Special Edition Patch -  - Skyrim ... "
+ *
+ * A Vortex mod's id IS its install name, so the second mod aliases onto the
+ * first: the adopt-our-own-copy shortcut finds it, the compareKey map points
+ * two entries at one id, and the mirror then rewrites that one staging folder
+ * to the second mod's file list — DELETING the first mod's files while its
+ * receipt row still says installed and verified. Before the shortcut existed
+ * the same collision produced a visible 600s dialog stall; the fix turned a
+ * loud hang into silent loss, which is worse.
+ *
+ * The collection NAME has the same defect one level up: it is free text the
+ * curator typed, while `package.id` is the UUID that actually identifies a
+ * release. Two curators can both publish "Skyrim Essentials" v1.0.0, and
+ * without the id one collection adopts, mirrors over and later uninstalls the
+ * other's copy.
+ *
+ * So the marker carries a short digest of (package id, compareKey). It is
+ * inside the marker, never in the truncated half, which makes the name
+ * injective BY CONSTRUCTION rather than by hoping the budget is generous.
+ *
+ * Shape: `<mod> - <collection> v<version> [<8 hex>] - Event Horizon`.
  */
 export function alongsideInstallName(args: {
   modName: string;
   collectionName: string;
   collectionVersion: string;
+  /** The collection's UUID — the identity its title only approximates. */
+  packageId: string;
+  /** Identifies the MOD within that release. */
+  compareKey: string;
 }): string {
   /**
    * Each PART is sanitised on its own and only then joined.
@@ -81,9 +115,23 @@ export function alongsideInstallName(args: {
       .replace(/[\s.]+$/, "")
       .trim();
 
+  /**
+   * Eight hex characters: 32 bits over the pairs inside ONE collection
+   * release, which is the only scope where a collision can do harm. Short
+   * enough that the name stays readable in the mod list, which is the whole
+   * reason the name is human-shaped at all.
+   *
+   * `\u0000` separates the two halves so a packageId ending in the compareKey's
+   * first characters cannot produce the same input as a different split.
+   */
+  const discriminator = createHash("sha256")
+    .update(`${args.packageId}\u0000${args.compareKey}`)
+    .digest("hex")
+    .slice(0, 8);
+
   const marker = ` - ${clean(args.collectionName)} v${clean(
     args.collectionVersion,
-  )} - Event Horizon`;
+  )} [${discriminator}] - Event Horizon`;
 
   /**
    * The MARKER is what makes this name unique and what tells the user whose
@@ -124,6 +172,12 @@ export async function installAlongside(
     modName: string;
     collectionName: string;
     collectionVersion: string;
+    /**
+     * The collection's UUID and this mod's compareKey. Together they are what
+     * makes the install name injective — see {@link alongsideInstallName}.
+     */
+    packageId: string;
+    compareKey: string;
     /** The curator's recorded installer answers, when the mod had any. */
     choices?: VortexInstallerChoices;
     unattended?: boolean;
@@ -134,6 +188,8 @@ export async function installAlongside(
     modName: args.modName,
     collectionName: args.collectionName,
     collectionVersion: args.collectionVersion,
+    packageId: args.packageId,
+    compareKey: args.compareKey,
   });
 
   /**

@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-curator
-description: "Skill for the Curator area of Event-Horizon. 134 symbols across 27 files."
+description: "Skill for the Curator area of Event-Horizon. 137 symbols across 29 files."
 ---
 
 # Curator
 
-134 symbols | 27 files | Cohesion: 85%
+137 symbols | 29 files | Cohesion: 85%
 
 ## When to Use
 
@@ -20,13 +20,13 @@ description: "Skill for the Curator area of Event-Horizon. 134 symbols across 27
 | `src/ui/pages/curator/CuratorPage.tsx` | manualUpdates, shadowed, updatable, act, setTypeFor (+28) |
 | `src/core/curator/profileActions.ts` | fileIdentity, findManualUpdates, findUpdatable, findUpdateShadowed, shown (+6) |
 | `src/ui/pages/curator/curatorSession.ts` | begin, cancel, dismiss, finish, progress (+4) |
-| `src/core/curator/collectionDiff.ts` | diffCollectionAgainstProfile, candidate, firstUnclaimed, settle, nexusModIdOf (+3) |
+| `src/core/curator/collectionDiff.ts` | describeCollectionDiff, isUnchanged, diffCollectionAgainstProfile, candidate, firstUnclaimed (+3) |
 | `src/core/curator/updateOneMod.ts` | UpdateTimeout, installedIdentityReader, asNum, updateOneAndWait, finish (+2) |
 | `src/core/curator/cleanupPlan.ts` | findSupersededMods, consider, planCleanup, orphanArchives, provenSupersedes (+2) |
 | `src/core/curator/bulkUpdate.test.ts` | update, update, update, wait, candidate (+1) |
 | `src/core/curator/runCleanup.ts` | dependsOnFailedRemoval, describeCleanupOutcome, gb, runCleanup, asNumber (+1) |
 | `src/core/curator/readProfile.ts` | asNumber, asString, opt, readCuratorMods, readEnabledModIds |
-| `src/ui/pages/build/BuildDashboard.tsx` | diff, DetailRow, PublishedDetailsPanel, RecentlyBuiltCard, formatBytes |
+| `src/core/curator/reinstallMod.ts` | reinstallArgs, restorationFor, CannotReinstall, captureForReinstall |
 
 ## Entry Points
 

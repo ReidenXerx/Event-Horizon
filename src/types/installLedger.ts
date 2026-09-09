@@ -446,6 +446,17 @@ export type ModVerificationSkipReason =
    * The mirror pass reports what it actually did.
    */
   | "pending-mirror"
+  /**
+   * The mod failed its first install and was RECOVERED by the retry pass,
+   * which runs after the deploy — long after verification finished. There is
+   * no verdict for it because the check had already run when it arrived.
+   *
+   * It exists so the receipt has one row per installed mod. Without it a
+   * recovered mod simply had no entry, and "978 mods installed, 977 verified"
+   * read as a verification that quietly lost one rather than a mod that was
+   * never eligible.
+   */
+  | "recovered-after-verification"
   | "errored";
 
 export type ModVerificationFailReceipt = {

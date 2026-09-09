@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-actions
-description: "Skill for the Actions area of Event-Horizon. 88 symbols across 22 files."
+description: "Skill for the Actions area of Event-Horizon. 90 symbols across 24 files."
 ---
 
 # Actions
 
-88 symbols | 22 files | Cohesion: 68%
+90 symbols | 24 files | Cohesion: 69%
 
 ## When to Use
 
@@ -19,20 +19,20 @@ description: "Skill for the Actions area of Event-Horizon. 88 symbols across 22 
 |------|---------|
 | `src/actions/installCollectionAction.ts` | collectUserDecisions, formatDivergedConflictText, formatOrphanText, formatPromptUserText, pickConflictChoice (+24) |
 | `src/actions/buildPackageAction.ts` | BundleResolutionError, createBuildPackageAction, formatBytes, formatError, promptCuratorMetadata (+8) |
-| `src/utils/utils.ts` | exportDiffReport, pickJsonFile, pickModArchiveFile, openFile, openFolder (+1) |
-| `src/core/comparePlugins.ts` | getCurrentPluginsTxtPath, getLocalAppDataPath, pluginsTxtFolderCandidates, discoveredStore, exportPluginsDiffReport |
-| `src/core/getModsListForProfile.ts` | getActiveGameId, getActiveProfileId, getActiveProfileIdFromState, belongsToGame |
+| `src/utils/utils.ts` | exportDiffReport, pickJsonFile, pickTxtFile, pickModArchiveFile, openFile (+1) |
+| `src/core/getModsListForProfile.ts` | getActiveGameId, getActiveProfileId, getActiveProfileIdFromState, belongsToGame, getModsForProfile |
+| `src/core/comparePlugins.ts` | exportPluginsDiffReport, getCurrentPluginsTxtPath, getLocalAppDataPath, pluginsTxtFolderCandidates |
 | `src/core/deploymentManifest.ts` | captureDeploymentManifests, collectDistinctModTypes, normalizeManifest |
 | `src/core/manifest/packageFileName.ts` | buildOutputFileName, safePackageVersion, slugifyPackageName |
 | `src/actions/compareModsAction.ts` | createCompareModsAction, action, action |
+| `src/actions/comparePluginsAction.ts` | createComparePluginsAction, action, action |
 | `src/actions/exportModsAction.ts` | createExportModsAction, action, action |
-| `src/actions/comparePluginsAction.ts` | action, action, createComparePluginsAction |
 
 ## Entry Points
 
 Start here when exploring this area:
 
-- **`createBuildPackageAction`** (Function) — `src/actions/buildPackageAction.ts:120`
+- **`createBuildPackageAction`** (Function) — `src/actions/buildPackageAction.ts:126`
 - **`captureDeploymentManifests`** (Function) — `src/core/deploymentManifest.ts:133`
 - **`collectDistinctModTypes`** (Function) — `src/core/deploymentManifest.ts:53`
 - **`matchEhcollFile`** (Function) — `src/core/doctor/heal.ts:202`
@@ -42,7 +42,7 @@ Start here when exploring this area:
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `createBuildPackageAction` | Function | `src/actions/buildPackageAction.ts` | 120 |
+| `createBuildPackageAction` | Function | `src/actions/buildPackageAction.ts` | 126 |
 | `captureDeploymentManifests` | Function | `src/core/deploymentManifest.ts` | 133 |
 | `collectDistinctModTypes` | Function | `src/core/deploymentManifest.ts` | 53 |
 | `matchEhcollFile` | Function | `src/core/doctor/heal.ts` | 202 |
@@ -56,12 +56,12 @@ Start here when exploring this area:
 | `safePackageVersion` | Function | `src/core/manifest/packageFileName.ts` | 27 |
 | `slugifyPackageName` | Function | `src/core/manifest/packageFileName.ts` | 15 |
 | `createCompareModsAction` | Function | `src/actions/compareModsAction.ts` | 21 |
+| `createComparePluginsAction` | Function | `src/actions/comparePluginsAction.ts` | 16 |
 | `createExportModsAction` | Function | `src/actions/exportModsAction.ts` | 17 |
+| `exportPluginsDiffReport` | Function | `src/core/comparePlugins.ts` | 371 |
+| `profileDriftSince` | Function | `src/core/curator/profileDrift.ts` | 51 |
 | `exportModsToJsonFile` | Function | `src/core/exportMods.ts` | 7 |
 | `getActiveGameId` | Function | `src/core/getModsListForProfile.ts` | 258 |
-| `getActiveProfileId` | Function | `src/core/getModsListForProfile.ts` | 263 |
-| `getActiveProfileIdFromState` | Function | `src/core/getModsListForProfile.ts` | 295 |
-| `belongsToGame` | Function | `src/core/getModsListForProfile.ts` | 300 |
 
 ## Execution Flows
 

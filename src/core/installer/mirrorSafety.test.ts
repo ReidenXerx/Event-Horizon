@@ -97,3 +97,69 @@ describe("mirrorProvesTarget refuses to certify a run that did not finish", () =
     ).toBe(false);
   });
 });
+
+describe("a file a runtime wrote is never deleted", () => {
+  /**
+   * ─── THE ASYMMETRY ─────────────────────────────────────────────────────
+   * `target` comes from the manifest, and `captureStagingFiles` filtered
+   * volatile files out of it at BUILD time. `current` is a live walk of the
+   * user's staging folder, and nothing filtered that. So every SKSE log,
+   * `Thumbs.db` and `desktop.ini` on the user's machine appeared in `current`,
+   * matched nothing in `target`, and was classified extra — on the one
+   * function in this codebase that deletes.
+   *
+   * `stagingSetHash` documents this exact shape as having already cost seven
+   * mods when it was only a FALSE REPORT. Here it cost real files.
+   *
+   * NS-2 is about mods; this is the same principle one level down: a file
+   * Event Horizon did not put there, and that no manifest ever claimed, is
+   * not ours to remove.
+   */
+  it("leaves a runtime-written log alone rather than calling it extra", () => {
+    const plan = planMirror({
+      target: [f("meshes/a.nif", "aaa")],
+      current: [
+        f("meshes/a.nif", "aaa"),
+        // Written by SKSE the first time the user launched the game.
+        f("SKSE/Plugins/BugFixesSSE.log", "bbb"),
+      ],
+      caseMode: "insensitive",
+    });
+
+    expect(plan.remove).toEqual([]);
+    // And it is not silently turned into a restore either — the curator has
+    // no copy of it, and shipping one would be noise.
+    expect(plan.restore).toEqual([]);
+  });
+
+  it("leaves OS bookkeeping alone", () => {
+    const plan = planMirror({
+      target: [f("textures/a.dds", "aaa")],
+      current: [
+        f("textures/a.dds", "aaa"),
+        f("textures/Thumbs.db", "bbb"),
+        // Carries the user's own folder customisation, so deleting it is a
+        // visible loss rather than a regenerable one.
+        f("textures/desktop.ini", "ccc"),
+      ],
+      caseMode: "insensitive",
+    });
+
+    expect(plan.remove).toEqual([]);
+  });
+
+  it("still deletes a genuinely extra MOD file", () => {
+    /**
+     * The other direction, so the filter cannot pass by disabling removal
+     * altogether. Reconciling the folder to the curator's is what mirroring
+     * IS (NS-5) — a leftover from a different FOMOD answer has to go.
+     */
+    const plan = planMirror({
+      target: [f("meshes/a.nif", "aaa")],
+      current: [f("meshes/a.nif", "aaa"), f("meshes/leftover.nif", "bbb")],
+      caseMode: "insensitive",
+    });
+
+    expect(plan.remove).toEqual(["meshes/leftover.nif"]);
+  });
+});

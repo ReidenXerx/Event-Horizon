@@ -32,6 +32,10 @@ const ARGS = {
   modName: "Address Library - All In One",
   collectionName: "ivy panties",
   collectionVersion: "1.0.13",
+  // Both are part of the install name: the UUID separates two collections
+  // that share a title, the compareKey separates two mods inside one release.
+  packageId: "11111111-2222-4333-8444-555555555555",
+  compareKey: "nexus:266:1001",
   // Deliberately absent: reaching the copy step at all is how the second test
   // proves it did NOT take the adopt shortcut.
   archivePath: "C:/nowhere/does-not-exist.7z",
@@ -43,6 +47,8 @@ describe("a copy this collection already made", () => {
       modName: ARGS.modName,
       collectionName: ARGS.collectionName,
       collectionVersion: ARGS.collectionVersion,
+      packageId: ARGS.packageId,
+      compareKey: ARGS.compareKey,
     });
     let installsRequested = 0;
     const api = {
@@ -94,6 +100,8 @@ describe("a copy this collection already made", () => {
       modName: ARGS.modName,
       collectionName: ARGS.collectionName,
       collectionVersion: "1.0.12",
+      packageId: ARGS.packageId,
+      compareKey: ARGS.compareKey,
     });
     const api = {
       getState: () => stateWithMod(older),

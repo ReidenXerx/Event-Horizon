@@ -137,6 +137,119 @@ describe("emptySelectionVerified", () => {
     expect(r.notes.join(" ")).toMatch(/does NOT reproduce your folder/i);
   });
 
+  /**
+   * ─── AND THE CASE THAT EXCLUSION GOT WRONG ────────────────────────────
+   * The rule above — "a file the archive cannot produce is silent on what was
+   * ticked" — is true for a file the archive does not CONTAIN. It was applied
+   * to every unexplained file, and that is a different set: `unexplained`
+   * means "no archive entry with this CONTENT", which also covers a file the
+   * archive contains and the curator then EDITED.
+   *
+   * That second kind is the opposite of silent. It shares a path with an
+   * archive entry, so an installer option is exactly how it could have got
+   * there — and editing the result of a ticked box is not exotic here, it is
+   * the entire reason post-processing exists.
+   *
+   * These cases pass `{path, size}` with NO crc, which is what production
+   * does (`runSelfChecks` builds staged refs from `mod.stagingFiles`, and
+   * those carry sha256, never crc32). Containment then matches on size alone,
+   * so any edit that changes a file's length lands in `unexplained`. The
+   * fixtures above all supply a crc and therefore cannot reach this path at
+   * all — GP-4, the case that cannot fail.
+   */
+  const checkNoCrc = (staged: Array<{ path: string; size: number }>) =>
+    selfCheckMod({
+      sevenZip: sevenZip(ENTRIES),
+      modId: "m3",
+      modName: "A FOMOD With Options",
+      archivePath: "a.7z",
+      staged,
+      recordedChoices: [],
+      readEntry: readScript,
+    });
+
+  it("REFUSES when the ticked file is present but EDITED", async () => {
+    /**
+     * The curator ticked "Optional Patch", then cleaned patch.esp in xEdit:
+     * 200 bytes in the archive, 203 on disk. With no crc, containment cannot
+     * match it, so it is `unexplained` — but the archive DOES hold a
+     * `patch.esp`, so ticking the box is precisely how it got there.
+     *
+     * Excluding it made the proof vacuous: `extra` came back empty, the mod
+     * shipped `emptySelectionVerified: true`, and every user replayed the
+     * installer with nothing ticked and received a mod without the patch —
+     * verified clean, because the files that ARE there are correct (NS-8).
+     */
+    const r = await checkNoCrc([
+      { path: "base.esp", size: 100 },
+      { path: "patch.esp", size: 203 },
+    ]);
+
+    expect(r.emptySelectionVerified).toBeUndefined();
+    expect(r.notes.join(" ")).toMatch(/does NOT reproduce your folder/i);
+  });
+
+  it("still PROVES it when the edited file is one the archive never had", async () => {
+    /**
+     * The other half of the split, held at crc-less fidelity so it cannot
+     * pass for the wrong reason. `placeholder.txt` shares neither a path nor
+     * a basename with any archive entry, so no option could have placed it —
+     * it stays excluded and the proof stands.
+     */
+    const r = await checkNoCrc([
+      { path: "base.esp", size: 100 },
+      { path: "placeholder.txt", size: 74 },
+    ]);
+
+    expect(r.emptySelectionVerified).toBe(true);
+    expect(r.notes.join(" ")).toMatch(/cannot come from this archive at all/i);
+  });
+
+  it("REFUSES a proof that compared nothing at all", async () => {
+    /**
+     * Both `missing` and `extra` are empty when the two sets agree — and also
+     * when there was nothing to compare. A mod whose archive holds only its
+     * FOMOD script predicts no files, and a folder of purely foreign files is
+     * entirely set aside, so `0 === 0` and the proof "succeeds" having
+     * examined nothing.
+     *
+     * That is the "not checked read as a pass" shape, which this codebase has
+     * now shipped under six different names. It is refused explicitly.
+     */
+    // No `requiredInstallFiles`: with nothing ticked this script installs
+    // nothing at all, which is what makes `predicted` empty.
+    const OPTIONAL_ONLY = `<config>
+  <installSteps order="Explicit">
+    <installStep name="Extras">
+      <optionalFileGroups order="Explicit">
+        <group name="Patches" type="SelectAny">
+          <plugins order="Explicit">
+            <plugin name="Optional Patch">
+              <files><folder source="optional" destination=""/></files>
+            </plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+  </installSteps>
+</config>`;
+    const r = await selfCheckMod({
+      sevenZip: sevenZip([
+        { name: "fomod/ModuleConfig.xml", size: 10, crc: "0000000a" },
+        { name: "optional/patch.esp", size: 200, crc: "22222222" },
+      ]),
+      modId: "m4",
+      modName: "Nothing To Compare",
+      archivePath: "a.7z",
+      staged: [{ path: "hand-written.txt", size: 5 }],
+      recordedChoices: [],
+      readEntry: async () => Buffer.from(OPTIONAL_ONLY, "utf8"),
+    });
+
+    expect(r.emptySelectionVerified).toBeUndefined();
+    expect(r.notes.join(" ")).toMatch(/nothing was compared/i);
+  });
+
   it("says nothing about a mod whose archive has no installer", async () => {
     // The 1,454 mods in a real collection with an empty selection list and no
     // FOMOD at all. Claiming a verified empty selection for those would be

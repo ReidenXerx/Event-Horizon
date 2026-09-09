@@ -1,16 +1,16 @@
 ---
 name: gitnexus-area-doctor
-description: "Skill for the Doctor area of Event-Horizon. 23 symbols across 8 files."
+description: "Skill for the Doctor area of Event-Horizon. 22 symbols across 8 files."
 ---
 
 # Doctor
 
-23 symbols | 8 files | Cohesion: 84%
+22 symbols | 8 files | Cohesion: 83%
 
 ## When to Use
 
 - Working with code in `src/`
-- Understanding how describeHeal, rebuildPluginOrder, runHeal work
+- Understanding how describeHeal, runHeal, nexusModIdOfCompareKey work
 - Modifying doctor-related functionality
 
 ## Key Files
@@ -18,10 +18,10 @@ description: "Skill for the Doctor area of Event-Horizon. 23 symbols across 8 fi
 | File | Symbols |
 |------|---------|
 | `src/core/doctor/gather.ts` | countModRules, gatherObservations, readEnabledModIds, readInstalledModIds, readProfileIds |
-| `src/core/doctor/heal.ts` | describeHeal, rebuildPluginOrder, healNeedsManifest |
 | `src/core/doctor/runHeal.ts` | healImpl, resolveModMaps, runHeal |
 | `src/core/doctor/health.ts` | countCheck, detailList, evaluateHealth |
 | `src/core/doctor/health.test.ts` | drifted, healthy, on |
+| `src/core/doctor/heal.ts` | describeHeal, healNeedsManifest |
 | `src/core/identity/compareKey.ts` | nexusModIdOfCompareKey, parseCompareKey |
 | `src/ui/pages/doctor/DoctorPage.tsx` | heal, unavailableHeal |
 | `src/core/installer/checkPluginOrder.ts` | comparePluginOrder, key |
@@ -31,17 +31,16 @@ description: "Skill for the Doctor area of Event-Horizon. 23 symbols across 8 fi
 Start here when exploring this area:
 
 - **`describeHeal`** (Function) — `src/core/doctor/heal.ts:66`
-- **`rebuildPluginOrder`** (Function) — `src/core/doctor/heal.ts:161`
 - **`runHeal`** (Function) — `src/core/doctor/runHeal.ts:98`
 - **`nexusModIdOfCompareKey`** (Function) — `src/core/identity/compareKey.ts:96`
 - **`parseCompareKey`** (Function) — `src/core/identity/compareKey.ts:79`
+- **`heal`** (Function) — `src/ui/pages/doctor/DoctorPage.tsx:283`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
 | `describeHeal` | Function | `src/core/doctor/heal.ts` | 66 |
-| `rebuildPluginOrder` | Function | `src/core/doctor/heal.ts` | 161 |
 | `runHeal` | Function | `src/core/doctor/runHeal.ts` | 98 |
 | `nexusModIdOfCompareKey` | Function | `src/core/identity/compareKey.ts` | 96 |
 | `parseCompareKey` | Function | `src/core/identity/compareKey.ts` | 79 |
@@ -57,9 +56,10 @@ Start here when exploring this area:
 | `readEnabledModIds` | Function | `src/core/doctor/gather.ts` | 53 |
 | `readInstalledModIds` | Function | `src/core/doctor/gather.ts` | 37 |
 | `readProfileIds` | Function | `src/core/doctor/gather.ts` | 25 |
-| `countCheck` | Function | `src/core/doctor/health.ts` | 487 |
+| `countCheck` | Function | `src/core/doctor/health.ts` | 501 |
 | `detailList` | Function | `src/core/doctor/health.ts` | 147 |
 | `key` | Function | `src/core/installer/checkPluginOrder.ts` | 59 |
+| `drifted` | Function | `src/core/doctor/health.test.ts` | 294 |
 
 ## Execution Flows
 

@@ -56,21 +56,21 @@ Start here when exploring this area:
 | `nexusModKey` | Function | `src/core/identity/modIdentity.ts` | 226 |
 | `stagingSetKey` | Function | `src/core/identity/modIdentity.ts` | 220 |
 | `str` | Function | `src/core/identity/modIdentity.ts` | 201 |
-| `buildRule` | Function | `src/core/manifest/buildManifest.ts` | 795 |
-| `buildRules` | Function | `src/core/manifest/buildManifest.ts` | 747 |
+| `buildRule` | Function | `src/core/manifest/buildManifest.ts` | 804 |
+| `buildRules` | Function | `src/core/manifest/buildManifest.ts` | 756 |
 
 ## Execution Flows
 
 | Flow | Type | Steps |
 |------|------|-------|
+| `BuildDiffCard → NexusCompareKey` | cross_community | 5 |
+| `BuildDiffCard → IsNexusSourced` | cross_community | 5 |
 | `OnRecovered → NexusCompareKey` | cross_community | 5 |
 | `MatchSnapshots → StripVersionTokens` | cross_community | 4 |
 | `MatchSnapshots → StripVortexPin` | cross_community | 4 |
 | `MatchSnapshots → Str` | cross_community | 4 |
 | `Diff → IsNexusSourced` | cross_community | 4 |
 | `Diff → NexusCompareKey` | cross_community | 4 |
-| `LoadBuildDiff → IsNexusSourced` | cross_community | 4 |
-| `LoadBuildDiff → NexusCompareKey` | cross_community | 4 |
 | `MatchSnapshots → DiceCoefficient` | intra_community | 3 |
 | `MatchSnapshots → ArchiveShaKey` | cross_community | 3 |
 

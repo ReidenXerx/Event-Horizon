@@ -39,6 +39,7 @@
  */
 
 import type { EhcollStagingFile } from "../../types/ehcoll";
+import { isVolatileFile } from "../volatileFiles";
 
 import { type CaseMode, pathKey } from "../paths";
 
@@ -182,6 +183,26 @@ export function planMirror(args: {
     .filter((file) => !wanted.has(key(file.path, mode)))
     // Never delete a file that only looks extra because of letter case.
     .filter((file) => !wantedInsensitive.has(key(file.path, "insensitive")))
+    /**
+     * ─── AND NEVER DELETE WHAT A RUNTIME WROTE ──────────────────────────
+     * `target` comes from the manifest, and `captureStagingFiles` filtered
+     * volatile files out of it at build time. `current` is a live walk of the
+     * user's folder, which filters nothing. So every SKSE log, `Thumbs.db`
+     * and `desktop.ini` the user's own machine wrote appeared in `current`,
+     * matched nothing in `target`, and was classified extra — on the ONE
+     * function in this codebase that deletes.
+     *
+     * Filtering in one place and not the other is the exact asymmetry
+     * `stagingSetHash` documents as having already cost seven mods, and here
+     * it cost real files rather than a false report. It belongs inside this
+     * function rather than at the call site: `planMirror` is what removes
+     * things, so it is what has to know which files are not ours to remove.
+     *
+     * A volatile file is never restored either — it is absent from `target`,
+     * so the loop above never sees it. That is correct: a runtime rewrites it
+     * on its own, and shipping the curator's copy of a log would be noise.
+     */
+    .filter((file) => !isVolatileFile(file.path))
     .map((file) => file.path);
 
   if (extra.length === 0) {

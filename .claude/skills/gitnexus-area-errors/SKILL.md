@@ -5,7 +5,7 @@ description: "Skill for the Errors area of Event-Horizon. 45 symbols across 13 f
 
 # Errors
 
-45 symbols | 13 files | Cohesion: 80%
+45 symbols | 13 files | Cohesion: 79%
 
 ## When to Use
 
@@ -34,7 +34,7 @@ Start here when exploring this area:
 
 - **`EventHorizonLogo`** (Function) — `src/ui/components/EventHorizonLogo.tsx:47`
 - **`useErrorReporterFormatted`** (Function) — `src/ui/errors/ErrorContext.tsx:65`
-- **`CollectionsPage`** (Function) — `src/ui/pages/CollectionsPage.tsx:90`
+- **`CollectionsPage`** (Function) — `src/ui/pages/CollectionsPage.tsx:91`
 - **`HomePage`** (Function) — `src/ui/pages/HomePage.tsx:48`
 - **`ModDiffsPage`** (Function) — `src/ui/pages/ModDiffsPage.tsx:67`
 
@@ -44,23 +44,23 @@ Start here when exploring this area:
 |--------|------|------|------|
 | `EventHorizonLogo` | Function | `src/ui/components/EventHorizonLogo.tsx` | 47 |
 | `useErrorReporterFormatted` | Function | `src/ui/errors/ErrorContext.tsx` | 65 |
-| `CollectionsPage` | Function | `src/ui/pages/CollectionsPage.tsx` | 90 |
+| `CollectionsPage` | Function | `src/ui/pages/CollectionsPage.tsx` | 91 |
 | `HomePage` | Function | `src/ui/pages/HomePage.tsx` | 48 |
 | `ModDiffsPage` | Function | `src/ui/pages/ModDiffsPage.tsx` | 67 |
 | `PluginDiffsPage` | Function | `src/ui/pages/PluginDiffsPage.tsx` | 53 |
-| `BuildPage` | Function | `src/ui/pages/build/BuildPage.tsx` | 126 |
+| `BuildPage` | Function | `src/ui/pages/build/BuildPage.tsx` | 127 |
 | `InstallPage` | Function | `src/ui/pages/install/InstallPage.tsx` | 50 |
 | `ErrorReportModal` | Function | `src/ui/errors/ErrorReportModal.tsx` | 38 |
 | `handleCopy` | Function | `src/ui/errors/ErrorReportModal.tsx` | 67 |
 | `handleSave` | Function | `src/ui/errors/ErrorReportModal.tsx` | 78 |
-| `buildErrorReport` | Function | `src/ui/errors/formatError.ts` | 147 |
+| `buildErrorReport` | Function | `src/ui/errors/formatError.ts` | 149 |
 | `onError` | Function | `src/ui/errors/ErrorContext.tsx` | 128 |
 | `onRejection` | Function | `src/ui/errors/ErrorContext.tsx` | 141 |
 | `report` | Function | `src/ui/errors/ErrorContext.tsx` | 106 |
 | `isForeignError` | Function | `src/ui/errors/foreignError.ts` | 60 |
 | `stackOf` | Function | `src/ui/errors/foreignError.ts` | 41 |
 | `describeForeignError` | Function | `src/ui/errors/foreignError.ts` | 74 |
-| `formatError` | Function | `src/ui/errors/formatError.ts` | 112 |
+| `formatError` | Function | `src/ui/errors/formatError.ts` | 114 |
 | `render` | Method | `src/ui/errors/ErrorBoundary.tsx` | 94 |
 
 ## Execution Flows
@@ -72,11 +72,11 @@ Start here when exploring this area:
 | `RouteOutlet → Fail` | cross_community | 7 |
 | `RouteOutlet → Ok` | cross_community | 7 |
 | `RouteOutlet → BelongsToGame` | cross_community | 7 |
+| `OnError → ToPosix` | cross_community | 7 |
+| `OnRejection → ToPosix` | cross_community | 7 |
 | `RouteOutlet → GetActiveGameId` | cross_community | 6 |
 | `RouteOutlet → ResolveProfileName` | cross_community | 6 |
 | `RouteOutlet → ResolveVortexVersion` | cross_community | 6 |
-| `OnError → CleanStack` | cross_community | 6 |
-| `OnError → GuessGenericHints` | cross_community | 6 |
 
 ## How to Explore
 

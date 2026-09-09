@@ -5,7 +5,7 @@ description: "Skill for the Pages area of Event-Horizon. 170 symbols across 43 f
 
 # Pages
 
-170 symbols | 43 files | Cohesion: 81%
+170 symbols | 43 files | Cohesion: 82%
 
 ## When to Use
 
@@ -17,8 +17,8 @@ description: "Skill for the Pages area of Event-Horizon. 170 symbols across 43 f
 
 | File | Symbols |
 |------|---------|
-| `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, DoneStep, ExternalDownloadGuide, FailureBody (+17) |
-| `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildWizard, BuildingPanel, DecisionsGate, DraftRestoredBanner (+16) |
+| `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildDiffCard, BuildWizard, BuildingPanel, DecisionsGate (+17) |
+| `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, DoneStep, ExternalDownloadGuide, FomodModeModal (+16) |
 | `src/ui/pages/curator/CuratorPage.tsx` | CuratorBody, endorseAll, freedByRetiring, refreshUpdates, setEnabledFor (+12) |
 | `src/ui/pages/CollectionsPage.tsx` | CollectionsList, handleContinueInstall, refresh, DetailTile, EmptyState (+8) |
 | `src/ui/pages/HomePage.tsx` | CuratorPanel, Dashboard, DashboardBody, ErrorPanel, FooterRow (+7) |
@@ -52,9 +52,9 @@ Start here when exploring this area:
 | `endorseDurationMs` | Function | `src/core/curator/endorsePace.ts` | 31 |
 | `endorseIsLong` | Function | `src/core/curator/endorsePace.ts` | 63 |
 | `freezeAttribute` | Function | `src/core/curator/readProfile.ts` | 124 |
-| `healingBlockedReason` | Function | `src/core/doctor/health.ts` | 600 |
-| `overallHealth` | Function | `src/core/doctor/health.ts` | 547 |
-| `describeInstallAttempt` | Function | `src/core/installer/attemptRecord.ts` | 210 |
+| `healingBlockedReason` | Function | `src/core/doctor/health.ts` | 614 |
+| `overallHealth` | Function | `src/core/doctor/health.ts` | 561 |
+| `describeInstallAttempt` | Function | `src/core/installer/attemptRecord.ts` | 231 |
 | `describeFomodModes` | Function | `src/core/installer/fomodReplayMode.ts` | 78 |
 | `s` | Function | `src/core/installer/fomodReplayMode.ts` | 84 |
 | `mustAskReplayMode` | Function | `src/core/installer/fomodReplayMode.ts` | 183 |
@@ -69,6 +69,7 @@ Start here when exploring this area:
 |------|------|-------|
 | `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
 | `BuildWizard → GetVortexUserDataPath` | cross_community | 10 |
+| `BuildDiffCard → ToPosix` | cross_community | 9 |
 | `HomePage → Truncate` | cross_community | 8 |
 | `Dashboard → GetVortexUserDataPath` | cross_community | 8 |
 | `RouteOutlet → Fail` | cross_community | 7 |
@@ -76,7 +77,6 @@ Start here when exploring this area:
 | `RouteOutlet → BelongsToGame` | cross_community | 7 |
 | `EndorseAll → GetVortexUserDataPath` | cross_community | 7 |
 | `RefreshUpdates → GetVortexUserDataPath` | cross_community | 7 |
-| `RouteOutlet → GetActiveGameId` | cross_community | 6 |
 
 ## How to Explore
 

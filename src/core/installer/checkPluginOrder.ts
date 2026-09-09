@@ -111,7 +111,22 @@ export function comparePluginOrder(
  * successful install is a line people learn to skip, and this one has to be
  * read on the occasions it is not zero.
  */
-export function describePluginOrderDrift(drift: PluginOrderDrift): string[] {
+export function describePluginOrderDrift(
+  drift: PluginOrderDrift,
+  /**
+   * ─── IS THIS NUMBER A MEASUREMENT? ────────────────────────────────────
+   * The install re-pins the curator's order and then polls plugins.txt to
+   * confirm the write landed. When that poll times out, `drift` still holds
+   * the PRE-re-pin count — and the advice below ("sort your plugins in
+   * Vortex") is the one action that undoes the re-pin, so giving it on the
+   * strength of a stale number is worse than saying nothing.
+   *
+   * The flag existed in the driver, was assigned, and was read by nothing —
+   * so this caveat has never reached a user. That is the same
+   * written-but-never-read shape the receipt has now shipped several times.
+   */
+  repinUnconfirmed = false,
+): string[] {
   const problems = drift.misordered.length + drift.missing.length;
   if (problems === 0) return [];
 
@@ -131,8 +146,15 @@ export function describePluginOrderDrift(drift: PluginOrderDrift): string[] {
       lines.push(`  • and ${drift.misordered.length - 5} more.`);
     }
     lines.push(
-      `Sorting your plugins in Vortex usually resolves this. If it does not, ` +
-        `the curator's order relied on something LOOT does not know about.`,
+      repinUnconfirmed
+        ? `The collection re-applied the curator's order, but Windows did ` +
+          `not report the change back in time to confirm it — so the count ` +
+          `above is from BEFORE that step and may already be resolved. ` +
+          `Restart Vortex and check the load order there. Do NOT press Sort ` +
+          `yet: if the re-pin did land, sorting would undo it.`
+        : `Sorting your plugins in Vortex usually resolves this. If it does ` +
+          `not, the curator's order relied on something LOOT does not know ` +
+          `about.`,
     );
   }
 

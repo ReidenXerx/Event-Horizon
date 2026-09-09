@@ -305,14 +305,39 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
       listing,
       staged: input.staged,
       /**
-       * Staged files the ARCHIVE cannot produce, already computed by the
-       * containment pass. They are not evidence about what was ticked — see
-       * `verifyEmptySelection`.
+       * ─── ONLY THE *ADDED* ONES ──────────────────────────────────────────
+       * Staged files the containment pass could not account for, split by
+       * `classifyUnexplained` into two kinds that mean opposite things here.
+       *
+       * `added` — no archive entry shares its path OR its basename. The
+       * archive genuinely cannot produce it, so no installer option can have
+       * placed it, and it says nothing about what was ticked. Excluding it is
+       * the whole point: a curator's hand-added file was vetoing the proof and
+       * costing every user a FOMOD dialog they cannot answer.
+       *
+       * `changed` — an archive entry DOES share its path or name; only the
+       * bytes differ. That file is reachable by an installer option, and the
+       * curator most likely ticked the option and THEN edited the result —
+       * cleaning a plugin in xEdit, repacking a BA2 — which is the entire
+       * reason post-processing exists here. Production supplies no crc
+       * (`runSelfChecks` passes `{path, size}`), so containment matches on
+       * size alone and any such edit lands in this bucket.
+       *
+       * Excluding `changed` made the proof VACUOUS for exactly that
+       * population: the one file proving an option was picked was filtered
+       * out, `extra` came back empty, `emptySelectionVerified` shipped, and
+       * every user replayed the installer with nothing ticked (NS-8). So a
+       * `changed` file still vetoes, and only `added` is set aside.
        */
       unexplained: new Set(
-        containment.verdicts
-          .filter((v) => v.kind === "unexplained")
-          .map((v) => v.file.path.toLowerCase()),
+        classifyUnexplained(
+          containment.verdicts
+            .filter((v) => v.kind === "unexplained")
+            .map((v) => v.file),
+          listing,
+        )
+          .filter((f) => f.kind === "added")
+          .map((f) => f.path.toLowerCase()),
       ),
     });
     notes.push(verdict.note);
@@ -516,6 +541,10 @@ async function verifyEmptySelection(input: {
      *
      * `missing` stays strict: a file the no-choice replay WOULD produce and the
      * curator does not have means the replay is not what happened.
+     *
+     * NARROWED SINCE: the caller now passes only the `added` unexplained files.
+     * A `changed` one shares a path with an archive entry, so an option COULD
+     * have placed it, and it must still veto — see the caller's note.
      */
     const extra = [...actual].filter(
       (p) => !predicted.has(p) && !(input.unexplained?.has(p) ?? false),
@@ -523,6 +552,27 @@ async function verifyEmptySelection(input: {
     const ignoredUnexplained = [...actual].filter(
       (p) => !predicted.has(p) && (input.unexplained?.has(p) ?? false),
     ).length;
+
+    /**
+     * ─── A PROOF THAT COMPARED NOTHING IS NOT A PROOF ────────────────────
+     * `missing` and `extra` can both be empty because the two sets AGREE, or
+     * because there was nothing to compare: a replay that predicts no files at
+     * all, against a folder whose every file was set aside as `added`. Both
+     * reach the same `0 === 0` and the second says nothing whatsoever about
+     * what the curator ticked.
+     *
+     * This is the "not checked read as a pass" shape this codebase has now
+     * shipped several times under several names. Refuse it explicitly, and say
+     * which of the two it was, rather than certifying an empty comparison.
+     */
+    if (predicted.size === 0 && ignoredUnexplained >= actual.size) {
+      return no(
+        `A no-choice replay of this FOMOD predicts no files, and all ` +
+          `${actual.size} staged file(s) are ones the archive cannot produce ` +
+          `— so nothing was compared and nothing is proven about what was ` +
+          `picked.`,
+      );
+    }
 
     if (missing.length === 0 && extra.length === 0) {
       return {
