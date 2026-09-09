@@ -244,3 +244,104 @@ describe("degrading gracefully", () => {
     expect(text).not.toMatch(/undefined/);
   });
 });
+
+describe("when the user supplied the wrong archive", () => {
+  /**
+   * A tester's report named 11 differing and 248 extra files and closed with
+   * "worth checking whether this mod still downloads the same archive it did
+   * when the collection was built" — sending the curator to hunt a Nexus
+   * re-upload.
+   *
+   * The run had already answered it. The file the tester browsed to hashed to
+   * 76390867… where the collection recorded 51552edf…, and the install logged
+   * both and warned him at the time. A report that asks a question the same
+   * run answered wastes the only person who can act on it.
+   */
+  const withMismatch = (): string =>
+    buildCuratorReport({
+      packageName: "ivy panties",
+      packageVersion: "1.0.13",
+      modName: "AAF_darthroman_creature_pack_v1.0.3b",
+      modCompareKey: "external:51552edf",
+      missingFiles: [],
+      differingFiles: ["AAF_DR_creature_pack.esp"],
+      extraFiles: ["AAF/DR_pack_furnitureData_DR.xml"],
+      attempts: ["Verified against the file list the collection recorded"],
+      suppliedArchiveDiffers: {
+        expected: "51552edf12182fc8f584ca1ea479622d1ef5b8db86d93b1ed020ca4a2be0b5f4",
+        actual: "76390867850b3e1545eada7fd3c08b1968c076d5ad03b2f76f5f3d3f35a32091",
+      },
+    });
+
+  it("states the cause and prints both hashes", () => {
+    const r = withMismatch();
+    expect(r).toMatch(/This one is explained/);
+    expect(r).toContain("51552edf12182fc8f584ca1ea479622d1ef5b8db86d93b1ed020ca4a2be0b5f4");
+    expect(r).toContain("76390867850b3e1545eada7fd3c08b1968c076d5ad03b2f76f5f3d3f35a32091");
+  });
+
+  it("stops asking the curator to check for a re-upload", () => {
+    // The specific sentence that sent them looking. Its absence is the point.
+    expect(withMismatch()).not.toMatch(/still downloads the same archive/);
+    expect(withMismatch()).not.toMatch(/may have been re-uploaded/);
+  });
+
+  it("says the file lists are a consequence, not a second fault", () => {
+    expect(withMismatch()).toMatch(/consequence of that and not a separate fault/);
+  });
+
+  it("points at the answer the curator can actually act on", () => {
+    // If the original file is gone, bundling or mirroring is the fix.
+    expect(withMismatch()).toMatch(/bundling or mirroring/i);
+  });
+
+  it("keeps the original wording when the archive was NOT the problem", () => {
+    // The overwhelming majority of reports. Losing the re-upload hint for
+    // those would trade one wrong answer for another.
+    const r = buildCuratorReport({
+      packageName: "ivy panties",
+      packageVersion: "1.0.13",
+      modName: "porcTattoos_2c",
+      modCompareKey: "external:staging:ec638def",
+      missingFiles: ["Interface/Translations/porcTattoos_en.txt.bak"],
+      differingFiles: ["Interface/Translations/porcTattoos_en.txt"],
+      extraFiles: [],
+      attempts: ["Verified against the file list the collection recorded"],
+    });
+    expect(r).toMatch(/still downloads the same archive/);
+    expect(r).not.toMatch(/This one is explained/);
+  });
+});
+
+describe("the wiring, not just the report", () => {
+  /**
+   * Removing the driver's hand-off left all the tests above GREEN. The helper
+   * was covered and its call site was not — the same gap that let the
+   * deploy-mods argument order survive 200 tests, and the reason this file
+   * ends with a source check rather than trusting the unit tests.
+   */
+  const driver = (): string => {
+    const fs = require("fs") as typeof import("fs");
+    const path = require("path") as typeof import("path");
+    return fs.readFileSync(path.join(__dirname, "runInstall.ts"), "utf8");
+  };
+
+  it("hands the mismatch out of every install path", () => {
+    const src = driver();
+    // Both call sites: the main loop and the post-deploy retry pass. A cause
+    // recorded on one and not the other reports differently depending on WHEN
+    // the mod installed, which is the worst kind of inconsistency to debug.
+    const handoffs = src.match(/onSuppliedArchiveDiffers: \(info\) =>/g) ?? [];
+    expect(handoffs.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("feeds it into the curator report", () => {
+    expect(driver()).toContain("suppliedArchiveDiffers: suppliedArchiveMismatches.get(");
+  });
+
+  it("records it against the compareKey the report is keyed by", () => {
+    // Keyed wrong, it would silently never match and the report would revert
+    // to speculating — with every test still green.
+    expect(driver()).toContain("suppliedArchiveMismatches.has(installEntry.compareKey)");
+  });
+});

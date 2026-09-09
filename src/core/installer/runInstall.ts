@@ -738,6 +738,19 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
    */
   const failedMods: FailedModReportEntry[] = [];
   /**
+   * Mods whose archive the USER supplied by hand and which is NOT the one the
+   * collection was built from, keyed by compareKey.
+   *
+   * Different bytes install different files, so this is the explanation for
+   * every difference verification is about to find. Without it the curator
+   * report lists them and then asks whether the mod was re-uploaded on Nexus
+   * — a question the same run had already answered and logged.
+   */
+  const suppliedArchiveMismatches = new Map<
+    string,
+    { expected: string; actual: string }
+  >();
+  /**
    * Consecutive failures, to tell "this mod is broken" from "everything is
    * broken". A dead extractor or a lost connection fails every mod in turn,
    * and grinding through 900 of them to say so helps nobody.
@@ -1271,6 +1284,11 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           onSkip: (entry) => skippedMods.push(entry),
           onCarry: (entry) => carriedMods.push(entry),
           onNotice: (line) => externalNotices.push(line),
+          onSuppliedArchiveDiffers: (info) =>
+            suppliedArchiveMismatches.set(info.compareKey, {
+              expected: info.expected,
+              actual: info.actual,
+            }),
           bundledPool,
         });
         // Clear the prompts Vortex raises per multi-plugin mod. Swept here
@@ -2107,6 +2125,15 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
                   ]
                 : [],
             extraFiles: verifyResult.extraFiles,
+            // When the user supplied the wrong archive, that IS the finding —
+            // and the report says so instead of speculating about re-uploads.
+            ...(suppliedArchiveMismatches.has(installEntry.compareKey)
+              ? {
+                  suppliedArchiveDiffers: suppliedArchiveMismatches.get(
+                    installEntry.compareKey,
+                  )!,
+                }
+              : {}),
             // Proves WHICH build produced this. A curator who rebuilt without
             // bumping the version has two different packages both calling
             // themselves v1.0.9, and the answer changes what the report means.
@@ -3560,6 +3587,11 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             onSkip: (e) => skippedMods.push(e),
             onCarry: (e) => carriedMods.push(e),
             onNotice: (line) => externalNotices.push(line),
+            onSuppliedArchiveDiffers: (info) =>
+              suppliedArchiveMismatches.set(info.compareKey, {
+                expected: info.expected,
+                actual: info.actual,
+              }),
           });
           if (entry === undefined) {
             carryForward.push(failed);
@@ -3956,6 +3988,16 @@ async function executeDecision(args: {
   /** Something the user should read, that is not a failure. */
   onNotice: (line: string) => void;
   /**
+   * A hand-supplied archive that is NOT the one the collection was built
+   * from, with both hashes. Verification is about to find every file this
+   * explains and has no way to know why, so the cause travels with it.
+   */
+  onSuppliedArchiveDiffers?: (info: {
+    compareKey: string;
+    expected: string;
+    actual: string;
+  }) => void;
+  /**
    * Optional bundled prefetch pool. When supplied, bundled-archive
    * decisions will consume pre-extracted results from the pool
    * instead of running 7z inline. Recovery paths and out-of-band
@@ -3973,6 +4015,7 @@ async function executeDecision(args: {
     onSkip,
     onCarry,
     onNotice,
+    onSuppliedArchiveDiffers,
     bundledPool,
   } = args;
   const { manifest } = ctx.plan;
@@ -4095,6 +4138,9 @@ async function executeDecision(args: {
         choice,
         onSkip,
         onNotice,
+        ...(onSuppliedArchiveDiffers !== undefined
+          ? { onSuppliedArchiveDiffers }
+          : {}),
       });
     }
 
@@ -4238,8 +4284,26 @@ async function executePromptUserChoice(args: {
   onSkip: (entry: SkippedModReportEntry) => void;
   /** Something the user should read, that is not a failure. */
   onNotice: (line: string) => void;
+  /**
+   * A hand-supplied archive that is NOT the one the collection was built
+   * from, with both hashes. Verification is about to find every file this
+   * explains and has no way to know why, so the cause travels with it.
+   */
+  onSuppliedArchiveDiffers?: (info: {
+    compareKey: string;
+    expected: string;
+    actual: string;
+  }) => void;
 }): Promise<InstalledModReportEntry | undefined> {
-  const { ctx, resolution, manifestEntry, choice, onSkip, onNotice } = args;
+  const {
+    ctx,
+    resolution,
+    manifestEntry,
+    choice,
+    onSkip,
+    onNotice,
+    onSuppliedArchiveDiffers,
+  } = args;
   const compareKey = resolution.compareKey;
 
   if (choice.kind === "skip") {
@@ -4300,6 +4364,18 @@ async function executePromptUserChoice(args: {
           `collection was built from. ${describeArchiveIdentity(picked)} It was ` +
           `installed as you chose — this is a note, not a refusal.`,
       );
+      /**
+       * Also reported OUT, because verification is about to find every file
+       * this explains and has no way to know why. A curator report that lists
+       * 11 differing and 248 extra files and then asks whether the mod was
+       * re-uploaded is sending them to look for something this run already
+       * measured.
+       */
+      onSuppliedArchiveDiffers?.({
+        compareKey: resolution.compareKey,
+        expected: picked.expected,
+        actual: picked.actual,
+      });
       break;
     case "damaged":
       onNotice(

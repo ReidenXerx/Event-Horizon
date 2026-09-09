@@ -65,6 +65,24 @@ export type CuratorReportInput = {
    * stronger claim.
    */
   archiveChecked?: boolean;
+  /**
+   * The user supplied this archive BY HAND and it is not the one the
+   * collection was built from — with both hashes, because they are the whole
+   * answer.
+   *
+   * ─── WHY THIS OVERRIDES EVERYTHING BELOW ────────────────────────────────
+   * A tester's report named 11 differing and 248 extra files and closed with
+   * "worth checking whether this mod still downloads the same archive it did
+   * when the collection was built" — sending the curator to hunt a Nexus
+   * re-upload. The install had already ANSWERED that: the file the tester
+   * browsed to hashed to `76390867…` where the collection recorded
+   * `51552edf…`, and the run logged both and warned him at the time.
+   *
+   * A report that asks a question the same run already answered wastes the
+   * only person who can act on it. When this is set, that is the finding, and
+   * the file lists below are its consequence rather than a mystery.
+   */
+  suppliedArchiveDiffers?: { expected: string; actual: string };
 
   /** Host description — "win32 (Wine/Proton)" is load-bearing information. */
   platform?: string;
@@ -153,20 +171,46 @@ export function buildCuratorReport(input: CuratorReportInput): string {
   lines.push(``);
 
   lines.push(`What this does and does not mean`);
-  lines.push(
-    `It does NOT prove the mod is broken. The archive may have been ` +
-      `re-uploaded under the same file id since the collection was built, or ` +
-      `something on this machine may be altering the files.`,
-  );
-  lines.push(
-    `It DOES mean a clean install here cannot reproduce what the collection ` +
-      `recorded, so anyone else installing it will most likely see the same.`,
-  );
-  lines.push(``);
-  lines.push(
-    `Worth checking: whether this mod still downloads the same archive it did ` +
-      `when the collection was built.`,
-  );
+  if (input.suppliedArchiveDiffers !== undefined) {
+    /**
+     * The cause is known, so the report states it instead of speculating.
+     * Nothing below it about re-uploads or a machine altering files applies:
+     * a different archive explains every differing and extra file at once.
+     */
+    lines.push(
+      `This one is explained. The archive supplied for this mod on that ` +
+        `machine is NOT the one the collection was built from:`,
+    );
+    lines.push(`  collection built from: ${input.suppliedArchiveDiffers.expected}`);
+    lines.push(`  file supplied here:    ${input.suppliedArchiveDiffers.actual}`);
+    lines.push(
+      `Different bytes install different files, so the lists above are the ` +
+        `consequence of that and not a separate fault. The person installing ` +
+        `was warned at the time and chose to continue, which is allowed — a ` +
+        `mirror or a repack is sometimes the only file still available.`,
+    );
+    lines.push(``);
+    lines.push(
+      `Worth checking: whether the original file is still downloadable at ` +
+        `all. If it is not, bundling or mirroring this mod is what makes the ` +
+        `collection reproducible for everyone else.`,
+    );
+  } else {
+    lines.push(
+      `It does NOT prove the mod is broken. The archive may have been ` +
+        `re-uploaded under the same file id since the collection was built, or ` +
+        `something on this machine may be altering the files.`,
+    );
+    lines.push(
+      `It DOES mean a clean install here cannot reproduce what the collection ` +
+        `recorded, so anyone else installing it will most likely see the same.`,
+    );
+    lines.push(``);
+    lines.push(
+      `Worth checking: whether this mod still downloads the same archive it did ` +
+        `when the collection was built.`,
+    );
+  }
 
   return lines.join("\n");
 }
