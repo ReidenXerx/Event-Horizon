@@ -84,7 +84,7 @@
  */
 
 import { isAbort } from "../../utils/abortError";
-import { isBaseGameMaster } from "../manifest/pluginMasters";
+import { planInstallEpochs } from "../resolver/installEpochs";
 import { actions, types, util } from "@nexusmods/vortex-api";
 import { stagingRootForModId } from "../stagingPath";
 
@@ -1308,43 +1308,21 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
      * mod still goes through one code path, with one set of journalling,
      * failure-streak and abort rules.
      */
-    const collectionPlugins = new Set(
-      plan.manifest.plugins.order
-        .map((pl) => pl.name.toLowerCase())
-        .filter((name) => !isBaseGameMaster(name, plan.manifest.game.id)),
+    const epochs = planInstallEpochs(plan.manifest);
+    const secondEpochKeys = new Set(epochs.second);
+    const firstEpoch = plan.modResolutions.filter(
+      (r) => !secondEpochKeys.has(r.compareKey),
     );
-    /**
-     * Deferred only when waiting can actually CHANGE the answer: the plugin
-     * has to be one this collection orders. A base-game master is active from
-     * the start, and a plugin nobody ships is never going to be active — in
-     * both cases the second epoch buys nothing and costs the mod its place.
-     */
-    const needsLiveState = (compareKey: string): string[] => {
-      const named = manifestByCompareKey.get(compareKey)?.install
-        ?.readsPluginState;
-      if (named === undefined || named.length === 0) return [];
-      return named.filter((n) => collectionPlugins.has(n.toLowerCase()));
-    };
-
-    const firstEpoch: typeof plan.modResolutions[number][] = [];
-    const secondEpoch: typeof plan.modResolutions[number][] = [];
-    const deferralReasons: { name: string; waitsFor: string[] }[] = [];
-    for (const r of plan.modResolutions) {
-      const waitsFor = needsLiveState(r.compareKey);
-      if (waitsFor.length > 0) {
-        secondEpoch.push(r);
-        deferralReasons.push({ name: r.name, waitsFor });
-      } else {
-        firstEpoch.push(r);
-      }
-    }
+    const secondEpoch = plan.modResolutions.filter((r) =>
+      secondEpochKeys.has(r.compareKey),
+    );
     const installQueue = [...firstEpoch, ...secondEpoch];
     const secondEpochStartsAt = firstEpoch.length;
     if (secondEpoch.length > 0) {
       ehLog("info", "install.epoch.planned", {
         firstEpoch: firstEpoch.length,
         secondEpoch: secondEpoch.length,
-        deferred: deferralReasons.slice(0, 20),
+        deferred: epochs.deferred.slice(0, 20),
         why:
           "these mods' installers ask the game whether a plugin this " +
           "collection ships is active; installing them before it is active " +

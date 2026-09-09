@@ -22,6 +22,7 @@
  */
 
 import { ehLog } from "../logging/ehLog";
+import { planInstallEpochs } from "./installEpochs";
 
 import type { InstallPlan, ModResolution, UserSideState } from "../../types/installPlan";
 
@@ -122,6 +123,32 @@ export function logInstallPlan(
       (d) => d.status.kind !== "ok",
     ).length,
   });
+
+  /**
+   * ─── WHAT WILL WAIT, AND WHY — BEFORE ANYTHING IS INSTALLED ──────────
+   * The epoch split is a decision about the PLAN, so it can be reported from
+   * the plan. Selecting a package in the wizard now says which mods will
+   * install in the second pass and what each is waiting for, without touching
+   * anything — which is the only dry run that is genuinely free.
+   *
+   * It is also the one number that says whether the second epoch is doing
+   * anything at all. On a real 978-mod collection it is 21, and exactly one
+   * of those was the loud kind the retry pass was already rescuing; the rest
+   * are compatibility-patch installers that fail silently or not at all.
+   */
+  const epochs = planInstallEpochs(plan.manifest);
+  if (epochs.deferred.length > 0) {
+    ehLog("info", "resolver.plan.epochs", {
+      where,
+      firstEpoch: epochs.first.length,
+      secondEpoch: epochs.second.length,
+      deferred: epochs.deferred.slice(0, 25),
+      why:
+        "these mods' installers ask the game whether a plugin this " +
+        "collection ships is active, so they install after the plugin order " +
+        "lands rather than at their manifest position",
+    });
+  }
 
   const attention: ModResolution[] = plan.modResolutions.filter(
     (r) => !UNREMARKABLE.has(r.decision.kind),
