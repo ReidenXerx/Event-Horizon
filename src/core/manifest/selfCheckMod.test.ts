@@ -39,6 +39,41 @@ const ARCHIVE_ENTRIES: SevenZipListEntry[] = [
 
 const readScript = async (): Promise<Buffer> => Buffer.from(SCRIPT, "utf8");
 
+/**
+ * The same script, plus the one thing `SCRIPT` has never had: a question to
+ * the game.
+ *
+ * A step's `<visible>` is the SILENT kind of dependency — it does not refuse
+ * like `<moduleDependencies>` does, it just hides the step and installs a
+ * different file set with no error for anything downstream to catch. It is
+ * the reason `readsPluginState` exists, and no fixture in this file carried
+ * one, so every test here agreed equally with code that kept the dependency
+ * and code that threw it away.
+ */
+const SCRIPT_ASKING = `<config>
+  <installSteps order="Explicit">
+    <installStep name="Theme">
+      <visible>
+        <dependencies operator="And">
+          <fileDependency file="AAF.esm" state="Active"/>
+        </dependencies>
+      </visible>
+      <optionalFileGroups order="Explicit">
+        <group name="Body" type="SelectExactlyOne">
+          <plugins order="Explicit">
+            <plugin name="Atomic Muscle">
+              <files><folder source="20 Bodies/00 AM" destination=""/></files>
+            </plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+  </installSteps>
+</config>`;
+
+const readAskingScript = async (): Promise<Buffer> =>
+  Buffer.from(SCRIPT_ASKING, "utf8");
+
 describe("selfCheckMod", () => {
   it("detects a file the FOMOD says should exist but the curator lacks", async () => {
     // The real shape of the bug: a folder partially extracted on the curator's
@@ -114,6 +149,65 @@ describe("selfCheckMod", () => {
     expect(r.depth).toBe("containment");
     expect(r.missing).toEqual([]);
     expect(r.notes.join(" ")).toMatch(/confidence low/i);
+  });
+
+  it("KEEPS the plugin dependency when replay confidence is low", async () => {
+    /**
+     * ─── THE ONE THAT SHIPPED A TESTER THE WRONG FILES ─────────────────
+     * Two questions, one return, and it used to answer both with silence:
+     *
+     *   "which files should be here?"  — a replay result, genuinely unsafe
+     *                                    to report when confidence is low
+     *   "does this installer ask the   — read straight off the parsed
+     *    game about a plugin?"           script, and not a replay result
+     *                                    at all
+     *
+     * Confidence is `warnings.length === 0 ? "high" : "low"`, so a single
+     * warning lands here — and a script complex enough to warn is exactly
+     * the kind that asks about plugins. On a real Skyrim collection `Helios`
+     * (1292 dependency elements, 763 flagDependencys, 59 plugins named) and
+     * `Better Animals` (names BSHeartland.esm) were both parsed correctly,
+     * both dropped here, both installed in the first epoch, and both handed
+     * a tester a silently wrong file set: `Helios_Obsidian.esp` and a
+     * SkyPatcher ini simply absent, with nothing reporting an error.
+     */
+    const r = await selfCheckMod({
+      sevenZip: sevenZip(ARCHIVE_ENTRIES),
+      modId: "m1", modName: "x",
+      archivePath: "a.7z",
+      staged: [{ path: "AAF/AM-actionData.xml", size: 430, crc: "11111111" }],
+      // A step the script does not contain ⇒ low confidence.
+      recordedChoices: [{ name: "Ghost Step", groups: [] }],
+      readEntry: readAskingScript,
+    });
+
+    expect(r.notes.join(" ")).toMatch(/confidence low/i);
+    // Still refuses to accuse the folder — that half was always right.
+    expect(r.missing).toEqual([]);
+    // And now says what the script asked.
+    expect(r.readsPluginState).toEqual(["aaf.esm"]);
+  });
+
+  it("reports an unreadable FOMOD script as unexamined, not as silence", async () => {
+    /**
+     * The archive opened and the script did not. Nothing was parsed, so
+     * `readsPluginState` is absent — and absent reads as "asks nothing" to
+     * the epoch planner unless something says otherwise. Same unanswered
+     * question as a missing archive, reached a different way.
+     */
+    const r = await selfCheckMod({
+      sevenZip: sevenZip(ARCHIVE_ENTRIES),
+      modId: "m1", modName: "x",
+      archivePath: "a.7z",
+      staged: [{ path: "AAF/AM-actionData.xml", size: 430, crc: "11111111" }],
+      recordedChoices: CHOICES,
+      readEntry: async (): Promise<Buffer> => {
+        throw new Error("archive entry is corrupt");
+      },
+    });
+
+    expect(r.installerUnexamined).toBe(true);
+    expect(r.readsPluginState).toBeUndefined();
   });
 
   it("degrades to containment when the archive has no FOMOD script", async () => {

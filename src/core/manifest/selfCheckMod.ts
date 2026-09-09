@@ -441,7 +441,19 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
     notes.push(`Could not read ${configEntry}: ${err instanceof Error ? err.message : String(err)}`);
   }
   if (raw === undefined) {
-    return { ...withLeads, depth: "containment", notes, ...unexplainedFacts(containment, listing) };
+    /**
+     * The archive opened and the script did not. Nothing was parsed, so
+     * `readsPluginState` stays absent — and absent means "asks nothing" to
+     * the epoch planner unless this says otherwise. It is the same
+     * unanswered question as a missing archive, reached a different way.
+     */
+    return {
+      ...withLeads,
+      depth: "containment",
+      notes,
+      installerUnexamined: true,
+      ...unexplainedFacts(containment, listing),
+    };
   }
 
   let expected;
@@ -454,10 +466,37 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
     const replay = replayFomod(parsed.script, input.recordedChoices);
     notes.push(...replay.warnings);
     if (replay.confidence === "low") {
-      // A replay we do not fully understand must never accuse a folder of
-      // missing files.
+      /**
+       * A replay we do not fully understand must never accuse a folder of
+       * missing files — but it must still report what the SCRIPT said.
+       *
+       * These are two different questions and this return used to answer
+       * both with silence. "Which files should be here" is a replay result
+       * and is genuinely unsafe when confidence is low. "Does this installer
+       * ask the game about a plugin" is a fact read straight off the parsed
+       * script six lines above, and no amount of replay uncertainty changes
+       * it.
+       *
+       * Confidence is `warnings.length === 0 ? "high" : "low"`, so ONE
+       * warning lands here — and a script complex enough to warn is exactly
+       * the kind that asks about plugins. Measured on a real Skyrim
+       * collection: `Helios` carries 1292 dependency elements and 763
+       * `flagDependency`s and names 59 plugins; `Better Animals` names
+       * `BSHeartland.esm`. Both were parsed correctly, both dropped here,
+       * both then installed in the first epoch and shipped a tester the
+       * wrong file set with no error — `Helios_Obsidian.esp` and a
+       * SkyPatcher ini simply absent.
+       *
+       * `withDeps` is the whole fix: report the dependency, keep refusing to
+       * report missing files.
+       */
       notes.push("Replay confidence low; not reporting missing files.");
-      return { ...withLeads, depth: "containment", notes, ...unexplainedFacts(containment, listing) };
+      return withDeps({
+        ...withLeads,
+        depth: "containment",
+        notes,
+        ...unexplainedFacts(containment, listing),
+      });
     }
     expected = expandFomodPlan(replay.sources, listing);
     if (expected.unmatchedSpecs.length > 0) {
