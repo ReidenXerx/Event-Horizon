@@ -48,6 +48,7 @@ import {
 import type { ConflictChoice, OrphanChoice } from "../../../types/installDriver";
 import type { FomodReplayMode } from "../../../core/installer/fomodReplayMode";
 import { blocksInstall as autoDeployBlocks } from "../../../core/installer/autoDeploy";
+import { blocksInstall as autoSortBlocks } from "../../../core/installer/autoSort";
 import { probeDeploymentMethod } from "../../../core/installer/probeDeployment";
 import {
   fillDefaultConflictChoices,
@@ -629,6 +630,17 @@ class InstallSession {
       return;
     }
 
+    /**
+     * The same gate for automatic plugin SORTING, and it matters for the same
+     * reason: it silently replaces the curator's load order with LOOT's, both
+     * during the run and every time the user deploys afterwards. It is on by
+     * default in Vortex, so most users arrive with it enabled.
+     */
+    if (autoSortBlocks(liveState)) {
+      void this.offerDisableAutoSort(api);
+      return;
+    }
+
     // Read defensively. Failing open is the rule for this whole check, and a
     // gate that THROWS on an unfamiliar plan shape fails closed in the worst
     // way — it takes down the install with a TypeError instead of the thing it
@@ -761,6 +773,72 @@ class InstallSession {
     // Straight on: the user has just agreed to install, and making them click
     // Install a second time after answering a question they did not raise is
     // the kind of friction that reads as a bug.
+    this.startInstall(api);
+  }
+
+  /**
+   * Offer to turn automatic plugin sorting off, then continue.
+   *
+   * Same contract as auto-deployment: offered rather than done, and left off
+   * afterwards rather than quietly restored.
+   */
+  private async offerDisableAutoSort(
+    api: types.IExtensionApi,
+  ): Promise<void> {
+    if (this.state.kind !== "confirm") return;
+    const pluginCount = (
+      this.state.bundle.plan as {
+        manifest?: { plugins?: { order?: unknown[] } };
+      }
+    )?.manifest?.plugins?.order?.length;
+    const [{ describeAutoSortBlock, ACTION_SET_AUTOSORT_ENABLED }, { ehLog }] =
+      await Promise.all([
+        import("../../../core/installer/autoSort"),
+        import("../../../core/logging/ehLog"),
+      ]);
+    const described = describeAutoSortBlock(
+      typeof pluginCount === "number" ? pluginCount : 0,
+    );
+    ehLog("warn", "install.blocked.auto-sort", { pluginCount });
+
+    const result = await api.showDialog?.(
+      "question",
+      described.title,
+      { text: described.body },
+      [{ label: described.decline }, { label: described.confirm }],
+    );
+    if (result?.action !== described.confirm) {
+      // Their Vortex, their call. The install proceeds and the order is still
+      // pinned — it is simply liable to be re-sorted later, which is now a
+      // choice they made rather than a surprise.
+      ehLog("info", "install.auto-sort.declined", {});
+      this.startInstall(api);
+      return;
+    }
+
+    try {
+      /**
+       * A RAW dispatch: `SET_AUTOSORT_ENABLED` is registered by Vortex's
+       * bundled `gamebryo-plugin-management` extension, not by core, so there
+       * is no typed action creator to import — the same deliberate sidestep
+       * `applyPluginOrder` and `applyUserlist` make. Its payload is the bare
+       * boolean (`createAction('SET_AUTOSORT_ENABLED', e => e)`).
+       */
+      const store = api.store as unknown as {
+        dispatch?: (action: { type: string; payload: unknown }) => void;
+      };
+      if (typeof store?.dispatch !== "function") {
+        throw new Error("no redux store available");
+      }
+      store.dispatch({ type: ACTION_SET_AUTOSORT_ENABLED, payload: false });
+      ehLog("info", "install.auto-sort-disabled", {});
+    } catch (err) {
+      // Non-fatal: the install is still worth doing, and the order is still
+      // pinned. Saying so beats stopping over a setting.
+      ehLog("warn", "install.auto-sort-disable-failed", {
+        error: String(err),
+      });
+    }
     this.startInstall(api);
   }
 

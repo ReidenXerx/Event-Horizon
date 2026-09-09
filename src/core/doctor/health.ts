@@ -356,14 +356,28 @@ export function evaluateHealth(
               : []),
           ],
       affectedCount: same ? 0 : drift.misordered.length + drift.missing.length,
-      ...(same
-        ? {}
-        : {
-            heal: {
-              action: "repin-plugin-order" as const,
-              label: "Restore the curator's plugin order",
-            },
-          }),
+      /**
+       * ─── OFFERED EVEN WHEN THE CHECK IS HEALTHY ──────────────────────
+       * The only heal on this panel that is useful on a HEALTHY machine, and
+       * it is the one users ask for by name.
+       *
+       * Vortex sorts plugins with LOOT automatically — `autoSort` is on by
+       * default — so the curator's order is liable to be replaced long after
+       * the install, by an ordinary deploy or by enabling one plugin. The
+       * install now offers to turn that off, but a user who leaves it on, or
+       * who sorts by hand, needs a way back that does not mean re-running an
+       * hour-long install.
+       *
+       * Safe to press at any time: the heal re-pins the recorded order with
+       * `skipSort`, which is idempotent — pressing it on a machine that is
+       * already correct changes nothing.
+       */
+      heal: {
+        action: "repin-plugin-order" as const,
+        label: same
+          ? "Re-apply the curator's plugin order"
+          : "Restore the curator's plugin order",
+      },
     });
   }
 
