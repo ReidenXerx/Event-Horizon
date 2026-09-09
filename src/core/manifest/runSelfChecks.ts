@@ -123,6 +123,16 @@ export type PostProcessingCandidate = {
   /** How many staged files the archive cannot produce. */
   unexplained: number;
   /**
+   * The archive could not be consulted at all — never kept, purged, or
+   * unreadable — so nothing here was compared against it.
+   *
+   * NOT the same as `unexplained: 0`, which means the comparison ran and found
+   * everything accounted for. This mod cannot be rebuilt from an archive on
+   * this machine, and most likely not on anyone else's either, so mirroring or
+   * bundling is the only way it reaches a user intact.
+   */
+  archiveUnavailable: boolean;
+  /**
    * EVERY file this mod stages is one the archive cannot produce, so a user
    * who installs it from that archive receives nothing the curator has.
    *
@@ -215,9 +225,32 @@ export function findPostProcessingCandidates(
   /** Mod ids whose staging was captured with a hash for every file. */
   mirrorable: ReadonlySet<string> = new Set(),
 ): PostProcessingCandidate[] {
+  /**
+   * ─── A MOD WITH NO ARCHIVE IS A CANDIDATE TOO ──────────────────────────
+   * The filter used to be `unexplained > 0`, and `unexplained` is produced by
+   * comparing staging against the ARCHIVE. When the archive cannot be listed
+   * — it was never kept, the download was purged, 7z cannot read it — the
+   * self-check returns `depth: "skipped"` with nothing counted, so the mod
+   * scored zero and was never offered.
+   *
+   * That is exactly backwards. A mod whose archive is gone is the one that
+   * MOST needs mirroring or bundling: there is no archive for anyone else to
+   * reproduce it from, so a plain install cannot produce it at all. Two of
+   * them shipped in a real collection and reached testers as "could not be
+   * reproduced" — and the curator, reasonably, believed they had answered,
+   * because they had never been asked.
+   *
+   * `unexplained` stays 0 for these (nothing was compared, so claiming a
+   * number would be inventing evidence). They are flagged by
+   * `archiveUnavailable` instead, and the UI can say the true thing: we could
+   * not check this one, and it cannot be rebuilt from an archive here.
+   */
+  const archiveUnavailable = (r: SelfCheckReport): boolean =>
+    r.depth === "skipped" && r.stagedCount > 0;
+
   return (
     reports
-      .filter((r) => r.unexplained > 0)
+      .filter((r) => r.unexplained > 0 || archiveUnavailable(r))
       .map((r) => {
         const settled = isSettled(r, decided);
         const answer = decided.get(r.modId);
@@ -229,6 +262,12 @@ export function findPostProcessingCandidates(
           // plain install. `stagedCount > 0` because a mod that stages no
           // files at all is a different (and harmless) shape.
           shipsNothing: r.stagedCount > 0 && r.unexplained >= r.stagedCount,
+          /**
+           * The archive could not be consulted at all, so nothing about this
+           * mod was verified against it. Distinct from `unexplained: 0`, which
+           * means "checked, and everything is accounted for".
+           */
+          archiveUnavailable: archiveUnavailable(r),
           files: r.unexplainedExamples,
           canMirror: mirrorable.has(r.modId),
           ...(r.unexplainedFingerprint !== undefined
@@ -244,6 +283,12 @@ export function findPostProcessingCandidates(
       // to be waded through on the way to the ones that are not.
       .sort((a, b) => {
         if (a.needsAnswer !== b.needsAnswer) return a.needsAnswer ? -1 : 1;
+        // An unreachable archive outranks a large unexplained count: the
+        // second is a mod that ships something wrong, the first is a mod that
+        // cannot be reproduced at all.
+        if (a.archiveUnavailable !== b.archiveUnavailable) {
+          return a.archiveUnavailable ? -1 : 1;
+        }
         return b.unexplained - a.unexplained;
       })
   );

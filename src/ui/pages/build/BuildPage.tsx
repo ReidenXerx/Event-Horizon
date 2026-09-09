@@ -3054,9 +3054,39 @@ function PostProcessingDecisions(props: {
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {describeUnreproducible(c.unexplained)}
+                  {c.archiveUnavailable
+                    ? "archive unavailable — nothing could be checked"
+                    : describeUnreproducible(c.unexplained)}
                 </span>
               </div>
+
+              {c.archiveUnavailable && (
+                /*
+                  The mod that most needs an answer, and the one that used to
+                  be invisible. `unexplained` is produced by comparing staging
+                  against the ARCHIVE, so a mod whose archive is gone scored
+                  zero and never appeared on this list at all — while being
+                  precisely the mod nobody else can reproduce, because there is
+                  no archive to reproduce it from.
+                */
+                <div
+                  style={{
+                    marginTop: "var(--eh-sp-2)",
+                    padding: "var(--eh-sp-2) var(--eh-sp-3)",
+                    borderLeft: "2px solid var(--eh-warning)",
+                    background: "var(--eh-warning-soft)",
+                    fontSize: "var(--eh-text-sm)",
+                    lineHeight: "var(--eh-leading-relaxed)",
+                  }}
+                >
+                  This mod&apos;s archive could not be read on this machine, so
+                  nothing about it was checked against one — and whoever
+                  installs this collection has no archive to rebuild it from
+                  either. Bundling or mirroring it is what makes it arrive
+                  intact; leaving it as-is ships a mod that cannot be
+                  reproduced.
+                </div>
+              )}
 
               {c.shipsNothing && (
                 /*
