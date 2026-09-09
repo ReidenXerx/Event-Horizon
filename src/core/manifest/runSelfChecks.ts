@@ -27,9 +27,11 @@ import * as fsp from "fs/promises";
 import * as os from "os";
 import * as path from "path";
 
+import { selectors } from "@nexusmods/vortex-api";
 import type { types } from "@nexusmods/vortex-api";
 
 import { resolveModArchivePath } from "../archiveHashing";
+import { findArchiveByHash } from "../findArchiveByHash";
 import type { AuditorMod } from "../getModsListForProfile";
 import { ehLog } from "../logging/ehLog";
 import { detectCaseSensitivity } from "../paths";
@@ -571,13 +573,75 @@ export async function runSelfChecks(
     caseMode: caseMode ?? "(unprobed — defaulting to insensitive)",
   });
 
+  /**
+   * ─── RECOVERING A MOD WHOSE DOWNLOAD LINK WENT STALE ───────────────────
+   * `resolveModArchivePath` follows `archiveId` into Vortex's download table.
+   * That link dies when a mod is UPDATED IN PLACE: Vortex refreshes `version`
+   * and the Nexus `fileId` and leaves the staging folder and `archiveName`
+   * naming the old file, whose download record went with it.
+   *
+   * On a real 978-mod collection ten mods were in that state, and not one of
+   * them could be examined — no FOMOD parsed, no archive verified, no
+   * `readsPluginState`, so the install-order fix silently skipped them. All
+   * ten archives were in the download folder the whole time.
+   *
+   * Built lazily: the index is only constructed if a mod actually needs it, so
+   * a collection with no stale links pays nothing at all.
+   */
+  /**
+   * ─── RECOVERING A MOD WHOSE DOWNLOAD LINK WENT STALE ───────────────────
+   * `resolveModArchivePath` follows `archiveId` into Vortex'''s download
+   * table. That link dies when a mod is UPDATED IN PLACE: Vortex refreshes
+   * `version` and the Nexus `fileId` and leaves the staging folder and
+   * `archiveName` naming the old file, whose download record went with it.
+   *
+   * On a real 978-mod collection ten mods were in that state and not one could
+   * be examined — no FOMOD parsed, no `readsPluginState`, so the
+   * install-order fix silently skipped them. All ten archives were in the
+   * download folder the whole time.
+   *
+   * Narrowed by modId, DECIDED by hash — see `findArchiveByHash`. Only mods
+   * whose own sha256 is known can be matched, and anything else stays
+   * unexaminable, which is the honest answer rather than a guessed one.
+   */
+  let recoveredByHash = 0;
+  const downloadDir = selectors.downloadPathForGame(state, gameId) as
+    | string
+    | undefined;
+  const recoverArchive = async (
+    mod: AuditorMod,
+  ): Promise<string | undefined> => {
+    const wantSha256 = mod.archiveSha256;
+    if (wantSha256 === undefined || downloadDir === undefined) return undefined;
+    const hit = await findArchiveByHash({
+      downloadDir,
+      wantSha256,
+      // Vortex stores it as either, depending on how the mod was added.
+      nexusModId:
+        typeof mod.nexusModId === "string"
+          ? Number.parseInt(mod.nexusModId, 10) || undefined
+          : mod.nexusModId,
+      ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
+    });
+    if (hit !== undefined) recoveredByHash += 1;
+    return hit;
+  };
+
   for (const mod of comparable) {
     if (opts?.signal?.aborted === true) break;
     done += 1;
     opts?.onProgress?.(done, total, mod.name);
 
     const staged = (mod.stagingFiles ?? []).map((f) => ({ path: f.path, size: f.size }));
-    const archivePath = resolveModArchivePath(state, mod, gameId);
+    /**
+     * The recorded link first, always. It is cheap, it is what Vortex says,
+     * and it is right for the overwhelming majority. The hash index is the
+     * fallback for the handful whose link is dead — never a replacement,
+     * because matching every mod by content would spend a full folder hash to
+     * re-derive an answer already on hand.
+     */
+    const archivePath =
+      resolveModArchivePath(state, mod, gameId) ?? (await recoverArchive(mod));
 
     try {
       reports.push(
@@ -725,6 +789,15 @@ export async function runSelfChecks(
     decided,
     mirrorable,
   );
+
+  if (recoveredByHash > 0) {
+    ehLog("info", "self-check.archives-recovered", {
+      mods: recoveredByHash,
+      why:
+        "their Vortex download record was stale; matched by the exact bytes " +
+        "the manifest already records for them",
+    });
+  }
 
   if (summary.skipped > 0) {
     warnings.push(
