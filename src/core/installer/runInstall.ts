@@ -84,6 +84,7 @@
  */
 
 import { isAbort } from "../../utils/abortError";
+import { isBaseGameMaster } from "../manifest/pluginMasters";
 import { actions, types, util } from "@nexusmods/vortex-api";
 import { stagingRootForModId } from "../stagingPath";
 
@@ -1279,8 +1280,164 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       totalMods: total,
       decisions: countByDecision(plan.modResolutions),
     });
+    /**
+     * ─── TWO EPOCHS, DECLARED RATHER THAN DISCOVERED ────────────────────
+     * Some FOMOD installers ask the game whether a plugin is ACTIVE, and
+     * Vortex answers from live state — `getAllPlugins(activeOnly)` reads
+     * `loadOrder[name].enabled`, and pre-filling the curator's answers does
+     * not suppress it. So a mod naming a plugin THIS COLLECTION provides
+     * behaves differently depending on where it sits in the install order,
+     * which is a coin toss nobody chose.
+     *
+     * One real mod, 801 of 979, refused eleven times across the tester logs:
+     * "Prerequisits not fulfilled: File 'aaf.esm' is Active OR File 'aaf.esp'
+     * is Active" — with AAF in the same collection, uninstalled at that
+     * moment. The retry pass rescues that, because refusing is loud.
+     *
+     * The same dependency in a step's `<visible>` or a conditional pattern
+     * does NOT refuse. It takes a different branch, installs a different file
+     * set, and nothing fails — so nothing retries, and verification later
+     * reports the mod as unreproducible while blaming its archive. Discovering
+     * the population by letting mods FAIL can never find those.
+     *
+     * So the build declares them (`install.readsPluginState`) and they install
+     * in a second epoch, after the plugins are actually active. The retry pass
+     * stays as the net for anything the declaration missed.
+     *
+     * The ORDER is a permutation of the same queue, not a second loop: every
+     * mod still goes through one code path, with one set of journalling,
+     * failure-streak and abort rules.
+     */
+    const collectionPlugins = new Set(
+      plan.manifest.plugins.order
+        .map((pl) => pl.name.toLowerCase())
+        .filter((name) => !isBaseGameMaster(name, plan.manifest.game.id)),
+    );
+    /**
+     * Deferred only when waiting can actually CHANGE the answer: the plugin
+     * has to be one this collection orders. A base-game master is active from
+     * the start, and a plugin nobody ships is never going to be active — in
+     * both cases the second epoch buys nothing and costs the mod its place.
+     */
+    const needsLiveState = (compareKey: string): string[] => {
+      const named = manifestByCompareKey.get(compareKey)?.install
+        ?.readsPluginState;
+      if (named === undefined || named.length === 0) return [];
+      return named.filter((n) => collectionPlugins.has(n.toLowerCase()));
+    };
+
+    const firstEpoch: typeof plan.modResolutions[number][] = [];
+    const secondEpoch: typeof plan.modResolutions[number][] = [];
+    const deferralReasons: { name: string; waitsFor: string[] }[] = [];
+    for (const r of plan.modResolutions) {
+      const waitsFor = needsLiveState(r.compareKey);
+      if (waitsFor.length > 0) {
+        secondEpoch.push(r);
+        deferralReasons.push({ name: r.name, waitsFor });
+      } else {
+        firstEpoch.push(r);
+      }
+    }
+    const installQueue = [...firstEpoch, ...secondEpoch];
+    const secondEpochStartsAt = firstEpoch.length;
+    if (secondEpoch.length > 0) {
+      ehLog("info", "install.epoch.planned", {
+        firstEpoch: firstEpoch.length,
+        secondEpoch: secondEpoch.length,
+        deferred: deferralReasons.slice(0, 20),
+        why:
+          "these mods' installers ask the game whether a plugin this " +
+          "collection ships is active; installing them before it is active " +
+          "makes the outcome depend on manifest position",
+      });
+    }
+
     for (let i = 0; i < total; i++) {
-      const resolution = plan.modResolutions[i];
+      /**
+       * The boundary. Deploy so the plugins exist in the game folder, then
+       * write the curator's order so they are ACTIVE — `activeOnly` reads
+       * enablement, not presence, so the deploy alone is not enough.
+       *
+       * `skipSort`: this pin exists to activate plugins, not to settle the
+       * final order. The real ordering pass runs later and re-pins after LOOT;
+       * sorting here would spend a full LOOT run on a load order that is about
+       * to change again.
+       */
+      if (i === secondEpochStartsAt && secondEpoch.length > 0) {
+        try {
+          reportProgress(
+            "installing-mods",
+            i,
+            total,
+            "Activating plugins before the remaining mods...",
+          );
+          /**
+           * ─── TYPES BEFORE ANY DEPLOY, INCLUDING THIS ONE ──────────────
+           * A modType decides WHERE a mod's files land: SSE Engine Fixes
+           * Part 2 is loose binaries the curator typed `dinput`, which
+           * deploys to the game ROOT. Deploying it before the type is
+           * restored puts those DLLs in `Data`, where nothing loads them —
+           * and this boundary introduced a deploy that runs ~1,300 lines
+           * before the modType phase.
+           *
+           * `applyModTypes.test.ts` caught exactly that, which is what a
+           * source-ordering test is for. So the types are restored here too,
+           * for the mods installed so far. The later phase still runs and is
+           * still the authority; this one only makes the intermediate deploy
+           * honest.
+           */
+          const epochTypes = applyModTypeChanges(
+            ctx.api,
+            plan.manifest.game.id,
+            planModTypeChanges({
+              installed: new Map(
+                installedMods.map(
+                  (m) => [m.compareKey, m.vortexModId] as const,
+                ),
+              ),
+              currentTypes: readCurrentModTypes(ctx.api, plan.manifest.game.id),
+              manifestMods: plan.manifest.mods,
+            }),
+            actions,
+          );
+          await deployAndWait(api, activeProfileId);
+          const pin = await applyPluginOrder({
+            api,
+            gameId: plan.manifest.game.id,
+            collectionId: plan.manifest.package.id,
+            order: plan.manifest.plugins.order,
+            skipSort: true,
+            ...(ctx.abortSignal !== undefined
+              ? { signal: ctx.abortSignal }
+              : {}),
+          });
+          ehLog("info", "install.epoch.second.start", {
+            mods: secondEpoch.length,
+            modTypesRestored: epochTypes.length,
+            pluginOrderPinned: pin.pinned,
+            writeRequested: pin.writeRequested,
+          });
+        } catch (err) {
+          /**
+           * Non-fatal, and it degrades to exactly the old behaviour: the mods
+           * install anyway, an installer that refuses lands in `failedMods`,
+           * and the retry pass picks it up after the real deploy. Saying so
+           * beats failing an install over an optimisation.
+           */
+          ehLog("error", "install.epoch.second.activation-failed", {
+            mods: secondEpoch.length,
+            consequence:
+              "the deferred mods install without their prerequisites active, " +
+              "which is what happened before this pass existed — the retry " +
+              "pass remains their safety net",
+            err,
+          });
+        }
+        aborted = checkAbort("installing-mods");
+        if (aborted) return aborted;
+      }
+
+      const resolution = installQueue[i]!;
       const manifestEntry = manifestByCompareKey.get(resolution.compareKey);
       if (!manifestEntry) {
         // Resolver invariant violation — every modResolution must

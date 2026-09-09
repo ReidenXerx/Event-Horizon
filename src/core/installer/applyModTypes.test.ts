@@ -207,10 +207,35 @@ describe("the driver sets types BEFORE it deploys", () => {
     expect(src).toContain(DEPLOY_CALL);
   });
 
-  it("restores the curator's types first", () => {
-    expect(src.indexOf("applyModTypeChanges(")).toBeLessThan(
-      src.indexOf(DEPLOY_CALL),
-    );
+  it("restores the curator's types before EVERY deploy, not just the first", () => {
+    /**
+     * Strengthened after this test caught a real one. It used to compare the
+     * FIRST index of each, which says nothing about a deploy added later —
+     * and the second-epoch boundary added one ~1,300 lines above the modType
+     * phase, so mods would have been linked with Vortex's derived type before
+     * the curator's was restored. SSE Engine Fixes Part 2 is loose binaries
+     * typed `dinput`: deployed as default, its DLLs land in `Data` where
+     * nothing loads them, and every file check still passes.
+     *
+     * The invariant was never "the first deploy" — it is that no deploy
+     * happens with the types unset. There is more than one now.
+     */
+    const deploys: number[] = [];
+    for (let at = src.indexOf(DEPLOY_CALL); at !== -1; ) {
+      deploys.push(at);
+      at = src.indexOf(DEPLOY_CALL, at + 1);
+    }
+    // Proves the scan found something, so an empty loop cannot pass silently.
+    expect(deploys.length).toBeGreaterThanOrEqual(2);
+
+    for (const deployAt of deploys) {
+      const typesBefore = src.lastIndexOf("applyModTypeChanges(", deployAt);
+      expect(
+        typesBefore,
+        `a deployAndWait at offset ${deployAt} has no applyModTypeChanges ` +
+          `before it — those mods would deploy with Vortex's derived modType`,
+      ).toBeGreaterThan(-1);
+    }
   });
 
   it("still checks for leftovers after the deploy", () => {
