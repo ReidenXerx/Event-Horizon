@@ -1594,6 +1594,26 @@ function CuratorBody(): JSX.Element {
           </p>
         )}
 
+        {orphanPlan.staleLinked.length > 0 && (
+          <p
+            style={{
+              margin: "var(--eh-sp-2) 0 0",
+              padding: "var(--eh-sp-2)",
+              borderLeft: "3px solid var(--eh-warning)",
+              color: "var(--eh-text-secondary)",
+              fontSize: "var(--eh-text-sm)",
+            }}
+          >
+            {num(orphanPlan.staleLinked.length)} download(s) worth{" "}
+            {formatSize(orphanPlan.staleLinkedBytes)} ARE the archives of mods
+            you have installed, but Vortex has lost the link to them — which is
+            what an in-place mod update leaves behind. They are kept and can
+            never be deleted from here. The same broken link stops a build
+            examining those mods{"'"} installers, so re-scanning the Downloads
+            tab is worth doing before your next build.
+          </p>
+        )}
+
         {orphanPlan.unclearOrphans.length > 0 && (
           <p
             style={{

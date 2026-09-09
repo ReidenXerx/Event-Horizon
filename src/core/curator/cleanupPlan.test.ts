@@ -527,3 +527,123 @@ describe("an orphan is only superseded by something NEWER", () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * An archive can be an installed mod's own, with a broken link.
+ *
+ * `stillReferenced` is keyed on `mod.archiveId`, and that link DIES when a mod
+ * is updated in place: Vortex refreshes `version` and `nexusFileId` and leaves
+ * `archiveId` naming the old download record, which was deleted with the old
+ * file. BodyTalk went 3.8 → 4.0.1 that way; its staging folder is still called
+ * `BodyTalk-72310-3-8-1687372211`.
+ *
+ * The archive the mod actually uses then belongs to a record nothing points
+ * at. It is not superseded either — its file id EQUALS the installed one
+ * rather than being lower — so it landed in `unclearOrphans`, under a sentence
+ * telling the curator that NO version of that mod is installed.
+ *
+ * Nothing was ever at risk: an unclear orphan is never listed and never
+ * selected. But the claim is false about the curator's own live archives, and
+ * the reclaimable-space figure counted them. Ten of them on one real
+ * collection.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("an archive whose mod link went stale", () => {
+  /** BodyTalk as it really is: installed at 4.0.1, archiveId long dead. */
+  const bodyTalk = {
+    id: "BodyTalk-72310-3-8-1687372211",
+    name: "BodyTalk",
+    enabled: true,
+    nexusModId: 72310,
+    nexusFileId: 383018,
+    // Points at the 3.8 download record, which no longer exists.
+    archiveId: "dead-record-for-3-8",
+  } as unknown as CuratorMod;
+
+  /** The 4.0.1 archive, with its own record that no mod points at. */
+  const its401Archive: DownloadEntry = {
+    id: "download-for-4-0-1",
+    fileName: "TBOS-BodyTalk4-72310-4-0-1-1769451493.7z",
+    bytes: 307_700_000,
+    nexusModId: 72310,
+    nexusFileId: 383018,
+  };
+
+  it("is kept and named, not reported as having no version installed", () => {
+    const plan = planCleanup({
+      mods: [bodyTalk],
+      downloads: [its401Archive],
+    });
+
+    expect(plan.staleLinked.map((s) => s.entry.id)).toEqual([
+      "download-for-4-0-1",
+    ]);
+    // And crucially NOT under the label that says otherwise.
+    expect(plan.unclearOrphans).toEqual([]);
+    expect(plan.deleteArchives).toEqual([]);
+  });
+
+  it("still deletes a genuinely older archive of the same mod", () => {
+    /**
+     * The other direction, and the reason this cannot simply keep everything
+     * that shares a modId: the 4.0 archive IS superseded, and reclaiming it is
+     * the entire point of the feature.
+     */
+    const older: DownloadEntry = {
+      id: "download-for-4-0",
+      fileName: "TBOS-BodyTalk4-72310-4-0-1754521707.zip",
+      bytes: 300_000_000,
+      nexusModId: 72310,
+      nexusFileId: 300000,
+    };
+
+    const plan = planCleanup({
+      mods: [bodyTalk],
+      downloads: [older, its401Archive],
+    });
+
+    expect(plan.deleteArchives.map((d) => d.entry.id)).toEqual([
+      "download-for-4-0",
+    ]);
+    expect(plan.staleLinked.map((s) => s.entry.id)).toEqual([
+      "download-for-4-0-1",
+    ]);
+  });
+
+  it("does not claim a SIBLING file from the same page", () => {
+    /**
+     * Matched on (modId, fileId) exactly, never on the page. One Nexus page
+     * ships main files, variants and patches — "Bodypaints - CBBE" installed
+     * while "- Male" is merely downloaded is the same-page fallacy this file
+     * was twice rewritten to eliminate, and a NEWER sibling must stay an
+     * unclear orphan rather than being claimed as the installed mod's.
+     */
+    const sibling: DownloadEntry = {
+      id: "download-for-a-variant",
+      fileName: "TBOS-BodyTalk4-Variant-72310-9-9-1799999999.7z",
+      bytes: 1_000,
+      nexusModId: 72310,
+      nexusFileId: 999999,
+    };
+
+    const plan = planCleanup({ mods: [bodyTalk], downloads: [sibling] });
+
+    expect(plan.staleLinked).toEqual([]);
+    expect(plan.unclearOrphans.map((o) => o.entry.id)).toEqual([
+      "download-for-a-variant",
+    ]);
+  });
+
+  it("leaves a properly linked archive exactly as it was", () => {
+    // The ordinary case, which must keep counting as `keptReferenced` rather
+    // than becoming a stale-link report on every healthy install.
+    const linked = { ...bodyTalk, archiveId: "download-for-4-0-1" } as
+      unknown as CuratorMod;
+
+    const plan = planCleanup({ mods: [linked], downloads: [its401Archive] });
+
+    expect(plan.keptReferenced).toBe(1);
+    expect(plan.staleLinked).toEqual([]);
+  });
+});

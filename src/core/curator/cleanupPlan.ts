@@ -96,6 +96,17 @@ export type CleanupPlan = {
    * not installed looks exactly like a leftover from here.
    */
   unclearOrphans: { entry: DownloadEntry }[];
+  /**
+   * Archives that ARE an installed mod's own, reached only by Nexus identity
+   * because the mod's `archiveId` points at a download record that no longer
+   * exists — the state an in-place mod update leaves behind.
+   *
+   * Never deletable, and deliberately not folded into `keptReferenced`: the
+   * curator can repair these (a Downloads-tab rescan, or re-linking), and the
+   * same broken link is what stops the build examining those mods' installers.
+   */
+  staleLinked: { entry: DownloadEntry }[];
+  staleLinkedBytes: number;
   unclearBytes: number;
   /** Archives left alone because a mod still points at them. */
   keptReferenced: number;
@@ -304,8 +315,43 @@ export function planCleanup(args: {
     }
   }
 
+  /**
+   * ─── AN ARCHIVE CAN BE A MOD'S OWN, WITH A BROKEN LINK ────────────────
+   * `stillReferenced` is keyed on `mod.archiveId`, and that link DIES when a
+   * mod is updated in place: Vortex refreshes `version` and `nexusFileId` and
+   * leaves `archiveId` pointing at the old download record, which was deleted
+   * with the old file.
+   *
+   * The archive the mod actually uses then belongs to a record nothing points
+   * at, so it reads as an orphan — and because its file id EQUALS the
+   * installed one rather than being lower, it is not superseded either. It
+   * lands in `unclearOrphans`, which the curator is told means "no version of
+   * that mod is installed".
+   *
+   * That sentence is false for it. The mod IS installed; it is this exact
+   * file. Ten archives on a real 978-mod collection were in that state,
+   * including one whose mod the build could not examine at all.
+   *
+   * Nothing was ever at risk of deletion — an unclear orphan is never listed
+   * and never selected — but a curator reading "N downloads have no version
+   * installed" is being told something untrue about their own live archives,
+   * and the reclaimable-space figure counts them.
+   *
+   * Matched on `(nexusModId, nexusFileId)` exactly. Not on the modId alone:
+   * one page ships main files, variants and patches, and treating any of them
+   * as "the installed one's archive" is the same-page fallacy this file was
+   * twice rewritten to eliminate.
+   */
+  const installedIdentity = new Set<string>();
+  for (const mod of mods) {
+    if (removedIds.has(mod.id)) continue;
+    if (mod.nexusModId === undefined || mod.nexusFileId === undefined) continue;
+    installedIdentity.add(`${mod.nexusModId}:${mod.nexusFileId}`);
+  }
+
   const deleteArchives: ArchiveRemoval[] = [];
   const unclearOrphans: { entry: DownloadEntry }[] = [];
+  const staleLinked: { entry: DownloadEntry }[] = [];
   let keptReferenced = 0;
 
   for (const entry of downloads) {
@@ -315,6 +361,20 @@ export function planCleanup(args: {
     }
     if (freedByRemoval.has(entry.id)) {
       deleteArchives.push({ entry, reason: "freed-by-removal" });
+      continue;
+    }
+    /**
+     * Before the orphan question: this IS an installed mod's archive, and the
+     * only reason it looks unreferenced is a dead `archiveId`. Kept, counted
+     * apart, and reported so the curator can repair the link rather than
+     * wonder why a mod they use appears in a cleanup list.
+     */
+    if (
+      entry.nexusModId !== undefined &&
+      entry.nexusFileId !== undefined &&
+      installedIdentity.has(`${entry.nexusModId}:${entry.nexusFileId}`)
+    ) {
+      staleLinked.push({ entry });
       continue;
     }
     // Orphan. "Superseded" means a STRICTLY NEWER file of the same mod is
@@ -343,6 +403,8 @@ export function planCleanup(args: {
     bytesFreed: deleteArchives.reduce((n, a) => n + a.entry.bytes, 0),
     unclearOrphans,
     unclearBytes: unclearOrphans.reduce((n, o) => n + o.entry.bytes, 0),
+    staleLinked,
+    staleLinkedBytes: staleLinked.reduce((n, o) => n + o.entry.bytes, 0),
     keptReferenced,
   };
 }
