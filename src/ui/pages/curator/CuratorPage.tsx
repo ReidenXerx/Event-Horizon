@@ -1500,7 +1500,9 @@ function CuratorBody(): JSX.Element {
         title="Disk cleanup — 1. Orphaned archives"
         note={
           "Downloaded files that no installed mod points at, where a NEWER " +
-          "file of the same mod is installed. Deleting these changes nothing " +
+          "version of that same file is installed — the same file, not merely " +
+          "the same mod page, so an addon you never installed is never read " +
+          "as an old version of the main file. Deleting these changes nothing " +
           "about your setup — it is only disk, and this is where almost all " +
           "the space is. Nothing is pre-ticked: the files are deleted " +
           "permanently, so you choose which."

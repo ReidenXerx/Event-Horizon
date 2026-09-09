@@ -35,7 +35,11 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
-import { fileIdentity, type CuratorMod } from "./profileActions";
+import {
+  fileIdentity,
+  identityCandidates,
+  type CuratorMod,
+} from "./profileActions";
 
 /** One archive as Vortex's download store describes it. */
 export type DownloadEntry = {
@@ -43,6 +47,15 @@ export type DownloadEntry = {
   id: string;
   fileName: string;
   bytes: number;
+  /**
+   * Nexus's own name for this FILE — not for the mod page.
+   *
+   * What separates two different files on one page from two versions of the
+   * same file, and therefore what stands between an uninstalled addon and a
+   * permanent delete. Absent on a download Vortex fetched without file
+   * details; the file name then answers for it.
+   */
+  logicalFileName?: string;
   /** Nexus mod id, when Vortex recorded one. */
   nexusModId?: number;
   /** Nexus file id, when Vortex recorded one. */
@@ -292,26 +305,44 @@ export function planCleanup(args: {
   }
 
   /**
-   * ─── THE NEWEST FILE STILL INSTALLED, PER NEXUS PAGE ────────────────
-   * Not "which pages are installed". This used to be a Set of mod ids, and
-   * "some version of this mod is installed" was accepted as proof that an
-   * unreferenced download was superseded — the same-page fallacy the mod side
-   * of this file was rewritten to eliminate, still live on the archive side,
-   * and on the half that deletes with no tick required.
+   * ─── THE NEWEST FILE STILL INSTALLED, PER FILE — NOT PER PAGE ────────
+   * Three rules have stood here. The first two were both too weak, and each
+   * looked right until it was measured against a real profile.
    *
-   * It destroyed exactly the files a curator most wants kept: a NEWER file
-   * downloaded ahead of installing it, a sibling variant from one page
-   * ("Bodypaints - CBBE" installed, "- Male" merely downloaded), and every
-   * archive re-fetched by archive recovery — which nothing references by
-   * `archiveId`, so all 771 of them read as orphans of an installed page.
+   * A Set of mod ids came first: "some version of this mod is installed" was
+   * accepted as proof that an unreferenced download was superseded. It
+   * destroyed exactly the files a curator most wants kept — a NEWER file
+   * downloaded ahead of installing it, and every archive re-fetched by
+   * archive recovery, which nothing references by `archiveId`, so all 771 of
+   * them read as orphans of an installed page.
+   *
+   * A Map of mod id → newest installed file id came second. It fixed the
+   * downloaded-ahead case and left the VARIANT case untouched, because a
+   * page's newest file says nothing whatever about a DIFFERENT file on that
+   * page. Measured on the real Fallout 4 profile: 18 mod pages ship
+   * genuinely distinct files under one id — page 102734 hosts `Settlement
+   * Visitors` and six separate `Visitor Addon …` files; page 64480, five
+   * unrelated power-armor patches. Every uninstalled one of those was offered
+   * for permanent deletion because some sibling had a higher file id.
+   *
+   * The mod half of this file already refused that inference: it groups by
+   * `fileIdentity` before it compares versions. This is the same rule on the
+   * archive half — newest installed file id per (page, FILE identity). Being
+   * superseded now requires the same file, installed at a strictly newer
+   * version, which is what the word was always supposed to mean.
    */
-  const newestInstalledFile = new Map<number, number>();
+  const identityKey = (modId: number, identity: string): string =>
+    `${modId}\u0000${identity}`;
+  const newestInstalledFile = new Map<string, number>();
   for (const mod of mods) {
     if (removedIds.has(mod.id)) continue;
     if (mod.nexusModId === undefined || mod.nexusFileId === undefined) continue;
-    const held = newestInstalledFile.get(mod.nexusModId);
-    if (held === undefined || mod.nexusFileId > held) {
-      newestInstalledFile.set(mod.nexusModId, mod.nexusFileId);
+    for (const identity of identityCandidates(mod)) {
+      const key = identityKey(mod.nexusModId, identity);
+      const held = newestInstalledFile.get(key);
+      if (held === undefined || mod.nexusFileId > held) {
+        newestInstalledFile.set(key, mod.nexusFileId);
+      }
     }
   }
 
@@ -377,15 +408,27 @@ export function planCleanup(args: {
       staleLinked.push({ entry });
       continue;
     }
-    // Orphan. "Superseded" means a STRICTLY NEWER file of the same mod is
-    // installed — nothing weaker. An archive we cannot place that way is not
+    // Orphan. "Superseded" means a STRICTLY NEWER version of THIS FILE is
+    // installed — nothing weaker, and in particular not "a newer file exists
+    // somewhere on this mod page". An archive we cannot place that way is not
     // evidence of anything, so it falls to `unclearOrphans`, which is
-    // reported and never selected. A missing `nexusFileId` on either side is
-    // an unknown, and an unknown is never grounds for a permanent delete.
-    const newestInstalled =
-      entry.nexusModId === undefined
-        ? undefined
-        : newestInstalledFile.get(entry.nexusModId);
+    // reported and never selected. A missing `nexusFileId`, a missing name,
+    // or a name nothing installed shares are all unknowns, and an unknown is
+    // never grounds for a permanent delete.
+    let newestInstalled: number | undefined;
+    if (entry.nexusModId !== undefined) {
+      for (const identity of identityCandidates(entry)) {
+        const held = newestInstalledFile.get(
+          identityKey(entry.nexusModId, identity),
+        );
+        if (
+          held !== undefined &&
+          (newestInstalled === undefined || held > newestInstalled)
+        ) {
+          newestInstalled = held;
+        }
+      }
+    }
     if (
       entry.nexusFileId !== undefined &&
       newestInstalled !== undefined &&

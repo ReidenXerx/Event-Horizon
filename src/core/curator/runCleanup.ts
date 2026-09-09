@@ -79,12 +79,28 @@ export function readDownloads(
     if (file.state !== undefined && file.state !== "finished") continue;
     if (Array.isArray(file.game) && !file.game.includes(gameId)) continue;
 
-    const nexus = (file.modInfo?.nexus ?? {}) as { ids?: Record<string, unknown> };
+    const nexus = (file.modInfo?.nexus ?? {}) as {
+      ids?: Record<string, unknown>;
+      fileInfo?: Record<string, unknown>;
+    };
     const ids = nexus.ids ?? {};
+    /**
+     * `fileInfo.name` is the FILE's own name on Nexus — the same value Vortex
+     * copies to a mod's `logicalFileName` when it installs this download.
+     * Carrying it here is what lets an archive be compared against an install
+     * by file rather than by mod page, so an addon nobody ever set up is not
+     * read as an old version of its page's main file.
+     */
+    const logical = nexus.fileInfo?.name;
+    const logicalFileName =
+      typeof logical === "string" && logical.trim() !== ""
+        ? logical.trim()
+        : undefined;
     out.push({
       id,
       fileName: file.localPath,
       bytes: typeof file.size === "number" ? file.size : 0,
+      ...(logicalFileName !== undefined ? { logicalFileName } : {}),
       ...(asNumber(ids.modId) !== undefined
         ? { nexusModId: asNumber(ids.modId)! }
         : {}),

@@ -22,23 +22,46 @@ import {
 } from "./cleanupPlan";
 import type { CuratorMod } from "./profileActions";
 
+/**
+ * ─── WHY THESE HELPERS NAME THE FILE ───────────────────────────────────
+ * They used to leave `fileName` as `<id>.7z`, which parses to no identity at
+ * all. That was invisible while "superseded" only meant "a newer file exists
+ * on this mod page": the rule never looked at a name, so a fixture without
+ * one still exercised it.
+ *
+ * Once superseding required the SAME FILE, ten of these tests started
+ * passing vacuously — no identity on either side means no match, so every
+ * archive fell to `unclearOrphans` and every "this gets deleted" assertion
+ * would have had to be weakened to keep them green. The fixtures were
+ * convenient rather than meaningful (GP-4), and the fix belongs in them.
+ *
+ * So anything carrying a `nexusModId` gets the name Vortex would really have
+ * written: `<file>-<modId>-<version>-<timestamp>`. One default name per
+ * helper means two rows of one page are two VERSIONS of one file, which is
+ * what most of these tests are about. A test about two DIFFERENT files on
+ * one page says so, by passing `fileName` or `logicalFileName` itself.
+ */
+const named = (modId: number | undefined, stem: string): string =>
+  modId === undefined ? `${stem}.7z` : `${stem}-${modId}-1-0-1700000000.7z`;
+
 const mod = (
   id: string,
   over: Partial<CuratorMod & { archiveId?: string }> = {},
-): CuratorMod & { archiveId?: string } => ({
-  id,
-  name: id,
-  enabled: true,
-  modType: "",
-  ...over,
-});
+): CuratorMod & { archiveId?: string } => {
+  const merged = { id, name: id, enabled: true, modType: "", ...over };
+  return {
+    fileName: named(merged.nexusModId, "the-file"),
+    ...merged,
+  };
+};
 
-const dl = (id: string, over: Partial<DownloadEntry> = {}): DownloadEntry => ({
-  id,
-  fileName: `${id}.7z`,
-  bytes: 1024 ** 3,
-  ...over,
-});
+const dl = (id: string, over: Partial<DownloadEntry> = {}): DownloadEntry => {
+  const merged = { id, bytes: 1024 ** 3, ...over };
+  return {
+    fileName: named(merged.nexusModId, "the-file"),
+    ...merged,
+  };
+};
 
 describe("which installs are old versions", () => {
   it("keeps the highest file id and retires the rest", () => {
@@ -223,14 +246,36 @@ describe("the two ways this used to delete the wrong thing", () => {
 });
 
 describe("splitting the plan into the two acts", () => {
+  /**
+   * One FILE at three versions — which is what these tests were always about.
+   * The names used to be `Mod-7-0.7z` for "version 7.0", and the `-7-` in it
+   * collided with mod id 7 by accident, so they are spelled the way Vortex
+   * really writes them: `<file>-<modId>-<version>-<timestamp>`.
+   */
   const mods = [
-    mod("old", { nexusModId: 7, nexusFileId: 70, archiveId: "arc-old" }),
-    mod("new", { nexusModId: 7, nexusFileId: 80, archiveId: "arc-new" }),
+    mod("old", {
+      nexusModId: 7,
+      nexusFileId: 70,
+      archiveId: "arc-old",
+      fileName: "Mod-7-1-0-1700000000.7z",
+    }),
+    mod("new", {
+      nexusModId: 7,
+      nexusFileId: 80,
+      archiveId: "arc-new",
+      fileName: "Mod-7-2-0-1700000001.7z",
+    }),
   ];
   const downloads: DownloadEntry[] = [
-    { id: "arc-old", fileName: "Mod-7-0.7z", bytes: 100, nexusModId: 7 },
-    { id: "arc-new", fileName: "Mod-8-0.7z", bytes: 200, nexusModId: 7 },
-    { id: "arc-loose", fileName: "Mod-6-0.7z", bytes: 400, nexusModId: 7, nexusFileId: 60 },
+    { id: "arc-old", fileName: "Mod-7-1-0-1700000000.7z", bytes: 100, nexusModId: 7 },
+    { id: "arc-new", fileName: "Mod-7-2-0-1700000001.7z", bytes: 200, nexusModId: 7 },
+    {
+      id: "arc-loose",
+      fileName: "Mod-7-0-9-1699999999.7z",
+      bytes: 400,
+      nexusModId: 7,
+      nexusFileId: 60,
+    },
   ];
 
   it("calls an already-free archive an orphan, needing no removal", () => {
@@ -549,6 +594,136 @@ describe("an orphan is only superseded by something NEWER", () => {
  * collection.
  * ──────────────────────────────────────────────────────────────────────
  */
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * AN ADDON IS NOT AN OLD VERSION OF THE FILE BESIDE IT
+ *
+ * "Superseded" once meant "this mod page has a newer file". Measured on the
+ * real Fallout 4 profile, 18 pages ship genuinely DIFFERENT files under one
+ * mod id: page 102734 hosts `Settlement Visitors` and six separate
+ * `Visitor Addon …` files; page 64480, five unrelated power-armor patches;
+ * page 78619, four different guns.
+ *
+ * Every one of those that the curator had downloaded and not installed was
+ * offered for PERMANENT deletion, because a sibling on the page had a higher
+ * file id. A page's newest file says nothing whatever about a different file
+ * on that page, and this is the half of the codebase that acts on it with a
+ * delete rather than a suggestion.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("an addon is not an old version of the file beside it", () => {
+  /** The page's main file, installed, newer than everything else on it. */
+  const visitors = mod("visitors", {
+    nexusModId: 102734,
+    nexusFileId: 900,
+    logicalFileName: "Settlement Visitors",
+    archiveId: "arc-visitors",
+  });
+  const visitorsArchive = dl("arc-visitors", {
+    nexusModId: 102734,
+    nexusFileId: 900,
+    fileName: "Settlement Visitors-102734-2-0-1700000000.7z",
+  });
+  /** A different file on that page, downloaded and never installed. */
+  const petsAddon = dl("arc-pets", {
+    nexusModId: 102734,
+    nexusFileId: 100,
+    fileName: "Visitor Addon Pets-102734-1-0-1690000000.7z",
+  });
+
+  it("REFUSES to delete an addon because the main file is newer", () => {
+    const plan = planCleanup({
+      mods: [visitors],
+      downloads: [visitorsArchive, petsAddon],
+    });
+
+    expect(plan.deleteArchives).toEqual([]);
+    expect(plan.unclearOrphans.map((o) => o.entry.id)).toEqual(["arc-pets"]);
+  });
+
+  it("still retires a genuinely older version of that SAME addon", () => {
+    /**
+     * The other direction, and the reason this cannot simply keep every
+     * archive sharing a page. Once the addon itself is installed at a newer
+     * file, its own older file is superseded and reclaiming it is the point.
+     */
+    const plan = planCleanup({
+      mods: [
+        visitors,
+        mod("pets", {
+          nexusModId: 102734,
+          nexusFileId: 500,
+          logicalFileName: "Visitor Addon Pets",
+          archiveId: "arc-pets-new",
+        }),
+      ],
+      downloads: [
+        visitorsArchive,
+        dl("arc-pets-new", {
+          nexusModId: 102734,
+          nexusFileId: 500,
+          fileName: "Visitor Addon Pets-102734-2-0-1700000000.7z",
+        }),
+        petsAddon,
+      ],
+    });
+
+    expect(plan.deleteArchives.map((d) => d.entry.id)).toEqual(["arc-pets"]);
+    expect(plan.deleteArchives[0]!.reason).toBe("orphan-superseded");
+  });
+
+  it("matches the file name when Nexus's own name is missing", () => {
+    /**
+     * A download record fetched without file details carries no
+     * `logicalFileName`, and the install may be the side that has one. Both
+     * names are kept on both sides and either may match — because picking one
+     * per side and comparing the picks would silently match NOTHING, which
+     * reads as "nothing is superseded" and turns this feature off without
+     * erroring.
+     */
+    const plan = planCleanup({
+      mods: [
+        mod("pets", {
+          nexusModId: 102734,
+          nexusFileId: 500,
+          // No logicalFileName at all — only the archive name Vortex kept.
+          fileName: "Visitor Addon Pets-102734-2-0-1700000000.7z",
+          archiveId: "arc-pets-new",
+        }),
+      ],
+      downloads: [
+        dl("arc-pets-new", {
+          nexusModId: 102734,
+          nexusFileId: 500,
+          fileName: "Visitor Addon Pets-102734-2-0-1700000000.7z",
+        }),
+        petsAddon,
+      ],
+    });
+
+    expect(plan.deleteArchives.map((d) => d.entry.id)).toEqual(["arc-pets"]);
+  });
+
+  it("refuses when NEITHER side names the file", () => {
+    // An unknown is not evidence, and this is the branch that deletes.
+    const plan = planCleanup({
+      mods: [
+        mod("anon", { nexusModId: 555, nexusFileId: 900, fileName: undefined }),
+      ],
+      downloads: [
+        dl("arc-anon", {
+          nexusModId: 555,
+          nexusFileId: 100,
+          fileName: "nothing-parseable-here.7z",
+        }),
+      ],
+    });
+
+    expect(plan.deleteArchives).toEqual([]);
+    expect(plan.unclearOrphans.map((o) => o.entry.id)).toEqual(["arc-anon"]);
+  });
+});
+
 describe("an archive whose mod link went stale", () => {
   /** BodyTalk as it really is: installed at 4.0.1, archiveId long dead. */
   const bodyTalk = {
@@ -557,6 +732,16 @@ describe("an archive whose mod link went stale", () => {
     enabled: true,
     nexusModId: 72310,
     nexusFileId: 383018,
+    /**
+     * The FILE's name as Nexus gives it, which the 4.0.1 update REFRESHED —
+     * the same update that left `archiveId` pointing at nothing. So the one
+     * link that survives an in-place update is the file's identity, and it is
+     * what lets a genuinely older archive still be recognised here.
+     *
+     * Note it is not the staging folder's name: that still says `BodyTalk`
+     * from 3.8, while the file has been `TBOS-BodyTalk4` since 4.0.
+     */
+    logicalFileName: "TBOS-BodyTalk4",
     // Points at the 3.8 download record, which no longer exists.
     archiveId: "dead-record-for-3-8",
   } as unknown as CuratorMod;

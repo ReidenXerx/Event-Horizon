@@ -529,3 +529,46 @@ export function fileIdentity(mod: CuratorMod): string | undefined {
   // nothing. Anything shorter than a character is not a name.
   return at <= 0 ? undefined : file.slice(0, at).toLowerCase();
 }
+
+/**
+ * ─── EVERY NAME THIS FILE COULD ANSWER TO ──────────────────────────────
+ * `fileIdentity` picks ONE name, preferring Nexus's own. That is right for
+ * grouping installs against each other: both sides are mods, and both were
+ * filled by the same code path, so they agree on which name exists.
+ *
+ * Comparing an INSTALL against a DOWNLOAD is not that case. The install
+ * carries `attributes.logicalFileName`, which Vortex writes at install time;
+ * the download carries whatever `modInfo.nexus.fileInfo` held when it was
+ * fetched, and either can be missing on either side. Picking one name per
+ * side and comparing the picks would then silently never match — which reads
+ * as "nothing is superseded" and quietly turns the archive cleanup off
+ * without erroring. A rule that fails closed AND silently is worse than the
+ * one it replaced.
+ *
+ * So both names are kept and a match on EITHER is a match. The false positive
+ * this admits would need two DIFFERENT files on one Nexus page to carry the
+ * same name, which is the one thing the name exists to prevent.
+ */
+export function identityCandidates(file: {
+  logicalFileName?: string;
+  fileName?: string;
+  nexusModId?: number;
+}): Set<string> {
+  const out = new Set<string>();
+
+  const logical = file.logicalFileName?.trim();
+  if (logical !== undefined && logical !== "") out.add(logical.toLowerCase());
+
+  const name = file.fileName?.trim();
+  if (name !== undefined && name !== "" && file.nexusModId !== undefined) {
+    // Cut at THIS FILE'S OWN mod id, which Nexus appends along with the
+    // version and upload timestamp. Everything Vortex adds after that point
+    // — the extension, and the `.1` it appends to a re-download — is on the
+    // far side of the cut and cannot disturb the name.
+    const marker = `-${file.nexusModId}-`;
+    const at = name.lastIndexOf(marker);
+    if (at > 0) out.add(name.slice(0, at).toLowerCase());
+  }
+
+  return out;
+}
