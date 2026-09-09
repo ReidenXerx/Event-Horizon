@@ -250,7 +250,24 @@ export function findPostProcessingCandidates(
 
   return (
     reports
-      .filter((r) => r.unexplained > 0 || archiveUnavailable(r))
+      /**
+       * ─── AND ANYTHING THE CURATOR HAS ALREADY ANSWERED ─────────────────
+       * An answer must stay reachable, or it cannot be changed.
+       *
+       * A mod answered "mirror" whose `unexplained` later drops to 0 — they
+       * reinstalled it cleanly — vanished from this list while `mirrored:
+       * true` stayed in the config. If one of its files then could not be
+       * hashed, `packageZip` REFUSED the whole build with "change this mod'''s
+       * answer", after every expensive phase, about a mod the only screen
+       * that can change that answer would not list.
+       *
+       * Showing it costs one settled row (`needsAnswer` is false, so it does
+       * not gate the build); not showing it costs an unreachable refusal.
+       */
+      .filter(
+        (r) =>
+          r.unexplained > 0 || archiveUnavailable(r) || decided.has(r.modId),
+      )
       .map((r) => {
         const settled = isSettled(r, decided);
         const answer = decided.get(r.modId);
@@ -270,9 +287,19 @@ export function findPostProcessingCandidates(
           archiveUnavailable: archiveUnavailable(r),
           files: r.unexplainedExamples,
           canMirror: mirrorable.has(r.modId),
+          /**
+           * What the answer will be recorded AGAINST. For an unreadable
+           * archive there is nothing to hash, and leaving it absent made the
+           * answer permanent — `isSettled` reads a missing fingerprint as
+           * "answered before fingerprints existed", which is a different fact.
+           * The sentinel records WHY there is no hash, so the question reopens
+           * the moment a real one appears.
+           */
           ...(r.unexplainedFingerprint !== undefined
             ? { fingerprint: r.unexplainedFingerprint }
-            : {}),
+            : archiveUnavailable(r)
+              ? { fingerprint: ARCHIVE_UNAVAILABLE_FINGERPRINT }
+              : {}),
           reopened: !settled && answer !== undefined,
           ...(answer !== undefined ? { decision: answer.choice } : {}),
           needsAnswer: !settled,
@@ -294,19 +321,89 @@ export function findPostProcessingCandidates(
   );
 }
 
-/** Answered, and about the same files it was answered about. */
+/**
+ * Answered, and about the same files it was answered about.
+ *
+ * ─── TWO TRANSITIONS THAT MUST RE-ASK ───────────────────────────────────────
+ * A mod whose archive cannot be read scores `unexplained: 0` and produces no
+ * `unexplainedFingerprint`, because nothing was compared. Those mods are
+ * candidates now — an archive that is gone is the one case where a plain
+ * install cannot reproduce the mod at all — and their answers are therefore
+ * given about NO evidence.
+ *
+ * Both directions across that boundary used to go silent:
+ *
+ *  1. Answer "declare" while the archive is unreadable, then re-download it.
+ *     The check now runs and finds 1,608 unexplained files with a real
+ *     fingerprint — but `answeredFor === undefined` returned settled, so those
+ *     files were withheld from every user, permanently, on the strength of an
+ *     answer given when nothing had been compared. NS-7 says "declare" is only
+ *     for files the user is no worse off without; it was answered about zero
+ *     known files and applied to 1,608.
+ *
+ *  2. Answer a mod normally, then LOSE its archive. The report becomes
+ *     `depth: "skipped"` with no fingerprint, `report.unexplainedFingerprint
+ *     === undefined` returned settled, and the build sailed past the one mod
+ *     that can no longer be reproduced from an archive by anybody.
+ *
+ * The `undefined` branches are still right for the case they were written for
+ * — configs answered before fingerprints existed — so the fix is to record a
+ * fingerprint for the no-evidence case rather than to make absence mean more
+ * than it does. `ARCHIVE_UNAVAILABLE_FINGERPRINT` is that record: it is not a
+ * hash of anything, it is the sentinel meaning "answered while blind".
+ *
+ * Direction (1) then needs no branch of its own, and deliberately does not
+ * have one: the sentinel is a fingerprint like any other, so the ordinary
+ * equality at the bottom sees `"archive-unavailable" !== "<real hash>"` and
+ * reopens. An explicit `if` for it was written, measured against the tests,
+ * found to change nothing, and deleted — writing unreachable code in the pass
+ * whose subject is records nobody reads would be its own joke.
+ *
+ * Direction (2) DOES need one, because there is no fingerprint to compare
+ * against: a lost archive produces none, and the `undefined` short-circuit
+ * above would honour the old answer before the equality is ever reached.
+ */
 function isSettled(
   report: SelfCheckReport,
   decided: ReadonlyMap<string, PostProcessingAnswer>,
 ): boolean {
   if (!decided.has(report.modId)) return false;
   const answeredFor = decided.get(report.modId)?.fingerprint;
-  // Answered before fingerprints were recorded, or against a report that
-  // could not produce one. Honour it rather than nag.
+
+  // (2) Answered with evidence, and the evidence is now gone. A standing
+  // answer about files nobody can produce any more is the question worth
+  // asking again, not the one worth honouring.
+  if (
+    report.depth === "skipped" &&
+    report.stagedCount > 0 &&
+    answeredFor !== ARCHIVE_UNAVAILABLE_FINGERPRINT
+  ) {
+    return false;
+  }
+
+  // Answered before fingerprints were recorded. Honour it rather than nag.
   if (answeredFor === undefined) return true;
   if (report.unexplainedFingerprint === undefined) return true;
+  /**
+   * Direction (1) lands here rather than in a branch of its own. An answer
+   * given while blind carries `ARCHIVE_UNAVAILABLE_FINGERPRINT`, so once the
+   * archive is readable and a real hash exists, this comparison is
+   * `"archive-unavailable" !== "<hash>"` and the question reopens.
+   */
   return answeredFor === report.unexplainedFingerprint;
 }
+
+/**
+ * The fingerprint recorded for an answer given when the archive could not be
+ * read at all.
+ *
+ * Deliberately not a hash: there was nothing to hash. It is a marker that says
+ * WHY there is no fingerprint, which is the distinction `isSettled` needs and
+ * a plain `undefined` cannot carry — absence already means "answered before we
+ * recorded what it was about", and conflating the two makes an answer given
+ * against no evidence permanent.
+ */
+export const ARCHIVE_UNAVAILABLE_FINGERPRINT = "archive-unavailable";
 
 export function describeUndeclaredPostProcessing(
   reports: readonly SelfCheckReport[],

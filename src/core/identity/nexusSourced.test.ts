@@ -43,7 +43,6 @@ describe("the predicate itself", () => {
 describe("nobody re-implements it", () => {
   const files = [
     "ui/pages/build/engine.ts",
-    "actions/buildPackageAction.ts",
     "core/manifest/buildManifest.ts",
   ];
 

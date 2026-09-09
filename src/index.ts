@@ -4,7 +4,6 @@ import { util, type types } from "@nexusmods/vortex-api";
 import createExportModsAction from "./actions/exportModsAction";
 import createCompareModsAction from "./actions/compareModsAction";
 import { createComparePluginsAction } from "./actions/comparePluginsAction";
-import createBuildPackageAction from "./actions/buildPackageAction";
 import createInstallCollectionAction from "./actions/installCollectionAction";
 import { EventHorizonMainPage } from "./ui";
 import { ehLog, getLogFilePath } from "./core/logging/ehLog";
@@ -60,7 +59,6 @@ function init(context: types.IExtensionContext): boolean {
   const exportModsAction = createExportModsAction(context);
   const compareModsAction = createCompareModsAction(context);
   const comparePluginsAction = createComparePluginsAction(context);
-  const buildPackageAction = createBuildPackageAction(context);
   const installCollectionAction = createInstallCollectionAction(context);
 
   // Install our custom sidebar glyph BEFORE registering the main page —
@@ -128,20 +126,36 @@ function init(context: types.IExtensionContext): boolean {
     },
   );
 
-  // Toolbar fallbacks — kept so power users can hit the same flows
-  // outside the Event Horizon main page (handy for CI / scripted
-  // testing). The mainPage is the recommended UX.
-  context.registerAction(
-    "global-icons",
-    102,
-    "show",
-    {},
-    "Event Horizon: Build (legacy dialog)",
-    () => {
-      void buildPackageAction();
-    },
-  );
+  /**
+   * ─── THE BUILD DIALOG IS GONE, AND THAT IS THE FIX ────────────────────
+   * There were two doors into the build, and every rule added since had to be
+   * ported by hand into both. Twice nobody did:
+   *
+   *  - The missing-master gate guarded the page only, so this action shipped
+   *    packages a user could not install (fixed by extracting `gateOnMasters`).
+   *  - The bundled-archive resolver was two copies that had diverged (fixed by
+   *    extracting `resolveBundledArchives`).
+   *
+   * Four test files exist purely to police that divergence, and 83f10e0
+   * already concluded the approach cannot hold: "a regex over source text can
+   * only police the rules somebody remembered to enumerate." At deletion time
+   * the action was still missing FIVE more — no ESL flags recorded
+   * (`pluginLightFlags` had exactly one call site, the page), no preflight
+   * refusal, no self-checks, no post-processed declarations, no mirror
+   * payload. All silent: the output is a real `.ehcoll` through the same
+   * `buildManifest` → `packageEhcoll` pipeline, byte-indistinguishable from a
+   * correct one until somebody installs it.
+   *
+   * Its own header called it transitional scaffolding. One door now, so the
+   * seventh divergence cannot be written.
+   *
+   * The INSTALL fallback below stays: it has one gate, not a growing set, and
+   * it is genuinely useful for scripted testing.
+   */
 
+  // Toolbar fallback — kept so power users can hit the install flow outside
+  // the Event Horizon main page (handy for CI / scripted testing). The
+  // mainPage is the recommended UX.
   context.registerAction(
     "global-icons",
     103,

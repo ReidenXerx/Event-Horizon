@@ -96,18 +96,14 @@ describe("nothing new is built with the weak level", () => {
     expect(src).toMatch(/verificationLevel:\s*pkg\.verificationLevel \?\? "thorough"/);
   });
 
-  it("the toolbar action captures AND records thorough", async () => {
-    const src = await read("../../actions/buildPackageAction.ts");
-    const code = src
-      .split("\n")
-      .filter((l) => !/^\s*(\*|\/\/)/.test(l))
-      .join("\n");
-    expect(code).toMatch(/level:\s*"thorough"/);
-    expect(code).toMatch(/verificationLevel:\s*"thorough"/);
-    // The capture level and the recorded level must not disagree.
-    expect(code).not.toMatch(/level:\s*"fast"/);
-    expect(code).not.toMatch(/verificationLevel:\s*"fast"/);
-  });
+  /**
+   * The toolbar-action case is gone with the action. It was the second door
+   * into the build, and every rule added since — this one included — had to be
+   * ported into it by hand; twice nobody did, and by the time it was deleted
+   * it was missing five gates the page has. One door now.
+   *
+   * The page's own assertion is below and is unchanged.
+   */
 
   it("the build UI does not offer the weak level as a choice", async () => {
     const src = await read("../../ui/pages/build/buildSession.ts");

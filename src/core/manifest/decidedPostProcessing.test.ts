@@ -330,3 +330,125 @@ describe("a verdict changed while the build is paused", () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * An answer given while blind is not the same as an answer given long ago.
+ *
+ * A mod whose archive cannot be read at all scores `unexplained: 0` and
+ * produces no fingerprint, because nothing was compared. Those mods became
+ * candidates because an archive that is gone is precisely the case a plain
+ * install cannot reproduce — but their answers are then given about NO
+ * evidence, and `isSettled` treated a missing fingerprint as "answered before
+ * fingerprints existed" and honoured it for ever.
+ *
+ * Both directions across that boundary went silent, and both matter:
+ * "declare" withholds bytes from every user (NS-7), and a lost archive means
+ * nobody can rebuild the mod from one.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("answers about an archive nobody could read", () => {
+  /** What `selfCheckMod` returns when the archive cannot be listed. */
+  const blind = (modId: string): SelfCheckReport =>
+    report(modId, {
+      depth: "skipped",
+      unexplained: 0,
+      // The whole point: nothing was compared, so there is nothing to hash.
+      unexplainedFingerprint: undefined,
+    });
+
+  it("re-asks once the archive becomes readable again", () => {
+    /**
+     * The curator answers "declare" while the download is purged. Next month
+     * they re-download it, the check runs, and it finds real unexplained
+     * files with a real fingerprint. The standing answer was given against
+     * none of that, so it must not decide what ships.
+     */
+    const answered = findPostProcessingCandidates(
+      [blind("m1")],
+      new Map([["m1", { choice: "declare" as const, fingerprint: "archive-unavailable" }]]),
+    );
+    expect(answered[0]?.needsAnswer).toBe(false);
+
+    // Same mod, archive now readable and 1,608 files unaccounted for.
+    const readable = findPostProcessingCandidates(
+      [report("m1", { unexplained: 1608, unexplainedFingerprint: "fp-real" })],
+      new Map([["m1", { choice: "declare" as const, fingerprint: "archive-unavailable" }]]),
+    );
+    expect(readable[0]?.needsAnswer).toBe(true);
+    expect(readable[0]?.reopened).toBe(true);
+  });
+
+  it("re-asks when a mod that WAS answered loses its archive", () => {
+    /**
+     * The other direction. The answer was given about files the archive could
+     * produce; now nobody can produce any of them, which is a different
+     * question rather than the same one with less evidence.
+     */
+    const candidates = findPostProcessingCandidates(
+      [blind("m1")],
+      new Map([["m1", { choice: "declare" as const, fingerprint: "fp-original" }]]),
+    );
+    expect(candidates[0]?.needsAnswer).toBe(true);
+  });
+
+  it("records the sentinel so the answer knows what it was about", () => {
+    // Without this the answer is written with NO fingerprint, and a missing
+    // fingerprint already means something else.
+    const candidates = findPostProcessingCandidates(
+      [blind("m1")],
+      new Map(),
+    );
+    expect(candidates[0]?.fingerprint).toBe("archive-unavailable");
+  });
+
+  it("still honours a legacy answer that predates fingerprints", () => {
+    // The `undefined` branch is right for the case it was written for, and
+    // this proves the fix did not take it away.
+    const candidates = findPostProcessingCandidates(
+      [report("m1")],
+      new Map([["m1", { choice: "declare" as const, fingerprint: undefined }]]),
+    );
+    expect(candidates[0]?.needsAnswer).toBe(false);
+  });
+});
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * An answer you cannot reach is an answer you cannot change.
+ *
+ * A mod answered "mirror" whose `unexplained` later drops to zero — the
+ * curator reinstalled it cleanly — disappeared from this list while
+ * `mirrored: true` stayed in the config. If one of its staged files then
+ * could not be hashed, `packageZip` refused the ENTIRE build with "change
+ * this mod's answer", after every expensive phase, about a mod the only
+ * screen that can change that answer would not show.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("a mod that is already answered", () => {
+  it("stays on the list even when nothing is unexplained any more", () => {
+    const clean = report("m1", {
+      unexplained: 0,
+      unexplainedFingerprint: undefined,
+    });
+    const candidates = findPostProcessingCandidates(
+      [clean],
+      new Map([["m1", { choice: "mirror" as const, fingerprint: undefined }]]),
+    );
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.decision).toBe("mirror");
+    // Settled, so it does not gate the build — it is there to be reviewed.
+    expect(candidates[0]?.needsAnswer).toBe(false);
+  });
+
+  it("still leaves an UNANSWERED clean mod off the list", () => {
+    // The filter must not become "show everything". A mod with nothing
+    // unexplained and no standing answer has no question to ask.
+    const candidates = findPostProcessingCandidates(
+      [report("m1", { unexplained: 0, unexplainedFingerprint: undefined })],
+      new Map(),
+    );
+    expect(candidates).toHaveLength(0);
+  });
+});

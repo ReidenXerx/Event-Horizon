@@ -254,7 +254,6 @@ describe("every curator-side lookup goes through the resolver", () => {
   const CONSUMERS = [
     "core/manifest/runSelfChecks.ts",
     "ui/pages/build/engine.ts",
-    "actions/buildPackageAction.ts",
     "core/archiveRecovery.ts",
   ];
 

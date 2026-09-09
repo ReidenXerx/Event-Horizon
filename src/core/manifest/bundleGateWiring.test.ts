@@ -37,11 +37,20 @@ import { resolveBundledArchives } from "./resolveBundledArchives";
 
 const ROOT = join(__dirname, "..", "..");
 
-/** Every path that can produce an `.ehcoll`. */
-const BUILD_PATHS = [
-  join(ROOT, "ui", "pages", "build", "engine.ts"),
-  join(ROOT, "actions", "buildPackageAction.ts"),
-];
+/**
+ * Every path that can produce an `.ehcoll`.
+ *
+ * There is ONE now. The legacy toolbar action was the second, and deleting it
+ * is what this file was really asking for: a regex over source text can only
+ * police the rules somebody remembered to enumerate, and by the time it went
+ * the action was missing five gates nobody had enumerated here.
+ *
+ * The list stays a list on purpose. If a second build entry point is ever
+ * added, adding it here is how it inherits every assertion below — and the
+ * "no second copy of the resolver" check keeps its meaning either way, since
+ * a private copy inside the one remaining path is still a private copy.
+ */
+const BUILD_PATHS = [join(ROOT, "ui", "pages", "build", "engine.ts")];
 
 const SHARED = join(ROOT, "core", "manifest", "resolveBundledArchives.ts");
 

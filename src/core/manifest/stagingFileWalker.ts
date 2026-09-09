@@ -11,6 +11,7 @@ import { toPosix } from "../paths";
 import type { EhcollStagingFile, VerificationLevel } from "../../types/ehcoll";
 import { hashFileSha256 } from "../archiveHashing";
 import { AbortError } from "../../utils/abortError";
+import { ehLog } from "../logging/ehLog";
 import { pMap } from "../../utils/pMap";
 
 /**
@@ -263,14 +264,16 @@ export async function hashStagingFiles(
     files,
     workers,
     async (file) => {
+      // 205GB re-read on every build is what made "thorough" a level the
+      // curator had to opt into. A hash is reused only while path, size AND
+      // mtime all match, so a file that changed is always re-read.
+      //
+      // Outside the try because the retry in the catch needs it too.
+      const key =
+        hashCache !== undefined
+          ? archiveFileCacheKey(file.absolutePath, file.size, file.mtimeMs)
+          : undefined;
       try {
-        // 205GB re-read on every build is what made "thorough" a level the
-        // curator had to opt into. A hash is reused only while path, size AND
-        // mtime all match, so a file that changed is always re-read.
-        const key =
-          hashCache !== undefined
-            ? archiveFileCacheKey(file.absolutePath, file.size, file.mtimeMs)
-            : undefined;
         const cached = key === undefined ? undefined : hashCache!.get(key);
         if (cached !== undefined) {
           return { ok: true as const, sha256: cached };
@@ -282,8 +285,41 @@ export async function hashStagingFiles(
         return { ok: true as const, sha256 };
       } catch (err) {
         if (err instanceof AbortError) throw err;
-        onFileWarn(file.relativePath, err as Error);
-        return { ok: false as const };
+        /**
+         * ─── ONE RETRY, BECAUSE THE USUAL CAUSE IS TRANSIENT ────────────
+         * A file without a hash is not a cosmetic gap. `mirrorable` drops the
+         * mod, `packageZip` REFUSES the whole build for a mod already
+         * answered "mirror", and both happen after every expensive phase has
+         * run.
+         *
+         * And the usual cause clears on its own: an antivirus scanning a file
+         * it has just seen written, OneDrive rehydrating a placeholder, a
+         * search indexer holding a handle for a moment. Those are the same
+         * transient locks the mirror's own rename fallback exists for.
+         *
+         * One retry, after a short pause. Not a loop: a file that is still
+         * unreadable a second later is genuinely unreadable, and turning a
+         * build into a retry storm against a locked file helps nobody. The
+         * warning below still fires when the retry fails, so a real problem
+         * is still reported rather than papered over.
+         */
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        if (signal?.aborted === true) throw new AbortError();
+        try {
+          const sha256 = await hashFileSha256(file.absolutePath, signal);
+          if (key !== undefined) {
+            hashCache!.set(key, sha256);
+          }
+          ehLog("debug", "staging.hash.retry-ok", {
+            path: file.relativePath,
+            firstError: (err as Error)?.message,
+          });
+          return { ok: true as const, sha256 };
+        } catch (retryErr) {
+          if (retryErr instanceof AbortError) throw retryErr;
+          onFileWarn(file.relativePath, retryErr as Error);
+          return { ok: false as const };
+        }
       }
     },
     signal,

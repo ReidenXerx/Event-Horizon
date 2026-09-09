@@ -157,7 +157,11 @@ for (const a of registered.actions) {
 let bad = 0;
 if (ret !== true) { console.error("WARN: init() did not return true"); bad++; }
 if (registered.mainPages.length !== 1) { console.error("WARN: expected exactly 1 main page"); bad++; }
-if (registered.actions.length !== 5) { console.error("WARN: expected 5 actions"); bad++; }
+// Four since the legacy BUILD dialog was deleted. It was the second door into
+// the build, and every gate added since had to be ported into it by hand;
+// twice nobody did, and by the time it went it was missing five of them.
+// The legacy INSTALL fallback stays — one gate, not a growing set.
+if (registered.actions.length !== 4) { console.error("WARN: expected 4 actions"); bad++; }
 const dupes = new Map();
 for (const a of registered.actions) {
   const key = a.group + "#" + a.pos;

@@ -54,7 +54,6 @@ function code(src: string): string {
  */
 const CALLERS: { file: string; fn: string }[] = [
   // plugins.txt — %LOCALAPPDATA%\<game>\plugins.txt
-  { file: "actions/buildPackageAction.ts", fn: "getCurrentPluginsTxtPath" },
   { file: "actions/comparePluginsAction.ts", fn: "getCurrentPluginsTxtPath" },
   { file: "ui/pages/build/engine.ts", fn: "getCurrentPluginsTxtPath" },
   { file: "core/installer/checkPluginOrder.ts", fn: "getCurrentPluginsTxtPath" },
