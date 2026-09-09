@@ -1814,6 +1814,34 @@ export async function runBuildPipeline(
         .filter((r) => (r.readsPluginState?.length ?? 0) > 0)
         .map((r) => [r.modId, r.readsPluginState!] as const),
     );
+    /**
+     * ─── AND THE MODS NOTHING COULD BE LEARNED ABOUT ──────────────────
+     * This overlay used to carry only the answers, so a mod whose archive
+     * could not be opened reached the manifest indistinguishable from one
+     * that was read and asks nothing. The field existed, was computed, was
+     * logged — and was dropped here, which made it a build-time warning
+     * rather than something the package knows.
+     */
+    const unexaminedInstallers = new Set(
+      selfCheck.reports
+        .filter((r) => r.installerUnexamined === true)
+        .map((r) => r.modId),
+    );
+    if (unexaminedInstallers.size > 0) {
+      mods = mods.map((m) =>
+        unexaminedInstallers.has(m.id)
+          ? { ...m, installerUnexamined: true }
+          : m,
+      );
+      ehLog("info", "build.installer-unexamined", {
+        mods: unexaminedInstallers.size,
+        names: [...unexaminedInstallers],
+        why:
+          "their archive could not be read, so the package records that the " +
+          "question was never answered rather than letting it read as 'asks " +
+          "nothing'",
+      });
+    }
     if (pluginStateReaders.size > 0) {
       mods = mods.map((m) =>
         pluginStateReaders.has(m.id)

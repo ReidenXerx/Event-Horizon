@@ -121,6 +121,12 @@ export type AuditorMod = {
    * has already done.
    */
   readsPluginState?: string[];
+  /**
+   * The archive could not be read, so `readsPluginState` above is absent for
+   * a reason that is NOT "asks nothing". Overlaid from the self-check the
+   * same way `readsPluginState` is.
+   */
+  installerUnexamined?: boolean;
   collectionIds?: string[];
 
   installerType?: string;

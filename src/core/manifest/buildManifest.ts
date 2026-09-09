@@ -721,6 +721,14 @@ function buildModInstallSpec(
     ...((mod.readsPluginState?.length ?? 0) > 0
       ? { readsPluginState: mod.readsPluginState! }
       : {}),
+    /**
+     * Only when the archive could not be read. Written for the same reason
+     * the field exists: without it, the absence above means two things and
+     * the installer picks the wrong one silently.
+     */
+    ...(mod.installerUnexamined === true
+      ? { installerUnexamined: true as const }
+      : {}),
   };
 }
 

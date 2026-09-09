@@ -45,7 +45,7 @@ const src = fs.readFileSync(path.join(__dirname, "runInstall.ts"), "utf8");
 
 /** A manifest with just enough shape for the split to be computable. */
 const manifest = (
-  mods: { name: string; reads?: string[] }[],
+  mods: { name: string; reads?: string[]; unexamined?: boolean }[],
   pluginNames: string[],
 ): EhcollManifest =>
   ({
@@ -57,6 +57,10 @@ const manifest = (
       install: {
         fomodSelections: [],
         ...(m.reads !== undefined ? { readsPluginState: m.reads } : {}),
+        // Three states, not two: named a plugin, named none, and NOT LOOKED
+        // AT. The fixture carried only the first two for as long as the code
+        // did.
+        ...(m.unexamined === true ? { installerUnexamined: true } : {}),
       },
     })),
   }) as unknown as EhcollManifest;
@@ -131,6 +135,53 @@ describe("which mods have to wait", () => {
     expect(epochs.second).toEqual([]);
     expect(epochs.first).toHaveLength(3);
     expect(describeInstallEpochs(epochs)).toEqual([]);
+  });
+
+  it("does NOT defer a mod whose installer could not be examined", () => {
+    /**
+     * The decision, spelled out as a test so it cannot be quietly reversed.
+     * "We could not read this archive" is not evidence that a mod needs to
+     * wait. Deferring on it would move a mod out of its curated position on
+     * the strength of a missing download record — a guess dressed as caution,
+     * and one that would fire on whatever the curator most recently updated
+     * in place.
+     */
+    const epochs = planInstallEpochs(
+      manifest([{ name: "Unreadable", unexamined: true }], ["aaf.esm"]),
+    );
+
+    expect(epochs.second).toEqual([]);
+    expect(epochs.first).toHaveLength(1);
+  });
+
+  it("NAMES it instead, even though nothing defers", () => {
+    /**
+     * The half that makes the decision above safe. Without it the planner
+     * stays silent at exactly the moment it knows least, and silence is the
+     * most reassuring output it has.
+     */
+    const epochs = planInstallEpochs(
+      manifest([{ name: "Unreadable", unexamined: true }], ["aaf.esm"]),
+    );
+
+    expect(epochs.unexamined.map((m) => m.name)).toEqual(["Unreadable"]);
+    const lines = describeInstallEpochs(epochs);
+    expect(lines.join("\n")).toContain("Unreadable");
+    expect(lines.join("\n")).toContain("could not have their installer");
+  });
+
+  it("still defers an unexamined mod that DOES name a plugin", () => {
+    // Belt and braces: the flag reports, it never suppresses. A mod carrying
+    // both is deferred on the evidence and not silenced by the unknown.
+    const epochs = planInstallEpochs(
+      manifest(
+        [{ name: "Both", reads: ["aaf.esm"], unexamined: true }],
+        ["aaf.esm"],
+      ),
+    );
+
+    expect(epochs.second).toHaveLength(1);
+    expect(epochs.unexamined).toEqual([]);
   });
 
   it("keeps manifest order inside each epoch", () => {

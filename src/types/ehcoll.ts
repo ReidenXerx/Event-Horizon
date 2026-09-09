@@ -441,6 +441,25 @@ export type ModInstallSpec = {
    * this collection provides and which the user already has.
    */
   readsPluginState?: string[];
+  /**
+   * ─── WHY AN ABSENT `readsPluginState` NEEDED A SECOND FIELD ──────────
+   * Absent means TWO things, and they call for opposite handling:
+   *
+   *   1. the installer was read and asks the game nothing — 845 of 963 mods
+   *      on the real collection have no FOMOD script at all;
+   *   2. the archive could not be opened, so nothing is known.
+   *
+   * The epoch planner reads absent as (1), which is right 845 times and wrong
+   * for the handful in (2) — and (2) is exactly the population most likely to
+   * matter, because a mod whose download record Vortex lost is usually one
+   * that has been updated in place and re-patched.
+   *
+   * `true` says the second thing out loud. It does NOT defer the mod: a mod
+   * that could not be examined is not evidence that it needs deferring, and
+   * deferring on a guess costs it its curated position. It is reported, and
+   * the remedy is the curator's — rescan Downloads, rebuild.
+   */
+  installerUnexamined?: boolean;
 };
 
 export type ModInstallState = {

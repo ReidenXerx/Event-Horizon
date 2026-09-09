@@ -424,3 +424,27 @@ project rather than this one, it belongs upstream — say so and it can be promo
   what reported four healthy mods as broken, and nothing in the codebase could have noticed it.
   The guard names the offending file in its failure message and asserts its own regex against a
   sample, because a guard that matches nothing passes forever.*
+
+- **PP-9** — **A scratch script named after a stdlib module hijacks every later script in that
+  directory.** Python prepends the *script's own directory* to `sys.path`, so a throwaway
+  `posix.py` / `types.py` / `queue.py` left in a scratchpad is imported instead of the real module
+  by anything run from there — including the stdlib's own internals. The failure is not a tidy
+  `ImportError`: `import shutil` reaches `posixpath`, which reaches your file, which **executes**,
+  running whatever that old script did — a patch, a delete, a write — against today's tree. Name
+  scratch scripts with a prefix that cannot collide (`p17_…`, `mut_…`), and when a stdlib import
+  fails somewhere absurd, list the directory for a name that shadows it before debugging anything
+  else. *Scar: a mutation-test runner died on `import shutil`; the traceback ran through
+  `posixpath` into a two-hour-old `posix.py` in the scratchpad, which re-ran a stale patch script
+  against `src/` and asserted mid-run. It happened to abort before writing — `git status` was
+  clean of it — but nothing in the design made that the outcome rather than a silent partial edit
+  to a source file in a session with ten files already modified.*
+
+- **PP-10** — **A screen that cannot parse its input reports the input as ABSENT.** A safety check
+  built on filenames, log lines or IDs answers confidently for the shapes it knows and silently
+  answers "not found" for every shape it does not — which reads as the alarming result when
+  checking for presence, and as the *reassuring* one when checking for loss. Enumerate the shapes
+  before trusting the count, and make the parser report what it could not parse as its own number,
+  next to the answer. *Scar: a check for "did any installed mod lose its last archive" reported 54
+  losses reading one filename shape, 11 reading two, and 0 once all four were handled — every one
+  of the 54 was the parser. Three of the four shapes were produced by this project's own code.
+  Reported as a finding to the user before the last two shapes were added.*

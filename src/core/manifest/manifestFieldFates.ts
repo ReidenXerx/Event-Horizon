@@ -125,6 +125,23 @@ export const MOD_INSTALL_SPEC_FATES: {
     by: "core/installer/installerChoices.ts",
   },
   readsPluginState: { kind: "applied", by: "core/installer/runInstall.ts" },
+  /**
+   * Read to be DISCLOSED, not to change what happens.
+   *
+   * `planInstallEpochs` collects these mods and `describeInstallEpochs` names
+   * them; neither moves one. That is the decision, not an omission — "we
+   * could not read this archive" is not evidence that a mod needs deferring,
+   * and deferring on it would cost the mod its curated position for nothing.
+   *
+   * Still `applied` rather than `recorded-only`, because the reader is real
+   * and the entry below makes the test open that file and prove it. A
+   * `recorded-only` here would be the more modest-sounding claim and the less
+   * honest one: it would say nothing reads the field, and something does.
+   */
+  installerUnexamined: {
+    kind: "applied",
+    by: "core/resolver/installEpochs.ts",
+  },
   installerType: {
     kind: "recorded-only",
     why:

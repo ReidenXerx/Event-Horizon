@@ -744,6 +744,11 @@ function validateInstallSpec(
     ...(readsPluginState !== undefined && readsPluginState.length > 0
       ? { readsPluginState }
       : {}),
+    // Only `true` survives. Anything else is the absence it already was, and
+    // a truthy non-boolean must not become a claim about the archive.
+    ...(obj.installerUnexamined === true
+      ? { installerUnexamined: true as const }
+      : {}),
   };
 }
 

@@ -64,6 +64,16 @@ export type InstallEpochs = {
   second: string[];
   /** The deferred mods with their reasons, for the log and the report. */
   deferred: DeferredMod[];
+  /**
+   * Mods whose installer could not be examined at build time.
+   *
+   * They are in `first` — not deferring them is a decision, not an oversight.
+   * "We could not look" is not evidence that a mod needs to wait, and moving
+   * it on that basis would cost it its curated position for nothing. They are
+   * named so a tester reading one log can tell this case apart from the 845
+   * mods that were read and ask nothing.
+   */
+  unexamined: { compareKey: string; name: string }[];
 };
 
 /**
@@ -91,19 +101,25 @@ export function planInstallEpochs(manifest: EhcollManifest): InstallEpochs {
   const first: string[] = [];
   const second: string[] = [];
   const deferred: DeferredMod[] = [];
+  const unexamined: { compareKey: string; name: string }[] = [];
 
   for (const mod of manifest.mods) {
     const named = mod.install?.readsPluginState ?? [];
     const waitsFor = named.filter((n) => shipped.has(n.toLowerCase()));
     if (waitsFor.length === 0) {
       first.push(mod.compareKey);
+      // Reported from the same pass that decides, so the two can never
+      // disagree — but deliberately NOT a reason to defer.
+      if (mod.install?.installerUnexamined === true) {
+        unexamined.push({ compareKey: mod.compareKey, name: mod.name });
+      }
       continue;
     }
     second.push(mod.compareKey);
     deferred.push({ compareKey: mod.compareKey, name: mod.name, waitsFor });
   }
 
-  return { first, second, deferred };
+  return { first, second, deferred, unexamined };
 }
 
 /**
@@ -114,20 +130,47 @@ export function planInstallEpochs(manifest: EhcollManifest): InstallEpochs {
  * occasions it is not zero.
  */
 export function describeInstallEpochs(epochs: InstallEpochs): string[] {
-  if (epochs.deferred.length === 0) return [];
+  if (epochs.deferred.length === 0 && epochs.unexamined.length === 0) return [];
 
-  const lines = [
-    `${epochs.deferred.length} mod(s) will install in a second pass, after ` +
-      `the collection's plugins are active. Their installers ask the game ` +
-      `whether a plugin is present, so installing them earlier would give a ` +
-      `different answer — usually a missing compatibility patch, with no ` +
-      `error to notice.`,
-  ];
-  for (const mod of epochs.deferred.slice(0, 10)) {
-    lines.push(`  • "${mod.name}" waits for ${mod.waitsFor.join(", ")}`);
+  const lines: string[] = [];
+
+  if (epochs.deferred.length > 0) {
+    lines.push(
+      `${epochs.deferred.length} mod(s) will install in a second pass, after ` +
+        `the collection's plugins are active. Their installers ask the game ` +
+        `whether a plugin is present, so installing them earlier would give a ` +
+        `different answer — usually a missing compatibility patch, with no ` +
+        `error to notice.`,
+    );
+    for (const mod of epochs.deferred.slice(0, 10)) {
+      lines.push(`  • "${mod.name}" waits for ${mod.waitsFor.join(", ")}`);
+    }
+    if (epochs.deferred.length > 10) {
+      lines.push(`  • and ${epochs.deferred.length - 10} more.`);
+    }
   }
-  if (epochs.deferred.length > 10) {
-    lines.push(`  • and ${epochs.deferred.length - 10} more.`);
+
+  /**
+   * Said even when nothing defers, which is why the guard above is an AND.
+   * A build that examined nothing would otherwise print the most reassuring
+   * message available — silence — at exactly the moment it knows least.
+   */
+  if (epochs.unexamined.length > 0) {
+    lines.push(
+      `${epochs.unexamined.length} mod(s) could not have their installer ` +
+        `examined when this package was built, so it is NOT known whether ` +
+        `they ask the game about another mod's plugin. They install in their ` +
+        `normal position — being unreadable is not a reason to move a mod — ` +
+        `but if one of them installs the wrong files, this is the first ` +
+        `place to look.`,
+    );
+    for (const mod of epochs.unexamined.slice(0, 10)) {
+      lines.push(`  • "${mod.name}"`);
+    }
+    if (epochs.unexamined.length > 10) {
+      lines.push(`  • and ${epochs.unexamined.length - 10} more.`);
+    }
   }
+
   return lines;
 }

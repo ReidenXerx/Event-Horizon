@@ -685,7 +685,7 @@ export async function runSelfChecks(
     .map(([reason, count]) => `${count}x ${reason}`);
 
   // One concrete example, so a wrong path or id is visible rather than inferred.
-  const firstSkipped = reports.find((r) => r.depth === "skipped");
+  const skippedReports = reports.filter((r) => r.depth === "skipped");
 
   const warnings: string[] = [];
   const withMissing = reports.filter((r) => r.missing.length > 0);
@@ -888,12 +888,29 @@ export async function runSelfChecks(
     modsWithOmissionLeads: summary.modsWithOmissionLeads,
     highConfidenceLeads: summary.highConfidenceLeads,
     reasons: topReasons,
-    ...(firstSkipped !== undefined
+    /**
+     * ─── NAME THEM ALL ────────────────────────────────────────────────
+     * This used to log `exampleSkipped` — one mod, with its notes. On the
+     * curator's own machine that is enough, because the staging folder is
+     * right there to look at. Event Horizon ships to testers whose machines
+     * nobody can inspect, and for them the log IS the machine: "6 mods could
+     * not be verified, here is one of them" names a problem and withholds
+     * the only thing needed to act on it.
+     *
+     * Capped, because a collection where everything is unverifiable would
+     * otherwise write a thousand names into a log nobody can read — and the
+     * count above is the honest total either way.
+     */
+    ...(skippedReports.length > 0
       ? {
+          skippedMods: skippedReports.slice(0, 50).map((r) => r.modName),
+          ...(skippedReports.length > 50
+            ? { skippedNotListed: skippedReports.length - 50 }
+            : {}),
           exampleSkipped: {
-            mod: firstSkipped.modName,
-            stagedCount: firstSkipped.stagedCount,
-            notes: firstSkipped.notes,
+            mod: skippedReports[0]!.modName,
+            stagedCount: skippedReports[0]!.stagedCount,
+            notes: skippedReports[0]!.notes,
           },
         }
       : {}),
