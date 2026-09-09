@@ -411,6 +411,34 @@ function normalizeStringArray(value: unknown): string[] {
   return Array.from(seen).sort();
 }
 
+/**
+ * The installer answers Vortex holds for ONE mod, right now.
+ *
+ * The resolver's `InstalledMod` projection deliberately drops these — it does
+ * not need them to decide identity. The INSTALLER does: a mod whose Nexus
+ * archive is unchanged but whose FOMOD options the curator has since narrowed
+ * has the same `compareKey`, resolves as already-installed, and keeps the
+ * user's older, wider selection forever. A tester's collection shipped a patch
+ * plugin whose master nothing provides for exactly that reason.
+ */
+export function liveFomodSelections(
+  state: unknown,
+  gameId: string,
+  vortexModId: string,
+): FomodSelectionStep[] {
+  const mod = (
+    state as {
+      persistent?: {
+        mods?: Record<string, Record<string, { attributes?: any }>>;
+      };
+    }
+  )?.persistent?.mods?.[gameId]?.[vortexModId];
+  const attributes = mod?.attributes;
+  return normalizeFomodSelections(
+    attributes?.installerChoices ?? attributes?.installerChoicesData,
+  );
+}
+
 function normalizeFomodSelections(installerChoices: any): FomodSelectionStep[] {
   const options = installerChoices?.options;
 

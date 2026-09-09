@@ -175,6 +175,8 @@ import {
   orderDiffers,
   repinCuratorOrder,
 } from "./repinPluginOrder";
+import { compareSelections } from "../curator/fomodSelectionDiff";
+import { liveFomodSelections } from "../getModsListForProfile";
 import type { PluginOrderEntry } from "./checkPluginOrder";
 import { InstallStreaks } from "./installStreaks";
 import { getGameDirectory } from "../manifest/externalDependencies";
@@ -1580,6 +1582,13 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           `[${i + 1}/${installedMods.length}] Checking "${installEntry.name}"...`,
         );
 
+        /**
+         * Set when the FILES verify but the installer ANSWERS do not match the
+         * collection. Sends the mod to the same recovery a failure would,
+         * without pretending a file check failed — `judgeReinstall` asks the
+         * archive about differing files, and there are none to ask about.
+         */
+        let staleInstallerOptions = false;
         let verifyResult: VerifyResult;
         try {
           verifyResult = await verifyModInstall({
@@ -1634,7 +1643,66 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           continue;
         }
 
+        /**
+         * ─── VERIFIED, AND STILL NOT WHAT THE COLLECTION SAYS ────────────
+         * Verification proves every file the curator RECORDED is present with
+         * the recorded bytes. It says nothing about files the user has that
+         * the curator does not — those are `extraFiles`, deliberately
+         * informational, because a user who picked different FOMOD options is
+         * entitled to their own choice.
+         *
+         * That reasoning does not cover the CURATOR narrowing a mod. A tester
+         * hit it: the curator re-installed `Val Serano` excluding a patch and
+         * shipped v1.0.11, but the Nexus archive is unchanged, so the
+         * compareKey is unchanged, the resolver answered
+         * `nexus-already-installed` in 0 ms, and the tester kept v1.0.10's
+         * wider selection — including `AX ValSerano-RaceCompatibility.esp`,
+         * whose master the collection does not ship. Vortex then refused to
+         * sort, and the mod verified CLEAN the whole time, because everything
+         * the curator recorded really was there.
+         *
+         * So compare the answers themselves. Both sides carry them and it
+         * costs nothing: the manifest records what the curator picked, and
+         * Vortex holds what this machine picked. When both are known and they
+         * DIFFER, this mod is not the collection's version of it, whatever the
+         * file check says.
+         *
+         * Treated as a verification FAILURE so it flows into the machinery
+         * that already exists: `judgeReinstall` decides, and the repair path
+         * reinstalls a mod we installed or installs the curator's copy
+         * ALONGSIDE one we did not — so a mod the user owns is never
+         * destroyed to correct it (NS-2).
+         */
         if (verifyResult.kind === "ok") {
+          const manifestEntry = manifestByCompareKey.get(
+            installEntry.compareKey,
+          );
+          const curatorPicked = manifestEntry?.install?.fomodSelections ?? [];
+          const userPicked = liveFomodSelections(
+            api.getState(),
+            plan.manifest.game.id,
+            installEntry.vortexModId,
+          );
+          if (
+            compareSelections(
+              curatorPicked,
+              userPicked,
+              manifestEntry?.install?.emptySelectionVerified === true,
+            ) === "differ"
+          ) {
+            ehLog("warn", "verify.selections-differ", {
+              name: installEntry.name,
+              compareKey: installEntry.compareKey,
+              consequence:
+                "this mod's files verify, but it was installed with different " +
+                "installer options than the collection records — the archive " +
+                "is the same, so nothing else could have noticed",
+            });
+            staleInstallerOptions = true;
+          }
+        }
+
+        if (verifyResult.kind === "ok" && !staleInstallerOptions) {
           // Verification passed, so every file the curator recorded is present
           // with exactly the recorded bytes: the manifest's file list is now a
           // PROVEN description of this disk, and can serve as the drift
@@ -1653,6 +1721,10 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           continue;
         }
 
+        // Everything from here is the recovery path. A stale-options mod
+        // reaches it with `verifyResult.kind === "ok"`, so the judgement step
+        // — which exists to ask the ARCHIVE about files that differ — is
+        // skipped: no file differs, and the answer is already known.
         // verifyResult.kind === "fail".
         //
         // Before spending a reinstall, ask the ARCHIVE — the one reference no
@@ -1684,10 +1756,13 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           ehLog("info", "verify.pending-mirror", {
             name: installEntry.name,
             compareKey: installEntry.compareKey,
-            missing: verifyResult.missingFiles.length,
+            missing:
+              verifyResult.kind === "fail" ? verifyResult.missingFiles.length : 0,
             differing:
-              verifyResult.sizeMismatches.length +
-              verifyResult.hashMismatches.length,
+              verifyResult.kind === "fail"
+                ? verifyResult.sizeMismatches.length +
+                  verifyResult.hashMismatches.length
+                : 0,
             why: "the curator ships these files; the mirror pass settles this mod",
           });
           verifications.push({
@@ -1700,7 +1775,9 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           continue;
         }
 
-        const judgement = await judgeReinstall({
+        const judgement =
+          verifyResult.kind === "fail"
+            ? await judgeReinstall({
           missingFiles: verifyResult.missingFiles,
           differingPaths: [
             ...verifyResult.sizeMismatches.map((m) => m.path),
@@ -1715,7 +1792,21 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             ? { postProcessed: true }
             : {}),
           ...(ctx.abortSignal !== undefined ? { signal: ctx.abortSignal } : {}),
-        });
+              })
+            : /**
+               * Stale installer options: no file differs, so there is nothing
+               * to ask the archive about. The verdict is already known — this
+               * mod is not the collection's version of itself — and a
+               * reinstall is exactly what fixes it.
+               */
+              {
+                kind: "reinstall" as const,
+                why:
+                  "installed with different installer options than this " +
+                  "collection records",
+                // No archive was consulted: no file differed to ask about.
+                archiveConsulted: false,
+              };
 
         ehLog("info", "verify.judged", {
           name: installEntry.name,
@@ -1746,7 +1837,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
              compareKey: installEntry.compareKey,
              name: installEntry.name,
              level: declaredLevel === "thorough" ? "thorough" : "fast",
-             verifiedFileCount: verifyResult.expectedCount,
+             verifiedFileCount: expectedFiles?.length ?? 0,
              extraFileCount: verifyResult.extraFiles.length,
              okReason: "variant-ambiguous",
            });
@@ -1767,7 +1858,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             compareKey: installEntry.compareKey,
             name: installEntry.name,
             level: declaredLevel === "thorough" ? "thorough" : "fast",
-            verifiedFileCount: verifyResult.expectedCount,
+            verifiedFileCount: expectedFiles?.length ?? 0,
             extraFileCount: verifyResult.extraFiles.length,
             // The receipt now says WHICH of the three "ok"s this is.
             okReason: judgement.kind,
@@ -1776,14 +1867,24 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         }
 
         // Reinstall warranted, or we could not tell — try ONE recovery cycle.
-        const failSummary = summarizeVerifyFail(verifyResult);
+        const failSummary =
+          verifyResult.kind === "fail"
+            ? summarizeVerifyFail(verifyResult)
+            : "installer options differ from the collection";
         ehLog("warn", "verify.failed", {
           name: installEntry.name,
           compareKey: installEntry.compareKey,
           summary: failSummary,
-          missing: verifyResult.missingFiles.length,
-          sizeMismatches: verifyResult.sizeMismatches.length,
-          hashMismatches: verifyResult.hashMismatches.length,
+          missing:
+            verifyResult.kind === "fail" ? verifyResult.missingFiles.length : 0,
+          sizeMismatches:
+            verifyResult.kind === "fail"
+              ? verifyResult.sizeMismatches.length
+              : 0,
+          hashMismatches:
+            verifyResult.kind === "fail"
+              ? verifyResult.hashMismatches.length
+              : 0,
           next: "judging whether a reinstall could change anything",
         });
         reportProgress(
@@ -1961,7 +2062,21 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               // The repair may have replaced this mod; name the one that is
               // actually on disk, not the id we deleted.
               installEntry: installedMods[i]!,
-              verifyResult,
+              // A stale-options mod reaches the repair with a PASSING file
+              // check, so there is no failure object to report; synthesise the
+              // empty one rather than claiming files differed.
+              verifyResult:
+                verifyResult.kind === "fail"
+                  ? verifyResult
+                  : {
+                      kind: "fail",
+                      missingFiles: [],
+                      sizeMismatches: [],
+                      hashMismatches: [],
+                      extraFiles: verifyResult.extraFiles,
+                      expectedCount: expectedFiles?.length ?? 0,
+                      stagingRoot: "",
+                    },
               level: declaredLevel === "thorough" ? "thorough" : "fast",
               // `errored` means the repair threw AFTER the uninstall, so an
               // attempt very much was made. Reporting that as "not attempted"
@@ -1982,11 +2097,15 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             ...(manifestEntry?.version !== undefined
               ? { modVersion: manifestEntry.version }
               : {}),
-            missingFiles: verifyResult.missingFiles,
-            differingFiles: [
-              ...verifyResult.sizeMismatches.map((m) => m.path),
-              ...verifyResult.hashMismatches.map((m) => m.path),
-            ],
+            missingFiles:
+              verifyResult.kind === "fail" ? verifyResult.missingFiles : [],
+            differingFiles:
+              verifyResult.kind === "fail"
+                ? [
+                    ...verifyResult.sizeMismatches.map((m) => m.path),
+                    ...verifyResult.hashMismatches.map((m) => m.path),
+                  ]
+                : [],
             extraFiles: verifyResult.extraFiles,
             // Proves WHICH build produced this. A curator who rebuilt without
             // bumping the version has two different packages both calling
@@ -2014,7 +2133,20 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         verifications.push(
           buildFailReceipt({
             installEntry: installedMods[i]!,
-            verifyResult,
+            // As above: a stale-options mod arrives here with a PASSING file
+            // check, so there is no failure object to report.
+            verifyResult:
+              verifyResult.kind === "fail"
+                ? verifyResult
+                : {
+                    kind: "fail",
+                    missingFiles: [],
+                    sizeMismatches: [],
+                    hashMismatches: [],
+                    extraFiles: verifyResult.extraFiles,
+                    expectedCount: expectedFiles?.length ?? 0,
+                    stagingRoot: "",
+                  },
             level: declaredLevel === "thorough" ? "thorough" : "fast",
             // Same reasoning as the damaged-archive receipt above: `errored`
             // is an attempt that reached the uninstall and then failed.
