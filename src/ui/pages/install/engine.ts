@@ -324,7 +324,8 @@ export async function runLoadingPipeline(args: {
   const runtimeFindings = await checkSystemRuntimes();
   checkAbort();
   events.onPhase("checking-environment");
-  const environment = await checkEnvironment(api, activeGameId, manifest);
+  const environment = await checkEnvironment(api, activeGameId, manifest, signal);
+  checkAbort();
 
   return {
     kind: "ready",
@@ -545,7 +546,8 @@ export async function runLoadingPipelineWithReceipt(args: {
   const runtimeFindings = await checkSystemRuntimes();
   checkAbort();
   events.onPhase("checking-environment");
-  const environment = await checkEnvironment(api, activeGameId, manifest);
+  const environment = await checkEnvironment(api, activeGameId, manifest, signal);
+  checkAbort();
 
   return {
     ehcoll,
@@ -579,6 +581,7 @@ async function checkEnvironment(
   api: types.IExtensionApi,
   gameId: string,
   manifest: ReadEhcollResult["manifest"],
+  signal: AbortSignal | undefined,
 ): Promise<EnvironmentReport | undefined> {
   try {
     const [{ gatherPreflightFacts }, { runEnvironmentPreflight }] = await Promise.all([
@@ -589,8 +592,13 @@ async function checkEnvironment(
       state: api.getState(),
       gameId,
       externalDependencies: manifest.externalDependencies,
+      ...(manifest.gameIni !== undefined ? { gameIni: manifest.gameIni } : {}),
     });
-    return await runEnvironmentPreflight(facts, { scanFolder: true, context: "install-preview" });
+    return await runEnvironmentPreflight(facts, {
+      scanFolder: true,
+      context: "install-preview",
+      ...(signal !== undefined ? { signal } : {}),
+    });
   } catch (err) {
     ehLog("warn", "environment.preflight.crashed", {
       context: "install-preview",

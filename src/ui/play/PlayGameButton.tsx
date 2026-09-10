@@ -11,6 +11,12 @@ import { useApi } from "../state";
 import { VORTEX_PLAY_WARNING } from "../../core/environment/launchGame";
 import { basenameOf } from "../../core/paths";
 
+/**
+ * One launch at a time across every Play button on every page: two loaders
+ * started a second apart start two games.
+ */
+let launchInFlight = false;
+
 export function PlayGameButton(props: {
   gameId: string;
   intent?: ButtonIntent;
@@ -24,7 +30,8 @@ export function PlayGameButton(props: {
   const play = (event?: React.MouseEvent): void => {
     // Rows that host this button navigate on click; Play is not a navigation.
     event?.stopPropagation();
-    if (busy) return;
+    if (busy || launchInFlight) return;
+    launchInFlight = true;
     setBusy(true);
     void (async (): Promise<void> => {
       try {
@@ -52,6 +59,7 @@ export function PlayGameButton(props: {
       } catch (err) {
         reportError(err, { title: "Couldn't start the game", context: { step: "play", gameId: props.gameId } });
       } finally {
+        launchInFlight = false;
         setBusy(false);
       }
     })();

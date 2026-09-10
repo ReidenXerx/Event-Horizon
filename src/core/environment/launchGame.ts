@@ -12,16 +12,25 @@
  * loader → it refuses and says why; it never falls back to the game exe.
  *
  * The one exception is the curator's: "excluding fnv bc there is specific
- * patcher that make vanilla exe works with script extending inside". New Vegas
- * is started through its own executable, which the NVSE patcher makes load the
- * extender.
+ * patcher that make vanilla exe works with script extending inside". It is a
+ * field on the NVSE probe (`launchesGameExecutable`), not a list here.
+ *
+ * ─── WHAT VORTEX DOES WITH runExecutable (read from app.asar) ───────────
+ *  - The promise settles when the process CLOSES, and a start hook that
+ *    throws ProcessCanceled (a deploy prompt that failed) is swallowed into a
+ *    RESOLVE. So a resolve without a spawn is "did not start", not success.
+ *  - `onSpawned(child.pid)` fires straight after spawn(), before an async
+ *    ENOENT/EACCES error arrives — with an undefined pid when it failed.
+ *  - Vortex's own starter dispatches `setToolRunning` in onSpawned; that is
+ *    what starts its ProcessMonitor, which is what stops a deploy or purge
+ *    running under a live game. runExecutable alone does not, so we do.
  * ──────────────────────────────────────────────────────────────────────
  */
 
 import * as fsp from "fs/promises";
 import * as path from "path";
 
-import { selectors } from "@nexusmods/vortex-api";
+import { actions, selectors } from "@nexusmods/vortex-api";
 import type { types } from "@nexusmods/vortex-api";
 
 import { ehLog } from "../logging/ehLog";
@@ -29,9 +38,6 @@ import { scriptExtenderFor } from "../manifest/externalDependencies";
 import { blockingChecks } from "./environmentChecks";
 import { runEnvironmentPreflight } from "./preflight";
 import { gatherPreflightFacts } from "./vortexEnvironment";
-
-/** Games started through their own executable. See the module docblock. */
-export const LAUNCHES_GAME_EXECUTABLE: ReadonlySet<string> = new Set(["falloutnv"]);
 
 export type LaunchTarget =
   | {
@@ -43,19 +49,21 @@ export type LaunchTarget =
     }
   | { kind: "refused"; title: string; lines: string[]; steps: string[] };
 
-const VORTEX_PLAY_WARNING =
+export const VORTEX_PLAY_WARNING =
   "Do not use Vortex's Play button for this collection: it can start the game without the script extender and not tell you.";
 
+type ScriptExtender = NonNullable<ReturnType<typeof scriptExtenderFor>>;
+
 export function chooseLaunchTarget(input: {
-  gameId: string;
   gameName: string;
   gameDir: string;
   executable: string | undefined;
   exeExists: boolean;
-  scriptExtender: { name: string; loader: string; instructionsUrl: string } | undefined;
+  scriptExtender: ScriptExtender | undefined;
   loaderExists: boolean;
 }): LaunchTarget {
-  if (LAUNCHES_GAME_EXECUTABLE.has(input.gameId)) {
+  const se = input.scriptExtender;
+  if (se?.launchesGameExecutable === true) {
     if (input.executable !== undefined && input.exeExists) {
       return {
         kind: "ok",
@@ -72,7 +80,6 @@ export function chooseLaunchTarget(input: {
       steps: [`Check the ${input.gameName} folder set in Vortex → Games.`],
     };
   }
-  const se = input.scriptExtender;
   if (se === undefined) {
     return {
       kind: "refused",
@@ -118,9 +125,15 @@ async function isFile(p: string): Promise<boolean> {
 }
 
 function isCancellation(err: unknown): boolean {
-  const name = (err as { name?: unknown; constructor?: { name?: unknown } })?.name;
+  const name = (err as { name?: unknown })?.name;
   const ctor = (err as { constructor?: { name?: unknown } })?.constructor?.name;
   return [name, ctor].some((n) => n === "UserCanceled" || n === "ProcessCanceled");
+}
+
+function runningTools(state: unknown): string[] {
+  const running = (state as { session?: { base?: { toolsRunning?: Record<string, unknown> } } })?.session?.base
+    ?.toolsRunning;
+  return running !== undefined && running !== null ? Object.keys(running) : [];
 }
 
 export async function launchGame(api: types.IExtensionApi, gameId: string): Promise<LaunchOutcome> {
@@ -139,6 +152,14 @@ export async function launchGame(api: types.IExtensionApi, gameId: string): Prom
       [`Switch Vortex to ${facts.gameName}, then press Play again.`],
     );
   }
+  const running = runningTools(state);
+  if (running.length > 0) {
+    return refuse(
+      "A game or tool started from Vortex is still running.",
+      [`Running: ${running.join(", ")}`],
+      ["Close it first — starting a second copy, or deploying under a running game, breaks both."],
+    );
+  }
 
   const report = await runEnvironmentPreflight(facts, { scanFolder: false, context: "play" });
   const blocked = blockingChecks(report.checks);
@@ -153,7 +174,6 @@ export async function launchGame(api: types.IExtensionApi, gameId: string): Prom
 
   const se = scriptExtenderFor(gameId);
   const target = chooseLaunchTarget({
-    gameId,
     gameName: facts.gameName,
     gameDir,
     executable: facts.executable,
@@ -166,10 +186,11 @@ export async function launchGame(api: types.IExtensionApi, gameId: string): Prom
   ehLog("info", "play.start", { gameId, executable: target.executable, cwd: target.cwd, via: target.via });
   return new Promise<LaunchOutcome>((resolve, reject) => {
     let settled = false;
-    const started = (): void => {
+    const settle = (outcome: LaunchOutcome | Error): void => {
       if (settled) return;
       settled = true;
-      resolve({ kind: "started", executable: target.executable, via: target.via });
+      if (outcome instanceof Error) reject(outcome);
+      else resolve(outcome);
     };
     api
       .runExecutable(target.executable, [], {
@@ -180,8 +201,19 @@ export async function launchGame(api: types.IExtensionApi, gameId: string): Prom
         detach: true,
         shell: false,
         onSpawned: (pid?: number) => {
+          if (typeof pid !== "number" || pid <= 0) {
+            // spawn() failed; the error is on its way. Not started.
+            ehLog("warn", "play.spawn-without-pid", { gameId, executable: target.executable });
+            return;
+          }
           ehLog("info", "play.spawned", { gameId, executable: target.executable, pid });
-          started();
+          const setToolRunning = (actions as unknown as {
+            setToolRunning?: (exePath: string, started: number, exclusive: boolean) => unknown;
+          }).setToolRunning;
+          if (typeof setToolRunning === "function") {
+            api.store?.dispatch(setToolRunning(target.executable, Date.now(), true) as never);
+          }
+          settle({ kind: "started", executable: target.executable, via: target.via });
         },
         onExit: (code: number | null) => {
           // A loader exits as soon as it has started the game; a non-zero code
@@ -189,23 +221,21 @@ export async function launchGame(api: types.IExtensionApi, gameId: string): Prom
           ehLog(code === 0 ? "info" : "warn", "play.exit", { gameId, executable: target.executable, code });
         },
       })
-      .then(started)
+      .then(() => {
+        if (!settled) {
+          // Resolved without ever spawning: a start hook was cancelled and Vortex swallowed it.
+          ehLog("warn", "play.not-started", { gameId, executable: target.executable });
+          settle({ kind: "cancelled" });
+        }
+      })
       .catch((err: unknown) => {
         if (isCancellation(err)) {
           ehLog("info", "play.cancelled", { gameId, error: String(err) });
-          if (!settled) {
-            settled = true;
-            resolve({ kind: "cancelled" });
-          }
+          settle({ kind: "cancelled" });
           return;
         }
         ehLog("error", "play.failed", { gameId, executable: target.executable, error: String(err) });
-        if (!settled) {
-          settled = true;
-          reject(err instanceof Error ? err : new Error(String(err)));
-        }
+        settle(err instanceof Error ? err : new Error(String(err)));
       });
   });
 }
-
-export { VORTEX_PLAY_WARNING };

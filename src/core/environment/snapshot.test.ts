@@ -12,6 +12,29 @@ import * as path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const hashCalls = vi.hoisted(() => ({ paths: [] as string[] }));
+const diskFull = vi.hoisted(() => ({ on: false }));
+
+/**
+ * A write stream that fails the way a full disk or a dropped drive does: the
+ * buffer is full (so the writer waits for `drain`) and the write then errors,
+ * which destroys the stream — and a destroyed stream never emits `drain`.
+ */
+vi.mock("fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("fs")>();
+  const { Writable } = await import("stream");
+  return {
+    ...actual,
+    createWriteStream: (...args: Parameters<typeof actual.createWriteStream>) => {
+      if (!diskFull.on) return actual.createWriteStream(...args);
+      return new Writable({
+        highWaterMark: 1,
+        write(_chunk, _encoding, callback) {
+          setTimeout(() => callback(Object.assign(new Error("ENOSPC: no space left on device, write"), { code: "ENOSPC" })), 5);
+        },
+      });
+    },
+  };
+});
 
 vi.mock("../archiveHashing", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../archiveHashing")>();
@@ -122,5 +145,36 @@ describe("writeEnvironmentSnapshot", () => {
       },
     });
     await expect(pending).rejects.toThrow(/cancelled/i);
+    // Nothing half-written is left under either name.
+    expect(fs.existsSync(filePath)).toBe(false);
+    expect(fs.existsSync(`${filePath}.partial`)).toBe(false);
+  });
+
+  it("rejects — rather than hanging — when the file cannot be written, and leaves nothing behind", async () => {
+    const filePath = path.join(tmp, "no-such-folder", "snapshot.json");
+    await expect(
+      writeEnvironmentSnapshot({ api: api(), gameId: "fallout4", filePath, extensionVersion: "test" }),
+    ).rejects.toThrow();
+    expect(fs.existsSync(`${filePath}.partial`)).toBe(false);
+  });
+
+  it("rejects when the disk fills mid-write, instead of waiting forever for a drain that never comes", async () => {
+    diskFull.on = true;
+    try {
+      const filePath = path.join(tmp, "full.json");
+      await expect(
+        writeEnvironmentSnapshot({ api: api(), gameId: "fallout4", filePath, extensionVersion: "test" }),
+      ).rejects.toThrow(/ENOSPC/);
+      expect(fs.existsSync(filePath)).toBe(false);
+    } finally {
+      diskFull.on = false;
+    }
+  }, 4000);
+
+  it("writes under the final name only once complete", async () => {
+    const filePath = path.join(tmp, "done.json");
+    await writeEnvironmentSnapshot({ api: api(), gameId: "fallout4", filePath, extensionVersion: "test" });
+    expect(fs.existsSync(filePath)).toBe(true);
+    expect(fs.existsSync(`${filePath}.partial`)).toBe(false);
   });
 });

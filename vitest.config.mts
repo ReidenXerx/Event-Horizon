@@ -26,6 +26,8 @@ export default defineConfig({
       "src/**/*.test.ts",
       "src/**/*.test.tsx",
       "test/e2e/**/*.e2e.test.ts",
+      // The release tooling (scripts/lib) is plain ESM and tested where it lives.
+      "scripts/**/*.test.mjs",
     ],
     /**
      * ─── A SUITE THAT FAILS AT RANDOM IS A SUITE NOBODY READS ───────────

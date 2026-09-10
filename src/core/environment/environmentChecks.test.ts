@@ -11,6 +11,7 @@ import {
   decideBinaryImports,
   decideGameFolder,
   decideGameManaged,
+  decideIniLeftovers,
   decideLauncherRan,
   decideProtectedLocation,
   describeBlockedChecks,
@@ -129,7 +130,7 @@ describe("decideBinaryImports", () => {
 const scan = (over: Partial<GameFolderScan["report"]>, deployedCount = 0): GameFolderScan => ({
   report: {
     vanilla: { kind: "known", source: "gog", detail: "list", files: 10 },
-    counts: { deployed: 0, vanilla: 10, vortex: 0, declared: 0, creation: 0, "not-loaded": 0, volatile: 0, unmanaged: 0 },
+    counts: { deployed: 0, vanilla: 10, vortex: 0, declared: 0, creation: 0, tool: 0, "not-loaded": 0, volatile: 0, unmanaged: 0 },
     unmanaged: [],
     vanillaMissing: [],
     vanillaSizeMismatch: [],
@@ -138,7 +139,9 @@ const scan = (over: Partial<GameFolderScan["report"]>, deployedCount = 0): GameF
   manifests: [],
   deployedCount,
   unreadable: [],
+  linkedDirs: [],
   creationSources: [],
+  toolDlls: [],
 });
 
 describe("decideGameFolder", () => {
@@ -174,5 +177,76 @@ describe("describeBlockedChecks", () => {
     expect(text).toMatch(/never been started/);
     expect(text).toMatch(/What to do:/);
     expect(text).not.toMatch(/Vortex manages/);
+  });
+});
+
+describe("checks that could not run say unknown, never ok", () => {
+  it("Program Files: no roots reported", () => {
+    expect(
+      decideProtectedLocation({ gameName: G, gameDir: "C:/Program Files/x", protectedRoots: [], wine: false, store: "steam" }).status,
+    ).toBe("unknown");
+  });
+
+  it("DLL imports: no executable could be read", () => {
+    const c = decideBinaryImports({ gameName: G, checked: [], findings: [], unreadable: ["Fallout4.exe"] });
+    expect(c.status).toBe("unknown");
+    expect(c.lines).toEqual(["Unreadable: Fallout4.exe"]);
+  });
+});
+
+describe("decideLauncherRan — what wrote the file", () => {
+  const base = { gameName: G, prefsPath: "C:/Docs/My Games/Fallout4/Fallout4Prefs.ini", exists: true };
+
+  it("blocks when the file holds no launcher-written hardware settings", () => {
+    const c = decideLauncherRan({ ...base, launcherWrote: false, hasLauncher: true, store: "steam" });
+    expect(c.status).toBe("blocked");
+    expect(c.title).toMatch(/not created by the game/);
+    expect(c.steps[0]).toMatch(/from Steam/);
+  });
+
+  it("names the right place to start the game from, and does not ask for a launcher a game lacks", () => {
+    const xbox = decideLauncherRan({ ...base, exists: false, hasLauncher: true, store: "xbox" });
+    expect(xbox.steps[0]).toMatch(/from the Xbox app/);
+    const starfield = decideLauncherRan({ ...base, gameName: "Starfield", exists: false, hasLauncher: false, store: "steam" });
+    expect(starfield.steps[0]).toMatch(/wait for the main menu/);
+    expect(starfield.steps[0]).not.toMatch(/launcher/);
+  });
+
+  it("passes when the launcher's contents cannot be judged", () => {
+    expect(decideLauncherRan({ ...base, launcherWrote: undefined }).status).toBe("ok");
+  });
+});
+
+describe("decideIniLeftovers", () => {
+  it("is unknown without the game's defaults to compare against", () => {
+    expect(decideIniLeftovers({ gameName: G, defaultsFile: undefined, leftovers: [] }).status).toBe("unknown");
+  });
+
+  it("passes with nothing left over, and warns — never blocks — otherwise", () => {
+    expect(decideIniLeftovers({ gameName: G, defaultsFile: "Fallout4_Default.ini", leftovers: [] }).status).toBe("ok");
+    const c = decideIniLeftovers({
+      gameName: G,
+      defaultsFile: "Fallout4_Default.ini",
+      leftovers: [
+        { file: "Fallout4Custom.ini", key: "sResourceDataDirsFinal", value: "", defaultValue: "STRINGS\\" },
+        { file: "Fallout4.ini", key: "sResourceArchive2List", value: "Old.ba2" },
+      ],
+    });
+    expect(c.status).toBe("warning");
+    expect(c.lines).toEqual([
+      "Fallout4Custom.ini: sResourceDataDirsFinal= (game default: STRINGS\\)",
+      "Fallout4.ini: sResourceArchive2List=Old.ba2 (game default: not set)",
+    ]);
+  });
+});
+
+describe("decideGameFolder — what it did not check, and what it left alone", () => {
+  it("says a GOG record is presence-only, and names tool DLLs it leaves alone", () => {
+    const s = scan({});
+    s.toolDlls = [{ dll: "flowchartx64.dll", owners: ["CreationKit.exe"] }];
+    const c = decideGameFolder({ gameName: G, scan: s });
+    expect(c.status).toBe("ok");
+    expect(c.lines.join("\n")).toMatch(/presence, not content/);
+    expect(c.lines.join("\n")).toMatch(/flowchartx64\.dll \(CreationKit\.exe\)/);
   });
 });

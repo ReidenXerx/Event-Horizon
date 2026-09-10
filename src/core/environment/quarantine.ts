@@ -4,33 +4,56 @@
  *
  * The files a clean-folder check finds are not ours (NS-2): a tester's hand-
  * installed mod, a previous collection's MCM settings, a shader cache. So this
- * never deletes. It MOVES, into a folder inside the game root that the game
- * does not load, and the restore puts every file back where it was.
+ * never deletes. It MOVES, into a folder beside the game folder on the same
+ * drive — outside what the store owns, so uninstalling, reinstalling or moving
+ * the game (exactly what a tester with a dirty folder tends to do) does not
+ * take the files with it — and the restore puts every file back where it was.
  *
  * ─── THE ORDER IS THE SAFETY ───────────────────────────────────────────
  *  1. The record is written BEFORE the first file moves — twice, once in Event
- *     Horizon's own folder and once beside the files — so a crash, a power cut
- *     or a killed Vortex mid-move still leaves a list of where everything went.
- *  2. Same volume as the game, so a move is a rename: nothing is copied, and a
- *     half-finished move cannot exist. A cross-volume junction falls back to
- *     copy, size check, then unlink of the original.
- *  3. Restore reads the DISK, not the record's states: a file in quarantine
- *     goes back if its original place is free, and stays put if something now
- *     occupies it. It never overwrites.
+ *     Horizon's own folder and once beside the files — and rewritten every few
+ *     files, so a crash, a power cut or a killed Vortex mid-move still leaves a
+ *     list of where everything went. If the record cannot be rewritten, moving
+ *     stops: a move nobody recorded is the one thing this must never do.
+ *  2. Same volume as the game. A regular file is hard-linked into place and
+ *     then unlinked from the game folder: creating a link FAILS when the
+ *     destination exists, which makes "never overwrite" atomic in a way a
+ *     check-then-rename is not (rename silently replaces on Windows). Links and
+ *     filesystems without hard links fall back to check-then-rename, and a
+ *     cross-volume junction to copy, size check, then unlink.
+ *  3. What is held is read from the DISK, not from recorded states: a crash can
+ *     leave "pending" on a file that did move, and the Doctor must still offer
+ *     it back. Restore puts a file back only if its original place is free.
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import * as fs from "fs";
 import * as fsp from "fs/promises";
 import * as path from "path";
 
 import { ehLog } from "../logging/ehLog";
 import type { FolderEntry } from "./gameFolderScan";
+import { logPaths } from "./logPaths";
 
-/** A root sub-folder: off the load surface, so the scan never sees its own quarantine. */
 export const QUARANTINE_FOLDER_NAME = "Event Horizon quarantine";
+
+/**
+ * `<parent of game folder>\Event Horizon quarantine\<game folder name>` — the
+ * curator's choice: same drive (a move stays instant), outside the folder the
+ * store owns. A game installed at a drive root has no parent, so its quarantine
+ * is a root sub-folder of the game, which the scan never walks.
+ */
+export function quarantineRootFor(gameDir: string): string {
+  const resolved = path.resolve(gameDir);
+  const parent = path.dirname(resolved);
+  return parent === resolved
+    ? path.join(resolved, QUARANTINE_FOLDER_NAME)
+    : path.join(parent, QUARANTINE_FOLDER_NAME, path.basename(resolved));
+}
 const SCHEMA = "event-horizon.quarantine/1";
 const RECORD_IN_FOLDER = "restore.json";
-const FLUSH_EVERY = 250;
+/** Small on purpose: a crash can lose at most this many state updates. */
+const FLUSH_EVERY = 25;
 
 export type QuarantineEntryState =
   | "pending"
@@ -59,14 +82,18 @@ export type QuarantineRecord = {
   createdAt: string;
   completedAt?: string;
   restoredAt?: string;
+  /** The user acknowledged files that went missing from quarantine. */
+  dismissedAt?: string;
   entries: QuarantineEntry[];
 };
 
 export type QuarantineSummary = {
   recordPath: string;
   record: QuarantineRecord;
-  /** Files still sitting in quarantine. */
+  /** Files sitting in the quarantine folder right now. */
   held: number;
+  /** Files recorded as moved that are no longer in the quarantine folder. */
+  absent: number;
 };
 
 function isSafeRelative(rel: string): boolean {
@@ -84,13 +111,37 @@ async function exists(p: string): Promise<boolean> {
 }
 
 async function moveFile(from: string, to: string): Promise<void> {
-  if (await exists(to)) throw new Error(`destination already exists: ${to}`);
   await fsp.mkdir(path.dirname(to), { recursive: true });
+  const st = await fsp.lstat(from);
+  if (st.isFile()) {
+    let linked = false;
+    try {
+      await fsp.link(from, to);
+      linked = true;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code === "EEXIST") {
+        throw new Error(`destination already exists: ${to}`);
+      }
+      // No hard links here (FAT, some shares, a locked file): fall through.
+    }
+    if (linked) {
+      try {
+        await fsp.unlink(from);
+        return;
+      } catch (err) {
+        // The original could not be removed (a running game holds it). Undo
+        // the link so the file exists in exactly one place, and report it.
+        await fsp.unlink(to).catch(() => undefined);
+        throw err;
+      }
+    }
+  }
+  if (await exists(to)) throw new Error(`destination already exists: ${to}`);
   try {
     await fsp.rename(from, to);
   } catch (err) {
     if ((err as NodeJS.ErrnoException)?.code !== "EXDEV") throw err;
-    await fsp.copyFile(from, to, (await import("fs")).constants.COPYFILE_EXCL);
+    await fsp.copyFile(from, to, fs.constants.COPYFILE_EXCL);
     const [a, b] = await Promise.all([fsp.stat(from), fsp.stat(to)]);
     if (a.size !== b.size) {
       await fsp.unlink(to).catch(() => undefined);
@@ -121,10 +172,11 @@ export async function quarantineFiles(args: {
   const now = args.now ?? new Date();
   const stamp = now.toISOString().replace(/[:.]/g, "-").slice(0, 19);
   let id = `${args.gameId}-${stamp}`;
-  let folder = path.join(args.gameDir, QUARANTINE_FOLDER_NAME, id);
+  const root = quarantineRootFor(args.gameDir);
+  let folder = path.join(root, id);
   for (let n = 2; await exists(folder); n += 1) {
     id = `${args.gameId}-${stamp}-${n}`;
-    folder = path.join(args.gameDir, QUARANTINE_FOLDER_NAME, id);
+    folder = path.join(root, id);
   }
 
   const record: QuarantineRecord = {
@@ -146,6 +198,8 @@ export async function quarantineFiles(args: {
 
   let moved = 0;
   const failed: QuarantineEntry[] = [];
+  const movedPaths: string[] = [];
+  let recordError: string | undefined;
   for (let i = 0; i < record.entries.length; i += 1) {
     const entry = record.entries[i]!;
     try {
@@ -153,21 +207,46 @@ export async function quarantineFiles(args: {
       await moveFile(path.join(args.gameDir, entry.path), path.join(folder, entry.path));
       entry.state = "moved";
       moved += 1;
+      movedPaths.push(entry.path);
     } catch (err) {
       entry.state = "failed";
       entry.error = err instanceof Error ? err.message : String(err);
       failed.push(entry);
       ehLog("warn", "quarantine.move-failed", { id, file: entry.path, error: entry.error });
     }
-    if ((i + 1) % FLUSH_EVERY === 0) await writeRecord(record, recordPath);
+    if ((i + 1) % FLUSH_EVERY === 0) {
+      try {
+        await writeRecord(record, recordPath);
+      } catch (err) {
+        recordError = err instanceof Error ? err.message : String(err);
+        ehLog("error", "quarantine.record-write-failed", { id, afterEntries: i + 1, error: recordError });
+        break;
+      }
+    }
   }
   record.completedAt = new Date().toISOString();
-  await writeRecord(record, recordPath);
+  try {
+    await writeRecord(record, recordPath);
+  } catch (err) {
+    recordError ??= err instanceof Error ? err.message : String(err);
+    ehLog("error", "quarantine.record-write-failed", { id, final: true, error: recordError });
+  }
+  if (recordError !== undefined) {
+    failed.unshift({
+      path: "(quarantine record)",
+      size: 0,
+      mtimeMs: 0,
+      state: "failed",
+      error: `the quarantine record could not be written, so moving stopped: ${recordError}`,
+    });
+  }
+
+  logPaths("info", "quarantine.moved", { id, folder, recordPath }, movedPaths);
   ehLog(failed.length === 0 ? "info" : "warn", "quarantine.done", {
     id,
     moved,
     failed: failed.length,
-    failedSample: failed.slice(0, 50).map((f) => `${f.path}: ${f.error}`),
+    failedDetail: failed.map((f) => `${f.path}: ${f.error}`),
   });
   return { recordPath, record, moved, failed };
 }
@@ -181,7 +260,20 @@ export async function readQuarantineRecord(recordPath: string): Promise<Quaranti
   }
 }
 
-export async function listQuarantines(recordDir: string): Promise<QuarantineSummary[]> {
+/** What a record holds on disk right now — never what its states claim. */
+async function countOnDisk(record: QuarantineRecord): Promise<{ held: number; absent: number }> {
+  let held = 0;
+  let absent = 0;
+  for (const e of record.entries) {
+    if (e.state === "restored" || e.state === "failed" || !isSafeRelative(e.path)) continue;
+    if (await exists(path.join(record.folder, e.path))) held += 1;
+    // "pending" and not in the folder: it never left the game folder.
+    else if (e.state !== "pending") absent += 1;
+  }
+  return { held, absent };
+}
+
+export async function listQuarantines(recordDir: string, gameId?: string): Promise<QuarantineSummary[]> {
   let names: string[];
   try {
     names = await fsp.readdir(recordDir);
@@ -193,12 +285,8 @@ export async function listQuarantines(recordDir: string): Promise<QuarantineSumm
     if (!name.endsWith(".json")) continue;
     const recordPath = path.join(recordDir, name);
     const record = await readQuarantineRecord(recordPath);
-    if (record === undefined) continue;
-    out.push({
-      recordPath,
-      record,
-      held: record.entries.filter((e) => e.state === "moved" || e.state === "conflict").length,
-    });
+    if (record === undefined || (gameId !== undefined && record.gameId !== gameId)) continue;
+    out.push({ recordPath, record, ...(await countOnDisk(record)) });
   }
   return out.sort((a, b) => b.record.createdAt.localeCompare(a.record.createdAt));
 }
@@ -216,6 +304,7 @@ export async function restoreQuarantine(recordPath: string): Promise<RestoreResu
   const record = await readQuarantineRecord(recordPath);
   if (record === undefined) throw new Error(`Not a readable quarantine record: ${recordPath}`);
   const result: RestoreResult = { restored: 0, conflicts: [], absent: [], failed: [] };
+  const restoredPaths: string[] = [];
   ehLog("info", "quarantine.restore.start", { id: record.id, recordPath, files: record.entries.length });
 
   for (const entry of record.entries) {
@@ -229,7 +318,7 @@ export async function restoreQuarantine(recordPath: string): Promise<RestoreResu
     // The disk decides, not the recorded state: a crash can leave "pending"
     // on a file that did move.
     if (!(await exists(held))) {
-      if (entry.state === "moved" || entry.state === "conflict") {
+      if (entry.state !== "pending") {
         entry.state = "absent";
         result.absent.push(entry.path);
       }
@@ -245,6 +334,7 @@ export async function restoreQuarantine(recordPath: string): Promise<RestoreResu
       entry.state = "restored";
       delete entry.error;
       result.restored += 1;
+      restoredPaths.push(entry.path);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       entry.error = message;
@@ -252,33 +342,54 @@ export async function restoreQuarantine(recordPath: string): Promise<RestoreResu
     }
   }
 
-  const stillHeld = record.entries.some((e) => e.state === "conflict" || e.state === "moved");
-  if (!stillHeld && result.failed.length === 0) record.restoredAt = new Date().toISOString();
+  const { held } = await countOnDisk(record);
+  if (held === 0 && result.failed.length === 0 && result.absent.length === 0) {
+    record.restoredAt = new Date().toISOString();
+  }
   await fsp.writeFile(recordPath, JSON.stringify(record, null, 2), "utf8");
 
-  if (record.restoredAt !== undefined) {
+  if (held === 0 && result.failed.length === 0) {
     // Only our own folder is tidied, and only once it holds nothing of anyone's.
     await fsp.unlink(path.join(record.folder, RECORD_IN_FOLDER)).catch(() => undefined);
     await pruneEmptyDirs(record.folder);
+    // `<game folder name>`, then `Event Horizon quarantine` — each only if empty.
     await fsp.rmdir(path.dirname(record.folder)).catch(() => undefined);
+    if (path.basename(path.dirname(path.dirname(record.folder))) === QUARANTINE_FOLDER_NAME) {
+      await fsp.rmdir(path.dirname(path.dirname(record.folder))).catch(() => undefined);
+    }
   } else if (await exists(record.folder)) {
     await fsp.writeFile(path.join(record.folder, RECORD_IN_FOLDER), JSON.stringify(record, null, 2), "utf8");
   }
 
-  ehLog(result.conflicts.length + result.failed.length === 0 ? "info" : "warn", "quarantine.restore.done", {
+  logPaths("info", "quarantine.restored", { id: record.id, recordPath }, restoredPaths);
+  ehLog(result.conflicts.length + result.failed.length + result.absent.length === 0 ? "info" : "warn", "quarantine.restore.done", {
     id: record.id,
     restored: result.restored,
-    conflicts: result.conflicts.length,
-    conflictSample: result.conflicts.slice(0, 50),
-    absent: result.absent.length,
-    failed: result.failed.slice(0, 50),
+    conflicts: result.conflicts,
+    absent: result.absent,
+    failed: result.failed,
+    stillHeld: held,
   });
   return result;
 }
 
+/**
+ * Acknowledge files that went missing from quarantine, so the Doctor stops
+ * listing a record it can do nothing more with. Refuses while anything is held.
+ */
+export async function dismissQuarantine(recordPath: string): Promise<void> {
+  const record = await readQuarantineRecord(recordPath);
+  if (record === undefined) throw new Error(`Not a readable quarantine record: ${recordPath}`);
+  const { held, absent } = await countOnDisk(record);
+  if (held > 0) throw new Error(`This quarantine still holds ${held} file(s); restore them first.`);
+  record.dismissedAt = new Date().toISOString();
+  await fsp.writeFile(recordPath, JSON.stringify(record, null, 2), "utf8");
+  ehLog("info", "quarantine.dismissed", { id: record.id, recordPath, absent });
+}
+
 /** Remove empty directories bottom-up, `dir` included. Never touches a file. */
 async function pruneEmptyDirs(dir: string): Promise<void> {
-  let dirents: import("fs").Dirent[];
+  let dirents: fs.Dirent[];
   try {
     dirents = await fsp.readdir(dir, { withFileTypes: true });
   } catch {

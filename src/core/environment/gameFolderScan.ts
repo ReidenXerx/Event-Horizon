@@ -10,10 +10,10 @@
  * ─── WHAT COUNTS (the curator's call) ──────────────────────────────────
  * Only files the game can LOAD: everything under `Data`, and native code
  * (`.dll`, `.asi`) sitting in the game root, where the process picks it up by
- * search order or through an ASI loader. A screenshot, a shortcut, GOG's
- * uninstaller or a Creation Kit install beside the game are never read by the
- * game and are left alone — moving the uninstaller would break the store, and
- * reporting it would teach people to ignore the report.
+ * search order or through an ASI loader. Executables, screenshots, shortcuts
+ * and GOG's uninstaller beside the game are never read by the game and are
+ * left alone — moving the uninstaller would break the store, and reporting it
+ * would teach people to ignore the report.
  *
  * ─── WHAT A FILE IS ALLOWED TO BE ──────────────────────────────────────
  * Every allowance comes from a record something else wrote, never from a list
@@ -27,10 +27,18 @@
  *   - volatile  — logs and OS metadata (volatileFiles.ts)
  * What is left is `unmanaged`.
  *
- * With no store record the answer is `unknown`, never "everything is foreign":
- * without a vanilla list, `Fallout4 - Textures1.ba2` is indistinguishable from
- * a mod, and a check that offers to move the game's own archives aside is worse
- * than no check.
+ * ─── WHEN THE ANSWER IS "UNKNOWN" ──────────────────────────────────────
+ * Never "everything is foreign". Without a trustworthy vanilla list,
+ * `Fallout4 - Textures1.ba2` is indistinguishable from a mod, and a check that
+ * offers to move the game's own archives aside is worse than no check. So the
+ * list is `unknown` — and nothing is purged or moved — when:
+ *   - no store record exists (offline installers, Epic, Xbox),
+ *   - a record is partial (a Steam depot manifest missing, a GOG section whose
+ *     entry count disagrees with its own counter, a Steam app mid-update),
+ *   - the record does not list the game's own executable (it is some other
+ *     app's record), or
+ *   - part of the load surface could not be seen: an unreadable folder, an
+ *     unreadable Vortex manifest, or a folder that is a link to somewhere else.
  * ──────────────────────────────────────────────────────────────────────
  */
 
@@ -39,11 +47,14 @@ import * as path from "path";
 
 import { ehLog } from "../logging/ehLog";
 import { segmentsOf, toPosix } from "../paths";
+import { scriptExtenderLoaders } from "../manifest/externalDependencies";
 import { isVolatileFile } from "../volatileFiles";
+import { rootDllOwnership } from "./binaryImports";
 import {
   parseAppManifest,
   parseDepotManifest,
   parseGogFileList,
+  type SteamAppManifest,
   type StoreFile,
 } from "./storeFileLists";
 
@@ -75,6 +86,7 @@ export type FileClass =
   | "vortex"
   | "declared"
   | "creation"
+  | "tool"
   | "not-loaded"
   | "volatile"
   | "unmanaged";
@@ -94,9 +106,15 @@ export type GameFolderReport = {
 
 const ROOT_NATIVE_CODE = /\.(dll|asi)$/i;
 const VORTEX_MANIFEST = /^vortex\.deployment(\..+)?\.json$/i;
+/** Vortex writes manifests atomically through a temp file; a crash leaves it behind. */
+const VORTEX_MANIFEST_TEMP = /^vortex\.deployment(\..+)?\.json\..+\.tmp$/i;
 const VORTEX_MARKER = "__folder_managed_by_vortex";
 const VORTEX_BACKUP_SUFFIX = ".vortex_backup";
 const ARCHIVE = /\.(ba2|bsa)$/i;
+/** Steam's `StateFlags` for "fully installed". Anything else is mid-update or broken. */
+const STEAM_FULLY_INSTALLED = "4";
+
+const byPath = (a: FolderEntry, b: FolderEntry): number => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 
 /** Would the game load this file? See the module docblock. */
 export function isOnLoadSurface(relPath: string): boolean {
@@ -111,6 +129,7 @@ export function isVortexArtifact(relPath: string): boolean {
   return (
     name === VORTEX_MARKER ||
     VORTEX_MANIFEST.test(name) ||
+    VORTEX_MANIFEST_TEMP.test(name) ||
     name.endsWith(VORTEX_BACKUP_SUFFIX)
   );
 }
@@ -133,14 +152,17 @@ export function classifyGameFolder(input: {
   deployed: ReadonlySet<string>;
   creations: CreationAllowlist;
   declared: ReadonlySet<string>;
+  /** Lower-case root DLL names that belong to a tool beside the game (binaryImports.rootDllOwnership). */
+  toolOwned?: ReadonlySet<string>;
 }): GameFolderReport {
-  const { entries, vanilla, deployed, creations, declared } = input;
+  const { entries, vanilla, deployed, creations, declared, toolOwned } = input;
   const counts: Record<FileClass, number> = {
     deployed: 0,
     vanilla: 0,
     vortex: 0,
     declared: 0,
     creation: 0,
+    tool: 0,
     "not-loaded": 0,
     volatile: 0,
     unmanaged: 0,
@@ -164,6 +186,7 @@ export function classifyGameFolder(input: {
     else if (isVortexArtifact(lower)) cls = "vortex";
     else if (declared.has(lower)) cls = "declared";
     else if (isCreation(lower, creations)) cls = "creation";
+    else if (!lower.includes("/") && toolOwned?.has(lower) === true) cls = "tool";
     else if (!isOnLoadSurface(lower)) cls = "not-loaded";
     else if (isVolatileFile(lower)) cls = "volatile";
     else cls = "unmanaged";
@@ -235,7 +258,16 @@ export function groupEntries(
 
 // ── IO ───────────────────────────────────────────────────────────────────
 
-export type WalkResult = { entries: FolderEntry[]; unreadable: string[] };
+export type WalkResult = {
+  entries: FolderEntry[];
+  unreadable: string[];
+  /**
+   * Folders that are links (symlinks, junctions) to somewhere else. Not walked
+   * and not moved: following them could reach — and quarantine — files outside
+   * the game folder, and moving one would move the link, not what it holds.
+   */
+  linkedDirs: string[];
+};
 
 /**
  * Every file under `root`, relative, "/"-separated.
@@ -250,6 +282,7 @@ export async function walkFolder(
 ): Promise<WalkResult> {
   const entries: FolderEntry[] = [];
   const unreadable: string[] = [];
+  const linkedDirs: string[] = [];
   const stack: string[] = [""];
   while (stack.length > 0) {
     if (options.signal?.aborted) throw new Error("Scan cancelled");
@@ -264,12 +297,28 @@ export async function walkFolder(
     }
     for (const d of dirents) {
       const childRel = rel === "" ? d.name : `${rel}/${d.name}`;
+      const skippedRootFolder = options.loadSurfaceOnly && rel === "" && d.name.toLowerCase() !== "data";
       if (d.isDirectory()) {
-        if (options.loadSurfaceOnly && rel === "" && d.name.toLowerCase() !== "data") continue;
-        stack.push(childRel);
+        if (!skippedRootFolder) stack.push(childRel);
         continue;
       }
-      if (!d.isFile() && !d.isSymbolicLink()) continue;
+      if (d.isSymbolicLink()) {
+        let target: import("fs").Stats | undefined;
+        try {
+          target = await fsp.stat(path.join(root, childRel));
+        } catch {
+          target = undefined;
+        }
+        if (target?.isDirectory() === true) {
+          if (!skippedRootFolder) {
+            linkedDirs.push(childRel);
+            ehLog("warn", "environment.walk.linked-folder", { root, dir: childRel });
+          }
+          continue;
+        }
+      } else if (!d.isFile()) {
+        continue;
+      }
       try {
         const st = await fsp.lstat(path.join(root, childRel));
         entries.push({ path: childRel, size: st.size, mtimeMs: Math.round(st.mtimeMs) });
@@ -279,8 +328,9 @@ export async function walkFolder(
       }
     }
   }
-  entries.sort((a, b) => a.path.localeCompare(b.path));
-  return { entries, unreadable };
+  // Plain code-unit order: a locale-aware sort of 700k paths froze the renderer for seconds.
+  entries.sort(byPath);
+  return { entries, unreadable, linkedDirs };
 }
 
 export type DeploymentManifestSummary = {
@@ -293,6 +343,10 @@ export type DeploymentManifestSummary = {
 
 /**
  * What Vortex has linked into the game folder, from its own manifests.
+ *
+ * Read from DISK rather than through Vortex's API on purpose: after a purge the
+ * files on disk are the truth, and a manifest Vortex no longer knows about still
+ * describes files that are there.
  *
  * `files[].relPath` is relative to the manifest's `targetPath`, which for the
  * default mod type is `Data` and for `dinput` is the game root — so it is
@@ -340,105 +394,160 @@ export async function readDeployedFiles(
   return { deployed, manifests, unreadable };
 }
 
-/** The store's record of this install, or why there is none. */
-export async function loadVanillaList(gameDir: string): Promise<VanillaList> {
-  const tried: string[] = [];
+const unknown = (reason: string): VanillaList => ({ kind: "unknown", reason });
 
-  // GOG
-  const gogList = path.join(gameDir, "goggame-galaxyFileList.ini");
-  tried.push(gogList);
-  try {
-    const parsed = parseGogFileList(await fsp.readFile(gogList, "utf8"));
-    if (parsed.files.length > 0) {
-      return {
-        kind: "known",
-        source: "gog",
-        detail: `${gogList} (products ${parsed.productIds.join(", ") || "none"})`,
-        files: parsed.files,
-        ownedRootPrefixes: parsed.productIds.map((id) => `goggame-${id}.`),
-      };
-    }
-  } catch {
-    // Not a GOG Galaxy install — try Steam.
-  }
-
-  // Steam: <library>/steamapps/common/<installdir>
+/** Steam's record, when the game sits in a Steam library. `undefined` = not a Steam install. */
+async function readSteamRecord(gameDir: string, tried: string[]): Promise<VanillaList | undefined> {
   const commonDir = path.dirname(gameDir);
   const steamapps = path.dirname(commonDir);
-  if (path.basename(commonDir).toLowerCase() === "common" && path.basename(steamapps).toLowerCase() === "steamapps") {
-    let names: string[] = [];
+  if (path.basename(commonDir).toLowerCase() !== "common" || path.basename(steamapps).toLowerCase() !== "steamapps") {
+    return undefined;
+  }
+  let names: string[];
+  try {
+    names = (await fsp.readdir(steamapps)).filter((n) => /^appmanifest_\d+\.acf$/i.test(n)).sort();
+  } catch {
+    return undefined;
+  }
+  /**
+   * EVERY app whose install folder is this one, not the first. Bethesda's
+   * Creation Kits are separate Steam apps that install into the game's own
+   * folder, and their appmanifest ids sort BEFORE the game's (1946160 < 377160
+   * as file names). Taking the first match made the Creation Kit's depot the
+   * "vanilla" list, and the game's own .esm and archives came out foreign.
+   * The folder holds the union of what every app put there.
+   */
+  const folder = path.basename(gameDir).toLowerCase();
+  const matches: Array<{ acfPath: string; app: SteamAppManifest }> = [];
+  for (const name of names) {
+    const acfPath = path.join(steamapps, name);
     try {
-      names = await fsp.readdir(steamapps);
+      const app = parseAppManifest(await fsp.readFile(acfPath, "utf8"));
+      if (app !== undefined && app.installDir.toLowerCase() === folder) matches.push({ acfPath, app });
     } catch {
-      names = [];
-    }
-    const folder = path.basename(gameDir).toLowerCase();
-    for (const name of names) {
-      if (!/^appmanifest_\d+\.acf$/i.test(name)) continue;
-      const acfPath = path.join(steamapps, name);
-      let app: ReturnType<typeof parseAppManifest>;
-      try {
-        app = parseAppManifest(await fsp.readFile(acfPath, "utf8"));
-      } catch {
-        continue;
-      }
-      if (app === undefined || app.installDir.toLowerCase() !== folder) continue;
-      tried.push(acfPath);
-
-      const cacheDirs = [
-        ...(app.launcherPath !== undefined ? [path.join(path.dirname(app.launcherPath), "depotcache")] : []),
-        path.join(path.dirname(steamapps), "depotcache"),
-        path.join(steamapps, "depotcache"),
-      ];
-      const files: StoreFile[] = [];
-      const used: string[] = [];
-      for (const depot of app.depots) {
-        const fileName = `${depot.depotId}_${depot.manifestId}.manifest`;
-        let found: Buffer | undefined;
-        for (const dir of cacheDirs) {
-          try {
-            found = await fsp.readFile(path.join(dir, fileName));
-            used.push(path.join(dir, fileName));
-            break;
-          } catch {
-            tried.push(path.join(dir, fileName));
-          }
-        }
-        if (found === undefined) {
-          if (depot.size === 0) continue;
-          return {
-            kind: "unknown",
-            reason: `Steam's record for depot ${depot.depotId} (${fileName}) is not in depotcache — a partial list would call the game's own files foreign.`,
-          };
-        }
-        const manifest = parseDepotManifest(found);
-        if (manifest === undefined || manifest.filenamesEncrypted) {
-          return {
-            kind: "unknown",
-            reason: `Steam's depot manifest ${fileName} could not be read${manifest?.filenamesEncrypted === true ? " (file names are encrypted)" : ""}.`,
-          };
-        }
-        files.push(...manifest.files);
-      }
-      if (files.length === 0) {
-        return { kind: "unknown", reason: `Steam app ${app.appId} lists no readable depots.` };
-      }
-      return {
-        kind: "known",
-        source: "steam",
-        detail: `${acfPath} → ${used.join(", ")}`,
-        files,
-        ownedRootPrefixes: [],
-      };
+      // An unreadable acf for SOME app: only matters if it was ours, which we
+      // cannot tell — so the whole record is not trustworthy.
+      return unknown(`Steam's ${acfPath} could not be read, and it may belong to this game.`);
     }
   }
+  if (matches.length === 0) return undefined;
 
+  const files = new Map<string, StoreFile>();
+  const used: string[] = [];
+  for (const { acfPath, app } of matches) {
+    tried.push(acfPath);
+    if (app.stateFlags !== undefined && app.stateFlags !== STEAM_FULLY_INSTALLED) {
+      return unknown(`Steam reports app ${app.appId} is not fully installed or is updating (StateFlags ${app.stateFlags}), so its file list is in flux.`);
+    }
+    const cacheDirs = [
+      ...(app.launcherPath !== undefined ? [path.join(path.dirname(app.launcherPath), "depotcache")] : []),
+      path.join(path.dirname(steamapps), "depotcache"),
+      path.join(steamapps, "depotcache"),
+    ];
+    for (const depot of app.depots) {
+      const fileName = `${depot.depotId}_${depot.manifestId}.manifest`;
+      let found: Buffer | undefined;
+      for (const dir of cacheDirs) {
+        try {
+          found = await fsp.readFile(path.join(dir, fileName));
+          used.push(path.join(dir, fileName));
+          break;
+        } catch {
+          tried.push(path.join(dir, fileName));
+        }
+      }
+      if (found === undefined) {
+        if (depot.size === 0) continue;
+        return unknown(
+          `Steam's record for app ${app.appId} depot ${depot.depotId} (${fileName}) is not in depotcache — a partial list would call the game's own files foreign.`,
+        );
+      }
+      const manifest = parseDepotManifest(found);
+      if (manifest === undefined || manifest.filenamesEncrypted) {
+        return unknown(
+          `Steam's depot manifest ${fileName} could not be read${manifest?.filenamesEncrypted === true ? " (file names are encrypted)" : ""}.`,
+        );
+      }
+      for (const f of manifest.files) {
+        const key = f.path.toLowerCase();
+        const prior = files.get(key);
+        if (prior === undefined) files.set(key, f);
+        else if (prior.size !== f.size) files.set(key, { path: prior.path, required: true }); // two depots disagree: size unknown
+      }
+    }
+  }
+  if (files.size === 0) return unknown(`Steam apps ${matches.map((m) => m.app.appId).join(", ")} list no readable depots.`);
   return {
-    kind: "unknown",
-    reason:
-      "No store install record was found (no GOG Galaxy file list, and the game is not in a Steam library with its depot manifests). " +
-      `Looked for: ${tried.join("; ")}`,
+    kind: "known",
+    source: "steam",
+    detail: `Steam apps ${matches.map((m) => m.app.appId).join(", ")} (${matches.map((m) => m.acfPath).join(", ")}) → ${used.join(", ")}`,
+    files: [...files.values()],
+    ownedRootPrefixes: [],
   };
+}
+
+/** GOG Galaxy's record. `undefined` = no galaxy file list. */
+async function readGogRecord(gameDir: string, tried: string[]): Promise<VanillaList | undefined> {
+  const gogList = path.join(gameDir, "goggame-galaxyFileList.ini");
+  tried.push(gogList);
+  let text: string;
+  try {
+    text = await fsp.readFile(gogList, "utf8");
+  } catch {
+    return undefined;
+  }
+  const parsed = parseGogFileList(text);
+  // Each section declares how many entries it has. A mismatch is a list
+  // truncated mid-write — partial, so not trustworthy.
+  const short = parsed.sections.filter((s) => s.declared !== undefined && s.declared !== s.found);
+  if (short.length > 0) {
+    return unknown(
+      `GOG's ${gogList} is incomplete (${short.map((s) => `[${s.name}] declares ${s.declared}, lists ${s.found}`).join("; ")}).`,
+    );
+  }
+  if (parsed.productIds.length === 0 || !parsed.files.some((f) => f.required)) {
+    return unknown(`GOG's ${gogList} has no game product section — only redistributables.`);
+  }
+  return {
+    kind: "known",
+    source: "gog",
+    detail: `${gogList} (products ${parsed.productIds.join(", ")})`,
+    files: parsed.files,
+    ownedRootPrefixes: parsed.productIds.map((id) => `goggame-${id}.`),
+  };
+}
+
+/**
+ * The store's record of this install, or why there is none.
+ *
+ * A Steam library layout is asked first: GOG files copied into a Steam install
+ * (the tester's own incident class) bring a galaxy file list along, and the
+ * folder is still Steam's.
+ */
+export async function loadVanillaList(
+  gameDir: string,
+  options: {
+    /** The game's executable, relative to its folder. A record that does not list it is some other app's. */
+    executable?: string;
+  } = {},
+): Promise<VanillaList> {
+  const tried: string[] = [];
+  const list =
+    (await readSteamRecord(gameDir, tried)) ??
+    (await readGogRecord(gameDir, tried)) ??
+    unknown(
+      "No store install record was found (no GOG Galaxy file list, and the game is not in a Steam library with its depot manifests). " +
+        `Looked for: ${tried.join("; ")}`,
+    );
+  if (list.kind === "known" && options.executable !== undefined) {
+    const exe = segmentsOf(options.executable).join("/").toLowerCase();
+    if (!list.files.some((f) => f.path.toLowerCase() === exe)) {
+      return unknown(
+        `The ${list.source} record (${list.detail}) does not list the game's executable ${options.executable}, so it is not a record of this game.`,
+      );
+    }
+  }
+  return list;
 }
 
 /**
@@ -495,7 +604,10 @@ export type GameFolderScan = {
   /** Files Vortex currently has deployed, per its manifests. */
   deployedCount: number;
   unreadable: string[];
+  linkedDirs: string[];
   creationSources: string[];
+  /** Root DLLs left alone because a tool beside the game references them, with those tools. */
+  toolDlls: Array<{ dll: string; owners: string[] }>;
 };
 
 export async function scanGameFolder(args: {
@@ -503,6 +615,8 @@ export async function scanGameFolder(args: {
   localGameDir?: string;
   /** Lower-case paths, relative to the game root, of declared prerequisites. */
   declared: ReadonlySet<string>;
+  /** The game's executable, relative to its folder — the store record must list it. */
+  executable?: string;
   /** Already loaded by the caller; read from disk when absent. */
   vanilla?: VanillaList;
   signal?: AbortSignal;
@@ -512,11 +626,26 @@ export async function scanGameFolder(args: {
     loadSurfaceOnly: true,
     ...(args.signal !== undefined ? { signal: args.signal } : {}),
   });
-  const [vanilla, deployment, creations] = await Promise.all([
-    args.vanilla ?? loadVanillaList(gameDir),
+  const [storeList, deployment, creations] = await Promise.all([
+    args.vanilla ?? loadVanillaList(gameDir, args.executable !== undefined ? { executable: args.executable } : {}),
     readDeployedFiles(gameDir, walk.entries),
     loadCreationAllowlist(gameDir, args.localGameDir),
   ]);
+
+  // A scan that could not see everything cannot vouch for anything.
+  const blind: string[] = [];
+  if (walk.linkedDirs.length > 0) {
+    blind.push(
+      `${walk.linkedDirs.length} folder(s) are links to somewhere else (${walk.linkedDirs.slice(0, 5).join(", ")}${walk.linkedDirs.length > 5 ? ", …" : ""}); Event Horizon neither follows nor moves them.`,
+    );
+  }
+  if (walk.unreadable.length > 0) {
+    blind.push(`${walk.unreadable.length} location(s) could not be read (${walk.unreadable.slice(0, 5).join(", ")}${walk.unreadable.length > 5 ? ", …" : ""}).`);
+  }
+  if (deployment.unreadable.length > 0) {
+    blind.push(`Vortex deployment manifest(s) could not be read (${deployment.unreadable.join(", ")}), so deployed files cannot be told apart.`);
+  }
+  const vanilla: VanillaList = blind.length > 0 ? unknown(blind.join(" ")) : storeList;
 
   // The store records files outside the load surface too (`Fallout4/Fallout4Prefs.ini`).
   // Stat just those, so "missing" is not reported for files the walk never visited.
@@ -535,18 +664,37 @@ export async function scanGameFolder(args: {
     }
   }
 
+  // Which root DLLs belong to a tool beside the game. Only meaningful with a
+  // store record: without one, the game's own executables cannot be named.
+  let toolOwned = new Map<string, string[]>();
+  if (vanilla.kind === "known") {
+    const gameExes = new Set(
+      vanilla.files.filter((f) => !f.path.includes("/") && /\.exe$/i.test(f.path)).map((f) => f.path.toLowerCase()),
+    );
+    if (args.executable !== undefined && segmentsOf(args.executable).length === 1) {
+      gameExes.add(args.executable.toLowerCase());
+    }
+    for (const loader of scriptExtenderLoaders()) gameExes.add(loader);
+    toolOwned = (await rootDllOwnership({ gameDir, gameExes })).toolOwned;
+  }
+
   const report = classifyGameFolder({
     entries,
     vanilla,
     deployed: deployment.deployed,
     creations,
     declared: args.declared,
+    toolOwned: new Set(toolOwned.keys()),
   });
   return {
     report,
     manifests: deployment.manifests,
     deployedCount: deployment.manifests.reduce((n, m) => n + m.files, 0),
     unreadable: [...walk.unreadable, ...deployment.unreadable],
+    linkedDirs: walk.linkedDirs,
     creationSources: creations.sources,
+    toolDlls: [...toolOwned.entries()]
+      .filter(([dll]) => entries.some((e) => e.path.toLowerCase() === dll))
+      .map(([dll, owners]) => ({ dll, owners })),
   };
 }

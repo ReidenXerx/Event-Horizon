@@ -73,6 +73,12 @@ type DependencyProbe = {
   optional?: string[];
   instructionsUrl: string;
   instructions: string;
+  /**
+   * Start the game through its own executable rather than this loader. The
+   * curator's rule for New Vegas: "there is specific patcher that make vanilla
+   * exe works with script extending inside".
+   */
+  launchesGameExecutable?: boolean;
   /** Pull a version out of the files found, when the naming encodes one. */
   version?: (found: string[]) => string | undefined;
 };
@@ -136,6 +142,7 @@ const PROBES: DependencyProbe[] = [
     category: "script-extender",
     gameIds: ["falloutnv"],
     required: ["nvse_loader.exe"],
+    launchesGameExecutable: true,
     instructionsUrl: "https://github.com/xNVSE/NVSE",
     instructions:
       "Extract NVSE into the game folder and launch through nvse_loader.exe.",
@@ -210,7 +217,8 @@ const PROBES: DependencyProbe[] = [
     // d3d11.dll alone proves nothing — ReShade and other wrappers use the same
     // name. The .ini beside it is what makes this ENB.
     required: ["d3d11.dll", "enbseries.ini"],
-    optional: ["enblocal.ini", "enbhost.exe"],
+    // d3dcompiler_46e.dll is part of the ENB binaries its own instructions copy.
+    optional: ["enblocal.ini", "enbhost.exe", "d3dcompiler_46e.dll"],
     instructionsUrl: "http://enbdev.com/",
     instructions:
       "Download the ENBSeries binaries for this game from enbdev.com and copy " +
@@ -237,14 +245,35 @@ const PROBES: DependencyProbe[] = [
  */
 export function scriptExtenderFor(
   gameId: string,
-): { name: string; loader: string; instructionsUrl: string } | undefined {
+):
+  | { name: string; loader: string; instructionsUrl: string; launchesGameExecutable: boolean }
+  | undefined {
   const probe = PROBES.find(
     (p) => p.category === "script-extender" && p.gameIds.includes(gameId),
   );
   const loader = probe?.required[0];
   return probe === undefined || loader === undefined
     ? undefined
-    : { name: probe.name, loader, instructionsUrl: probe.instructionsUrl };
+    : {
+        name: probe.name,
+        loader,
+        instructionsUrl: probe.instructionsUrl,
+        launchesGameExecutable: probe.launchesGameExecutable === true,
+      };
+}
+
+/** Every script-extender loader executable, lower-case. They start the GAME, so their DLLs are the game's. */
+export function scriptExtenderLoaders(): string[] {
+  return PROBES.filter((p) => p.category === "script-extender")
+    .map((p) => p.required[0])
+    .filter((l): l is string => l !== undefined)
+    .map((l) => l.toLowerCase());
+}
+
+/** Every file a known prerequisite consists of, required and optional. Empty for an unknown id. */
+export function probeFilesFor(id: string): string[] {
+  const probe = PROBES.find((p) => p.id === id);
+  return probe === undefined ? [] : [...probe.required, ...(probe.optional ?? [])];
 }
 
 /**

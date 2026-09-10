@@ -7,12 +7,13 @@
  * list typed into this repository, which would be wrong for the next DLC, the
  * next patch and the next store.
  *
- *  - GOG writes `goggame-galaxyFileList.ini`: one section per product, each a
- *    list of `F<n>=<relative path>`. Numeric sections are the game and its
- *    DLC; named sections (`[ISI]`, `[DirectX]`, `[MSVC2019]`) are redistributable
- *    installers that GOG deletes after running them, so their absence is not
- *    damage. Measured on the curator's Fallout 4 GOTY: 119 product files, all
- *    present; 160 redistributable entries, all absent.
+ *  - GOG writes `goggame-galaxyFileList.ini`: one section per product, each
+ *    declaring `files_counter=N` and listing `F0..F(N-1)`, where F0 is a
+ *    content hash and the rest are relative paths. Numeric sections are the
+ *    game and its DLC; named sections (`[ISI]`, `[DirectX]`, `[MSVC2019]`) are
+ *    redistributable installers that GOG deletes after running them, so their
+ *    absence is not damage. Measured on the curator's Fallout 4 GOTY and Skyrim
+ *    AE: every section's counter equals its entry count; 0 product files missing.
  *
  *  - Steam keeps a depot manifest per installed depot in `depotcache`,
  *    `<depotId>_<manifestId>.manifest`, and names the installed pair in the
@@ -49,30 +50,45 @@ export type GogFileList = {
   /** Numeric section names: the game's product ids. */
   productIds: string[];
   files: StoreFile[];
+  /**
+   * Per section, the entry count it declares (`files_counter`) and the number
+   * of `F<n>=` entries actually present. A difference means the list was cut
+   * short — by a crash mid-write, or by hand.
+   */
+  sections: Array<{ name: string; declared?: number; found: number }>;
 };
 
 export function parseGogFileList(text: string): GogFileList {
   const productIds: string[] = [];
   const files: StoreFile[] = [];
-  let section: string | undefined;
+  const sections: GogFileList["sections"] = [];
+  let section: GogFileList["sections"][number] | undefined;
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim();
     const header = /^\[(.+)\]$/.exec(line);
     if (header !== null) {
-      section = header[1]!.trim();
-      if (/^\d+$/.test(section)) productIds.push(section);
+      section = { name: header[1]!.trim(), found: 0 };
+      sections.push(section);
+      if (/^\d+$/.test(section.name)) productIds.push(section.name);
+      continue;
+    }
+    if (section === undefined) continue;
+    const counter = /^files_counter=(\d+)$/.exec(line);
+    if (counter !== null) {
+      section.declared = Number(counter[1]);
       continue;
     }
     const entry = /^F\d+=(.*)$/.exec(line);
-    if (entry === null || section === undefined) continue;
+    if (entry === null) continue;
+    section.found += 1;
     const value = entry[1]!.trim();
     if (value.length === 0 || GOG_HASH_VALUE.test(value)) continue;
     files.push({
       path: toPosix(value),
-      required: /^\d+$/.test(section),
+      required: /^\d+$/.test(section.name),
     });
   }
-  return { productIds, files };
+  return { productIds, files, sections };
 }
 
 // ── Steam: KeyValues (.acf / .vdf) ───────────────────────────────────────
@@ -154,6 +170,8 @@ export type SteamAppManifest = {
   installDir: string;
   /** Steam's own executable, which locates `depotcache`. */
   launcherPath?: string;
+  /** Steam's `StateFlags`; "4" is fully installed, anything else is mid-update or broken. */
+  stateFlags?: string;
   depots: Array<{ depotId: string; manifestId: string; size?: number }>;
 };
 
@@ -180,10 +198,12 @@ export function parseAppManifest(text: string): SteamAppManifest | undefined {
     }
   }
   const launcherPath = app["LauncherPath"];
+  const stateFlags = app["StateFlags"];
   return {
     appId,
     installDir,
     ...(typeof launcherPath === "string" ? { launcherPath } : {}),
+    ...(typeof stateFlags === "string" ? { stateFlags } : {}),
     depots,
   };
 }

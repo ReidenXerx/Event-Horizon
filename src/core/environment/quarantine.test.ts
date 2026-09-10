@@ -1,8 +1,10 @@
 /**
  * Quarantine holds files that are not ours (NS-2), so the tests are about the
- * two promises that make moving them acceptable at all: the record exists
- * before anything moves, and restore puts everything back without ever
- * overwriting what now occupies a file's place.
+ * promises that make moving them acceptable at all: the record exists before
+ * anything moves; what is held is read from the disk (a crash mid-move must not
+ * hide files from the Doctor); restore puts everything back without ever
+ * overwriting what now occupies a file's place; and the files live beside the
+ * game folder, where uninstalling the game does not take them along.
  */
 import * as fs from "fs";
 import * as os from "os";
@@ -11,9 +13,11 @@ import * as path from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  dismissQuarantine,
   listQuarantines,
   QUARANTINE_FOLDER_NAME,
   quarantineFiles,
+  quarantineRootFor,
   readQuarantineRecord,
   restoreQuarantine,
 } from "./quarantine";
@@ -39,8 +43,15 @@ afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
+describe("quarantineRootFor", () => {
+  it("is beside the game folder, named after it — outside what the store owns", () => {
+    expect(quarantineRootFor(gameDir)).toBe(path.join(tmp, QUARANTINE_FOLDER_NAME, "Fallout 4"));
+    expect(quarantineRootFor(`${gameDir}${path.sep}`)).toBe(path.join(tmp, QUARANTINE_FOLDER_NAME, "Fallout 4"));
+  });
+});
+
 describe("quarantineFiles", () => {
-  it("moves files into a root sub-folder, keeping their relative paths", async () => {
+  it("moves files beside the game folder, keeping their relative paths", async () => {
     put("Data/F4SE/Plugins/old.dll", "OLD");
     put("dxgi.dll", "DXGI");
     const result = await quarantineFiles({
@@ -54,9 +65,8 @@ describe("quarantineFiles", () => {
     expect(result.moved).toBe(2);
     expect(result.failed).toEqual([]);
     expect(fs.existsSync(path.join(gameDir, "dxgi.dll"))).toBe(false);
-    expect(result.record.folder.startsWith(path.join(gameDir, QUARANTINE_FOLDER_NAME))).toBe(true);
+    expect(path.dirname(result.record.folder)).toBe(quarantineRootFor(gameDir));
     expect(fs.readFileSync(path.join(result.record.folder, "Data/F4SE/Plugins/old.dll"), "utf8")).toBe("OLD");
-    // Both copies of the record, with final states.
     expect((await readQuarantineRecord(result.recordPath))?.entries.map((e) => e.state)).toEqual(["moved", "moved"]);
     expect(fs.existsSync(path.join(result.record.folder, "restore.json"))).toBe(true);
   });
@@ -86,8 +96,31 @@ describe("quarantineFiles", () => {
   });
 });
 
+describe("listQuarantines — the disk, not the recorded states", () => {
+  it("still shows files moved by a run that crashed before recording them", async () => {
+    put("a.dll");
+    put("Data/b.esp");
+    const q = await quarantineFiles({ gameId: "fallout4", gameDir, entries: [entry("a.dll"), entry("Data/b.esp")], reason: "t", recordDir });
+    // What a killed Vortex leaves: files moved, record still saying "pending".
+    const record = JSON.parse(fs.readFileSync(q.recordPath, "utf8"));
+    for (const e of record.entries) e.state = "pending";
+    fs.writeFileSync(q.recordPath, JSON.stringify(record));
+    const [summary] = await listQuarantines(recordDir);
+    expect(summary?.held).toBe(2);
+    expect((await restoreQuarantine(q.recordPath)).restored).toBe(2);
+    expect(fs.existsSync(path.join(gameDir, "Data/b.esp"))).toBe(true);
+  });
+
+  it("filters by game", async () => {
+    put("a.dll");
+    await quarantineFiles({ gameId: "fallout4", gameDir, entries: [entry("a.dll")], reason: "t", recordDir });
+    expect(await listQuarantines(recordDir, "skyrimse")).toEqual([]);
+    expect((await listQuarantines(recordDir, "fallout4")).length).toBe(1);
+  });
+});
+
 describe("restoreQuarantine", () => {
-  it("puts every file back and removes its own empty folder", async () => {
+  it("puts every file back and removes its own empty folders", async () => {
     put("Data/MCM/Settings/x.ini", "INI");
     put("d3d11.dll", "ENB");
     const q = await quarantineFiles({
@@ -100,7 +133,7 @@ describe("restoreQuarantine", () => {
     const r = await restoreQuarantine(q.recordPath);
     expect(r).toEqual({ restored: 2, conflicts: [], absent: [], failed: [] });
     expect(fs.readFileSync(path.join(gameDir, "Data/MCM/Settings/x.ini"), "utf8")).toBe("INI");
-    expect(fs.existsSync(q.record.folder)).toBe(false);
+    expect(fs.existsSync(path.join(tmp, QUARANTINE_FOLDER_NAME))).toBe(false);
     expect((await readQuarantineRecord(q.recordPath))?.restoredAt).toBeDefined();
     expect((await listQuarantines(recordDir))[0]?.held).toBe(0);
   });
@@ -115,18 +148,29 @@ describe("restoreQuarantine", () => {
     expect(fs.readFileSync(path.join(q.record.folder, "d3d11.dll"), "utf8")).toBe("MINE");
     expect((await listQuarantines(recordDir))[0]?.held).toBe(1);
 
-    // Once the place is free again, the second restore completes.
     fs.unlinkSync(path.join(gameDir, "d3d11.dll"));
     expect((await restoreQuarantine(q.recordPath)).restored).toBe(1);
     expect(fs.readFileSync(path.join(gameDir, "d3d11.dll"), "utf8")).toBe("MINE");
   });
 
-  it("reads the disk, not the recorded state: a file gone from quarantine is reported absent", async () => {
+  it("does not call a restore complete when files went missing from quarantine — until dismissed", async () => {
     put("a.dll");
-    const q = await quarantineFiles({ gameId: "fallout4", gameDir, entries: [entry("a.dll")], reason: "t", recordDir });
+    put("b.dll");
+    const q = await quarantineFiles({ gameId: "fallout4", gameDir, entries: [entry("a.dll"), entry("b.dll")], reason: "t", recordDir });
     fs.unlinkSync(path.join(q.record.folder, "a.dll"));
     const r = await restoreQuarantine(q.recordPath);
     expect(r.absent).toEqual(["a.dll"]);
-    expect(r.restored).toBe(0);
+    expect(r.restored).toBe(1);
+    const record = await readQuarantineRecord(q.recordPath);
+    expect(record?.restoredAt).toBeUndefined();
+    expect((await listQuarantines(recordDir))[0]).toMatchObject({ held: 0, absent: 1 });
+    await dismissQuarantine(q.recordPath);
+    expect((await readQuarantineRecord(q.recordPath))?.dismissedAt).toBeDefined();
+  });
+
+  it("refuses to dismiss a record that still holds files", async () => {
+    put("a.dll");
+    const q = await quarantineFiles({ gameId: "fallout4", gameDir, entries: [entry("a.dll")], reason: "t", recordDir });
+    await expect(dismissQuarantine(q.recordPath)).rejects.toThrow(/still holds 1/);
   });
 });

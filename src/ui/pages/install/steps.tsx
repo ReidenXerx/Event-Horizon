@@ -696,7 +696,10 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
   // Enter = continue to decisions/review. Esc = bail. Off when focus
   // is inside an input (there are no inputs on this screen yet, but
   // the hook's guard makes that future-proof).
-  useKeyboardShortcut("Enter", onContinue);
+  // Enter is Continue, so it obeys the same verdict the disabled button does.
+  useKeyboardShortcut("Enter", () => {
+    if (verdict.canProceed) onContinue();
+  });
   useKeyboardShortcut("Escape", onCancel);
 
   return (

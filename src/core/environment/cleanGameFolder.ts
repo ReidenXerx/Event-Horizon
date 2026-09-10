@@ -12,13 +12,14 @@
  * of the install) and quarantine is reversible (Doctor restores it), but both
  * touch the user's machine, so neither happens without a yes.
  *
- * No store record → nothing is purged or moved, and the caller is told why:
- * without a vanilla list this cannot tell the game's own files from a mod's.
+ * No store record — or a folder the scan could not fully see — means nothing
+ * is purged or moved, and the caller is told why.
  * ──────────────────────────────────────────────────────────────────────
  */
 
 import { ehLog } from "../logging/ehLog";
 import { groupEntries, type FolderEntry, type GameFolderScan } from "./gameFolderScan";
+import { logPaths } from "./logPaths";
 
 export type CleanPreview = {
   gameName: string;
@@ -32,7 +33,14 @@ export type CleanOutcome =
   | { kind: "unverifiable"; reason: string }
   | { kind: "declined" }
   | { kind: "cleaned"; purged: boolean; moved: number; recordPath?: string }
-  | { kind: "failed"; message: string; remaining: FolderEntry[]; recordPath?: string };
+  | {
+      kind: "failed";
+      message: string;
+      remaining: FolderEntry[];
+      /** Vortex's deployment was purged before the failure: the game has no mods deployed. */
+      purged: boolean;
+      recordPath?: string;
+    };
 
 export async function cleanGameFolder(deps: {
   gameId: string;
@@ -68,6 +76,7 @@ export async function cleanGameFolder(deps: {
     deployedCount: first.deployedCount,
     unmanaged: first.report.unmanaged.length,
   });
+  logPaths("info", "clean-folder.shown-to-user", { gameId: deps.gameId, agreed }, first.report.unmanaged.map((e) => e.path));
   if (!agreed) return { kind: "declined" };
 
   let purged = false;
@@ -79,29 +88,40 @@ export async function cleanGameFolder(deps: {
     } catch (err) {
       const message = `Vortex could not purge ${deps.gameName}: ${err instanceof Error ? err.message : String(err)}`;
       ehLog("error", "clean-folder.purge-failed", { gameId: deps.gameId, error: message });
-      return { kind: "failed", message, remaining: [] };
+      return { kind: "failed", message, remaining: [], purged: false };
     }
   }
 
   const second = await deps.scan();
+  if (second.report.vanilla.kind === "unknown") {
+    const message = `After purging, the ${deps.gameName} folder could not be verified: ${second.report.vanilla.reason}`;
+    ehLog("error", "clean-folder.unverifiable-after-purge", { gameId: deps.gameId, reason: second.report.vanilla.reason });
+    return { kind: "failed", message, remaining: [], purged };
+  }
   if (second.deployedCount > 0) {
-    const message = `Vortex still has ${second.deployedCount} files deployed into ${deps.gameName} after purging.`;
+    const leftover = second.manifests.filter((m) => m.files > 0).map((m) => `${m.file} (${m.files} files)`);
+    const message =
+      `Vortex still lists ${second.deployedCount} deployed files in ${deps.gameName} after purging: ${leftover.join(", ")}. ` +
+      "A manifest Vortex no longer purges (for example from a mod type whose extension is gone) keeps these; deploy and purge once in Vortex, then try again.";
     ehLog("error", "clean-folder.purge-incomplete", { gameId: deps.gameId, deployed: second.deployedCount, manifests: second.manifests });
-    return { kind: "failed", message, remaining: [] };
+    return { kind: "failed", message, remaining: [], purged };
   }
 
   let recordPath: string | undefined;
   let moved = 0;
   if (second.report.unmanaged.length > 0) {
+    logPaths("info", "clean-folder.to-move", { gameId: deps.gameId }, second.report.unmanaged.map((e) => e.path));
     const result = await deps.quarantine([...second.report.unmanaged]);
     recordPath = result.recordPath;
     moved = result.moved;
     if (result.failed.length > 0) {
-      const message = `${result.failed.length} file(s) could not be moved out of the ${deps.gameName} folder (first: ${result.failed[0]!.path}${result.failed[0]!.error !== undefined ? ` — ${result.failed[0]!.error}` : ""}). Close the game and any tool using those files, then try again.`;
+      const first = result.failed[0]!;
+      const message = `${result.failed.length} file(s) could not be moved out of the ${deps.gameName} folder (first: ${first.path}${first.error !== undefined ? ` — ${first.error}` : ""}). Close the game and any tool using those files, then try again.`;
       return {
         kind: "failed",
         message,
         remaining: second.report.unmanaged.filter((e) => result.failed.some((f) => f.path === e.path)),
+        purged,
         recordPath,
       };
     }
@@ -109,14 +129,14 @@ export async function cleanGameFolder(deps: {
 
   // The claim "clean" is only made by a scan that found nothing.
   const third = await deps.scan();
-  if (third.report.unmanaged.length > 0 || third.deployedCount > 0) {
-    const message = `The ${deps.gameName} folder still is not clean after cleaning: ${third.report.unmanaged.length} unaccounted file(s), ${third.deployedCount} deployed.`;
-    ehLog("error", "clean-folder.verify-failed", {
-      gameId: deps.gameId,
-      remaining: third.report.unmanaged.slice(0, 200).map((e) => e.path),
-      deployed: third.deployedCount,
-    });
-    return { kind: "failed", message, remaining: third.report.unmanaged, ...(recordPath !== undefined ? { recordPath } : {}) };
+  if (third.report.vanilla.kind === "unknown" || third.report.unmanaged.length > 0 || third.deployedCount > 0) {
+    const message =
+      third.report.vanilla.kind === "unknown"
+        ? `The ${deps.gameName} folder could not be verified after cleaning: ${third.report.vanilla.reason}`
+        : `The ${deps.gameName} folder still is not clean after cleaning: ${third.report.unmanaged.length} unaccounted file(s), ${third.deployedCount} deployed.`;
+    ehLog("error", "clean-folder.verify-failed", { gameId: deps.gameId, deployed: third.deployedCount, message });
+    logPaths("error", "clean-folder.still-unmanaged", { gameId: deps.gameId }, third.report.unmanaged.map((e) => e.path));
+    return { kind: "failed", message, remaining: third.report.unmanaged, purged, ...(recordPath !== undefined ? { recordPath } : {}) };
   }
   ehLog("info", "clean-folder.verified-clean", { gameId: deps.gameId, purged, moved, recordPath });
   return { kind: "cleaned", purged, moved, ...(recordPath !== undefined ? { recordPath } : {}) };
@@ -132,7 +152,7 @@ export function describeCleanPlan(preview: CleanPreview): {
   const lines: string[] = [];
   if (preview.deployedCount > 0) {
     lines.push(
-      `1. Purge Vortex's deployment for ${preview.gameName} (${preview.deployedCount} files). Your mods stay installed in Vortex; the collection deploys again when the install finishes.`,
+      `1. Purge Vortex's deployment for ${preview.gameName} (${preview.deployedCount} files). Your mods stay installed in Vortex; the collection deploys again when the install finishes. If the install does not finish, deploy in Vortex to put them back.`,
       "",
     );
   }
@@ -140,6 +160,7 @@ export function describeCleanPlan(preview: CleanPreview): {
     `${preview.deployedCount > 0 ? "2" : "1"}. Move every file the game would load that is not part of ${preview.gameName}, Vortex or this collection into:`,
     `   ${preview.quarantineFolder}`,
     "   Nothing is deleted. Doctor → Moved-aside files puts every file back.",
+    "   It sits beside the game folder on the same drive, so uninstalling or moving the game does not take it along.",
     "",
   );
   if (preview.unmanaged.length > 0) {

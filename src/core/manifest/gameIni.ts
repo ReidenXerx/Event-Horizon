@@ -64,20 +64,35 @@ export type IniFileSnapshot = {
  * INI files that make up a game's configuration, in Vortex's own load order:
  * later files override earlier ones, and `*Custom.ini` is where hand edits go.
  */
-const INI_FILES_BY_GAME: Record<string, { folder: string; files: string[] }> = {
+const INI_FILES_BY_GAME: Record<
+  string,
+  {
+    folder: string;
+    files: string[];
+    /**
+     * The game's own launcher writes the Prefs file after detecting the
+     * hardware (screen size, adapter). Starfield has no launcher: the game
+     * writes it, and what it contains was never measured — so it is not judged.
+     */
+    launcherWritesPrefs: boolean;
+  }
+> = {
   fallout4: {
     folder: "Fallout4",
     files: ["Fallout4.ini", "Fallout4Prefs.ini", "Fallout4Custom.ini"],
+    launcherWritesPrefs: true,
   },
   skyrimse: {
     folder: "Skyrim Special Edition",
     files: ["Skyrim.ini", "SkyrimPrefs.ini", "SkyrimCustom.ini"],
+    launcherWritesPrefs: true,
   },
-  fallout3: { folder: "Fallout3", files: ["Fallout.ini", "FalloutPrefs.ini"] },
-  falloutnv: { folder: "FalloutNV", files: ["Fallout.ini", "FalloutPrefs.ini"] },
+  fallout3: { folder: "Fallout3", files: ["Fallout.ini", "FalloutPrefs.ini"], launcherWritesPrefs: true },
+  falloutnv: { folder: "FalloutNV", files: ["Fallout.ini", "FalloutPrefs.ini"], launcherWritesPrefs: true },
   starfield: {
     folder: "Starfield",
     files: ["StarfieldPrefs.ini", "StarfieldCustom.ini"],
+    launcherWritesPrefs: false,
   },
 };
 
@@ -236,6 +251,11 @@ export function prefsIniPathFor(
   const location = iniLocationFor(gameId, documentsPath, store);
   const file = location?.files.find((f) => /prefs\.ini$/i.test(f));
   return location === undefined || file === undefined ? undefined : `${location.dir}/${file}`;
+}
+
+/** Whether this game's launcher writes its Prefs file. `undefined` for an unknown game. */
+export function launcherWritesPrefsFor(gameId: string): boolean | undefined {
+  return INI_FILES_BY_GAME[gameId]?.launcherWritesPrefs;
 }
 
 /** Which files this game keeps its settings in, and where. */

@@ -14,7 +14,7 @@ const entry = (p: string): FolderEntry => ({ path: p, size: 10, mtimeMs: 1 });
 const scanResult = (unmanaged: FolderEntry[], deployedCount: number, known = true): GameFolderScan => ({
   report: {
     vanilla: known ? { kind: "known", source: "gog", detail: "list", files: 5 } : { kind: "unknown", reason: "no record" },
-    counts: { deployed: deployedCount, vanilla: 5, vortex: 0, declared: 0, creation: 0, "not-loaded": 0, volatile: 0, unmanaged: unmanaged.length },
+    counts: { deployed: deployedCount, vanilla: 5, vortex: 0, declared: 0, creation: 0, tool: 0, "not-loaded": 0, volatile: 0, unmanaged: unmanaged.length },
     unmanaged,
     vanillaMissing: [],
     vanillaSizeMismatch: [],
@@ -22,7 +22,9 @@ const scanResult = (unmanaged: FolderEntry[], deployedCount: number, known = tru
   manifests: [],
   deployedCount,
   unreadable: [],
+  linkedDirs: [],
   creationSources: [],
+  toolDlls: [],
 });
 
 function harness(scans: GameFolderScan[], options: { agree?: boolean; purgeFails?: boolean; failMoves?: string[] } = {}) {
@@ -117,6 +119,19 @@ describe("cleanGameFolder", () => {
     const { deps } = harness([scanResult([entry("a.dll")], 0), scanResult([entry("a.dll")], 0), scanResult([entry("a.dll")], 0)]);
     const outcome = await cleanGameFolder(deps);
     expect(outcome.kind).toBe("failed");
+  });
+
+  it("says the deployment was purged when moving fails afterwards — the game has no mods deployed", async () => {
+    const { deps } = harness([scanResult([entry("a.dll")], 5), scanResult([entry("a.dll")], 0)], { failMoves: ["a.dll"] });
+    const outcome = await cleanGameFolder(deps);
+    expect(outcome).toMatchObject({ kind: "failed", purged: true });
+  });
+
+  it("stops, without moving, when the folder cannot be verified after the purge", async () => {
+    const { deps, calls } = harness([scanResult([entry("a.dll")], 5), scanResult([], 0, false)]);
+    const outcome = await cleanGameFolder(deps);
+    expect(outcome).toMatchObject({ kind: "failed", purged: true });
+    expect(calls).not.toContain("quarantine:1");
   });
 });
 

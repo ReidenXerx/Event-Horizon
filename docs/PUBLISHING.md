@@ -123,10 +123,15 @@ Questions outside the review process go to the
 
 ### Step 1 — decide the version
 
-Bump **both** `info.json` and `package.json` to the same value.
+Bump `package.json`, `info.json` and `src/ui/version.ts` to the same value.
 
-Alpha/beta suffixes are fine (`0.1.0-alpha.1`); the browser shows the string
-verbatim.
+**Plain `x.y.z` only — no `-alpha.N`.** Vortex decides whether to offer an
+extension update with `!semver.gte(semver.coerce(installed),
+semver.coerce(listed))` (read out of app.asar), and `semver.coerce` drops a
+prerelease suffix: `0.1.0-alpha.149` and `0.1.0-alpha.150` are both `0.1.0`,
+so no alpha release is ever offered as an update. None of the 807 extensions
+in the curated manifest uses a prerelease version. The alpha counter lives in
+the patch number instead: `0.1.0-alpha.150` was followed by `0.1.151`.
 
 ### Step 2 — build and package
 
@@ -233,12 +238,34 @@ Until that lands, people can still install by downloading the zip from the mod
 page and using Install from file — worth saying plainly in the mod description
 rather than letting testers conclude it is broken.
 
-### Step 6 — updating
+### Step 6 — updating: `npm run release:nexus`
 
-Upload a new file to the **same** mod page, then give Nexus the new `fileId`.
-`modId` does not change. Vortex compares the manifest's `version` against the
-installed one to offer updates, so an un-bumped version ships as "no update
-available".
+Event Horizon lives at [nexusmods.com/site/mods/2235](https://www.nexusmods.com/site/mods/2235)
+(`package.json` → `nexus`). Releases go through one script, which uses the
+Nexus API v3 upload flow and adds the zip as a **new version of the existing
+main file** (the previous version is archived, so the page keeps exactly one
+main file):
+
+```
+npm run release:nexus -- --dry-run   # everything except writes to Nexus
+npm run release:nexus
+```
+
+It refuses before touching Nexus when the version files disagree, the version
+is not plain `x.y.z`, it is not newer than Nexus's latest by Vortex's own
+comparison, the tree is dirty or not pushed, the tag exists, or tests,
+typecheck, packaging or the smoke load fail. After uploading it adds the
+changelog (commit subjects since the previous `v*` tag), checks Nexus lists the
+version, then tags and pushes `v<version>`.
+
+API key: `NEXUSMODS_API_KEY`, or the first line of `~/.nexusmods/api-key`
+(create one at nexusmods.com/settings/api-keys). It is never printed.
+
+**When users get it.** Only listed extensions auto-update (§2b). Vortex-Backend's
+`Update Extensions Manifest` workflow runs daily at 07:45 UTC and picks up the
+newest file version; Vortex re-downloads the manifest at most hourly. So an
+upload reaches installed copies within about a day, and never before the
+listing exists.
 
 ---
 

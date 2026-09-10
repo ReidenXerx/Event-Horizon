@@ -19,6 +19,8 @@ import * as fsp from "fs/promises";
 import * as path from "path";
 
 import { ehLog } from "../logging/ehLog";
+import { probeFilesFor } from "../manifest/externalDependencies";
+import { isMachineOwned, parseIni } from "../manifest/gameIni";
 import { segmentsOf } from "../paths";
 import type { EhcollExternalDependency } from "../../types/ehcoll";
 import { probeImportMismatches, type ImportProbe } from "./binaryImports";
@@ -26,9 +28,11 @@ import {
   decideBinaryImports,
   decideGameFolder,
   decideGameManaged,
+  decideIniLeftovers,
   decideLauncherRan,
   decideProtectedLocation,
   type EnvironmentCheck,
+  type IniLeftover,
 } from "./environmentChecks";
 import {
   groupEntries,
@@ -47,6 +51,13 @@ export type PreflightFacts = {
   executable?: string;
   /** Where the launcher writes `<Game>Prefs.ini` for this store. */
   prefsPath?: string;
+  /** Whether the game's own launcher writes the Prefs file (false: the game does). */
+  hasLauncher?: boolean;
+  /** The store-correct My Games folder and this game's INI file names. */
+  iniDir?: string;
+  iniFiles?: string[];
+  /** `section.key`, lower-case, of every INI setting the collection ships. */
+  collectionIniKeys?: ReadonlySet<string>;
   /** `%LOCALAPPDATA%\<game folder>` — plugins.txt and ContentCatalog.txt. */
   localGameDir?: string;
   /** Lower-case paths, relative to the game root, of the collection's declared prerequisites. */
@@ -72,7 +83,14 @@ const DESTINATION_PREFIX: Record<string, string> = {
   "<scripts>": "data/scripts/",
 };
 
-/** The files a collection declares as prerequisites, as game-root-relative keys. */
+/**
+ * The files a collection declares as prerequisites, as game-root-relative keys.
+ *
+ * The manifest records only the files the curator's detection FOUND; the
+ * prerequisite's own probe knows every file it consists of (ENB's instructions
+ * copy d3dcompiler_46e.dll too), so both are allowed — otherwise cleaning moves
+ * half of a prerequisite the user was told to install.
+ */
 export function declaredPrerequisitePaths(
   deps: readonly EhcollExternalDependency[] | undefined,
 ): Set<string> {
@@ -80,9 +98,9 @@ export function declaredPrerequisitePaths(
   for (const dep of deps ?? []) {
     const prefix = DESTINATION_PREFIX[dep.destination] ?? "";
     for (const f of dep.files) {
-      const rel = segmentsOf(f.relPath).join("/");
-      out.add(`${prefix}${rel}`.toLowerCase());
+      out.add(`${prefix}${segmentsOf(f.relPath).join("/")}`.toLowerCase());
     }
+    for (const name of probeFilesFor(dep.id)) out.add(name.toLowerCase());
   }
   return out;
 }
@@ -101,6 +119,57 @@ async function isFile(p: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Did the game's launcher write this Prefs file? `undefined` when that cannot be judged. */
+async function launcherWrotePrefs(prefsPath: string, hasLauncher: boolean | undefined): Promise<boolean | undefined> {
+  if (hasLauncher !== true) return undefined;
+  try {
+    return parseIni(await fsp.readFile(prefsPath, "utf8")).some((s) => isMachineOwned(s.key));
+  } catch {
+    return undefined;
+  }
+}
+
+/** `[Archive]` settings in the user's INIs that differ from the game's `<Game>_Default.ini`. */
+async function findIniLeftovers(facts: PreflightFacts, gameDir: string): Promise<{ defaultsFile?: string; leftovers: IniLeftover[] }> {
+  if (facts.iniDir === undefined || facts.iniFiles === undefined) return { leftovers: [] };
+  let names: string[];
+  try {
+    names = await fsp.readdir(gameDir);
+  } catch {
+    return { leftovers: [] };
+  }
+  const defaultsFile = names.find((n) => /^[^_]+_default\.ini$/i.test(n));
+  if (defaultsFile === undefined) return { leftovers: [] };
+  let defaults: Map<string, string>;
+  try {
+    defaults = new Map(
+      parseIni(await fsp.readFile(path.join(gameDir, defaultsFile), "utf8"))
+        .filter((s) => s.section.toLowerCase() === "archive")
+        .map((s) => [s.key.toLowerCase(), s.value]),
+    );
+  } catch {
+    return { leftovers: [] };
+  }
+  const leftovers: IniLeftover[] = [];
+  for (const file of facts.iniFiles) {
+    let text: string;
+    try {
+      text = await fsp.readFile(path.join(facts.iniDir, file), "utf8");
+    } catch {
+      continue;
+    }
+    for (const s of parseIni(text)) {
+      if (s.section.toLowerCase() !== "archive") continue;
+      const key = s.key.toLowerCase();
+      if (facts.collectionIniKeys?.has(`archive.${key}`) === true) continue;
+      const dflt = defaults.get(key);
+      if (dflt === s.value) continue;
+      leftovers.push({ file, key: s.key, value: s.value, ...(dflt !== undefined ? { defaultValue: dflt } : {}) });
+    }
+  }
+  return { defaultsFile, leftovers };
 }
 
 export async function runEnvironmentPreflight(
@@ -131,11 +200,15 @@ export async function runEnvironmentPreflight(
       exeExists,
     }),
   );
+  const prefsExists = facts.prefsPath !== undefined && (await isFile(facts.prefsPath));
   report.checks.push(
     decideLauncherRan({
       gameName: facts.gameName,
       prefsPath: facts.prefsPath,
-      exists: facts.prefsPath !== undefined && (await isFile(facts.prefsPath)),
+      exists: prefsExists,
+      launcherWrote: prefsExists ? await launcherWrotePrefs(facts.prefsPath!, facts.hasLauncher) : undefined,
+      hasLauncher: facts.hasLauncher,
+      store: facts.store,
     }),
   );
 
@@ -154,7 +227,7 @@ export async function runEnvironmentPreflight(
     }),
   );
 
-  const vanilla = await loadVanillaList(gameDir);
+  const vanilla = await loadVanillaList(gameDir, facts.executable !== undefined ? { executable: facts.executable } : {});
   const vanillaRootNames = new Set(
     vanilla.kind === "known"
       ? vanilla.files.filter((f) => !f.path.includes("/")).map((f) => f.path.toLowerCase())
@@ -183,14 +256,19 @@ export async function runEnvironmentPreflight(
       gameName: facts.gameName,
       checked: report.imports.checked,
       findings: report.imports.findings,
+      unreadable: report.imports.unreadable,
     }),
   );
+
+  const ini = await findIniLeftovers(facts, gameDir);
+  report.checks.push(decideIniLeftovers({ gameName: facts.gameName, defaultsFile: ini.defaultsFile, leftovers: ini.leftovers }));
 
   if (options.scanFolder) {
     report.folder = await scanGameFolder({
       gameDir,
       ...(facts.localGameDir !== undefined ? { localGameDir: facts.localGameDir } : {}),
       declared: facts.declared,
+      ...(facts.executable !== undefined ? { executable: facts.executable } : {}),
       vanilla,
       ...(options.signal !== undefined ? { signal: options.signal } : {}),
     });
@@ -204,7 +282,7 @@ export async function runEnvironmentPreflight(
 /** One line per check with its evidence, then the folder and import detail. */
 export function logEnvironmentReport(report: EnvironmentReport, context: string, elapsedMs?: number): void {
   for (const c of report.checks) {
-    ehLog(c.status === "blocked" ? "warn" : c.status === "ok" ? "info" : "warn", "environment.check", {
+    ehLog(c.status === "ok" ? "info" : "warn", "environment.check", {
       context,
       gameId: report.gameId,
       id: c.id,
@@ -232,6 +310,8 @@ export function logEnvironmentReport(report: EnvironmentReport, context: string,
       deployedCount: report.folder.deployedCount,
       manifests: report.folder.manifests,
       creationSources: report.folder.creationSources,
+      toolDlls: report.folder.toolDlls,
+      linkedDirs: report.folder.linkedDirs,
       unmanaged: f.unmanaged.length,
       groups: groupEntries(f.unmanaged).slice(0, 60),
       unmanagedSample: f.unmanaged.slice(0, 400).map((e) => e.path),

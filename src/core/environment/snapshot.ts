@@ -13,13 +13,16 @@
  *   preflight  every check with its evidence (preflight.ts)
  *   texts      plugins.txt, loadorder.txt, ContentCatalog.txt, the game's INIs,
  *              Vortex's deployment manifests, today's Event Horizon log
- *   receipts   every install receipt for the game, and quarantine records
+ *   receipts   every install receipt for the game, and its quarantine records
  *   files      EVERY file in the game folder and in Vortex's staging folder:
  *              path, size, mtime — plus SHA-256 for the files whose exact
  *              bytes decide behaviour (exe, dll, asi, plugins, ini, archives)
  *
  * Size is not a constraint (NS-1); the file is streamed so memory is. A file
  * reached twice through hard links — Vortex's usual deployment — is hashed once.
+ *
+ * Written to `<name>.partial` and renamed only when complete: a cancelled or
+ * failed snapshot never leaves truncated JSON under the name someone will send.
  * ──────────────────────────────────────────────────────────────────────
  */
 
@@ -112,22 +115,49 @@ export async function writeEnvironmentSnapshot(args: {
   });
   checkAbort();
 
-  const out = fs.createWriteStream(args.filePath, { encoding: "utf8" });
+  const partialPath = `${args.filePath}.partial`;
+  const out = fs.createWriteStream(partialPath, { encoding: "utf8" });
   let streamError: Error | undefined;
   out.on("error", (err) => {
     streamError = err;
   });
+  /**
+   * Resolves when the chunk is accepted, REJECTS when the stream fails. A
+   * destroyed stream never emits `drain`, so waiting for drain alone hung the
+   * snapshot forever on a full disk or a dropped drive, with Cancel dead.
+   */
   const write = (s: string): Promise<void> =>
     new Promise<void>((resolve, reject) => {
       if (streamError !== undefined) {
         reject(streamError);
         return;
       }
-      if (out.write(s)) resolve();
-      else out.once("drain", () => resolve());
+      if (out.write(s)) {
+        resolve();
+        return;
+      }
+      const onDrain = (): void => {
+        out.off("error", onError);
+        resolve();
+      };
+      const onError = (err: Error): void => {
+        out.off("drain", onDrain);
+        reject(err);
+      };
+      out.once("drain", onDrain);
+      out.once("error", onError);
     });
-  const field = async (name: string, value: unknown, last = false): Promise<void> => {
-    await write(`${JSON.stringify(name)}:${JSON.stringify(value ?? null)}${last ? "" : ","}\n`);
+  const close = (): Promise<void> =>
+    new Promise<void>((resolve) => {
+      if (out.destroyed || out.writableFinished) {
+        resolve();
+        return;
+      }
+      out.once("error", () => resolve());
+      out.end(() => resolve());
+    });
+  const field = async (name: string, value: unknown): Promise<void> => {
+    await write(`${JSON.stringify(name)}:${JSON.stringify(value ?? null)},\n`);
   };
 
   let gameFiles = 0;
@@ -171,7 +201,7 @@ export async function writeEnvironmentSnapshot(args: {
     });
 
     const typedState = state as types.IState;
-    const profileId = selectors.activeProfileId(typedState);
+    const profileId = safe(() => selectors.activeProfileId(typedState));
     const known = (state as { session?: { gameMode?: { known?: unknown[] } } })?.session?.gameMode?.known;
     const knownGame = Array.isArray(known)
       ? (known as Array<Record<string, unknown>>).find((g) => g?.["id"] === gameId)
@@ -202,6 +232,7 @@ export async function writeEnvironmentSnapshot(args: {
       deploymentMethod: safe(() => resolveDeploymentMethod(typedState, gameId)),
       stagingRoot: safe(() => installRootFor(typedState, gameId)),
       automation: (state as { settings?: { automation?: unknown } })?.settings?.automation,
+      toolsRunning: (state as { session?: { base?: { toolsRunning?: unknown } } })?.session?.base?.toolsRunning,
       modsInPool: Object.keys(
         ((state as { persistent?: { mods?: Record<string, Record<string, unknown>> } })?.persistent?.mods?.[gameId] ??
           {}) as Record<string, unknown>,
@@ -223,7 +254,7 @@ export async function writeEnvironmentSnapshot(args: {
       }
     }
     // The INI folder the launcher check used — store-specific (gameIni.ts).
-    const iniDir = facts.prefsPath !== undefined ? path.dirname(facts.prefsPath) : undefined;
+    const iniDir = facts.iniDir ?? (facts.prefsPath !== undefined ? path.dirname(facts.prefsPath) : undefined);
     if (iniDir !== undefined) {
       try {
         for (const name of await fsp.readdir(iniDir)) {
@@ -252,7 +283,12 @@ export async function writeEnvironmentSnapshot(args: {
     );
     await field(
       "quarantines",
-      (await listQuarantines(getEventHorizonDir("quarantine"))).map((q) => ({ ...q.record, recordPath: q.recordPath })),
+      (await listQuarantines(getEventHorizonDir("quarantine"), gameId)).map((q) => ({
+        ...q.record,
+        recordPath: q.recordPath,
+        held: q.held,
+        absent: q.absent,
+      })),
     );
 
     // ── files ────────────────────────────────────────────────────────────
@@ -260,11 +296,11 @@ export async function writeEnvironmentSnapshot(args: {
     const writeFiles = async (
       root: string | undefined,
       phase: "game-files" | "staging-files",
-    ): Promise<number> => {
+    ): Promise<{ count: number; unreadable: string[]; linkedDirs: string[] }> => {
       await write("[\n");
       if (root === undefined) {
         await write("]");
-        return 0;
+        return { count: 0, unreadable: [], linkedDirs: [] };
       }
       const walk = await walkFolder(root, { loadSurfaceOnly: false, ...(signal !== undefined ? { signal } : {}) });
       const total = walk.entries.length;
@@ -279,24 +315,36 @@ export async function writeEnvironmentSnapshot(args: {
         done += 1;
         if (done % 500 === 0 || sha !== null) progress({ phase, done, total, current: entry.path });
       }
-      if (walk.unreadable.length > 0) {
-        await write(`${first ? "" : ",\n"}${JSON.stringify(["<unreadable>", walk.unreadable])}`);
-      }
       await write("\n]");
-      return total;
+      return { count: total, unreadable: walk.unreadable, linkedDirs: walk.linkedDirs };
     };
 
     await write(`"fileColumns":["path","size","mtimeMs","sha256"],\n`);
     await write(`"gameRoot":${JSON.stringify(report.gameDir ?? null)},\n"gameFiles":`);
-    gameFiles = await writeFiles(report.gameDir, "game-files");
+    const game = await writeFiles(report.gameDir, "game-files");
+    gameFiles = game.count;
+    await write(`,\n"gameUnreadable":${JSON.stringify(game.unreadable)},\n"gameLinkedDirs":${JSON.stringify(game.linkedDirs)}`);
     const stagingRoot = safe(() => installRootFor(typedState, gameId));
     await write(`,\n"stagingRoot":${JSON.stringify(stagingRoot ?? null)},\n"stagingFiles":`);
-    stagingFiles = await writeFiles(stagingRoot, "staging-files");
-    await write("\n}\n");
-  } finally {
-    await new Promise<void>((resolve) => out.end(() => resolve()));
+    const staging = await writeFiles(stagingRoot, "staging-files");
+    stagingFiles = staging.count;
+    await write(
+      `,\n"stagingUnreadable":${JSON.stringify(staging.unreadable)},\n"stagingLinkedDirs":${JSON.stringify(staging.linkedDirs)}\n}\n`,
+    );
+    await close();
+    if (streamError !== undefined) throw streamError;
+    await fsp.rename(partialPath, args.filePath);
+  } catch (err) {
+    await close();
+    await fsp.unlink(partialPath).catch(() => undefined);
+    ehLog(signal?.aborted ? "info" : "error", "snapshot.failed", {
+      gameId,
+      filePath: args.filePath,
+      cancelled: signal?.aborted === true,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
   }
-  if (streamError !== undefined) throw streamError;
 
   const bytes = (await fsp.stat(args.filePath)).size;
   const result: SnapshotResult = {

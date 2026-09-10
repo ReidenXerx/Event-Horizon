@@ -11,8 +11,8 @@ import { util } from "@nexusmods/vortex-api";
 import { discoveredStore, getCurrentPluginsTxtPath } from "../comparePlugins";
 import { looksLikeWine } from "../installer/checkSevenZipHealth";
 import { ehLog } from "../logging/ehLog";
-import { prefsIniPathFor } from "../manifest/gameIni";
-import type { EhcollExternalDependency } from "../../types/ehcoll";
+import { iniLocationFor, launcherWritesPrefsFor, prefsIniPathFor } from "../manifest/gameIni";
+import type { EhcollExternalDependency, EhcollGameIni } from "../../types/ehcoll";
 import { declaredPrerequisitePaths, type PreflightFacts } from "./preflight";
 
 export type DiscoveryView = {
@@ -81,10 +81,19 @@ export function gameDisplayName(state: unknown, gameId: string): string {
   return typeof name === "string" && name.length > 0 ? name : gameId;
 }
 
+export function collectionIniKeys(gameIni: EhcollGameIni | undefined): Set<string> {
+  const out = new Set<string>();
+  for (const file of gameIni?.files ?? []) {
+    for (const s of file.settings) out.add(`${s.section}.${s.key}`.toLowerCase());
+  }
+  return out;
+}
+
 export function gatherPreflightFacts(args: {
   state: unknown;
   gameId: string;
   externalDependencies?: readonly EhcollExternalDependency[];
+  gameIni?: EhcollGameIni;
 }): PreflightFacts {
   const { state, gameId } = args;
   const discovery = readDiscovery(state, gameId);
@@ -102,10 +111,10 @@ export function gatherPreflightFacts(args: {
     // Games without a plugins.txt Event Horizon reads have no Creations catalog either.
     localGameDir = undefined;
   }
-  const prefsPath =
-    documentsPath !== undefined && documentsPath.length > 0
-      ? prefsIniPathFor(gameId, documentsPath, discovery.store)
-      : undefined;
+  const haveDocuments = documentsPath !== undefined && documentsPath.length > 0;
+  const prefsPath = haveDocuments ? prefsIniPathFor(gameId, documentsPath!, discovery.store) : undefined;
+  const iniLocation = haveDocuments ? iniLocationFor(gameId, documentsPath!, discovery.store) : undefined;
+  const hasLauncher = launcherWritesPrefsFor(gameId);
   const facts: PreflightFacts = {
     gameId,
     gameName: gameDisplayName(state, gameId),
@@ -113,6 +122,9 @@ export function gatherPreflightFacts(args: {
     ...(discovery.store !== undefined ? { store: discovery.store } : {}),
     ...(executable !== undefined ? { executable } : {}),
     ...(prefsPath !== undefined ? { prefsPath } : {}),
+    ...(hasLauncher !== undefined ? { hasLauncher } : {}),
+    ...(iniLocation !== undefined ? { iniDir: iniLocation.dir, iniFiles: iniLocation.files } : {}),
+    collectionIniKeys: collectionIniKeys(args.gameIni),
     ...(localGameDir !== undefined ? { localGameDir } : {}),
     declared: declaredPrerequisitePaths(args.externalDependencies),
     protectedRoots: [process.env["ProgramFiles"], process.env["ProgramFiles(x86)"], process.env["ProgramW6432"]].filter(
@@ -125,9 +137,12 @@ export function gatherPreflightFacts(args: {
     discovery,
     executable,
     prefsPath,
+    hasLauncher,
+    iniDir: iniLocation?.dir,
+    collectionIniKeys: facts.collectionIniKeys?.size,
     localGameDir,
     documentsPath,
-    declared: facts.declared.size,
+    declared: [...facts.declared],
     protectedRoots: facts.protectedRoots,
     wine: facts.wine,
   });

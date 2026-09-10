@@ -54,6 +54,17 @@ describe("parseGogFileList", () => {
   it("ignores entries before any section", () => {
     expect(parseGogFileList("F1=stray.dll\n").files).toEqual([]);
   });
+
+  it("counts each section's entries against its own files_counter", () => {
+    const parsed = parseGogFileList(
+      `${text}[1162721350]\r\nfiles_counter=3\r\nF0=0123456789abcdef0123456789abcdef\r\nF1=Data\\ccBGSSSE001-Fish.esm\r\n`,
+    );
+    expect(parsed.sections).toEqual([
+      { name: "1998527297", declared: 4, found: 4 },
+      { name: "DirectX", declared: 2, found: 2 },
+      { name: "1162721350", declared: 3, found: 2 },
+    ]);
+  });
 });
 
 describe("parseVdf / parseAppManifest", () => {
@@ -94,6 +105,11 @@ describe("parseVdf / parseAppManifest", () => {
     // 7497069378349273908 as a Number is 7497069378349274000: the file name
     // built from it would not exist.
     expect(parseAppManifest(acf)?.depots[0]?.manifestId).toBe("7497069378349273908");
+  });
+
+  it("reads StateFlags, which says whether Steam is mid-update", () => {
+    expect(parseAppManifest('"AppState" { "appid" "1" "installdir" "X" "StateFlags" "1026" }')?.stateFlags).toBe("1026");
+    expect(parseAppManifest(acf)?.stateFlags).toBeUndefined();
   });
 
   it("refuses unbalanced input instead of returning half an object", () => {

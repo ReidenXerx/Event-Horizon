@@ -14,6 +14,7 @@ const env = vi.hoisted(() => ({
   },
   preflightThrows: false,
   activeGameId: "fallout4",
+  switchBeforePurge: false,
   cleanOutcome: { kind: "cleaned", purged: true, moved: 3 } as Record<string, unknown>,
   cleanCalls: 0,
   purgeCalls: 0,
@@ -46,6 +47,7 @@ vi.mock("../../../core/environment/preflight", () => ({
 vi.mock("../../../core/environment/cleanGameFolder", () => ({
   cleanGameFolder: async (deps: { purge: () => Promise<void> }) => {
     env.cleanCalls += 1;
+    if (env.switchBeforePurge) env.activeGameId = "skyrimse";
     if (env.cleanOutcome["kind"] === "cleaned") await deps.purge();
     return env.cleanOutcome;
   },
@@ -102,6 +104,7 @@ beforeEach(() => {
   env.report = { checks: [], gameDir: "E:/Games/Fallout 4" };
   env.preflightThrows = false;
   env.activeGameId = "fallout4";
+  env.switchBeforePurge = false;
   env.cleanOutcome = { kind: "cleaned", purged: true, moved: 3 };
   env.cleanCalls = 0;
   env.purgeCalls = 0;
@@ -148,6 +151,17 @@ describe("startInstall — environment gate", () => {
     expect(env.cleanCalls).toBe(0);
     expect(env.purgeCalls).toBe(0);
     expect(String(dialogs[0]?.[1])).toMatch(/managing skyrimse now/);
+  });
+
+  it("purges nothing when Vortex switches game while the folder is being scanned", async () => {
+    env.switchBeforePurge = true;
+    const s = confirmSession();
+    const { api, dialogs } = fakeApi("Cancel");
+    s.startInstall(api);
+    await settle(s);
+    expect(env.purgeCalls).toBe(0);
+    expect(kindOf(s)).toBe("confirm");
+    expect(JSON.stringify(dialogs[0])).toMatch(/switched to skyrimse before the purge/);
   });
 
   it("starts when the folder cannot be verified (warned, not blocked)", async () => {

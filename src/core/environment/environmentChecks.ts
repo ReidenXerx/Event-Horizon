@@ -13,9 +13,10 @@
  *                        wrote its hardware-detected `<Game>Prefs.ini`
  *  - binary-imports      "Entry Point Not Found: SteamInternal_CreateInterface"
  *                        — a GOG steam_api64.dll inside a Steam install
- *  - protected-location  game under Program Files, where Windows can redirect
- *                        or refuse a mod manager's writes
+ *  - protected-location  game under Program Files, where tools running without
+ *                        administrator rights are refused writes
  *  - game-folder         leftovers from earlier setups (gameFolderScan.ts)
+ *  - ini-leftovers       archive-loading INI settings from earlier setups
  *
  * `blocked` stops an install. `warning` is shown and logged. `unknown` means a
  * probe could not run — never a block, because refusing a working install on a
@@ -32,7 +33,8 @@ export type EnvironmentCheckId =
   | "protected-location"
   | "launcher-ran"
   | "binary-imports"
-  | "game-folder";
+  | "game-folder"
+  | "ini-leftovers";
 
 export type EnvironmentStatus = "ok" | "blocked" | "warning" | "unknown";
 
@@ -50,6 +52,14 @@ export type EnvironmentCheck = {
 const ok = (id: EnvironmentCheckId, title: string, lines: string[] = []): EnvironmentCheck => ({
   id,
   status: "ok",
+  title,
+  lines,
+  steps: [],
+});
+
+const unknownCheck = (id: EnvironmentCheckId, title: string, lines: string[] = []): EnvironmentCheck => ({
+  id,
+  status: "unknown",
   title,
   lines,
   steps: [],
@@ -88,13 +98,9 @@ export function decideGameManaged(input: {
     };
   }
   if (input.executable === undefined) {
-    return {
-      id: "game-managed",
-      status: "unknown",
-      title: `Could not tell which executable ${gameName} uses.`,
-      lines: [`Game folder: ${input.discoveredPath}`],
-      steps: [],
-    };
+    return unknownCheck("game-managed", `Could not tell which executable ${gameName} uses.`, [
+      `Game folder: ${input.discoveredPath}`,
+    ]);
   }
   if (!input.exeExists) {
     return {
@@ -138,6 +144,9 @@ export function decideProtectedLocation(input: {
   if (input.wine) {
     return ok("protected-location", "Running under Wine/Proton — Windows folder protection does not apply.");
   }
+  if (input.protectedRoots.every((r) => r.trim().length === 0)) {
+    return unknownCheck("protected-location", "Windows did not report its Program Files folders, so this could not be checked.");
+  }
   const root = protectedRootOf(input.gameDir, input.protectedRoots);
   if (root === undefined) {
     return ok("protected-location", `${input.gameName} is outside Windows' protected folders.`, [
@@ -157,7 +166,7 @@ export function decideProtectedLocation(input: {
     title: `${input.gameName} is installed under ${root}.`,
     lines: [
       `Folder: ${input.gameDir}`,
-      "Windows protects this folder: writes from a mod manager can be refused or silently redirected elsewhere, so the game may never see the mods that were installed.",
+      "Windows only lets programs running as administrator write there. Vortex, xEdit, BodySlide and script-extender plugins normally do not run as administrator, so some of their writes into the game folder are refused — and which ones depends on how each tool was started, so the setup cannot be reproduced.",
     ],
     steps: [
       ...moveSteps,
@@ -168,38 +177,66 @@ export function decideProtectedLocation(input: {
 
 // ── 3. The launcher has run once ─────────────────────────────────────────
 
+function startOnceStep(gameName: string, store: string | undefined, hasLauncher: boolean | undefined): string {
+  const s = (store ?? "").toLowerCase();
+  const where =
+    s === "steam"
+      ? "from Steam"
+      : s === "gog"
+        ? "from GOG Galaxy or its desktop shortcut"
+        : s === "epic"
+          ? "from the Epic Games Launcher"
+          : s === "xbox"
+            ? "from the Xbox app"
+            : "from your store";
+  return hasLauncher === false
+    ? `Start ${gameName} once ${where} and wait for the main menu, then quit.`
+    : `Start ${gameName} once ${where} — its own launcher, not Vortex or a script extender — and let it detect your hardware, then close it. You do not need to play.`;
+}
+
 export function decideLauncherRan(input: {
   gameName: string;
   prefsPath: string | undefined;
   exists: boolean;
+  /**
+   * Whether the file carries the hardware settings only the game's launcher
+   * writes. `undefined` when that cannot be judged (the game has no launcher,
+   * or the file could not be read).
+   */
+  launcherWrote?: boolean | undefined;
+  hasLauncher?: boolean | undefined;
+  store?: string | undefined;
 }): EnvironmentCheck {
   if (input.prefsPath === undefined) {
-    return {
-      id: "launcher-ran",
-      status: "unknown",
-      title: `No settings-file layout is known for ${input.gameName}.`,
-      lines: [],
-      steps: [],
-    };
+    return unknownCheck("launcher-ran", `No settings-file layout is known for ${input.gameName}.`);
   }
   const file = basenameOf(input.prefsPath) || input.prefsPath;
-  if (input.exists) {
-    return ok("launcher-ran", `${input.gameName} has been set up on this PC.`, [`Found: ${input.prefsPath}`]);
+  const steps = [startOnceStep(input.gameName, input.store, input.hasLauncher), "Load the collection again."];
+  if (!input.exists) {
+    return {
+      id: "launcher-ran",
+      status: "blocked",
+      title: `${input.gameName} has never been started on this PC.`,
+      lines: [
+        `${file} is missing: ${input.prefsPath}`,
+        "The game writes it the first time it runs, after detecting your hardware. Without it the game starts with wrong video settings, and the collection's settings are written into a folder the game has not set up.",
+      ],
+      steps,
+    };
   }
-  return {
-    id: "launcher-ran",
-    status: "blocked",
-    title: `${input.gameName} has never been started on this PC.`,
-    lines: [
-      `${file} is missing: ${input.prefsPath}`,
-      "The game's own launcher writes it the first time it runs, after detecting your hardware. Without it the game starts with wrong video settings, and the collection's settings are written into a folder the game has not set up.",
-    ],
-    steps: [
-      `Start ${input.gameName} once from your store (Steam or GOG) — the normal launcher, not Vortex or a script extender.`,
-      `Let it finish detecting your hardware, then close it. You do not need to play.`,
-      "Load the collection again.",
-    ],
-  };
+  if (input.launcherWrote === false) {
+    return {
+      id: "launcher-ran",
+      status: "blocked",
+      title: `${input.gameName}'s settings file was not created by the game.`,
+      lines: [
+        `${file} exists but holds none of the hardware settings (screen size, display adapter) the game's launcher writes: ${input.prefsPath}`,
+        "A mod tool — possibly an earlier install — created it, so the launcher's hardware detection has never run on this PC.",
+      ],
+      steps,
+    };
+  }
+  return ok("launcher-ran", `${input.gameName} has been set up on this PC.`, [`Found: ${input.prefsPath}`]);
 }
 
 // ── 4. Executables can load their DLLs ───────────────────────────────────
@@ -216,6 +253,7 @@ export function decideBinaryImports(input: {
   gameName: string;
   checked: readonly string[];
   findings: readonly ImportMismatch[];
+  unreadable?: readonly string[];
 }): EnvironmentCheck {
   const describe = (f: ImportMismatch): string =>
     `${f.exe} needs ${f.missing.slice(0, 3).join(", ")}${f.missing.length > 3 ? ` (+${f.missing.length - 3} more)` : ""} from ${f.dll}, and the ${f.dll} in the game folder does not have ${f.missing.length === 1 ? "it" : "them"}.`;
@@ -246,7 +284,14 @@ export function decideBinaryImports(input: {
       steps: ["If the game fails to start, remove or update the DLL named above."],
     };
   }
-  return ok("binary-imports", "Game executables and their DLLs match.", [`Checked: ${input.checked.join(", ") || "none"}`]);
+  if (input.checked.length === 0) {
+    return unknownCheck(
+      "binary-imports",
+      "No game executable could be read, so DLL compatibility was not checked.",
+      input.unreadable !== undefined && input.unreadable.length > 0 ? [`Unreadable: ${input.unreadable.join(", ")}`] : [],
+    );
+  }
+  return ok("binary-imports", "Game executables and their DLLs match.", [`Checked: ${input.checked.join(", ")}`]);
 }
 
 // ── 5. The game folder is clean ──────────────────────────────────────────
@@ -256,6 +301,13 @@ export function decideGameFolder(input: {
   scan: GameFolderScan;
 }): EnvironmentCheck {
   const { report, deployedCount } = input.scan;
+  const toolDlls = input.scan.toolDlls ?? [];
+  const toolLines =
+    toolDlls.length > 0
+      ? [
+          `Left alone — they belong to tools beside the game: ${toolDlls.map((t) => `${t.dll} (${t.owners.join(", ")})`).join("; ")}.`,
+        ]
+      : [];
   if (report.vanilla.kind === "unknown") {
     return {
       id: "game-folder",
@@ -263,7 +315,7 @@ export function decideGameFolder(input: {
       title: `Could not verify the ${input.gameName} folder is clean.`,
       lines: [report.vanilla.reason],
       steps: [
-        "Files left in the game folder by earlier mod setups can collide with this collection. If the game misbehaves, verify the game files in your store and remove anything you added by hand.",
+        "Nothing will be purged or moved. Files left in the game folder by earlier mod setups can collide with this collection; if the game misbehaves, verify the game files in your store and remove anything you added by hand.",
       ],
     };
   }
@@ -290,21 +342,69 @@ export function decideGameFolder(input: {
       `${report.vanillaSizeMismatch.length} game file${report.vanillaSizeMismatch.length === 1 ? " differs" : "s differ"} from the store's copy (${report.vanillaSizeMismatch.slice(0, 3).map((m) => m.path).join(", ")}${report.vanillaSizeMismatch.length > 3 ? ", …" : ""}).`,
     );
   }
+  const presenceOnly =
+    report.vanilla.source === "gog"
+      ? ["GOG's record has no file sizes, so the game's own files were checked for presence, not content."]
+      : [];
   if (lines.length === 0) {
     return ok("game-folder", `The ${input.gameName} folder is a clean game.`, [
       `Checked against ${report.vanilla.detail}`,
+      ...presenceOnly,
+      ...toolLines,
     ]);
   }
   const steps: string[] = [];
   if (unmanaged.length > 0 || deployedCount > 0) {
     steps.push(
-      "When you click Install, Event Horizon purges Vortex's deployment and moves the files above into a quarantine folder — nothing is deleted, and the Doctor page can put every file back.",
+      "When you click Install, Event Horizon purges Vortex's deployment and moves the files above into a quarantine folder beside the game folder — nothing is deleted, and the Doctor page can put every file back.",
     );
   }
   if (report.vanillaMissing.length > 0 || report.vanillaSizeMismatch.length > 0) {
     steps.push("Verify the game files in your store (Steam: Verify integrity; GOG Galaxy: Verify / Repair).");
   }
-  return { id: "game-folder", status: "warning", title: `The ${input.gameName} folder is not a clean game.`, lines, steps };
+  return {
+    id: "game-folder",
+    status: "warning",
+    title: `The ${input.gameName} folder is not a clean game.`,
+    lines: [...lines, ...presenceOnly, ...toolLines],
+    steps,
+  };
+}
+
+// ── 6. INI leftovers ─────────────────────────────────────────────────────
+
+export type IniLeftover = { file: string; key: string; value: string; defaultValue?: string };
+
+/**
+ * Archive-loading settings in the user's INIs that neither the game's own
+ * defaults nor this collection set. Warn only (the curator's call): they
+ * change which archives and loose files the game loads, and they are the
+ * user's to keep or remove.
+ */
+export function decideIniLeftovers(input: {
+  gameName: string;
+  defaultsFile: string | undefined;
+  leftovers: readonly IniLeftover[];
+}): EnvironmentCheck {
+  if (input.defaultsFile === undefined) {
+    return unknownCheck("ini-leftovers", `No default INI in the ${input.gameName} folder to compare the archive settings against.`);
+  }
+  if (input.leftovers.length === 0) {
+    return ok("ini-leftovers", "No archive-loading settings from earlier setups in the game's INI files.", [
+      `Compared against ${input.defaultsFile}`,
+    ]);
+  }
+  return {
+    id: "ini-leftovers",
+    status: "warning",
+    title: `${input.gameName}'s INI files carry archive-loading settings this collection does not set.`,
+    lines: input.leftovers.map(
+      (l) => `${l.file}: ${l.key}=${l.value} (game default: ${l.defaultValue === undefined ? "not set" : l.defaultValue === "" ? "empty" : l.defaultValue})`,
+    ),
+    steps: [
+      "They change which archives and loose files the game loads, and probably come from an earlier mod setup. Keep them if you set them on purpose; otherwise remove them from the file named, or reset the INIs with a tool like BethINI.",
+    ],
+  };
 }
 
 export function blockingChecks(checks: readonly EnvironmentCheck[]): EnvironmentCheck[] {

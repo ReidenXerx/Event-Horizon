@@ -707,11 +707,13 @@ class InstallSession {
         });
         this.installInFlight = false;
         this.installController = undefined;
+        this.warnIfLeftUndeployed(api, startState.bundle.plan, result.kind);
         if (this.state.kind !== "installing") return;
         this.dispatch({ type: "install-result", result });
       } catch (err) {
         this.installInFlight = false;
         this.installController = undefined;
+        this.warnIfLeftUndeployed(api, startState.bundle.plan, "crashed");
         this.failWith(err, {
           title: "Install driver crashed",
           context: {
@@ -725,6 +727,24 @@ class InstallSession {
 
   private environmentClearedFor: unknown = undefined;
   private environmentGateRunning = false;
+  /** The plan whose install began right after Vortex's deployment was purged. */
+  private purgedForPlan: unknown = undefined;
+
+  /**
+   * After a purge the game has no mods deployed until the install deploys them
+   * again. A run that ends any other way has to say so, or the tester starts a
+   * vanilla game and reports a broken collection.
+   */
+  private warnIfLeftUndeployed(api: types.IExtensionApi, plan: unknown, outcome: string): void {
+    if (outcome === "success" || this.purgedForPlan !== plan) return;
+    logFailure("warn", "install.ended-undeployed", { outcome });
+    api.sendNotification?.({
+      id: "event-horizon-undeployed",
+      type: "warning",
+      message:
+        "Event Horizon purged Vortex's deployment before this install, and the install did not finish. Deploy in Vortex (or install again) to put your mods back into the game.",
+    });
+  }
 
   private async runEnvironmentGate(api: types.IExtensionApi): Promise<void> {
     if (this.state.kind !== "confirm" || this.environmentGateRunning) return;
@@ -737,39 +757,48 @@ class InstallSession {
       this.environmentClearedFor = plan;
       this.startInstall(api);
     };
-    const [
-      { ehLog },
-      { gatherPreflightFacts, purgeGameDeployment },
-      { runEnvironmentPreflight },
-      { blockingChecks, describeBlockedChecks },
-      { cleanGameFolder, describeCleanPlan },
-      { scanGameFolder, groupEntries },
-      { quarantineFiles, QUARANTINE_FOLDER_NAME },
-      { getEventHorizonDir },
-      { getActiveGameId },
-      path,
-    ] = await Promise.all([
-      import("../../../core/logging/ehLog"),
-      import("../../../core/environment/vortexEnvironment"),
-      import("../../../core/environment/preflight"),
-      import("../../../core/environment/environmentChecks"),
-      import("../../../core/environment/cleanGameFolder"),
-      import("../../../core/environment/gameFolderScan"),
-      import("../../../core/environment/quarantine"),
-      import("../../../core/paths"),
-      import("../../../core/getModsListForProfile"),
-      import("path"),
-    ]);
+    const NOTIFICATION = "event-horizon-environment-gate";
+    // Up to three scans and a purge — minutes on a large setup. Say so, or the
+    // Install button looks dead.
+    api.sendNotification?.({
+      id: NOTIFICATION,
+      type: "activity",
+      message: "Event Horizon: checking the game folder…",
+    });
+    let recordPath: string | undefined;
+    let purged = false;
     try {
+      // Inside the try: a module that fails to load must not leave the gate
+      // flagged as running, with the Install button dead for the session.
+      const [
+        { gatherPreflightFacts, purgeGameDeployment },
+        { runEnvironmentPreflight },
+        { blockingChecks, describeBlockedChecks },
+        { cleanGameFolder, describeCleanPlan },
+        { scanGameFolder, groupEntries },
+        { quarantineFiles, quarantineRootFor },
+        { getEventHorizonDir },
+        { getActiveGameId },
+      ] = await Promise.all([
+        import("../../../core/environment/vortexEnvironment"),
+        import("../../../core/environment/preflight"),
+        import("../../../core/environment/environmentChecks"),
+        import("../../../core/environment/cleanGameFolder"),
+        import("../../../core/environment/gameFolderScan"),
+        import("../../../core/environment/quarantine"),
+        import("../../../core/paths"),
+        import("../../../core/getModsListForProfile"),
+      ]);
       const facts = gatherPreflightFacts({
         state: api.getState(),
         gameId,
         externalDependencies: manifest.externalDependencies,
+        ...(manifest.gameIni !== undefined ? { gameIni: manifest.gameIni } : {}),
       });
       const report = await runEnvironmentPreflight(facts, { scanFolder: false, context: "install-gate" });
       const blocked = blockingChecks(report.checks);
       if (blocked.length > 0) {
-        ehLog("warn", "install.blocked.environment", { gameId, checks: blocked.map((c) => c.id) });
+        logFailure("warn", "install.blocked.environment", { gameId, checks: blocked.map((c) => c.id) });
         await api.showDialog?.(
           "error",
           blocked.length === 1 ? blocked[0]!.title : `${facts.gameName} is not ready for this collection`,
@@ -792,7 +821,7 @@ class InstallSession {
       // collection has nothing to do with.
       const activeNow = getActiveGameId(api.getState());
       if (activeNow !== gameId) {
-        ehLog("warn", "install.blocked.active-game-changed", { gameId, activeNow });
+        logFailure("warn", "install.blocked.active-game-changed", { gameId, activeNow });
         await api.showDialog?.(
           "error",
           `Vortex is managing ${activeNow ?? "no game"} now, not ${facts.gameName}`,
@@ -804,14 +833,26 @@ class InstallSession {
       const outcome = await cleanGameFolder({
         gameId,
         gameName: facts.gameName,
-        quarantineFolder: path.join(gameDir, QUARANTINE_FOLDER_NAME),
+        quarantineFolder: quarantineRootFor(gameDir),
         scan: () =>
           scanGameFolder({
             gameDir,
             ...(facts.localGameDir !== undefined ? { localGameDir: facts.localGameDir } : {}),
             declared: facts.declared,
+            ...(facts.executable !== undefined ? { executable: facts.executable } : {}),
           }),
-        purge: () => purgeGameDeployment(api),
+        purge: async () => {
+          // Checked again at the moment of purging: the scan before it takes a
+          // while, and purge-mods empties whatever game is active THEN.
+          const activeAtPurge = getActiveGameId(api.getState());
+          if (activeAtPurge !== gameId) {
+            throw new Error(
+              `Vortex switched to ${activeAtPurge ?? "no game"} before the purge, so nothing was purged`,
+            );
+          }
+          await purgeGameDeployment(api);
+          purged = true;
+        },
         confirm: async (preview) => {
           const d = describeCleanPlan(preview);
           const answer = await api.showDialog?.(
@@ -822,16 +863,19 @@ class InstallSession {
           );
           return answer?.action === d.confirm;
         },
-        quarantine: (entries) =>
-          quarantineFiles({
+        quarantine: async (entries) => {
+          const result = await quarantineFiles({
             gameId,
             gameDir,
             entries,
             reason: `Before installing ${manifest.package.name} v${manifest.package.version}`,
             recordDir: getEventHorizonDir("quarantine"),
-          }),
+          });
+          recordPath = result.recordPath;
+          return result;
+        },
       });
-      ehLog("info", "install.environment-gate.outcome", { gameId, outcome: outcome.kind });
+      logFailure("info", "install.environment-gate.outcome", { gameId, outcome: outcome.kind, purged, recordPath });
       if (outcome.kind === "declined") return;
       if (outcome.kind === "failed") {
         await api.showDialog?.(
@@ -841,6 +885,12 @@ class InstallSession {
             text: `${outcome.message} The install was not started.`,
             message: [
               ...groupEntries(outcome.remaining).map((g) => `${g.group} — ${g.files} file(s)`),
+              ...(outcome.purged
+                ? [
+                    "",
+                    "Vortex's deployment was purged, so the game has no mods deployed right now. Deploy in Vortex to put them back, or click Install again once the problem is fixed.",
+                  ]
+                : []),
               ...(outcome.recordPath !== undefined
                 ? ["", "Files already moved aside can be put back from Doctor → Moved-aside files.", outcome.recordPath]
                 : []),
@@ -850,27 +900,41 @@ class InstallSession {
         );
         return;
       }
+      if (outcome.kind === "cleaned" && outcome.purged) this.purgedForPlan = plan;
       proceed();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      ehLog("error", "install.environment-gate.crashed", {
+      logFailure("error", "install.environment-gate.crashed", {
         gameId,
         error: err instanceof Error ? err.stack ?? message : message,
+        purged,
+        recordPath,
       });
-      // A check that could not run must not become a wall: say so, and let the
-      // user decide with the reason in front of them.
+      const aftermath = [
+        ...(recordPath !== undefined
+          ? [`Some files were already moved aside. Doctor → Moved-aside files puts them back (${recordPath}).`]
+          : []),
+        ...(purged ? ["Vortex's deployment was purged. Deploy in Vortex puts your mods back."] : []),
+      ];
+      // A check that could not run must not become a wall: say so, with what
+      // already happened, and let the user decide.
       const answer = await api.showDialog?.(
         "error",
         "The game setup check failed",
-        { text: `Event Horizon could not finish checking the game folder: ${message}` },
+        {
+          text: `Event Horizon could not finish checking the game folder: ${message}`,
+          ...(aftermath.length > 0 ? { message: aftermath.join("\n") } : {}),
+        },
         [{ label: "Cancel" }, { label: "Install anyway" }],
       );
       if (answer?.action === "Install anyway") {
-        ehLog("warn", "install.environment-gate.overridden", { gameId });
+        logFailure("warn", "install.environment-gate.overridden", { gameId, purged });
+        if (purged) this.purgedForPlan = plan;
         proceed();
       }
     } finally {
       this.environmentGateRunning = false;
+      api.dismissNotification?.(NOTIFICATION);
     }
   }
 

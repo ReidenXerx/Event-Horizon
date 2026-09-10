@@ -1,6 +1,6 @@
 {
   "name": "vortex-event-horizon",
-  "version": "0.1.0-alpha.150",
+  "version": "0.1.151",
   "description": "Vortex extension – Event Horizon: capture and reproduce a curator's exact mod state before Vortex's collection black hole loses it.",
   "repository": {
     "type": "git",
@@ -100,7 +100,8 @@
     "bearing:wiki-force": "bash scripts/run-with-project-tmp.sh gitnexus wiki --force --provider openai --model gpt-4o-mini --base-url https://api.openai.com/v1",
     "gitnexus:wiki-force": "bash scripts/run-with-project-tmp.sh gitnexus wiki --force --provider openai --model gpt-4o-mini --base-url https://api.openai.com/v1",
     "bearing:test-order": "node scripts/bearing-test-order.mjs --report",
-    "gitnexus:test-order": "node scripts/bearing-test-order.mjs --report"
+    "gitnexus:test-order": "node scripts/bearing-test-order.mjs --report",
+    "release:nexus": "node scripts/release-nexus.mjs"
   },
   "devDependencies": {
     "@nexusmods/vortex-api": "2.6.0-beta.2",
@@ -113,5 +114,10 @@
   },
   "engines": {
     "node": ">=22.9.0"
+  },
+  "nexus": {
+    "gameDomain": "site",
+    "modId": 2235,
+    "fileName": "Event Horizon"
   }
 }
