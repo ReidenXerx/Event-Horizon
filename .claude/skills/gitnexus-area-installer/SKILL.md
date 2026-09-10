@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-installer
-description: "Skill for the Installer area of Event-Horizon. 332 symbols across 80 files."
+description: "Skill for the Installer area of Event-Horizon. 363 symbols across 93 files."
 ---
 
 # Installer
 
-332 symbols | 80 files | Cohesion: 76%
+363 symbols | 93 files | Cohesion: 75%
 
 ## When to Use
 
@@ -17,16 +17,16 @@ description: "Skill for the Installer area of Event-Horizon. 332 symbols across 
 
 | File | Symbols |
 |------|---------|
-| `src/core/installer/runInstall.ts` | buildAbortedResult, buildDisplayNameByModId, buildFailReceipt, buildManifestIndex, buildNexusModIdMap (+61) |
-| `src/core/installer/modInstall.ts` | safeRmTempDir, delayRespectingAbort, downloadFolderFor, downloadNexusArchiveOnly, installFromBundledArchive (+24) |
+| `src/core/installer/runInstall.ts` | buildAbortedResult, buildDisplayNameByModId, buildFailReceipt, buildManifestIndex, buildNexusModIdMap (+59) |
+| `src/core/installer/modInstall.ts` | delayRespectingAbort, downloadFolderFor, downloadNexusArchiveOnly, installFromBundledArchive, installFromExistingDownload (+24) |
 | `src/core/installLedger.ts` | InstallLedgerError, expectString, getInstallLedgerDir, getReceiptPath, isIso8601 (+11) |
 | `src/core/installer/applyUserlist.ts` | applyGroupDefinition, applyGroupRule, applyPluginEntry, applyPluginGroup, applyPluginRuleWithCollectionWins (+8) |
 | `src/core/installer/bundledPrefetch.ts` | BundledPrefetchPool, dispose, prime, pump, runExtraction (+2) |
+| `src/core/installer/applyGameIni.ts` | describeGameIniApplication, shouldApplyGameIni, applyGameIni, describeIniChanges, isSectionHeader (+2) |
 | `src/core/installer/installJournal.ts` | logJournalSummary, ownedModIds, clearJournal, appendJournalEntry, getJournalDir (+2) |
 | `src/core/installer/checkNexusAccount.ts` | hasNexusSlice, nexusSlice, readNexusAccount, readUserInfo, readViaSelectors (+2) |
 | `src/core/installer/profile.ts` | createFreshProfile, makeAbortError, pickNonCollidingName, switchToProfile, disableModInProfile (+1) |
 | `src/core/installer/timeBudgets.ts` | countMods, clamp, deployBudgetMs, profileSwitchBudgetMs, scale (+1) |
-| `src/core/installer/sourceMemory.ts` | forgetSources, getSourceMemoryDir, memoryPath, readSourceMemory, rememberSource (+1) |
 
 ## Entry Points
 
@@ -36,7 +36,7 @@ Start here when exploring this area:
 - **`shouldApplyGameIni`** (Function) — `src/core/installer/applyGameIni.ts:315`
 - **`applyIniTweaks`** (Function) — `src/core/installer/applyIniTweaks.ts:53`
 - **`emptyIniTweakApplication`** (Function) — `src/core/installer/applyIniTweaks.ts:41`
-- **`applyLoadOrder`** (Function) — `src/core/installer/applyLoadOrder.ts:113`
+- **`describeModTypeChanges`** (Function) — `src/core/installer/applyModTypes.ts:159`
 
 ## Key Symbols
 
@@ -45,11 +45,11 @@ Start here when exploring this area:
 | `BundledPrefetchPool` | Class | `src/core/installer/bundledPrefetch.ts` | 117 |
 | `InstallStreaks` | Class | `src/core/installer/installStreaks.ts` | 59 |
 | `InstallLedgerError` | Class | `src/core/installLedger.ts` | 72 |
+| `AbortError` | Class | `src/utils/abortError.ts` | 22 |
 | `describeGameIniApplication` | Function | `src/core/installer/applyGameIni.ts` | 340 |
 | `shouldApplyGameIni` | Function | `src/core/installer/applyGameIni.ts` | 315 |
 | `applyIniTweaks` | Function | `src/core/installer/applyIniTweaks.ts` | 53 |
 | `emptyIniTweakApplication` | Function | `src/core/installer/applyIniTweaks.ts` | 41 |
-| `applyLoadOrder` | Function | `src/core/installer/applyLoadOrder.ts` | 113 |
 | `describeModTypeChanges` | Function | `src/core/installer/applyModTypes.ts` | 159 |
 | `label` | Function | `src/core/installer/applyModTypes.ts` | 163 |
 | `planModTypeChanges` | Function | `src/core/installer/applyModTypes.ts` | 63 |

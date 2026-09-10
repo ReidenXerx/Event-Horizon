@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-paths
-description: "Skill for the Paths area of Event-Horizon. 12 symbols across 4 files."
+description: "Skill for the Paths area of Event-Horizon. 13 symbols across 5 files."
 ---
 
 # Paths
 
-12 symbols | 4 files | Cohesion: 59%
+13 symbols | 5 files | Cohesion: 60%
 
 ## When to Use
 
@@ -21,6 +21,7 @@ description: "Skill for the Paths area of Event-Horizon. 12 symbols across 4 fil
 | `src/ui/pages/dashboard/data.ts` | loadBuiltPackages, loadCuratorConfigs, loadDashboardData, loadReceipts |
 | `src/core/paths/modPath.ts` | basenameOf, extensionOf, segmentsOf |
 | `src/core/manifest/storeCompatibility.ts` | isScriptExtenderPlugin |
+| `src/core/volatileFiles.ts` | volatileReason |
 
 ## Entry Points
 
@@ -45,6 +46,7 @@ Start here when exploring this area:
 | `basenameOf` | Function | `src/core/paths/modPath.ts` | 56 |
 | `extensionOf` | Function | `src/core/paths/modPath.ts` | 79 |
 | `segmentsOf` | Function | `src/core/paths/modPath.ts` | 49 |
+| `volatileReason` | Function | `src/core/volatileFiles.ts` | 93 |
 | `loadBuiltPackages` | Function | `src/ui/pages/dashboard/data.ts` | 249 |
 | `loadCuratorConfigs` | Function | `src/ui/pages/dashboard/data.ts` | 184 |
 | `loadReceipts` | Function | `src/ui/pages/dashboard/data.ts` | 156 |
