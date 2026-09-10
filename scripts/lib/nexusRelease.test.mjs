@@ -13,7 +13,6 @@ import { describe, expect, it } from "vitest";
 import {
   coerceVersion,
   findMainFile,
-  formatChangelog,
   isReleasableVersion,
   nexusClient,
   readZipEntry,
@@ -90,14 +89,6 @@ describe("readZipEntry", () => {
 
   it("does not accept info.json one folder down — Vortex would not either", () => {
     expect(readZipEntry(zip([["event-horizon/info.json", "{}", false]]), "info.json")).toBeUndefined();
-  });
-});
-
-describe("formatChangelog", () => {
-  it("lists subjects and stays within the API limit", () => {
-    expect(formatChangelog(["A", "", "B"])).toBe("- A\n- B");
-    expect(formatChangelog([])).toBe("- Maintenance release");
-    expect(formatChangelog(["x".repeat(100)], 20).length).toBeLessThanOrEqual(20);
   });
 });
 

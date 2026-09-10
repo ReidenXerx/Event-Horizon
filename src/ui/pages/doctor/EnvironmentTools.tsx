@@ -59,6 +59,7 @@ export function EnvironmentTools(): JSX.Element {
   const [quarantines, setQuarantines] = React.useState<QuarantineSummary[] | undefined>(undefined);
   const [busyRecord, setBusyRecord] = React.useState<string | undefined>(undefined);
   const [tick, setTick] = React.useState(0);
+  const [savingLogs, setSavingLogs] = React.useState(false);
 
   // Follow Vortex's active game.
   React.useEffect(() => {
@@ -158,6 +159,39 @@ export function EnvironmentTools(): JSX.Element {
       } finally {
         snapshotAbort.current = undefined;
         setSnapshot(undefined);
+      }
+    })();
+  };
+
+  const saveLogs = (): void => {
+    if (savingLogs) return;
+    void (async (): Promise<void> => {
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const filePath = await api.saveFile({
+        title: "Save Event Horizon logs",
+        defaultPath: `event-horizon-logs-${stamp}.zip`,
+        filters: [
+          { name: "ZIP archive", extensions: ["zip"] },
+          { name: "All files", extensions: ["*"] },
+        ],
+      });
+      if (filePath === undefined || filePath.length === 0) return;
+      setSavingLogs(true);
+      try {
+        const { collectLogSources, logBundleDirs, writeLogBundle } = await import("../../../core/diagnostics/logBundle");
+        const sources = await collectLogSources(logBundleDirs());
+        const result = await writeLogBundle({ filePath, extensionVersion: EXTENSION_VERSION, sources });
+        toast({
+          intent: result.skipped.length === 0 ? "success" : "warning",
+          message:
+            `Logs saved: ${result.files} files, ${formatBytes(result.bytes)}` +
+            (result.skipped.length > 0 ? ` (${result.skipped.length} could not be read — listed inside)` : "") +
+            ". Send this file to whoever asked for it.",
+        });
+      } catch (err) {
+        reportError(err, { title: "Couldn't save the logs", context: { step: "doctor-save-logs" } });
+      } finally {
+        setSavingLogs(false);
       }
     })();
   };
@@ -266,6 +300,20 @@ export function EnvironmentTools(): JSX.Element {
             )}
           </div>
         )}
+      </Card>
+
+      <Card title="Logs" inert>
+        <div className="eh-stack eh-stack--sm">
+          <span className="eh-secondary">
+            Saves every Event Horizon log, Vortex&apos;s own logs and Event Horizon&apos;s install records into one zip.
+            Send that file when someone asks what happened — it is everything needed to find out.
+          </span>
+          <div className="eh-row">
+            <Button intent="ghost" disabled={savingLogs} onClick={saveLogs}>
+              {savingLogs ? "Saving…" : "Save logs…"}
+            </Button>
+          </div>
+        </div>
       </Card>
 
       <EnvironmentCard report={report} showOk />

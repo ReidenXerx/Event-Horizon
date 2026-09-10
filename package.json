@@ -101,6 +101,7 @@
     "gitnexus:wiki-force": "bash scripts/run-with-project-tmp.sh gitnexus wiki --force --provider openai --model gpt-4o-mini --base-url https://api.openai.com/v1",
     "bearing:test-order": "node scripts/bearing-test-order.mjs --report",
     "gitnexus:test-order": "node scripts/bearing-test-order.mjs --report",
+    "release": "node scripts/release-nexus.mjs",
     "release:nexus": "node scripts/release-nexus.mjs"
   },
   "devDependencies": {

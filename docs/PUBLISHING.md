@@ -238,7 +238,7 @@ Until that lands, people can still install by downloading the zip from the mod
 page and using Install from file — worth saying plainly in the mod description
 rather than letting testers conclude it is broken.
 
-### Step 6 — updating: `npm run release:nexus`
+### Step 6 — updating: `npm run release`
 
 Event Horizon lives at [nexusmods.com/site/mods/2235](https://www.nexusmods.com/site/mods/2235)
 (`package.json` → `nexus`). Releases go through one script, which uses the
@@ -246,17 +246,26 @@ Nexus API v3 upload flow and adds the zip as a **new version of the existing
 main file** (the previous version is archived, so the page keeps exactly one
 main file):
 
+First write the notes: add a `## [x.y.z] — YYYY-MM-DD` section to `CHANGELOG.md`
+(newest first, player-facing). The release refuses without one, and those exact words
+become the Nexus changelog and the GitHub Release notes.
+
 ```
-npm run release:nexus -- --dry-run   # everything except writes to Nexus
-npm run release:nexus
+npm run release -- --dry-run   # everything except writes to Nexus and GitHub
+npm run release                # alias: npm run release:nexus
 ```
 
-It refuses before touching Nexus when the version files disagree, the version
-is not plain `x.y.z`, it is not newer than Nexus's latest by Vortex's own
-comparison, the tree is dirty or not pushed, the tag exists, or tests,
-typecheck, packaging or the smoke load fail. After uploading it adds the
-changelog (commit subjects since the previous `v*` tag), checks Nexus lists the
-version, then tags and pushes `v<version>`.
+It refuses before touching either site when the version files disagree, the
+version is not plain `x.y.z`, CHANGELOG.md has no section for it, it is not newer
+than Nexus's latest by Vortex's own comparison, the tree is dirty or not pushed,
+the tag or GitHub Release exists, `gh` is not signed in, or tests, typecheck,
+packaging or the smoke load fail. It uploads to Nexus as "Event Horizon x.y.z",
+adds the changelog, checks Nexus lists the version, then tags `v<version>` and
+publishes the GitHub Release with the same notes and the zip attached.
+
+Nexus's review rule is exactly one active Main file. The page had two
+(alpha.85 and alpha.94); archive the older one before the first run, or the
+dry run will say so.
 
 API key: `NEXUSMODS_API_KEY`, or the first line of `~/.nexusmods/api-key`
 (create one at nexusmods.com/settings/api-keys). It is never printed.

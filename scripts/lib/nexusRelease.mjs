@@ -107,17 +107,6 @@ export function readZipEntry(buf, wanted) {
   return undefined;
 }
 
-// ── changelog ────────────────────────────────────────────────────────────
-
-/** Commit subjects as a Nexus changelog, newest first, within the API's limit. */
-export function formatChangelog(subjects, limit = 65535) {
-  const lines = subjects.map((s) => s.trim()).filter((s) => s.length > 0).map((s) => `- ${s}`);
-  let text = lines.join("\n");
-  if (text.length === 0) text = "- Maintenance release";
-  if (text.length > limit) text = `${text.slice(0, limit - 2)}\n…`;
-  return text;
-}
-
 // ── API ──────────────────────────────────────────────────────────────────
 
 export class NexusApiError extends Error {
