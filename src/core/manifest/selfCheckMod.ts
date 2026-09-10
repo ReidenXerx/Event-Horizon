@@ -25,6 +25,7 @@
  * unusual setup must not be blocked, only informed.
  */
 
+import { isVolatileFile } from "../volatileFiles";
 import type { SevenZipApi } from "./sevenZip";
 import type { ArchiveListing } from "./archiveContents";
 import { listArchiveContents } from "./archiveContents";
@@ -512,8 +513,22 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
   }
 
   const stagedPaths = new Set(input.staged.map((f) => key(f.path)));
+  /**
+   * ─── A RUNTIME'S FILE IS NEVER MISSING ───────────────────────────────
+   * Verification skipping what a runtime writes is SETTLED — `isVolatileFile`
+   * is the rule, and the install side and `planMirror` both obey it. This
+   * comparison did not, so the BUILD kept telling the curator a mod was
+   * broken because a log or a folder-view file was absent.
+   *
+   * Measured on a real Skyrim build: four of the six mods reported as
+   * "missing files" were exactly this — `SKSE/Plugins/cbpc.log`,
+   * `skse/plugins/MuJointFix.log`, and `desktop.ini` in two more — each with
+   * advice to reinstall a mod that was fine. A finding that is wrong two
+   * times in three teaches the curator to skip the third.
+   */
   const missing = expected.files
     .filter((f) => !stagedPaths.has(key(f.path)))
+    .filter((f) => !isVolatileFile(f.path))
     .map((f) => f.path);
 
   return withDeps({
@@ -660,7 +675,11 @@ async function verifyEmptySelection(input: {
     const key = (p: string): string => pathKey(p, input.caseMode ?? "insensitive");
     const predicted = new Set(expected.files.map((f) => key(f.path)));
     const actual = new Set(input.staged.map((f) => key(f.path)));
-    const missing = [...predicted].filter((p) => !actual.has(p));
+    // Same rule as the replayed `missing` above: a log or desktop.ini the
+    // archive happens to carry is not evidence about what was ticked.
+    const missing = [...predicted].filter(
+      (p) => !actual.has(p) && !isVolatileFile(p),
+    );
     /**
      * ─── A TICKED BOX CAN ONLY ADD A FILE FROM THE ARCHIVE ───────────────
      * `extra` used to be every staged file the no-choice replay does not

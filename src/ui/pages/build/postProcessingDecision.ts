@@ -189,8 +189,47 @@ export function describeChoice(
    * the copy is then written to stay true either way.
    */
   kinds?: { added: number; changed: number },
+  /**
+   * Files the archive installs that the curator's folder does not have. The
+   * copy for a deletion is not the copy for an addition: "users get your
+   * version of 0 files" is what this said before it knew the difference.
+   */
+  removedCount = 0,
 ): ChoiceCopy {
   const n = `${fileCount} file${fileCount === 1 ? "" : "s"}`;
+  const m = `${removedCount} file${removedCount === 1 ? "" : "s"}`;
+  const onlyRemoved = fileCount === 0 && removedCount > 0;
+  if (choice === "mirror" && onlyRemoved) {
+    return {
+      label: "Ship my deletion — users lose these files too",
+      consequence:
+        `Users still download this mod from Nexus, then the collection removes ` +
+        `the ${m} missing from your folder — theirs ends up identical to yours. ` +
+        `Right when you deleted them on purpose. Wrong if Vortex lost them ` +
+        `during an install: then every user loses them as well, and the ` +
+        `answer is to reinstall the mod instead.`,
+    };
+  }
+  if (choice === "declare" && onlyRemoved) {
+    return {
+      label: "Users keep these files — ship the archive as it is",
+      consequence:
+        `Users get the archive's ${m} that your folder does not have. Right ` +
+        `when Vortex lost them on your machine, or when they do not matter — ` +
+        `and in the first case, reinstall the mod so your own setup matches ` +
+        `what you ship.`,
+    };
+  }
+  if (choice === "bundle" && onlyRemoved) {
+    return {
+      label: "Ship my exact folder — deletions included",
+      consequence:
+        `Packs your staging folder as it is, so users get it without the ` +
+        `${m} you do not have and without installing from Nexus. Makes the ` +
+        `download bigger by the size of the folder, and no installer runs on ` +
+        `their machine.`,
+    };
+  }
   if (choice === "mirror") {
     return {
       label: "Reproduce my version — users get exactly this",
@@ -205,7 +244,11 @@ export function describeChoice(
         `your version of the ${n} in place — their folder ends up identical ` +
         `to yours. Right when the archive has the file and you changed it: a ` +
         `plugin you cleaned, an ini you edited. The package carries this ` +
-        `mod's files to do that, so the download is bigger.`,
+        `mod's files to do that, so the download is bigger.` +
+        (removedCount > 0
+          ? ` It also removes the ${m} missing from your folder — right if you ` +
+            `deleted them, wrong if Vortex lost them.`
+          : ""),
     };
   }
   if (choice === "declare") {

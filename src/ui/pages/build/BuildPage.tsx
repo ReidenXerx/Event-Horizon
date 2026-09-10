@@ -3184,6 +3184,58 @@ function PostProcessingDecisions(props: {
                 </ul>
               )}
 
+              {/*
+                The other direction: files the archive installs that the
+                curator's folder does not have. Shown with the one sentence
+                that decides the answer, because the list alone reads the same
+                whether the curator deleted them or Vortex lost them.
+              */}
+              {c.removedCount > 0 && (
+                <div className="eh-stack eh-stack--xs">
+                  <p
+                    style={{
+                      margin: 0,
+                      color: "var(--eh-text-secondary)",
+                      fontSize: "var(--eh-text-sm)",
+                    }}
+                  >
+                    {c.removedCount} file{c.removedCount === 1 ? "" : "s"} the
+                    archive installs {c.removedCount === 1 ? "is" : "are"} not in
+                    your folder. If you deleted{" "}
+                    {c.removedCount === 1 ? "it" : "them"}, mirroring ships that
+                    deletion; if Vortex lost{" "}
+                    {c.removedCount === 1 ? "it" : "them"}, reinstall the mod
+                    instead — only you know which.
+                  </p>
+                  <ul
+                    style={{
+                      margin: 0,
+                      padding:
+                        "var(--eh-sp-2) var(--eh-sp-2) var(--eh-sp-2) var(--eh-sp-5)",
+                      background: "var(--eh-bg-deep)",
+                      borderRadius: "var(--eh-radius-sm)",
+                      fontFamily: "var(--eh-font-mono)",
+                      fontSize: "var(--eh-text-xs)",
+                      color: "var(--eh-text-secondary)",
+                    }}
+                  >
+                    {c.removed.map((p) => (
+                      <li key={`removed:${p}`}>
+                        {p}
+                        <span style={{ color: "var(--eh-text-muted)" }}>
+                          {" — in the archive, not in your folder"}
+                        </span>
+                      </li>
+                    ))}
+                    {c.removedCount > c.removed.length && (
+                      <li style={{ listStyle: "none", opacity: 0.7 }}>
+                        and {c.removedCount - c.removed.length} more
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              )}
+
               {settledAs !== undefined && !changing.has(c.modId) ? (
                 <div
                   style={{
@@ -3196,7 +3248,12 @@ function PostProcessingDecisions(props: {
                   <Pill intent="neutral">
                     ✓{" "}
                     {
-                      describeChoice(settledAs, c.unexplained, countKinds(c.files))
+                      describeChoice(
+                        settledAs,
+                        c.unexplained,
+                        countKinds(c.files),
+                        c.removedCount,
+                      )
                         .label
                     }
                   </Pill>
@@ -3245,7 +3302,12 @@ function PostProcessingDecisions(props: {
                       "drop",
                     ] as PostProcessingChoice[]
                   ).map((k) => {
-                    const copy = describeChoice(k, c.unexplained, countKinds(c.files));
+                    const copy = describeChoice(
+                      k,
+                      c.unexplained,
+                      countKinds(c.files),
+                      c.removedCount,
+                    );
                     // Mirroring reconciles against per-file hashes, which a
                     // `fast` build never recorded. Showing it as pickable then
                     // would take an answer the build cannot honour.

@@ -136,6 +136,33 @@ describe("selfCheckMod", () => {
     expect(r.notes.join(" ")).toMatch(/recorded FOMOD choices/i);
   });
 
+  it("never reports a runtime log or desktop.ini as missing", async () => {
+    /**
+     * Four of six "missing files" findings on a real Skyrim build were a
+     * `.log` a plugin writes beside itself or a `desktop.ini` Explorer drops
+     * into a folder — each one telling the curator to reinstall a healthy mod.
+     * Both are `isVolatileFile`, which the install side already skips.
+     */
+    const r = await selfCheckMod({
+      sevenZip: sevenZip([
+        ...ARCHIVE_ENTRIES,
+        { name: "20 Bodies/00 AM/SKSE/Plugins/cbpc.log", size: 9, crc: "33333333" },
+        { name: "20 Bodies/00 AM/AAF/desktop.ini", size: 9, crc: "44444444" },
+      ]),
+      modId: "m1", modName: "x",
+      archivePath: "a.7z",
+      staged: [
+        { path: "AAF/AM-actionData.xml", size: 430, crc: "11111111" },
+        { path: "AAF/AM-otherData.xml", size: 431, crc: "22222222" },
+      ],
+      recordedChoices: CHOICES,
+      readEntry: readScript,
+    });
+
+    expect(r.depth).toBe("replayed");
+    expect(r.missing).toEqual([]);
+  });
+
   it("does NOT claim missing files when replay confidence is low", async () => {
     const r = await selfCheckMod({
       sevenZip: sevenZip(ARCHIVE_ENTRIES),

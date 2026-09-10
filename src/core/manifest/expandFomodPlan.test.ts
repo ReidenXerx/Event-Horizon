@@ -25,6 +25,51 @@ describe("expandFomodPlan", () => {
     expect(r.files.map((f) => f.path).sort()).toEqual(["AAF/x.xml", "y.esp"]);
   });
 
+  it("treats destination \".\" as the mod root, not a folder named \".\"", () => {
+    /**
+     * The FOMOD Creation Tool writes `destination="."`. It used to survive
+     * as a path segment, so a real Skyrim mod — Extended Cut: Saints and
+     * Seducers — was predicted at `./interface/...`, never matched its own
+     * staged `interface/...`, and was reported missing 115 of 120 files.
+     */
+    const r = expandFomodPlan(
+      [folder("00 Core Files", ".")],
+      listing(["00 Core Files/interface/dog/corgi.dds", "00 Core Files/ECSS.esp"]),
+    );
+    expect(r.files.map((f) => f.path).sort()).toEqual([
+      "ECSS.esp",
+      "interface/dog/corgi.dds",
+    ]);
+  });
+
+  it("drops . and empty segments anywhere in a destination", () => {
+    const r = expandFomodPlan(
+      [folder("src", "./Textures/."), folder("more", "Meshes//a")],
+      listing(["src/b.dds", "more/c.nif"]),
+    );
+    expect(r.files.map((f) => f.path).sort()).toEqual([
+      "Meshes/a/c.nif",
+      "Textures/b.dds",
+    ]);
+  });
+
+  it("installs a file with destination \".\" at the root under its own name", () => {
+    const r = expandFomodPlan(
+      [file("opt/Patch.esp", ".")],
+      listing(["opt/Patch.esp"]),
+    );
+    expect(r.files[0]!.path).toBe("Patch.esp");
+  });
+
+  it("matches a source written with a leading ./", () => {
+    const r = expandFomodPlan(
+      [folder("./00 Core Files", "")],
+      listing(["00 Core Files/x.esp"]),
+    );
+    expect(r.unmatchedSpecs).toEqual([]);
+    expect(r.files[0]!.path).toBe("x.esp");
+  });
+
   it("expands a folder under a destination prefix", () => {
     const r = expandFomodPlan(
       [folder("src/tex", "Textures")],

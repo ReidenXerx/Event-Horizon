@@ -22,6 +22,7 @@
  * not be checked, and the build proceeds.
  */
 
+import { fingerprintUnexplained } from "./unexplainedFiles";
 import * as fs from "fs";
 import * as fsp from "fs/promises";
 import * as os from "os";
@@ -159,6 +160,29 @@ export type PostProcessingCandidate = {
    */
   shipsNothing: boolean;
   /**
+   * ─── FILES THE ARCHIVE INSTALLS THAT THE CURATOR'S FOLDER DOES NOT HAVE ──
+   * The opposite divergence from `unexplained`, and it used to have no
+   * question at all. A curator who deleted a texture or a patch from a mod's
+   * staging was told the mod was "missing files" and advised to REINSTALL it,
+   * which puts the files back; mirroring was never offered, so no tester
+   * could receive the deletion even though `planMirror` removes exactly
+   * those files when a mod is mirrored.
+   *
+   * It is asked rather than decided because "missing" has two causes that
+   * look identical from here: the curator removed the file on purpose, or
+   * Vortex lost it — a known failure of concurrent installs. Mirroring the
+   * first is right; mirroring the second deletes the file from every user
+   * too. Only the curator knows which.
+   *
+   * Two sources, both concrete: files a replayed FOMOD predicts and staging
+   * lacks, and `high`-confidence omission leads for mods with no FOMOD —
+   * archive files missing from a folder whose same-type siblings are all
+   * there. Runtime logs and folder-view files are excluded upstream.
+   * Capped for display; `removedCount` is the real number.
+   */
+  removed: string[];
+  removedCount: number;
+  /**
    * A few of them, classified, so the answer comes from looking.
    *
    * Not bare paths: a path cannot tell the curator whether declaring means the
@@ -216,6 +240,56 @@ export type PostProcessingCandidate = {
  * Declared mods are gone from this list, which is what makes answering feel
  * like progress rather than an annotation the curator has to keep re-reading.
  */
+/** How many deleted-file paths a candidate carries for display. */
+const REMOVED_EXAMPLES = 10;
+
+/**
+ * Files the archive installs that this mod's staging folder does not have.
+ *
+ * `missing` is the replay's proven set; high-confidence omission leads are
+ * the same signal for a mod with no FOMOD to replay. Medium leads are left
+ * out: an extension nothing else in the folder shares is more often a file
+ * the installer skips than one anybody removed.
+ */
+function removedFiles(r: SelfCheckReport): string[] {
+  /**
+   * `?? []` on fields the type calls required, deliberately. This runs over
+   * EVERY report in the build, and the first version read `omissionLeads`
+   * unguarded: one report built without it — a skipped mod's fixture here —
+   * threw, and took the whole candidate list down with it, including mods
+   * that had nothing to do with deletions. Losing one field for one mod is
+   * the failure to prefer.
+   */
+  return [
+    ...new Set([
+      ...(r.missing ?? []),
+      ...(r.omissionLeads ?? [])
+        .filter((l) => l.confidence === "high")
+        .map((l) => l.path),
+    ]),
+  ];
+}
+
+/**
+ * What an answer about this mod is recorded against.
+ *
+ * IDENTICAL to `unexplainedFingerprint` for a mod with nothing removed —
+ * which is every mod answered before removals were asked about — so no
+ * existing answer reopens because this function exists. Once files are
+ * missing, both sets feed it, so deleting one more file reopens the question
+ * the same way adding one does.
+ */
+function divergenceFingerprint(r: SelfCheckReport): string | undefined {
+  const removed = removedFiles(r);
+  if (removed.length === 0) return r.unexplainedFingerprint;
+  return fingerprintUnexplained([
+    ...(r.unexplainedFingerprint !== undefined
+      ? [{ path: `unexplained:${r.unexplainedFingerprint}` }]
+      : []),
+    ...removed.map((path) => ({ path: `removed:${path}` })),
+  ]);
+}
+
 export function findPostProcessingCandidates(
   reports: readonly SelfCheckReport[],
   /**
@@ -270,7 +344,11 @@ export function findPostProcessingCandidates(
        */
       .filter(
         (r) =>
-          r.unexplained > 0 || archiveUnavailable(r) || decided.has(r.modId),
+          r.unexplained > 0 ||
+          // A deletion is a divergence too. See `removed` on the type.
+          removedFiles(r).length > 0 ||
+          archiveUnavailable(r) ||
+          decided.has(r.modId),
       )
       .map((r) => {
         const settled = isSettled(r, decided);
@@ -279,6 +357,8 @@ export function findPostProcessingCandidates(
           modId: r.modId,
           modName: r.modName,
           unexplained: r.unexplained,
+          removed: removedFiles(r).slice(0, REMOVED_EXAMPLES),
+          removedCount: removedFiles(r).length,
           // Every staged file unexplained ⇒ nothing of this mod survives a
           // plain install. `stagedCount > 0` because a mod that stages no
           // files at all is a different (and harmless) shape.
@@ -299,8 +379,8 @@ export function findPostProcessingCandidates(
            * The sentinel records WHY there is no hash, so the question reopens
            * the moment a real one appears.
            */
-          ...(r.unexplainedFingerprint !== undefined
-            ? { fingerprint: r.unexplainedFingerprint }
+          ...(divergenceFingerprint(r) !== undefined
+            ? { fingerprint: divergenceFingerprint(r)! }
             : archiveUnavailable(r)
               ? { fingerprint: ARCHIVE_UNAVAILABLE_FINGERPRINT }
               : {}),
@@ -320,7 +400,9 @@ export function findPostProcessingCandidates(
         if (a.archiveUnavailable !== b.archiveUnavailable) {
           return a.archiveUnavailable ? -1 : 1;
         }
-        return b.unexplained - a.unexplained;
+        return (
+          b.unexplained + b.removedCount - (a.unexplained + a.removedCount)
+        );
       })
   );
 }
@@ -415,14 +497,14 @@ function isSettled(
 
   // Answered before fingerprints were recorded. Honour it rather than nag.
   if (answeredFor === undefined) return true;
-  if (report.unexplainedFingerprint === undefined) return true;
+  if (divergenceFingerprint(report) === undefined) return true;
   /**
    * Direction (1) lands here rather than in a branch of its own. An answer
    * given while blind carries `ARCHIVE_UNAVAILABLE_FINGERPRINT`, so once the
    * archive is readable and a real hash exists, this comparison is
    * `"archive-unavailable" !== "<hash>"` and the question reopens.
    */
-  return answeredFor === report.unexplainedFingerprint;
+  return answeredFor === divergenceFingerprint(report);
 }
 
 /**
@@ -721,8 +803,9 @@ export async function runSelfChecks(
   for (const report of withMissing) {
     warnings.push(
       `"${report.modName}" is missing ${report.missing.length} file(s) its FOMOD should have ` +
-        `installed (e.g. ${report.missing[0]}). Reinstalling that mod before shipping is ` +
-        `advisable — a collection built from it reproduces the gap.`,
+        `installed (e.g. ${report.missing[0]}). If Vortex lost them, reinstall the mod ` +
+        `before shipping. If you deleted them on purpose, answer it in the list ` +
+        `below — mirroring ships your deletion to every user.`,
     );
   }
   // Leads, phrased as leads. The measured rate is ~2.6% of mods on a real

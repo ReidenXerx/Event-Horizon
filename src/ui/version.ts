@@ -10,4 +10,4 @@
  * would rewrite tracked source on every build and put a generated artifact in
  * git history, to solve a problem one file read already catches.
  */
-export const EXTENSION_VERSION = "0.1.0-alpha.147";
+export const EXTENSION_VERSION = "0.1.0-alpha.148";

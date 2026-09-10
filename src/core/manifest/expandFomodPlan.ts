@@ -57,9 +57,32 @@ const norm = (s: string): string => s.split("\\").join("/").toLowerCase();
 /** Strip leading/trailing slashes so joins never double up. */
 const trim = (s: string): string => s.replace(/^\/+/, "").replace(/\/+$/, "");
 
+/**
+ * ─── `.` IS THE MOD ROOT, NOT A FOLDER CALLED "." ──────────────────────
+ * `trim` strips slashes and nothing else, so `destination="."` survived as a
+ * path segment and every file under it was predicted at `./interface/...`.
+ * The staged file is `interface/...`, the two never compared equal, and the
+ * build reported the mod as missing almost everything it had installed.
+ *
+ * Measured on a real Skyrim collection: `Skyrim Extended Cut - Saints and
+ * Seducers` declares `<folder source="00 Core Files" destination="." />` —
+ * the FOMOD Creation Tool writes exactly that — and was reported "missing 115
+ * of 120 files", with advice to reinstall a mod that was installed perfectly.
+ *
+ * Empty and `.` segments are dropped from BOTH sides of the join and from
+ * sources, anywhere they appear: `./Textures`, `Textures/.`, `a//b`. `..` is
+ * left alone on purpose — it would climb out of the mod folder, which is not
+ * something to normalise quietly.
+ */
+const clean = (s: string): string =>
+  s
+    .split("/")
+    .filter((segment) => segment !== "" && segment !== ".")
+    .join("/");
+
 function join(destination: string | undefined, relative: string): string {
-  const base = trim((destination ?? "").split("\\").join("/"));
-  const rel = trim(relative);
+  const base = clean((destination ?? "").split("\\").join("/"));
+  const rel = clean(relative);
   if (base === "") return rel;
   return rel === "" ? base : `${base}/${rel}`;
 }
@@ -92,7 +115,7 @@ export function expandFomodPlan(
   let contested = 0;
 
   for (const spec of specs) {
-    const src = trim(norm(spec.source));
+    const src = clean(norm(spec.source));
     let matched = 0;
 
     if (spec.isFolder) {
@@ -112,10 +135,14 @@ export function expandFomodPlan(
         // A file spec's destination is the full target path when given;
         // otherwise the file lands at the root under its own name.
         const destination = spec.destination;
+        // `.` alone means the root, so it falls through to "own name at the
+        // root" exactly like an empty destination does.
+        const cleaned =
+          destination === undefined
+            ? ""
+            : clean(destination.split("\\").join("/"));
         const target =
-          destination !== undefined && trim(destination) !== ""
-            ? trim(destination.split("\\").join("/"))
-            : (hit.real.split("/").pop() ?? hit.real);
+          cleaned !== "" ? cleaned : (hit.real.split("/").pop() ?? hit.real);
         place(target, hit.entry, spec.priority);
       }
     }
