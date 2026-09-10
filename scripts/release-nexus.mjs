@@ -51,7 +51,9 @@ const fail = (msg) => {
 };
 
 const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
-const gh = (...args) => spawnSync("gh", args, { cwd: root, encoding: "utf8", shell: isWindows });
+// No shell: gh is a real executable, and a shell joins arguments unquoted, which
+// split `--title "Event Horizon 0.1.151"` at its spaces and failed the first release.
+const gh = (...args) => spawnSync("gh", args, { cwd: root, encoding: "utf8" });
 const npm = (script) => {
   const res = spawnSync(isWindows ? "npm.cmd" : "npm", ["run", script], { cwd: root, stdio: "inherit", shell: isWindows });
   if (res.status !== 0) fail(`npm run ${script} failed (exit ${res.status}) — nothing was published.`);
