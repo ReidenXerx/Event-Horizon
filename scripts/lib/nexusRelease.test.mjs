@@ -104,6 +104,10 @@ function fakeNexus({ stateSequence = ["created", "available"] } = {}) {
       const h = init.headers;
       if (h["content-disposition"] !== 'attachment; filename="event-horizon-0.1.151.zip"') throw new Error("bad Content-Disposition");
       if (h["content-md5"] !== bytesSeen.md5b64) throw new Error("bad Content-MD5");
+      // Signed by the presigned URL; the live storage rejects any other value.
+      if (h["content-type"] !== "application/octet-stream") {
+        return { ok: false, status: 403, text: async () => "<Error><Code>SignatureDoesNotMatch</Code></Error>" };
+      }
       return { ok: true, status: 200, text: async () => "" };
     }
     if (init.headers.apikey !== "KEY") throw new Error("missing apikey header");

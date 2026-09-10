@@ -168,10 +168,14 @@ export function nexusClient({ apiKey, fetchImpl = fetch, userAgent, sleep = (ms)
       onState(`created upload ${created.id}`);
       const put = await fetchImpl(created.presigned_url, {
         method: "PUT",
+        // The presigned URL signs `content-disposition;content-md5;content-type;host`
+        // (its X-Amz-SignedHeaders). The docs name only the first two; measured
+        // against the live storage on 2026-09-11, only application/octet-stream
+        // is accepted — application/zip and friends fail SignatureDoesNotMatch.
         headers: {
+          "content-type": "application/octet-stream",
           "content-disposition": `attachment; filename="${filename}"`,
           "content-md5": md5.toString("base64"),
-          "content-length": String(bytes.length),
         },
         body: bytes,
       });
