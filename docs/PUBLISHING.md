@@ -263,9 +263,11 @@ packaging or the smoke load fail. It uploads to Nexus as "Event Horizon x.y.z",
 adds the changelog, checks Nexus lists the version, then tags `v<version>` and
 publishes the GitHub Release with the same notes and the zip attached.
 
-Nexus's review rule is exactly one active Main file. The page had two
-(alpha.85 and alpha.94); archive the older one before the first run, or the
-dry run will say so.
+In API v3 a "mod file" is an update chain and every upload is a version in it.
+The release adds a version to the page's chain (on 2026-09-11 its newest,
+alpha.94, was archived — that is fine) and archives the previous one, so the
+page keeps exactly one Main file. It refuses only when several chains exist
+and not exactly one has a Main version.
 
 API key: `NEXUSMODS_API_KEY`, or the first line of `~/.nexusmods/api-key`
 (create one at nexusmods.com/settings/api-keys). It is never printed.

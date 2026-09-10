@@ -177,9 +177,38 @@ describe("findMainFile", () => {
     expect(found.latest.version).toBe("0.1.0-alpha.150");
   });
 
-  it("refuses when there is no main file, or more than one", async () => {
-    await expect(findMainFile(client([{ id: "f-1", name: "A" }], { "f-1": [] }), "m")).rejects.toThrow(/exactly one/);
+  it("uses the only chain even when its newest version was archived — the real page's state", async () => {
+    // site/mods/2235 as the API returned it: alpha.94 archived, alpha.85 old_version, alpha.20 archived.
+    const found = await findMainFile(
+      client([{ id: "7906317", name: "Event Horizon 0.1.0 Alpha.20", is_active: false }], {
+        "7906317": [
+          { id: "v94", version: "0.1.2", category: "archived", position: "3.0", uploaded_at: "2026-09-07T01:40:24.000+00:00" },
+          { id: "v85", version: "0.1.1", category: "old_version", position: "2.0", uploaded_at: "2026-09-06T23:08:20.000+00:00" },
+          { id: "v20", version: "0.1.0", category: "archived", position: "1.0", uploaded_at: "2026-09-03T19:51:31.000+00:00" },
+        ],
+      }),
+      "m",
+    );
+    expect(found.file.id).toBe("7906317");
+    expect(found.latest.id).toBe("v94");
+  });
+
+  it("orders a chain by position, not by upload time", async () => {
+    const found = await findMainFile(
+      client([{ id: "f-1", name: "A" }], {
+        "f-1": [
+          { id: "moved-later", category: "main", position: "2.0", uploaded_at: "2026-01-01" },
+          { id: "uploaded-later", category: "old_version", position: "1.0", uploaded_at: "2026-09-01" },
+        ],
+      }),
+      "m",
+    );
+    expect(found.latest.id).toBe("moved-later");
+  });
+
+  it("refuses when there is no chain, or several and not exactly one in Main Files", async () => {
+    await expect(findMainFile(client([{ id: "f-1", name: "A" }], { "f-1": [] }), "m")).rejects.toThrow(/0 chain/);
     const two = { "f-1": [{ id: "a", category: "main", uploaded_at: "1" }], "f-2": [{ id: "b", category: "main", uploaded_at: "1" }] };
-    await expect(findMainFile(client([{ id: "f-1", name: "A" }, { id: "f-2", name: "B" }], two), "m")).rejects.toThrow(/found 2/);
+    await expect(findMainFile(client([{ id: "f-1", name: "A" }, { id: "f-2", name: "B" }], two), "m")).rejects.toThrow(/2 with a main/);
   });
 });

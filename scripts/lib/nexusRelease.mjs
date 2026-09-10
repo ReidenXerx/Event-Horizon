@@ -197,24 +197,40 @@ export function nexusClient({ apiKey, fetchImpl = fetch, userAgent, sleep = (ms)
   };
 }
 
+/** A version's place in its chain: Nexus's `position` ("3.0"), falling back to upload time. */
+function newestFirst(a, b) {
+  const pa = Number(a.position);
+  const pb = Number(b.position);
+  if (Number.isFinite(pa) && Number.isFinite(pb) && pa !== pb) return pb - pa;
+  return String(b.uploaded_at).localeCompare(String(a.uploaded_at));
+}
+
 /**
- * The one active main file on the page, with its newest version.
+ * The file chain the extension ships in, with its newest version.
  *
- * Nexus's review rule is exactly one file under Main Files; with none or
- * several there is no correct target, so this refuses rather than guesses.
+ * In API v3 a "mod file" is an update chain; each upload is a version in it,
+ * and archiving moves a version out of Main Files without leaving the chain.
+ * Measured on site/mods/2235: one chain holding alpha.20 (archived),
+ * alpha.85 (old_version) and alpha.94 (archived) — no main version at all,
+ * which is still exactly the chain the next release belongs in.
+ *
+ * So: the only chain with versions is the target whatever its newest version's
+ * category. With several, the one whose newest version is in Main Files; if
+ * that is not exactly one, there is no correct target and this refuses.
  */
 export async function findMainFile(client, modId) {
   const files = (await client.getModFiles(modId))?.mod_files ?? [];
-  const candidates = [];
+  const chains = [];
   for (const file of files) {
-    if (file.is_active === false) continue;
     const versions = (await client.getModFileVersions(file.id))?.versions ?? [];
-    const latest = [...versions].sort((a, b) => String(b.uploaded_at).localeCompare(String(a.uploaded_at)))[0];
-    if (latest?.category === "main") candidates.push({ file, latest, versions });
+    if (versions.length === 0) continue;
+    chains.push({ file, latest: [...versions].sort(newestFirst)[0], versions });
   }
-  if (candidates.length !== 1) {
-    const listing = files.map((f) => `${f.name} (${f.id})`).join(", ") || "none";
-    throw new Error(`Expected exactly one active main file on the mod page, found ${candidates.length}. Files: ${listing}`);
-  }
-  return candidates[0];
+  if (chains.length === 1) return chains[0];
+  const main = chains.filter((c) => c.latest.category === "main");
+  if (main.length === 1) return main[0];
+  const listing = chains.map((c) => `${c.file.name} (${c.file.id}, newest ${c.latest.version} ${c.latest.category})`).join("; ") || "none";
+  throw new Error(
+    `Cannot tell which file chain on the mod page is the extension's: ${chains.length} chain(s) with versions, ${main.length} with a main version. Chains: ${listing}`,
+  );
 }
