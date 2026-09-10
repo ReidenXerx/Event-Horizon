@@ -40,6 +40,7 @@ import {
   identityCandidates,
   type CuratorMod,
 } from "./profileActions";
+import { stripTrailingVersion } from "./fileNameVersion";
 
 /** One archive as Vortex's download store describes it. */
 export type DownloadEntry = {
@@ -56,6 +57,11 @@ export type DownloadEntry = {
    * details; the file name then answers for it.
    */
   logicalFileName?: string;
+  /**
+   * The FILE's version as Nexus reported it, when the download record kept
+   * one. Only used to cut the version out of the name; never compared.
+   */
+  version?: string;
   /** Nexus mod id, when Vortex recorded one. */
   nexusModId?: number;
   /** Nexus file id, when Vortex recorded one. */
@@ -207,14 +213,28 @@ export function findSupersededMods(
       if (successor !== undefined) consider(mod, successor, "update-chain");
     }
 
-    // 2. The same FILE at a lower version. Grouped by the file's own name,
-    //    so a variant is never compared against a different variant.
+    /**
+     * 2. The same FILE at a lower version. Grouped by the file's own name, so
+     *    a variant is never compared against a different variant.
+     *
+     *    The name has its VERSION removed first, because authors put it
+     *    there: `Addictol 1.0` and `Addictol 1.1` are one file, and grouping
+     *    on the raw name puts them in separate buckets where neither can
+     *    supersede the other. Vortex's own "Remove related" strips it the
+     *    same way; `stripTrailingVersion` refuses the ambiguous cases that
+     *    Vortex's unanchored version would mangle.
+     *
+     *    `fileIdentity` itself is deliberately NOT changed — it also keys
+     *    update detection (`updateGroupKey`), and widening it there is a
+     *    separate question with separate evidence.
+     */
     const byIdentity = new Map<string, CuratorMod[]>();
     for (const mod of group) {
       const identity = fileIdentity(mod);
       if (identity === undefined) continue;
-      const list = byIdentity.get(identity);
-      if (list === undefined) byIdentity.set(identity, [mod]);
+      const key = stripTrailingVersion(identity).toLowerCase();
+      const list = byIdentity.get(key);
+      if (list === undefined) byIdentity.set(key, [mod]);
       else list.push(mod);
     }
     for (const bucket of byIdentity.values()) {

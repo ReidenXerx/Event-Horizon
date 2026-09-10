@@ -96,11 +96,22 @@ export function readDownloads(
       typeof logical === "string" && logical.trim() !== ""
         ? logical.trim()
         : undefined;
+    /**
+     * The file's version, for cutting out of the name rather than comparing.
+     * Nexus reports it as `version`; older records may carry `mod_version`.
+     */
+    const rawVersion =
+      nexus.fileInfo?.version ?? nexus.fileInfo?.mod_version;
+    const version =
+      typeof rawVersion === "string" && rawVersion.trim() !== ""
+        ? rawVersion.trim()
+        : undefined;
     out.push({
       id,
       fileName: file.localPath,
       bytes: typeof file.size === "number" ? file.size : 0,
       ...(logicalFileName !== undefined ? { logicalFileName } : {}),
+      ...(version !== undefined ? { version } : {}),
       ...(asNumber(ids.modId) !== undefined
         ? { nexusModId: asNumber(ids.modId)! }
         : {}),

@@ -724,6 +724,125 @@ describe("an addon is not an old version of the file beside it", () => {
   });
 });
 
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * THE VERSION THE AUTHOR PUT IN THE NAME
+ *
+ * `Addictol 1.0` and `Addictol 1.1` are one file at two versions. Compared as
+ * given they are two files, so neither can ever supersede the other and the
+ * old one is never reclaimable — the curator carries it forever, and the only
+ * evidence they are related is a name a human can read and the code could
+ * not.
+ *
+ * Measured on the real download folders: 41 archives across two games sit in
+ * exactly that state — `apocalypse 10.0.0` beside `10.2.2`,
+ * `BodySlide and Outfit Studio - v5.7.0` beside `- v5.8.1`,
+ * `Backpacks of the Commonwealth 1.8.1` beside `1.8.3`.
+ *
+ * Vortex groups these for its own "Remove related" action by stripping the
+ * version out of the name. This does the same, with the anchoring Vortex's
+ * one-liner lacks — see `fileNameVersion.ts`.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("versions the author wrote into the file name", () => {
+  it("retires an older install whose version is inside its name", () => {
+    // A candidate with real evidence now, rather than a same-page guess —
+    // and still only a candidate: nothing is ticked without the curator.
+    const cands = findSupersededMods([
+      mod("old", {
+        nexusModId: 84214,
+        nexusFileId: 100,
+        logicalFileName: "Addictol 1.0",
+        version: "1.0",
+        enabled: false,
+      }),
+      mod("new", {
+        nexusModId: 84214,
+        nexusFileId: 500,
+        logicalFileName: "Addictol 1.1",
+        version: "1.1",
+      }),
+    ]);
+    expect(cands).toHaveLength(1);
+    expect(cands[0]!.mod.id).toBe("old");
+    expect(cands[0]!.evidence).toBe("same-file");
+  });
+
+  it("deletes an orphan archive whose version is inside its name", () => {
+    const plan = planCleanup({
+      mods: [
+        mod("installed", {
+          nexusModId: 1090,
+          nexusFileId: 900,
+          logicalFileName: "Apocalypse 10.2.2",
+          version: "10.2.2",
+          archiveId: "arc-new",
+        }),
+      ],
+      downloads: [
+        dl("arc-new", {
+          nexusModId: 1090,
+          nexusFileId: 900,
+          fileName: "Apocalypse-1090-10-2-2-1700000000.7z",
+          logicalFileName: "Apocalypse 10.2.2",
+          version: "10.2.2",
+        }),
+        dl("arc-old", {
+          nexusModId: 1090,
+          nexusFileId: 100,
+          fileName: "Apocalypse-1090-10-0-0-1690000000.7z",
+          logicalFileName: "Apocalypse 10.0.0",
+          version: "10.0.0",
+        }),
+      ],
+    });
+
+    expect(plan.deleteArchives.map((d) => d.entry.id)).toEqual(["arc-old"]);
+    expect(plan.deleteArchives[0]!.reason).toBe("orphan-superseded");
+  });
+
+  it("STILL refuses two different files whose names end in numbers", () => {
+    /**
+     * The expensive direction, and the reason a bare trailing integer is
+     * never stripped. Both of these are real files on one real Nexus page.
+     */
+    const plan = planCleanup({
+      mods: [
+        mod("revolver", {
+          nexusModId: 78619,
+          nexusFileId: 900,
+          logicalFileName: ".44 Auto-Revolver (Mateba Unica 6)",
+          version: "1.0",
+          archiveId: "arc-revolver",
+        }),
+      ],
+      downloads: [
+        /**
+         * Both names spelled out. The `dl` helper defaults every entry to one
+         * shared file name, and two archives carrying it match on THAT rather
+         * than on anything this test is about — the refusal became invisible
+         * and the test failed for a reason it was not written to check.
+         */
+        dl("arc-revolver", {
+          nexusModId: 78619,
+          nexusFileId: 900,
+          fileName: ".44 Auto-Revolver (Mateba Unica 6)-78619-1-0-1700000000.7z",
+          logicalFileName: ".44 Auto-Revolver (Mateba Unica 6)",
+        }),
+        dl("arc-pistol", {
+          nexusModId: 78619,
+          nexusFileId: 100,
+          fileName: ".22 Pistol Pack Munitions-78619-1-0-1690000000.7z",
+          logicalFileName: ".22 Pistol Pack Munitions",
+        }),
+      ],
+    });
+
+    expect(plan.deleteArchives).toEqual([]);
+    expect(plan.unclearOrphans.map((o) => o.entry.id)).toEqual(["arc-pistol"]);
+  });
+});
+
 describe("an archive whose mod link went stale", () => {
   /** BodyTalk as it really is: installed at 4.0.1, archiveId long dead. */
   const bodyTalk = {

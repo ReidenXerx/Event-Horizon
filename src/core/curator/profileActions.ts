@@ -36,6 +36,8 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { nameForms } from "./fileNameVersion";
+
 /** One mod as the curator view sees it, read from live Vortex state. */
 export type CuratorMod = {
   /** Vortex's mod id — the handle every action needs. */
@@ -553,11 +555,35 @@ export function identityCandidates(file: {
   logicalFileName?: string;
   fileName?: string;
   nexusModId?: number;
+  /**
+   * The mod's own version, when known. Used to cut the version OUT of the
+   * name — authors put it there routinely — and matched as a whole token so
+   * a version of "1" cannot eat the 1 in "M1A1".
+   */
+  version?: string;
 }): Set<string> {
   const out = new Set<string>();
 
-  const logical = file.logicalFileName?.trim();
-  if (logical !== undefined && logical !== "") out.add(logical.toLowerCase());
+  /**
+   * ─── AND THE SAME NAME WITHOUT ITS VERSION ─────────────────────────
+   * `Addictol 1.0` and `Addictol 1.1` are one file at two versions, and
+   * comparing the names as given makes them two files that can never
+   * supersede each other — so the older one is never reclaimable and the
+   * curator carries it forever. Measured on the real download folders: 41
+   * archives across two games are in exactly that state.
+   *
+   * Vortex draws the same distinction for its own "Remove related" action
+   * (`modGrouping.ts`), by stripping `attributes.version` out of
+   * `attributes.logicalFileName`. `nameForms` does that with anchoring it
+   * lacks — see the header of `fileNameVersion.ts` for why copying the line
+   * verbatim would delete files.
+   *
+   * Purely additive: the un-stripped form is still in the set, so nothing
+   * that matched before stops matching.
+   */
+  for (const form of nameForms(file.logicalFileName, file.version)) {
+    out.add(form);
+  }
 
   const name = file.fileName?.trim();
   if (name !== undefined && name !== "" && file.nexusModId !== undefined) {
@@ -567,7 +593,11 @@ export function identityCandidates(file: {
     // far side of the cut and cannot disturb the name.
     const marker = `-${file.nexusModId}-`;
     const at = name.lastIndexOf(marker);
-    if (at > 0) out.add(name.slice(0, at).toLowerCase());
+    if (at > 0) {
+      for (const form of nameForms(name.slice(0, at), file.version)) {
+        out.add(form);
+      }
+    }
   }
 
   return out;
