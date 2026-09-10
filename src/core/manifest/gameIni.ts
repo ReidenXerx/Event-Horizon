@@ -221,6 +221,23 @@ export function myGamesFolderCandidates(
   return [base, ...variants.filter((f) => f !== base)];
 }
 
+/**
+ * Where the game's launcher writes `<Game>Prefs.ini`, for this store.
+ *
+ * The launcher writes it the first time it runs, after detecting the hardware;
+ * its absence means the game has never been started on this machine. Derived
+ * from the INI table rather than named per game.
+ */
+export function prefsIniPathFor(
+  gameId: string,
+  documentsPath: string,
+  store?: string,
+): string | undefined {
+  const location = iniLocationFor(gameId, documentsPath, store);
+  const file = location?.files.find((f) => /prefs\.ini$/i.test(f));
+  return location === undefined || file === undefined ? undefined : `${location.dir}/${file}`;
+}
+
 /** Which files this game keeps its settings in, and where. */
 export function iniLocationFor(
   gameId: string,

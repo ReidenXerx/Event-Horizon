@@ -53,6 +53,7 @@ import { useApi } from "../state";
 import { useEHRuntime } from "../runtime/useEHRuntime";
 import { EXTENSION_VERSION } from "../version";
 import { getVortexUserDataPath } from "../../core/paths";
+import { PlayGameButton } from "../play/PlayGameButton";
 
 export interface CollectionsPageProps {
   onNavigate: (route: EventHorizonRoute) => void;
@@ -1133,6 +1134,7 @@ function ReceiptDetailModal(props: {
       footer={
         receipt !== undefined && (
           <>
+            <PlayGameButton gameId={receipt.gameId} />
             <Button
               intent="danger"
               disabled={busy}

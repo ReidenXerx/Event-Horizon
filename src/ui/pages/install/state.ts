@@ -22,6 +22,7 @@
  * which keeps the reducer pure and the steps pure-presentational.
  */
 
+import type { EnvironmentReport } from "../../../core/environment/preflight";
 import type { types } from "@nexusmods/vortex-api";
 import type { ReadEhcollResult } from "../../../core/manifest/readEhcoll";
 import type { RuntimeFinding } from "../../../core/runtime/detectRuntimes";
@@ -49,7 +50,8 @@ export type LoadingPhase =
   | "hashing-mods"
   | "hashing-staging"
   | "scanning-downloads"
-  | "resolving-plan";
+  | "resolving-plan"
+  | "checking-environment";
 
 export interface PreviewBundle {
   zipPath: string;
@@ -87,6 +89,13 @@ export interface PreviewBundle {
    * the install rather than leaving it to be discovered after.
    */
   runtimeFindings?: RuntimeFinding[];
+  /**
+   * The environment preflight taken while loading: game managed, launcher run,
+   * DLL imports, Program Files, clean game folder. Blocked checks refuse the
+   * install; the Install click re-runs them, because the machine can change
+   * between the preview and the click.
+   */
+  environment?: EnvironmentReport;
 }
 
 export type WizardState =

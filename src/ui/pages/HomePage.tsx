@@ -36,6 +36,7 @@ import {
   type DashboardData,
 } from "./dashboard/data";
 import type { EventHorizonRoute } from "../routes";
+import { PlayGameButton } from "../play/PlayGameButton";
 
 export interface HomePageProps {
   onNavigate: (route: EventHorizonRoute) => void;
@@ -525,17 +526,20 @@ function PlayerPanel(props: {
                     )}
                   </div>
                 </div>
-                <Pill
-                  intent={
-                    receipt.installTargetMode === "fresh-profile"
-                      ? "info"
-                      : "warning"
-                  }
-                >
-                  {receipt.installTargetMode === "fresh-profile"
-                    ? "fresh profile"
-                    : "current profile"}
-                </Pill>
+                <div className="eh-row">
+                  <Pill
+                    intent={
+                      receipt.installTargetMode === "fresh-profile"
+                        ? "info"
+                        : "warning"
+                    }
+                  >
+                    {receipt.installTargetMode === "fresh-profile"
+                      ? "fresh profile"
+                      : "current profile"}
+                  </Pill>
+                  <PlayGameButton gameId={receipt.gameId} size="sm" />
+                </div>
               </li>
             ))}
           </ul>

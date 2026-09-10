@@ -232,6 +232,22 @@ const PROBES: DependencyProbe[] = [
 ];
 
 /**
+ * The script extender that starts this game, from the same probe table the
+ * build uses to recognise one — one place names each loader.
+ */
+export function scriptExtenderFor(
+  gameId: string,
+): { name: string; loader: string; instructionsUrl: string } | undefined {
+  const probe = PROBES.find(
+    (p) => p.category === "script-extender" && p.gameIds.includes(gameId),
+  );
+  const loader = probe?.required[0];
+  return probe === undefined || loader === undefined
+    ? undefined
+    : { name: probe.name, loader, instructionsUrl: probe.instructionsUrl };
+}
+
+/**
  * The game's install root, from Vortex's own discovery record.
  *
  * Reads state only. Returns undefined when the game was never discovered,

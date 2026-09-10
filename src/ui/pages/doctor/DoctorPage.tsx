@@ -36,6 +36,7 @@ import type { EventHorizonRoute } from "../../routes";
 import type { InstallReceipt } from "../../../types/installLedger";
 import type { EhcollManifest } from "../../../types/ehcoll";
 import { stagingRootForModId } from "../../../core/stagingPath";
+import { EnvironmentTools } from "./EnvironmentTools";
 
 export interface DoctorPageProps {
   onNavigate: (route: EventHorizonRoute) => void;
@@ -136,7 +137,7 @@ function toHealthView(receipt: InstallReceipt): HealthReceiptView {
   };
 }
 
-export function DoctorPage(props: DoctorPageProps): JSX.Element {
+function CollectionDoctor(props: DoctorPageProps): JSX.Element {
   const api = useApi();
   const reportError = useErrorReporter();
   const toast = useToast();
@@ -491,6 +492,20 @@ export function DoctorPage(props: DoctorPageProps): JSX.Element {
             : {})}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * The Doctor: the game-setup tools first, because they work with no collection
+ * installed — which is exactly when a tester whose install never finished needs
+ * them — and the collection's own health below.
+ */
+export function DoctorPage(props: DoctorPageProps): JSX.Element {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--eh-sp-4)" }}>
+      <EnvironmentTools />
+      <CollectionDoctor {...props} />
     </div>
   );
 }

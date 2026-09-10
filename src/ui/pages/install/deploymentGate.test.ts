@@ -52,9 +52,14 @@ function confirmSession(): ReturnType<typeof getInstallSession> {
   const s = getInstallSession();
   (s as unknown as { installInFlight: boolean }).installInFlight = false;
   (s as unknown as { installController?: unknown }).installController = undefined;
+  const b = bundle();
+  // These cases are about the deployment and auto-deploy gates. The
+  // environment gate after them is async and has its own test file
+  // (environmentGate.test.ts), so it is marked as passed for this plan.
+  (s as unknown as { environmentClearedFor: unknown }).environmentClearedFor = b.plan;
   (s as unknown as { state: unknown }).state = {
     kind: "confirm",
-    bundle: bundle(),
+    bundle: b,
     decisions: { conflictChoices: {}, orphanChoices: {} },
   };
   return s;

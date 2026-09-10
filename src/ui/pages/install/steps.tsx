@@ -20,6 +20,8 @@
  */
 
 import * as React from "react";
+import { EnvironmentCard, summarizeEnvironment } from "./EnvironmentCard";
+import { PlayGameCard } from "../../play/PlayGameButton";
 import { util } from "@nexusmods/vortex-api";
 
 import {
@@ -369,6 +371,7 @@ const LOADING_PHASE_LABELS: Record<LoadingPhase, string> = {
   "hashing-staging": "Verifying installed mod contents",
   "scanning-downloads": "Checking which archives you already have",
   "resolving-plan": "Resolving the install plan",
+  "checking-environment": "Checking the game setup and game folder",
 };
 
 export function LoadingStep(props: {
@@ -673,7 +676,22 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
     [bundle.runtimeFindings],
   );
 
-  const verdict = computeVerdict(plan, [...accountLines, ...runtimeLines]);
+  /**
+   * The environment preflight. A blocked check (game not managed, never
+   * started, wrong-store DLL, Program Files) makes this uninstallable; a
+   * warning (dirty game folder, unverifiable folder) is said here and acted on
+   * when Install is clicked.
+   */
+  const environment = React.useMemo(
+    () => summarizeEnvironment(bundle.environment),
+    [bundle.environment],
+  );
+
+  const verdict = computeVerdict(
+    plan,
+    [...accountLines, ...runtimeLines, ...environment.warnings],
+    environment.blockers,
+  );
 
   // Enter = continue to decisions/review. Esc = bail. Off when focus
   // is inside an input (there are no inputs on this screen yet, but
@@ -776,6 +794,8 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
           </div>
         </section>
       </div>
+
+      <EnvironmentCard report={bundle.environment} />
 
       <RulesScopePreview summary={summary} />
 
@@ -996,9 +1016,11 @@ function RulesScopePreview(props: {
  * and no explanation; a wrong warning merely wastes a paragraph. The install
  * driver still fails loudly if it turns out to be right.
  */
-function computeVerdict(
+export function computeVerdict(
   plan: InstallPlan,
   accountLines: readonly string[] = [],
+  /** Blocked environment checks, by title. Any one makes the plan uninstallable. */
+  environmentBlockers: readonly string[] = [],
 ): {
   headline: string;
   lines: string[];
@@ -1018,7 +1040,8 @@ function computeVerdict(
     }
   }
 
-  if (!plan.summary.canProceed || blockers.length > 0) {
+  if (!plan.summary.canProceed || blockers.length > 0 || environmentBlockers.length > 0) {
+    for (const b of environmentBlockers) lines.push(b);
     if (compat.errors.length > 0) {
       for (const e of compat.errors) lines.push(e);
     }
@@ -3365,6 +3388,7 @@ function SuccessBody(props: {
       <MirrorNotice lines={result.mirrorNotice ?? []} />
       <StagingDriftNotice lines={result.stagingDriftNotice ?? []} />
       <CuratorReportsNotice reports={result.curatorReports ?? []} />
+      <PlayGameCard gameId={props.bundle.plan.manifest.game.id} />
       <div
         style={{
           display: "grid",

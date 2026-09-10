@@ -65,6 +65,7 @@ import type { InstallPlan } from "../../../types/installPlan";
 import { getVortexUserDataPath } from "../../../core/paths";
 import { ehLog } from "../../../core/logging/ehLog";
 import type { RuntimeFinding } from "../../../core/runtime/detectRuntimes";
+import type { EnvironmentReport } from "../../../core/environment/preflight";
 
 const SUPPORTED_GAME_IDS: ReadonlySet<string> = new Set<SupportedGameId>([
   "skyrimse",
@@ -123,6 +124,8 @@ export type LoadOutcome =
        * is a warning the player can act on, not a refusal.
        */
       runtimeFindings?: RuntimeFinding[];
+      /** Whether this PC can run the collection at all. See PreviewBundle.environment. */
+      environment?: EnvironmentReport;
     };
 
 /**
@@ -319,6 +322,9 @@ export async function runLoadingPipeline(args: {
   logInstallPlan(plan, userState, "wizard-preview");
 
   const runtimeFindings = await checkSystemRuntimes();
+  checkAbort();
+  events.onPhase("checking-environment");
+  const environment = await checkEnvironment(api, activeGameId, manifest);
 
   return {
     kind: "ready",
@@ -327,6 +333,7 @@ export async function runLoadingPipeline(args: {
     plan,
     appDataPath,
     ...(runtimeFindings.length > 0 ? { runtimeFindings } : {}),
+    ...(environment !== undefined ? { environment } : {}),
     ...(extractorFatal !== undefined
       ? {
           extractorBlocked: {
@@ -395,6 +402,7 @@ export async function runLoadingPipelineWithReceipt(args: {
   extractorBlocked?: ExtractorBlocked;
   /** Same advisory findings as the first pass — see PreviewBundle. */
   runtimeFindings?: RuntimeFinding[];
+  environment?: EnvironmentReport;
 }> {
   const { api, ehcoll, receipt, appDataPath, events, signal } = args;
   const { manifest } = ehcoll;
@@ -535,6 +543,9 @@ export async function runLoadingPipelineWithReceipt(args: {
   // with no runtime verdict at all — the same ungated back door the extractor
   // check above exists to close.
   const runtimeFindings = await checkSystemRuntimes();
+  checkAbort();
+  events.onPhase("checking-environment");
+  const environment = await checkEnvironment(api, activeGameId, manifest);
 
   return {
     ehcoll,
@@ -542,6 +553,7 @@ export async function runLoadingPipelineWithReceipt(args: {
     plan,
     appDataPath,
     ...(runtimeFindings.length > 0 ? { runtimeFindings } : {}),
+    ...(environment !== undefined ? { environment } : {}),
     ...(extractorFatal !== undefined
       ? {
           extractorBlocked: {
@@ -553,6 +565,40 @@ export async function runLoadingPipelineWithReceipt(args: {
         }
       : {}),
   };
+}
+
+/**
+ * The environment preflight for the preview: is the game managed, has it been
+ * started once, can its executables load their DLLs, is it outside Program
+ * Files, and is its folder a clean game.
+ *
+ * Fails OPEN: a preflight that crashed must not stop a working install. The
+ * install gate re-runs the blocking checks anyway, and the crash is logged.
+ */
+async function checkEnvironment(
+  api: types.IExtensionApi,
+  gameId: string,
+  manifest: ReadEhcollResult["manifest"],
+): Promise<EnvironmentReport | undefined> {
+  try {
+    const [{ gatherPreflightFacts }, { runEnvironmentPreflight }] = await Promise.all([
+      import("../../../core/environment/vortexEnvironment"),
+      import("../../../core/environment/preflight"),
+    ]);
+    const facts = gatherPreflightFacts({
+      state: api.getState(),
+      gameId,
+      externalDependencies: manifest.externalDependencies,
+    });
+    return await runEnvironmentPreflight(facts, { scanFolder: true, context: "install-preview" });
+  } catch (err) {
+    ehLog("warn", "environment.preflight.crashed", {
+      context: "install-preview",
+      gameId,
+      error: err instanceof Error ? err.stack ?? err.message : String(err),
+    });
+    return undefined;
+  }
 }
 
 /**
