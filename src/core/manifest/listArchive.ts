@@ -51,8 +51,11 @@ export type ArchiveListingAttempt =
  * Only the LISTING is native. Unpacking a mod archive stays Vortex's job with
  * Vortex's 7z, because a mod archive is as often .7z or .rar as .zip.
  */
-async function listZipNatively(archivePath: string): Promise<ArchiveListing> {
+async function listZipNatively(
+  archivePath: string,
+): Promise<{ listing: ArchiveListing; namesCertain: boolean }> {
   const zipEntries = await listZipEntries(archivePath);
+  const namesCertain = zipEntries.every((e) => e.nameEncodingKnown);
 
   const entries = zipEntries
     .filter((e) => !e.isDirectory)
@@ -64,7 +67,10 @@ async function listZipNatively(archivePath: string): Promise<ArchiveListing> {
       crc: (e.crc32 >>> 0).toString(16).padStart(8, "0"),
     }));
 
-  return { entries, withCrc: entries.length, crcCoverage: 1 };
+  return {
+    listing: { entries, withCrc: entries.length, crcCoverage: 1 },
+    namesCertain,
+  };
 }
 
 /** Never throws. See the note on {@link ArchiveListingAttempt}. */
@@ -78,12 +84,26 @@ export async function listArchiveNativeFirst(args: {
     return { kind: "unreadable", why: "cancelled" };
   }
 
+  /**
+   * ─── A NAME WE COULD ONLY GUESS DEFERS TO 7-ZIP ───────────────────────
+   * A ZIP without the UTF-8 flag whose names carry non-ASCII bytes is in some
+   * codepage this reader cannot identify, and the files on disk are named by
+   * whatever 7-Zip decoded on THIS machine. So 7-Zip is asked instead — it is
+   * the only decoder guaranteed to agree with the extraction.
+   *
+   * The native listing is kept as a LAST resort rather than thrown away: on a
+   * Wine prefix where 7-Zip will not run (the reason this module exists), a
+   * listing with one or two uncertain names is far more useful than
+   * "unreadable" for the whole mod. Measured: 2 of 1,283 mod ZIPs on the
+   * curator's machine are in this state.
+   */
+  let guessed: ArchiveListing | undefined;
   try {
-    return {
-      kind: "listed",
-      listing: await listZipNatively(args.archivePath),
-      via: "native-zip",
-    };
+    const native = await listZipNatively(args.archivePath);
+    if (native.namesCertain) {
+      return { kind: "listed", listing: native.listing, via: "native-zip" };
+    }
+    guessed = native.listing;
   } catch {
     // Not a ZIP, or not a readable one. Either way 7z gets its turn.
   }
@@ -99,6 +119,9 @@ export async function listArchiveNativeFirst(args: {
       via: "seven-zip",
     };
   } catch (err) {
+    if (guessed !== undefined) {
+      return { kind: "listed", listing: guessed, via: "native-zip" };
+    }
     return {
       kind: "unreadable",
       why: err instanceof Error ? err.message : String(err),

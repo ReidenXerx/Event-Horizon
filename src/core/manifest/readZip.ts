@@ -54,6 +54,24 @@ export interface ZipEntry {
   crc32: number;
   /** Directory entries exist in the table and carry no payload. */
   isDirectory: boolean;
+  /**
+   * ─── WHETHER `name` IS THE NAME THE EXTRACTOR WILL WRITE ─────────────
+   * `true` when the entry sets general-purpose bit 11 (the name IS UTF-8) or
+   * its name is plain ASCII, which every codepage agrees on.
+   *
+   * `false` otherwise, and then `name` is a guess. With bit 11 clear, the
+   * bytes are in whatever codepage the archiver's machine used, and 7-Zip —
+   * which is what Vortex extracts with — decodes them with THIS machine's OEM
+   * codepage, strictly: a probe zip holding a UTF-8 "é" with bit 11 clear
+   * lists as "├®" under codepage 850. So the name on disk depends on the
+   * machine: 850 here, very likely 866 on a Ukrainian tester's. A table in
+   * this file cannot know which, so it does not pretend to.
+   *
+   * `name` itself is still decoded as UTF-8 exactly as before. This reader
+   * also opens every `.ehcoll`, which 7-Zip writes with bit 11 set, and those
+   * paths are not to be disturbed by a mod-archive problem.
+   */
+  nameEncodingKnown: boolean;
 }
 
 /** Raised for anything malformed, unsupported, or truncated. */
@@ -79,6 +97,8 @@ const METHOD_DEFLATE = 8;
 
 /** Flag bit 0. An encrypted entry inflates to garbage rather than failing loudly. */
 const FLAG_ENCRYPTED = 0x1;
+/** General-purpose bit 11: the entry's name and comment are UTF-8. */
+const FLAG_UTF8_NAME = 0x800;
 
 /**
  * Every entry in the archive's central directory.
@@ -541,6 +561,14 @@ async function readCentralDirectory(
 
     const nameStart = pos + 46;
     const name = buf.toString("utf8", nameStart, nameStart + nameLength);
+    let asciiOnly = true;
+    for (let b = nameStart; b < nameStart + nameLength; b += 1) {
+      if (buf[b]! >= 0x80) {
+        asciiOnly = false;
+        break;
+      }
+    }
+    const nameEncodingKnown = (flags & FLAG_UTF8_NAME) !== 0 || asciiOnly;
 
     if ((flags & FLAG_ENCRYPTED) !== 0) {
       ehLog("error", "zip.entry.encrypted", {
@@ -606,6 +634,7 @@ async function readCentralDirectory(
       localHeaderOffset,
       crc32,
       isDirectory: name.endsWith("/"),
+      nameEncodingKnown,
     });
 
     pos = nameStart + nameLength + extraLength + commentLength;

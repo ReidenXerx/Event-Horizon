@@ -366,7 +366,33 @@ export async function sevenZipList(
   const startedAt = Date.now();
   ehLog("debug", "sevenzip.list.start", { archive: archiveName });
   const entries: SevenZipListEntry[] = [];
-  const spec = await api.list(archive, options ?? {}, (batch) => {
+  /**
+   * ─── `-sccUTF-8`: THE NAMES COME BACK AS THEY ARE ON DISK ─────────────
+   * Without it 7-Zip writes names in the CONSOLE codepage, and Node reads its
+   * stdout as UTF-8. Anything that codepage cannot hold comes back wrong or
+   * gone, and the extraction that put the file on disk never had that problem
+   * — so the listing and the staging folder stop agreeing on a file's name.
+   *
+   * Measured on the curator's download folders, ten archives list differently
+   * without it:
+   *   - `BeastHHBB - Feminine Female Khajiit` stores "Cópia" (Portuguese for
+   *     "Copy") as OEM byte 0xA2; it listed as "C\uFFFDpia", matched nothing
+   *     staged, and was offered to the curator as two DELETED files — who
+   *     answered "ship my deletion" on that evidence.
+   *   - Nemesis's `简体中文.txt` and `日本語.txt` listed as `____.txt`.
+   *   - Bards Reborn's "cú chulainn" listed as "c\uFFFD chulainn".
+   *
+   * The switch changes only how 7-Zip PRINTS a name. How it DECODES the stored
+   * bytes is untouched, so the listing now names files exactly as the
+   * extraction on this machine did. Appended after the caller's own switches:
+   * 7-Zip reads switches wherever they appear, and a caller's positional filter
+   * keeps working.
+   */
+  const withUtf8Output: SevenZipOptions = {
+    ...(options ?? {}),
+    raw: [...(options?.raw ?? []), "-sccUTF-8"],
+  };
+  const spec = await api.list(archive, withUtf8Output, (batch) => {
     for (const entry of batch) {
       if (entry?.name !== undefined) {
         entries.push(entry);
