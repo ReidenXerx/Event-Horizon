@@ -34,9 +34,9 @@ Start here when exploring this area:
 
 - **`describeEnableChanges`** (Function) — `src/core/curator/bulkToggles.ts:61`
 - **`planEnableChanges`** (Function) — `src/core/curator/bulkToggles.ts:34`
-- **`archivesFreedByRemoval`** (Function) — `src/core/curator/cleanupPlan.ts:384`
-- **`cleanupSubset`** (Function) — `src/core/curator/cleanupPlan.ts:396`
-- **`describeEvidence`** (Function) — `src/core/curator/cleanupPlan.ts:230`
+- **`archivesFreedByRemoval`** (Function) — `src/core/curator/cleanupPlan.ts:509`
+- **`cleanupSubset`** (Function) — `src/core/curator/cleanupPlan.ts:521`
+- **`describeEvidence`** (Function) — `src/core/curator/cleanupPlan.ts:274`
 
 ## Key Symbols
 
@@ -44,16 +44,16 @@ Start here when exploring this area:
 |--------|------|------|------|
 | `describeEnableChanges` | Function | `src/core/curator/bulkToggles.ts` | 61 |
 | `planEnableChanges` | Function | `src/core/curator/bulkToggles.ts` | 34 |
-| `archivesFreedByRemoval` | Function | `src/core/curator/cleanupPlan.ts` | 384 |
-| `cleanupSubset` | Function | `src/core/curator/cleanupPlan.ts` | 396 |
-| `describeEvidence` | Function | `src/core/curator/cleanupPlan.ts` | 230 |
-| `formatSize` | Function | `src/core/curator/cleanupPlan.ts` | 350 |
+| `archivesFreedByRemoval` | Function | `src/core/curator/cleanupPlan.ts` | 509 |
+| `cleanupSubset` | Function | `src/core/curator/cleanupPlan.ts` | 521 |
+| `describeEvidence` | Function | `src/core/curator/cleanupPlan.ts` | 274 |
+| `formatSize` | Function | `src/core/curator/cleanupPlan.ts` | 475 |
 | `describeEndorseDuration` | Function | `src/core/curator/endorsePace.ts` | 44 |
 | `endorseDurationMs` | Function | `src/core/curator/endorsePace.ts` | 31 |
 | `endorseIsLong` | Function | `src/core/curator/endorsePace.ts` | 63 |
 | `freezeAttribute` | Function | `src/core/curator/readProfile.ts` | 124 |
-| `healingBlockedReason` | Function | `src/core/doctor/health.ts` | 614 |
-| `overallHealth` | Function | `src/core/doctor/health.ts` | 561 |
+| `healingBlockedReason` | Function | `src/core/doctor/health.ts` | 777 |
+| `overallHealth` | Function | `src/core/doctor/health.ts` | 705 |
 | `describeInstallAttempt` | Function | `src/core/installer/attemptRecord.ts` | 231 |
 | `describeFomodModes` | Function | `src/core/installer/fomodReplayMode.ts` | 78 |
 | `s` | Function | `src/core/installer/fomodReplayMode.ts` | 84 |

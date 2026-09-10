@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-build
-description: "Skill for the Build area of Event-Horizon. 253 symbols across 41 files."
+description: "Skill for the Build area of Event-Horizon. 260 symbols across 42 files."
 ---
 
 # Build
 
-253 symbols | 41 files | Cohesion: 73%
+260 symbols | 42 files | Cohesion: 72%
 
 ## When to Use
 
@@ -19,11 +19,11 @@ description: "Skill for the Build area of Event-Horizon. 253 symbols across 41 f
 |------|---------|
 | `src/ui/pages/build/BuildPage.tsx` | handle, handleDiscardDraft, handleChange, handleDismissDraftBanner, session (+26) |
 | `src/ui/pages/build/buildSession.ts` | queuePosition, isAbortError, _runBuild, begin, discardDraft (+26) |
-| `src/ui/pages/build/engine.ts` | BuildRefusedError, BundleResolutionError, applyPostProcessedDeclarations, buildOutputFileName, collectMirrorPayload (+24) |
+| `src/ui/pages/build/engine.ts` | BuildRefusedError, BundleResolutionError, applyPostProcessedDeclarations, buildOutputFileName, collectMirrorPayload (+25) |
 | `src/ui/pages/build/BuildDashboard.tsx` | BuildDashboard, handleCleanupUnbuilt, handleDeletePublished, handleDiscardDraft, handleDismissBuilt (+17) |
 | `src/ui/pages/build/buildSessionRegistry.ts` | BuildSessionRegistry, getBuildSessionRegistry, ensure, get, makeHooks (+13) |
 | `src/ui/pages/build/buildDiff.test.ts` | findPackages, findPackages, findPackages, findPackages, findPackages (+9) |
-| `src/core/manifest/collectionConfig.ts` | deleteCollectionConfig, deletePublishedCollection, isUuid, listNeverBuiltConfigs, listPublishedCollections (+7) |
+| `src/core/manifest/collectionConfig.ts` | deleteCollectionConfig, deletePublishedCollection, isUuid, listNeverBuiltConfigs, listPublishedCollections (+8) |
 | `src/core/draftStorage.ts` | deleteDraft, getAppDataPath, getDraftPath, getDraftsRoot, isPlainObject (+6) |
 | `src/core/build/nexusAvailability.ts` | categoryOf, checkNexusAvailability, classifyFile, currentMainFile, fileIdOf (+6) |
 | `src/core/archiveHashCache.ts` | archiveHashCacheKey, emptyArchiveHashCache, isHex64, loadArchiveHashCache, rememberArchiveHash (+4) |
@@ -69,8 +69,8 @@ Start here when exploring this area:
 |------|------|-------|
 | `PublishedDetailsPanel → GetEventHorizonDir` | cross_community | 10 |
 | `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
-| `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
 | `LoadPublishedDetails → GetEventHorizonRoot` | cross_community | 10 |
+| `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
 | `PublishedDetailsPanel → GetVortexUserDataPath` | cross_community | 10 |
 | `BuildPage → GetVortexUserDataPath` | cross_community | 10 |
 | `BuildWizard → GetVortexUserDataPath` | cross_community | 10 |

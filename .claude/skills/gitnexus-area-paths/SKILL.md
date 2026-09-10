@@ -5,7 +5,7 @@ description: "Skill for the Paths area of Event-Horizon. 12 symbols across 4 fil
 
 # Paths
 
-12 symbols | 4 files | Cohesion: 58%
+12 symbols | 4 files | Cohesion: 59%
 
 ## When to Use
 
@@ -61,7 +61,7 @@ Start here when exploring this area:
 | `RunSelfChecks → GetVortexUserDataPath` | cross_community | 10 |
 | `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
 | `Act → GetEventHorizonDir` | cross_community | 10 |
-| `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
+| `SelfCheckMod → GetVortexUserDataPath` | cross_community | 10 |
 | `LoadPublishedDetails → GetEventHorizonRoot` | cross_community | 10 |
 
 ## How to Explore

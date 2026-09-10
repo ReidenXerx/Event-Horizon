@@ -34,7 +34,7 @@ Start here when exploring this area:
 
 - **`EventHorizonLogo`** (Function) — `src/ui/components/EventHorizonLogo.tsx:47`
 - **`useErrorReporterFormatted`** (Function) — `src/ui/errors/ErrorContext.tsx:65`
-- **`CollectionsPage`** (Function) — `src/ui/pages/CollectionsPage.tsx:91`
+- **`CollectionsPage`** (Function) — `src/ui/pages/CollectionsPage.tsx:92`
 - **`HomePage`** (Function) — `src/ui/pages/HomePage.tsx:48`
 - **`ModDiffsPage`** (Function) — `src/ui/pages/ModDiffsPage.tsx:67`
 
@@ -44,7 +44,7 @@ Start here when exploring this area:
 |--------|------|------|------|
 | `EventHorizonLogo` | Function | `src/ui/components/EventHorizonLogo.tsx` | 47 |
 | `useErrorReporterFormatted` | Function | `src/ui/errors/ErrorContext.tsx` | 65 |
-| `CollectionsPage` | Function | `src/ui/pages/CollectionsPage.tsx` | 91 |
+| `CollectionsPage` | Function | `src/ui/pages/CollectionsPage.tsx` | 92 |
 | `HomePage` | Function | `src/ui/pages/HomePage.tsx` | 48 |
 | `ModDiffsPage` | Function | `src/ui/pages/ModDiffsPage.tsx` | 67 |
 | `PluginDiffsPage` | Function | `src/ui/pages/PluginDiffsPage.tsx` | 53 |

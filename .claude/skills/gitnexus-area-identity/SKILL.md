@@ -56,8 +56,8 @@ Start here when exploring this area:
 | `nexusModKey` | Function | `src/core/identity/modIdentity.ts` | 226 |
 | `stagingSetKey` | Function | `src/core/identity/modIdentity.ts` | 220 |
 | `str` | Function | `src/core/identity/modIdentity.ts` | 201 |
-| `buildRule` | Function | `src/core/manifest/buildManifest.ts` | 804 |
-| `buildRules` | Function | `src/core/manifest/buildManifest.ts` | 756 |
+| `buildRule` | Function | `src/core/manifest/buildManifest.ts` | 820 |
+| `buildRules` | Function | `src/core/manifest/buildManifest.ts` | 772 |
 
 ## Execution Flows
 

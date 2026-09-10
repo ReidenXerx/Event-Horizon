@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-manifest
-description: "Skill for the Manifest area of Event-Horizon. 461 symbols across 115 files."
+description: "Skill for the Manifest area of Event-Horizon. 496 symbols across 124 files."
 ---
 
 # Manifest
 
-461 symbols | 115 files | Cohesion: 75%
+496 symbols | 124 files | Cohesion: 75%
 
 ## When to Use
 
@@ -18,21 +18,21 @@ description: "Skill for the Manifest area of Event-Horizon. 461 symbols across 1
 | File | Symbols |
 |------|---------|
 | `src/core/manifest/parseManifest.ts` | ParseManifestError, describe, expectArray, expectBoolean, expectEnum (+43) |
-| `src/core/manifest/packageZip.ts` | describeBytes, isAbortLikeError, packageEhcoll, checkAbort, prepareStagingDir (+14) |
+| `src/core/manifest/packageZip.ts` | isAbortLikeError, describeBytes, packageEhcoll, checkAbort, prepareStagingDir (+14) |
 | `src/core/manifest/buildManifest.ts` | toPosixPath, BuildManifestError, buildLoadOrder, buildManifest, buildPackageMetadata (+12) |
 | `src/core/manifest/readZip.ts` | ZipReadError, extractZipEntryToFile, findDataOffset, findEntry, findZip64Extra (+11) |
-| `src/core/manifest/collectionConfig.ts` | mode, CollectionConfigError, createDefaultConfig, getCollectionConfigPath, loadOrCreateCollectionConfig (+8) |
+| `src/core/resolver/userState.ts` | buildSuggestedProfileName, buildUserSideState, judgeResumeCandidate, lookupProfile, pickInstallTarget (+10) |
+| `src/core/manifest/collectionConfig.ts` | mode, reconcileExternalModsConfig, CollectionConfigError, createDefaultConfig, getCollectionConfigPath (+9) |
 | `src/core/manifest/externalHints.ts` | countBy, downloadsFromState, modsFromState, asMode, collectExternalHints (+8) |
-| `src/core/resolver/userState.ts` | buildSuggestedProfileName, buildUserSideState, judgeResumeCandidate, pickInstallTarget, previousInstallFromReceipt (+7) |
 | `src/core/manifest/readEhcoll.ts` | ReadEhcollError, assertReadableFile, crossCheckBundled, extractManifest, listZipEntries (+7) |
+| `src/core/manifest/parseModuleConfig.ts` | collectPluginStateDependencies, walk, decodeModuleConfig, parseConditionals, parseFiles (+5) |
 | `src/core/manifest/sevenZip.ts` | resolveSevenZip, assertOk, cancelOnAbort, sevenZipAdd, sevenZipExtractFull (+5) |
-| `src/core/manifest/bundleFromStaging.ts` | readCachedBundle, repackBundledExternals, sweepStaleBundles, writeCachedBundle, directorySize (+3) |
 
 ## Entry Points
 
 Start here when exploring this area:
 
-- **`createInstallCollectionAction`** (Function) — `src/actions/installCollectionAction.ts:118`
+- **`createInstallCollectionAction`** (Function) — `src/actions/installCollectionAction.ts:119`
 - **`archiveFileCacheKey`** (Function) — `src/core/archiveHashCache.ts:84`
 - **`enrichModsWithArchiveHashes`** (Function) — `src/core/archiveHashing.ts:184`
 - **`hashFileSha256`** (Function) — `src/core/archiveHashing.ts:39`
@@ -48,8 +48,8 @@ Start here when exploring this area:
 | `ParseManifestError` | Class | `src/core/manifest/parseManifest.ts` | 123 |
 | `BuildManifestError` | Class | `src/core/manifest/buildManifest.ts` | 255 |
 | `CollectionConfigError` | Class | `src/core/manifest/collectionConfig.ts` | 290 |
-| `PackageEhcollError` | Class | `src/core/manifest/packageZip.ts` | 171 |
-| `createInstallCollectionAction` | Function | `src/actions/installCollectionAction.ts` | 118 |
+| `PackageEhcollError` | Class | `src/core/manifest/packageZip.ts` | 172 |
+| `createInstallCollectionAction` | Function | `src/actions/installCollectionAction.ts` | 119 |
 | `archiveFileCacheKey` | Function | `src/core/archiveHashCache.ts` | 84 |
 | `enrichModsWithArchiveHashes` | Function | `src/core/archiveHashing.ts` | 184 |
 | `hashFileSha256` | Function | `src/core/archiveHashing.ts` | 39 |
@@ -59,9 +59,9 @@ Start here when exploring this area:
 | `discoveredStore` | Function | `src/core/comparePlugins.ts` | 160 |
 | `liveStagingShapes` | Function | `src/core/curator/liveStagingShapes.ts` | 41 |
 | `stagingShapeOf` | Function | `src/core/curator/stagingShape.ts` | 54 |
-| `getModsForGame` | Function | `src/core/getModsListForProfile.ts` | 613 |
+| `findArchiveByHash` | Function | `src/core/findArchiveByHash.ts` | 63 |
+| `getModsForGame` | Function | `src/core/getModsListForProfile.ts` | 649 |
 | `listInstallAttempts` | Function | `src/core/installer/attemptRecord.ts` | 147 |
-| `checkArchiveIdentity` | Function | `src/core/installer/checkArchiveIdentity.ts` | 83 |
 
 ## Execution Flows
 
@@ -75,7 +75,7 @@ Start here when exploring this area:
 | `RunSelfChecks → GetVortexUserDataPath` | cross_community | 10 |
 | `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
 | `Act → GetEventHorizonDir` | cross_community | 10 |
-| `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
+| `SelfCheckMod → GetVortexUserDataPath` | cross_community | 10 |
 | `LoadPublishedDetails → GetEventHorizonRoot` | cross_community | 10 |
 
 ## How to Explore

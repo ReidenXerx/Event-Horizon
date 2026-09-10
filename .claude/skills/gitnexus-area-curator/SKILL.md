@@ -1,32 +1,32 @@
 ---
 name: gitnexus-area-curator
-description: "Skill for the Curator area of Event-Horizon. 137 symbols across 29 files."
+description: "Skill for the Curator area of Event-Horizon. 147 symbols across 31 files."
 ---
 
 # Curator
 
-137 symbols | 29 files | Cohesion: 85%
+147 symbols | 31 files | Cohesion: 86%
 
 ## When to Use
 
 - Working with code in `src/`
-- Understanding how getEHRuntime, runtime, fileIdentity work
+- Understanding how getEHRuntime, runtime, findSupersededMods work
 - Modifying curator-related functionality
 
 ## Key Files
 
 | File | Symbols |
 |------|---------|
-| `src/ui/pages/curator/CuratorPage.tsx` | manualUpdates, shadowed, updatable, act, setTypeFor (+28) |
-| `src/core/curator/profileActions.ts` | fileIdentity, findManualUpdates, findUpdatable, findUpdateShadowed, shown (+6) |
+| `src/ui/pages/curator/CuratorPage.tsx` | orphanPlan, retireCandidates, retirePlan, manualUpdates, shadowed (+28) |
+| `src/core/curator/profileActions.ts` | identityCandidates, fileIdentity, findManualUpdates, findUpdatable, findUpdateShadowed (+7) |
 | `src/ui/pages/curator/curatorSession.ts` | begin, cancel, dismiss, finish, progress (+4) |
-| `src/core/curator/collectionDiff.ts` | describeCollectionDiff, isUnchanged, diffCollectionAgainstProfile, candidate, firstUnclaimed (+3) |
+| `src/core/curator/cleanupPlan.ts` | findSupersededMods, consider, planCleanup, identityKey, orphanArchives (+3) |
+| `src/core/curator/collectionDiff.ts` | settle, describeCollectionDiff, isUnchanged, diffCollectionAgainstProfile, candidate (+3) |
 | `src/core/curator/updateOneMod.ts` | UpdateTimeout, installedIdentityReader, asNum, updateOneAndWait, finish (+2) |
-| `src/core/curator/cleanupPlan.ts` | findSupersededMods, consider, planCleanup, orphanArchives, provenSupersedes (+2) |
 | `src/core/curator/bulkUpdate.test.ts` | update, update, update, wait, candidate (+1) |
 | `src/core/curator/runCleanup.ts` | dependsOnFailedRemoval, describeCleanupOutcome, gb, runCleanup, asNumber (+1) |
 | `src/core/curator/readProfile.ts` | asNumber, asString, opt, readCuratorMods, readEnabledModIds |
-| `src/core/curator/reinstallMod.ts` | reinstallArgs, restorationFor, CannotReinstall, captureForReinstall |
+| `src/core/curator/fileNameVersion.ts` | escapeForRegExp, nameForms, stripKnownVersion, stripTrailingVersion |
 
 ## Entry Points
 
@@ -34,9 +34,9 @@ Start here when exploring this area:
 
 - **`getEHRuntime`** (Function) — `src/ui/runtime/ehRuntime.ts:79`
 - **`runtime`** (Function) — `src/ui/runtime/useEHRuntime.ts:14`
-- **`fileIdentity`** (Function) — `src/core/curator/profileActions.ts:517`
-- **`findManualUpdates`** (Function) — `src/core/curator/profileActions.ts:232`
-- **`findUpdatable`** (Function) — `src/core/curator/profileActions.ts:311`
+- **`findSupersededMods`** (Function) — `src/core/curator/cleanupPlan.ts:167`
+- **`consider`** (Function) — `src/core/curator/cleanupPlan.ts:184`
+- **`planCleanup`** (Function) — `src/core/curator/cleanupPlan.ts:287`
 
 ## Key Symbols
 
@@ -46,22 +46,22 @@ Start here when exploring this area:
 | `CannotReinstall` | Class | `src/core/curator/reinstallMod.ts` | 45 |
 | `getEHRuntime` | Function | `src/ui/runtime/ehRuntime.ts` | 79 |
 | `runtime` | Function | `src/ui/runtime/useEHRuntime.ts` | 14 |
-| `fileIdentity` | Function | `src/core/curator/profileActions.ts` | 517 |
-| `findManualUpdates` | Function | `src/core/curator/profileActions.ts` | 232 |
-| `findUpdatable` | Function | `src/core/curator/profileActions.ts` | 311 |
-| `findUpdateShadowed` | Function | `src/core/curator/profileActions.ts` | 353 |
-| `updateGroupKey` | Function | `src/core/curator/profileActions.ts` | 305 |
-| `vortexReportsUpdate` | Function | `src/core/curator/profileActions.ts` | 208 |
+| `findSupersededMods` | Function | `src/core/curator/cleanupPlan.ts` | 167 |
+| `consider` | Function | `src/core/curator/cleanupPlan.ts` | 184 |
+| `planCleanup` | Function | `src/core/curator/cleanupPlan.ts` | 287 |
+| `identityKey` | Function | `src/core/curator/cleanupPlan.ts` | 353 |
+| `nameForms` | Function | `src/core/curator/fileNameVersion.ts` | 139 |
+| `stripKnownVersion` | Function | `src/core/curator/fileNameVersion.ts` | 115 |
+| `stripTrailingVersion` | Function | `src/core/curator/fileNameVersion.ts` | 76 |
+| `identityCandidates` | Function | `src/core/curator/profileActions.ts` | 553 |
+| `fileIdentity` | Function | `src/core/curator/profileActions.ts` | 519 |
+| `findManualUpdates` | Function | `src/core/curator/profileActions.ts` | 234 |
+| `findUpdatable` | Function | `src/core/curator/profileActions.ts` | 313 |
+| `findUpdateShadowed` | Function | `src/core/curator/profileActions.ts` | 355 |
+| `updateGroupKey` | Function | `src/core/curator/profileActions.ts` | 307 |
+| `vortexReportsUpdate` | Function | `src/core/curator/profileActions.ts` | 210 |
 | `describeTypeChanges` | Function | `src/core/curator/bulkToggles.ts` | 72 |
 | `label` | Function | `src/core/curator/bulkToggles.ts` | 76 |
-| `planTypeChanges` | Function | `src/core/curator/bulkToggles.ts` | 50 |
-| `reinstallArgs` | Function | `src/core/curator/reinstallMod.ts` | 128 |
-| `restorationFor` | Function | `src/core/curator/reinstallMod.ts` | 106 |
-| `applyModTypeChanges` | Function | `src/core/installer/applyModTypes.ts` | 133 |
-| `installedIdentityReader` | Function | `src/core/curator/updateOneMod.ts` | 181 |
-| `asNum` | Function | `src/core/curator/updateOneMod.ts` | 195 |
-| `updateOneAndWait` | Function | `src/core/curator/updateOneMod.ts` | 78 |
-| `finish` | Function | `src/core/curator/updateOneMod.ts` | 94 |
 
 ## Execution Flows
 

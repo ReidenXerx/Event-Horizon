@@ -27,7 +27,7 @@ description: "Skill for the E2e area of Event-Horizon. 13 symbols across 5 files
 
 Start here when exploring this area:
 
-- **`runInstall`** (Function) — `src/core/installer/runInstall.ts:593`
+- **`runInstall`** (Function) — `src/core/installer/runInstall.ts:595`
 - **`makeWorld`** (Function) — `test/e2e/world.ts:78`
 - **`makeFakeVortex`** (Function) — `test/e2e/fakeVortex.ts:53`
 - **`complete`** (Function) — `test/e2e/fakeVortex.ts:132`
@@ -37,12 +37,12 @@ Start here when exploring this area:
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `runInstall` | Function | `src/core/installer/runInstall.ts` | 593 |
+| `runInstall` | Function | `src/core/installer/runInstall.ts` | 595 |
 | `makeWorld` | Function | `test/e2e/world.ts` | 78 |
 | `makeFakeVortex` | Function | `test/e2e/fakeVortex.ts` | 53 |
 | `complete` | Function | `test/e2e/fakeVortex.ts` | 132 |
 | `nexusDownload` | Function | `test/e2e/fakeVortex.ts` | 287 |
-| `formatError` | Function | `src/core/installer/runInstall.ts` | 5403 |
+| `formatError` | Function | `src/core/installer/runInstall.ts` | 6061 |
 | `install` | Function | `test/e2e/installDriver.e2e.test.ts` | 89 |
 | `userState` | Function | `test/e2e/installDriver.e2e.test.ts` | 67 |
 | `install` | Function | `test/e2e/verification.e2e.test.ts` | 117 |

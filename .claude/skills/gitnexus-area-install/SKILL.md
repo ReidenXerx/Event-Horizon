@@ -5,7 +5,7 @@ description: "Skill for the Install area of Event-Horizon. 69 symbols across 8 f
 
 # Install
 
-69 symbols | 8 files | Cohesion: 82%
+69 symbols | 8 files | Cohesion: 83%
 
 ## When to Use
 
@@ -30,7 +30,7 @@ description: "Skill for the Install area of Event-Horizon. 69 symbols across 8 f
 
 Start here when exploring this area:
 
-- **`reconcileMods`** (Function) — `src/ui/pages/install/steps.tsx:3145`
+- **`reconcileMods`** (Function) — `src/ui/pages/install/steps.tsx:3163`
 - **`wizardReducer`** (Function) — `src/ui/pages/install/state.ts:218`
 - **`canProceedFromDecisions`** (Function) — `src/ui/pages/install/state.ts:437`
 - **`countUndecidedConflicts`** (Function) — `src/ui/pages/install/state.ts:464`
@@ -40,7 +40,7 @@ Start here when exploring this area:
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `reconcileMods` | Function | `src/ui/pages/install/steps.tsx` | 3145 |
+| `reconcileMods` | Function | `src/ui/pages/install/steps.tsx` | 3163 |
 | `wizardReducer` | Function | `src/ui/pages/install/state.ts` | 218 |
 | `canProceedFromDecisions` | Function | `src/ui/pages/install/state.ts` | 437 |
 | `countUndecidedConflicts` | Function | `src/ui/pages/install/state.ts` | 464 |
@@ -56,10 +56,10 @@ Start here when exploring this area:
 | `formatDuration` | Function | `src/ui/pages/install/installProgress.ts` | 132 |
 | `trackPhase` | Function | `src/ui/pages/install/installProgress.ts` | 66 |
 | `InstallingStep` | Function | `src/ui/pages/install/steps.tsx` | 2227 |
-| `getInstallSession` | Function | `src/ui/pages/install/installSession.ts` | 975 |
-| `isAbortError` | Function | `src/ui/pages/install/installSession.ts` | 988 |
-| `InstallSession` | Class | `src/ui/pages/install/installSession.ts` | 85 |
-| `BucketList` | Function | `src/ui/pages/install/steps.tsx` | 3993 |
+| `getInstallSession` | Function | `src/ui/pages/install/installSession.ts` | 976 |
+| `isAbortError` | Function | `src/ui/pages/install/installSession.ts` | 989 |
+| `InstallSession` | Class | `src/ui/pages/install/installSession.ts` | 86 |
+| `BucketList` | Function | `src/ui/pages/install/steps.tsx` | 4128 |
 
 ## Execution Flows
 

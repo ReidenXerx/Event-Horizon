@@ -46,7 +46,7 @@ Start here when exploring this area:
 | `scriptExtenderMods` | Function | `src/core/manifest/storeCompatibility.ts` | 98 |
 | `resolveCompatibility` | Function | `src/core/resolver/resolveInstallPlan.ts` | 182 |
 | `resolveInstallPlan` | Function | `src/core/resolver/resolveInstallPlan.ts` | 93 |
-| `logInstallPlan` | Function | `src/core/resolver/logInstallPlan.ts` | 94 |
+| `logInstallPlan` | Function | `src/core/resolver/logInstallPlan.ts` | 95 |
 | `collectStagingSetHashTargetsForTest` | Function | `src/core/resolver/enrichStagingSetHashes.ts` | 371 |
 | `compareVersions` | Function | `src/core/resolver/gameVersionGuidance.ts` | 167 |
 | `parse` | Function | `src/core/resolver/gameVersionGuidance.ts` | 168 |
