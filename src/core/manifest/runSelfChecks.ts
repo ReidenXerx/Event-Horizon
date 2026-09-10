@@ -385,6 +385,34 @@ function isSettled(
     return false;
   }
 
+  /**
+   * (3) The mod SHIPS NOTHING, and the standing answer delivers that nothing.
+   *
+   * `declare` means "these files are the curator's own; users install the
+   * archive without them". For a mod whose every staged file is unexplained
+   * that leaves the user with an empty mod — and the build screen's own text
+   * for this shape says so: "every ordinary answer below is wrong for it".
+   *
+   * It is a reasonable answer to the question that was asked (are you worse
+   * off without these files? no) and the wrong outcome for the collection, so
+   * it must not be honoured in silence. Measured: one mod on a real Skyrim
+   * collection, answered `declare` before fingerprints existed, therefore
+   * settled forever — and every tester who installed that collection was
+   * stopped by a five-checkbox FOMOD dialog for a mod that installs no files
+   * at all, with `drop` sitting unused two rows away.
+   *
+   * Only `declare` reopens. `bundle` and `mirror` ship the bytes, so the user
+   * gets what the curator has; `drop` is the answer this is asking for and
+   * must obviously stay settled.
+   */
+  if (
+    report.stagedCount > 0 &&
+    report.unexplained >= report.stagedCount &&
+    decided.get(report.modId)?.choice === "declare"
+  ) {
+    return false;
+  }
+
   // Answered before fingerprints were recorded. Honour it rather than nag.
   if (answeredFor === undefined) return true;
   if (report.unexplainedFingerprint === undefined) return true;

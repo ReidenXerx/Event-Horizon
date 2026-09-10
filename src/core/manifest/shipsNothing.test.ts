@@ -46,6 +46,59 @@ function report(over: Partial<SelfCheckReport> = {}): SelfCheckReport {
 
 const only = (r: SelfCheckReport) => findPostProcessingCandidates([r], new Map())[0]!;
 
+describe("a mod that ships nothing keeps being asked about", () => {
+  /**
+   * ─── THE ANSWER THAT SETTLED THE WRONG THING ───────────────────────────
+   * `declare` answers "are you worse off without these files?" with no, which
+   * is correct about a placeholder — and leaves the collection shipping a mod
+   * that installs nothing. The build screen's own copy for this shape says
+   * "every ordinary answer below is wrong for it".
+   *
+   * On the real Skyrim collection this mod was answered `declare` BEFORE
+   * fingerprints were recorded, so `isSettled` honoured it forever (there is
+   * no fingerprint to invalidate). Every tester who installed that collection
+   * was stopped by a five-checkbox FOMOD dialog — "Choose one if applicable"
+   * — for a mod whose staging folder holds one 74-byte Vortex placeholder and
+   * nothing else, with `drop` unused two rows away.
+   */
+  const answered = (choice: string): Map<string, { choice: string }> =>
+    new Map([["mod-1", { choice }]]) as never;
+
+  it("REOPENS when the standing answer is declare", () => {
+    const c = findPostProcessingCandidates([report()], answered("declare"))[0]!;
+    expect(c.shipsNothing).toBe(true);
+    expect(c.needsAnswer).toBe(true);
+  });
+
+  it("stays settled once the curator drops it", () => {
+    // `drop` is the answer this is asking for. Re-asking would be nagging.
+    const c = findPostProcessingCandidates([report()], answered("drop"))[0]!;
+    expect(c.needsAnswer).toBe(false);
+  });
+
+  it("stays settled for bundle and mirror, which ship the bytes", () => {
+    // The user gets what the curator has, so the mod is not empty for them.
+    for (const choice of ["bundle", "mirror"]) {
+      const c = findPostProcessingCandidates([report()], answered(choice))[0]!;
+      expect(c.needsAnswer).toBe(false);
+    }
+  });
+
+  it("does not reopen a declared mod that DOES ship content", () => {
+    /**
+     * The guard is scoped to the degenerate shape. An ordinary declared mod
+     * — a repacked BA2, a cleaned plugin — is answered once and stays
+     * answered, which is what makes answering feel like progress.
+     */
+    const c = findPostProcessingCandidates(
+      [report({ unexplained: 3, stagedCount: 40 })],
+      answered("declare"),
+    )[0]!;
+    expect(c.shipsNothing).toBe(false);
+    expect(c.needsAnswer).toBe(false);
+  });
+});
+
 describe("shipsNothing", () => {
   it("flags a mod whose every staged file is unexplained", () => {
     expect(only(report()).shipsNothing).toBe(true);
