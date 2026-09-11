@@ -189,6 +189,30 @@ export async function fetchRequirements(args: {
   return { byUid, failedUids };
 }
 
+/**
+ * The answers from an earlier read that a new read may use instead of asking
+ * Nexus again: for a mod still asked about (`wanted`), fetched less than
+ * `maxAgeMs` before `now` by ITS OWN fetch time. A kept answer keeps that
+ * time, so carrying it through any number of later reads never makes it
+ * fresh; an answer with no recorded time is never kept.
+ */
+export function reusableAnswers(args: {
+  fetched: ReadonlyMap<string, Partial<NexusModRequirements>>;
+  fetchedAt: ReadonlyMap<string, number>;
+  wanted: ReadonlySet<string>;
+  now: number;
+  maxAgeMs: number;
+}): Map<string, { raw: Partial<NexusModRequirements>; fetchedAt: number }> {
+  const out = new Map<string, { raw: Partial<NexusModRequirements>; fetchedAt: number }>();
+  for (const [uid, raw] of args.fetched) {
+    if (!args.wanted.has(uid)) continue;
+    const at = args.fetchedAt.get(uid);
+    if (at === undefined || args.now - at >= args.maxAgeMs) continue;
+    out.set(uid, { raw, fetchedAt: at });
+  }
+  return out;
+}
+
 // ── Resolution ─────────────────────────────────────────────────────────
 
 export type RequirementStatus =

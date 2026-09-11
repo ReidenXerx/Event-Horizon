@@ -230,19 +230,18 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
     const signal = session.begin("requirements", { keepReport: true });
     if (signal === undefined) return;
     try {
-      // After an install only the NEW mods' pages are asked for; the button
-      // re-reads everything.
-      const previous =
-        incremental === true && requirements !== undefined && Date.now() - requirements.fetchedAt < REUSE_MAX_AGE_MS
-          ? requirements.load
-          : undefined;
+      // After an install only the NEW mods' pages are asked for, and an old
+      // answer is reused only while it is younger than a day by its own fetch
+      // time (the cache's fetchedAt is reset by every read, so it cannot be
+      // the clock). The button re-reads everything.
+      const previous = incremental === true && requirements !== undefined ? requirements.load : undefined;
       const load = await loadRequirements({
         api,
         gameId: game,
         mods: readCuratorMods(api.getState(), game, readEnabledModIds(api.getState(), game)),
         signal,
         onProgress: setProgress,
-        ...(previous === undefined ? {} : { previous }),
+        ...(previous === undefined ? {} : { previous, maxReuseAgeMs: REUSE_MAX_AGE_MS }),
       });
       if (load.stopped) {
         // A partial report would show "0 missing" and "headers read" for

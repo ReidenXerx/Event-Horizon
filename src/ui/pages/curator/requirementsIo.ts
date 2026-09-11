@@ -28,6 +28,7 @@ import {
   nexusDomainOf,
   parseGameList,
   resolveNexusRequirements,
+  reusableAnswers,
   uidsFor,
   type GameNumbers,
   type NexusFileInfo,
@@ -218,6 +219,11 @@ export type RequirementsLoad = {
   stopped: boolean;
   /** What Nexus said, by UID, so a later read after an install asks only about the new mods. */
   fetched: Map<string, Partial<NexusModRequirements>>;
+  /**
+   * When each answer in `fetched` was fetched from Nexus. A reused answer
+   * keeps its time: the reuse window is per answer, never per read.
+   */
+  fetchedAtByUid: Map<string, number>;
 };
 
 /**
@@ -231,11 +237,13 @@ export async function loadRequirements(args: {
   signal?: AbortSignal;
   onProgress?: (message: string) => void;
   /**
-   * A previous load for the same game: its Nexus answers are reused and
-   * only UIDs it did not have are fetched. Plugin headers are always
-   * re-read (local, and the pool may have new plugins).
+   * A previous load for the same game: its Nexus answers younger than
+   * `maxReuseAgeMs` are reused and only the other UIDs are fetched. Plugin
+   * headers are always re-read (local, and the pool may have new plugins).
    */
   previous?: RequirementsLoad;
+  /** How old a reused answer may be, from its own fetch. Absent: nothing is reused. */
+  maxReuseAgeMs?: number;
 }): Promise<RequirementsLoad> {
   const { api, gameId, mods } = args;
   const ext = nexusExtOf(api);
@@ -246,6 +254,7 @@ export async function loadRequirements(args: {
   const { uidByMod, noUid } = uidsFor(mods, games, gameId, toDomain);
 
   let fetched = new Map<string, Partial<NexusModRequirements>>();
+  const fetchedAtByUid = new Map<string, number>();
   let failed = new Set<string>();
   let unavailable: string | undefined;
   if (ext.getModRequirements === undefined) {
@@ -257,11 +266,28 @@ export async function loadRequirements(args: {
       "Vortex's Nexus games cache is missing, so mod pages cannot be addressed. Open the Nexus tab once and try again.";
   } else {
     // Only answers for mods STILL in the pool are carried over, or a removed
-    // mod's page would count as answered and the map would grow forever.
-    const current = new Set(uidByMod.values());
+    // mod's page would count as answered and the map would grow forever; and
+    // only answers young enough by THEIR OWN fetch time.
+    const now = Date.now();
     const reuse =
-      args.previous === undefined ? undefined : new Map([...args.previous.fetched].filter(([uid]) => current.has(uid)));
-    const uids = [...uidByMod.values()].filter((u) => reuse === undefined || !reuse.has(u));
+      args.previous === undefined
+        ? new Map<string, { raw: Partial<NexusModRequirements>; fetchedAt: number }>()
+        : reusableAnswers({
+            fetched: args.previous.fetched,
+            fetchedAt: args.previous.fetchedAtByUid ?? new Map(),
+            wanted: new Set(uidByMod.values()),
+            now,
+            maxAgeMs: args.maxReuseAgeMs ?? 0,
+          });
+    if (args.previous !== undefined) {
+      ehLog("info", "curator.requirements.reuse", {
+        previous: args.previous.fetched.size,
+        reused: reuse.size,
+        notReused: args.previous.fetched.size - reuse.size,
+        maxAgeMs: args.maxReuseAgeMs ?? 0,
+      });
+    }
+    const uids = [...uidByMod.values()].filter((u) => !reuse.has(u));
     if (uids.length > 0) {
       args.onProgress?.(`Asking Nexus about ${uids.length} mods…`);
       const result = await fetchRequirements({
@@ -271,9 +297,14 @@ export async function loadRequirements(args: {
         onProgress: (done, total) => args.onProgress?.(`Asking Nexus about mods — ${done} of ${total}`),
       });
       fetched = result.byUid;
+      for (const uid of fetched.keys()) fetchedAtByUid.set(uid, now);
       failed = new Set(result.failedUids);
     }
-    if (reuse !== undefined) for (const [uid, raw] of reuse) if (!fetched.has(uid)) fetched.set(uid, raw);
+    for (const [uid, kept] of reuse) {
+      if (fetched.has(uid)) continue;
+      fetched.set(uid, kept.raw);
+      fetchedAtByUid.set(uid, kept.fetchedAt);
+    }
   }
 
   let report = resolveNexusRequirements({
@@ -361,5 +392,6 @@ export async function loadRequirements(args: {
     headers,
     stopped: args.signal?.aborted === true,
     fetched,
+    fetchedAtByUid,
   };
 }
