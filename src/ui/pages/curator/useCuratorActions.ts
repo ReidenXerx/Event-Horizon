@@ -46,6 +46,10 @@ import {
   runRequirementPlan,
 } from "../../../core/curator/runRequirementPlan";
 import {
+  describeRemoveConfirm,
+  splitByArchiveOnDisk,
+} from "../../../core/curator/archiveOnDisk";
+import {
   describeBulkUpdate,
   runBulkUpdate,
 } from "../../../core/curator/bulkUpdate";
@@ -480,24 +484,26 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
     if (game === undefined || targets.length === 0) return;
     const ids = new Set(targets.map((m) => m.id));
     const broken = report === undefined ? [] : dependantsOf(report, mods, ids);
+    // A reinstall from Downloads is promised only for the mods whose archive
+    // is actually there — the same probe Reinstall refuses on.
+    const state0 = api.getState();
+    const { noArchive } = await splitByArchiveOnDisk(
+      targets,
+      (archiveId) => getModArchivePath(state0, archiveId, game),
+      (p) =>
+        fsp.stat(p).then(
+          () => true,
+          () => false,
+        ),
+    );
+    ehLog("info", "curator.remove.confirm", {
+      asked: targets.length,
+      noArchive: noArchive.map((m) => m.id),
+      stillNeeded: broken.map((b) => b.provider.id),
+    });
     const ok = await confirm({
       title: `Remove ${num(targets.length)} mod(s) from this game?`,
-      text:
-        `Each is uninstalled from Vortex — its staging folder is deleted and it leaves every profile. ` +
-        `Its archive stays in Downloads, so it can be installed again; Disk cleanup lists such archives.\n\n` +
-        targets
-          .slice(0, 10)
-          .map((m) => `  • ${m.name}`)
-          .join("\n") +
-        (targets.length > 10 ? `\n  … and ${targets.length - 10} more` : "") +
-        (broken.length > 0
-          ? `\n\nSTILL NEEDED: ` +
-            broken
-              .slice(0, 6)
-              .map((b) => `${b.provider.name} by ${b.dependants.map((d) => d.name).join(", ")}`)
-              .join("; ") +
-            `.`
-          : ""),
+      text: describeRemoveConfirm({ targets, noArchive, stillNeeded: broken }),
       confirmLabel: "Remove",
     });
     if (!ok) return;
@@ -760,21 +766,15 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
     // reinstall UNINSTALLS first, so a mod whose archive is not actually there
     // is refused here, before anything is removed (NS-2).
     const state0 = api.getState();
-    const targets: CuratorMod[] = [];
-    const noArchive: CuratorMod[] = [];
-    for (const m of requested) {
-      const full = getModArchivePath(state0, m.archiveId, game);
-      if (full === undefined) {
-        noArchive.push(m);
-        continue;
-      }
-      try {
-        await fsp.stat(full);
-        targets.push(m);
-      } catch {
-        noArchive.push(m);
-      }
-    }
+    const { withArchive: targets, noArchive } = await splitByArchiveOnDisk(
+      requested,
+      (archiveId) => getModArchivePath(state0, archiveId, game),
+      (p) =>
+        fsp.stat(p).then(
+          () => true,
+          () => false,
+        ),
+    );
     if (targets.length === 0) {
       setNote(
         `None of the ${num(requested.length)} ticked mod(s) has its archive on disk, so none can be reinstalled — ` +
