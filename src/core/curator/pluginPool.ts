@@ -80,6 +80,34 @@ export function readPluginList(state: unknown): PluginEntry[] {
   });
 }
 
+/**
+ * The list the Plugins view shows: Vortex's plugin list AS IT IS NOW, plus
+ * the plugins of disabled mods that the last requirements read found in
+ * staging.
+ *
+ * The read keeps its own copy of Vortex's list, and that copy is a snapshot:
+ * a plugin enabled or disabled afterwards kept its old state there, so the
+ * view showed the wrong button label, State and regular-slot count, and a
+ * second click sent the same value again. Enabled state and load order come
+ * from `live`; only what Vortex cannot list (a disabled mod's plugins) comes
+ * from the read — and not once that mod is enabled, when Vortex lists the
+ * plugin itself after the deploy.
+ */
+export function livePluginList(
+  live: readonly PluginEntry[],
+  lastRead: readonly PluginEntry[] | undefined,
+  isModEnabled: (modId: string) => boolean,
+): PluginEntry[] {
+  const listed = new Set(live.map((p) => p.name.toLowerCase()));
+  const fromDisabled = (lastRead ?? []).filter(
+    (p) =>
+      p.fromDisabledMod === true &&
+      !listed.has(p.name.toLowerCase()) &&
+      (p.modId === undefined || !isModEnabled(p.modId)),
+  );
+  return [...live, ...fromDisabled];
+}
+
 /** The owners map the requirements engine wants: plugin → mod, and whether the game ships it. */
 export function pluginOwners(
   plugins: readonly PluginEntry[],

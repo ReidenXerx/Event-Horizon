@@ -122,7 +122,7 @@ import {
   type PlannedFile,
   type PlannedInstall,
 } from "../../../core/curator/installPlan";
-import { readPluginList } from "../../../core/curator/pluginPool";
+import { livePluginList, readPluginList } from "../../../core/curator/pluginPool";
 import { buildPluginRows } from "../../../core/curator/pluginView";
 import { isBaseGameMaster } from "../../../core/manifest/pluginMasters";
 import { knownGameIds, loadRequirements, nexusDomainForVortexGame, nexusExtOf } from "./requirementsIo";
@@ -477,11 +477,13 @@ function CuratorBody(): JSX.Element {
     [mods, downloads],
   );
 
-  // The plugin list is Vortex's; the headers come with the requirements pass.
-  const plugins = React.useMemo(
-    () => (requirements?.load.plugins ?? readPluginList(api.getState())),
-    [api, tick, requirements],
-  );
+  // The plugin list is Vortex's, re-read on every tick so an enable or disable
+  // shows at once; the requirements pass adds only the headers and the
+  // plugins of disabled mods, which Vortex does not list.
+  const plugins = React.useMemo(() => {
+    const enabledIds = new Set(mods.filter((m) => m.enabled).map((m) => m.id));
+    return livePluginList(readPluginList(api.getState()), requirements?.load.plugins, (id) => enabledIds.has(id));
+  }, [api, tick, requirements, mods]);
   const pluginRows = React.useMemo(
     () =>
       gameId === undefined
