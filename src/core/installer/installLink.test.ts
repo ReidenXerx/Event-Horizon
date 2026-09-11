@@ -50,6 +50,18 @@ describe("parseInstallLink", () => {
     });
   });
 
+  it("turns a pixeldrain share page into its direct download link", () => {
+    expect(parseInstallLink("https://pixeldrain.com/u/Qc8K6SYR")).toEqual({
+      kind: "direct",
+      url: "https://pixeldrain.com/api/file/Qc8K6SYR?download",
+    });
+    // An already-direct link is left alone.
+    expect(parseInstallLink("https://pixeldrain.com/api/file/Qc8K6SYR?download")).toEqual({
+      kind: "direct",
+      url: "https://pixeldrain.com/api/file/Qc8K6SYR?download",
+    });
+  });
+
   it("refuses a Nexus link that is not a mod page, and says what to paste instead", () => {
     const r = parseInstallLink("https://www.nexusmods.com/fallout4/collections/tumkz9");
     expect(r.kind).toBe("invalid");

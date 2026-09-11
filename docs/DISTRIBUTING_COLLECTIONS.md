@@ -1,35 +1,54 @@
 # Distributing collections
 
 **Status**: SETTLED 2026-09-11 — a collection is distributed as a **Nexus mod
-page** whose main file is the full `.ehcoll`. Vortex's own collection pipe
-(sections 2–6 below) is research that was never built and is not going to be:
-Event Horizon exists because that pipe loses the curator's state, so pointing
-people at it again would be the wrong door.
+page** (landing page: description, install steps, checklist, 18+ notice) whose
+package, the full `.ehcoll`, is hosted on **pixeldrain**. Vortex's own
+collection pipe (sections 2–6 below) is research that was never built and is
+not going to be: Event Horizon exists because that pipe loses the curator's
+state, so pointing people at it again would be the wrong door.
+
+**Why not the package on Nexus itself:** it was tried first (multipart upload
+works, see below) and Nexus's automated safety scan quarantined both files
+within the hour. The stated reason list includes *nested archives (a zip
+containing another zip)*, and an `.ehcoll` with bundled files is exactly that
+— `bundled/*.zip` inside the package, with no executable anywhere (checked:
+zero `.exe`/`.dll` entries in either). That is structural to the format, so
+every revision would be quarantined again pending a manual review by email.
+The curator chose pixeldrain, which the collections already used for their
+BodySlide and FaceGen outputs.
 
 **How a collection reaches its users:**
 
 1. The curator builds the `.ehcoll` (Curator Tools → Build).
-2. `node scripts/nexus-collection-file.mjs --file <pkg> --game <domain> --mod <id> --name "<Name>" --version x.y.z [--description-file f] [--primary]`
-   puts it on the mod page as a file. Above 100 MiB this is the API's S3
-   multipart flow (`uploadArchiveFromDisk` in `scripts/lib/nexusRelease.mjs`):
-   one presigned PUT per part, three in flight, four attempts each, ETags
-   collected into the completion XML, then finalise and wait for
-   `available`. Measured 2026-09-11: 3.4 GB in 64 s, 10.7 GB in 2 min 40 s.
-   `--file-id <id>` adds the package as a new VERSION of an existing file
-   instead of a new file (later revisions).
-3. The page's description tells people to install Event Horizon and pick the
-   file from the Files tab; external mods (LoversLab, Google Drive) are listed
-   with links, in the order Event Horizon asks for them. The mod page is set
-   to require the Event Horizon file (file-to-file requirement, min 0.1.152).
+2. Upload it to pixeldrain with the account key (`~/.pixeldrain/api-key`, never
+   printed or committed): `PUT https://pixeldrain.com/api/file/<name>` with
+   Basic auth (empty user, the key as password), streaming from disk. Verify by
+   size and a few sampled Range reads; pixeldrain serves Ranges, which is what
+   Event Horizon's resumable direct download needs.
+3. The mod page's description says: install Event Horizon, then **paste this
+   link**: `https://pixeldrain.com/api/file/<id>?download` (the direct form
+   works on 0.1.153; from 0.1.154 the share page `pixeldrain.com/u/<id>` is
+   accepted too). The page's own file is a small zip holding a text file with
+   the link, the file name, the size and the SHA-256, so the page has a file
+   and a checksum without hosting the package.
 4. The mod page is created and edited through the curator's own browser over
    the DevTools protocol, the same way `scripts/nexus-page.mjs` writes the
-   extension's page: the API can upload files but cannot create a mod or
-   write its description.
+   extension's page; the API uploads files but cannot create a mod or write a
+   description. The page requires the Event Horizon file (file-to-file
+   requirement, min 0.1.152) and carries the adult tags.
 
-The first two pages: Fallout 4 mod 108944 (Ivy's Panties) and Skyrim SE mod
-191460 (Meridia's Panties). The old Vortex Collection pages stay up with a
-description that points at the mod pages; their forum guides carry a legacy
-note.
+`scripts/nexus-collection-file.mjs` (`uploadArchiveFromDisk` in
+`scripts/lib/nexusRelease.mjs`) puts any file on a mod page, multipart above
+100 MiB: one presigned PUT per part, three in flight, four attempts each,
+ETags folded into the completion XML, then finalise and wait for `available`.
+Measured 2026-09-11: 3.4 GB in 64 s, 10.7 GB in 2 min 40 s. It is what uploads
+the link zip now, and it is ready if Nexus ever whitelists the packages.
+`--file-id <id>` adds a new VERSION of an existing file.
+
+The first two pages: Fallout 4 mod 108944 (Ivy's Panties, pixeldrain 4gheZH7F)
+and Skyrim SE mod 191460 (Meridia's Panties, pixeldrain Qc8K6SYR). The old
+Vortex Collection pages stay up with a description that points at the mod
+pages; their forum guides carry a legacy note.
 
 ---
 

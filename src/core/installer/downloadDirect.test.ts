@@ -13,7 +13,7 @@ import * as path from "path";
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { downloadToFile } from "./downloadDirect";
+import { downloadToFile, probeFileName } from "./downloadDirect";
 
 const BODY = Buffer.alloc(300_000);
 for (let i = 0; i < BODY.length; i += 1) BODY[i] = (i * 7 + (i >> 8)) & 0xff;
@@ -32,6 +32,16 @@ beforeAll(async () => {
       const n = Number(req.url.slice("/redirect/".length));
       res.writeHead(302, { location: n > 1 ? `/redirect/${n - 1}` : "/file.ehcoll" });
       res.end();
+      return;
+    }
+    if (req.url === "/named") {
+      // A share host: the URL says nothing, the header names the file.
+      const probe = /bytes=(\d+)-(\d+)/.exec(req.headers.range ?? "");
+      res.writeHead(probe ? 206 : 200, {
+        "content-disposition": 'attachment; filename="meridia-panties-1.0.15.ehcoll"',
+        ...(probe ? { "content-range": `bytes 0-0/${BODY.length}` } : {}),
+      });
+      res.end(probe ? BODY.subarray(0, 1) : BODY);
       return;
     }
     if (req.url === "/missing") {
@@ -155,6 +165,12 @@ describe("downloadToFile", () => {
   it("names the HTTP status when the link is dead", async () => {
     const dest = path.join(tmp, "six.ehcoll");
     await expect(downloadToFile({ url: `${base}/missing`, destPath: dest })).rejects.toThrow(/HTTP 404/);
+  });
+
+  it("reads the server's file name with a one-byte probe", async () => {
+    expect(await probeFileName(`${base}/named`)).toBe("meridia-panties-1.0.15.ehcoll");
+    expect(await probeFileName(`${base}/file.ehcoll`)).toBeUndefined();
+    expect(await probeFileName(`${base}/missing`)).toBeUndefined();
   });
 
   it("cancels with an AbortError and keeps the part for next time", async () => {

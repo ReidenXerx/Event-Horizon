@@ -27,7 +27,7 @@ import { selectors, type types } from "@nexusmods/vortex-api";
 
 import { getActiveGameId } from "../../../core/getModsListForProfile";
 import { readNexusAccount } from "../../../core/installer/checkNexusAccount";
-import { downloadToFile } from "../../../core/installer/downloadDirect";
+import { downloadToFile, probeFileName } from "../../../core/installer/downloadDirect";
 import {
   chooseEhcollFile,
   fileSizeOf,
@@ -72,7 +72,11 @@ export async function fetchLink(
 }
 
 async function fetchDirect(url: string, signal: AbortSignal, events: FetchLinkEvents): Promise<FetchLinkOutcome> {
-  const fileName = safeDownloadName(url);
+  events.onPhase("resolving");
+  // The server's own name for the file, when it gives one: a pixeldrain link
+  // ends in an id, and a file named after that would hide which package it is.
+  const served = await probeFileName(url, signal);
+  const fileName = safeDownloadName(served !== undefined ? `https://x/${encodeURIComponent(served)}` : url);
   const destPath = path.join(getEventHorizonDir("downloads"), fileName);
   events.onPhase("downloading", { fileName });
   let lastReport = 0;

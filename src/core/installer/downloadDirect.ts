@@ -168,10 +168,52 @@ export async function downloadToFile(args: {
   return { path: args.destPath, size, sha256, resumed: existing > 0 && status !== 200 };
 }
 
+/**
+ * The file name the server would give the download, from Content-Disposition,
+ * read with a one-byte Range request. Undefined when the server names nothing
+ * or does not answer; the caller then names the file after the link.
+ */
+export async function probeFileName(
+  url: string,
+  signal?: AbortSignal,
+  request: RequestImpl = defaultRequest,
+): Promise<string | undefined> {
+  let opened: { res: http.IncomingMessage; url: string };
+  try {
+    opened = await openRange(request, url, "bytes=0-0", signal);
+  } catch {
+    return undefined;
+  }
+  const { res } = opened;
+  res.resume();
+  res.destroy();
+  const header = res.headers["content-disposition"];
+  if (typeof header !== "string") return undefined;
+  const star = /filename\*=(?:UTF-8|utf-8)''([^;]+)/.exec(header);
+  if (star !== null) {
+    try {
+      return decodeURIComponent(star[1].trim());
+    } catch {
+      /* fall through to the plain form */
+    }
+  }
+  const plain = /filename="?([^";]+)"?/.exec(header);
+  return plain !== null ? plain[1].trim() : undefined;
+}
+
 function open(
   request: RequestImpl,
   url: string,
   from: number,
+  signal: AbortSignal | undefined,
+): Promise<{ res: http.IncomingMessage; url: string }> {
+  return openRange(request, url, from > 0 ? `bytes=${from}-` : undefined, signal);
+}
+
+function openRange(
+  request: RequestImpl,
+  url: string,
+  range: string | undefined,
   signal: AbortSignal | undefined,
   hops = 0,
 ): Promise<{ res: http.IncomingMessage; url: string }> {
@@ -181,7 +223,7 @@ function open(
       return;
     }
     const headers: Record<string, string> = { "user-agent": "EventHorizon/collection-link" };
-    if (from > 0) headers.range = `bytes=${from}-`;
+    if (range !== undefined) headers.range = range;
     let req: http.ClientRequest;
     try {
       // No keep-alive pool: a gigabyte transfer gains nothing from one, and a
@@ -202,7 +244,7 @@ function open(
             reject(new Error(`The link redirected somewhere unreadable: ${location}`));
             return;
           }
-          resolve(open(request, next, from, signal, hops + 1));
+          resolve(openRange(request, next, range, signal, hops + 1));
           return;
         }
         resolve({ res, url });

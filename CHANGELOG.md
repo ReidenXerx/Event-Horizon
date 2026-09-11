@@ -8,7 +8,14 @@ Vortex ignores everything after the dash when it decides whether an extension ha
 could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
-(7 September 2026), then 0.1.151, 0.1.152 and 0.1.153.
+(7 September 2026), then 0.1.151 to 0.1.154.
+
+## [0.1.154] — 2026-09-11
+
+### Install a collection
+- **A pixeldrain share link works as pasted.** `pixeldrain.com/u/<id>` is turned into the direct download; before this only the
+  `api/file/<id>?download` form was fetched, and the share page came down as HTML. A direct download is now named the way
+  the server names it (Content-Disposition), so a link that ends in an id still lands as `ivy-panties-1.0.19.ehcoll`.
 
 ## [0.1.153] — 2026-09-11
 
