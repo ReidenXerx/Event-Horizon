@@ -58,6 +58,61 @@ export function declaredClasses(): Set<string> {
   return declared;
 }
 
+/** The CSS the theme modules ship: the contents of their template literals. */
+export function themeCss(): { file: string; css: string }[] {
+  const out: { file: string; css: string }[] = [];
+  for (const file of readdirSync(THEME)) {
+    if (!file.endsWith(".ts") || file.endsWith(".test.ts")) continue;
+    const text = stripComments(readFileSync(join(THEME, file), "utf8"));
+    for (const m of text.matchAll(/`([^`]*)`/g)) out.push({ file, css: m[1]! });
+  }
+  return out;
+}
+
+type Rule = { selector: string; empty: boolean };
+
+/**
+ * Every rule block in a stylesheet, with whether its body is empty.
+ *
+ * Nested blocks (`@media { .eh-x { … } }`) are walked; a block that holds
+ * other blocks is not empty. The selector is the text since the last `;`,
+ * `{` or `}`, so a preceding `@import …;` does not become part of it.
+ */
+export function cssRules(css: string): Rule[] {
+  const rules: Rule[] = [];
+  const open: { selector: string; holdsRules: boolean }[] = [];
+  let text = "";
+  for (const ch of css) {
+    if (ch === "{") {
+      open.push({ selector: text.slice(text.lastIndexOf(";") + 1).trim(), holdsRules: false });
+      text = "";
+    } else if (ch === "}") {
+      const rule = open.pop();
+      if (rule !== undefined) {
+        rules.push({ selector: rule.selector, empty: !rule.holdsRules && text.trim() === "" });
+        const parent = open[open.length - 1];
+        if (parent !== undefined) parent.holdsRules = true;
+      }
+      text = "";
+    } else {
+      text += ch;
+    }
+  }
+  return rules;
+}
+
+/**
+ * Rules that name an `eh-` class (or keyframes) and declare nothing.
+ *
+ * "Declared" above means the name appears; `.eh-bar__fill { }` passes that
+ * and styles nothing, which is the same silent no-op as never declaring it.
+ */
+export function emptyEhRules(css: string): string[] {
+  return cssRules(css)
+    .filter((r) => r.empty && /(?:\.|@keyframes\s+)eh-[a-z0-9]/.test(r.selector))
+    .map((r) => r.selector);
+}
+
 type Reference = { cls: string; file: string; line: number };
 
 /**
@@ -152,6 +207,35 @@ describe("theme classes", () => {
     // a regex that silently stops matching would otherwise look like success.
     expect(declaredClasses().size).toBeGreaterThan(100);
     expect(referencedClasses().length).toBeGreaterThan(100);
+  });
+
+  it("declares nothing as an empty rule", () => {
+    const empty = themeCss().flatMap(({ file, css }) =>
+      emptyEhRules(css).map((selector) => `${selector} in ${file}`),
+    );
+    expect(empty).toEqual([]);
+  });
+
+  it("actually parses the theme's rules, and would catch an emptied one", () => {
+    // The check above passes on a parser that finds no rules at all.
+    const rules = themeCss().flatMap(({ css }) => cssRules(css));
+    expect(rules.length).toBeGreaterThan(300);
+    expect(rules.filter((r) => /\.eh-[a-z]/.test(r.selector) && !r.empty).length).toBeGreaterThan(300);
+
+    expect(emptyEhRules(".eh-bar__fill { }")).toEqual([".eh-bar__fill"]);
+    expect(emptyEhRules(".eh-bar__fill {\n  \n}")).toEqual([".eh-bar__fill"]);
+    expect(emptyEhRules(".eh-bar__fill { width: 1px; }")).toEqual([]);
+    // Inside an at-rule, and without a parent being mistaken for empty.
+    expect(emptyEhRules("@media (max-width: 1px) { .eh-a { } }")).toEqual([".eh-a"]);
+    expect(emptyEhRules("@media (max-width: 1px) { .eh-a { color: red; } }")).toEqual([]);
+    expect(emptyEhRules("@keyframes eh-spin { }")).toEqual(["@keyframes eh-spin"]);
+    expect(emptyEhRules("@keyframes eh-spin { to { transform: none; } }")).toEqual([]);
+    // One emptied rule among full ones, in a comma list, after a statement.
+    expect(
+      emptyEhRules('@import url("x");\n.eh-a { color: red; }\n.eh-b,\n.eh-c { }\n.eh-d { top: 0; }'),
+    ).toEqual([".eh-b,\n.eh-c"]);
+    // A rule naming no eh- class is not this check's business.
+    expect(emptyEhRules("body { }")).toEqual([]);
   });
 
   it("catches an undeclared class", () => {
