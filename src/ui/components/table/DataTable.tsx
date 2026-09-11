@@ -44,6 +44,7 @@ import {
   type TargetSet,
   type ViewRow,
 } from "./tableView";
+import { placeRowWindow, recordRowHeights, type RowPlacement } from "./rowWindow";
 
 export type Column<T> = ColumnSpec & {
   /** The value that sorts and filters. Keep it plain — text or a number. */
@@ -66,8 +67,8 @@ function nextSort(current: SortState | undefined, key: string): SortState | unde
 const ROW_HEIGHT_GUESS = 42;
 /** useLayoutEffect warns under server rendering (the render harness); there it is a no-op anyway. */
 const useIsomorphicLayoutEffect = typeof window !== "undefined" ? React.useLayoutEffect : React.useEffect;
-/** Rows rendered beyond the visible band, so a scroll never shows a gap. */
-const OVERSCAN = 12;
+/** One shared empty record, so a table with nothing measured does not churn identities. */
+const NO_HEIGHTS: ReadonlyMap<string, number> = new Map<string, number>();
 
 export function DataTable<T>(props: {
   rows: readonly T[];
@@ -126,14 +127,15 @@ export function DataTable<T>(props: {
   const wrapRef = React.useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = React.useState(0);
   const [viewport, setViewport] = React.useState(props.maxHeight ?? 420);
-  const [rowHeight, setRowHeight] = React.useState(ROW_HEIGHT_GUESS);
-  const firstRowRef = React.useRef<HTMLTableRowElement>(null);
-  useIsomorphicLayoutEffect(() => {
-    const h = firstRowRef.current?.getBoundingClientRect().height;
-    if (h !== undefined && h > 8 && Math.abs(h - rowHeight) > 0.5) setRowHeight(h);
-    const v = wrapRef.current?.clientHeight;
-    if (v !== undefined && v > 0 && v !== viewport) setViewport(v);
-  });
+  /**
+   * Each rendered row's measured height, by id. Rows are not one height — a
+   * native plugin has no action buttons — and one height measured off
+   * whichever row came first looped forever; see rowWindow.ts.
+   */
+  const [heights, setHeights] = React.useState<ReadonlyMap<string, number>>(NO_HEIGHTS);
+  const bodyRef = React.useRef<HTMLTableSectionElement>(null);
+  /** What the last committed render placed, so a settling position keeps it. */
+  const placementRef = React.useRef<RowPlacement | undefined>(undefined);
   /**
    * The last row the curator clicked, for shift-click ranges.
    *
@@ -167,19 +169,36 @@ export function DataTable<T>(props: {
     [viewRows, columns, filters, sort],
   );
 
-  // The window: OVERSCAN rows either side of what is visible. The scroll
-  // position is clamped to the CURRENT list: a filter typed while scrolled
-  // to the bottom of 1,900 rows would otherwise ask for rows past the end
-  // and render a blank table under a spacer the browser unwinds in ~85
-  // scroll events.
-  const total = view.rows.length;
-  const maxTop = Math.max(0, total * rowHeight - viewport);
-  const top = Math.min(scrollTop, maxTop);
-  const start = Math.max(0, Math.floor(top / rowHeight) - OVERSCAN);
-  const end = Math.min(total, Math.ceil((top + viewport) / rowHeight) + OVERSCAN);
-  const windowRows = view.rows.slice(start, end);
-  const topSpace = start * rowHeight;
-  const bottomSpace = Math.max(0, (total - end) * rowHeight);
+  // The window: overscan rows either side of what is visible, each placed at
+  // the sum of the measured heights above it. The arithmetic, and why it
+  // settles, is in rowWindow.ts.
+  const ids = React.useMemo(() => view.rows.map((r) => r.id), [view.rows]);
+  const { span, placement } = placeRowWindow({
+    ids,
+    heights,
+    scrollTop,
+    viewport,
+    fallback: ROW_HEIGHT_GUESS,
+    prior: placementRef.current,
+  });
+  const windowRows = view.rows.slice(span.start, span.end);
+  const { topSpace, bottomSpace } = span;
+
+  useIsomorphicLayoutEffect(() => {
+    placementRef.current = placement;
+    const body = bodyRef.current;
+    if (body !== null) {
+      const measured: [string, number][] = [];
+      for (const tr of Array.from(body.rows)) {
+        const id = tr.dataset.ehRow;
+        if (id !== undefined) measured.push([id, tr.getBoundingClientRect().height]);
+      }
+      const next = recordRowHeights(heights, measured);
+      if (next !== undefined) setHeights(next);
+    }
+    const v = wrapRef.current?.clientHeight;
+    if (v !== undefined && v > 0 && v !== viewport) setViewport(v);
+  });
 
   const matchedIds = React.useMemo(() => {
     // Everything the filter kept — including rows the cap left unrendered,
@@ -453,7 +472,7 @@ export function DataTable<T>(props: {
               </tr>
             )}
           </thead>
-          <tbody>
+          <tbody ref={bodyRef}>
             {view.rows.length === 0 && (
               <tr>
                 <td colSpan={colCount} className="eh-table__empty">
@@ -461,18 +480,29 @@ export function DataTable<T>(props: {
                 </td>
               </tr>
             )}
+            {/*
+              A spacer is a NEW row whenever its height changes: keyed on it.
+              Updated in place, Edge kept laying the table out at the old
+              height — measured in headless Edge after a jump from 3800 to
+              1500: the value said 957px, the cell was 3266px tall until a
+              forced reflow — so the right rows sat under the previous
+              render's spacer, off screen, with a blank band where they
+              belonged and clicks landing on nothing. Putting the value on
+              the cell instead of the row, or on a block inside the cell,
+              went stale the same way; a fresh row never did.
+            */}
             {topSpace > 0 && (
-              <tr className="eh-table__spacer" aria-hidden="true" style={{ ["--eh-spacer" as string]: `${topSpace}px` } as React.CSSProperties}>
-                <td colSpan={colCount} />
+              <tr key={`top-${topSpace}`} className="eh-table__spacer" aria-hidden="true">
+                <td colSpan={colCount} style={{ ["--eh-spacer" as string]: `${topSpace}px` } as React.CSSProperties} />
               </tr>
             )}
-            {windowRows.map((viewRow, i) => {
+            {windowRows.map((viewRow) => {
               const row = byId.get(viewRow.id)!;
               const selected = selection?.selected.has(viewRow.id) === true;
               return (
                 <tr
                   key={viewRow.id}
-                  ref={i === 0 ? firstRowRef : undefined}
+                  data-eh-row={viewRow.id}
                   className={selected ? "eh-table__row--selected" : undefined}
                   aria-selected={selection !== undefined ? selected : undefined}
                   onClick={
@@ -514,8 +544,8 @@ export function DataTable<T>(props: {
               );
             })}
             {bottomSpace > 0 && (
-              <tr className="eh-table__spacer" aria-hidden="true" style={{ ["--eh-spacer" as string]: `${bottomSpace}px` } as React.CSSProperties}>
-                <td colSpan={colCount} />
+              <tr key={`bottom-${bottomSpace}`} className="eh-table__spacer" aria-hidden="true">
+                <td colSpan={colCount} style={{ ["--eh-spacer" as string]: `${bottomSpace}px` } as React.CSSProperties} />
               </tr>
             )}
           </tbody>
