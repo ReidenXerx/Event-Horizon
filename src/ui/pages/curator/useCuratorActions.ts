@@ -444,6 +444,8 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
         const plan = await planRequirementClosure({
           rootName,
           roots: lines,
+          // A root whose own requirement list Nexus cut short makes the plan short.
+          rootModIds: thenEnable.map((m) => m.id),
           mods,
           activeGame: game,
           games: cache.load.games,

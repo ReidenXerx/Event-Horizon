@@ -70,7 +70,7 @@ import { LoadOrderCard } from "../pages/doctor/LoadOrderCard";
 import { assessLoadOrder, previewRepin } from "../../core/doctor/loadOrderStatus";
 import { DownloadsView } from "../pages/curator/DownloadsView";
 import { planCleanup } from "../../core/curator/cleanupPlan";
-import { buildPluginRows, type PluginHeader } from "../../core/curator/pluginView";
+import { buildPluginRows, pluginCapabilityFor, type PluginHeader } from "../../core/curator/pluginView";
 import { readPluginList } from "../../core/curator/pluginPool";
 import { readDownloads } from "../../core/curator/runCleanup";
 import { getCuratorSession } from "../pages/curator/curatorSession";
@@ -1263,7 +1263,15 @@ describe("render", () => {
     });
     write(
       "curator-plugins",
-      React.createElement(PluginsView, { rows, headersRead: true, onFocus: () => undefined, onSetEnabled: () => undefined, busy: false }),
+      React.createElement(PluginsView, {
+        rows,
+        headersRead: true,
+        onFocus: () => undefined,
+        onSetEnabled: () => undefined,
+        busy: false,
+        // The fixture is Skyrim SE: light plugins and the 254-slot counter apply.
+        capability: pluginCapabilityFor("skyrimse")!,
+      }),
     );
   });
 

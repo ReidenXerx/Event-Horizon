@@ -990,6 +990,7 @@ function CuratorBody(): JSX.Element {
         plan={planState?.plan}
         files={planState?.files ?? []}
         picked={planState?.picked ?? {}}
+        enablesAfter={planState?.thenEnable.map((m) => m.name) ?? []}
         onPick={(key, fileId): void =>
           setPlanState((st) => (st === undefined ? st : { ...st, picked: { ...st.picked, [key]: fileId } }))
         }

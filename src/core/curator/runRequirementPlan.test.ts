@@ -133,9 +133,19 @@ describe("the mod the plan was for", () => {
   });
 
   it("stays off when the chain was cut at its depth cap", async () => {
-    const r = await run([withFile(step("A"))], { plan: { truncated: true } });
+    const r = await run([withFile(step("A"))], { plan: { truncated: true, depthCapped: true, truncatedLists: [] } });
     expect(r.enabled).toEqual(["prov"]);
     expect(r.lines.join("\n")).toMatch(/depth cap/);
+  });
+
+  it("names a requirement list Nexus cut short, and does not call it the depth cap", async () => {
+    const r = await run([withFile(step("A"))], {
+      plan: { truncated: true, depthCapped: false, truncatedLists: [{ name: "Big list", notReturned: 4 }] },
+    });
+    expect(r.enabled).toEqual(["prov"]);
+    const text = r.lines.join("\n");
+    expect(text).toMatch(/only part of the requirement list for Big list \(4 not returned\)/);
+    expect(text).not.toMatch(/depth cap/);
   });
 
   it("stays off when a step did not install", async () => {

@@ -58,7 +58,17 @@ export function planBlockers(plan: InstallPlan, files: readonly PlannedFile[], p
   if (plan.unfetched.length > 0) {
     out.push(`Nexus did not answer for ${plan.unfetched.join(", ")}, so whatever those need is not in the plan`);
   }
-  if (plan.truncated) out.push("the chain was cut at its depth cap, so the plan may be short");
+  const cutLists = plan.truncatedLists ?? [];
+  if (cutLists.length > 0) {
+    out.push(
+      `Nexus returned only part of the requirement list for ${cutLists
+        .map((l) => `${l.name} (${l.notReturned} not returned)`)
+        .join(", ")}, so the plan may be short`,
+    );
+  }
+  if (plan.depthCapped === true || (plan.truncated && cutLists.length === 0)) {
+    out.push("the chain was cut at its depth cap, so the plan may be short");
+  }
   return out;
 }
 
