@@ -107,6 +107,10 @@ import { ehLog } from "../../../core/logging/ehLog";
 import { getCuratorSession, type CuratorSnapshot } from "./curatorSession";
 import { DiskCleanupView, type Confirmer } from "./DiskCleanupView";
 import { RequirementsPanel } from "./RequirementsPanel";
+import { PluginsView } from "./PluginsView";
+import { readPluginList } from "../../../core/curator/pluginPool";
+import { buildPluginRows } from "../../../core/curator/pluginView";
+import { isBaseGameMaster } from "../../../core/manifest/pluginMasters";
 import { loadRequirements, nexusExtOf } from "./requirementsIo";
 import {
   VIEWS,
@@ -307,16 +311,35 @@ function CuratorBody(): JSX.Element {
   const counts = React.useMemo(() => viewCounts(rows), [rows]);
   const chips = React.useMemo(() => visibleViews(counts), [counts]);
 
-  const [view, setView] = React.useState<ViewId | "disk">("all");
+  const [view, setView] = React.useState<ViewId | "disk" | "plugins">("all");
+  const tableView = view !== "disk" && view !== "plugins";
   const visibleRows = React.useMemo(
-    () => (view === "disk" ? [] : rowsForView(rows, view)),
-    [rows, view],
+    () => (tableView ? rowsForView(rows, view as ViewId) : []),
+    [rows, view, tableView],
   );
-  const viewSpec = view === "disk" ? undefined : VIEWS.find((v) => v.id === view);
+  const viewSpec = tableView ? VIEWS.find((v) => v.id === view) : undefined;
   // A view that emptied under the user (every update taken) falls back to All.
   React.useEffect(() => {
-    if (view !== "all" && view !== "disk" && counts[view] === 0) setView("all");
-  }, [view, counts]);
+    if (tableView && view !== "all" && counts[view as ViewId] === 0) setView("all");
+  }, [view, counts, tableView]);
+
+  // The plugin list is Vortex's; the headers come with the requirements pass.
+  const plugins = React.useMemo(
+    () => (requirements?.load.plugins ?? readPluginList(api.getState())),
+    [api, tick, requirements],
+  );
+  const pluginRows = React.useMemo(
+    () =>
+      gameId === undefined
+        ? []
+        : buildPluginRows({
+            plugins,
+            headers: requirements?.load.headers ?? new Map(),
+            mods,
+            isBaseGame: (m) => isBaseGameMaster(m, gameId),
+          }),
+    [plugins, requirements, mods, gameId],
+  );
 
   const [selected, setSelected] = React.useState<ReadonlySet<string>>(new Set());
   const chosen = React.useMemo(() => mods.filter((m) => selected.has(m.id)), [mods, selected]);
@@ -907,6 +930,11 @@ function CuratorBody(): JSX.Element {
             {v.id !== "all" && <span className="eh-muted"> {num(counts[v.id])}</span>}
           </Chip>
         ))}
+        {plugins.length > 0 && (
+          <Chip active={view === "plugins"} onClick={(): void => setView("plugins")} title="Load order, masters, light flags and owning mods">
+            Plugins <span className="eh-muted">{num(plugins.length)}</span>
+          </Chip>
+        )}
         <Chip active={view === "disk"} onClick={(): void => setView("disk")} title="Orphaned archives and superseded installs">
           Disk cleanup
         </Chip>
@@ -914,6 +942,8 @@ function CuratorBody(): JSX.Element {
 
       {view === "disk" ? (
         <DiskCleanupView mods={mods} downloads={downloads} busy={!idle} confirm={confirm} applyCleanup={applyCleanup} />
+      ) : view === "plugins" ? (
+        <PluginsView rows={pluginRows} headersRead={requirements !== undefined} onFocus={setFocusId} />
       ) : (
         <div className="eh-stack">
           {viewSpec !== undefined && viewSpec.id !== "all" && <p className="eh-note eh-prose">{viewSpec.description}</p>}
@@ -974,7 +1004,7 @@ function CuratorBody(): JSX.Element {
       )}
 
       {/* The action bar: only while something is ticked, only what applies. */}
-      {chosen.length > 0 && view !== "disk" && (
+      {chosen.length > 0 && tableView && (
         <div className="eh-actions eh-actions--sticky eh-row--split">
           <span className="eh-strong">
             {num(chosen.length)} ticked

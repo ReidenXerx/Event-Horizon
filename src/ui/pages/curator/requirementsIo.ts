@@ -17,8 +17,10 @@ import type { types } from "@nexusmods/vortex-api";
 
 import { ehLog } from "../../../core/logging/ehLog";
 import { readPluginMasters, isBaseGameMaster } from "../../../core/manifest/pluginMasters";
+import { readPluginFlagsDetailed } from "../../../core/manifest/pluginFlags";
+import type { PluginHeader } from "../../../core/curator/pluginView";
 import { getVortexUserDataPath } from "../../../core/paths";
-import { pluginOwners, readPluginList } from "../../../core/curator/pluginPool";
+import { pluginOwners, readPluginList, type PluginEntry } from "../../../core/curator/pluginPool";
 import type { CuratorMod } from "../../../core/curator/profileActions";
 import {
   addMasterRequirements,
@@ -79,6 +81,10 @@ export type RequirementsLoad = {
   answered: number;
   mastersRead: number;
   mastersUnreadable: number;
+  /** The plugin list as it was when the headers were read. */
+  plugins: PluginEntry[];
+  /** Per plugin name: masters and flags, or why the header could not be read. */
+  headers: Map<string, PluginHeader>;
 };
 
 /**
@@ -130,22 +136,35 @@ export async function loadRequirements(args: {
     noUid,
   });
 
-  // Plugin masters: hard requirements, read from the staging copies Vortex
-  // lists. Base-game masters are never something to install.
+  // Plugin headers: masters are hard requirements, and the light flag is
+  // what decides the regular-slot count. Read from the copies Vortex lists
+  // (staging for a mod's plugin, the game folder for a native one). Base-game
+  // masters are never something to install.
   const plugins = readPluginList(api.getState());
   const masters = new Map<string, readonly string[]>();
+  const headers = new Map<string, PluginHeader>();
   let mastersRead = 0;
   let mastersUnreadable = 0;
+  let n = 0;
   for (const p of plugins) {
     if (args.signal?.aborted === true) break;
-    if (p.isNative || p.filePath === undefined || p.modId === undefined) continue;
-    const read = await readPluginMasters(p.filePath);
+    if (p.filePath === undefined) continue;
+    n += 1;
+    if (n % 50 === 0) args.onProgress?.(`Reading plugin headers — ${n} of ${plugins.length}`);
+    const [read, flags] = await Promise.all([readPluginMasters(p.filePath), readPluginFlagsDetailed(p.filePath)]);
+    const header: PluginHeader = {};
     if (read.kind === "ok") {
-      masters.set(p.name, read.masters);
-      mastersRead += 1;
+      header.masters = read.masters;
+      if (p.modId !== undefined && !p.isNative) {
+        masters.set(p.name, read.masters);
+        mastersRead += 1;
+      }
     } else {
-      mastersUnreadable += 1;
+      header.unreadable = read.kind === "not-found" ? "file not found" : read.why;
+      if (p.modId !== undefined && !p.isNative) mastersUnreadable += 1;
     }
+    if (flags.kind === "ok") header.flags = flags.flags;
+    headers.set(p.name, header);
   }
   if (masters.size > 0) {
     report = addMasterRequirements(report, {
@@ -174,5 +193,7 @@ export async function loadRequirements(args: {
     answered: fetched.size,
     mastersRead,
     mastersUnreadable,
+    plugins,
+    headers,
   };
 }

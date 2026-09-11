@@ -62,6 +62,9 @@ import { DoctorPanel } from "../pages/doctor/DoctorPanel";
 import { CuratorPanel } from "../pages/curator/CuratorPage";
 import { RequirementsPanel } from "../pages/curator/RequirementsPanel";
 import { DiskCleanupView } from "../pages/curator/DiskCleanupView";
+import { PluginsView } from "../pages/curator/PluginsView";
+import { buildPluginRows, type PluginHeader } from "../../core/curator/pluginView";
+import { readPluginList } from "../../core/curator/pluginPool";
 import { readDownloads } from "../../core/curator/runCleanup";
 import { getCuratorSession } from "../pages/curator/curatorSession";
 import { readCuratorMods, readEnabledModIds } from "../../core/curator/readProfile";
@@ -1119,9 +1122,52 @@ describe("render", () => {
         },
       },
       settings: { profiles: { activeProfileId: "p1", activeGameId: "skyrimse" } },
+      // Vortex's plugin management state: the list it found, and the active
+      // profile's load order. One plugin per mod that ships one; a base-game
+      // master; one plugin whose mod is disabled; one loose file.
+      session: {
+        plugins: {
+          pluginList: {
+            "Skyrim.esm": { isNative: true, filePath: "C:/Games/Skyrim/Data/Skyrim.esm" },
+            "Update.esm": { isNative: true, filePath: "C:/Games/Skyrim/Data/Update.esm" },
+            "Apocalypse - Magic of Skyrim.esp": { modId: "needs-update", filePath: "C:/staging/needs-update/Apocalypse - Magic of Skyrim.esp" },
+            "Embers XD.esp": { modId: "dupe-a", filePath: "C:/staging/dupe-a/Embers XD.esp" },
+            "Animated Armoury.esp": { modId: "shadow-new", filePath: "C:/staging/shadow-new/Animated Armoury.esp" },
+            "Skyland AIO.esp": { modId: "sky-new", filePath: "C:/staging/sky-new/Skyland AIO.esp" },
+            "Skyland Patch.esp": { modId: "sky-old", filePath: "C:/staging/sky-old/Skyland Patch.esp" },
+            "Loose Tweak.esp": { filePath: "C:/Games/Skyrim/Data/Loose Tweak.esp" },
+          },
+        },
+      },
+      loadOrder: {
+        "Skyrim.esm": { enabled: true, loadOrder: 0 },
+        "Update.esm": { enabled: true, loadOrder: 1 },
+        "Apocalypse - Magic of Skyrim.esp": { enabled: true, loadOrder: 2 },
+        "Embers XD.esp": { enabled: true, loadOrder: 3 },
+        "Animated Armoury.esp": { enabled: true, loadOrder: 4 },
+        "Skyland AIO.esp": { enabled: true, loadOrder: 5 },
+        "Skyland Patch.esp": { enabled: false, loadOrder: 6 },
+        "Loose Tweak.esp": { enabled: true, loadOrder: 7 },
+      },
     };
     return state;
   }
+
+  // What reading the headers of the fixture's plugins would say.
+  const pluginHeaders = (): Map<string, PluginHeader> =>
+    new Map<string, PluginHeader>([
+      ["Skyrim.esm", { masters: [], flags: { isLight: false, isMaster: true } }],
+      ["Update.esm", { masters: ["Skyrim.esm"], flags: { isLight: false, isMaster: true } }],
+      [
+        "Apocalypse - Magic of Skyrim.esp",
+        { masters: ["Skyrim.esm", "Update.esm", "Dawnguard.esm", "MysticOrdinator.esp"], flags: { isLight: false, isMaster: false } },
+      ],
+      ["Embers XD.esp", { masters: ["Skyrim.esm"], flags: { isLight: true, isMaster: false } }],
+      ["Animated Armoury.esp", { masters: ["Skyrim.esm", "Update.esm"], flags: { isLight: false, isMaster: false } }],
+      ["Skyland AIO.esp", { masters: ["Skyrim.esm"], flags: { isLight: true, isMaster: false } }],
+      ["Skyland Patch.esp", { masters: ["Skyland AIO.esp"], flags: { isLight: true, isMaster: false } }],
+      ["Loose Tweak.esp", { masters: ["Skyland Patch.esp", "Embers XD.esp"], unreadable: undefined, flags: { isLight: false, isMaster: false } }],
+    ]);
 
   it("curator tools — the profile-wide actions", () => {
     // A fake Vortex store shaped like the real one: a mod needing an update,
@@ -1153,6 +1199,24 @@ describe("render", () => {
         confirm: async () => false,
         applyCleanup: async () => undefined,
       }),
+    );
+  });
+
+  // The Plugins view with headers read: a disabled master (Skyland Patch is
+  // off, Loose Tweak needs it), a missing one (MysticOrdinator), light flags
+  // and the regular-slot count.
+  it("curator tools — plugins", () => {
+    const state = curatorState();
+    const mods = readCuratorMods(state as never, "skyrimse", readEnabledModIds(state as never, "skyrimse"));
+    const rows = buildPluginRows({
+      plugins: readPluginList(state),
+      headers: pluginHeaders(),
+      mods,
+      isBaseGame: (m) => /^(skyrim|update|dawnguard|hearthfires|dragonborn)\.esm$/i.test(m),
+    });
+    write(
+      "curator-plugins",
+      React.createElement(PluginsView, { rows, headersRead: true, onFocus: () => undefined }),
     );
   });
 
@@ -1212,7 +1276,16 @@ describe("render", () => {
     session.setRequirements({
       gameId: "skyrimse",
       fetchedAt: Date.now(),
-      load: { report, games, asked: uidByMod.size, answered: fetched.size, mastersRead: 1, mastersUnreadable: 0 },
+      load: {
+        report,
+        games,
+        asked: uidByMod.size,
+        answered: fetched.size,
+        mastersRead: 1,
+        mastersUnreadable: 0,
+        plugins: readPluginList(state),
+        headers: pluginHeaders(),
+      },
     });
     try {
       write(
