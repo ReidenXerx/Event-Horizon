@@ -143,3 +143,21 @@ describe("LoadOrderBadge — a curator plugin switched off", () => {
     expect(html).not.toContain("moved");
   });
 });
+
+describe("LoadOrderBadge — while an install runs", () => {
+  it("keeps Re-apply disabled, and says why, until the install finishes", async () => {
+    const { getEHRuntime } = await import("../../runtime/ehRuntime");
+    getEHRuntime().setInstallBusy(true);
+    try {
+      const html = render("prof-ivy", receipt());
+      expect(html).toContain("Re-apply");
+      expect(html).toMatch(/<button[^>]*\sdisabled[=\s>""][^>]*>/);
+      expect(html).toMatch(/install is running/i);
+    } finally {
+      getEHRuntime().setInstallBusy(false);
+    }
+    const after = render("prof-ivy", receipt());
+    expect(after).not.toMatch(/install is running/i);
+    expect(after).not.toMatch(/<button[^>]*\sdisabled[=\s>""][^>]*>/);
+  });
+});

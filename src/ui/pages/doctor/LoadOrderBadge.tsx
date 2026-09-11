@@ -9,17 +9,22 @@
  * the same profile. Only the order's owner gets a verdict and a Re-apply;
  * the heal writes into whatever order is active.
  *
+ * The Re-apply refuses on the notification's grounds (`reapplyBlockedReason`):
+ * not while an install writes, and not twice at once.
+ *
  * Live: it re-reads when Vortex's plugin order, plugin list or active profile
- * changes, not only when the page happens to re-render.
+ * changes, and when an install starts or stops — not only when the page
+ * happens to re-render.
  */
 
 import * as React from "react";
 
 import { assessReceiptOrder, canReapply, curatorPluginsOff, type LoadOrderStatus } from "../../../core/doctor/loadOrderStatus";
-import { reapplyCuratorOrder } from "../../../core/doctor/loadOrderWatcher";
+import { reapplyBlockedReason, reapplyCuratorOrder } from "../../../core/doctor/loadOrderWatcher";
 import type { InstallReceipt } from "../../../types/installLedger";
 import { Button, Pill, type PillIntent } from "../../components";
 import { useToast } from "../../components/Toast";
+import { useEHRuntime } from "../../runtime/useEHRuntime";
 import { useApi } from "../../state";
 
 type StateWatchApi = { onStateChange?: (path: string[], cb: () => void) => void };
@@ -94,6 +99,8 @@ export function LoadOrderBadge(props: { receipt: InstallReceipt; receipts: reado
   const toast = useToast();
   const [busy, setBusy] = React.useState(false);
   const [tick, setTick] = React.useState(0);
+  // Re-renders when an install starts or stops, so the refusal below is current.
+  useEHRuntime();
   React.useEffect(() => watchLoadOrderState(api as StateWatchApi, () => setTick((t) => t + 1)), [api]);
   const status = React.useMemo<LoadOrderStatus>(
     () => assessReceiptOrder({ receipt: props.receipt, receipts: props.receipts, state: api.getState() }),
@@ -105,6 +112,7 @@ export function LoadOrderBadge(props: { receipt: InstallReceipt; receipts: reado
   const pill = badgePill(status);
   if (pill === undefined) return null;
   const offerReapply = status.kind === "drifted" && canReapply(status);
+  const blocked = busy ? undefined : reapplyBlockedReason();
 
   return (
     <span className="eh-row eh-row--sm eh-row--nowrap" onClick={(e): void => e.stopPropagation()} title={pill.title}>
@@ -116,6 +124,8 @@ export function LoadOrderBadge(props: { receipt: InstallReceipt; receipts: reado
           size="sm"
           intent="primary"
           busy={busy}
+          disabled={blocked !== undefined}
+          title={blocked ?? "Refills the collection's slots with the curator's order; every other plugin stays where it is. No sort runs."}
           onClick={(): void => {
             setBusy(true);
             void reapplyCuratorOrder(api, props.receipt)
