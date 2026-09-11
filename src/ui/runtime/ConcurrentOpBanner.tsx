@@ -6,6 +6,7 @@
 
 import * as React from "react";
 
+import { Callout } from "../components/Callout";
 import { useEHRuntime } from "./useEHRuntime";
 
 export type Pipeline = "build" | "install";
@@ -29,43 +30,12 @@ export function ConcurrentOpBanner(
   const otherLabel = props.self === "build" ? "install" : "build";
 
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      style={{
-        margin: "0 0 var(--eh-sp-4) 0",
-        padding: "var(--eh-sp-3) var(--eh-sp-4)",
-        background: "color-mix(in srgb, var(--eh-warning) 12%, transparent)",
-        border: "1px solid color-mix(in srgb, var(--eh-warning) 35%, transparent)",
-        borderRadius: "var(--eh-radius-md)",
-        color: "var(--eh-text-primary)",
-        fontSize: "var(--eh-text-sm)",
-        lineHeight: "var(--eh-leading-relaxed)",
-        display: "flex",
-        alignItems: "flex-start",
-        gap: "var(--eh-sp-3)",
-      }}
+    <Callout
+      tone="warning"
+      title={`A ${otherLabel} is in progress on the other tab.`}
     >
-      <span
-        aria-hidden="true"
-        style={{
-          fontSize: "var(--eh-text-md)",
-          lineHeight: 1,
-          marginTop: 2,
-        }}
-      >
-        ⚠
-      </span>
-      <div>
-        <strong style={{ display: "block", marginBottom: 2 }}>
-          A {otherLabel} is in progress on the other tab.
-        </strong>
-        <span className="eh-secondary">
-          Both pipelines read Vortex state at the same time. You can
-          continue, but a snapshot taken now may not match the disk
-          once the {otherLabel} finishes.
-        </span>
-      </div>
-    </div>
+      Both pipelines read Vortex state at the same time. You can continue, but a
+      snapshot taken now may not match the disk once the {otherLabel} finishes.
+    </Callout>
   );
 }

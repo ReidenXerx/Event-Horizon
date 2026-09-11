@@ -42,7 +42,13 @@ export const BASE_CSS = `
   box-sizing: border-box;
 }
 
-.eh-app h1, .eh-app h2, .eh-app h3, .eh-app h4 {
+/* Element defaults are wrapped in :where() so they carry NO specificity: a
+   component class must be able to override them. Without this ".eh-app h3"
+   (0,1,1) beat ".eh-section__title" (0,1,0), and ".eh-app p" beat
+   ".eh-note" - every section heading in a card came out at 22px and every
+   note paragraph in the secondary colour instead of muted.
+   (No backticks in here: this file IS a template literal.) */
+:where(.eh-app) h1, :where(.eh-app) h2, :where(.eh-app) h3, :where(.eh-app) h4 {
   margin: 0;
   font-weight: 600;
   letter-spacing: var(--eh-tracking-tight);
@@ -50,33 +56,33 @@ export const BASE_CSS = `
   color: var(--eh-text-primary);
 }
 
-.eh-app h1 { font-size: var(--eh-text-3xl); }
-.eh-app h2 { font-size: var(--eh-text-2xl); }
-.eh-app h3 { font-size: var(--eh-text-xl); }
-.eh-app h4 { font-size: var(--eh-text-lg); }
+:where(.eh-app) h1 { font-size: var(--eh-text-3xl); }
+:where(.eh-app) h2 { font-size: var(--eh-text-2xl); }
+:where(.eh-app) h3 { font-size: var(--eh-text-xl); }
+:where(.eh-app) h4 { font-size: var(--eh-text-lg); }
 
-.eh-app p {
+:where(.eh-app) p {
   margin: 0;
   color: var(--eh-text-secondary);
 }
 
-.eh-app a {
+:where(.eh-app) a {
   color: var(--eh-cyan);
   text-decoration: none;
   transition: color var(--eh-dur-fast) var(--eh-easing);
 }
 
-.eh-app a:hover {
+:where(.eh-app) a:hover {
   color: var(--eh-cyan-bright);
   text-shadow: var(--eh-glow-cyan);
 }
 
-.eh-app code, .eh-app pre {
+:where(.eh-app) code, :where(.eh-app) pre {
   font-family: var(--eh-font-mono);
   font-size: var(--eh-text-sm);
 }
 
-.eh-app code {
+:where(.eh-app) code {
   padding: 1px 6px;
   background: var(--eh-bg-raised);
   border: 1px solid var(--eh-border-subtle);
@@ -181,7 +187,9 @@ export const BASE_CSS = `
     0 0 0 2px var(--eh-bg-base),
     0 0 0 4px var(--eh-cyan),
     var(--eh-glow-cyan);
-  border-radius: var(--eh-radius-sm);
+  /* No border-radius here: the ring follows the element's own shape. Setting
+     one turned a tabbed-to 16px checkbox into a circle (a radio, visually)
+     and squared the modal's corners the moment it took focus. */
 }
 
 /* Remove the default outline on mouse-only interactions. */

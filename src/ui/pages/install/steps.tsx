@@ -26,12 +26,19 @@ import { util } from "@nexusmods/vortex-api";
 
 import {
   Button,
+  Callout,
   Card,
+  ChoiceCard,
   EventHorizonMark,
   HashingCard,
   Modal,
+  Notice,
+  Page,
   Pill,
   ProgressRing,
+  Section,
+  StatGrid,
+  StatTile,
   StepDots,
 } from "../../components";
 import { useApi, useApiOptional } from "../../state";
@@ -130,24 +137,15 @@ function Stepper(props: { current: WizardState["kind"] }): JSX.Element {
         ? 1
         : 0;
   return (
-    <div
-      style={{
-        display: "flex",
-        gap: "var(--eh-sp-2)",
-        alignItems: "center",
-        marginBottom: "var(--eh-sp-5)",
-      }}
-    >
+    <>
       <StepDots total={visibleStates.length} current={safeIdx} />
-      <span
-        className="eh-label"
-      >
+      <span className="eh-label">
         Step {safeIdx + 1} / {visibleStates.length}
         {STEP_LABELS[safeIdx]?.label
           ? ` · ${STEP_LABELS[safeIdx]?.label}`
           : ""}
       </span>
-    </div>
+    </>
   );
 }
 
@@ -159,41 +157,14 @@ function StepFrame(props: {
   children: React.ReactNode;
 }): JSX.Element {
   return (
-    <div className="eh-page" key={props.current}>
-      {props.showStepper !== false && <Stepper current={props.current} />}
-      <header
-        style={{
-          marginBottom: "var(--eh-sp-5)",
-          animation:
-            "eh-fade-up var(--eh-dur-slow) var(--eh-easing) both",
-        }}
-      >
-        <h2
-          style={{
-            margin: 0,
-            color: "var(--eh-text-primary)",
-            fontSize: "var(--eh-text-2xl)",
-            letterSpacing: "var(--eh-tracking-tight)",
-          }}
-        >
-          {props.title}
-        </h2>
-        {props.subtitle !== undefined && (
-          <p
-            style={{
-              margin: "var(--eh-sp-2) 0 0 0",
-              color: "var(--eh-text-secondary)",
-              fontSize: "var(--eh-text-md)",
-              lineHeight: "var(--eh-leading-relaxed)",
-              maxWidth: "640px",
-            }}
-          >
-            {props.subtitle}
-          </p>
-        )}
-      </header>
+    <Page
+      key={props.current}
+      eyebrow={props.showStepper !== false ? <Stepper current={props.current} /> : undefined}
+      title={props.title}
+      subtitle={props.subtitle}
+    >
       {props.children}
-    </div>
+    </Page>
   );
 }
 
@@ -304,44 +275,12 @@ export function PickStep(props: PickStepProps): JSX.Element {
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: "var(--eh-sp-5)",
-          padding: "var(--eh-sp-7) var(--eh-sp-5)",
-          background: isDragging
-            ? "var(--eh-accent-soft, var(--eh-bg-elevated))"
-            : "var(--eh-bg-glass)",
-          border: isDragging
-            ? "2px dashed var(--eh-accent)"
-            : "1px dashed var(--eh-border-default)",
-          borderRadius: "var(--eh-radius-lg)",
-          textAlign: "center",
-          transition: "background var(--eh-dur-fast) var(--eh-easing), border-color var(--eh-dur-fast) var(--eh-easing)",
-          animation:
-            "eh-fade-up var(--eh-dur-deliberate) var(--eh-easing) both",
-        }}
+        className={isDragging ? "eh-dropzone eh-dropzone--active" : "eh-dropzone"}
       >
         <EventHorizonMark size={120} />
         <div>
-          <h3
-            style={{
-              margin: 0,
-              color: "var(--eh-text-primary)",
-              fontSize: "var(--eh-text-xl)",
-            }}
-          >
-            Drop a .ehcoll file or click to browse
-          </h3>
-          <p
-            style={{
-              margin: "var(--eh-sp-2) 0 0 0",
-              color: "var(--eh-text-secondary)",
-              fontSize: "var(--eh-text-sm)",
-              maxWidth: "440px",
-            }}
-          >
+          <h3 className="eh-dropzone__title">Drop a .ehcoll file or click to browse</h3>
+          <p className="eh-dropzone__hint">
             Event Horizon never modifies your current profile until you click Install on the final review screen.
           </p>
         </div>
@@ -411,34 +350,13 @@ export function LoadingStep(props: {
           onCancel={props.onCancel}
         />
       ) : (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--eh-sp-5)",
-            padding: "var(--eh-sp-6)",
-            background: "var(--eh-bg-raised)",
-            border: "1px solid var(--eh-border-default)",
-            borderRadius: "var(--eh-radius-lg)",
-          }}
-        >
+        <div className="eh-progress-panel">
           <ProgressRing value={ratio} size={88} />
-          <div className="eh-fill">
-            <strong
-              style={{
-                color: "var(--eh-text-primary)",
-                fontSize: "var(--eh-text-lg)",
-              }}
-            >
+          <div className="eh-fill eh-stack eh-stack--xs">
+            <strong className="eh-progress-panel__title">
               {LOADING_PHASE_LABELS[props.phase]}
             </strong>
-            <p
-              style={{
-                margin: "var(--eh-sp-1) 0 0 0",
-                color: "var(--eh-text-secondary)",
-                fontSize: "var(--eh-text-sm)",
-              }}
-            >
+            <p className="eh-body">
               Hold tight — this can take a moment for large mod lists.
             </p>
           </div>
@@ -511,15 +429,7 @@ export function StaleReceiptStep(
         title={`${state.receipt.packageName} v${state.receipt.packageVersion}`}
         footer={`Receipt last updated ${formatTime(state.receipt.installedAt)}`}
       >
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "var(--eh-sp-3)",
-            color: "var(--eh-text-secondary)",
-            fontSize: "var(--eh-text-sm)",
-          }}
-        >
+        <div className="eh-stack eh-body">
           <div>
             <strong>Was installed into:</strong>{" "}
             {state.receipt.vortexProfileName}{" "}
@@ -532,29 +442,9 @@ export function StaleReceiptStep(
             {state.receipt.mods.length}
           </div>
 
-          <details
-            style={{
-              padding: "var(--eh-sp-2) var(--eh-sp-3)",
-              background: "var(--eh-bg-elevated)",
-              border: "1px solid var(--eh-border-default)",
-              borderRadius: "var(--eh-radius-sm)",
-            }}
-          >
-            <summary
-              style={{
-                cursor: "pointer",
-                color: "var(--eh-text-primary)",
-                fontWeight: 600,
-              }}
-            >
-              What is a stale receipt?
-            </summary>
-            <p
-              style={{
-                margin: "var(--eh-sp-2) 0 0 0",
-                lineHeight: "var(--eh-leading-relaxed)",
-              }}
-            >
+          <details className="eh-details eh-inset">
+            <summary className="eh-strong">What is a stale receipt?</summary>
+            <p className="eh-details__body eh-body">
               When a collection is installed, Event Horizon writes a small
               JSON file remembering which mods went where, so a re-install
               can skip them. If the Vortex profile is later deleted (or
@@ -563,31 +453,14 @@ export function StaleReceiptStep(
             </p>
           </details>
 
-          <div
-            style={{
-              padding: "var(--eh-sp-3)",
-              background: "var(--eh-bg-elevated)",
-              border: "1px solid var(--eh-border-default)",
-              borderRadius: "var(--eh-radius-sm)",
-              color: "var(--eh-text-primary)",
-              fontSize: "var(--eh-text-sm)",
-              lineHeight: "var(--eh-leading-relaxed)",
-            }}
-          >
+          <Callout tone="info" icon={null}>
             <strong>Recommended:</strong>{" "}
             <em>Start fresh</em> — Event Horizon deletes the dead receipt
             and treats this like a brand-new install (a new profile, full
             install plan, full safety guarantees).
-          </div>
+          </Callout>
         </div>
-        <div
-          style={{
-            marginTop: "var(--eh-sp-4)",
-            display: "flex",
-            gap: "var(--eh-sp-2)",
-            flexWrap: "wrap",
-          }}
-        >
+        <div className="eh-actions">
           <Button
             intent="primary"
             disabled={busy}
@@ -629,13 +502,6 @@ export interface PreviewStepProps {
   onContinue: () => void;
   onCancel: () => void;
 }
-
-/** Both summary groups lay out the same way; declared once so they cannot drift. */
-const SUMMARY_GRID: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-  gap: "var(--eh-sp-3)",
-};
 
 export function PreviewStep(props: PreviewStepProps): JSX.Element {
   const { bundle, onContinue, onCancel } = props;
@@ -718,23 +584,9 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
           answer, so it goes first, and the colour carries it before the words
           are read. "Verdict" as a card title said nothing the headline does
           not say better. */}
-      <div
-        role="status"
-        style={{
-          display: "flex",
-          gap: "var(--eh-sp-3)",
-          alignItems: "flex-start",
-          padding: "var(--eh-sp-4)",
-          marginBottom: "var(--eh-sp-5)",
-          borderLeft: `3px solid ${verdict.color}`,
-          borderRadius: "var(--eh-radius-sm)",
-          background: "var(--eh-bg-raised)",
-        }}
-      >
-        <div className="eh-stack eh-stack--sm eh-fill">
-          <strong style={{ color: verdict.color, fontSize: "var(--eh-text-md)" }}>
-            {verdict.headline}
-          </strong>
+      <div className="eh-stack eh-stack--xl">
+      <Callout tone={verdict.tone} role="status" title={verdict.headline}>
+        <div className="eh-stack eh-stack--sm">
           {verdict.lines.length > 0 ? (
             <ul className="eh-list">
               {verdict.lines.map((line, idx) => (
@@ -748,7 +600,7 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
             Checked against your active game install. Nothing has been changed yet.
           </span>
         </div>
-      </div>
+      </Callout>
 
       {/* Two groups, not six equal numbers.
           The first three describe what happens if you do nothing but press
@@ -756,66 +608,50 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
           or cannot be done at all. Undifferentiated, a reader gets six figures
           and no sense of which need them — and the zeroes are worth keeping,
           because "Missing: 0" says the check ran. */}
-      <div className="eh-stack eh-stack--lg" style={{ marginBottom: "var(--eh-sp-5)" }}>
-        <section className="eh-stack eh-stack--sm">
-          <h3 className="eh-label" style={{ margin: 0 }}>
-            What this collection is
-          </h3>
-          <div style={SUMMARY_GRID}>
-            <SummaryTile label="Total mods" value={summary.totalMods} />
-            <SummaryTile
-              label="Already installed"
-              value={summary.alreadyInstalled}
-            />
-            <SummaryTile
-              label="Will install silently"
-              value={summary.willInstallSilently}
-            />
-          </div>
-        </section>
+      <Section title="What this collection is">
+        <StatGrid min={200}>
+          <StatTile size="lg" label="Total mods" value={summary.totalMods} />
+          <StatTile size="lg" label="Already installed" value={summary.alreadyInstalled} />
+          <StatTile size="lg" label="Will install silently" value={summary.willInstallSilently} />
+        </StatGrid>
+      </Section>
 
-        <section className="eh-stack eh-stack--sm">
-          <h3 className="eh-label" style={{ margin: 0 }}>
-            What needs you
-          </h3>
-          <div style={SUMMARY_GRID}>
-            <SummaryTile
-              label="Need confirmation"
-              value={summary.needsUserConfirmation}
-              accent={summary.needsUserConfirmation > 0 ? "warning" : "default"}
-            />
-            <SummaryTile
-              label="Missing"
-              value={summary.missing}
-              accent={summary.missing > 0 ? "danger" : "default"}
-            />
-            <SummaryTile
-              label="Orphans"
-              value={summary.orphans}
-              accent={summary.orphans > 0 ? "warning" : "default"}
-            />
-          </div>
-        </section>
-      </div>
+      <Section title="What needs you">
+        <StatGrid min={200}>
+          <StatTile
+            size="lg"
+            label="Need confirmation"
+            value={summary.needsUserConfirmation}
+            tone={summary.needsUserConfirmation > 0 ? "warning" : "neutral"}
+          />
+          <StatTile
+            size="lg"
+            label="Missing"
+            value={summary.missing}
+            tone={summary.missing > 0 ? "danger" : "neutral"}
+          />
+          <StatTile
+            size="lg"
+            label="Orphans"
+            value={summary.orphans}
+            tone={summary.orphans > 0 ? "warning" : "neutral"}
+          />
+        </StatGrid>
+      </Section>
 
       <EnvironmentCard report={bundle.environment} />
 
       <RulesScopePreview summary={summary} />
 
-      <Card title="Install target" footer={null}>
+      <Card title="Install target">
         {target.kind === "fresh-profile" ? (
-          <div>
-            <Pill intent="info" withDot>
-              Fresh profile
-            </Pill>
-            <p
-              style={{
-                margin: "var(--eh-sp-3) 0 0 0",
-                color: "var(--eh-text-secondary)",
-                fontSize: "var(--eh-text-sm)",
-                lineHeight: "var(--eh-leading-relaxed)",
-              }}
-            >
+          <div className="eh-stack eh-stack--sm">
+            <div>
+              <Pill intent="info" withDot>
+                Fresh profile
+              </Pill>
+            </div>
+            <p className="eh-body">
               {target.resumeProfileId !== undefined ? (
                 <>
                   {/* A resume continues a profile. Promising a new one here —
@@ -842,18 +678,13 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
             </p>
           </div>
         ) : (
-          <div>
-            <Pill intent="warning" withDot>
-              Current profile
-            </Pill>
-            <p
-              style={{
-                margin: "var(--eh-sp-3) 0 0 0",
-                color: "var(--eh-text-secondary)",
-                fontSize: "var(--eh-text-sm)",
-                lineHeight: "var(--eh-leading-relaxed)",
-              }}
-            >
+          <div className="eh-stack eh-stack--sm">
+            <div>
+              <Pill intent="warning" withDot>
+                Current profile
+              </Pill>
+            </div>
+            <p className="eh-body">
               The collection will install on top of{" "}
               <strong className="eh-strong">
                 {target.profileName}
@@ -864,11 +695,9 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
           </div>
         )}
       </Card>
+      </div>
 
-
-      <div
-        className="eh-actions"
-      >
+      <div className="eh-actions">
         <Button intent="ghost" onClick={onCancel}>
           Cancel
         </Button>
@@ -881,43 +710,6 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
         </Button>
       </div>
     </StepFrame>
-  );
-}
-
-function SummaryTile(props: {
-  label: string;
-  value: number;
-  accent?: "default" | "warning" | "danger";
-}): JSX.Element {
-  const accentColor =
-    props.accent === "warning"
-      ? "var(--eh-warning)"
-      : props.accent === "danger"
-        ? "var(--eh-danger)"
-        : "var(--eh-cyan)";
-  return (
-    <div
-      style={{
-        padding: "var(--eh-sp-4)",
-        background: "var(--eh-bg-raised)",
-        border: "1px solid var(--eh-border-subtle)",
-        borderRadius: "var(--eh-radius-md)",
-      }}
-    >
-      <div className="eh-label" style={{ marginBottom: "var(--eh-sp-2)" }}>
-        {props.label}
-      </div>
-      <div
-        style={{
-          color: accentColor,
-          fontSize: "var(--eh-text-2xl)",
-          fontWeight: 700,
-          fontVariantNumeric: "tabular-nums",
-        }}
-      >
-        {props.value}
-      </div>
-    </div>
   );
 }
 
@@ -943,53 +735,25 @@ function RulesScopePreview(props: {
   if (total === 0) return null;
 
   return (
-    <div
-      style={{
-        marginBottom: "var(--eh-sp-5)",
-        display: "flex",
-        flexDirection: "column",
-        gap: "var(--eh-sp-3)",
-      }}
-    >
-      <div
-        className="eh-label"
-      >
-        Rules &amp; ordering this collection ships
-      </div>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: "var(--eh-sp-3)",
-        }}
-      >
+    <Section title="Rules & ordering this collection ships">
+      <StatGrid min={180}>
         {summary.ruleCount > 0 && (
-          <SummaryTile label="Mod rules" value={summary.ruleCount} />
+          <StatTile size="lg" label="Mod rules" value={summary.ruleCount} />
         )}
         {summary.loadOrderCount > 0 && (
-          <SummaryTile label="Load order entries" value={summary.loadOrderCount} />
+          <StatTile size="lg" label="Load order entries" value={summary.loadOrderCount} />
         )}
         {summary.pluginOrderCount > 0 && (
-          <SummaryTile label="Plugins" value={summary.pluginOrderCount} />
+          <StatTile size="lg" label="Plugins" value={summary.pluginOrderCount} />
         )}
         {summary.userlistPluginCount > 0 && (
-          <SummaryTile
-            label="LOOT plugin rules"
-            value={summary.userlistPluginCount}
-          />
+          <StatTile size="lg" label="LOOT plugin rules" value={summary.userlistPluginCount} />
         )}
         {summary.userlistGroupCount > 0 && (
-          <SummaryTile label="LOOT groups" value={summary.userlistGroupCount} />
+          <StatTile size="lg" label="LOOT groups" value={summary.userlistGroupCount} />
         )}
-      </div>
-      <p
-        style={{
-          margin: 0,
-          color: "var(--eh-text-muted)",
-          fontSize: "var(--eh-text-xs)",
-          lineHeight: "var(--eh-leading-relaxed)",
-        }}
-      >
+      </StatGrid>
+      <p className="eh-note eh-prose">
         {/*
           This used to end "Pre-existing rules unrelated to this collection are
           left alone", which stopped being true the day the rule purge landed:
@@ -1005,7 +769,7 @@ function RulesScopePreview(props: {
         and for your other profiles of this game — are cleared first. They are
         saved to a backup file, and the install tells you where.
       </p>
-    </div>
+    </Section>
   );
 }
 
@@ -1027,7 +791,9 @@ export function computeVerdict(
 ): {
   headline: string;
   lines: string[];
+  /** The CSS colour, kept for callers that read it; `tone` is what renders. */
   color: string;
+  tone: "danger" | "warning" | "success";
   canProceed: boolean;
 } {
   const lines: string[] = [];
@@ -1064,6 +830,7 @@ export function computeVerdict(
       headline: "Cannot install",
       lines,
       color: "var(--eh-danger)",
+      tone: "danger",
       canProceed: false,
     };
   }
@@ -1101,6 +868,7 @@ export function computeVerdict(
       : "Plan resolves cleanly",
     lines,
     color: needsAttention ? "var(--eh-warning)" : "var(--eh-success)",
+    tone: needsAttention ? "warning" : "success",
     canProceed: true,
   };
 }
@@ -1152,12 +920,11 @@ export function DecisionsStep(props: DecisionsStepProps): JSX.Element {
       )}
 
       {conflicts.length > 0 && (
-        <section style={{ marginBottom: "var(--eh-sp-5)" }}>
-          <SectionHeader
-            count={conflicts.length}
-            title="Mod conflicts"
-            description="The collection's version differs from what's installed on your machine."
-          />
+        <Section
+          count={conflicts.length}
+          title="Mod conflicts"
+          description="The collection's version differs from what's installed on your machine."
+        >
           {/*
             How far through they are. A real plan puts 27 near-identical cards
             on this page, each about a mod the user has never heard of, and the
@@ -1167,11 +934,7 @@ export function DecisionsStep(props: DecisionsStepProps): JSX.Element {
             Continue button silently stays disabled until the last one.
           */}
           {conflicts.length > 1 && (
-            <p
-              className="eh-note"
-              role="status"
-              style={{ margin: "0 0 var(--eh-sp-3) 0" }}
-            >
+            <p className="eh-note" role="status">
               {(() => {
                 const decided = conflicts.filter(
                   (r) =>
@@ -1205,16 +968,15 @@ export function DecisionsStep(props: DecisionsStepProps): JSX.Element {
               />
             ))}
           </div>
-        </section>
+        </Section>
       )}
 
       {orphans.length > 0 && (
-        <section>
-          <SectionHeader
-            count={orphans.length}
-            title="Orphaned mods"
-            description="These were installed by a previous release of this collection but are no longer referenced."
-          />
+        <Section
+          count={orphans.length}
+          title="Orphaned mods"
+          description="These were installed by a previous release of this collection but are no longer referenced."
+        >
           <div
             className="eh-stack"
           >
@@ -1235,12 +997,12 @@ export function DecisionsStep(props: DecisionsStepProps): JSX.Element {
               />
             ))}
           </div>
-        </section>
+        </Section>
       )}
 
-      <div
-        className="eh-actions"
-      >
+      {/* Sticky: with 27 cards above it, the button a user is looking for
+          should not be a page-length scroll away. */}
+      <div className="eh-actions eh-actions--sticky">
         <Button
           intent="ghost"
           onClick={(): void => dispatch({ type: "back-to-preview" })}
@@ -1261,42 +1023,6 @@ export function DecisionsStep(props: DecisionsStepProps): JSX.Element {
         </Button>
       </div>
     </StepFrame>
-  );
-}
-
-function SectionHeader(props: {
-  count: number;
-  title: string;
-  description: string;
-}): JSX.Element {
-  return (
-    <header
-      style={{
-        marginBottom: "var(--eh-sp-3)",
-        display: "flex",
-        alignItems: "center",
-        gap: "var(--eh-sp-3)",
-      }}
-    >
-      <h3
-        style={{
-          margin: 0,
-          color: "var(--eh-text-primary)",
-          fontSize: "var(--eh-text-lg)",
-        }}
-      >
-        {props.title}
-      </h3>
-      <Pill intent="info">{props.count}</Pill>
-      <span
-        style={{
-          color: "var(--eh-text-muted)",
-          fontSize: "var(--eh-text-sm)",
-        }}
-      >
-        {props.description}
-      </span>
-    </header>
   );
 }
 
@@ -1333,18 +1059,10 @@ function ExternalDownloadGuide(props: {
   });
 
   return (
-    <div
-      className="eh-stack eh-stack--sm eh-inset"
-      style={{ marginBottom: "var(--eh-sp-3)" }}
-    >
+    <div className="eh-stack eh-stack--sm eh-inset">
       {guide.canOpen && props.url !== undefined && (
         <div className="eh-row">
-          <span
-            className="eh-mono eh-fill"
-            style={{ fontSize: "var(--eh-text-xs)", wordBreak: "break-all" }}
-          >
-            {props.url}
-          </span>
+          <span className="eh-mono eh-fill">{props.url}</span>
           <Button
             intent="ghost"
             onClick={(): void => {
@@ -1359,12 +1077,12 @@ function ExternalDownloadGuide(props: {
         </div>
       )}
       {openFailed && (
-        <span className="eh-note" role="alert" style={{ color: "var(--eh-warning)" }}>
+        <Callout tone="warning" role="alert">
           Nothing opened — your system may not have a browser Vortex can reach.
           Copy the link above into your own browser.
-        </span>
+        </Callout>
       )}
-      <ol className="eh-list eh-note" style={{ margin: 0 }}>
+      <ol className="eh-list eh-note">
         {guide.steps.map((step, i) => (
           <li key={i}>{step}</li>
         ))}
@@ -1409,57 +1127,16 @@ function ConflictRow(props: {
   };
 
   return (
-    <article
-      style={{
-        background: "var(--eh-bg-raised)",
-        border: "1px solid var(--eh-border-subtle)",
-        borderRadius: "var(--eh-radius-md)",
-        padding: "var(--eh-sp-4)",
-      }}
+    <Card
+      compact
+      headingLevel={4}
+      titleSize="sm"
+      title={resolution.name}
+      subtitle={<span className="eh-mono eh-muted">{resolution.compareKey}</span>}
+      actions={<Pill intent="warning">{decisionLabel(decision.kind)}</Pill>}
     >
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "var(--eh-sp-3)",
-          marginBottom: "var(--eh-sp-3)",
-          flexWrap: "wrap",
-        }}
-      >
-        <div>
-          <strong
-            style={{
-              color: "var(--eh-text-primary)",
-              fontSize: "var(--eh-text-md)",
-            }}
-          >
-            {resolution.name}
-          </strong>
-          <div
-            style={{
-              color: "var(--eh-text-muted)",
-              fontSize: "var(--eh-text-xs)",
-              fontFamily: "var(--eh-font-mono)",
-              marginTop: "var(--eh-sp-1)",
-            }}
-          >
-            {resolution.compareKey}
-          </div>
-        </div>
-        <Pill intent="warning">{decisionLabel(decision.kind)}</Pill>
-      </header>
-
-      <p
-        style={{
-          margin: "0 0 var(--eh-sp-3) 0",
-          color: "var(--eh-text-secondary)",
-          fontSize: "var(--eh-text-sm)",
-          lineHeight: "var(--eh-leading-relaxed)",
-        }}
-      >
-        {describeConflict(resolution)}
-      </p>
+      <div className="eh-stack">
+      <p className="eh-body">{describeConflict(resolution)}</p>
 
       {/* Get it yourself, in your own browser.
           Vortex answers a browse-website dependency with an embedded browser;
@@ -1481,10 +1158,9 @@ function ConflictRow(props: {
       )}
 
       {decision.kind === "external-prompt-user" ? (
-        <div
-          className="eh-stack eh-stack--sm"
-        >
-          <RadioOption
+        <div className="eh-stack eh-stack--sm" role="radiogroup" aria-label={`What to do about ${resolution.name}`}>
+          <ChoiceCard
+            name={`conflict:${resolution.compareKey}`}
             checked={value?.kind === "use-local-file"}
             onChange={(): void => {
               void handlePickFile();
@@ -1496,7 +1172,8 @@ function ConflictRow(props: {
                 : `Expected filename: ${decision.expectedFilename}`
             }
           />
-          <RadioOption
+          <ChoiceCard
+            name={`conflict:${resolution.compareKey}`}
             checked={value?.kind === "skip"}
             onChange={(): void => onChange({ kind: "skip" })}
             label="Skip this mod"
@@ -1504,16 +1181,16 @@ function ConflictRow(props: {
           />
         </div>
       ) : (
-        <div
-          className="eh-stack eh-stack--sm"
-        >
-          <RadioOption
+        <div className="eh-stack eh-stack--sm" role="radiogroup" aria-label={`What to do about ${resolution.name}`}>
+          <ChoiceCard
+            name={`conflict:${resolution.compareKey}`}
             checked={value?.kind === "keep-existing"}
             onChange={(): void => onChange({ kind: "keep-existing" })}
             label="Keep your installed version"
             sub="Safe default — your file stays untouched and is enabled in the install profile."
           />
-          <RadioOption
+          <ChoiceCard
+            name={`conflict:${resolution.compareKey}`}
             checked={value?.kind === "replace-existing"}
             onChange={(): void => onChange({ kind: "replace-existing" })}
             label="Replace with the collection's version"
@@ -1521,7 +1198,8 @@ function ConflictRow(props: {
           />
         </div>
       )}
-    </article>
+      </div>
+    </Card>
   );
 }
 
@@ -1532,123 +1210,34 @@ function OrphanRow(props: {
 }): JSX.Element {
   const { orphan, value, onChange } = props;
   return (
-    <article
-      style={{
-        background: "var(--eh-bg-raised)",
-        border: "1px solid var(--eh-border-subtle)",
-        borderRadius: "var(--eh-radius-md)",
-        padding: "var(--eh-sp-4)",
-      }}
+    <Card
+      compact
+      headingLevel={4}
+      titleSize="sm"
+      title={orphan.name}
+      subtitle={<span className="eh-mono eh-muted">installed by v{orphan.installedFromVersion}</span>}
+      actions={<Pill intent="warning">orphaned</Pill>}
     >
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "var(--eh-sp-3)",
-          marginBottom: "var(--eh-sp-3)",
-          flexWrap: "wrap",
-        }}
-      >
-        <div>
-          <strong
-            style={{
-              color: "var(--eh-text-primary)",
-              fontSize: "var(--eh-text-md)",
-            }}
-          >
-            {orphan.name}
-          </strong>
-          <div
-            style={{
-              color: "var(--eh-text-muted)",
-              fontSize: "var(--eh-text-xs)",
-              fontFamily: "var(--eh-font-mono)",
-              marginTop: "var(--eh-sp-1)",
-            }}
-          >
-            installed by v{orphan.installedFromVersion}
-          </div>
-        </div>
-        <Pill intent="warning">orphaned</Pill>
-      </header>
-      <div
-        className="eh-stack eh-stack--sm"
-      >
-        <RadioOption
+      <div className="eh-stack eh-stack--sm" role="radiogroup" aria-label={`What to do about ${orphan.name}`}>
+        <ChoiceCard
+          name={`orphan:${orphan.existingModId}`}
           checked={value.kind === "keep"}
           onChange={(): void => onChange({ kind: "keep" })}
           label="Keep installed"
           sub="Leave the mod alone — useful if you want it independently of the collection."
         />
-        <RadioOption
+        <ChoiceCard
+          name={`orphan:${orphan.existingModId}`}
           checked={value.kind === "uninstall"}
           onChange={(): void => onChange({ kind: "uninstall" })}
           label="Uninstall it"
           sub="Removes the mod entirely (file system + Vortex state). Destructive."
         />
       </div>
-    </article>
+    </Card>
   );
 }
 
-function RadioOption(props: {
-  checked: boolean;
-  onChange: () => void;
-  label: React.ReactNode;
-  sub?: React.ReactNode;
-}): JSX.Element {
-  return (
-    <label
-      style={{
-        display: "flex",
-        gap: "var(--eh-sp-3)",
-        alignItems: "flex-start",
-        padding: "var(--eh-sp-3)",
-        background: props.checked
-          ? "var(--eh-bg-elevated)"
-          : "transparent",
-        border: props.checked
-          ? "1px solid var(--eh-border-strong)"
-          : "1px solid var(--eh-border-subtle)",
-        borderRadius: "var(--eh-radius-sm)",
-        cursor: "pointer",
-        transition:
-          "background var(--eh-dur-fast) var(--eh-easing), border var(--eh-dur-fast) var(--eh-easing)",
-      }}
-    >
-      <input
-        type="radio"
-        checked={props.checked}
-        onChange={props.onChange}
-        style={{ marginTop: 4, accentColor: "var(--eh-cyan)" }}
-      />
-      <div>
-        <div
-          style={{
-            color: "var(--eh-text-primary)",
-            fontSize: "var(--eh-text-sm)",
-            fontWeight: 600,
-          }}
-        >
-          {props.label}
-        </div>
-        {props.sub !== undefined && (
-          <div
-            style={{
-              color: "var(--eh-text-muted)",
-              fontSize: "var(--eh-text-xs)",
-              marginTop: "var(--eh-sp-1)",
-              wordBreak: "break-word",
-            }}
-          >
-            {props.sub}
-          </div>
-        )}
-      </div>
-    </label>
-  );
-}
 
 function decisionLabel(kind: ModResolution["decision"]["kind"]): string {
   switch (kind) {
@@ -1711,33 +1300,6 @@ const DISK_SPACE_WARN_THRESHOLD = 5 * 1024 * 1024 * 1024;
  * Both banners here had the same eleven inline properties copied out, down to
  * a hardcoded rgba(255, 177, 92, 0.08) that existed nowhere else in the app.
  */
-function WarningPanel(props: {
-  children: React.ReactNode;
-  style?: React.CSSProperties;
-  role?: string;
-}): JSX.Element {
-  return (
-    <div
-      role={props.role}
-      style={{
-        display: "flex",
-        gap: "var(--eh-sp-2)",
-        alignItems: "flex-start",
-        padding: "var(--eh-sp-3) var(--eh-sp-4)",
-        background: "var(--eh-warning-soft)",
-        border: "1px solid var(--eh-warning)",
-        borderRadius: "var(--eh-radius-sm)",
-        color: "var(--eh-text-primary)",
-        fontSize: "var(--eh-text-sm)",
-        lineHeight: "var(--eh-leading-relaxed)",
-        ...props.style,
-      }}
-    >
-      <span aria-hidden="true">⚠</span>
-      <div className="eh-fill">{props.children}</div>
-    </div>
-  );
-}
 
 
 /**
@@ -1802,71 +1364,22 @@ function FomodModeModal(props: {
         </Button>
       }
     >
+      {/* Two-up so BOTH options are on screen at once; the cards stretch to
+          one height so the buttons line up across columns. */}
       <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(330px, 1fr))",
-          gap: "var(--eh-sp-3)",
-          // Stretch, not start: the columns are different heights (only one
-          // carries a caution) and `margin-top: auto` on the buttons needs
-          // free space to push into, or they sit at ragged heights.
-          alignItems: "stretch",
-        }}
+        className="eh-grid eh-grid--tight"
+        style={{ ["--eh-grid-min" as string]: "330px" } as React.CSSProperties}
       >
         {options.map((opt) => (
-          <div
-            key={opt.mode}
-            style={{
-              padding: "var(--eh-sp-4)",
-              height: "100%",
-              borderRadius: "var(--eh-radius-md)",
-              background: "var(--eh-bg-elevated)",
-              border: "1px solid var(--eh-border-subtle)",
-              display: "flex",
-              flexDirection: "column",
-              gap: "var(--eh-sp-2)",
-            }}
-          >
-            <span
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--eh-sp-2)",
-                flexWrap: "wrap",
-              }}
-            >
-              <strong
-                style={{
-                  fontSize: "var(--eh-text-md)",
-                  color: "var(--eh-text-primary)",
-                }}
-              >
-                {opt.title}
-              </strong>
+          <div key={opt.mode} className="eh-option-card">
+            <span className="eh-row eh-row--sm">
+              <strong className="eh-strong">{opt.title}</strong>
               {opt.recommended && <Pill intent="info">Recommended</Pill>}
             </span>
 
-            <span
-              style={{
-                fontSize: "var(--eh-text-sm)",
-                color: "var(--eh-text-secondary)",
-                lineHeight: "var(--eh-leading-relaxed)",
-              }}
-            >
-              {opt.blurb}
-            </span>
+            <p className="eh-body">{opt.blurb}</p>
 
-            <ul
-              style={{
-                margin: 0,
-                paddingLeft: "var(--eh-sp-4)",
-                display: "flex",
-                flexDirection: "column",
-                gap: 2,
-                fontSize: "var(--eh-text-xs)",
-                color: "var(--eh-text-muted)",
-              }}
-            >
+            <ul className="eh-list eh-muted">
               {opt.points.map((pt, i) => (
                 <li key={i}>{pt}</li>
               ))}
@@ -1876,16 +1389,12 @@ function FomodModeModal(props: {
                 here, and a warning that appears after you commit is not a
                 warning. */}
             {opt.caution !== undefined && (
-              <WarningPanel style={{ marginTop: "var(--eh-sp-1)" }}>
+              <Callout tone="warning" role="silent">
                 {opt.caution}
-              </WarningPanel>
+              </Callout>
             )}
 
-            {/* Wrapped, because Button drops inline `style` by design
-                (Button.tsx omits it) — the margin has to live on something
-                that keeps it. This is what bottom-aligns the two buttons
-                across columns of different heights. */}
-            <div style={{ marginTop: "auto", paddingTop: "var(--eh-sp-2)" }}>
+            <div className="eh-option-card__cta">
               <Button
                 intent={opt.recommended ? "primary" : "ghost"}
                 fullWidth
@@ -1998,12 +1507,12 @@ export function ConfirmStep(props: ConfirmStepProps): JSX.Element {
       title="Last chance to review"
       subtitle="Once you click Install, Event Horizon will start downloading, hardlinking, and deploying mods. Closing the page won't roll the changes back."
     >
+      <div className="eh-stack">
       <Card
         title={`${bundle.plan.manifest.package.name} v${bundle.plan.manifest.package.version}`}
       >
-        <ul
-          className="eh-list"
-        >
+        <div className="eh-stack">
+        <ul className="eh-list">
           <li>
             <strong>Target:</strong>{" "}
             {isFresh
@@ -2039,7 +1548,7 @@ export function ConfirmStep(props: ConfirmStepProps): JSX.Element {
           game. It is reversible from the backup, but it is not nothing, and
           the last screen before an hour of work is where it has to be said.
         */}
-        <p className="eh-note" style={{ margin: "var(--eh-sp-4) 0 0 0" }}>
+        <p className="eh-note">
           Your own mod-conflict and LOOT rules for this game will be replaced
           by the collection&apos;s, so the load order matches what the curator
           tested. They are backed up to a file first, and the summary at the
@@ -2047,11 +1556,9 @@ export function ConfirmStep(props: ConfirmStepProps): JSX.Element {
         </p>
 
         {removalCount === 0 ? (
-          <p className="eh-note" style={{ margin: "var(--eh-sp-2) 0 0 0" }}>
-            Nothing will be uninstalled.
-          </p>
+          <p className="eh-note">Nothing will be uninstalled.</p>
         ) : (
-          <WarningPanel style={{ margin: "var(--eh-sp-4) 0 0 0" }}>
+          <Callout tone="warning">
             <strong>
               {removalCount} mod{removalCount === 1 ? "" : "s"} will be
               uninstalled
@@ -2059,24 +1566,23 @@ export function ConfirmStep(props: ConfirmStepProps): JSX.Element {
             </strong>{" "}
             This is what you asked for on the previous screen, but it is the
             part that cannot be undone by going back.
-          </WarningPanel>
+          </Callout>
         )}
+        </div>
       </Card>
 
       {diskFreeBytes !== undefined &&
         diskFreeBytes < DISK_SPACE_WARN_THRESHOLD && (
-          <WarningPanel role="alert" style={{ marginTop: "var(--eh-sp-4)" }}>
-            <strong>Low disk space on Vortex&apos;s data drive.</strong>{" "}
+          <Callout tone="warning" role="alert" title="Low disk space on Vortex's data drive.">
             Only {formatBytes(diskFreeBytes)} free where mods get staged.
             Large collections can easily download tens of gigabytes —
             installs may fail mid-way if the disk fills. Free up space
             before continuing if you&apos;re unsure.
-          </WarningPanel>
+          </Callout>
         )}
+      </div>
 
-      <div
-        className="eh-actions"
-      >
+      <div className="eh-actions">
         <Button intent="ghost" onClick={onBack}>
           ← Back
         </Button>
@@ -2207,17 +1713,7 @@ function PhaseTrail(props: {
   if (idx < 0) return null;
 
   return (
-    <ol
-      aria-label="Install phases"
-      style={{
-        display: "flex",
-        flexWrap: "wrap",
-        gap: "var(--eh-sp-2)",
-        listStyle: "none",
-        margin: "var(--eh-sp-3) 0 0 0",
-        padding: 0,
-      }}
-    >
+    <ol aria-label="Install phases" className="eh-phase-trail">
       {DRIVER_PHASE_ORDER.map((phase, i) => {
         const done = i < idx;
         const active = i === idx;
@@ -2225,22 +1721,13 @@ function PhaseTrail(props: {
           <li
             key={phase}
             aria-current={active ? "step" : undefined}
-            style={{
-              fontSize: "var(--eh-text-xs)",
-              fontFamily: "var(--eh-font-mono)",
-              padding: "2px var(--eh-sp-2)",
-              borderRadius: "var(--eh-radius-sm)",
-              border: `1px solid ${
-                active ? "var(--eh-cyan)" : "var(--eh-border-subtle)"
-              }`,
-              color: active
-                ? "var(--eh-cyan)"
+            className={
+              active
+                ? "eh-phase-trail__phase eh-phase-trail__phase--active"
                 : done
-                  ? "var(--eh-text-secondary)"
-                  : "var(--eh-text-muted)",
-              background: active ? "var(--eh-bg-raised)" : "transparent",
-              opacity: done || active ? 1 : 0.55,
-            }}
+                  ? "eh-phase-trail__phase eh-phase-trail__phase--done"
+                  : "eh-phase-trail__phase"
+            }
           >
             {done ? "✓ " : ""}
             {PHASE_SHORT[phase] ?? phase}
@@ -2349,48 +1836,18 @@ export function InstallingStep(props: {
       title="Installing"
       subtitle={`${bundle.plan.manifest.package.name} v${bundle.plan.manifest.package.version} — keep this page open until the run finishes.`}
     >
-      <div
-        style={{
-          display: "flex",
-          gap: "var(--eh-sp-5)",
-          padding: "var(--eh-sp-6)",
-          background: "var(--eh-bg-raised)",
-          border: "1px solid var(--eh-border-default)",
-          borderRadius: "var(--eh-radius-lg)",
-          alignItems: "center",
-        }}
-      >
+      <div className="eh-stack">
+      <div className="eh-progress-panel">
         <ProgressRing value={ratio} size={120} />
-        <div style={{ flex: 1 }}>
-          <strong
-            style={{
-              color: "var(--eh-text-primary)",
-              fontSize: "var(--eh-text-lg)",
-            }}
-          >
-            {phaseLabel}
-          </strong>
-          <p
-            style={{
-              margin: "var(--eh-sp-1) 0 0 0",
-              color: "var(--eh-text-secondary)",
-              fontSize: "var(--eh-text-sm)",
-              lineHeight: "var(--eh-leading-relaxed)",
-            }}
-          >
+        <div className="eh-fill eh-stack eh-stack--xs">
+          <strong className="eh-progress-panel__title">{phaseLabel}</strong>
+          <p className="eh-body">
             {progress?.message ??
               "Driver is starting up — this usually takes a few seconds."}
           </p>
           {/* Elapsed is always true and always worth knowing; the estimate
               appears only once it is measured rather than guessed. */}
-          <p
-            style={{
-              margin: "var(--eh-sp-2) 0 0 0",
-              color: "var(--eh-text-muted)",
-              fontSize: "var(--eh-text-xs)",
-              fontFamily: "var(--eh-font-mono)",
-            }}
-          >
+          <p className="eh-mono eh-muted">
             {describeElapsed(startedAtMs, nowMs)}
             {progress !== undefined && progress.totalSteps > 1
               ? ` · step ${progress.currentStep} / ${progress.totalSteps}`
@@ -2412,7 +1869,7 @@ export function InstallingStep(props: {
           teach them to read a working install as a stuck one — the precise
           failure the original banner was written to prevent, inverted. */}
       {fomodCount > 0 && progress?.phase === "installing-mods" && (
-        <p className="eh-note" style={{ margin: "var(--eh-sp-3) 0 0 0" }}>
+        <p className="eh-note eh-prose">
           {supervised ? (
             <>
               {fomodCount} of these mods have installer options. Vortex will
@@ -2441,57 +1898,29 @@ export function InstallingStep(props: {
       )}
 
       {recent.length > 1 && (
-        <details style={{ marginTop: "var(--eh-sp-3)" }}>
-          <summary
-            style={{
-              color: "var(--eh-text-muted)",
-              cursor: "pointer",
-              fontSize: "var(--eh-text-sm)",
-            }}
-          >
-            Recent activity
-          </summary>
-          <ol
-            style={{
-              margin: "var(--eh-sp-2) 0 0 0",
-              padding: 0,
-              listStyle: "none",
-              fontFamily: "var(--eh-font-mono)",
-              fontSize: "var(--eh-text-xs)",
-              color: "var(--eh-text-muted)",
-            }}
-          >
+        <details className="eh-details">
+          <summary>Recent activity</summary>
+          {/* The newest line is the one the eye should land on (first-child
+              is brighter); the rest are context and fade back. */}
+          <ol className="eh-activity eh-details__body">
             {recent.map((line, i) => (
-              <li
-                key={`${i}-${line}`}
-                style={{
-                  padding: "1px 0",
-                  // The newest line is the one the eye should land on; the
-                  // rest are context and fade back.
-                  color: i === 0 ? "var(--eh-text-secondary)" : undefined,
-                }}
-              >
-                {line}
-              </li>
+              <li key={`${i}-${line}`}>{line}</li>
             ))}
           </ol>
         </details>
       )}
 
       {quiet !== undefined && (
-        <p
-          className="eh-note"
-          role="status"
-          style={{ margin: "var(--eh-sp-3) 0 0 0" }}
-        >
+        <p className="eh-note" role="status">
           {quiet}
         </p>
       )}
+      </div>
 
       {/* The stop control lives below the progress, away from the eye, and
           never becomes a primary action — the expected thing to do on this
           screen is wait. */}
-      <div className="eh-actions" style={{ marginTop: "var(--eh-sp-4)" }}>
+      <div className="eh-actions">
         {props.cancelPending ? (
           <span className="eh-note" role="status">
             Stopping after the current mod finishes...
@@ -2562,7 +1991,7 @@ export function DoneStep(props: DoneStepProps): JSX.Element {
   let badge: JSX.Element;
   let headline: string;
   let body: React.ReactNode;
-  let accent: string;
+  let accent: "success" | "warning" | "danger";
 
   if (result.kind === "success") {
     /**
@@ -2590,7 +2019,7 @@ export function DoneStep(props: DoneStepProps): JSX.Element {
     headline = stoppedLate
       ? `Installed ${bundle.plan.manifest.package.name} v${bundle.plan.manifest.package.version} — finishing steps skipped`
       : `Installed ${bundle.plan.manifest.package.name} v${bundle.plan.manifest.package.version}`;
-    accent = stoppedLate ? "var(--eh-warning)" : "var(--eh-success)";
+    accent = stoppedLate ? "warning" : "success";
     body = (
       <SuccessBody
         result={result}
@@ -2600,7 +2029,7 @@ export function DoneStep(props: DoneStepProps): JSX.Element {
   } else if (result.kind === "aborted") {
     badge = <Pill intent="warning">Stopped</Pill>;
     headline = "Install stopped";
-    accent = "var(--eh-warning)";
+    accent = "warning";
     body = (
       <FailureBody
         phase={result.phase}
@@ -2617,7 +2046,7 @@ export function DoneStep(props: DoneStepProps): JSX.Element {
       </Pill>
     );
     headline = "Install failed";
-    accent = "var(--eh-danger)";
+    accent = "danger";
     body = (
       <FailureBody
         phase={result.phase}
@@ -2652,18 +2081,10 @@ export function DoneStep(props: DoneStepProps): JSX.Element {
   return (
     <StepFrame
       current="done"
-      title={
-        <span style={{ color: accent }}>
-          {headline}
-        </span>
-      }
-      subtitle={
-        <span style={{ display: "inline-flex", gap: "var(--eh-sp-2)" }}>
-          {badge}
-        </span>
-      }
+      title={<span className={`eh-tone--${accent}`}>{headline}</span>}
+      subtitle={badge}
     >
-      <Card title={null}>{body}</Card>
+      <Card>{body}</Card>
 
       <div
         className="eh-actions"
@@ -2740,32 +2161,6 @@ export function DoneStep(props: DoneStepProps): JSX.Element {
  * handful of lines and folding them would hide the whole message behind a
  * click. Same head, different body, because the difference is real.
  */
-function NoticeCard(props: {
-  label: string;
-  intent: "info" | "warning" | "danger" | "success" | "neutral";
-  summary: string;
-  accentBorder?: string;
-  children?: React.ReactNode;
-}): JSX.Element {
-  return (
-    <div
-      className="eh-inset"
-      style={
-        props.accentBorder !== undefined
-          ? { borderColor: props.accentBorder }
-          : undefined
-      }
-    >
-      <div className="eh-row eh-row--sm" style={{ alignItems: "flex-start" }}>
-        <Pill intent={props.intent}>{props.label}</Pill>
-        <span className="eh-fill eh-secondary" style={{ fontSize: "var(--eh-text-sm)" }}>
-          {props.summary}
-        </span>
-      </div>
-      {props.children}
-    </div>
-  );
-}
 
 /**
  * How many detail lines a notice shows before it folds them away.
@@ -2793,24 +2188,15 @@ function NoticeLines(props: {
 }): JSX.Element | null {
   if (props.lines.length === 0) return null;
   const body = (
-    <div className="eh-note" style={{ marginTop: "var(--eh-sp-2)", whiteSpace: "pre-line" }}>
-      {props.lines.join("\n")}
-    </div>
+    <div className="eh-note eh-pre-line">{props.lines.join("\n")}</div>
   );
   if (props.lines.length <= INLINE_LINE_LIMIT) return body;
   return (
-    <details>
-      <summary
-        style={{
-          color: "var(--eh-text-muted)",
-          cursor: "pointer",
-          fontSize: "var(--eh-text-sm)",
-          marginTop: "var(--eh-sp-2)",
-        }}
-      >
+    <details className="eh-details">
+      <summary>
         {props.moreLabel ?? "Show details"} ({props.lines.length})
       </summary>
-      {body}
+      <div className="eh-details__body">{body}</div>
     </details>
   );
 }
@@ -2819,14 +2205,13 @@ function ModTypeNotice(props: { lines: readonly string[] }): JSX.Element | null 
   if (props.lines.length === 0) return null;
   const [summary, ...rest] = props.lines;
   return (
-    <NoticeCard
+    <Notice
       label="Wrong folder"
       intent="warning"
       summary={summary ?? ""}
-      accentBorder="var(--eh-warning)"
     >
       <NoticeLines lines={rest} />
-    </NoticeCard>
+    </Notice>
   );
 }
 
@@ -2852,14 +2237,13 @@ function PluginOrderNotice(props: {
   if (props.lines.length === 0) return null;
   const [summary, ...rest] = props.lines;
   return (
-    <NoticeCard
+    <Notice
       label="Load order"
       intent="warning"
       summary={summary ?? ""}
-      accentBorder="var(--eh-warning)"
     >
       <NoticeLines lines={rest} />
-    </NoticeCard>
+    </Notice>
   );
 }
 
@@ -2867,14 +2251,13 @@ function IniTweakNotice(props: { lines: readonly string[] }): JSX.Element | null
   if (props.lines.length === 0) return null;
   const [summary, ...rest] = props.lines;
   return (
-    <NoticeCard
+    <Notice
       label="INI tweaks"
       intent="warning"
       summary={summary ?? ""}
-      accentBorder="var(--eh-warning)"
     >
       <NoticeLines lines={rest} />
-    </NoticeCard>
+    </Notice>
   );
 }
 
@@ -2883,21 +2266,18 @@ function GameIniNotice(props: { lines: readonly string[] }): JSX.Element | null 
   const [summary, ...changes] = props.lines;
 
   return (
-    <NoticeCard label="Game settings" intent="info" summary={summary ?? ""}>
+    <Notice label="Game settings" intent="info" summary={summary ?? ""}>
       {changes.length > 0 && (
-        <details style={{ marginTop: "var(--eh-sp-2)" }}>
-          <summary className="eh-note" style={{ cursor: "pointer" }}>
+        <details className="eh-details">
+          <summary>
             Show the {changes.length} setting{changes.length === 1 ? "" : "s"} that changed
           </summary>
-          <div
-            className="eh-mono eh-muted"
-            style={{ marginTop: "var(--eh-sp-2)", whiteSpace: "pre-line" }}
-          >
+          <div className="eh-details__body eh-mono eh-muted eh-pre-line">
             {changes.join("\n")}
           </div>
         </details>
       )}
-    </NoticeCard>
+    </Notice>
   );
 }
 
@@ -2916,13 +2296,13 @@ function ExternalArchiveNotice(props: {
   if (props.lines.length === 0) return null;
   const n = props.lines.length;
   return (
-    <NoticeCard
+    <Notice
       label="Files you supplied"
       intent="info"
       summary={`${n} mod${n === 1 ? "" : "s"} installed from a file that is not the one the collection was built from.`}
     >
       <NoticeLines lines={props.lines} />
-    </NoticeCard>
+    </Notice>
   );
 }
 
@@ -2943,14 +2323,13 @@ function PluginFlagNotice(props: {
   // successfully is good news and must not look like a failure.
   const broken = /will not start/i.test(summary ?? "");
   return (
-    <NoticeCard
+    <Notice
       label={broken ? "Too many plugins" : "Plugin flags"}
       intent={broken ? "danger" : "info"}
       summary={summary ?? ""}
-      accentBorder={broken ? "var(--eh-danger)" : undefined}
     >
       <NoticeLines lines={rest} moreLabel="Details" />
-    </NoticeCard>
+    </Notice>
   );
 }
 
@@ -2981,14 +2360,13 @@ function FinishingSkippedNotice(props: {
   if (props.lines.length === 0) return null;
   const [summary, ...rest] = props.lines;
   return (
-    <NoticeCard
+    <Notice
       label="Stopped before finishing"
       intent="warning"
       summary={summary ?? ""}
-      accentBorder="var(--eh-warning)"
     >
       <NoticeLines lines={rest} moreLabel="What was skipped" />
-    </NoticeCard>
+    </Notice>
   );
 }
 
@@ -3006,14 +2384,13 @@ function MirrorNotice(props: {
   if (props.lines.length === 0) return null;
   const [summary, ...rest] = props.lines;
   return (
-    <NoticeCard
+    <Notice
       label="Mirrored files"
       intent="warning"
       summary={summary ?? ""}
-      accentBorder="var(--eh-warning)"
     >
       <NoticeLines lines={rest} moreLabel="Per mod" />
-    </NoticeCard>
+    </Notice>
   );
 }
 
@@ -3023,14 +2400,13 @@ function PluginOrderNotAppliedNotice(props: {
   if (props.lines.length === 0) return null;
   const [summary, ...rest] = props.lines;
   return (
-    <NoticeCard
+    <Notice
       label="Load order"
       intent="warning"
       summary={summary ?? ""}
-      accentBorder="var(--eh-warning)"
     >
       <NoticeLines lines={rest} moreLabel="Why" />
-    </NoticeCard>
+    </Notice>
   );
 }
 
@@ -3048,14 +2424,13 @@ function RulesPurgeNotice(props: {
   if (props.lines.length === 0) return null;
   const [summary, ...rest] = props.lines;
   return (
-    <NoticeCard
+    <Notice
       label="Rules replaced"
       intent="warning"
       summary={summary ?? ""}
-      accentBorder="var(--eh-warning)"
     >
       <NoticeLines lines={rest} moreLabel="What was removed" />
-    </NoticeCard>
+    </Notice>
   );
 }
 
@@ -3074,13 +2449,13 @@ function DamagedArchiveNotice(props: {
   if (props.lines.length === 0) return null;
   const n = props.lines.length;
   return (
-    <NoticeCard
+    <Notice
       label="Damaged downloads"
       intent="warning"
       summary={`${n} mod${n === 1 ? "" : "s"} could not be installed because the downloaded file on this machine is corrupted. Downloading ${n === 1 ? "it" : "them"} again should fix ${n === 1 ? "it" : "them"}.`}
     >
       <NoticeLines lines={props.lines} />
-    </NoticeCard>
+    </Notice>
   );
 }
 
@@ -3097,9 +2472,9 @@ function StagingDriftNotice(props: {
   if (props.lines.length === 0) return null;
   const [summary, ...rest] = props.lines;
   return (
-    <NoticeCard label="Changed since last install" intent="info" summary={summary ?? ""}>
+    <Notice label="Changed since last install" intent="info" summary={summary ?? ""}>
       <NoticeLines lines={rest} />
-    </NoticeCard>
+    </Notice>
   );
 }
 
@@ -3133,17 +2508,16 @@ function CuratorReportsNotice(props: {
   };
 
   return (
-    <NoticeCard
+    <Notice
       label="Could not reproduce"
       intent="warning"
-      accentBorder="var(--eh-warning)"
       summary={
         `${n} mod${n === 1 ? "" : "s"} did not end up matching the collection, ` +
         `even after reinstalling. This is worth telling the collection's author — ` +
         `the report below is ready to paste.`
       }
     >
-      <div style={{ display: "flex", gap: "var(--eh-sp-2)", marginTop: "var(--eh-sp-2)" }}>
+      <div className="eh-row">
         <Button
           intent="primary"
           onClick={(): void => copy(props.reports.join("\n\n---\n\n"), "them")}
@@ -3152,28 +2526,23 @@ function CuratorReportsNotice(props: {
         </Button>
       </div>
       {props.reports.map((report, i) => (
-        <details key={i} style={{ marginTop: "var(--eh-sp-3)" }}>
-          <summary className="eh-note" style={{ cursor: "pointer" }}>
+        <details key={i} className="eh-details">
+          <summary>
             {/* First line of the report names the mod. */}
             {report.split("\n").find((l) => l.startsWith("Mod: ")) ??
               `Report ${i + 1}`}
           </summary>
-          <div
-            className="eh-mono eh-muted"
-            style={{
-              marginTop: "var(--eh-sp-2)",
-              whiteSpace: "pre-wrap",
-              fontSize: "var(--eh-text-xs)",
-            }}
-          >
-            {report}
+          <div className="eh-details__body eh-stack eh-stack--sm">
+            <div className="eh-inset eh-mono eh-muted eh-pre-wrap">{report}</div>
+            <div>
+              <Button intent="ghost" size="sm" onClick={(): void => copy(report, "it")}>
+                Copy this one
+              </Button>
+            </div>
           </div>
-          <Button intent="ghost" onClick={(): void => copy(report, "it")}>
-            Copy this one
-          </Button>
         </details>
       ))}
-    </NoticeCard>
+    </Notice>
   );
 }
 
@@ -3235,11 +2604,7 @@ function ModAccounting(props: {
   });
 
   return (
-    <p
-      className="eh-note"
-      style={{ margin: "var(--eh-sp-2) 0 0 0" }}
-      role={missing !== 0 ? "status" : undefined}
-    >
+    <p className="eh-note eh-prose" role={missing !== 0 ? "status" : undefined}>
       {missing === 0 ? (
         <>
           All {total} mods in this collection are accounted for: {parts}.
@@ -3309,23 +2674,12 @@ function InstallNotes(props: {
 
   const n = present.length;
   return (
-    <details>
-      <summary
-        style={{
-          color: "var(--eh-text-muted)",
-          cursor: "pointer",
-          fontSize: "var(--eh-text-sm)",
-        }}
-      >
+    <details className="eh-details">
+      <summary>
         {n} note{n === 1 ? "" : "s"} about this install —{" "}
         {present.map((p) => p.label).join(", ")}
       </summary>
-      <div
-        className="eh-stack"
-        style={{ marginTop: "var(--eh-sp-3)" }}
-      >
-        {present.map((p) => p.node)}
-      </div>
+      <div className="eh-stack eh-details__body">{present.map((p) => p.node)}</div>
     </details>
   );
 }
@@ -3392,19 +2746,9 @@ function SuccessBody(props: {
       <StagingDriftNotice lines={result.stagingDriftNotice ?? []} />
       <CuratorReportsNotice reports={result.curatorReports ?? []} />
       <PlayGameCard gameId={props.bundle.plan.manifest.game.id} />
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: "var(--eh-sp-3)",
-        }}
-      >
-        <Tile
-          label="Profile"
-          value={result.profileName}
-          accent="var(--eh-cyan)"
-        />
-        <Tile
+      <StatGrid min={160}>
+        <StatTile label="Profile" value={result.profileName} tone="info" />
+        <StatTile
           label="Mode"
           value={
             result.installTargetMode === "fresh-profile"
@@ -3417,30 +2761,16 @@ function SuccessBody(props: {
           asks when reporting that a collection "takes forever" — without it
           the answer is a guess on both sides of the conversation.
         */}
-        <Tile label="Took" value={formatDuration(result.durationMs)} />
-        <Tile
-          label="Installed"
-          value={String(result.installedModIds.length)}
-          accent="var(--eh-success)"
-        />
-        <Tile
+        <StatTile label="Took" value={formatDuration(result.durationMs)} />
+        <StatTile label="Installed" value={result.installedModIds.length} tone="success" />
+        <StatTile
           label="Removed"
-          value={String(result.removedMods.length)}
-          accent={
-            result.removedMods.length > 0
-              ? "var(--eh-warning)"
-              : undefined
-          }
+          value={result.removedMods.length}
+          tone={result.removedMods.length > 0 ? "warning" : "neutral"}
         />
-        <Tile
-          label="Carried"
-          value={String(result.carriedMods.length)}
-        />
-        <Tile
-          label="Skipped"
-          value={String(result.skippedMods.length)}
-        />
-      </div>
+        <StatTile label="Carried" value={result.carriedMods.length} />
+        <StatTile label="Skipped" value={result.skippedMods.length} />
+      </StatGrid>
 
       <ModAccounting result={result} bundle={props.bundle} />
 
@@ -3462,24 +2792,9 @@ function SuccessBody(props: {
         <BucketList title="Removal breakdown" buckets={removedBuckets} />
       )}
       {result.skippedMods.length > 0 && (
-        <details>
-          <summary
-            style={{
-              color: "var(--eh-text-muted)",
-              cursor: "pointer",
-              fontSize: "var(--eh-text-sm)",
-            }}
-          >
-            Show skipped mods ({result.skippedMods.length})
-          </summary>
-          <ul
-            style={{
-              margin: "var(--eh-sp-2) 0 0 0",
-              paddingLeft: "var(--eh-sp-5)",
-              color: "var(--eh-text-secondary)",
-              fontSize: "var(--eh-text-sm)",
-            }}
-          >
+        <details className="eh-details">
+          <summary>Show skipped mods ({result.skippedMods.length})</summary>
+          <ul className="eh-list eh-details__body">
             {result.skippedMods.map((s) => (
               <li key={s.compareKey}>
                 {s.name} <em className="eh-muted">— {s.reason}</em>
@@ -3496,17 +2811,10 @@ function SuccessBody(props: {
 
       <IntegritySection verifications={result.verifications} />
 
-      <p
-        style={{
-          margin: 0,
-          color: "var(--eh-text-muted)",
-          fontSize: "var(--eh-text-xs)",
-          fontFamily: "var(--eh-font-mono)",
-          wordBreak: "break-all",
-        }}
-      >
-        receipt: {result.receiptPath}
-      </p>
+      <div className="eh-kv">
+        <span className="eh-kv__label">Receipt</span>
+        <span className="eh-fill eh-mono eh-muted">{result.receiptPath}</span>
+      </div>
       {/*
         The path above is unselectable in practice and means nothing to most
         people, but it is the door to everything this run recorded — the
@@ -3514,7 +2822,7 @@ function SuccessBody(props: {
         touched. The accounting line above sends readers to that log; without
         a way to reach it that instruction is a dead end.
       */}
-      <div className="eh-actions" style={{ marginTop: "var(--eh-sp-2)" }}>
+      <div className="eh-actions">
         <Button
           intent="ghost"
           size="sm"
@@ -3610,84 +2918,36 @@ function IntegritySection(props: {
   );
 
   return (
-    <div
-      className="eh-stack"
-    >
-      <div
-        className="eh-label"
-      >
-        Integrity check
-      </div>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-          gap: "var(--eh-sp-2)",
-        }}
-      >
-        <Tile
+    <Section title="Integrity check" size="sm">
+      <StatGrid min={160}>
+        <StatTile
           label="Mods passing"
-          value={String(okCount)}
-          accent={failCount === 0 ? "var(--eh-success)" : undefined}
+          value={okCount}
+          tone={failCount === 0 ? "success" : "neutral"}
         />
-        <Tile
-          label="Files verified"
-          value={String(totalVerifiedFiles)}
-        />
+        <StatTile label="Files verified" value={totalVerifiedFiles} />
         {recoveredCount > 0 && (
-          <Tile
-            label="Recovered"
-            value={String(recoveredCount)}
-            accent="var(--eh-warning)"
-          />
+          <StatTile label="Recovered" value={recoveredCount} tone="warning" />
         )}
         {failCount > 0 && (
-          <Tile
-            label="Still failing"
-            value={String(failCount)}
-            accent="var(--eh-danger)"
-          />
+          <StatTile label="Still failing" value={failCount} tone="danger" />
         )}
         {skipCount > 0 && failCount === 0 && (
-          <Tile
-            label="Skipped"
-            value={String(skipCount)}
-          />
+          <StatTile label="Skipped" value={skipCount} />
         )}
-      </div>
+      </StatGrid>
       {recovered.length > 0 && fails.length === 0 && (
-        <p
-          style={{
-            margin: 0,
-            color: "var(--eh-text-muted)",
-            fontSize: "var(--eh-text-xs)",
-            lineHeight: "var(--eh-leading-relaxed)",
-          }}
-        >
+        <p className="eh-note eh-prose">
           {recovered.length} mod{recovered.length === 1 ? "" : "s"} needed a
           reinstall to land all files. Common cause: an antivirus briefly
           quarantined a file mid-extract; Event Horizon retried automatically.
         </p>
       )}
       {fails.length > 0 && (
-        <details>
-          <summary
-            style={{
-              color: "var(--eh-danger)",
-              cursor: "pointer",
-              fontSize: "var(--eh-text-sm)",
-            }}
-          >
-            Show failing mods ({fails.length})
-          </summary>
-          <p
-            style={{
-              margin: "var(--eh-sp-2) 0 var(--eh-sp-2) 0",
-              color: "var(--eh-text-muted)",
-              fontSize: "var(--eh-text-xs)",
-              lineHeight: "var(--eh-leading-relaxed)",
-            }}
-          >
+        <details className="eh-details eh-details--danger">
+          <summary>Show failing mods ({fails.length})</summary>
+          <div className="eh-details__body eh-stack eh-stack--sm">
+          <p className="eh-note eh-prose">
             {/*
               Two different failures used to share one sentence. A mod whose
               only defect is its installer ANSWERS verifies byte-for-byte, so
@@ -3720,16 +2980,9 @@ function IntegritySection(props: {
               </>
             )}
           </p>
-          <ul
-            style={{
-              margin: 0,
-              paddingLeft: "var(--eh-sp-5)",
-              color: "var(--eh-text-secondary)",
-              fontSize: "var(--eh-text-sm)",
-            }}
-          >
+          <ul className="eh-list eh-list--spaced">
             {fails.map((f) => (
-              <li key={f.vortexModId} style={{ marginBottom: "var(--eh-sp-2)" }}>
+              <li key={f.vortexModId}>
                 <strong>{f.name}</strong>{" "}
                 <em className="eh-muted">
                   {/*
@@ -3759,7 +3012,7 @@ function IntegritySection(props: {
                   {f.modRemoved === true && (
                     <>
                       {" "}
-                      <strong style={{ color: "var(--eh-danger)" }}>
+                      <strong className="eh-tone--danger">
                         — removed during the repair and could not be put back;
                         it is no longer installed
                       </strong>
@@ -3767,17 +3020,9 @@ function IntegritySection(props: {
                   )}
                 </em>
                 {f.examples.length > 0 && (
-                  <ul
-                    style={{
-                      margin: "var(--eh-sp-1) 0 0 0",
-                      paddingLeft: "var(--eh-sp-4)",
-                      color: "var(--eh-text-muted)",
-                      fontSize: "var(--eh-text-xs)",
-                      fontFamily: "var(--eh-font-mono)",
-                    }}
-                  >
+                  <ul className="eh-list eh-mono eh-muted">
                     {f.examples.slice(0, 6).map((ex, i) => (
-                      <li key={i} style={{ wordBreak: "break-all" }}>
+                      <li key={i}>
                         [{ex.bucket}] {ex.path}
                       </li>
                     ))}
@@ -3791,9 +3036,10 @@ function IntegritySection(props: {
               </li>
             ))}
           </ul>
+          </div>
         </details>
       )}
-    </div>
+    </Section>
   );
 }
 
@@ -3837,25 +3083,9 @@ function RulesAndUserlistSection(props: {
   }
 
   return (
-    <div
-      className="eh-stack"
-    >
-      <div
-        className="eh-label"
-      >
-        Rules &amp; ordering
-      </div>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-          gap: "var(--eh-sp-2)",
-        }}
-      >
-        <Tile
-          label="Mod rules applied"
-          value={String(rules.appliedRuleCount)}
-        />
+    <Section title="Rules & ordering" size="sm">
+      <StatGrid min={160}>
+        <StatTile label="Mod rules applied" value={rules.appliedRuleCount} />
         {/*
           Only when the game HAS one. Fallout 4 and Skyrim drive load order
           through plugins.txt, not Vortex's generic LoadOrder API, so a
@@ -3865,16 +3095,10 @@ function RulesAndUserlistSection(props: {
           reproduce. It made the curator stop and ask.
         */}
         {rules.appliedLoadOrderCount > 0 && (
-          <Tile
-            label="Load order entries"
-            value={String(rules.appliedLoadOrderCount)}
-          />
+          <StatTile label="Load order entries" value={rules.appliedLoadOrderCount} />
         )}
-        <Tile
-          label="Plugin rules applied"
-          value={String(userlist.appliedRuleCount)}
-        />
-        <Tile
+        <StatTile label="Plugin rules applied" value={userlist.appliedRuleCount} />
+        <StatTile
           label="Plugin groups"
           value={`${userlist.appliedGroupAssignmentCount} assigned · ${userlist.appliedNewGroupCount} new`}
         />
@@ -3887,55 +3111,27 @@ function RulesAndUserlistSection(props: {
           this is just the count.
         */}
         {hasOverwrites && (
-          <Tile
+          <StatTile
             label="Your rules replaced"
-            value={String(
-              rules.overwrittenUserRuleCount +
-                userlist.overwrittenGroupAssignmentCount,
-            )}
+            value={rules.overwrittenUserRuleCount + userlist.overwrittenGroupAssignmentCount}
           />
         )}
         {totalSkipped > 0 && (
-          <Tile
-            label="Skipped"
-            value={String(totalSkipped)}
-            accent="var(--eh-danger)"
-          />
+          <StatTile label="Skipped" value={totalSkipped} tone="danger" />
         )}
-      </div>
+      </StatGrid>
       {totalSkipped > 0 && (
-        <details>
-          <summary
-            style={{
-              color: "var(--eh-danger)",
-              cursor: "pointer",
-              fontSize: "var(--eh-text-sm)",
-            }}
-          >
-            Show skipped rules ({totalSkipped})
-          </summary>
-          <p
-            style={{
-              margin: "var(--eh-sp-2) 0 var(--eh-sp-2) 0",
-              color: "var(--eh-text-muted)",
-              fontSize: "var(--eh-text-xs)",
-              lineHeight: "var(--eh-leading-relaxed)",
-            }}
-          >
+        <details className="eh-details eh-details--danger">
+          <summary>Show skipped rules ({totalSkipped})</summary>
+          <div className="eh-details__body eh-stack eh-stack--sm">
+          <p className="eh-note eh-prose">
             These came from the collection but did not land. Common causes:
             Vortex&apos;s mod-rule or userlist contract changed, the rule
             referenced a mod/plugin that did not install, or the curator
             ignored the rule before publishing. The full per-rule reason
             lives in the receipt JSON.
           </p>
-          <ul
-            style={{
-              margin: 0,
-              paddingLeft: "var(--eh-sp-5)",
-              color: "var(--eh-text-secondary)",
-              fontSize: "var(--eh-text-sm)",
-            }}
-          >
+          <ul className="eh-list">
             {rules.skippedRules.map((s, i) => (
               <li key={`mr-${i}`}>
                 <code>{s.source}</code> {s.ruleType} <code>{s.reference}</code>{" "}
@@ -3961,9 +3157,10 @@ function RulesAndUserlistSection(props: {
               </li>
             ))}
           </ul>
+          </div>
         </details>
       )}
-    </div>
+    </Section>
   );
 }
 
@@ -4016,28 +3213,26 @@ function FailureBody(props: {
       {/* The reason leads. Someone reading this screen just had an install
           fail; what went wrong is the whole question, and "Phase:" is our
           vocabulary rather than theirs. It used to be the first line. */}
-      <p className="eh-body eh-strong" style={{ fontSize: "var(--eh-text-md)" }}>
-        {props.message}
-      </p>
+      <p className="eh-strong">{props.message}</p>
 
       {/* Then the facts about the state their machine is now in, as aligned
           fields rather than a stack of bold-prefixed sentences. */}
       <div className="eh-stack eh-stack--xs">
-        <div className="eh-field">
-          <span className="eh-field__label">
+        <div className="eh-kv">
+          <span className="eh-kv__label">
             {props.stopped === true ? "Stopped during" : "Failed during"}
           </span>
           <span className="eh-fill">{props.phase}</span>
         </div>
         {props.installedSoFar !== undefined && (
-          <div className="eh-field">
-            <span className="eh-field__label">Mods installed first</span>
+          <div className="eh-kv">
+            <span className="eh-kv__label">Mods installed first</span>
             <span className="eh-fill">{props.installedSoFar}</span>
           </div>
         )}
         {props.partialProfileId !== undefined && (
-          <div className="eh-field">
-            <span className="eh-field__label">Partial profile</span>
+          <div className="eh-kv">
+            <span className="eh-kv__label">Partial profile</span>
             <span className="eh-fill eh-mono">{props.partialProfileId}</span>
           </div>
         )}
@@ -4118,74 +3313,22 @@ function FailureBody(props: {
   );
 }
 
-function Tile(props: {
-  label: string;
-  value: React.ReactNode;
-  accent?: string;
-}): JSX.Element {
-  return (
-    <div
-      className="eh-inset"
-    >
-      <div
-        style={{
-          color: "var(--eh-text-muted)",
-          fontSize: "var(--eh-text-xs)",
-          textTransform: "uppercase",
-          letterSpacing: "var(--eh-tracking-widest)",
-          marginBottom: "var(--eh-sp-1)",
-        }}
-      >
-        {props.label}
-      </div>
-      <div
-        style={{
-          color: props.accent ?? "var(--eh-text-primary)",
-          fontSize: "var(--eh-text-md)",
-          fontWeight: 600,
-          fontVariantNumeric: "tabular-nums",
-          wordBreak: "break-word",
-        }}
-      >
-        {props.value}
-      </div>
-    </div>
-  );
-}
+
 
 function BucketList(props: {
   title: string;
   buckets: Array<{ key: string; count: number }>;
 }): JSX.Element {
   return (
-    <div>
-      <h4
-        style={{
-          margin: "0 0 var(--eh-sp-2) 0",
-          color: "var(--eh-text-secondary)",
-          fontSize: "var(--eh-text-xs)",
-          textTransform: "uppercase",
-          letterSpacing: "var(--eh-tracking-widest)",
-        }}
-      >
-        {props.title}
-      </h4>
-      <ul
-        style={{
-          margin: 0,
-          paddingLeft: "var(--eh-sp-5)",
-          color: "var(--eh-text-secondary)",
-          fontSize: "var(--eh-text-sm)",
-        }}
-      >
+    <Section title={props.title} size="sm">
+      <ul className="eh-list">
         {props.buckets.map((b) => (
           <li key={b.key}>
-            <span style={{ fontFamily: "var(--eh-font-mono)" }}>{b.key}</span>{" "}
-            — {b.count}
+            <span className="eh-mono">{b.key}</span> — {b.count}
           </li>
         ))}
       </ul>
-    </div>
+    </Section>
   );
 }
 

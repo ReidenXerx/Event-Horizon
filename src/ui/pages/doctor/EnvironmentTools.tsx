@@ -266,7 +266,7 @@ export function EnvironmentTools(): JSX.Element {
     <>
       <Card title="Game setup" inert>
         {gameId === undefined ? (
-          <p className="eh-secondary" style={{ margin: 0 }}>
+          <p className="eh-body">
             No active game in Vortex. Select the game first.
           </p>
         ) : (
@@ -292,7 +292,7 @@ export function EnvironmentTools(): JSX.Element {
               <PlayGameButton gameId={gameId} />
             </div>
             {snapshot !== undefined && (
-              <span className="eh-secondary" style={{ wordBreak: "break-all" }}>
+              <span className="eh-secondary eh-pre-wrap">
                 {snapshot.phase}
                 {snapshot.total !== undefined ? ` ${snapshot.done} / ${snapshot.total}` : ""}
                 {snapshot.current !== undefined ? ` — ${snapshot.current}` : ""}
@@ -340,7 +340,7 @@ export function EnvironmentTools(): JSX.Element {
                   )}
                 </div>
                 <span className="eh-secondary">{q.record.reason}</span>
-                <span className="eh-secondary" style={{ wordBreak: "break-all" }}>
+                <span className="eh-secondary eh-pre-wrap">
                   {q.record.folder}
                 </span>
               </div>

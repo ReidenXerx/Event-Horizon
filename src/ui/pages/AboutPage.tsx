@@ -10,7 +10,7 @@
 
 import * as React from "react";
 
-import { EventHorizonMark, Page, Pill, Card } from "../components";
+import { EventHorizonMark, Page, Pill, Card, StatTile, StatGrid } from "../components";
 import { EXTENSION_VERSION } from "../version";
 
 const REPO_URL = "https://github.com/ReidenXerx/Event-Horizon";
@@ -22,143 +22,109 @@ const NEXUS_URL = "https://www.nexusmods.com/";
 export function AboutPage(): JSX.Element {
   return (
     <Page>
-      <div
-        style={{
-          display: "flex",
-          gap: "var(--eh-sp-6)",
-          alignItems: "flex-start",
-          flexWrap: "wrap",
-          padding: "var(--eh-sp-5)",
-          background: "var(--eh-bg-glass)",
-          border: "1px solid var(--eh-border-subtle)",
-          borderRadius: "var(--eh-radius-lg)",
-          backdropFilter: "blur(8px)",
-          WebkitBackdropFilter: "blur(8px)",
-        }}
-      >
-        <EventHorizonMark size={96} />
-        <div style={{ flex: "1 1 320px", minWidth: 280 }}>
-          <h2 style={{ marginBottom: "var(--eh-sp-2)" }}>
-            <span className="eh-text-gradient">Event Horizon</span>
-          </h2>
-          <p style={{ marginBottom: "var(--eh-sp-4)" }}>
-            A drop-in collection installer for Vortex that captures every
-            piece of curator state — FOMOD selections, mod rules, plugin
-            load order, INI tweaks, file overrides — and reproduces it
-            faithfully on the player&apos;s machine. Standalone format,
-            no interference with vanilla Vortex collections.
-          </p>
-          <div
-            style={{
-              display: "flex",
-              gap: "var(--eh-sp-2)",
-              flexWrap: "wrap",
-              marginBottom: "var(--eh-sp-4)",
-            }}
-          >
-            <Pill intent="info" withDot>
-              v{EXTENSION_VERSION}
-            </Pill>
-            <Pill intent="success" withDot>
-              MIT licensed
-            </Pill>
-            <Pill intent="warning">Pre-release</Pill>
+      <div className="eh-stack eh-stack--xl">
+        <Card>
+          <div className="eh-row eh-row--top eh-row--xl">
+            <EventHorizonMark size={96} />
+            <div className="eh-fill">
+              <div className="eh-stack eh-stack--lg">
+                <div className="eh-stack eh-stack--sm">
+                  <h2>
+                    <span className="eh-text-gradient">Event Horizon</span>
+                  </h2>
+                  <p>
+                    A drop-in collection installer for Vortex that captures every
+                    piece of curator state — FOMOD selections, mod rules, plugin
+                    load order, INI tweaks, file overrides — and reproduces it
+                    faithfully on the player&apos;s machine. Standalone format,
+                    no interference with vanilla Vortex collections.
+                  </p>
+                </div>
+                <div className="eh-row">
+                  <Pill intent="info" withDot>
+                    v{EXTENSION_VERSION}
+                  </Pill>
+                  <Pill intent="success" withDot>
+                    MIT licensed
+                  </Pill>
+                  <Pill intent="warning">Pre-release</Pill>
+                </div>
+                <div className="eh-stack eh-stack--sm">
+                  <h4>Supported games</h4>
+                  <p className="eh-muted">
+                    Skyrim Special Edition / Anniversary Edition, Fallout 3,
+                    Fallout: New Vegas, Fallout 4, Starfield.
+                  </p>
+                </div>
+                <div className="eh-stack eh-stack--sm">
+                  <h4>Authors</h4>
+                  <p className="eh-muted">
+                    <strong className="eh-secondary">
+                      DuduPhudu
+                    </strong>{" "}
+                    and{" "}
+                    <strong className="eh-secondary">
+                      Bluuuk
+                    </strong>
+                    .
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
-          <h4 style={{ marginBottom: "var(--eh-sp-2)" }}>Supported games</h4>
-          <p className="eh-muted">
-            Skyrim Special Edition / Anniversary Edition, Fallout 3,
-            Fallout: New Vegas, Fallout 4, Starfield.
-          </p>
-          <h4
-            style={{
-              marginTop: "var(--eh-sp-4)",
-              marginBottom: "var(--eh-sp-2)",
-            }}
-          >
-            Authors
-          </h4>
-          <p className="eh-muted">
-            <strong className="eh-secondary">
-              DuduPhudu
-            </strong>{" "}
-            and{" "}
-            <strong className="eh-secondary">
-              Bluuuk
-            </strong>
-            .
-          </p>
-        </div>
-      </div>
-
-      <div
-        className="eh-stagger"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: "var(--eh-sp-4)",
-          marginTop: "var(--eh-sp-6)",
-        }}
-      >
-        <Stat label="Captures" value="FOMOD + rules + LO" />
-        <Stat label="Identity" value="Nexus IDs + sha256" />
-        <Stat label="Isolation" value="Fresh-profile by default" />
-        <Stat label="Conflicts" value="Explicit user pickers" />
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-          gap: "var(--eh-sp-4)",
-          marginTop: "var(--eh-sp-6)",
-        }}
-      >
-        <Card title="Links">
-          <LinkRow
-            href={REPO_URL}
-            label="Source code"
-            sub="GitHub repository · contributions welcome"
-          />
-          <LinkRow
-            href={ISSUE_URL}
-            label="Report a bug"
-            sub="Open an issue with the Copy report payload from any error"
-          />
-          <LinkRow
-            href={LICENSE_URL}
-            label="MIT License"
-            sub="© 2026 DuduPhudu and Bluuuk — see LICENSE for full text"
-          />
         </Card>
 
-        <Card title="Built on">
-          <LinkRow
-            href={VORTEX_URL}
-            label="Vortex"
-            sub="The Nexus Mods mod manager Event Horizon plugs into"
-          />
-          <LinkRow
-            href={NEXUS_URL}
-            label="Nexus Mods"
-            sub="Where mods live; Event Horizon resolves Nexus IDs to files"
-          />
-          <p
-            style={{
-              margin: "var(--eh-sp-3) 0 0 0",
-              color: "var(--eh-text-muted)",
-              fontSize: "var(--eh-text-xs)",
-              lineHeight: "var(--eh-leading-relaxed)",
-            }}
-          >
-            Not affiliated with or endorsed by Nexus Mods. &quot;Vortex&quot;
-            is a trademark of its respective owners.
-          </p>
-        </Card>
+        <StatGrid className="eh-stagger" min={220}>
+          <StatTile label="Captures" value="FOMOD + rules + LO" />
+          <StatTile label="Identity" value="Nexus IDs + sha256" />
+          <StatTile label="Isolation" value="Fresh-profile by default" />
+          <StatTile label="Conflicts" value="Explicit user pickers" />
+        </StatGrid>
 
-        <Card title="Credits">
-          <ul
-            className="eh-list"
-          >
+        <div className="eh-grid">
+          <Card title="Links">
+            <div className="eh-stack">
+              <LinkRow
+                href={REPO_URL}
+                label="Source code"
+                sub="GitHub repository · contributions welcome"
+              />
+              <LinkRow
+                href={ISSUE_URL}
+                label="Report a bug"
+                sub="Open an issue with the Copy report payload from any error"
+              />
+              <LinkRow
+                href={LICENSE_URL}
+                label="MIT License"
+                sub="© 2026 DuduPhudu and Bluuuk — see LICENSE for full text"
+              />
+            </div>
+          </Card>
+
+          <Card title="Built on">
+            <div className="eh-stack">
+              <LinkRow
+                href={VORTEX_URL}
+                label="Vortex"
+                sub="The Nexus Mods mod manager Event Horizon plugs into"
+              />
+              <LinkRow
+                href={NEXUS_URL}
+                label="Nexus Mods"
+                sub="Where mods live; Event Horizon resolves Nexus IDs to files"
+              />
+              <p className="eh-small">
+                Not affiliated with or endorsed by Nexus Mods. &quot;Vortex&quot;
+                is a trademark of its respective owners.
+              </p>
+            </div>
+          </Card>
+
+          <Card title="Credits">
+            <ul
+              className="eh-list"
+            >
             <li>
               <strong className="eh-strong">
                 vortex-api
@@ -181,49 +147,10 @@ export function AboutPage(): JSX.Element {
               this less broken.
             </li>
           </ul>
-        </Card>
+          </Card>
+        </div>
       </div>
     </Page>
-  );
-}
-
-interface StatProps {
-  label: string;
-  value: string;
-}
-
-function Stat(props: StatProps): JSX.Element {
-  const { label, value } = props;
-  return (
-    <div
-      style={{
-        padding: "var(--eh-sp-4)",
-        background: "var(--eh-bg-raised)",
-        border: "1px solid var(--eh-border-subtle)",
-        borderRadius: "var(--eh-radius-md)",
-      }}
-    >
-      <div
-        style={{
-          fontSize: "var(--eh-text-xs)",
-          color: "var(--eh-text-muted)",
-          letterSpacing: "var(--eh-tracking-widest)",
-          textTransform: "uppercase",
-          marginBottom: "var(--eh-sp-2)",
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          fontSize: "var(--eh-text-md)",
-          color: "var(--eh-text-primary)",
-          fontWeight: 600,
-        }}
-      >
-        {value}
-      </div>
-    </div>
   );
 }
 
@@ -239,28 +166,11 @@ function LinkRow(props: LinkRowProps): JSX.Element {
     void openExternal(props.href);
   };
   return (
-    <div style={{ marginBottom: "var(--eh-sp-3)" }}>
-      <a
-        href={props.href}
-        onClick={handleClick}
-        style={{
-          color: "var(--eh-accent)",
-          textDecoration: "none",
-          fontWeight: 600,
-          fontSize: "var(--eh-text-sm)",
-        }}
-      >
+    <div className="eh-stack eh-stack--xs">
+      <a href={props.href} onClick={handleClick} className="eh-strong">
         {props.label} ↗
       </a>
-      <div
-        style={{
-          color: "var(--eh-text-muted)",
-          fontSize: "var(--eh-text-xs)",
-          marginTop: "var(--eh-sp-1)",
-        }}
-      >
-        {props.sub}
-      </div>
+      <div className="eh-small">{props.sub}</div>
     </div>
   );
 }

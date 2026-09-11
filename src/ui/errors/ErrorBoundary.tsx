@@ -22,7 +22,7 @@
 
 import * as React from "react";
 
-import { Button } from "../components";
+import { Button, Callout, Card } from "../components";
 import { EventHorizonLogo } from "../components";
 import {
   FormattedError,
@@ -117,64 +117,24 @@ function PageFallback(props: {
 }): JSX.Element {
   const { error, reset } = props;
   return (
-    <div
-      style={{
-        width: "100%",
-        minHeight: "70vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "var(--eh-sp-6)",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: "540px",
-          width: "100%",
-          background: "var(--eh-bg-raised)",
-          border: "1px solid var(--eh-border-default)",
-          borderRadius: "var(--eh-radius-lg)",
-          boxShadow: "var(--eh-shadow-card)",
-          padding: "var(--eh-sp-6)",
-          textAlign: "center",
-          animation:
-            "eh-fade-up var(--eh-dur-slow) var(--eh-easing) both",
-        }}
-      >
-        <div style={{ marginBottom: "var(--eh-sp-4)" }}>
+    <div className="eh-centred eh-centred--page">
+      <Card className="eh-card--narrow">
+        <div className="eh-stack eh-stack--lg">
           <EventHorizonLogo size={88} />
+          <div className="eh-stack eh-stack--sm">
+            <h2 className="eh-page__title">{error.title}</h2>
+            <p className="eh-body">{error.message}</p>
+          </div>
+          <div className="eh-stack eh-stack--xl">
+            <p className="eh-small">
+              The full report is showing in the error panel — copy or save it before retrying.
+            </p>
+            <Button intent="primary" onClick={reset}>
+              Try again
+            </Button>
+          </div>
         </div>
-        <h2
-          style={{
-            margin: "0 0 var(--eh-sp-2) 0",
-            color: "var(--eh-text-primary)",
-            fontSize: "var(--eh-text-xl)",
-          }}
-        >
-          {error.title}
-        </h2>
-        <p
-          style={{
-            color: "var(--eh-text-secondary)",
-            fontSize: "var(--eh-text-sm)",
-            margin: "0 0 var(--eh-sp-4) 0",
-          }}
-        >
-          {error.message}
-        </p>
-        <p
-          style={{
-            color: "var(--eh-text-muted)",
-            fontSize: "var(--eh-text-xs)",
-            margin: "0 0 var(--eh-sp-5) 0",
-          }}
-        >
-          The full report is showing in the error panel — copy or save it before retrying.
-        </p>
-        <Button intent="primary" onClick={reset}>
-          Try again
-        </Button>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -185,31 +145,16 @@ function InlineFallback(props: {
 }): JSX.Element {
   const { error, reset } = props;
   return (
-    <div
-      role="alert"
-      style={{
-        padding: "var(--eh-sp-4)",
-        background: "rgba(255, 102, 102, 0.08)",
-        border: "1px solid var(--eh-danger)",
-        borderRadius: "var(--eh-radius-md)",
-        display: "flex",
-        flexDirection: "column",
-        gap: "var(--eh-sp-2)",
-      }}
-    >
-      <strong style={{ color: "var(--eh-danger)" }}>{error.title}</strong>
-      <span style={{ color: "var(--eh-text-secondary)", fontSize: "var(--eh-text-sm)" }}>
-        {error.message}
-      </span>
-      <div>
-        <button
-          type="button"
-          className="eh-button eh-button--ghost eh-button--sm"
-          onClick={reset}
-        >
+    <Callout
+      tone="danger"
+      title={error.title}
+      actions={
+        <Button intent="ghost" size="sm" onClick={reset}>
           Reset
-        </button>
-      </div>
-    </div>
+        </Button>
+      }
+    >
+      {error.message}
+    </Callout>
   );
 }

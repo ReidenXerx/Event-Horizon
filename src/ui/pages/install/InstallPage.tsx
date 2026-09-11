@@ -353,39 +353,21 @@ function ErrorRetry(props: {
   return (
     <div className="eh-page" key="error">
       <Card title={props.state.error.title}>
-        <p
-          style={{
-            margin: 0,
-            color: "var(--eh-text-secondary)",
-            fontSize: "var(--eh-text-sm)",
-            lineHeight: "var(--eh-leading-relaxed)",
-          }}
-        >
-          {props.state.error.message}
-        </p>
-        <p
-          style={{
-            margin: "var(--eh-sp-3) 0 0 0",
-            color: "var(--eh-text-muted)",
-            fontSize: "var(--eh-text-xs)",
-          }}
-        >
-          The full report is open in the error panel — copy or save it before retrying.
-        </p>
-        <div
-          style={{
-            marginTop: "var(--eh-sp-4)",
-            display: "flex",
-            gap: "var(--eh-sp-2)",
-            flexWrap: "wrap",
-          }}
-        >
-          <Button intent="primary" onClick={props.onRetry}>
-            Start over
-          </Button>
-          <Button intent="ghost" onClick={handleCopy}>
-            {copied ? "Copied!" : "Copy report"}
-          </Button>
+        <div className="eh-stack eh-stack--lg">
+          <div className="eh-stack">
+            <p className="eh-body">{props.state.error.message}</p>
+            <p className="eh-small">
+              The full report is open in the error panel — copy or save it before retrying.
+            </p>
+          </div>
+          <div className="eh-row">
+            <Button intent="primary" onClick={props.onRetry}>
+              Start over
+            </Button>
+            <Button intent="ghost" onClick={handleCopy}>
+              {copied ? "Copied!" : "Copy report"}
+            </Button>
+          </div>
         </div>
       </Card>
     </div>

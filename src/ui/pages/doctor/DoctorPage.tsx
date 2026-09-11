@@ -21,7 +21,7 @@
 
 import * as React from "react";
 
-import { Button, Card } from "../../components";
+import { Button, Callout, Card, Field, Select } from "../../components";
 import { useApi } from "../../state";
 import { useErrorReporter } from "../../errors";
 import { useToast } from "../../components/Toast";
@@ -401,11 +401,11 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
   if (loaded === undefined) {
     return (
       <Card title="Collection Doctor">
-        <p style={{ margin: 0, color: "var(--eh-text-secondary)" }}>
-          No installed collections yet. Install one and the Doctor will be able
-          to tell you whether it is still intact.
-        </p>
-        <div style={{ marginTop: "var(--eh-sp-3)" }}>
+        <div className="eh-stack">
+          <p className="eh-body">
+            No installed collections yet. Install one and the Doctor will be able
+            to tell you whether it is still intact.
+          </p>
           <Button intent="primary" onClick={() => props.onNavigate("install")}>
             Install a collection
           </Button>
@@ -415,64 +415,51 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--eh-sp-4)" }}>
+    <div className="eh-stack eh-stack--lg">
       {loaded.receipts.length > 1 && (
         <Card inert>
-          <label
-            className="eh-label"
-            htmlFor="eh-doctor-collection"
-            style={{ display: "block", marginBottom: "var(--eh-sp-2)" }}
-          >
-            Collection
-          </label>
-          <select
-            id="eh-doctor-collection"
-            className="eh-input"
-            value={loaded.selected.packageId}
-            onChange={(e) => {
-              const next = loaded.receipts.find(
-                (r) => r.packageId === e.target.value,
-              );
-              if (next === undefined) return;
-              setDrifted(undefined);
-              setChecks(undefined);
-              setLoaded({ ...loaded, selected: next });
-            }}
-          >
-            {loaded.receipts.map((r) => (
-              <option key={r.packageId} value={r.packageId}>
-                {r.packageName} v{r.packageVersion}
-              </option>
-            ))}
-          </select>
+          <Field label="Collection">
+            {(id) => (
+              <Select
+                id={id}
+                value={loaded.selected.packageId}
+                onChange={(e) => {
+                  const next = loaded.receipts.find(
+                    (r) => r.packageId === e.target.value,
+                  );
+                  if (next === undefined) return;
+                  setDrifted(undefined);
+                  setChecks(undefined);
+                  setLoaded({ ...loaded, selected: next });
+                }}
+              >
+                {loaded.receipts.map((r) => (
+                  <option key={r.packageId} value={r.packageId}>
+                    {r.packageName} v{r.packageVersion}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
         </Card>
       )}
 
       {missingPackage !== undefined && (
-        <Card inert>
-          <p
-            style={{
-              margin: 0,
-              fontSize: "var(--eh-text-sm)",
-              color: "var(--eh-text-secondary)",
-              lineHeight: "var(--eh-leading-relaxed)",
-            }}
-          >
-            {missingPackage}
-          </p>
-          <div style={{ marginTop: "var(--eh-sp-3)" }}>
+        <Callout
+          tone="warning"
+          actions={
             <Button intent="ghost" size="sm" onClick={pickPackage}>
               Pick the .ehcoll…
             </Button>
-          </div>
-        </Card>
+          }
+        >
+          {missingPackage}
+        </Callout>
       )}
 
       {checks === undefined ? (
         <Card title="Collection Doctor">
-          <p style={{ margin: 0, color: "var(--eh-text-secondary)" }}>
-            Checking…
-          </p>
+          <p className="eh-body">Checking…</p>
         </Card>
       ) : (
         <DoctorPanel
@@ -503,7 +490,7 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
  */
 export function DoctorPage(props: DoctorPageProps): JSX.Element {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--eh-sp-4)" }}>
+    <div className="eh-stack eh-stack--lg">
       <EnvironmentTools />
       <CollectionDoctor {...props} />
     </div>

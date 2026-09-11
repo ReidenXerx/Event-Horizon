@@ -13,24 +13,16 @@ export const COMPONENTS_CSS = `
   max-width: var(--eh-max-content);
   margin: 0 auto;
   padding: var(--eh-page-padding);
-  animation: eh-fade-up var(--eh-dur-slow) var(--eh-easing) both;
+  /* fill-mode BACKWARDS, not both: "both" keeps transform: translateY(0)
+     after the entrance, and a transformed ancestor is the containing block
+     for every position:absolute descendant — so a modal opened from inside
+     the page sized its backdrop to the page CONTENT (3064px on a long list)
+     and centred the card a screen and a half down, behind a scroll the modal
+     itself had just locked. The natural state is the end state anyway. */
+  animation: eh-fade-up var(--eh-dur-slow) var(--eh-easing) backwards;
 }
 
-.eh-page__header {
-  margin-bottom: var(--eh-sp-6);
-}
-
-.eh-page__title {
-  font-size: var(--eh-text-3xl);
-  font-weight: 700;
-  letter-spacing: var(--eh-tracking-tight);
-  margin: 0 0 var(--eh-sp-2) 0;
-}
-
-.eh-page__subtitle {
-  color: var(--eh-text-secondary);
-  font-size: var(--eh-text-md);
-}
+/* The page header lives in primitives.ts with the rest of the page anatomy. */
 
 /* ── Stagger helpers (parent gives N, children animate w/ delay) ─ */
 .eh-stagger > *      { opacity: 0; animation: eh-fade-up var(--eh-dur-base) var(--eh-easing) both; }
@@ -62,11 +54,21 @@ export const COMPONENTS_CSS = `
 }
 
 .eh-nav__brand {
+  /* It is a <button> (it navigates home), so the reset lives here rather
+     than inline on the one element that uses it. */
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
   display: flex;
   align-items: center;
   gap: var(--eh-sp-3);
   margin-right: var(--eh-sp-5);
   user-select: none;
+  border-radius: var(--eh-radius-sm);
 }
 
 .eh-nav__brand-text {
@@ -248,6 +250,16 @@ export const COMPONENTS_CSS = `
   width: 100%;
 }
 
+/* The icon slot: was referenced by Button and declared nowhere, so a glyph
+   sat on the text baseline instead of centring on the label. */
+.eh-button__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  flex: none;
+}
+
 /* ── Card ─────────────────────────────────────────────────────── */
 .eh-card {
   background: var(--eh-bg-raised);
@@ -299,12 +311,52 @@ export const COMPONENTS_CSS = `
   opacity: 0.6;
 }
 
+.eh-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--eh-sp-3);
+  margin-bottom: var(--eh-sp-3);
+}
+
+.eh-card__heading {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .eh-card__title {
   font-size: var(--eh-text-lg);
   font-weight: 600;
-  margin: 0 0 var(--eh-sp-2) 0;
+  margin: 0;
   letter-spacing: var(--eh-tracking-tight);
 }
+
+.eh-card__title--sm {
+  font-size: var(--eh-text-md);
+}
+
+.eh-card__subtitle {
+  margin: var(--eh-sp-1) 0 0 0;
+  color: var(--eh-text-secondary);
+  font-size: var(--eh-text-sm);
+  line-height: var(--eh-leading-normal);
+}
+
+.eh-card__actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--eh-sp-2);
+}
+
+.eh-card--compact { padding: var(--eh-sp-4); }
+/* A card that is the only thing on the page (a crash fallback). */
+.eh-card--narrow { width: 100%; max-width: 540px; }
+
+.eh-card--info    { border-color: color-mix(in srgb, var(--eh-info) 45%, transparent); }
+.eh-card--success { border-color: color-mix(in srgb, var(--eh-success) 45%, transparent); }
+.eh-card--warning { border-color: color-mix(in srgb, var(--eh-warning) 55%, transparent); }
+.eh-card--danger  { border-color: color-mix(in srgb, var(--eh-danger) 55%, transparent); }
 
 .eh-card__body {
   color: var(--eh-text-secondary);
@@ -386,6 +438,16 @@ export const COMPONENTS_CSS = `
      beside it have their optical centre ABOVE that line - so a geometrically
      centred dot reads about a pixel low. Lift it onto the caps' centre. */
   transform: translateY(-0.5px);
+}
+
+/* A phrase, not a tag: sentence case, and it may wrap. */
+.eh-pill--plain {
+  text-transform: none;
+  letter-spacing: var(--eh-tracking-normal);
+  font-weight: 500;
+  white-space: normal;
+  line-height: var(--eh-leading-snug);
+  padding: 2px var(--eh-sp-3);
 }
 
 .eh-pill--success { color: var(--eh-success); border-color: var(--eh-success-glow); }
@@ -477,6 +539,16 @@ export const COMPONENTS_CSS = `
   gap: var(--eh-sp-4);
 }
 
+/* The dashboard's hero: a header, not a landing page. It sat this way as an
+   inline override for months; the modifier is the same numbers, named. */
+.eh-hero--compact {
+  padding: var(--eh-sp-3) var(--eh-sp-5);
+}
+
+.eh-hero--compact .eh-hero__title {
+  font-size: var(--eh-text-2xl);
+}
+
 .eh-hero__logo {
   position: relative;
   display: inline-flex;
@@ -541,14 +613,6 @@ export const COMPONENTS_CSS = `
   animation: eh-text-reveal var(--eh-dur-deliberate) var(--eh-easing) 200ms both;
 }
 
-.eh-hero__subtitle {
-  font-size: var(--eh-text-lg);
-  color: var(--eh-text-secondary);
-  max-width: 640px;
-  line-height: var(--eh-leading-relaxed);
-  animation: eh-text-reveal var(--eh-dur-deliberate) var(--eh-easing) 320ms both;
-}
-
 .eh-hero__tagline {
   font-size: var(--eh-text-xs);
   letter-spacing: var(--eh-tracking-widest);
@@ -590,31 +654,6 @@ export const COMPONENTS_CSS = `
 .eh-empty__title {
   font-size: var(--eh-text-lg);
   color: var(--eh-text-secondary);
-}
-
-/* ── Coming soon banner (used on placeholder pages) ───────────── */
-.eh-coming-soon {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: var(--eh-sp-8) var(--eh-sp-5);
-  gap: var(--eh-sp-4);
-  border: 1px dashed var(--eh-border-default);
-  border-radius: var(--eh-radius-lg);
-  background: var(--eh-bg-glass);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  max-width: 720px;
-  margin: 0 auto;
-}
-
-.eh-coming-soon__phase {
-  font-size: var(--eh-text-xs);
-  font-weight: 700;
-  letter-spacing: var(--eh-tracking-widest);
-  text-transform: uppercase;
-  color: var(--eh-cyan);
 }
 
 /* ── Form inputs (used by BuildPage form fields) ──────────────── */
@@ -737,6 +776,12 @@ export const COMPONENTS_CSS = `
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.eh-hashing__percent {
+  color: var(--eh-text-muted);
+  margin-left: var(--eh-sp-2);
+  font-size: var(--eh-text-sm);
 }
 
 .eh-hashing__current {
@@ -862,55 +907,6 @@ export const COMPONENTS_CSS = `
   flex-wrap: wrap;
 }
 
-.eh-plugin-diffs__selector-label {
-  font-size: var(--eh-text-xs);
-  font-weight: 600;
-  letter-spacing: var(--eh-tracking-wide);
-  text-transform: uppercase;
-  color: var(--eh-text-muted);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.eh-plugin-diffs__select {
-  appearance: none;
-  background-color: var(--eh-bg-elevated);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a7898' fill='none' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right var(--eh-sp-3) center;
-  border: 1px solid var(--eh-border-default);
-  border-radius: var(--eh-radius-sm);
-  color: var(--eh-text-primary);
-  font-family: inherit;
-  font-size: var(--eh-text-sm);
-  padding: var(--eh-sp-2) var(--eh-sp-7) var(--eh-sp-2) var(--eh-sp-3);
-  cursor: pointer;
-  min-width: 260px;
-  transition: border-color var(--eh-dur-fast) var(--eh-easing),
-              box-shadow var(--eh-dur-fast) var(--eh-easing);
-}
-
-.eh-plugin-diffs__select:hover {
-  border-color: var(--eh-border-strong);
-}
-
-.eh-plugin-diffs__select:focus,
-.eh-plugin-diffs__select:focus-visible {
-  outline: none;
-  border-color: var(--eh-cyan);
-  box-shadow: 0 0 0 3px rgba(76, 201, 240, 0.18);
-}
-
-.eh-plugin-diffs__selector-date {
-  font-size: var(--eh-text-xs);
-  color: var(--eh-text-muted);
-  white-space: nowrap;
-  padding: var(--eh-sp-1) var(--eh-sp-3);
-  background: var(--eh-bg-base);
-  border: 1px solid var(--eh-border-subtle);
-  border-radius: var(--eh-radius-pill);
-}
-
 /* Meta row (reference / current paths) */
 .eh-plugin-diffs__meta {
   display: flex;
@@ -930,26 +926,6 @@ export const COMPONENTS_CSS = `
   align-items: baseline;
   gap: var(--eh-sp-2);
   min-width: 0;
-}
-
-.eh-plugin-diffs__meta-label {
-  font-size: var(--eh-text-xs);
-  font-weight: 700;
-  letter-spacing: var(--eh-tracking-wide);
-  text-transform: uppercase;
-  color: var(--eh-text-muted);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.eh-plugin-diffs__meta-path {
-  font-family: var(--eh-font-mono);
-  font-size: var(--eh-text-xs);
-  color: var(--eh-text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 420px;
 }
 
 .eh-plugin-diffs__meta-separator {
@@ -1020,30 +996,6 @@ export const COMPONENTS_CSS = `
   text-decoration: underline;
 }
 
-.eh-plugin-diffs__enabled-badge {
-  font-size: var(--eh-text-xs);
-  font-weight: 600;
-  letter-spacing: var(--eh-tracking-wide);
-  text-transform: uppercase;
-  padding: 1px var(--eh-sp-2);
-  border-radius: var(--eh-radius-pill);
-  white-space: nowrap;
-  flex-shrink: 0;
-  border: 1px solid;
-}
-
-.eh-plugin-diffs__enabled-badge--on {
-  color: var(--eh-success);
-  border-color: var(--eh-success-glow);
-  background: rgba(61, 220, 132, 0.08);
-}
-
-.eh-plugin-diffs__enabled-badge--off {
-  color: var(--eh-text-muted);
-  border-color: var(--eh-border-subtle);
-  background: transparent;
-}
-
 .eh-plugin-diffs__change-detail {
   display: flex;
   align-items: center;
@@ -1061,35 +1013,6 @@ export const COMPONENTS_CSS = `
   font-size: var(--eh-text-xs);
   color: var(--eh-cyan-dim);
   font-weight: 600;
-}
-
-/* Status / utility */
-.eh-plugin-diffs__loading,
-.eh-plugin-diffs__error {
-  font-size: var(--eh-text-sm);
-  color: var(--eh-text-muted);
-  padding: var(--eh-sp-5) 0;
-  margin: 0;
-}
-
-.eh-plugin-diffs__error {
-  color: var(--eh-danger);
-}
-
-.eh-plugin-diffs__empty-page {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 240px;
-}
-
-.eh-plugin-diffs__empty-message {
-  font-size: var(--eh-text-md);
-  color: var(--eh-text-muted);
-  text-align: center;
-  max-width: 480px;
-  line-height: var(--eh-leading-relaxed);
-  margin: 0;
 }
 
 .eh-plugin-diffs__report {
@@ -1117,55 +1040,6 @@ export const COMPONENTS_CSS = `
   flex-wrap: wrap;
 }
 
-.eh-mod-diffs__selector-label {
-  font-size: var(--eh-text-xs);
-  font-weight: 600;
-  letter-spacing: var(--eh-tracking-wide);
-  text-transform: uppercase;
-  color: var(--eh-text-muted);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.eh-mod-diffs__select {
-  appearance: none;
-  background-color: var(--eh-bg-elevated);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a7898' fill='none' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right var(--eh-sp-3) center;
-  border: 1px solid var(--eh-border-default);
-  border-radius: var(--eh-radius-sm);
-  color: var(--eh-text-primary);
-  font-family: inherit;
-  font-size: var(--eh-text-sm);
-  padding: var(--eh-sp-2) var(--eh-sp-7) var(--eh-sp-2) var(--eh-sp-3);
-  cursor: pointer;
-  min-width: 260px;
-  transition: border-color var(--eh-dur-fast) var(--eh-easing),
-              box-shadow var(--eh-dur-fast) var(--eh-easing);
-}
-
-.eh-mod-diffs__select:hover {
-  border-color: var(--eh-border-strong);
-}
-
-.eh-mod-diffs__select:focus,
-.eh-mod-diffs__select:focus-visible {
-  outline: none;
-  border-color: var(--eh-cyan);
-  box-shadow: 0 0 0 3px rgba(76, 201, 240, 0.18);
-}
-
-.eh-mod-diffs__selector-date {
-  font-size: var(--eh-text-xs);
-  color: var(--eh-text-muted);
-  white-space: nowrap;
-  padding: var(--eh-sp-1) var(--eh-sp-3);
-  background: var(--eh-bg-base);
-  border: 1px solid var(--eh-border-subtle);
-  border-radius: var(--eh-radius-pill);
-}
-
 /* Snapshot metadata strip */
 .eh-mod-diffs__meta {
   display: flex;
@@ -1183,31 +1057,6 @@ export const COMPONENTS_CSS = `
   flex-wrap: wrap;
   align-items: center;
   gap: var(--eh-sp-2);
-}
-
-.eh-mod-diffs__meta-label {
-  font-size: var(--eh-text-xs);
-  font-weight: 700;
-  letter-spacing: var(--eh-tracking-wide);
-  text-transform: uppercase;
-  color: var(--eh-text-muted);
-  flex-shrink: 0;
-}
-
-.eh-mod-diffs__meta-detail {
-  font-family: var(--eh-font-mono);
-  font-size: var(--eh-text-xs);
-  color: var(--eh-text-primary);
-}
-
-.eh-mod-diffs__meta-count {
-  font-size: var(--eh-text-xs);
-  color: var(--eh-text-muted);
-  padding: 1px var(--eh-sp-2);
-  background: var(--eh-bg-elevated);
-  border: 1px solid var(--eh-border-subtle);
-  border-radius: var(--eh-radius-pill);
-  white-space: nowrap;
 }
 
 .eh-mod-diffs__meta-date {
@@ -1270,30 +1119,6 @@ export const COMPONENTS_CSS = `
   font-family: var(--eh-font-mono);
   white-space: nowrap;
   flex-shrink: 0;
-}
-
-.eh-mod-diffs__enabled-badge {
-  font-size: var(--eh-text-xs);
-  font-weight: 600;
-  letter-spacing: var(--eh-tracking-wide);
-  text-transform: uppercase;
-  padding: 1px var(--eh-sp-2);
-  border-radius: var(--eh-radius-pill);
-  white-space: nowrap;
-  flex-shrink: 0;
-  border: 1px solid;
-}
-
-.eh-mod-diffs__enabled-badge--on {
-  color: var(--eh-success);
-  border-color: var(--eh-success-glow);
-  background: rgba(61, 220, 132, 0.08);
-}
-
-.eh-mod-diffs__enabled-badge--off {
-  color: var(--eh-text-muted);
-  border-color: var(--eh-border-subtle);
-  background: transparent;
 }
 
 /* Changed mod rows */
@@ -1395,35 +1220,6 @@ export const COMPONENTS_CSS = `
   color: var(--eh-text-muted);
   font-size: var(--eh-text-xs);
   flex-shrink: 0;
-}
-
-/* Status / utility */
-.eh-mod-diffs__loading,
-.eh-mod-diffs__error {
-  font-size: var(--eh-text-sm);
-  color: var(--eh-text-muted);
-  padding: var(--eh-sp-5) 0;
-  margin: 0;
-}
-
-.eh-mod-diffs__error {
-  color: var(--eh-danger);
-}
-
-.eh-mod-diffs__empty-page {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 240px;
-}
-
-.eh-mod-diffs__empty-message {
-  font-size: var(--eh-text-md);
-  color: var(--eh-text-muted);
-  text-align: center;
-  max-width: 480px;
-  line-height: var(--eh-leading-relaxed);
-  margin: 0;
 }
 
 .eh-mod-diffs__report {

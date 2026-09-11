@@ -22,6 +22,8 @@
     "typecheck:test": "tsc -p tsconfig.test.json",
     "package:extension": "npm run build && node scripts/package-extension.js",
     "smoke": "node scripts/smoke-extension.cjs",
+    "ui:render": "node scripts/ui/render-screens.mjs",
+    "ui:shots": "node scripts/ui/render-screens.mjs --shots",
     "test": "vitest run",
     "gitnexus:setup": "bash scripts/bearing-setup.sh",
     "gitnexus:refresh": "bash scripts/run-with-project-tmp.sh gitnexus analyze --embeddings 0 --skills",

@@ -122,14 +122,6 @@ function NavBar(props: NavBarProps): JSX.Element {
         className="eh-nav__brand"
         onClick={(): void => onNavigate("home")}
         aria-label="Go to Event Horizon home"
-        style={{
-          appearance: "none",
-          background: "transparent",
-          border: 0,
-          padding: 0,
-          cursor: "pointer",
-          color: "inherit",
-        }}
       >
         <EventHorizonLogo size={28} />
         <span className="eh-nav__brand-text eh-text-gradient">

@@ -10,6 +10,15 @@
  *
  * For anything that requires acknowledgement, use the ErrorReportModal
  * or a confirmation Modal instead.
+ *
+ * Two behaviours a user notices when they are missing:
+ *   - The timer PAUSES while the pointer is over a toast. A 4-second toast
+ *     with a path in it cannot be read in 4 seconds; moving the mouse to it
+ *     is the universal "wait, let me read that", and it used to vanish
+ *     under the cursor.
+ *   - A `danger` toast announces assertively (`role="alert"`); the rest are
+ *     polite. Screen readers otherwise read "Receipt saved" and "Install
+ *     failed" in the same voice.
  */
 
 import * as React from "react";
@@ -22,12 +31,11 @@ export interface ToastInput {
   message: React.ReactNode;
   /**
    * Auto-dismiss delay in ms. `0` means sticky (manual dismiss only).
-   * Default: 4000ms.
+   * Default: 4000ms; `danger` defaults to sticky, because an error that
+   * disappears before it is read is an error nobody can act on.
    */
   ttl?: number;
-  /**
-   * Optional action button (single). Clicking it dismisses the toast.
-   */
+  /** Optional action button (single). Clicking it dismisses the toast. */
   action?: { label: string; onClick: () => void };
 }
 
@@ -35,11 +43,14 @@ interface ToastInstance extends ToastInput {
   id: number;
   /** Stable hash used to dedupe identical toasts back-to-back. */
   key: string;
+  ttl: number;
 }
 
 /** Max simultaneous toasts shown in the stack. Beyond this we drop the
  * oldest. We don't want a buggy loop covering the whole UI. */
 const MAX_STACK = 5;
+
+const DEFAULT_TTL = 4000;
 
 interface ToastContextValue {
   show: (input: ToastInput) => number;
@@ -72,81 +83,119 @@ export interface ToastProviderProps {
   children: React.ReactNode;
 }
 
+interface Timer {
+  handle: number;
+  /** When the timer will fire, so a pause can compute what is left. */
+  due: number;
+  remaining: number;
+}
+
 export function ToastProvider(props: ToastProviderProps): JSX.Element {
   const [toasts, setToasts] = React.useState<ToastInstance[]>([]);
+  /**
+   * The list, readable synchronously.
+   *
+   * `show()` used to assign the new id INSIDE the setState updater and arm
+   * the timer after it, assuming the updater had already run. It has not,
+   * whenever the call is made inside a React batch — a click handler, or
+   * anything on a concurrent root after the first toast — so `show()`
+   * returned -1 and the four-second toast became sticky. Measured on both
+   * root kinds. The ref is the source of truth; state mirrors it for render.
+   */
+  const toastsRef = React.useRef<ToastInstance[]>([]);
   const counterRef = React.useRef(0);
-  const timeoutsRef = React.useRef<Map<number, number>>(new Map());
+  const timersRef = React.useRef<Map<number, Timer>>(new Map());
 
-  const dismiss = React.useCallback((id: number): void => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-    const t = timeoutsRef.current.get(id);
+  const commit = React.useCallback((next: ToastInstance[]): void => {
+    toastsRef.current = next;
+    setToasts(next);
+  }, []);
+
+  const clearTimer = React.useCallback((id: number): void => {
+    const t = timersRef.current.get(id);
     if (t !== undefined) {
-      window.clearTimeout(t);
-      timeoutsRef.current.delete(id);
+      window.clearTimeout(t.handle);
+      timersRef.current.delete(id);
     }
   }, []);
 
+  const dismiss = React.useCallback(
+    (id: number): void => {
+      commit(toastsRef.current.filter((t) => t.id !== id));
+      clearTimer(id);
+    },
+    [clearTimer, commit],
+  );
+
+  const arm = React.useCallback(
+    (id: number, ms: number): void => {
+      const paused = timersRef.current.get(id);
+      if (paused !== undefined && paused.handle === -1) {
+        // The pointer is over it: extend what resumes, do not restart the
+        // clock under the cursor.
+        paused.remaining = Math.max(paused.remaining, ms);
+        return;
+      }
+      clearTimer(id);
+      if (ms <= 0) return;
+      const handle = window.setTimeout(() => dismiss(id), ms);
+      timersRef.current.set(id, { handle, due: Date.now() + ms, remaining: ms });
+    },
+    [clearTimer, dismiss],
+  );
+
+  const pause = React.useCallback((id: number): void => {
+    const t = timersRef.current.get(id);
+    if (t === undefined) return;
+    window.clearTimeout(t.handle);
+    t.remaining = Math.max(500, t.due - Date.now());
+    t.handle = -1;
+  }, []);
+
+  const resume = React.useCallback(
+    (id: number): void => {
+      const t = timersRef.current.get(id);
+      if (t === undefined || t.handle !== -1) return;
+      arm(id, t.remaining);
+    },
+    [arm],
+  );
+
   const show = React.useCallback(
     (input: ToastInput): number => {
-      const ttl = input.ttl ?? 4000;
+      const ttl = input.ttl ?? (input.intent === "danger" ? 0 : DEFAULT_TTL);
       const key = toastDedupKey(input);
 
-      // Capture the dedupe id without setState side-effects fighting
-      // each other. We resolve to a single id here then synchronously
-      // schedule the auto-dismiss timer below.
-      let resolvedId = -1;
-
-      setToasts((prev) => {
-        // Dedupe: an identical toast already on screen → just bump
-        // its TTL by reissuing the timer below. Don't push a clone.
-        const existing = prev.find((t) => t.key === key);
-        if (existing !== undefined) {
-          resolvedId = existing.id;
-          return prev;
-        }
-
-        counterRef.current += 1;
-        resolvedId = counterRef.current;
-        const next = [...prev, { ...input, id: resolvedId, key }];
-
-        // Cap the stack. Oldest excess toasts (still pinned) get
-        // discarded; the rest survive.
-        if (next.length > MAX_STACK) {
-          const overflow = next.length - MAX_STACK;
-          for (let i = 0; i < overflow; i++) {
-            const dropped = next[i];
-            const handle = timeoutsRef.current.get(dropped.id);
-            if (handle !== undefined) {
-              window.clearTimeout(handle);
-              timeoutsRef.current.delete(dropped.id);
-            }
-          }
-          return next.slice(overflow);
-        }
-        return next;
-      });
-
-      // Reschedule the timer for both new + deduped toasts so the
-      // user sees the latest occurrence linger a full TTL.
-      if (resolvedId >= 0 && ttl > 0) {
-        const prevTimer = timeoutsRef.current.get(resolvedId);
-        if (prevTimer !== undefined) {
-          window.clearTimeout(prevTimer);
-        }
-        const handle = window.setTimeout(() => dismiss(resolvedId), ttl);
-        timeoutsRef.current.set(resolvedId, handle);
+      // Dedupe: an identical toast already on screen is kept and re-armed.
+      const existing = toastsRef.current.find((t) => t.key === key);
+      if (existing !== undefined) {
+        arm(existing.id, ttl);
+        return existing.id;
       }
-      return resolvedId;
+
+      counterRef.current += 1;
+      const id = counterRef.current;
+      let next = [...toastsRef.current, { ...input, id, key, ttl }];
+
+      // Cap the stack: the oldest excess toasts (even sticky ones) go. An
+      // error that matters belongs in the ErrorReportModal, not here.
+      if (next.length > MAX_STACK) {
+        const overflow = next.length - MAX_STACK;
+        for (let i = 0; i < overflow; i++) clearTimer(next[i]!.id);
+        next = next.slice(overflow);
+      }
+      commit(next);
+      arm(id, ttl);
+      return id;
     },
-    [dismiss],
+    [arm, clearTimer, commit],
   );
 
   React.useEffect(() => {
+    const timers = timersRef.current;
     return (): void => {
-      for (const t of timeoutsRef.current.values()) {
-        window.clearTimeout(t);
-      }
-      timeoutsRef.current.clear();
+      for (const t of timers.values()) window.clearTimeout(t.handle);
+      timers.clear();
     };
   }, []);
 
@@ -158,7 +207,7 @@ export function ToastProvider(props: ToastProviderProps): JSX.Element {
   return (
     <ToastContext.Provider value={value}>
       {props.children}
-      <ToastHost toasts={toasts} onDismiss={dismiss} />
+      <ToastHost toasts={toasts} onDismiss={dismiss} onPause={pause} onResume={resume} />
     </ToastContext.Provider>
   );
 }
@@ -177,6 +226,7 @@ function toastDedupKey(input: ToastInput): string {
     input.intent ?? "info",
     nodeToText(input.title),
     nodeToText(input.message),
+  // A separator, so ("a","bc") and ("ab","c") do not collide.
   ].join("\u0001");
 }
 
@@ -195,28 +245,18 @@ function nodeToText(node: React.ReactNode): string {
 function ToastHost(props: {
   toasts: ToastInstance[];
   onDismiss: (id: number) => void;
+  onPause: (id: number) => void;
+  onResume: (id: number) => void;
 }): JSX.Element {
   return (
-    <div
-      style={{
-        position: "absolute",
-        right: "var(--eh-sp-5)",
-        bottom: "var(--eh-sp-5)",
-        zIndex: 2000,
-        display: "flex",
-        flexDirection: "column",
-        gap: "var(--eh-sp-2)",
-        pointerEvents: "none",
-        maxWidth: "380px",
-      }}
-      aria-live="polite"
-      role="region"
-    >
+    <div className="eh-toast-host" aria-live="polite" role="region" aria-label="Notifications">
       {props.toasts.map((toast) => (
         <ToastCard
           key={toast.id}
           toast={toast}
           onDismiss={(): void => props.onDismiss(toast.id)}
+          onPause={(): void => props.onPause(toast.id)}
+          onResume={(): void => props.onResume(toast.id)}
         />
       ))}
     </div>
@@ -226,67 +266,28 @@ function ToastHost(props: {
 function ToastCard(props: {
   toast: ToastInstance;
   onDismiss: () => void;
+  onPause: () => void;
+  onResume: () => void;
 }): JSX.Element {
   const { toast, onDismiss } = props;
   const intent = toast.intent ?? "info";
 
-  const accentColor =
-    intent === "success"
-      ? "var(--eh-success)"
-      : intent === "warning"
-        ? "var(--eh-warning)"
-        : intent === "danger"
-          ? "var(--eh-danger)"
-          : "var(--eh-info)";
-
   return (
     <div
-      role="status"
-      style={{
-        pointerEvents: "auto",
-        background: "var(--eh-bg-elevated)",
-        border: "1px solid var(--eh-border-default)",
-        borderLeft: `3px solid ${accentColor}`,
-        borderRadius: "var(--eh-radius-md)",
-        boxShadow: "var(--eh-shadow-card)",
-        padding: "var(--eh-sp-3) var(--eh-sp-4)",
-        display: "flex",
-        gap: "var(--eh-sp-3)",
-        alignItems: "flex-start",
-        animation:
-          "eh-slide-in-right var(--eh-dur-base) var(--eh-easing) both",
-        backdropFilter: "blur(6px)",
-        WebkitBackdropFilter: "blur(6px)",
-      }}
+      className={`eh-toast eh-toast--${intent}`}
+      role={intent === "danger" ? "alert" : "status"}
+      onMouseEnter={props.onPause}
+      onMouseLeave={props.onResume}
+      onFocus={props.onPause}
+      onBlur={props.onResume}
     >
       <div className="eh-fill">
-        {toast.title !== undefined && (
-          <div
-            style={{
-              fontWeight: 600,
-              color: "var(--eh-text-primary)",
-              fontSize: "var(--eh-text-sm)",
-              marginBottom: "var(--eh-sp-1)",
-            }}
-          >
-            {toast.title}
-          </div>
-        )}
-        <div
-          style={{
-            color: "var(--eh-text-secondary)",
-            fontSize: "var(--eh-text-sm)",
-            lineHeight: "var(--eh-leading-snug)",
-            wordBreak: "break-word",
-          }}
-        >
-          {toast.message}
-        </div>
+        {toast.title !== undefined && <div className="eh-toast__title">{toast.title}</div>}
+        <div className="eh-toast__message">{toast.message}</div>
         {toast.action !== undefined && (
           <button
             type="button"
-            className="eh-button eh-button--ghost eh-button--sm"
-            style={{ marginTop: "var(--eh-sp-2)" }}
+            className="eh-button eh-button--ghost eh-button--sm eh-toast__action"
             onClick={(): void => {
               toast.action?.onClick();
               onDismiss();
@@ -298,18 +299,9 @@ function ToastCard(props: {
       </div>
       <button
         type="button"
+        className="eh-toast__close"
         aria-label="Dismiss notification"
         onClick={onDismiss}
-        style={{
-          appearance: "none",
-          background: "transparent",
-          border: 0,
-          color: "var(--eh-text-muted)",
-          cursor: "pointer",
-          fontSize: "var(--eh-text-md)",
-          lineHeight: 1,
-          padding: 0,
-        }}
       >
         ×
       </button>

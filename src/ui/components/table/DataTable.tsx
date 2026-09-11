@@ -21,11 +21,18 @@
  * changing. A curator can search "SKSE", tick three, search "ENB", tick two,
  * and act on five. The header count is what says how many are really held,
  * because they are not all on screen.
+ *
+ * Keyboard: every column header is a real button (sortable with Enter and
+ * Space, `aria-sort` announced), the filter boxes are labelled per column,
+ * and the select-all box is indeterminate when only some matched rows are
+ * ticked — so a partial selection never reads as "none".
  * ──────────────────────────────────────────────────────────────────────
  */
 
 import * as React from "react";
 
+import { Checkbox, Input, Select } from "../Field";
+import { LinkButton } from "../LinkButton";
 import {
   applyTableView,
   describeTableView,
@@ -47,41 +54,6 @@ export type Column<T> = ColumnSpec & {
 
 /** One shared empty set, so an unselected table does not churn identities. */
 const EMPTY: ReadonlySet<string> = new Set<string>();
-
-const cellStyle: React.CSSProperties = {
-  padding: "var(--eh-sp-1) var(--eh-sp-2)",
-  borderTop: "1px solid var(--eh-border-subtle)",
-  verticalAlign: "middle",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-};
-
-const headStyle: React.CSSProperties = {
-  padding: "var(--eh-sp-1) var(--eh-sp-2)",
-  textAlign: "left",
-  fontSize: "var(--eh-text-xs)",
-  textTransform: "uppercase",
-  letterSpacing: "0.06em",
-  color: "var(--eh-text-muted)",
-  background: "var(--eh-bg-raised)",
-  position: "sticky",
-  top: 0,
-  zIndex: 1,
-  whiteSpace: "nowrap",
-};
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  background: "var(--eh-bg-deep)",
-  border: "1px solid var(--eh-border-default)",
-  borderRadius: "var(--eh-radius-sm)",
-  color: "var(--eh-text-primary)",
-  padding: "2px var(--eh-sp-1)",
-  fontSize: "var(--eh-text-xs)",
-  fontFamily: "var(--eh-font-mono)",
-};
 
 /** Click a header: ascending, then descending, then back to no sort. */
 function nextSort(current: SortState | undefined, key: string): SortState | undefined {
@@ -165,10 +137,13 @@ export function DataTable<T>(props: {
     return full.rows.map((r) => r.id);
   }, [viewRows, columns, filters]);
 
+  const selectedMatched =
+    selection === undefined
+      ? 0
+      : matchedIds.reduce((n, id) => n + (selection.selected.has(id) ? 1 : 0), 0);
   const allMatchedSelected =
-    selection !== undefined &&
-    matchedIds.length > 0 &&
-    matchedIds.every((id) => selection.selected.has(id));
+    selection !== undefined && matchedIds.length > 0 && selectedMatched === matchedIds.length;
+  const someMatchedSelected = selectedMatched > 0 && !allMatchedSelected;
 
   const filtersOn = Object.values(filters).some((v) => v.trim() !== "");
 
@@ -269,208 +244,173 @@ export function DataTable<T>(props: {
     selection.onChange(next);
   };
 
+  const colCount =
+    columns.length + (selection !== undefined ? 1 : 0) + (actions !== undefined ? 1 : 0);
+  const anyFilterable = columns.some((c) => c.filterable !== false);
+
   return (
     <div>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--eh-sp-2)",
-          marginBottom: "var(--eh-sp-1)",
-          fontSize: "var(--eh-text-xs)",
-          color: "var(--eh-text-secondary)",
-          flexWrap: "wrap",
-        }}
-      >
+      <div className="eh-table-toolbar">
         <span>{describeTableView(view, noun)}</span>
         {filtersOn && (
-          <button
-            type="button"
-            onClick={(): void => setFilters({})}
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--eh-accent)",
-              cursor: "pointer",
-              padding: 0,
-              font: "inherit",
-            }}
-          >
+          <LinkButton variant="xs" onClick={(): void => setFilters({})}>
             Clear filters
-          </button>
+          </LinkButton>
         )}
         {view.capped && (
-          <button
-            type="button"
-            onClick={(): void => setShowAll(true)}
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--eh-accent)",
-              cursor: "pointer",
-              padding: 0,
-              font: "inherit",
-            }}
-          >
+          <LinkButton variant="xs" onClick={(): void => setShowAll(true)}>
             Show all {view.matched.toLocaleString()}
-          </button>
+          </LinkButton>
         )}
         {selection !== undefined &&
           (selection.selected.size > 0 ? (
             <>
-              <span style={{ color: "var(--eh-text-muted)" }}>
+              <span className="eh-muted">
                 {selection.selected.size.toLocaleString()} ticked
                 {filtersOn ? " (some may be outside this filter)" : ""}
               </span>
-              <button
-                type="button"
-                onClick={(): void => selection.onChange(EMPTY)}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "var(--eh-accent)",
-                  cursor: "pointer",
-                  padding: 0,
-                  font: "inherit",
-                }}
-              >
+              <LinkButton variant="xs" onClick={(): void => selection.onChange(EMPTY)}>
                 Clear ticks
-              </button>
+              </LinkButton>
             </>
           ) : (
-            <span style={{ color: "var(--eh-text-muted)" }}>
-              Click a row to tick it · shift-click for a range
-            </span>
+            <span className="eh-muted">Click a row to tick it · shift-click for a range</span>
           ))}
       </div>
 
       <div
-        style={{
-          maxHeight: props.maxHeight ?? 420,
-          overflow: "auto",
-          border: "1px solid var(--eh-border-default)",
-          borderRadius: "var(--eh-radius-md)",
-        }}
+        className="eh-table-wrap"
+        style={
+          props.maxHeight !== undefined
+            ? ({ ["--eh-table-max-height" as string]: `${props.maxHeight}px` } as React.CSSProperties)
+            : undefined
+        }
       >
-        <table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse",
-            tableLayout: "fixed",
-            fontSize: "var(--eh-text-sm)",
-          }}
-        >
+        <table className={selection !== undefined ? "eh-table eh-table--selectable" : "eh-table"}>
           <thead>
             <tr>
               {selection !== undefined && (
-                <th style={{ ...headStyle, width: 32 }}>
-                  <input
-                    type="checkbox"
+                <th className="eh-table__tick" scope="col">
+                  <Checkbox
                     aria-label={selectAllLabel}
                     title={selectAllLabel}
                     checked={allMatchedSelected}
+                    indeterminate={someMatchedSelected}
                     onChange={toggleAllMatched}
                   />
                 </th>
               )}
-              {columns.map((col) => (
-                <th
-                  key={col.key}
-                  style={{
-                    ...headStyle,
-                    ...(col.width !== undefined ? { width: col.width } : {}),
-                    textAlign: col.align ?? "left",
-                    cursor: col.sortable === false ? "default" : "pointer",
-                  }}
-                  onClick={
-                    col.sortable === false
-                      ? undefined
-                      : (): void => setSort((s) => nextSort(s, col.key))
-                  }
-                >
-                  {col.header}
-                  {sort?.key === col.key && (sort.direction === "asc" ? " ▲" : " ▼")}
-                </th>
-              ))}
-              {actions !== undefined && <th style={headStyle} />}
+              {columns.map((col) => {
+                const sortable = col.sortable !== false;
+                const active = sort?.key === col.key;
+                const ariaSort = !active
+                  ? sortable
+                    ? "none"
+                    : undefined
+                  : sort!.direction === "asc"
+                    ? "ascending"
+                    : "descending";
+                return (
+                  <th
+                    key={col.key}
+                    scope="col"
+                    className={col.align === "right" ? "eh-table__num" : undefined}
+                    style={
+                      col.width !== undefined
+                        ? ({
+                            ["--eh-col-width" as string]:
+                              typeof col.width === "number" ? `${col.width}px` : col.width,
+                          } as React.CSSProperties)
+                        : undefined
+                    }
+                    aria-sort={ariaSort}
+                  >
+                    {sortable ? (
+                      <button
+                        type="button"
+                        className={active ? "eh-table__sort eh-table__sort--active" : "eh-table__sort"}
+                        onClick={(): void => setSort((s) => nextSort(s, col.key))}
+                        title={`Sort by ${col.header}`}
+                      >
+                        <span>{col.header}</span>
+                        <span className="eh-table__sort-glyph" aria-hidden="true">
+                          {active ? (sort!.direction === "asc" ? "▲" : "▼") : "⇅"}
+                        </span>
+                      </button>
+                    ) : (
+                      col.header
+                    )}
+                  </th>
+                );
+              })}
+              {actions !== undefined && <th scope="col" />}
             </tr>
-            <tr>
-              {selection !== undefined && <th style={{ ...headStyle, top: 26 }} />}
-              {columns.map((col) => (
-                <th key={col.key} style={{ ...headStyle, top: 26 }}>
-                  {col.filterable === false ? null : col.match === "exact" ? (
-                    <select
-                      aria-label={`Filter by ${col.header}`}
-                      value={filters[col.key] ?? ""}
-                      onChange={(e): void =>
-                        setFilters((f) => ({ ...f, [col.key]: e.target.value }))
-                      }
-                      style={inputStyle}
-                    >
-                      <option value="">all</option>
-                      {distinctValues(viewRows, col.key).map((v) => (
-                        <option key={v} value={v}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      aria-label={`Filter by ${col.header}`}
-                      placeholder="filter"
-                      value={filters[col.key] ?? ""}
-                      onChange={(e): void =>
-                        setFilters((f) => ({ ...f, [col.key]: e.target.value }))
-                      }
-                      style={inputStyle}
-                    />
-                  )}
-                </th>
-              ))}
-              {actions !== undefined && <th style={{ ...headStyle, top: 26 }} />}
-            </tr>
+            {anyFilterable && (
+              <tr className="eh-table__filters">
+                {selection !== undefined && <th />}
+                {columns.map((col) => (
+                  <th key={col.key}>
+                    {col.filterable === false ? null : col.match === "exact" ? (
+                      <Select
+                        small
+                        aria-label={`Filter by ${col.header}`}
+                        value={filters[col.key] ?? ""}
+                        onChange={(e): void =>
+                          setFilters((f) => ({ ...f, [col.key]: e.target.value }))
+                        }
+                      >
+                        <option value="">all</option>
+                        {distinctValues(viewRows, col.key).map((v) => (
+                          <option key={v} value={v}>
+                            {v}
+                          </option>
+                        ))}
+                      </Select>
+                    ) : (
+                      <Input
+                        small
+                        mono
+                        aria-label={`Filter by ${col.header}`}
+                        placeholder="filter"
+                        value={filters[col.key] ?? ""}
+                        onChange={(e): void =>
+                          setFilters((f) => ({ ...f, [col.key]: e.target.value }))
+                        }
+                      />
+                    )}
+                  </th>
+                ))}
+                {actions !== undefined && <th />}
+              </tr>
+            )}
           </thead>
           <tbody>
             {view.rows.length === 0 && (
               <tr>
-                <td
-                  colSpan={
-                    columns.length +
-                    (selection !== undefined ? 1 : 0) +
-                    (actions !== undefined ? 1 : 0)
-                  }
-                  style={{ ...cellStyle, color: "var(--eh-text-secondary)" }}
-                >
+                <td colSpan={colCount} className="eh-table__empty">
                   {`No ${noun} matches these filters.`}
                 </td>
               </tr>
             )}
             {view.rows.map((viewRow) => {
               const row = byId.get(viewRow.id)!;
+              const selected = selection?.selected.has(viewRow.id) === true;
               return (
                 <tr
                   key={viewRow.id}
+                  className={selected ? "eh-table__row--selected" : undefined}
+                  aria-selected={selection !== undefined ? selected : undefined}
                   onClick={
                     selection === undefined
                       ? undefined
                       : (e): void => clickRow(viewRow.id, e)
                   }
-                  style={
-                    selection === undefined
-                      ? undefined
-                      : {
-                          cursor: "pointer",
-                          background: selection.selected.has(viewRow.id)
-                            ? "var(--eh-bg-raised)"
-                            : undefined,
-                        }
-                  }
                 >
                   {selection !== undefined && (
-                    <td style={{ ...cellStyle, width: 32 }}>
-                      <input
-                        type="checkbox"
-                        checked={selection.selected.has(viewRow.id)}
+                    <td className="eh-table__tick">
+                      <Checkbox
+                        checked={selected}
+                        aria-label={`Tick ${String(viewRow.values[columns[0]?.key ?? ""] ?? viewRow.id)}`}
                         // The row's own click handler does the work, including
                         // the shift-range case a change event cannot see.
                         onChange={(): void => undefined}
@@ -480,7 +420,7 @@ export function DataTable<T>(props: {
                   {columns.map((col) => (
                     <td
                       key={col.key}
-                      style={{ ...cellStyle, textAlign: col.align ?? "left" }}
+                      className={col.align === "right" ? "eh-table__num" : undefined}
                       title={
                         viewRow.values[col.key] === undefined
                           ? undefined
@@ -493,9 +433,7 @@ export function DataTable<T>(props: {
                     </td>
                   ))}
                   {actions !== undefined && (
-                    <td style={{ ...cellStyle, textAlign: "right" }}>
-                      {actions(row)}
-                    </td>
+                    <td className="eh-table__actions">{actions(row)}</td>
                   )}
                 </tr>
               );

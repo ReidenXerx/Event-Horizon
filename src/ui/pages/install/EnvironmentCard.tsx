@@ -46,16 +46,16 @@ export function EnvironmentCard(props: {
               <strong className="eh-strong">{c.title}</strong>
             </div>
             {c.lines.length > 0 && (
-              <ul className="eh-list" style={{ margin: 0 }}>
+              <ul className="eh-list">
                 {c.lines.map((l, i) => (
-                  <li key={i} className="eh-secondary" style={{ whiteSpace: "pre-wrap" }}>
+                  <li key={i} className="eh-secondary eh-pre-wrap">
                     {l}
                   </li>
                 ))}
               </ul>
             )}
             {c.steps.length > 0 && (
-              <ol style={{ margin: 0 }}>
+              <ol className="eh-list">
                 {c.steps.map((s, i) => (
                   <li key={i} className="eh-secondary">
                     {s}

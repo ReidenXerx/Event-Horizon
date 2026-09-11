@@ -80,10 +80,15 @@ import {
 import { verifyUpdatedMod } from "../../../core/curator/verifyAfterUpdate";
 import {
   Button,
+  Callout,
   Card,
   DataTable,
+  Field,
+  Input,
   Page,
   Pill,
+  StatGrid,
+  StatTile,
   describeTarget,
   type Column,
   type TargetSet,
@@ -167,71 +172,6 @@ function makeConfirmer(
     ehLog("info", "curator.confirm.answer", { title, confirmed: said });
     return said;
   };
-}
-
-function Tile(props: {
-  label: string;
-  value: number;
-  intent?: "warning" | "danger";
-}): JSX.Element {
-  return (
-    <div
-      style={{
-        padding: "var(--eh-sp-3)",
-        background: "var(--eh-bg-raised)",
-        border: "1px solid var(--eh-border-default)",
-        borderRadius: "var(--eh-radius-md)",
-        minWidth: 120,
-      }}
-    >
-      <div
-        style={{
-          fontSize: "var(--eh-text-xs)",
-          textTransform: "uppercase",
-          letterSpacing: "0.06em",
-          color: "var(--eh-text-muted)",
-        }}
-      >
-        {props.label}
-      </div>
-      <div
-        style={{
-          fontSize: "var(--eh-text-xl)",
-          color:
-            props.value === 0
-              ? "var(--eh-text-secondary)"
-              : props.intent === "danger"
-                ? "var(--eh-danger)"
-                : props.intent === "warning"
-                  ? "var(--eh-warning)"
-                  : "var(--eh-text-primary)",
-        }}
-      >
-        {num(props.value)}
-      </div>
-    </div>
-  );
-}
-
-function Section(props: {
-  title: string;
-  note: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <Card title={props.title}>
-      <p
-        style={{
-          margin: "0 0 var(--eh-sp-2)",
-          color: "var(--eh-text-secondary)",
-          fontSize: "var(--eh-text-sm)",
-        }}
-      >
-        {props.note}
-      </p>
-      {props.children}
-    </Card>
-  );
 }
 
 /**
@@ -320,7 +260,7 @@ const MANUAL_COLUMNS: Column<ManualRow>[] = [
     value: (r) => r.url ?? "",
     render: (r) =>
       r.url === undefined ? (
-        <span style={{ color: "var(--eh-text-muted)" }}>no page recorded</span>
+        <span className="eh-muted">no page recorded</span>
       ) : (
         <a href={r.url} target="_blank" rel="noreferrer">
           open on Nexus
@@ -1106,7 +1046,7 @@ function CuratorBody(): JSX.Element {
   if (gameId === undefined) {
     return (
       <Card title="No active game">
-        <p style={{ color: "var(--eh-text-secondary)" }}>
+        <p className="eh-body">
           Vortex is not managing a game right now, so there is no profile to act
           on.
         </p>
@@ -1115,22 +1055,46 @@ function CuratorBody(): JSX.Element {
   }
 
   return (
-    <div className="eh-stack eh-stack--md">
-      <div style={{ display: "flex", gap: "var(--eh-sp-3)", flexWrap: "wrap" }}>
-        <Tile label="Mods" value={summary.total} />
-        <Tile label="Enabled" value={summary.enabled} />
-        <Tile label="Updatable" value={summary.updatable} intent="warning" />
-        <Tile label="Frozen" value={summary.frozen} />
-        <Tile
-          label="Freeze broken"
-          value={summary.frozenDrifted}
-          intent="danger"
+    <div className="eh-stack">
+      <StatGrid min={120}>
+        <StatTile
+          label="Mods"
+          value={num(summary.total)}
+          tone={summary.total === 0 ? "quiet" : "neutral"}
         />
-        <Tile label="Unendorsed" value={summary.endorsable} />
-        <Tile label="Duplicate groups" value={summary.duplicateGroups} />
-      </div>
+        <StatTile
+          label="Enabled"
+          value={num(summary.enabled)}
+          tone={summary.enabled === 0 ? "quiet" : "neutral"}
+        />
+        <StatTile
+          label="Updatable"
+          value={num(summary.updatable)}
+          tone={summary.updatable === 0 ? "quiet" : "warning"}
+        />
+        <StatTile
+          label="Frozen"
+          value={num(summary.frozen)}
+          tone={summary.frozen === 0 ? "quiet" : "neutral"}
+        />
+        <StatTile
+          label="Freeze broken"
+          value={num(summary.frozenDrifted)}
+          tone={summary.frozenDrifted === 0 ? "quiet" : "danger"}
+        />
+        <StatTile
+          label="Unendorsed"
+          value={num(summary.endorsable)}
+          tone={summary.endorsable === 0 ? "quiet" : "neutral"}
+        />
+        <StatTile
+          label="Duplicate groups"
+          value={num(summary.duplicateGroups)}
+          tone={summary.duplicateGroups === 0 ? "quiet" : "neutral"}
+        />
+      </StatGrid>
 
-      <div style={{ display: "flex", gap: "var(--eh-sp-2)", flexWrap: "wrap" }}>
+      <div className="eh-row">
         <Button intent="ghost" onClick={(): void => void refreshUpdates()}>
           Re-check Nexus for updates
         </Button>
@@ -1182,34 +1146,19 @@ function CuratorBody(): JSX.Element {
       </div>
 
       {endorseIsLong(endorsable.length) && busy === undefined && (
-        <p
-          style={{
-            margin: 0,
-            padding: "var(--eh-sp-2)",
-            borderLeft: "3px solid var(--eh-warning)",
-            color: "var(--eh-text-secondary)",
-            fontSize: "var(--eh-text-sm)",
-          }}
-        >
+        <Callout tone="warning">
           Endorsing {num(endorsable.length)} mods takes{" "}
           {describeEndorseDuration(endorsable.length)} and cannot be stopped
           once it starts. Vortex gives no way to confirm an endorsement
           finished, so they are spaced {ENDORSE_PACE_MS}ms apart — sending
           them all at once is a rate-limit, not a faster result. Leave the page
           open while it runs.
-        </p>
+        </Callout>
       )}
 
       {progress !== undefined && (
-        <div
-          style={{
-            display: "flex",
-            gap: "var(--eh-sp-2)",
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <p style={{ margin: 0, color: "var(--eh-text-primary)" }}>{progress}</p>
+        <div className="eh-row">
+          <span className="eh-strong">{progress}</span>
           {/*
             The stop this page has always claimed to have.
 
@@ -1232,19 +1181,16 @@ function CuratorBody(): JSX.Element {
 
       {lines.length > 0 && (
         <Card title="Update report">
-          {lines.map((l) => (
-            <p
-              key={l}
-              style={{
-                margin: "0 0 var(--eh-sp-2)",
-                color: l.includes("LOST")
-                  ? "var(--eh-danger)"
-                  : "var(--eh-text-secondary)",
-              }}
-            >
-              {l}
-            </p>
-          ))}
+          <div className="eh-stack eh-stack--sm">
+            {lines.map((l) => (
+              <span
+                key={l}
+                className={l.includes("LOST") ? "eh-tone--danger" : "eh-secondary"}
+              >
+                {l}
+              </span>
+            ))}
+          </div>
           {/*
             The report OUTLIVES the run and the page now, so it needs a way
             to be put down — otherwise the last run's lines sit above the next
@@ -1258,117 +1204,94 @@ function CuratorBody(): JSX.Element {
         </Card>
       )}
 
-      {note !== undefined && (
-        <p
-          style={{
-            margin: 0,
-            padding: "var(--eh-sp-2)",
-            borderLeft: "3px solid var(--eh-info)",
-            color: "var(--eh-text-secondary)",
-          }}
-        >
-          {note}
-        </p>
-      )}
+      {note !== undefined && <Callout tone="info">{note}</Callout>}
 
-      <Section
+      <Card
         title={`Updates available (${updatable.length})`}
-        note={
+        subtitle={
           "Frozen mods are not listed here. Installing these is a separate " +
           "step and runs one mod at a time — Vortex's own bulk update runs " +
           "them concurrently, which is why it loses files."
         }
       >
-        <DataTable
-          rows={updatable}
-          idOf={updateId}
-          columns={UPDATE_COLUMNS}
-          noun="update"
-          limit={200}
-          selection={{ selected: updateSel, onChange: setUpdateSel }}
-          onTarget={setUpdateAim}
-          empty={
-            <p style={{ color: "var(--eh-text-secondary)", margin: 0 }}>
-              Nothing to update, as far as Vortex currently knows. Re-check
-              Nexus if that looks wrong.
-            </p>
-          }
-          actions={(c): JSX.Element => (
-            <Button
-              size="sm"
-              intent="ghost"
-              onClick={(): void => setFrozen(c.mod, c.mod.version ?? "")}
-            >
-              Freeze here
-            </Button>
+        <div className="eh-stack eh-stack--lg">
+          <DataTable
+            rows={updatable}
+            idOf={updateId}
+            columns={UPDATE_COLUMNS}
+            noun="update"
+            limit={200}
+            selection={{ selected: updateSel, onChange: setUpdateSel }}
+            onTarget={setUpdateAim}
+            empty={
+              <p className="eh-body">
+                Nothing to update, as far as Vortex currently knows. Re-check
+                Nexus if that looks wrong.
+              </p>
+            }
+            actions={(c): JSX.Element => (
+              <Button
+                size="sm"
+                intent="ghost"
+                onClick={(): void => setFrozen(c.mod, c.mod.version ?? "")}
+              >
+                Freeze here
+              </Button>
+            )}
+          />
+
+          {shadowed.length > 0 && (
+            <div className="eh-stack eh-stack--xs">
+              <p className="eh-body">
+                {shadowed.length} older install(s) also have a newer file on
+                Nexus and are deliberately NOT listed above — you already have a
+                newer copy of each installed, so updating both would install the
+                new file twice. Retire them under Disk cleanup instead.
+              </p>
+              <DataTable
+                rows={shadowed}
+                idOf={shadowId}
+                columns={SHADOW_COLUMNS}
+                noun="older install"
+                limit={100}
+                maxHeight={240}
+              />
+            </div>
           )}
-        />
 
-        {shadowed.length > 0 && (
-          <div style={{ marginTop: "var(--eh-sp-3)" }}>
-            <p
-              style={{
-                margin: "0 0 var(--eh-sp-1)",
-                color: "var(--eh-text-secondary)",
-                fontSize: "var(--eh-text-sm)",
-              }}
-            >
-              {shadowed.length} older install(s) also have a newer file on
-              Nexus and are deliberately NOT listed above — you already have a
-              newer copy of each installed, so updating both would install the
-              new file twice. Retire them under Disk cleanup instead.
-            </p>
-            <DataTable
-              rows={shadowed}
-              idOf={shadowId}
-              columns={SHADOW_COLUMNS}
-              noun="older install"
-              limit={100}
-              maxHeight={240}
-            />
-          </div>
-        )}
+          {manualUpdates.length > 0 && (
+            <div className="eh-stack eh-stack--xs">
+              <Callout tone="warning">
+                {num(manualUpdates.length)} mod(s) have a newer version on Nexus
+                that Event Horizon CANNOT update for you. Vortex knows the new
+                version number but not which file it is — the update button
+                needs a file id, and Nexus did not give it one. These are real
+                updates; they just have to be done from the mod page. Nothing
+                above is missing them, and nothing here is a duplicate of it.
+              </Callout>
+              <DataTable
+                rows={manualUpdates}
+                idOf={manualId}
+                columns={MANUAL_COLUMNS}
+                noun="manual update"
+                limit={200}
+                maxHeight={320}
+              />
+            </div>
+          )}
+        </div>
+      </Card>
 
-        {manualUpdates.length > 0 && (
-          <div style={{ marginTop: "var(--eh-sp-3)" }}>
-            <p
-              style={{
-                margin: "0 0 var(--eh-sp-1)",
-                padding: "var(--eh-sp-2)",
-                borderLeft: "3px solid var(--eh-warning)",
-                color: "var(--eh-text-secondary)",
-                fontSize: "var(--eh-text-sm)",
-              }}
-            >
-              {num(manualUpdates.length)} mod(s) have a newer version on Nexus
-              that Event Horizon CANNOT update for you. Vortex knows the new
-              version number but not which file it is — the update button
-              needs a file id, and Nexus did not give it one. These are real
-              updates; they just have to be done from the mod page. Nothing
-              above is missing them, and nothing here is a duplicate of it.
-            </p>
-            <DataTable
-              rows={manualUpdates}
-              idOf={manualId}
-              columns={MANUAL_COLUMNS}
-              noun="manual update"
-              limit={200}
-              maxHeight={320}
-            />
-          </div>
-        )}
-      </Section>
-
-      <Section
+      <Card
         title={`Frozen (${frozen.length})`}
-        note={
+        subtitle={
           "A freeze keeps a mod out of this page's bulk update. It cannot stop " +
           "Vortex's own update button — Vortex has no such concept — so if the " +
           "version moves anyway, it is reported here rather than hidden."
         }
       >
-        {frozen.length > 0 && (
-          <div style={{ marginBottom: "var(--eh-sp-2)" }}>
+        <div className="eh-stack eh-stack--sm">
+          {frozen.length > 0 && (
             <Button
               size="sm"
               intent="ghost"
@@ -1383,107 +1306,102 @@ function CuratorBody(): JSX.Element {
                 "mod",
               )}
             </Button>
-          </div>
-        )}
-        <DataTable
-          rows={frozen}
-          idOf={frozenId}
-          columns={FROZEN_COLUMNS}
-          noun="frozen mod"
-          limit={200}
-          maxHeight={320}
-          selection={{ selected: frozenSel, onChange: setFrozenSel }}
-          onTarget={setFrozenAim}
-          empty={
-            <p style={{ color: "var(--eh-text-secondary)", margin: 0 }}>
-              Nothing frozen. Freeze a mod when its current version is the one
-              your setup depends on.
-            </p>
-          }
-          actions={(f): JSX.Element => (
-            <Button
-              size="sm"
-              intent="ghost"
-              onClick={(): void => setFrozen(f.mod, undefined)}
-            >
-              Unfreeze
-            </Button>
           )}
-        />
-      </Section>
+          <DataTable
+            rows={frozen}
+            idOf={frozenId}
+            columns={FROZEN_COLUMNS}
+            noun="frozen mod"
+            limit={200}
+            maxHeight={320}
+            selection={{ selected: frozenSel, onChange: setFrozenSel }}
+            onTarget={setFrozenAim}
+            empty={
+              <p className="eh-body">
+                Nothing frozen. Freeze a mod when its current version is the one
+                your setup depends on.
+              </p>
+            }
+            actions={(f): JSX.Element => (
+              <Button
+                size="sm"
+                intent="ghost"
+                onClick={(): void => setFrozen(f.mod, undefined)}
+              >
+                Unfreeze
+              </Button>
+            )}
+          />
+        </div>
+      </Card>
 
-      <Section
+      <Card
         title={`Selected (${chosen.length} of ${mods.length})`}
-        note={
+        subtitle={
           "Tick mods below, then act on all of them at once. Enabling and " +
           "setting a kind are state writes — Vortex re-deploys once at the " +
           "end. Reinstalling moves files, so it runs one mod at a time and " +
           "checks each against its archive before starting the next."
         }
       >
-        <div
-          style={{ display: "flex", gap: "var(--eh-sp-2)", flexWrap: "wrap" }}
-        >
-          <Button
-            size="sm"
-            intent="ghost"
-            disabled={busy !== undefined || chosen.length === 0}
-            onClick={(): void => setEnabledFor(chosen, true)}
-          >
-            Enable
-          </Button>
-          <Button
-            size="sm"
-            intent="ghost"
-            disabled={busy !== undefined || chosen.length === 0}
-            onClick={(): void => setEnabledFor(chosen, false)}
-          >
-            Disable
-          </Button>
-          <Button
-            size="sm"
-            intent="ghost"
-            disabled={busy !== undefined || chosen.length === 0}
-            onClick={(): void => void reinstall(chosen)}
-          >
-            {busy === "reinstall"
-              ? "Reinstalling..."
-              : `Reinstall ${chosen.length}`}
-          </Button>
-          <input
-            aria-label="Mod kind"
-            placeholder="mod kind, e.g. dinput"
-            value={typeValue}
-            onChange={(e): void => setTypeValue(e.target.value)}
-            style={{
-              background: "var(--eh-bg-deep)",
-              border: "1px solid var(--eh-border-default)",
-              borderRadius: "var(--eh-radius-sm)",
-              color: "var(--eh-text-primary)",
-              padding: "var(--eh-sp-1) var(--eh-sp-2)",
-              fontFamily: "var(--eh-font-mono)",
-              fontSize: "var(--eh-text-xs)",
-            }}
-          />
-          <Button
-            size="sm"
-            intent="ghost"
-            disabled={busy !== undefined || chosen.length === 0}
-            onClick={(): void => setTypeFor(chosen, typeValue)}
-          >
-            Set kind
-          </Button>
-          <Button
-            size="sm"
-            intent="ghost"
-            disabled={selected.size === 0}
-            onClick={(): void => setSelected(new Set())}
-          >
-            Clear
-          </Button>
-        </div>
+        <div className="eh-stack eh-stack--sm">
+          <div className="eh-row">
+            <Button
+              size="sm"
+              intent="ghost"
+              disabled={busy !== undefined || chosen.length === 0}
+              onClick={(): void => setEnabledFor(chosen, true)}
+            >
+              Enable
+            </Button>
+            <Button
+              size="sm"
+              intent="ghost"
+              disabled={busy !== undefined || chosen.length === 0}
+              onClick={(): void => setEnabledFor(chosen, false)}
+            >
+              Disable
+            </Button>
+            <Button
+              size="sm"
+              intent="ghost"
+              disabled={busy !== undefined || chosen.length === 0}
+              onClick={(): void => void reinstall(chosen)}
+            >
+              {busy === "reinstall"
+                ? "Reinstalling..."
+                : `Reinstall ${chosen.length}`}
+            </Button>
+            <Field label="Mod kind" inline>
+              {(id): JSX.Element => (
+                <Input
+                  id={id}
+                  mono
+                  small
+                  placeholder="mod kind, e.g. dinput"
+                  value={typeValue}
+                  onChange={(e): void => setTypeValue(e.target.value)}
+                />
+              )}
+            </Field>
+            <Button
+              size="sm"
+              intent="ghost"
+              disabled={busy !== undefined || chosen.length === 0}
+              onClick={(): void => setTypeFor(chosen, typeValue)}
+            >
+              Set kind
+            </Button>
+            <Button
+              size="sm"
+              intent="ghost"
+              disabled={selected.size === 0}
+              onClick={(): void => setSelected(new Set())}
+            >
+              Clear
+            </Button>
+          </div>
 
-        <div style={{ marginTop: "var(--eh-sp-2)" }}>
           <DataTable
             rows={mods}
             idOf={curatorModId}
@@ -1494,11 +1412,11 @@ function CuratorBody(): JSX.Element {
             selection={{ selected, onChange: setSelected }}
           />
         </div>
-      </Section>
+      </Card>
 
-      <Section
+      <Card
         title="Disk cleanup — 1. Orphaned archives"
-        note={
+        subtitle={
           "Downloaded files that no installed mod points at, where a NEWER " +
           "version of that same file is installed — the same file, not merely " +
           "the same mod page, so an addon you never installed is never read " +
@@ -1508,21 +1426,15 @@ function CuratorBody(): JSX.Element {
           "permanently, so you choose which."
         }
       >
+        <div className="eh-stack eh-stack--sm">
         {orphans.length === 0 ? (
-          <p style={{ color: "var(--eh-text-secondary)", margin: 0 }}>
+          <p className="eh-body">
             No orphaned archives. Every download is either in use by an
             installed mod, or is something with no installed version at all.
           </p>
         ) : (
           <>
-            <div
-              style={{
-                display: "flex",
-                gap: "var(--eh-sp-2)",
-                flexWrap: "wrap",
-                marginBottom: "var(--eh-sp-2)",
-              }}
-            >
+            <div className="eh-row">
               <Button
                 intent="danger"
                 disabled={busy !== undefined || archiveRemovals.length === 0}
@@ -1560,13 +1472,7 @@ function CuratorBody(): JSX.Element {
                     : `Delete ${num(archiveRemovals.length)} ticked ` +
                       `archive(s) — frees ${formatSize(archiveBytes)}`}
               </Button>
-              <span
-                style={{
-                  alignSelf: "center",
-                  color: "var(--eh-text-secondary)",
-                  fontSize: "var(--eh-text-sm)",
-                }}
-              >
+              <span className="eh-note">
                 Deleted permanently, not recycled. Nothing is uninstalled.
               </span>
             </div>
@@ -1583,29 +1489,15 @@ function CuratorBody(): JSX.Element {
         )}
 
         {orphanPlan.keptReferenced > 0 && (
-          <p
-            style={{
-              margin: "var(--eh-sp-2) 0 0",
-              color: "var(--eh-text-muted)",
-              fontSize: "var(--eh-text-sm)",
-            }}
-          >
+          <span className="eh-note">
             {num(orphanPlan.keptReferenced)} archive(s) are not listed because
             an installed mod still points at them. Event Horizon hashes those
             when you build, so they are never candidates here.
-          </p>
+          </span>
         )}
 
         {orphanPlan.staleLinked.length > 0 && (
-          <p
-            style={{
-              margin: "var(--eh-sp-2) 0 0",
-              padding: "var(--eh-sp-2)",
-              borderLeft: "3px solid var(--eh-warning)",
-              color: "var(--eh-text-secondary)",
-              fontSize: "var(--eh-text-sm)",
-            }}
-          >
+          <Callout tone="warning">
             {num(orphanPlan.staleLinked.length)} download(s) worth{" "}
             {formatSize(orphanPlan.staleLinkedBytes)} ARE the archives of mods
             you have installed, but Vortex has lost the link to them — which is
@@ -1613,31 +1505,24 @@ function CuratorBody(): JSX.Element {
             never be deleted from here. The same broken link stops a build
             examining those mods{"'"} installers, so re-scanning the Downloads
             tab is worth doing before your next build.
-          </p>
+          </Callout>
         )}
 
         {orphanPlan.unclearOrphans.length > 0 && (
-          <p
-            style={{
-              margin: "var(--eh-sp-2) 0 0",
-              padding: "var(--eh-sp-2)",
-              borderLeft: "3px solid var(--eh-info)",
-              color: "var(--eh-text-secondary)",
-              fontSize: "var(--eh-text-sm)",
-            }}
-          >
+          <Callout tone="info">
             {num(orphanPlan.unclearOrphans.length)} more download(s) worth{" "}
             {formatSize(orphanPlan.unclearBytes)} have NO version of that mod
             installed. Those are not listed above and never selected: a file
             you downloaded on purpose and have not installed yet looks exactly
             like a leftover from here.
-          </p>
+          </Callout>
         )}
-      </Section>
+        </div>
+      </Card>
 
-      <Section
+      <Card
         title="Disk cleanup — 2. Old mod installs"
-        note={
+        subtitle={
           "This one changes your setup, so nothing is pre-ticked. An install " +
           "is only listed here when Nexus's own update chain says it was " +
           "replaced, or when the same FILE is installed at a lower version — " +
@@ -1645,20 +1530,14 @@ function CuratorBody(): JSX.Element {
           "frees its archive too."
         }
       >
+        <div className="eh-stack eh-stack--sm">
         {retireCandidates.length === 0 ? (
-          <p style={{ color: "var(--eh-text-secondary)", margin: 0 }}>
+          <p className="eh-body">
             No install has been replaced by another one you have installed.
           </p>
         ) : (
           <>
-            <div
-              style={{
-                display: "flex",
-                gap: "var(--eh-sp-2)",
-                flexWrap: "wrap",
-                marginBottom: "var(--eh-sp-2)",
-              }}
-            >
+            <div className="eh-row">
               <Button
                 intent="danger"
                 disabled={busy !== undefined || retirePlan.removeMods.length === 0}
@@ -1711,7 +1590,7 @@ function CuratorBody(): JSX.Element {
               )}
             </div>
             {provenRetire.length === 0 ? (
-              <p style={{ color: "var(--eh-text-secondary)", margin: 0 }}>
+              <p className="eh-body">
                 Nothing here is backed by evidence. Everything found only
                 shares a mod page, and is listed below.
               </p>
@@ -1728,16 +1607,8 @@ function CuratorBody(): JSX.Element {
             )}
 
             {unprovenRetire.length > 0 && (
-              <div style={{ marginTop: "var(--eh-sp-3)" }}>
-                <p
-                  style={{
-                    margin: "0 0 var(--eh-sp-1)",
-                    padding: "var(--eh-sp-2)",
-                    borderLeft: "3px solid var(--eh-warning)",
-                    color: "var(--eh-text-secondary)",
-                    fontSize: "var(--eh-text-sm)",
-                  }}
-                >
+              <div className="eh-stack eh-stack--xs">
+                <Callout tone="warning">
                   {num(unprovenRetire.length)} more install(s) share a Nexus
                   page with a newer file and NOTHING ELSE. That is not an old
                   version — one page ships a main file, optional files,
@@ -1745,7 +1616,7 @@ function CuratorBody(): JSX.Element {
                   &ldquo;Bodypaints - CBBE&rdquo; sits next to
                   &ldquo;Bodypaints - Male&rdquo;. Listed so nothing is hidden;
                   tick one only if you know it yourself.
-                </p>
+                </Callout>
                 <DataTable
                   rows={unprovenRetire}
                   idOf={retireId}
@@ -1759,18 +1630,19 @@ function CuratorBody(): JSX.Element {
             )}
           </>
         )}
-      </Section>
+        </div>
+      </Card>
 
-      <Section
+      <Card
         title={`Installed more than once (${duplicates.length})`}
-        note={
+        subtitle={
           "Mods sharing a Nexus page. The same FILE twice is always redundant; " +
           "two different files from one page might be a main plus an optional, " +
           "so those are shown as something to look at rather than a verdict."
         }
       >
-        {duplicates.length > 0 && (
-          <div style={{ marginBottom: "var(--eh-sp-2)" }}>
+        <div className="eh-stack eh-stack--sm">
+          {duplicates.length > 0 && (
             <Button
               size="sm"
               intent="ghost"
@@ -1793,24 +1665,24 @@ function CuratorBody(): JSX.Element {
                 "group",
               )} to the selection above
             </Button>
-          </div>
-        )}
-        <DataTable
-          rows={duplicates}
-          idOf={duplicateId}
-          columns={DUPLICATE_COLUMNS}
-          noun="group"
-          limit={200}
-          maxHeight={320}
-          selection={{ selected: dupSel, onChange: setDupSel }}
-          onTarget={setDupAim}
-          empty={
-            <p style={{ color: "var(--eh-text-secondary)", margin: 0 }}>
-              No mod is installed twice.
-            </p>
-          }
-        />
-      </Section>
+          )}
+          <DataTable
+            rows={duplicates}
+            idOf={duplicateId}
+            columns={DUPLICATE_COLUMNS}
+            noun="group"
+            limit={200}
+            maxHeight={320}
+            selection={{ selected: dupSel, onChange: setDupSel }}
+            onTarget={setDupAim}
+            empty={
+              <p className="eh-body">
+                No mod is installed twice.
+              </p>
+            }
+          />
+        </div>
+      </Card>
     </div>
   );
 }

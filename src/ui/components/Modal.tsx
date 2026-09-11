@@ -2,22 +2,25 @@
  * Modal primitive for Event Horizon.
  *
  * Behaviour:
- *   - Renders an absolutely-positioned backdrop + a centered card.
- *   - Backdrop fades in (`eh-fade-in`); card scales in (`eh-fade-scale`).
- *   - Esc closes by default. Backdrop click closes by default.
- *   - Both can be disabled via `closeOnEsc` / `closeOnBackdropClick`.
- *   - First focusable element inside the modal is auto-focused on
- *     mount, so keyboard users land on something useful.
+ *   - Renders an absolutely-positioned backdrop + a centered card, INSIDE
+ *     `.eh-app` (no portal), so Vortex's chrome stays visible — a modal here
+ *     is a question inside the extension, not a system dialog.
+ *   - Esc closes by default; backdrop click closes by default. Both can be
+ *     disabled for a question that must be answered in a word (see
+ *     FomodModeModal, which does exactly that on purpose).
+ *   - Focus is TRAPPED inside the card while it is open (Tab and Shift+Tab
+ *     cycle), the first focusable element gets focus on open, and whatever
+ *     had focus before is given it back on close. Without the last part a
+ *     keyboard user who closed a modal landed at the top of the document.
+ *   - When two modals stack — an error report over a confirmation — only the
+ *     TOPMOST one handles Esc. Each used to listen on `window` in the capture
+ *     phase, so one Esc closed both.
+ *   - The scroll region behind the modal is locked while it is open, so the
+ *     wheel over a long dialog does not scroll the page underneath.
  *
- * The modal lives INSIDE `.eh-app` (we don't portal out to body) so
- * Vortex's chrome stays visible — a deliberate choice that prevents
- * the modal from feeling like a system-modal hijacking the whole
- * window.
- *
- * Stacking: backdrop uses `--eh-z-modal`, so any toast/overlay above
- * `--eh-z-toast` (2000) still wins. That matters for dismissal toasts
- * coming out of a modal action — we want them to render over the
- * dimming backdrop, not beneath it.
+ * Stacking: the backdrop uses `--eh-z-modal`; toasts sit above at
+ * `--eh-z-toast`, so a toast fired from a modal action shows over the
+ * dimmed backdrop rather than under it.
  */
 
 import * as React from "react";
@@ -28,32 +31,35 @@ export interface ModalProps {
   open: boolean;
   onClose: () => void;
   title?: React.ReactNode;
-  /**
-   * Optional text rendered under the title (in muted color).
-   */
+  /** Optional text rendered under the title, in the secondary tone. */
   subtitle?: React.ReactNode;
-  /**
-   * Footer (typically buttons). Aligns to the right by default.
-   */
+  /** Footer (typically buttons). Right-aligned. */
   footer?: React.ReactNode;
   size?: ModalSize;
   closeOnEsc?: boolean;
   closeOnBackdropClick?: boolean;
   /**
-   * If true, the close-X button is hidden. Use this for blocking
-   * confirmation dialogs where every button is in the footer.
+   * Hide the close-X. Use for a blocking question whose every answer is a
+   * button in the footer — a dismissal there would be an answer nobody gave.
    */
   hideCloseButton?: boolean;
+  /** Accessible name when `title` is not plain text. */
   ariaLabel?: string;
+  /** Extra class on the card, for a page that needs to size it. */
+  className?: string;
   children?: React.ReactNode;
 }
 
-const SIZE_TO_WIDTH: Record<ModalSize, string> = {
-  sm: "420px",
-  md: "560px",
-  lg: "760px",
-  xl: "960px",
-};
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Open modals, bottom to top. Module-level on purpose: two modals rendered by
+ * unrelated components still need to agree on which one is on top.
+ */
+const openStack: symbol[] = [];
+/** What `.eh-app__main` had for overflow-y before the first modal locked it. */
+let lockedOverflow = "";
 
 export function Modal(props: ModalProps): JSX.Element | null {
   const {
@@ -67,119 +73,141 @@ export function Modal(props: ModalProps): JSX.Element | null {
     closeOnBackdropClick = true,
     hideCloseButton,
     ariaLabel,
+    className,
     children,
   } = props;
 
   const cardRef = React.useRef<HTMLDivElement | null>(null);
+  const idRef = React.useRef<symbol | null>(null);
+  if (idRef.current === null) idRef.current = Symbol("modal");
+  const titleId = React.useId();
+  const subtitleId = React.useId();
 
+  // Register in the stack for as long as we are open, and lock the scroll
+  // region behind the FIRST modal, restoring it after the LAST: two modals
+  // closing in one render restored child-first and left the page locked.
   React.useEffect(() => {
     if (!open) return;
-    if (!closeOnEsc) return;
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
+    const id = idRef.current!;
+    openStack.push(id);
+    const main = cardRef.current
+      ?.closest(".eh-app")
+      ?.querySelector<HTMLElement>(".eh-app__main");
+    if (main !== null && main !== undefined && openStack.length === 1) {
+      lockedOverflow = main.style.overflowY;
+      main.style.overflowY = "hidden";
+    }
+    return (): void => {
+      const at = openStack.lastIndexOf(id);
+      if (at !== -1) openStack.splice(at, 1);
+      if (main !== null && main !== undefined && openStack.length === 0) {
+        main.style.overflowY = lockedOverflow;
       }
+    };
+  }, [open]);
+
+  // Esc: only the topmost open modal answers.
+  React.useEffect(() => {
+    if (!open || !closeOnEsc) return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") return;
+      if (openStack[openStack.length - 1] !== idRef.current) return;
+      event.stopPropagation();
+      onClose();
     };
     window.addEventListener("keydown", onKeyDown, true);
     return (): void => window.removeEventListener("keydown", onKeyDown, true);
   }, [open, closeOnEsc, onClose]);
 
+  // Focus in on open, back out on close; trap Tab in between.
   React.useEffect(() => {
     if (!open) return;
     const card = cardRef.current;
     if (card === null) return;
-    // Autofocus first focusable element inside the modal so keyboard
-    // users land somewhere useful. Falls back to the card itself.
-    const focusable = card.querySelector<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-    );
-    (focusable ?? card).focus();
+    const previouslyFocused =
+      typeof document !== "undefined" &&
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+
+    // Body first, then footer, then the close-X: the first focusable in DOM
+    // order was the × in the header, so every modal opened with Enter
+    // meaning "dismiss".
+    const first =
+      card.querySelector<HTMLElement>(`.eh-modal__body ${FOCUSABLE.split(", ").join(", .eh-modal__body ")}`) ??
+      card.querySelector<HTMLElement>(`.eh-modal__footer ${FOCUSABLE.split(", ").join(", .eh-modal__footer ")}`) ??
+      card.querySelector<HTMLElement>(FOCUSABLE);
+    (first ?? card).focus({ preventScroll: true });
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "Tab") return;
+      if (openStack[openStack.length - 1] !== idRef.current) return;
+      const focusable = Array.from(
+        card.querySelectorAll<HTMLElement>(FOCUSABLE),
+      ).filter((el) => el.offsetParent !== null || el === card);
+      if (focusable.length === 0) {
+        event.preventDefault();
+        card.focus();
+        return;
+      }
+      const firstEl = focusable[0]!;
+      const lastEl = focusable[focusable.length - 1]!;
+      const active = document.activeElement;
+      if (event.shiftKey && (active === firstEl || active === card)) {
+        event.preventDefault();
+        lastEl.focus();
+      } else if (!event.shiftKey && active === lastEl) {
+        event.preventDefault();
+        firstEl.focus();
+      }
+    };
+    card.addEventListener("keydown", onKeyDown);
+
+    return (): void => {
+      card.removeEventListener("keydown", onKeyDown);
+      // Only hand focus back if it is still somewhere inside the modal (or
+      // nowhere): a caller that moved focus deliberately keeps its choice.
+      const active = document.activeElement;
+      const stillInside =
+        active === null || active === document.body || card.contains(active);
+      if (stillInside && previouslyFocused !== null && previouslyFocused.isConnected) {
+        previouslyFocused.focus({ preventScroll: true });
+      }
+    };
   }, [open]);
 
   if (!open) return null;
 
-  const handleBackdropClick = (
-    event: React.MouseEvent<HTMLDivElement>,
-  ): void => {
+  const handleBackdropMouseDown = (event: React.MouseEvent<HTMLDivElement>): void => {
     if (!closeOnBackdropClick) return;
-    if (event.target === event.currentTarget) {
-      onClose();
-    }
+    if (event.target === event.currentTarget) onClose();
   };
 
+  const hasHeader = title !== undefined || !hideCloseButton;
+  const labelledBy = title !== undefined ? titleId : undefined;
+
   return (
-    <div
-      className="eh-modal-backdrop"
-      onMouseDown={handleBackdropClick}
-      role="dialog"
-      aria-modal="true"
-      aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}
-      style={{
-        position: "absolute",
-        inset: 0,
-        zIndex: 1000,
-        background: "var(--eh-bg-overlay)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "var(--eh-sp-5)",
-        animation: "eh-fade-in var(--eh-dur-base) var(--eh-easing) both",
-      }}
-    >
+    <div className="eh-modal-backdrop" onMouseDown={handleBackdropMouseDown}>
       <div
         ref={cardRef}
-        className="eh-modal"
+        className={["eh-modal", `eh-modal--${size}`, className].filter(Boolean).join(" ")}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={ariaLabel === undefined ? labelledBy : undefined}
+        aria-label={ariaLabel}
+        aria-describedby={subtitle !== undefined ? subtitleId : undefined}
         tabIndex={-1}
-        style={{
-          width: "100%",
-          maxWidth: SIZE_TO_WIDTH[size],
-          maxHeight: "calc(100% - 32px)",
-          background: "var(--eh-bg-raised)",
-          border: "1px solid var(--eh-border-default)",
-          borderRadius: "var(--eh-radius-lg)",
-          boxShadow: "var(--eh-shadow-modal)",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-          animation:
-            "eh-fade-scale var(--eh-dur-base) var(--eh-easing) both",
-        }}
       >
-        {(title !== undefined || !hideCloseButton) && (
-          <header
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              justifyContent: "space-between",
-              gap: "var(--eh-sp-4)",
-              padding:
-                "var(--eh-sp-5) var(--eh-sp-5) var(--eh-sp-3) var(--eh-sp-5)",
-              borderBottom: "1px solid var(--eh-border-subtle)",
-            }}
-          >
+        {hasHeader && (
+          <header className="eh-modal__header">
             <div className="eh-fill">
               {title !== undefined && (
-                <h3
-                  style={{
-                    margin: 0,
-                    fontSize: "var(--eh-text-lg)",
-                    color: "var(--eh-text-primary)",
-                  }}
-                >
+                <h3 id={titleId} className="eh-modal__title">
                   {title}
                 </h3>
               )}
               {subtitle !== undefined && (
-                <p
-                  style={{
-                    margin: "var(--eh-sp-1) 0 0 0",
-                    color: "var(--eh-text-secondary)",
-                    fontSize: "var(--eh-text-sm)",
-                  }}
-                >
+                <p id={subtitleId} className="eh-modal__subtitle">
                   {subtitle}
                 </p>
               )}
@@ -187,72 +215,17 @@ export function Modal(props: ModalProps): JSX.Element | null {
             {!hideCloseButton && (
               <button
                 type="button"
+                className="eh-modal__close"
                 aria-label="Close"
                 onClick={onClose}
-                style={{
-                  appearance: "none",
-                  background: "transparent",
-                  border: 0,
-                  color: "var(--eh-text-muted)",
-                  fontSize: "var(--eh-text-xl)",
-                  lineHeight: 1,
-                  cursor: "pointer",
-                  padding: "var(--eh-sp-1) var(--eh-sp-2)",
-                  borderRadius: "var(--eh-radius-sm)",
-                  transition:
-                    "color var(--eh-dur-fast) var(--eh-easing), background var(--eh-dur-fast) var(--eh-easing)",
-                }}
-                onMouseEnter={(e): void => {
-                  e.currentTarget.style.color = "var(--eh-text-primary)";
-                  e.currentTarget.style.background = "var(--eh-border-subtle)";
-                }}
-                onMouseLeave={(e): void => {
-                  e.currentTarget.style.color = "var(--eh-text-muted)";
-                  e.currentTarget.style.background = "transparent";
-                }}
               >
                 ×
               </button>
             )}
           </header>
         )}
-        <div
-          style={{
-            // `1 1 auto`, NOT `flex: 1`.
-            //
-            // `flex: 1` is shorthand for `1 1 0%`, and a zero basis makes this
-            // body contribute NOTHING to the card's intrinsic height. The card
-            // sets maxHeight but no height, so it then shrank to header +
-            // footer and the body got whatever was left — a sliver, with the
-            // content scrolling inside it. A collection's detail modal showed
-            // three stat cards clipped mid-word above the buttons.
-            //
-            // With an auto basis the body contributes its content height, the
-            // card grows to fit it, maxHeight still caps the whole thing, and
-            // the overflow below only engages once there is genuinely too much.
-            flex: "1 1 auto",
-            minHeight: 0,
-            overflowY: "auto",
-            padding: "var(--eh-sp-5)",
-          }}
-        >
-          {children}
-        </div>
-        {footer !== undefined && (
-          <footer
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "flex-end",
-              gap: "var(--eh-sp-2)",
-              padding: "var(--eh-sp-4) var(--eh-sp-5)",
-              borderTop: "1px solid var(--eh-border-subtle)",
-              background: "var(--eh-bg-base)",
-            }}
-          >
-            {footer}
-          </footer>
-        )}
+        <div className="eh-modal__body">{children}</div>
+        {footer !== undefined && <footer className="eh-modal__footer">{footer}</footer>}
       </div>
     </div>
   );

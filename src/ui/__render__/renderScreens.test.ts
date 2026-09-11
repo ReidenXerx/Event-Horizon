@@ -6,12 +6,15 @@
  * therefore the only place these components can be imported at all outside a
  * running Vortex.
  *
- * Skipped unless EH_RENDER is set, so a normal `vitest run` neither writes
- * files nor pays for it:
+ * Every screen is RENDERED on every `vitest run` — a screen that throws is a
+ * screen nobody can look at, and four of them had rotted that way unnoticed
+ * because the whole file used to be skipped without EH_RENDER. Writing the
+ * HTML to disk is the only part that stays opt-in:
  *
- *   EH_RENDER=1 npx vitest run src/ui/__render__/renderScreens.test.ts
+ *   EH_RENDER=1 EH_RENDER_OUT=.scratch-render/ui npx vitest run src/ui/__render__/renderScreens.test.ts
+ *   node scripts/ui/screenshot-screens.mjs .scratch-render/ui .scratch-render/shots
  *
- * Then screenshot the output with headless Edge and read the images. The data
+ * (`npm run ui:shots` does both.) Then read the images. The data
  * below is modelled on the real 963-mod Fallout 4 collection rather than
  * invented, because a screen that looks calm with three mods is exactly how
  * this UI's problems stayed invisible.
@@ -24,23 +27,21 @@ import { describe, it } from "vitest";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-// From the modules, not the barrel: `src/ui/theme/index.ts` re-exports only
-// EventHorizonStyles, so importing these from there yields undefined and the
-// harness renders a page with no CSS at all — which is what the first run of
-// this produced, and it looked like a UI problem rather than a harness one.
-import { BASE_CSS } from "../theme/base";
-import { COMPONENTS_CSS } from "../theme/components";
-import { KEYFRAMES_CSS } from "../theme/keyframes";
-import { LOGO_CSS } from "../theme/logo";
-import { TOKENS_CSS } from "../theme/tokens";
-import { UTILITIES_CSS } from "../theme/utilities";
+// The SAME stylesheet the extension ships, in the same order. The harness used
+// to concatenate the modules itself and put utilities BEFORE components, so a
+// utility that overrides a component's spacing won in Vortex and lost here —
+// and a screenshot then showed a layout the user never sees.
+import { COMBINED_CSS } from "../theme/EventHorizonStyles";
 import {
   ConfirmStep,
   DecisionsStep,
   DoneStep,
   InstallingStep,
+  LoadingStep,
+  PickStep,
   PreviewStep,
 } from "../pages/install/steps";
+import { AboutPage } from "../pages/AboutPage";
 import { ApiProvider } from "../state/ApiContext";
 import { ToastProvider } from "../components/Toast";
 import {
@@ -48,6 +49,7 @@ import {
   BuildDiffView,
   DecisionsGate,
   DonePanel,
+  FormPanel,
 } from "../pages/build/BuildPage";
 import { summarizeAvailability } from "../../core/build/nexusAvailability";
 import { DraftCard, PublishedCard, RecentlyBuiltCard } from "../pages/build/BuildDashboard";
@@ -73,14 +75,7 @@ const OUT =
   process.env.EH_RENDER_OUT ??
   path.join(os.tmpdir(), "event-horizon-render", "ui");
 
-const CSS = [
-  TOKENS_CSS,
-  BASE_CSS,
-  KEYFRAMES_CSS,
-  UTILITIES_CSS,
-  COMPONENTS_CSS,
-  LOGO_CSS,
-].join("\n");
+const CSS = COMBINED_CSS;
 
 /**
  * The real tree nests every page inside `.eh-app > .eh-app__inner >
@@ -93,9 +88,12 @@ const page = (title: string, body: string): string => `<!doctype html>
 <html><head><meta charset="utf-8"><title>${title}</title>
 <style>${CSS}</style>
 <style>
-  html,body{margin:0;background:var(--eh-bg-void, #0b0e14);}
-  /* Animations would capture mid-flight and make every screenshot differ. */
-  *,*::before,*::after{animation:none !important;transition:none !important;}
+  html,body{margin:0;background:var(--eh-void);}
+  /* Animations would capture mid-flight and make every screenshot differ.
+     They are jumped to their END rather than removed: removing them also
+     removed the transform an entrance animation leaves behind, and the
+     screenshots then certified a modal layout Vortex never draws. */
+  *,*::before,*::after{animation-delay:-60s !important;transition:none !important;}
   /* .eh-stagger > * starts at opacity:0 and is revealed BY its animation.
      Killing animations above left every staggered child invisible - which
      photographed as a large empty band where the quick-action cards are, and
@@ -127,13 +125,37 @@ ${body}
 </main></div></div>
 </body></html>`;
 
+const WRITE = process.env.EH_RENDER === "1";
+
+/**
+ * The providers every page has above it in Vortex (EventHorizonMainPage). A
+ * screen that reaches for `useApi()` or `useToast()` — the Play button does —
+ * throws without them, and it did: three screens were unrenderable for weeks.
+ * A screen may wrap itself in a richer ApiProvider; the inner one wins.
+ */
+const fakeApi = {
+  getState: (): unknown => ({}),
+  store: { dispatch: (): undefined => undefined },
+  events: { on: (): undefined => undefined, emit: (): undefined => undefined },
+} as never;
+
+const shell = (node: React.ReactElement): React.ReactElement =>
+  React.createElement(ApiProvider, {
+    api: fakeApi,
+    children: React.createElement(ToastProvider, { children: node }),
+  });
+
+/** What the providers render on their own: a screen must add to this. */
+const HOST_ONLY = renderToStaticMarkup(shell(React.createElement(React.Fragment)));
+
 const write = (name: string, node: React.ReactElement): void => {
+  const html = renderToStaticMarkup(shell(node));
+  // Rendering is the check. The providers always emit the toast host, so an
+  // empty-string test could never fire; compare against the host alone.
+  if (html === HOST_ONLY) throw new Error(`${name}: rendered nothing`);
+  if (!WRITE) return;
   fs.mkdirSync(OUT, { recursive: true });
-  fs.writeFileSync(
-    path.join(OUT, `${name}.html`),
-    page(name, renderToStaticMarkup(node)),
-    "utf8",
-  );
+  fs.writeFileSync(path.join(OUT, `${name}.html`), page(name, html), "utf8");
 };
 
 // ── data modelled on the real collection ────────────────────────────────
@@ -281,11 +303,10 @@ const dashboardData = {
 } as never;
 
 describe("render", () => {
-  const on = process.env.EH_RENDER === "1";
   // A machine with a half-installed collection and NO receipt — the exact
   // state a tester was in, where this page said "no collections" while 963
   // mods sat staged on his disk.
-  it.skipIf(!on)("collections-interrupted — the install that never finished", () => {
+  it("collections-interrupted — the install that never finished", () => {
     write(
       "collections-interrupted",
       React.createElement(
@@ -326,7 +347,7 @@ describe("render", () => {
     );
   });
 
-  it.skipIf(!on)("doctor — a collection with real problems", () => {
+  it("doctor — a collection with real problems", () => {
     // The interesting state, not the happy one: a screen of green cards tells
     // you nothing about whether the design works.
     const checks = evaluateHealth(
@@ -383,7 +404,7 @@ describe("render", () => {
   // cures that re-run manifest-reading steps say why they cannot. Worth a
   // screenshot because "disabled with a reason" is only better than "hidden"
   // if the reason is actually legible on the button.
-  it.skipIf(!on)("doctor-no-package — cures needing the package, disabled with the reason", () => {
+  it("doctor-no-package — cures needing the package, disabled with the reason", () => {
     const checks = evaluateHealth(
       {
         packageName: "Ivy 2",
@@ -438,7 +459,7 @@ describe("render", () => {
     );
   });
 
-  it.skipIf(!on)("doctor — healing blocked because an install is running", () => {
+  it("doctor — healing blocked because an install is running", () => {
     const checks = evaluateHealth(
       {
         packageName: "Ivy 2",
@@ -488,7 +509,7 @@ describe("render", () => {
     );
   });
 
-  it.skipIf(!on)("main dashboard — the first screen anyone sees", () => {
+  it("main dashboard — the first screen anyone sees", () => {
     write(
       "dashboard-home",
       // The real tree is .eh-page > Hero + DashboardBody (see Dashboard).
@@ -506,7 +527,7 @@ describe("render", () => {
   });
 
 
-  it.skipIf(!on)("build dashboard — the cards that ARE its content", () => {
+  it("build dashboard — the cards that ARE its content", () => {
     // The dashboard mounts loading and fills in from an effect, which static
     // rendering never runs, so capturing the page shows a skeleton. The cards
     // take their data as props, so they show the real screen without a DOM.
@@ -589,7 +610,7 @@ describe("render", () => {
     );
   });
 
-  it.skipIf(!on)("build done — the real v1.0.10 result and its 10 warnings", () => {
+  it("build done — the real v1.0.10 result and its 10 warnings", () => {
     // Verbatim from the actual build log: same counts, same sha256, same
     // warnings in the same order. This is the screen a curator reads after 28
     // minutes, and the only place those warnings are ever shown.
@@ -694,7 +715,7 @@ describe("render", () => {
     );
   });
 
-  it.skipIf(!on)("recently built - the way back into a finished build", () => {
+  it("recently built - the way back into a finished build", () => {
     const base = {
       name: "Meridia Panties",
       version: "1.0.4",
@@ -733,7 +754,7 @@ describe("render", () => {
     );
   });
 
-  it.skipIf(!on)("decisions gate - the build held open for an answer", () => {
+  it("decisions gate - the build held open for an answer", () => {
     const candidate = (
       modId: string,
       modName: string,
@@ -794,7 +815,7 @@ describe("render", () => {
     );
   });
 
-  it.skipIf(!on)("build diff \u2014 what this rebuild would ship", () => {
+  it("build diff \u2014 what this rebuild would ship", () => {
     // The card a curator sees on the form, with a diff shaped like a real
     // revision: a handful added, a couple dropped, several bumped, one
     // toggled, and a majority untouched.
@@ -822,6 +843,10 @@ describe("render", () => {
               { name: "SSE Display Tweaks", fromVersion: "0.5.16", toVersion: "0.5.25" },
             ],
             toggled: [{ name: "Wildcat - Combat of Skyrim", nowEnabled: false }],
+            reconfigured: [
+              { name: "Ordinator - Perks of Skyrim", version: "9.32", reason: "installer-options" },
+              { name: "Lux", version: "6.5", reason: "staged-files" },
+            ],
             unchanged: 1748,
             approximate: 29,
           },
@@ -841,7 +866,7 @@ describe("render", () => {
     );
   });
 
-  it.skipIf(!on)("curator tools — the profile-wide actions", () => {
+  it("curator tools — the profile-wide actions", () => {
     // A fake Vortex store shaped like the real one: a mod needing an update,
     // one frozen and holding, one whose freeze was broken from outside, and
     // two installs of the same Nexus page.
@@ -1097,7 +1122,7 @@ describe("render", () => {
     );
   });
 
-  it.skipIf(!on)("preview — what the plan will do", () => {
+  it("preview — what the plan will do", () => {
     write(
       "preview",
       React.createElement(PreviewStep, {
@@ -1108,7 +1133,7 @@ describe("render", () => {
     );
   });
 
-  it.skipIf(!on)("decisions — the mods needing a human answer", () => {
+  it("decisions — the mods needing a human answer", () => {
     // 27 of them on the real plan. This is the screen where a user with no
     // context has to make choices about mods they have never heard of.
     const base = bundle as unknown as { plan: Record<string, unknown> };
@@ -1122,7 +1147,9 @@ describe("render", () => {
           decision: {
             kind: "external-prompt-user",
             reason: "no bundled archive and no download link",
-            fileName: `ExternalMod${i}.7z`,
+            // The real field, not a lookalike: the screen printed "undefined"
+            // in its copy for as long as this fixture spelled it `fileName`.
+            expectedFilename: `ExternalMod${i}.7z`,
           },
         })),
       },
@@ -1160,7 +1187,7 @@ describe("render", () => {
   // with a replacement), 21 old-version, 8 unchecked. Invented round numbers
   // would have hidden the wording bug this reproduces — "2 of those… 2 of
   // these…" only looks wrong when the two counts are the same two mods.
-  it.skipIf(!on)("build-availability — the curator's real first run", () => {
+  it("build-availability — the curator's real first run", () => {
     const finding = (
       modId: number,
       fileId: number,
@@ -1203,7 +1230,7 @@ describe("render", () => {
     );
   });
 
-  it.skipIf(!on)("confirm — the last screen before an hour of work", () => {
+  it("confirm — the last screen before an hour of work", () => {
     write(
       "confirm",
       React.createElement(ConfirmStep, {
@@ -1225,7 +1252,7 @@ describe("render", () => {
   // question is asked — so it is the screen that actually needs looking at.
   // Rendered via ConfirmStep rather than in isolation so the real counts,
   // real copy and real Modal chrome all participate.
-  it.skipIf(!on)("confirm-asking — the modal, which cannot be dismissed into a default", () => {
+  it("confirm-asking — the modal, which cannot be dismissed into a default", () => {
     write(
       "confirm-asking",
       React.createElement(ConfirmStep, {
@@ -1246,7 +1273,7 @@ describe("render", () => {
     );
   });
 
-  it.skipIf(!on)("installing — mid-run", () => {
+  it("installing — mid-run", () => {
     write(
       "installing",
       React.createElement(InstallingStep, {
@@ -1267,7 +1294,7 @@ describe("render", () => {
     );
   });
 
-  it.skipIf(!on)("done — a install with everything to say", () => {
+  it("done — a install with everything to say", () => {
     // Deliberately the loud case: every notice present at once. This is what
     // a Proton tester's first run actually looks like, and the screen has to
     // stay readable in it.
@@ -1364,7 +1391,7 @@ describe("render", () => {
     );
   });
 
-  it.skipIf(!on)("done — the quiet, everything-worked case", () => {
+  it("done — the quiet, everything-worked case", () => {
     const result = {
       kind: "success",
       profileName: "Ivy 2 v1.0.10",
@@ -1403,6 +1430,118 @@ describe("render", () => {
       } as never),
     );
   });
+
+  it("pick — the first step, and the drop zone", () => {
+    write("pick", React.createElement(PickStep, { onPick: () => undefined }));
+  });
+
+  it("loading — the hashing pass, which is what a user stares at", () => {
+    write(
+      "loading-hashing",
+      React.createElement(LoadingStep, {
+        phase: "hashing-mods",
+        hashCount: 963,
+        hashDone: 412,
+        hashCurrent: "Tumba Gunner Collection-12345-1-0-1700000000.7z",
+        onCancel: () => undefined,
+      }),
+    );
+    write(
+      "loading-phase",
+      React.createElement(LoadingStep, { phase: "resolving-plan", onCancel: () => undefined }),
+    );
+  });
+
+  it("about — the page nobody screenshots and everybody links to", () => {
+    write("about", React.createElement(AboutPage, null));
+  });
+
+  it("build form — the curator's whole workbench", () => {
+    // The largest form in the UI, converted to primitives without ever having
+    // been rendered outside Vortex. Two external mods, one prerequisite, two
+    // scope warnings and a validation error: the states that draw the parts.
+    const ctx = {
+      gameId: "skyrimse",
+      gameVersion: "1.6.1170.0",
+      configPath: "C:/Users/x/AppData/Roaming/Vortex/event-horizon/collections/.config/meridia.json",
+      configCreated: false,
+      collectionConfig: { externalDependencies: {} },
+      mods: Array.from({ length: 1755 }, (_, i) => ({
+        id: `mod-${i}`,
+        name: `Mod ${i}`,
+        nexusModId: String(1000 + i),
+        nexusFileId: String(5000 + i),
+      })),
+      externalMods: [
+        {
+          id: "ext-1",
+          name: "Meridia's Custom Follower Patch",
+          installationPath: "C:/staging/meridia-follower",
+          archiveSha256: "",
+        },
+        {
+          id: "ext-2",
+          name: "xLODGen Output",
+          installationPath: "C:/staging/xlodgen",
+          archiveSha256: "abc",
+        },
+      ],
+      externalHints: new Map([
+        ["ext-2", { via: "download-url", url: "https://example.com/xlodgen-output.7z" }],
+      ]),
+      scopeWarnings: [
+        "9 external mods no longer match the archives they came from — their staging folders were edited after install.",
+        "2 mods have no archive on disk; they can still be bundled from their staging folders.",
+      ],
+      rootFolderReview: [
+        "Two mods install outside Data and will be deployed to the game root:",
+        "  • SKSE64 (dinput)",
+        "  • ENB Helper (engine injector)",
+      ],
+      detectedDependencies: [
+        {
+          id: "skse64",
+          name: "SKSE64",
+          version: "2.2.6",
+          files: [{ path: "skse64_loader.exe" }, { path: "skse64_1_6_1170.dll" }],
+          instructions: "Download the AE build and copy it next to SkyrimSE.exe.",
+          instructionsUrl: "https://skse.silverlock.org/",
+        },
+      ],
+    };
+    write(
+      "build-form",
+      React.createElement(FormPanel, {
+        state: {
+          ctx,
+          curator: {
+            name: "Meridia's Panties",
+            version: "1.0.4",
+            author: "DuduPhudu",
+            description: "",
+            gameVersion: "1.6.1170.0",
+            gameVersionPolicy: "exact",
+          },
+          overrides: { "ext-1": { treatAsExternal: true, url: "example.com/no-scheme" } },
+          readme: "",
+          changelog: "",
+          validationError: "Version must be semver: 1.0.4a is not.",
+          restoredAt: new Date(Date.now() - 12 * 60_000).toISOString(),
+          reverifyEverything: false,
+        },
+        title: "Skyrim — main",
+        onTitleChange: () => undefined,
+        onChange: () => undefined,
+        onBuild: () => undefined,
+        onRefresh: () => undefined,
+        refreshing: false,
+        refreshedAt: new Date(Date.now() - 3 * 60_000).toISOString(),
+        onDiscardDraft: () => undefined,
+        onDismissDraftBanner: () => undefined,
+        recoverableCount: 2,
+        onRecoverArchives: () => undefined,
+        onCheckAvailability: () => undefined,
+      } as never),
+    );
+  });
 });
-
-

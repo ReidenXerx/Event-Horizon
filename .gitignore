@@ -22,3 +22,4 @@ docs/ARCHITECTURE.gitnexus.md
 .claude/skills/*
 !.claude/skills/gitnexus-area-*/
 # --- end bearing ---
+.scratch-render/

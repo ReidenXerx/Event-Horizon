@@ -25,7 +25,7 @@ import * as React from "react";
 
 import type { types } from "@nexusmods/vortex-api";
 
-import { Button, Pill } from "../components";
+import { Button, Pill, Section, LinkButton } from "../components";
 import { useApiOptional } from "../state";
 import { Modal } from "../components/Modal";
 import { FormattedError, buildErrorReport } from "./formatError";
@@ -149,41 +149,30 @@ export function ErrorReportModal(props: ErrorReportModalProps): JSX.Element {
           <Pill intent="info">{error.className}</Pill>
         </div>
 
-        <p
-          style={{
-            color: "var(--eh-text-primary)",
-            fontSize: "var(--eh-text-md)",
-            lineHeight: "var(--eh-leading-relaxed)",
-            margin: 0,
-          }}
-        >
-          {error.message}
-        </p>
+        <p className="eh-strong">{error.message}</p>
 
         {error.details.length > 0 && (
-          <Section title="Details">
+          <Section title="Details" size="sm">
             <BulletList items={error.details} />
           </Section>
         )}
 
         {error.hints.length > 0 && (
-          <Section title="What to try" intent="success">
+          <Section title="What to try" size="sm" tone="success">
             <BulletList items={error.hints} />
           </Section>
         )}
 
-        <Section title="Technical details" collapsible>
+        <Section title="Technical details" size="sm">
           {techExpanded ? (
             <TechnicalPanel error={error} reportText={reportText} />
           ) : (
-            <button
-              type="button"
-              className="eh-button eh-button--ghost eh-button--sm"
+            <LinkButton
+              variant="caps"
               onClick={(): void => setTechExpanded(true)}
-              style={{ marginTop: "var(--eh-sp-2)" }}
             >
               Show stack trace + context
-            </button>
+            </LinkButton>
           )}
         </Section>
       </div>
@@ -195,44 +184,11 @@ export function ErrorReportModal(props: ErrorReportModalProps): JSX.Element {
 // Sub-components
 // ===========================================================================
 
-function Section(props: {
-  title: string;
-  intent?: "default" | "success";
-  collapsible?: boolean;
-  children: React.ReactNode;
-}): JSX.Element {
-  const titleColor =
-    props.intent === "success"
-      ? "var(--eh-success)"
-      : "var(--eh-text-secondary)";
-  return (
-    <section>
-      <h4
-        style={{
-          fontSize: "var(--eh-text-xs)",
-          fontWeight: 700,
-          color: titleColor,
-          letterSpacing: "var(--eh-tracking-widest)",
-          textTransform: "uppercase",
-          margin: "0 0 var(--eh-sp-2) 0",
-        }}
-      >
-        {props.title}
-      </h4>
-      {props.children}
-    </section>
-  );
-}
-
 function BulletList(props: { items: string[] }): JSX.Element {
   return (
-    <ul
-      className="eh-list"
-    >
+    <ul className="eh-list eh-stack eh-stack--xs">
       {props.items.map((item, idx) => (
-        <li key={idx} style={{ marginBottom: "var(--eh-sp-1)" }}>
-          {item}
-        </li>
+        <li key={idx}>{item}</li>
       ))}
     </ul>
   );
@@ -245,21 +201,7 @@ function TechnicalPanel(props: {
   const { error, reportText } = props;
   return (
     <pre
-      style={{
-        margin: 0,
-        padding: "var(--eh-sp-3)",
-        background: "var(--eh-bg-deep)",
-        border: "1px solid var(--eh-border-subtle)",
-        borderRadius: "var(--eh-radius-sm)",
-        color: "var(--eh-text-secondary)",
-        fontSize: "var(--eh-text-xs)",
-        fontFamily: "var(--eh-font-mono)",
-        lineHeight: "var(--eh-leading-snug)",
-        whiteSpace: "pre-wrap",
-        wordBreak: "break-word",
-        maxHeight: "320px",
-        overflow: "auto",
-      }}
+      className="eh-inset eh-inset--deep eh-mono eh-pre-wrap eh-scroll"
       title={`${error.className}: ${error.rawMessage}`}
     >
       {reportText}

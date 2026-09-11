@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-scripts
-description: "Skill for the Scripts area of Event-Horizon. 53 symbols across 7 files."
+description: "Skill for the Scripts area of Event-Horizon. 56 symbols across 8 files."
 ---
 
 # Scripts
 
-53 symbols | 7 files | Cohesion: 84%
+56 symbols | 8 files | Cohesion: 84%
 
 ## When to Use
 
@@ -22,6 +22,7 @@ description: "Skill for the Scripts area of Event-Horizon. 53 symbols across 7 f
 | `scripts/bearing-token-benchmark.mjs` | answered, classicalCost, cypher, gn, graphCost (+2) |
 | `scripts/bearing-agent.mjs` | loadStaleness, markRefreshOutcome, run, runAllowFail, currentBranch (+2) |
 | `scripts/package-extension.js` | buildZip, crc32, collect, walk |
+| `scripts/release-nexus.mjs` | fail, npm, readApiKey |
 | `scripts/lib/project-tmp.mjs` | isEnospcError, withProjectTmpEnv |
 | `scripts/bearing-test-order.mjs` | parseChangedSymbols |
 

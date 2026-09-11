@@ -48,7 +48,7 @@ Start here when exploring this area:
 | `verdictIsGood` | Function | `src/core/runtime/prerequisites.ts` | 186 |
 | `detectRuntimes` | Function | `src/core/runtime/detectRuntimes.ts` | 214 |
 | `describeRuntimeFindings` | Function | `src/core/runtime/detectRuntimes.ts` | 265 |
-| `runtimeLines` | Function | `src/ui/pages/install/steps.tsx` | 671 |
+| `runtimeLines` | Function | `src/ui/pages/install/steps.tsx` | 540 |
 | `verify` | Function | `src/core/curator/bulkUpdate.test.ts` | 72 |
 | `ok` | Function | `src/core/curator/bulkUpdate.test.ts` | 28 |
 | `run` | Function | `src/core/runtime/installPrerequisites.test.ts` | 192 |

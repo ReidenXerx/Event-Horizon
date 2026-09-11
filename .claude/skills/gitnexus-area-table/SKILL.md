@@ -5,7 +5,7 @@ description: "Skill for the Table area of Event-Horizon. 23 symbols across 4 fil
 
 # Table
 
-23 symbols | 4 files | Cohesion: 98%
+23 symbols | 4 files | Cohesion: 91%
 
 ## When to Use
 
@@ -26,36 +26,42 @@ description: "Skill for the Table area of Event-Horizon. 23 symbols across 4 fil
 
 Start here when exploring this area:
 
-- **`DataTable`** (Function) — `src/ui/components/table/DataTable.tsx:92`
-- **`clickRow`** (Function) — `src/ui/components/table/DataTable.tsx:227`
+- **`DataTable`** (Function) — `src/ui/components/table/DataTable.tsx:64`
+- **`clickRow`** (Function) — `src/ui/components/table/DataTable.tsx:202`
 - **`describeTableView`** (Function) — `src/ui/components/table/tableView.ts:241`
 - **`distinctValues`** (Function) — `src/ui/components/table/tableView.ts:170`
-- **`matchedIds`** (Function) — `src/ui/components/table/DataTable.tsx:160`
+- **`matchedIds`** (Function) — `src/ui/components/table/DataTable.tsx:132`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `DataTable` | Function | `src/ui/components/table/DataTable.tsx` | 92 |
-| `clickRow` | Function | `src/ui/components/table/DataTable.tsx` | 227 |
+| `DataTable` | Function | `src/ui/components/table/DataTable.tsx` | 64 |
+| `clickRow` | Function | `src/ui/components/table/DataTable.tsx` | 202 |
 | `describeTableView` | Function | `src/ui/components/table/tableView.ts` | 241 |
 | `distinctValues` | Function | `src/ui/components/table/tableView.ts` | 170 |
-| `matchedIds` | Function | `src/ui/components/table/DataTable.tsx` | 160 |
-| `view` | Function | `src/ui/components/table/DataTable.tsx` | 149 |
+| `matchedIds` | Function | `src/ui/components/table/DataTable.tsx` | 132 |
+| `view` | Function | `src/ui/components/table/DataTable.tsx` | 121 |
 | `applyTableView` | Function | `src/ui/components/table/tableView.ts` | 188 |
 | `compareCells` | Function | `src/ui/components/table/tableView.ts` | 161 |
 | `compareForSort` | Function | `src/ui/components/table/tableView.ts` | 138 |
 | `matchesFilter` | Function | `src/ui/components/table/tableView.ts` | 86 |
-| `target` | Function | `src/ui/components/table/DataTable.tsx` | 175 |
+| `target` | Function | `src/ui/components/table/DataTable.tsx` | 150 |
 | `effectiveTarget` | Function | `src/ui/components/table/tableView.ts` | 281 |
-| `nextSort` | Function | `src/ui/components/table/DataTable.tsx` | 86 |
-| `kindOf` | Function | `src/ui/pages/curator/CuratorPage.tsx` | 258 |
-| `stateOf` | Function | `src/ui/pages/curator/CuratorPage.tsx` | 260 |
-| `value` | Function | `src/ui/pages/curator/CuratorPage.tsx` | 272 |
-| `value` | Function | `src/ui/pages/curator/CuratorPage.tsx` | 375 |
+| `nextSort` | Function | `src/ui/components/table/DataTable.tsx` | 58 |
+| `kindOf` | Function | `src/ui/pages/curator/CuratorPage.tsx` | 198 |
+| `stateOf` | Function | `src/ui/pages/curator/CuratorPage.tsx` | 200 |
+| `value` | Function | `src/ui/pages/curator/CuratorPage.tsx` | 212 |
+| `value` | Function | `src/ui/pages/curator/CuratorPage.tsx` | 315 |
 | `comparable` | Function | `src/ui/components/table/tableView.ts` | 106 |
 | `text` | Function | `src/ui/components/table/tableView.ts` | 75 |
 | `many` | Function | `src/ui/components/table/tableView.test.ts` | 148 |
+
+## Execution Flows
+
+| Flow | Type | Steps |
+|------|------|-------|
+| `DataTable → UseIndeterminate` | cross_community | 4 |
 
 ## How to Explore
 

@@ -85,15 +85,7 @@ export function HashingCard(props: HashingCardProps): JSX.Element {
       <div className="eh-hashing__row">
         <span className="eh-hashing__counter">
           {done} / {total}
-          <span
-            style={{
-              color: "var(--eh-text-muted)",
-              marginLeft: "var(--eh-sp-2)",
-              fontSize: "var(--eh-text-sm)",
-            }}
-          >
-            ({percent}%)
-          </span>
+          <span className="eh-hashing__percent">({percent}%)</span>
         </span>
         {currentItem !== undefined && currentItem.length > 0 && (
           <span

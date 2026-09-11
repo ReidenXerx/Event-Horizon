@@ -26,12 +26,24 @@ import * as path from "path";
 
 import {
   Button,
+  Callout,
   Card,
+  Checkbox,
+  ChoiceCard,
   DiffSectionBlock,
+  Field,
   HashingCard,
+  Input,
+  LinkButton,
+  Page,
   Pill,
   ProgressRing,
+  Section,
+  Select,
+  StatGrid,
+  StatTile,
   StepDots,
+  Textarea,
   useToast,
 } from "../../components";
 import {
@@ -429,8 +441,8 @@ function BuildWizard(props: BuildWizardProps): JSX.Element {
   // in the registry; remounting the wizard for the same draftId
   // resumes exactly where they left off.
   const backToDashboard = (
-    <div style={{ marginBottom: "var(--eh-sp-3)" }}>
-      <Button intent="ghost" onClick={props.onBackToDashboard}>
+    <div className="eh-page__eyebrow">
+      <Button intent="ghost" size="sm" onClick={props.onBackToDashboard}>
         ← Drafts
       </Button>
     </div>
@@ -469,54 +481,40 @@ function BuildWizard(props: BuildWizardProps): JSX.Element {
         {backToDashboard}
         <Header stepIndex={stepIndex} stepLabel={stepLabels[stepIndex]} />
         <Card title="Re-downloading source archives">
-          <p style={{ marginTop: 0, color: "var(--eh-text-secondary)" }}>
-            Fetching the archives Vortex no longer has, so these mods can be
-            identified. Only the archive is downloaded — your installed mods are
-            not touched and nothing is re-installed.
-          </p>
-          <p style={{ fontVariantNumeric: "tabular-nums" }}>
-            <strong>
-              {state.done} / {state.total}
-            </strong>{" "}
-            ({pct}%)
-            {state.currentMod !== undefined ? ` — ${state.currentMod}` : ""}
-          </p>
-          <div
-            aria-hidden="true"
-            style={{
-              height: 6,
-              borderRadius: 3,
-              background: "var(--eh-bg-elevated)",
-              overflow: "hidden",
-              margin: "var(--eh-sp-3) 0",
-            }}
-          >
+          <div className="eh-stack">
+            <p className="eh-body">
+              Fetching the archives Vortex no longer has, so these mods can be
+              identified. Only the archive is downloaded — your installed mods are
+              not touched and nothing is re-installed.
+            </p>
+            <p className="eh-strong">
+              <strong>
+                {state.done} / {state.total}
+              </strong>{" "}
+              ({pct}%)
+              {state.currentMod !== undefined ? ` — ${state.currentMod}` : ""}
+            </p>
             <div
-              style={{
-                width: `${pct}%`,
-                height: "100%",
-                background: "var(--eh-accent, var(--eh-text-secondary))",
-                transition: "width 200ms linear",
-              }}
-            />
+              className="eh-bar"
+              aria-hidden="true"
+              style={{ ["--eh-progress" as string]: String(pct / 100) } as React.CSSProperties}
+            >
+              <div className="eh-bar__fill" />
+            </div>
+            <div>
+              <Button
+                intent="ghost"
+                onClick={(): void => session.cancelRecovering()}
+              >
+                Stop after this one
+              </Button>
+            </div>
+            <p className="eh-note">
+              Vortex offers no way to abort a download already in progress, so
+              stopping takes effect once the current file finishes. Everything
+              recovered so far is kept.
+            </p>
           </div>
-          <Button
-            intent="ghost"
-            onClick={(): void => session.cancelRecovering()}
-          >
-            Stop after this one
-          </Button>
-          <p
-            style={{
-              marginBottom: 0,
-              fontSize: "var(--eh-text-sm)",
-              color: "var(--eh-text-secondary)",
-            }}
-          >
-            Vortex offers no way to abort a download already in progress, so
-            stopping takes effect once the current file finishes. Everything
-            recovered so far is kept.
-          </p>
         </Card>
       </div>
     );
@@ -743,24 +741,8 @@ function GameMismatchBanner(props: {
   activeGameId: string;
 }): JSX.Element {
   return (
-    <div
-      role="alert"
-      style={{
-        marginBottom: "var(--eh-sp-3)",
-        padding: "var(--eh-sp-3) var(--eh-sp-4)",
-        background: "rgba(255, 198, 99, 0.08)",
-        border: "1px solid var(--eh-warning)",
-        borderRadius: "var(--eh-radius-md)",
-        color: "var(--eh-text-primary)",
-        fontSize: "var(--eh-text-sm)",
-        display: "flex",
-        gap: "var(--eh-sp-2)",
-        alignItems: "flex-start",
-      }}
-    >
-      <span aria-hidden="true">⚠</span>
+    <Callout tone="warning" role="alert" title="Active game switched.">
       <div>
-        <strong>Active game switched.</strong>{" "}
         This draft was loaded for <code>{props.draftGameId}</code>, but
         Vortex is now active on <code>{props.activeGameId}</code>. The
         form data still reflects the original game and will build
@@ -769,7 +751,7 @@ function GameMismatchBanner(props: {
         live mod state, or open this draft from the dashboard after
         switching profiles.
       </div>
-    </div>
+    </Callout>
   );
 }
 
@@ -790,44 +772,18 @@ function QueuedPanel(props: {
 }): JSX.Element {
   return (
     <Card title={`Queued: ${props.curator.name} v${props.curator.version}`}>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--eh-sp-3)",
-          padding: "var(--eh-sp-2)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--eh-sp-3)",
-          }}
-        >
+      <div className="eh-stack">
+        <div className="eh-row eh-row--lg eh-row--nowrap">
           <ProgressRing size={48} />
-          <div>
-            <div
-              style={{
-                color: "var(--eh-text-primary)",
-                fontSize: "var(--eh-text-md)",
-              }}
-            >
-              Waiting for the current build to finish.
-            </div>
-            <div
-              style={{
-                color: "var(--eh-text-secondary)",
-                fontSize: "var(--eh-text-sm)",
-                marginTop: "var(--eh-sp-1)",
-              }}
-            >
+          <div className="eh-fill eh-stack eh-stack--xs">
+            <span className="eh-strong">Waiting for the current build to finish.</span>
+            <p className="eh-body">
               Position {props.queuePosition} in queue. We'll start automatically
               when it's your turn — switching tabs is fine.
-            </div>
+            </p>
           </div>
         </div>
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <div className="eh-actions">
           <Button intent="ghost" onClick={props.onCancel}>
             Cancel build
           </Button>
@@ -860,29 +816,22 @@ function TreatAsExternalAction(props: {
   if (props.onTreat === undefined) return null;
   if (props.marked) {
     return (
-      <span style={{ color: "var(--eh-success)" }}>
+      <span className="eh-tone--success">
         {" "}
         — ships as an external mod
       </span>
     );
   }
   return (
-    <button
-      type="button"
-      onClick={() => props.onTreat?.(props.finding.modId, props.finding.fileId)}
-      style={{
-        marginLeft: "var(--eh-sp-2)",
-        background: "none",
-        border: "none",
-        padding: 0,
-        cursor: "pointer",
-        color: "var(--eh-cyan)",
-        font: "inherit",
-        textDecoration: "underline",
-      }}
-    >
-      ship as external
-    </button>
+    <>
+      {" "}
+      <LinkButton
+        variant="xs"
+        onClick={() => props.onTreat?.(props.finding.modId, props.finding.fileId)}
+      >
+        ship as external
+      </LinkButton>
+    </>
   );
 }
 
@@ -945,21 +894,15 @@ export function AvailabilityPanel(props: {
 
   return (
     <Card title="Can your users still download these mods?">
-      <p
-        style={{
-          margin: 0,
-          fontSize: "var(--eh-text-sm)",
-          color: "var(--eh-text-secondary)",
-          lineHeight: "var(--eh-leading-relaxed)",
-        }}
-      >
+      <div className="eh-stack">
+      <p className="eh-body">
         You already have every mod on disk, so one that Nexus has since
         deleted packs and ships perfectly — and then fails for everyone else.
         This asks Nexus about each mod, one request per mod page.
       </p>
 
-      <div style={{ marginTop: "var(--eh-sp-3)" }}>
-        <Button intent="ghost" size="sm" disabled={running} onClick={props.onCheck}>
+      <div>
+        <Button intent="ghost" size="sm" busy={running} onClick={props.onCheck}>
           {running
             ? `Checking ${props.progress!.done}/${props.progress!.total || "…"}`
             : result === undefined
@@ -969,57 +912,29 @@ export function AvailabilityPanel(props: {
       </div>
 
       {result !== undefined && (
-        <div style={{ marginTop: "var(--eh-sp-3)" }}>
+        <div className="eh-stack eh-stack--sm">
           {result.summary.lines.map((line, i) => (
             <p
               key={i}
-              style={{
-                margin: "0 0 var(--eh-sp-2) 0",
-                fontSize: "var(--eh-text-sm)",
-                lineHeight: "var(--eh-leading-relaxed)",
-                color:
-                  i === 0 && !result.summary.clean
-                    ? "var(--eh-text-primary)"
-                    : "var(--eh-text-secondary)",
-              }}
+              className={i === 0 && !result.summary.clean ? "eh-strong" : "eh-body"}
             >
               {line}
             </p>
           ))}
 
           {blocked.length > 0 && (
-            <ul
-              style={{
-                margin: "var(--eh-sp-2) 0 0 0",
-                paddingLeft: "var(--eh-sp-4)",
-                display: "flex",
-                flexDirection: "column",
-                gap: 2,
-                fontSize: "var(--eh-text-xs)",
-                fontFamily: "var(--eh-font-mono)",
-                color: "var(--eh-text-muted)",
-                maxHeight: 220,
-                overflowY: "auto",
-              }}
-            >
+            <ul className="eh-list eh-mono eh-muted eh-scroll">
               {blocked.map((f) => (
                 <li key={f.compareKey}>
                   {/* Which of the two, per mod: "old version tidied up" and
                       "page taken down" read identically as a download
                       failure and mean opposite things. */}
-                  <span
-                    style={{
-                      color:
-                        f.status === "mod-missing"
-                          ? "var(--eh-danger)"
-                          : "var(--eh-warning)",
-                    }}
-                  >
+                  <span className={f.status === "mod-missing" ? "eh-tone--danger" : "eh-tone--warning"}>
                     {f.status === "mod-missing" ? "page gone" : "file gone"}
                   </span>{" "}
                   {f.name} — mod {f.modId}, file {f.fileId}
                   {f.replacement !== undefined && (
-                    <span style={{ color: "var(--eh-text-secondary)" }}>
+                    <span className="eh-secondary">
                       {" "}
                       → current main file {f.replacement.fileId}
                       {f.replacement.version != null
@@ -1042,33 +957,9 @@ export function AvailabilityPanel(props: {
           )}
 
           {unchecked.length > 0 && (
-            <details style={{ marginTop: "var(--eh-sp-3)" }}>
-              <summary
-                style={{
-                  cursor: "pointer",
-                  color: "var(--eh-text-muted)",
-                  fontSize: "var(--eh-text-xs)",
-                  letterSpacing: "var(--eh-tracking-wide)",
-                  textTransform: "uppercase",
-                  fontWeight: 600,
-                }}
-              >
-                Show the {unchecked.length} Nexus could not answer for
-              </summary>
-              <ul
-                style={{
-                  margin: "var(--eh-sp-2) 0 0 0",
-                  paddingLeft: "var(--eh-sp-4)",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 2,
-                  fontSize: "var(--eh-text-xs)",
-                  fontFamily: "var(--eh-font-mono)",
-                  color: "var(--eh-text-muted)",
-                  maxHeight: 220,
-                  overflowY: "auto",
-                }}
-              >
+            <details className="eh-details">
+              <summary>Show the {unchecked.length} Nexus could not answer for</summary>
+              <ul className="eh-list eh-mono eh-muted eh-scroll eh-details__body">
                 {unchecked.map((f) => (
                   <li key={f.compareKey}>
                     {f.name} — mod {f.modId}, file {f.fileId}
@@ -1079,34 +970,12 @@ export function AvailabilityPanel(props: {
           )}
 
           {fragile.length > 0 && (
-            <details style={{ marginTop: "var(--eh-sp-3)" }}>
-              <summary
-                style={{
-                  cursor: "pointer",
-                  color: "var(--eh-text-muted)",
-                  fontSize: "var(--eh-text-xs)",
-                  letterSpacing: "var(--eh-tracking-wide)",
-                  textTransform: "uppercase",
-                  fontWeight: 600,
-                }}
-              >
+            <details className="eh-details">
+              <summary>
                 Show the {fragile.length} old or archived file
                 {fragile.length === 1 ? "" : "s"}
               </summary>
-              <ul
-                style={{
-                  margin: "var(--eh-sp-2) 0 0 0",
-                  paddingLeft: "var(--eh-sp-4)",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 2,
-                  fontSize: "var(--eh-text-xs)",
-                  fontFamily: "var(--eh-font-mono)",
-                  color: "var(--eh-text-muted)",
-                  maxHeight: 220,
-                  overflowY: "auto",
-                }}
-              >
+              <ul className="eh-list eh-mono eh-muted eh-scroll eh-details__body">
                 {fragile.map((f) => (
                   <li key={f.compareKey}>
                     {f.name} — mod {f.modId}, file {f.fileId}
@@ -1117,6 +986,7 @@ export function AvailabilityPanel(props: {
           )}
         </div>
       )}
+      </div>
     </Card>
   );
 }
@@ -1136,22 +1006,8 @@ function IdlePanel(props: {
 }): JSX.Element {
   return (
     <Card title="Build a collection">
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--eh-sp-3)",
-          padding: "var(--eh-sp-2)",
-        }}
-      >
-        <p
-          style={{
-            margin: 0,
-            color: "var(--eh-text-secondary)",
-            fontSize: "var(--eh-text-md)",
-            lineHeight: "var(--eh-leading-normal)",
-          }}
-        >
+      <div className="eh-stack">
+        <p className="eh-prose">
           Event Horizon will read your active profile, hash every mod
           archive (so the manifest pins exact files), and then open
           the curator form so you can polish the metadata, README,
@@ -1173,15 +1029,7 @@ function IdlePanel(props: {
             in flight; come back to this tab to see progress.
           </li>
         </ul>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            gap: "var(--eh-sp-2)",
-            marginTop: "var(--eh-sp-2)",
-            flexWrap: "wrap",
-          }}
-        >
+        <div className="eh-actions">
           <Button intent="ghost" onClick={props.onCancel}>
             Cancel
           </Button>
@@ -1200,51 +1048,20 @@ function IdlePanel(props: {
 
 function Header(props: { stepIndex: number; stepLabel: string }): JSX.Element {
   return (
-    <header
-      style={{
-        display: "flex",
-        alignItems: "flex-end",
-        justifyContent: "space-between",
-        gap: "var(--eh-sp-3)",
-        marginBottom: "var(--eh-sp-5)",
-        flexWrap: "wrap",
-      }}
-    >
-      <div>
-        <h2
-          style={{
-            margin: 0,
-            fontSize: "var(--eh-text-2xl)",
-            color: "var(--eh-text-primary)",
-            letterSpacing: "var(--eh-tracking-tight)",
-          }}
-        >
-          Build a collection
-        </h2>
-        <p
-          style={{
-            margin: "var(--eh-sp-2) 0 0 0",
-            color: "var(--eh-text-secondary)",
-            fontSize: "var(--eh-text-md)",
-          }}
-        >
+    <header className="eh-page__header">
+      <div className="eh-page__heading">
+        <h1 className="eh-page__title">Build a collection</h1>
+        <p className="eh-page__subtitle">
           Capture your active profile as an Event Horizon .ehcoll package.
         </p>
       </div>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "flex-end",
-          gap: "var(--eh-sp-2)",
-        }}
-      >
-        <StepDots total={5} current={props.stepIndex} />
-        <span
-          className="eh-label"
-        >
-          Step {props.stepIndex + 1} / 5 · {props.stepLabel}
-        </span>
+      <div className="eh-page__actions">
+        <div className="eh-stack eh-stack--sm eh-stack--end">
+          <StepDots total={5} current={props.stepIndex} />
+          <span className="eh-label">
+            Step {props.stepIndex + 1} / 5 · {props.stepLabel}
+          </span>
+        </div>
       </div>
     </header>
   );
@@ -1279,26 +1096,11 @@ function LoadingPanel(props: {
 
   return (
     <Card>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--eh-sp-4)",
-          padding: "var(--eh-sp-3)",
-        }}
-      >
+      <div className="eh-row eh-row--lg eh-row--nowrap">
         <ProgressRing size={64} />
-        <div className="eh-fill">
-          <h3 style={{ margin: 0, color: "var(--eh-text-primary)" }}>
-            Preparing build context
-          </h3>
-          <p
-            style={{
-              margin: "var(--eh-sp-1) 0 0 0",
-              color: "var(--eh-text-secondary)",
-              fontSize: "var(--eh-text-sm)",
-            }}
-          >
+        <div className="eh-fill eh-stack eh-stack--xs">
+          <span className="eh-progress-panel__title">Preparing build context</span>
+          <p className="eh-body">
             {props.progress?.message ?? phaseLabel ?? "Reading active profile..."}
           </p>
         </div>
@@ -1365,56 +1167,31 @@ interface FormPanelProps {
 function WarningRow(props: { text: string }): JSX.Element {
   const { headline, detail } = splitWarning(props.text);
   const tone = warningTone(props.text);
+  // Severity as a shape, not a word — the list stays scannable.
   const dot =
     tone === "blocking"
-      ? "var(--eh-danger)"
+      ? "eh-dot eh-dot--danger"
       : tone === "attention"
-      ? "var(--eh-warning)"
-      : "var(--eh-text-muted)";
+        ? "eh-dot eh-dot--warning"
+        : "eh-dot";
 
   if (detail.length === 0) {
     return (
-      <div className="eh-row eh-row--sm">
-        <Dot color={dot} />
+      <div className="eh-row eh-row--sm eh-row--nowrap">
+        <span aria-hidden className={dot} />
         <span className="eh-fill eh-secondary">{headline}</span>
       </div>
     );
   }
 
   return (
-    <details>
-      <summary style={{ cursor: "pointer", listStyle: "none" }}>
-        <span className="eh-row eh-row--sm" style={{ display: "inline-flex" }}>
-          <Dot color={dot} />
-          <span className="eh-secondary">{headline}</span>
-        </span>
+    <details className="eh-details">
+      <summary>
+        <span aria-hidden className={dot} />
+        <span className="eh-secondary">{headline}</span>
       </summary>
-      <div
-        className="eh-note"
-        style={{
-          whiteSpace: "pre-line",
-          margin: "var(--eh-sp-1) 0 0 var(--eh-sp-4)",
-        }}
-      >
-        {detail}
-      </div>
+      <div className="eh-note eh-pre-line eh-details__body">{detail}</div>
     </details>
-  );
-}
-
-/** Severity as a shape, not a word — the list stays scannable. */
-function Dot(props: { color: string }): JSX.Element {
-  return (
-    <span
-      aria-hidden
-      style={{
-        width: 6,
-        height: 6,
-        borderRadius: "50%",
-        background: props.color,
-        flexShrink: 0,
-      }}
-    />
   );
 }
 
@@ -1546,7 +1323,7 @@ export function BuildDiffView(props: {
   if (outcome.kind === "unreadable") {
     return (
       <Card title="Changes since your last build">
-        <p style={{ margin: 0, color: "var(--eh-warning)" }}>
+        <p className="eh-tone--warning">
           Couldn't read {outcome.fileName}, so there is nothing to compare
           against: {outcome.why}
         </p>
@@ -1557,14 +1334,8 @@ export function BuildDiffView(props: {
   const { diff } = outcome;
   return (
     <Card title={`Changes since v${outcome.againstVersion}`}>
-      <p
-        style={{
-          margin: "0 0 var(--eh-sp-2)",
-          color: isUnchanged(diff)
-            ? "var(--eh-text-secondary)"
-            : "var(--eh-text-primary)",
-        }}
-      >
+      <div className="eh-stack eh-stack--sm">
+      <p className={isUnchanged(diff) ? "eh-body" : "eh-strong"}>
         {describeCollectionDiff(diff)}
       </p>
       {!isUnchanged(diff) && (
@@ -1646,48 +1417,29 @@ export function BuildDiffView(props: {
           </DiffSectionBlock>
         </div>
       )}
+      </div>
     </Card>
   );
 }
 
 /** One section's rows, scrolling rather than pushing the page down. */
 function DiffLines(props: { children: React.ReactNode }): JSX.Element {
-  return (
-    <div style={{ maxHeight: 200, overflowY: "auto" }}>{props.children}</div>
-  );
+  return <div className="eh-scroll">{props.children}</div>;
 }
 
 function DiffLine(props: { name: string; detail?: string }): JSX.Element {
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        gap: "var(--eh-sp-3)",
-        padding: "2px 0",
-        fontSize: "var(--eh-text-sm)",
-      }}
-    >
-      <span style={{ color: "var(--eh-text-primary)", minWidth: 0 }}>
-        {props.name}
-      </span>
+    <div className="eh-diff-line">
+      <span className="eh-diff-line__name">{props.name}</span>
       {props.detail !== undefined && (
-        <span
-          style={{
-            color: "var(--eh-text-muted)",
-            fontFamily: "var(--eh-font-mono)",
-            fontSize: "var(--eh-text-xs)",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {props.detail}
-        </span>
+        <span className="eh-diff-line__detail">{props.detail}</span>
       )}
     </div>
   );
 }
 
-function FormPanel(props: FormPanelProps): JSX.Element {
+/** Exported for the render harness only. */
+export function FormPanel(props: FormPanelProps): JSX.Element {
   // Autosave. Everything below used to live only in the build session, which
   // is module-scoped — it survived tab switches and a React remount, and was
   // discarded by a Vortex restart. Fine for a version number; not fine for
@@ -1809,19 +1561,13 @@ function FormPanel(props: FormPanelProps): JSX.Element {
   };
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "minmax(0, 1fr)",
-        gap: "var(--eh-sp-4)",
-      }}
-    >
+    <div className="eh-stack eh-stack--lg">
       {/* Acting on this form usually means LEAVING it: it names a missing
           prerequisite or an archive you have to fetch, you go to Vortex and
           fix it, and you come back to the scan from before you did. The form
           is a snapshot, and until now the only way to retake it was to discard
           the draft — which threw away the typing with it. */}
-      <div className="eh-row" style={{ justifyContent: "flex-end" }}>
+      <div className="eh-row eh-row--end">
         {props.refreshedAt !== undefined && !props.refreshing && (
           <span className="eh-note">
             re-read {formatRelativeTime(props.refreshedAt)}
@@ -1830,7 +1576,7 @@ function FormPanel(props: FormPanelProps): JSX.Element {
         <Button
           intent="ghost"
           size="sm"
-          disabled={props.refreshing}
+          busy={props.refreshing}
           onClick={props.onRefresh}
           title={
             "Re-reads your mods, archives and game folder. Everything you " +
@@ -1848,40 +1594,25 @@ function FormPanel(props: FormPanelProps): JSX.Element {
         />
       )}
       {ctx.scopeWarnings.length > 0 && (
-        <div
+        <Callout
+          tone="warning"
           role="status"
-          style={{
-            padding: "var(--eh-sp-3) var(--eh-sp-4)",
-            background: "var(--eh-bg-elevated)",
-            border: "1px solid var(--eh-warning, var(--eh-border-default))",
-            borderRadius: "var(--eh-radius-md)",
-            color: "var(--eh-text-primary)",
-            fontSize: "var(--eh-text-sm)",
-            display: "flex",
-            gap: "var(--eh-sp-2)",
-            alignItems: "flex-start",
-          }}
+          title="Worth knowing before you build."
+          actions={
+            recoverableCount > 0 ? (
+              <Button intent="primary" size="sm" onClick={onRecoverArchives}>
+                Re-download {recoverableCount} archive
+                {recoverableCount === 1 ? "" : "s"}
+              </Button>
+            ) : undefined
+          }
         >
-          <span aria-hidden="true">⚠</span>
-          <div>
-            <strong>Worth knowing before you build.</strong>
-            <ul style={{ margin: "var(--eh-sp-2) 0 0", paddingLeft: "var(--eh-sp-4)" }}>
-              {ctx.scopeWarnings.map((warning) => (
-                <li key={warning} style={{ marginBottom: "var(--eh-sp-1)" }}>
-                  {warning}
-                </li>
-              ))}
-            </ul>
-            {recoverableCount > 0 && (
-              <div style={{ marginTop: "var(--eh-sp-3)" }}>
-                <Button intent="primary" size="sm" onClick={onRecoverArchives}>
-                  Re-download {recoverableCount} archive
-                  {recoverableCount === 1 ? "" : "s"}
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
+          <ul className="eh-list eh-list--spaced">
+            {ctx.scopeWarnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </Callout>
       )}
 
       <AvailabilityPanel
@@ -1905,27 +1636,10 @@ function FormPanel(props: FormPanelProps): JSX.Element {
       />
 
       {ctx.mods.length === 0 && (
-        <div
-          role="alert"
-          style={{
-            padding: "var(--eh-sp-3) var(--eh-sp-4)",
-            background: "var(--eh-bg-elevated)",
-            border: "1px solid var(--eh-danger)",
-            borderRadius: "var(--eh-radius-md)",
-            color: "var(--eh-text-primary)",
-            fontSize: "var(--eh-text-sm)",
-            display: "flex",
-            gap: "var(--eh-sp-2)",
-            alignItems: "flex-start",
-          }}
-        >
-          <span aria-hidden="true">⚠</span>
-          <div>
-            <strong>Your active profile has no mods.</strong>{" "}
-            A collection needs at least one mod. Enable some mods in
-            Vortex first, then come back here.
-          </div>
-        </div>
+        <Callout tone="danger" title="Your active profile has no mods.">
+          A collection needs at least one mod. Enable some mods in Vortex
+          first, then come back here.
+        </Callout>
       )}
       <BuildDiffCard
         collectionName={curator.name}
@@ -1934,27 +1648,18 @@ function FormPanel(props: FormPanelProps): JSX.Element {
       />
 
       <Card title="Collection metadata">
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: "var(--eh-sp-3)",
-            marginBottom: "var(--eh-sp-3)",
-            flexWrap: "wrap",
-          }}
-        >
+        <div className="eh-stack">
+        <div className="eh-row eh-row--split">
           <Field
+            className="eh-fill"
             label="Draft label (dashboard only)"
             hint="Optional. Helps you tell drafts apart on the dashboard. Not shipped in the .ehcoll."
           >
-            <input
+            <Input
               type="text"
-              className="eh-input"
               value={title}
               placeholder={`Untitled draft — e.g. "${ctx.gameId} main run"`}
               onChange={(e) => onTitleChange(e.target.value)}
-              style={{ minWidth: 280 }}
             />
           </Field>
           <ImportPreviousButton
@@ -1963,49 +1668,33 @@ function FormPanel(props: FormPanelProps): JSX.Element {
             }}
           />
         </div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: "var(--eh-sp-3)",
-          }}
-        >
+        <div className="eh-form-row">
           <Field label="Name" hint="Curator-facing display name. Becomes the package name.">
-            <input
+            <Input
               type="text"
-              className="eh-input"
               value={curator.name}
               placeholder="My Awesome Skyrim Build"
               onChange={(e) => updateCurator({ name: e.target.value })}
             />
           </Field>
           <Field label="Version" hint="Semver: 1.0.0, 0.2.1-beta.1.">
-            <input
+            <Input
               type="text"
-              className="eh-input"
               value={curator.version}
               placeholder="1.0.0"
               onChange={(e) => updateCurator({ version: e.target.value })}
             />
           </Field>
           <Field label="Author">
-            <input
+            <Input
               type="text"
-              className="eh-input"
               value={curator.author}
               placeholder="Your Nexus username"
               onChange={(e) => updateCurator({ author: e.target.value })}
             />
           </Field>
         </div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(220px, 2fr) minmax(160px, 1fr)",
-            gap: "var(--eh-sp-3)",
-            marginTop: "var(--eh-sp-3)",
-          }}
-        >
+        <div className="eh-form-row">
           <Field
             label="Required game version"
             hint={
@@ -2014,9 +1703,8 @@ function FormPanel(props: FormPanelProps): JSX.Element {
                 : `Detected on this machine: ${ctx.gameVersion}. Users on a different version are told to use a downgrader.`
             }
           >
-            <input
+            <Input
               type="text"
-              className="eh-input"
               value={curator.gameVersion}
               placeholder="e.g. 1.10.163.0 — blank means no check"
               onChange={(e) => updateCurator({ gameVersion: e.target.value })}
@@ -2030,8 +1718,7 @@ function FormPanel(props: FormPanelProps): JSX.Element {
                 : "Blocks only older versions."
             }
           >
-            <select
-              className="eh-input"
+            <Select
               value={curator.gameVersionPolicy}
               disabled={curator.gameVersion.trim().length === 0}
               onChange={(e) =>
@@ -2042,28 +1729,18 @@ function FormPanel(props: FormPanelProps): JSX.Element {
             >
               <option value="exact">Exactly this version</option>
               <option value="minimum">This version or newer</option>
-            </select>
+            </Select>
           </Field>
         </div>
-        <div style={{ marginTop: "var(--eh-sp-3)" }}>
-          <Field label="Description (optional)">
-            <textarea
-              className="eh-input eh-input--textarea"
-              rows={3}
-              value={curator.description}
-              placeholder="What this collection ships, who it's for..."
-              onChange={(e) => updateCurator({ description: e.target.value })}
-            />
-          </Field>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            gap: "var(--eh-sp-2)",
-            marginTop: "var(--eh-sp-3)",
-            flexWrap: "wrap",
-          }}
-        >
+        <Field label="Description (optional)">
+          <Textarea
+            rows={3}
+            value={curator.description}
+            placeholder="What this collection ships, who it's for..."
+            onChange={(e) => updateCurator({ description: e.target.value })}
+          />
+        </Field>
+        <div className="eh-row">
           <Pill intent="info">{ctx.gameId}</Pill>
           <Pill intent="neutral">{ctx.mods.length} mods</Pill>
           <Pill intent="neutral">{ctx.externalMods.length} external</Pill>
@@ -2075,11 +1752,12 @@ function FormPanel(props: FormPanelProps): JSX.Element {
             </Pill>
           )}
         </div>
+        </div>
       </Card>
 
       <Card title={`External mods (${ctx.externalMods.length})`}>
         {externalRows.length === 0 ? (
-          <p style={{ margin: 0, color: "var(--eh-text-secondary)" }}>
+          <p className="eh-body">
             No external (non-Nexus) mods in this profile. Nothing to override.
           </p>
         ) : (
@@ -2106,16 +1784,7 @@ function FormPanel(props: FormPanelProps): JSX.Element {
           {ctx.rootFolderReview.map((line, i) => (
             <p
               key={`${i}-${line.slice(0, 24)}`}
-              style={{
-                margin: 0,
-                color: line.startsWith("  •")
-                  ? "var(--eh-text-primary)"
-                  : "var(--eh-text-secondary)",
-                fontFamily: line.startsWith("  •")
-                  ? "var(--eh-font-mono)"
-                  : undefined,
-                fontSize: line.startsWith("  •") ? "0.9em" : undefined,
-              }}
+              className={line.startsWith("  •") ? "eh-mono eh-strong" : "eh-body"}
             >
               {line}
             </p>
@@ -2124,8 +1793,8 @@ function FormPanel(props: FormPanelProps): JSX.Element {
       </Card>
 
       <Card title="README (optional)">
-        <textarea
-          className="eh-input eh-input--textarea"
+        <Textarea
+          aria-label="README"
           rows={6}
           value={readme}
           placeholder="Markdown shipped inside the .ehcoll. Shown on the install screen."
@@ -2134,8 +1803,8 @@ function FormPanel(props: FormPanelProps): JSX.Element {
       </Card>
 
       <Card title="CHANGELOG (optional)">
-        <textarea
-          className="eh-input eh-input--textarea"
+        <Textarea
+          aria-label="CHANGELOG"
           rows={6}
           value={changelog}
           placeholder="Markdown describing what's new in this version."
@@ -2157,22 +1826,9 @@ function FormPanel(props: FormPanelProps): JSX.Element {
         onReverifyChange={(v): void => onChange({ reverifyEverything: v })}
       />
 
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "flex-end",
-          gap: "var(--eh-sp-2)",
-          alignItems: "center",
-          flexWrap: "wrap",
-        }}
-      >
+      <div className="eh-actions eh-actions--sticky">
         {validationError !== undefined && (
-          <span
-            style={{
-              color: "var(--eh-danger)",
-              fontSize: "var(--eh-text-sm)",
-            }}
-          >
+          <span className="eh-note eh-tone--danger" role="alert">
             {validationError}
           </span>
         )}
@@ -2232,22 +1888,10 @@ function PrerequisitesCard(props: PrerequisitesCardProps): JSX.Element {
   const { detected, overrides, gameVersion, gameId, onChange } = props;
   return (
     <Card title="Requirements the user must satisfy themselves">
-      <div
-        style={{
-          padding: "var(--eh-sp-3)",
-          border: "1px solid var(--eh-border-default)",
-          borderRadius: "var(--eh-radius-md)",
-          marginBottom: "var(--eh-sp-3)",
-        }}
-      >
-        <strong>Game version — {gameVersion}</strong>
-        <p
-          style={{
-            margin: "var(--eh-sp-1) 0 0",
-            color: "var(--eh-text-secondary)",
-            fontSize: "var(--eh-text-sm)",
-          }}
-        >
+      <div className="eh-stack">
+      <div className="eh-inset eh-stack eh-stack--xs">
+        <strong className="eh-strong">Game version — {gameVersion}</strong>
+        <p className="eh-body">
           Recorded from your install and required exactly. Anyone on a different
           build is told which version they need and pointed at a downgrader —
           moving a Bethesda game backwards is routine, and it is the thing people
@@ -2266,7 +1910,7 @@ function PrerequisitesCard(props: PrerequisitesCardProps): JSX.Element {
       </div>
 
       {detected.length === 0 ? (
-        <p style={{ margin: 0, color: "var(--eh-text-secondary)" }}>
+        <p className="eh-body">
           No prerequisites detected in your game folder that the collection does
           not already install. A script extender or ENB installed as a Vortex mod
           ships with the collection, so it is deliberately not listed here.
@@ -2279,52 +1923,46 @@ function PrerequisitesCard(props: PrerequisitesCardProps): JSX.Element {
             return (
               <div
                 key={dep.id}
-                style={{
-                  padding: "var(--eh-sp-3)",
-                  border: `1px solid ${included ? "var(--eh-accent)" : "var(--eh-border-default)"}`,
-                  borderRadius: "var(--eh-radius-md)",
-                  background: included ? "var(--eh-bg-elevated)" : "transparent",
-                }}
+                className={
+                  included
+                    ? "eh-choice-card eh-choice-card--static eh-choice-card--checked eh-stack eh-stack--sm"
+                    : "eh-choice-card eh-choice-card--static eh-stack eh-stack--sm"
+                }
               >
-                <label style={{ display: "flex", gap: "var(--eh-sp-2)", alignItems: "center" }}>
-                  <input
-                    type="checkbox"
-                    checked={included}
-                    onChange={(e): void => onChange(dep.id, { included: e.target.checked })}
-                  />
-                  <strong>{dep.name}</strong>
-                  <Pill intent="neutral">{dep.version}</Pill>
-                  <Pill intent="neutral">{dep.files.length} files</Pill>
-                </label>
-                <p
-                  style={{
-                    margin: "var(--eh-sp-2) 0",
-                    color: "var(--eh-text-secondary)",
-                    fontSize: "var(--eh-text-sm)",
-                  }}
-                >
+                <Checkbox
+                  checked={included}
+                  onChange={(e): void => onChange(dep.id, { included: e.target.checked })}
+                  label={
+                    <span className="eh-row eh-row--sm">
+                      <strong>{dep.name}</strong>
+                      <Pill intent="neutral">{dep.version}</Pill>
+                      <Pill intent="neutral">{dep.files.length} files</Pill>
+                    </span>
+                  }
+                />
+                <p className="eh-body">
                   Found in your game folder, installed by no mod in this
                   collection. The user's copy is verified against these hashes.
                 </p>
-                <textarea
-                  className="eh-input eh-input--textarea"
+                <Textarea
+                  aria-label={`Instructions for ${dep.name}`}
                   rows={3}
                   value={o.instructions ?? dep.instructions}
                   placeholder="What should the user do? Which build to download, and from where."
                   onChange={(e): void => onChange(dep.id, { instructions: e.target.value })}
                 />
-                <input
-                  className="eh-input"
+                <Input
+                  aria-label={`Download link for ${dep.name}`}
                   value={o.instructionsUrl ?? dep.instructionsUrl ?? ""}
                   placeholder="Download link"
                   onChange={(e): void => onChange(dep.id, { instructionsUrl: e.target.value })}
-                  style={{ marginTop: "var(--eh-sp-2)" }}
                 />
               </div>
             );
           })}
         </div>
       )}
+      </div>
     </Card>
   );
 }
@@ -2350,54 +1988,29 @@ function IntegrityLevelCard(props: IntegrityLevelCardProps): JSX.Element {
   const { modCount, reverify, onReverifyChange } = props;
   return (
     <Card title="Integrity verification">
-      <p
-        style={{
-          margin: 0,
-          marginBottom: "var(--eh-sp-3)",
-          color: "var(--eh-text-secondary)",
-          fontSize: "var(--eh-text-sm)",
-        }}
-      >
+      <div className="eh-stack">
+      <p className="eh-body">
         Every build records a SHA-256 for each file in all {modCount} mods, so
         an installing user can tell when Vortex drops or corrupts something.
         It is also what identifies a mod whose source archive is gone. Files
         already hashed are reused unless they changed, so this is only slow the
         first time.
       </p>
-      <label
-        style={{
-          display: "flex",
-          gap: "var(--eh-sp-3)",
-          padding: "var(--eh-sp-3)",
-          border: `1px solid ${reverify ? "var(--eh-accent)" : "var(--eh-border-default)"}`,
-          borderRadius: "var(--eh-radius-md)",
-          background: reverify ? "var(--eh-bg-elevated)" : "transparent",
-          cursor: "pointer",
-          alignItems: "flex-start",
-        }}
-      >
-        <input
-          type="checkbox"
-          checked={reverify}
-          onChange={(e): void => onReverifyChange(e.target.checked)}
-          style={{ marginTop: 3 }}
-        />
-        <span>
-          <strong>Re-read every file</strong>
-          <span
-            style={{
-              display: "block",
-              color: "var(--eh-text-secondary)",
-              fontSize: "var(--eh-text-sm)",
-            }}
-          >
+      <ChoiceCard
+        kind="checkbox"
+        checked={reverify}
+        onChange={(): void => onReverifyChange(!reverify)}
+        label="Re-read every file"
+        sub={
+          <>
             Ignores cached hashes and reads all {modCount} mods from disk again.
             Only worth it if you suspect a file changed without its size or
             timestamp changing — disk corruption rather than anything Vortex
             does. Costs a full pass over your staging folder.
-          </span>
-        </span>
-      </label>
+          </>
+        }
+      />
+      </div>
     </Card>
   );
 }
@@ -2538,14 +2151,10 @@ function HintSuggestion(props: {
         : "where the archive was downloaded from";
 
   return (
-    <div className="eh-row eh-row--sm" style={{ alignItems: "flex-start" }}>
+    <div className="eh-row eh-row--sm eh-row--top">
       <span className="eh-note eh-fill">
         From {source}:{" "}
-        {hint.url !== undefined && (
-          <span className="eh-mono" style={{ wordBreak: "break-all" }}>
-            {hint.url}
-          </span>
-        )}
+        {hint.url !== undefined && <span className="eh-mono">{hint.url}</span>}
         {hint.instructions !== undefined && ` — ${hint.instructions}`}
       </span>
       <Button
@@ -2590,9 +2199,9 @@ function SourceChoice(props: {
   onChange: (kind: ExternalSourceKind) => void;
 }): JSX.Element {
   return (
-    <div className="eh-stack eh-stack--xs" style={{ minWidth: "9rem" }}>
-      <select
-        className="eh-input"
+    <div className="eh-stack eh-stack--xs eh-source-choice">
+      <Select
+        aria-label="Source"
         value={props.value}
         onChange={(e): void =>
           props.onChange(e.target.value as ExternalSourceKind)
@@ -2609,7 +2218,7 @@ function SourceChoice(props: {
             {describeSourceKind(kind).label}
           </option>
         ))}
-      </select>
+      </Select>
       <span className="eh-note">{describeSourceKind(props.value).hint}</span>
     </div>
   );
@@ -2623,26 +2232,8 @@ function ExternalModsTable(
 ): JSX.Element {
   const { mods, overrides, onChange } = props;
   return (
-    <div
-      style={{
-        border: "1px solid var(--eh-border-subtle)",
-        borderRadius: "var(--eh-radius-sm)",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 2fr) auto minmax(0, 3fr)",
-          gap: "var(--eh-sp-3)",
-          padding: "var(--eh-sp-2) var(--eh-sp-3)",
-          background: "var(--eh-bg-base)",
-          color: "var(--eh-text-muted)",
-          fontSize: "var(--eh-text-xs)",
-          textTransform: "uppercase",
-          letterSpacing: "var(--eh-tracking-widest)",
-        }}
-      >
+    <div className="eh-grid-table">
+      <div className="eh-grid-table__head">
         <span>Mod</span>
         <span>Source</span>
         <span>Link and instructions</span>
@@ -2662,40 +2253,12 @@ function ExternalModsTable(
         const hasArchive =
           typeof mod.archiveSha256 === "string" && mod.archiveSha256.length > 0;
         return (
-          <div
-            key={mod.id}
-            style={{
-              display: "grid",
-              gridTemplateColumns: "minmax(0, 2fr) auto minmax(0, 3fr)",
-              gap: "var(--eh-sp-3)",
-              padding: "var(--eh-sp-3)",
-              borderTop: "1px solid var(--eh-border-subtle)",
-              alignItems: "start",
-            }}
-          >
-            <div>
-              <div
-                style={{
-                  color: "var(--eh-text-primary)",
-                  fontWeight: 600,
-                  wordBreak: "break-word",
-                }}
-              >
-                {mod.name}
-              </div>
-              <div
-                style={{
-                  color: "var(--eh-text-muted)",
-                  fontSize: "var(--eh-text-xs)",
-                  fontFamily: "var(--eh-font-mono)",
-                  marginTop: 2,
-                  wordBreak: "break-all",
-                }}
-              >
-                {mod.id}
-              </div>
+          <div key={mod.id} className="eh-grid-table__row">
+            <div className="eh-stack eh-stack--xs">
+              <div className="eh-strong">{mod.name}</div>
+              <div className="eh-mono eh-muted">{mod.id}</div>
               {!hasArchive && (
-                <div style={{ marginTop: 4 }}>
+                <div>
                   {/* Neutral, not a warning: this does not stop the mod
                       shipping. Bundling repacks the staging folder, and
                       identity falls back to the staging-set hash. It was
@@ -2725,10 +2288,11 @@ function ExternalModsTable(
               {(sourceKindOf(override) === "direct" ||
                 sourceKindOf(override) === "browse" ||
                 (override.url ?? "").length > 0) && (
-                <input
-                  className="eh-input"
+                <Input
                   type="url"
                   inputMode="url"
+                  aria-label={`Link for ${mod.name}`}
+                  aria-invalid={urlProblem(override.url) !== undefined ? true : undefined}
                   placeholder={
                     sourceKindOf(override) === "direct"
                       ? "Link to the file — https://..."
@@ -2736,11 +2300,6 @@ function ExternalModsTable(
                   }
                   value={override.url ?? ""}
                   onChange={(e) => onChange(mod.id, { url: e.target.value })}
-                  style={
-                    urlProblem(override.url) !== undefined
-                      ? { borderColor: "var(--eh-warning)" }
-                      : undefined
-                  }
                 />
               )}
               {/* Said HERE rather than at build time, because the manifest
@@ -2749,7 +2308,7 @@ function ExternalModsTable(
                   with no link and never find out. Caught where it is typed,
                   and where it can be fixed. */}
               {urlProblem(override.url) !== undefined && (
-                <span className="eh-note" style={{ color: "var(--eh-warning)" }}>
+                <span className="eh-note eh-tone--warning">
                   {urlProblem(override.url)}
                 </span>
               )}
@@ -2758,12 +2317,12 @@ function ExternalModsTable(
                   here because the user-side screen would otherwise offer a
                   button that has nothing behind it. */}
               {sourceProblem(override, { hasStagingFolder }) !== undefined && (
-                <span className="eh-note" style={{ color: "var(--eh-warning)" }}>
+                <span className="eh-note eh-tone--warning">
                   {sourceProblem(override, { hasStagingFolder })}
                 </span>
               )}
-              <textarea
-                className="eh-input eh-input--textarea"
+              <Textarea
+                aria-label={`Instructions for ${mod.name}`}
                 rows={2}
                 placeholder="Optional instructions shown when the user installs."
                 value={override.instructions ?? ""}
@@ -2841,7 +2400,8 @@ export function DecisionsGate(props: {
 
   return (
     <Card title="Before this gets packed">
-      <p style={{ margin: "0 0 var(--eh-sp-3)", color: "var(--eh-text-secondary)" }}>
+      <div className="eh-stack">
+      <p className="eh-body">
         The build is waiting here. Whatever you answer goes into the package
         it is about to make — you do not have to build again.
       </p>
@@ -2864,15 +2424,7 @@ export function DecisionsGate(props: {
         }}
       />
 
-      <div
-        style={{
-          display: "flex",
-          gap: "var(--eh-sp-2)",
-          marginTop: "var(--eh-sp-3)",
-          flexWrap: "wrap",
-          alignItems: "center",
-        }}
-      >
+      <div className="eh-row">
         <Button
           intent="primary"
           disabled={busy !== undefined}
@@ -2886,12 +2438,13 @@ export function DecisionsGate(props: {
           Cancel build
         </Button>
         {open.length > 0 && (
-          <span style={{ color: "var(--eh-text-secondary)", fontSize: "var(--eh-text-sm)" }}>
+          <span className="eh-note eh-fill">
             Unanswered mods ship as they are today — their extra files are
             recorded as required, and users installing from the archive cannot
             produce them.
           </span>
         )}
+      </div>
       </div>
     </Card>
   );
@@ -2932,17 +2485,9 @@ function PostProcessingDecisions(props: {
   const intro = describeDecisionIntro(open.length);
 
   return (
-    <div
-      style={{
-        padding: "var(--eh-sp-3)",
-        background: "rgba(255, 122, 122, 0.06)",
-        border: "1px solid var(--eh-danger, #ff7a7a)",
-        borderRadius: "var(--eh-radius-sm)",
-      }}
-      className="eh-stack eh-stack--sm"
-    >
+    <div className="eh-inset eh-inset--danger eh-stack eh-stack--sm">
       {open.length === 0 ? (
-        <strong style={{ color: "var(--eh-text-primary)" }}>
+        <strong className="eh-strong">
           All {candidates.length} answered.{" "}
           {applyMode === "this-build"
             ? "They will be applied to this build."
@@ -2950,25 +2495,15 @@ function PostProcessingDecisions(props: {
         </strong>
       ) : (
         <>
-          <strong style={{ color: "var(--eh-text-primary)" }}>{intro.title}</strong>
-          <p style={{ margin: 0, color: "var(--eh-text-secondary)" }}>{intro.what}</p>
-          <p style={{ margin: 0, color: "var(--eh-text-primary)" }}>
+          <strong className="eh-strong">{intro.title}</strong>
+          <p className="eh-body">{intro.what}</p>
+          <p className="eh-strong">
             <strong>{intro.question}</strong>
           </p>
-          <p style={{ margin: 0, color: "var(--eh-text-secondary)" }}>
-            {intro.ifIgnored}
-          </p>
-          {/* The warning against the cheap answer, styled so it is not skipped. */}
-          <p
-            style={{
-              margin: 0,
-              padding: "var(--eh-sp-2)",
-              borderLeft: "3px solid var(--eh-warning)",
-              color: "var(--eh-warning)",
-            }}
-          >
-            {intro.caution}
-          </p>
+          <p className="eh-body">{intro.ifIgnored}</p>
+          {/* The warning against the cheap answer, styled so it is not skipped —
+              and announced, because it is the line that guards NS-7. */}
+          <Callout tone="warning">{intro.caution}</Callout>
         </>
       )}
 
@@ -2981,14 +2516,7 @@ function PostProcessingDecisions(props: {
         curator is answering these one at a time and needs to see where one
         question ends and the next begins.
       */}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--eh-sp-3)",
-          marginTop: "var(--eh-sp-2)",
-        }}
-      >
+      <div className="eh-stack">
         {candidates.map((c, i) => {
           // Either answered a moment ago in this panel, or carried in from
           // the config. Both are a verdict and both are changeable.
@@ -3000,64 +2528,25 @@ function PostProcessingDecisions(props: {
           return (
             <div
               key={c.modId}
-              style={{
-                padding: "var(--eh-sp-3)",
-                background: done
-                  ? "var(--eh-bg-base)"
-                  : "var(--eh-bg-raised)",
-                border: `1px solid ${
-                  done ? "var(--eh-border-subtle)" : "var(--eh-border-default)"
-                }`,
-                borderRadius: "var(--eh-radius-md)",
-                boxShadow: done ? "none" : "var(--eh-shadow-card)",
-                opacity: done ? 0.6 : 1,
-              }}
-              className="eh-stack eh-stack--sm"
+              className={
+                done
+                  ? "eh-decision eh-decision--settled eh-stack eh-stack--sm"
+                  : "eh-decision eh-stack eh-stack--sm"
+              }
             >
               {/* Header: which mod, how far through, and the count as a badge. */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "baseline",
-                  justifyContent: "space-between",
-                  gap: "var(--eh-sp-3)",
-                  flexWrap: "wrap",
-                }}
-              >
-                <div
-                  style={{
-                    color: "var(--eh-text-primary)",
-                    fontSize: "var(--eh-text-md)",
-                    minWidth: 0,
-                    wordBreak: "break-word",
-                  }}
-                >
-                  <span
-                    style={{
-                      color: "var(--eh-text-muted)",
-                      fontVariantNumeric: "tabular-nums",
-                      marginRight: "var(--eh-sp-2)",
-                    }}
-                  >
+              <div className="eh-row eh-row--split">
+                <div className="eh-strong eh-fill">
+                  <span className="eh-decision__index">
                     {i + 1}/{candidates.length}
                   </span>
                   <strong>{c.modName}</strong>
                 </div>
-                <span
-                  style={{
-                    flexShrink: 0,
-                    padding: "2px var(--eh-sp-2)",
-                    borderRadius: "var(--eh-radius-pill)",
-                    background: "var(--eh-warning-soft)",
-                    color: "var(--eh-warning)",
-                    fontSize: "var(--eh-text-xs)",
-                    whiteSpace: "nowrap",
-                  }}
-                >
+                <Pill intent="warning" plain>
                   {c.archiveUnavailable
                     ? "archive unavailable — nothing could be checked"
                     : describeUnreproducible(c.unexplained)}
-                </span>
+                </Pill>
               </div>
 
               {c.archiveUnavailable && (
@@ -3069,23 +2558,14 @@ function PostProcessingDecisions(props: {
                   precisely the mod nobody else can reproduce, because there is
                   no archive to reproduce it from.
                 */
-                <div
-                  style={{
-                    marginTop: "var(--eh-sp-2)",
-                    padding: "var(--eh-sp-2) var(--eh-sp-3)",
-                    borderLeft: "2px solid var(--eh-warning)",
-                    background: "var(--eh-warning-soft)",
-                    fontSize: "var(--eh-text-sm)",
-                    lineHeight: "var(--eh-leading-relaxed)",
-                  }}
-                >
+                <Callout tone="warning" role="silent">
                   This mod&apos;s archive could not be read on this machine, so
                   nothing about it was checked against one — and whoever
                   installs this collection has no archive to rebuild it from
                   either. Bundling or mirroring it is what makes it arrive
                   intact; leaving it as-is ships a mod that cannot be
                   reproduced.
-                </div>
+                </Callout>
               )}
 
               {c.shipsNothing && (
@@ -3100,15 +2580,7 @@ function PostProcessingDecisions(props: {
                   collection that install was a FOMOD dialog that ended in a
                   Vortex error.
                 */
-                <p
-                  style={{
-                    margin: 0,
-                    padding: "var(--eh-sp-2)",
-                    borderLeft: "3px solid var(--eh-warning)",
-                    color: "var(--eh-text-secondary)",
-                    fontSize: "var(--eh-text-sm)",
-                  }}
-                >
+                <Callout tone="warning" role="silent">
                   <strong className="eh-strong">
                     This mod ships nothing a user can obtain.
                   </strong>{" "}
@@ -3117,7 +2589,7 @@ function PostProcessingDecisions(props: {
                   empty mod. Bundling or mirroring would ship these exact files
                   and work — but if they are a placeholder or leftover, the
                   useful answer is to remove the mod from your collection.
-                </p>
+                </Callout>
               )}
 
               {c.reopened && (
@@ -3125,20 +2597,12 @@ function PostProcessingDecisions(props: {
                 // the files it was about have changed since, so the old answer
                 // is deliberately not reapplied — reapplying "users don't need
                 // them" to a file added afterwards withholds it in silence.
-                <p
-                  style={{
-                    margin: 0,
-                    padding: "var(--eh-sp-2)",
-                    borderLeft: "3px solid var(--eh-info)",
-                    color: "var(--eh-text-secondary)",
-                    fontSize: "var(--eh-text-sm)",
-                  }}
-                >
+                <Callout tone="info" role="silent">
                   You answered this mod before, and these files have changed
                   since. Your previous answer is still saved and still applies
                   until you change it here — this is asking again because it
                   was given about different files.
-                </p>
+                </Callout>
               )}
 
               {/*
@@ -3149,27 +2613,16 @@ function PostProcessingDecisions(props: {
                 version, so each path now carries what it means.
               */}
               {c.files.length > 0 && (
-                <ul
-                  style={{
-                    margin: 0,
-                    padding: "var(--eh-sp-2) var(--eh-sp-2) var(--eh-sp-2) var(--eh-sp-5)",
-                    background: "var(--eh-bg-deep)",
-                    borderRadius: "var(--eh-radius-sm)",
-                    fontFamily: "var(--eh-font-mono)",
-                    fontSize: "var(--eh-text-xs)",
-                    color: "var(--eh-text-secondary)",
-                  }}
-                >
+                <ul className="eh-inset eh-inset--deep eh-list eh-list--inset eh-mono">
                   {c.files.map((f) => (
                     <li key={f.path}>
                       {f.path}
                       <span
-                        style={{
-                          color:
-                            f.kind === "changed" && (f.delta ?? 0) > 0
-                              ? "var(--eh-warning)"
-                              : "var(--eh-text-muted)",
-                        }}
+                        className={
+                          f.kind === "changed" && (f.delta ?? 0) > 0
+                            ? "eh-tone--warning"
+                            : "eh-muted"
+                        }
                       >
                         {" — "}
                         {describeUnexplainedFile(f)}
@@ -3177,7 +2630,7 @@ function PostProcessingDecisions(props: {
                     </li>
                   ))}
                   {c.unexplained > c.files.length && (
-                    <li style={{ listStyle: "none", opacity: 0.7 }}>
+                    <li className="eh-list__more">
                       and {c.unexplained - c.files.length} more
                     </li>
                   )}
@@ -3192,13 +2645,7 @@ function PostProcessingDecisions(props: {
               */}
               {c.removedCount > 0 && (
                 <div className="eh-stack eh-stack--xs">
-                  <p
-                    style={{
-                      margin: 0,
-                      color: "var(--eh-text-secondary)",
-                      fontSize: "var(--eh-text-sm)",
-                    }}
-                  >
+                  <p className="eh-body">
                     {c.removedCount} file{c.removedCount === 1 ? "" : "s"} the
                     archive installs {c.removedCount === 1 ? "is" : "are"} not in
                     your folder. If you deleted{" "}
@@ -3207,28 +2654,17 @@ function PostProcessingDecisions(props: {
                     {c.removedCount === 1 ? "it" : "them"}, reinstall the mod
                     instead — only you know which.
                   </p>
-                  <ul
-                    style={{
-                      margin: 0,
-                      padding:
-                        "var(--eh-sp-2) var(--eh-sp-2) var(--eh-sp-2) var(--eh-sp-5)",
-                      background: "var(--eh-bg-deep)",
-                      borderRadius: "var(--eh-radius-sm)",
-                      fontFamily: "var(--eh-font-mono)",
-                      fontSize: "var(--eh-text-xs)",
-                      color: "var(--eh-text-secondary)",
-                    }}
-                  >
+                  <ul className="eh-inset eh-inset--deep eh-list eh-list--inset eh-mono">
                     {c.removed.map((p) => (
                       <li key={`removed:${p}`}>
                         {p}
-                        <span style={{ color: "var(--eh-text-muted)" }}>
+                        <span className="eh-muted">
                           {" — in the archive, not in your folder"}
                         </span>
                       </li>
                     ))}
                     {c.removedCount > c.removed.length && (
-                      <li style={{ listStyle: "none", opacity: 0.7 }}>
+                      <li className="eh-list__more">
                         and {c.removedCount - c.removed.length} more
                       </li>
                     )}
@@ -3237,14 +2673,7 @@ function PostProcessingDecisions(props: {
               )}
 
               {settledAs !== undefined && !changing.has(c.modId) ? (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "var(--eh-sp-2)",
-                    flexWrap: "wrap",
-                  }}
-                >
+                <div className="eh-row">
                   <Pill intent="neutral">
                     ✓{" "}
                     {
@@ -3257,12 +2686,7 @@ function PostProcessingDecisions(props: {
                         .label
                     }
                   </Pill>
-                  <span
-                    style={{
-                      color: "var(--eh-text-secondary)",
-                      fontSize: "var(--eh-text-sm)",
-                    }}
-                  >
+                  <span className="eh-note eh-secondary">
                     {answer !== undefined
                       ? applyMode === "this-build"
                         ? "Saved — applies to this build."
@@ -3285,12 +2709,8 @@ function PostProcessingDecisions(props: {
                 // weigh rather than a list to get through. They are not
                 // interchangeable and the layout should not imply they are.
                 <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(auto-fit, minmax(260px, 1fr))",
-                    gap: "var(--eh-sp-2)",
-                  }}
+                  className="eh-grid eh-grid--tight"
+                  style={{ ["--eh-grid-min" as string]: "260px" } as React.CSSProperties}
                 >
                   {(
                     [
@@ -3313,18 +2733,11 @@ function PostProcessingDecisions(props: {
                     // would take an answer the build cannot honour.
                     const blocked = k === "mirror" && !c.canMirror;
                     return (
-                      <div
-                        key={k}
-                        className="eh-stack eh-stack--xs"
-                        style={{
-                          padding: "var(--eh-sp-2)",
-                          border: "1px solid var(--eh-border-subtle)",
-                          borderRadius: "var(--eh-radius-sm)",
-                        }}
-                      >
+                      <div key={k} className="eh-option">
                         <Button
                           intent={k === "mirror" ? "primary" : "ghost"}
                           disabled={busy !== undefined || blocked}
+                          busy={busy === c.modId}
                           onClick={(): void => {
                             // Close the row again: a re-opened one must show
                             // its NEW verdict, not stay a set of buttons.
@@ -3338,10 +2751,7 @@ function PostProcessingDecisions(props: {
                         >
                           {busy === c.modId ? "Saving..." : copy.label}
                         </Button>
-                        <span
-                          className="eh-note"
-                          style={{ color: "var(--eh-text-secondary)" }}
-                        >
+                        <span className="eh-note eh-secondary">
                           {blocked
                             ? "Needs a Thorough build — this one recorded file sizes only, so there is nothing to reconcile against."
                             : copy.consequence}
@@ -3379,33 +2789,12 @@ function BuildingPanel(props: {
 
   return (
     <Card>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: "var(--eh-sp-4)",
-          padding: "var(--eh-sp-5)",
-        }}
-      >
+      <div className="eh-centred">
         <ProgressRing size={84} />
-        <h3
-          style={{
-            margin: 0,
-            color: "var(--eh-text-primary)",
-            textAlign: "center",
-          }}
-        >
+        <h3 className="eh-progress-panel__title">
           Building {props.curator.name} v{props.curator.version}
         </h3>
-        <p
-          style={{
-            margin: 0,
-            color: "var(--eh-text-secondary)",
-            fontSize: "var(--eh-text-sm)",
-            textAlign: "center",
-          }}
-        >
+        <p className="eh-body">
           {props.progress.message ?? phaseToLabel(props.progress.phase)}
         </p>
         {props.onCancel !== undefined && cancellable && (
@@ -3414,15 +2803,7 @@ function BuildingPanel(props: {
           </Button>
         )}
         {props.onCancel !== undefined && !cancellable && (
-          <p
-            style={{
-              margin: 0,
-              color: "var(--eh-text-muted)",
-              fontSize: "var(--eh-text-xs)",
-            }}
-          >
-            Finishing up — please don't close Vortex.
-          </p>
+          <p className="eh-note">Finishing up — please don't close Vortex.</p>
         )}
       </div>
     </Card>
@@ -3541,33 +2922,18 @@ export function DonePanel(props: {
       <div
         className="eh-stack eh-stack--lg"
       >
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-            gap: "var(--eh-sp-3)",
-          }}
-        >
-          <Stat label="Output size" value={formatBytes(result.outputBytes)} />
-          <Stat label="Mods" value={String(result.modCount)} />
-          <Stat label="Bundled archives" value={String(result.bundledCount)} />
-          <Stat label="Warnings" value={String(result.warnings.length)} />
-        </div>
+        <StatGrid min={200}>
+          <StatTile label="Output size" value={formatBytes(result.outputBytes)} />
+          <StatTile label="Mods" value={result.modCount} />
+          <StatTile label="Bundled archives" value={result.bundledCount} />
+          <StatTile
+            label="Warnings"
+            value={result.warnings.length}
+            tone={result.warnings.length > 0 ? "warning" : "neutral"}
+          />
+        </StatGrid>
         <BuildRulesScopeSummary result={result} />
-        <div
-          style={{
-            padding: "var(--eh-sp-3)",
-            background: "var(--eh-bg-base)",
-            border: "1px solid var(--eh-border-subtle)",
-            borderRadius: "var(--eh-radius-sm)",
-            fontFamily: "var(--eh-font-mono)",
-            color: "var(--eh-text-secondary)",
-            fontSize: "var(--eh-text-xs)",
-            wordBreak: "break-all",
-          }}
-        >
-          {result.outputPath}
-        </div>
+        <div className="eh-inset eh-mono eh-secondary">{result.outputPath}</div>
         {/*
           The package's checksum, next to its path.
 
@@ -3577,38 +2943,10 @@ export function DonePanel(props: {
           to run sha256sum by hand and read hex to each other over chat — which
           is exactly how an alpha tester's afternoon went.
         */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "baseline",
-            gap: "var(--eh-sp-2)",
-            padding: "var(--eh-sp-3)",
-            background: "var(--eh-bg-base)",
-            border: "1px solid var(--eh-border-subtle)",
-            borderRadius: "var(--eh-radius-sm)",
-            fontSize: "var(--eh-text-xs)",
-            wordBreak: "break-all",
-          }}
-        >
-          <span
-            style={{
-              color: "var(--eh-text-muted)",
-              textTransform: "uppercase",
-              letterSpacing: "var(--eh-tracking-widest)",
-              flexShrink: 0,
-            }}
-          >
-            sha256
-          </span>
-          <code
-            style={{
-              fontFamily: "var(--eh-font-mono)",
-              color: "var(--eh-text-secondary)",
-            }}
-          >
-            {result.outputSha256}
-          </code>
-          <Button intent="ghost" onClick={handleCopyHash}>
+        <div className="eh-inset eh-row eh-row--nowrap">
+          <span className="eh-label">sha256</span>
+          <code className="eh-mono eh-fill">{result.outputSha256}</code>
+          <Button intent="ghost" size="sm" onClick={handleCopyHash}>
             Copy
           </Button>
         </div>
@@ -3637,21 +2975,12 @@ export function DonePanel(props: {
           already shows its notices this way.
         */}
         {result.warnings.length > 0 && (
-          <details
-            open
-            style={{
-              padding: "var(--eh-sp-3)",
-              background: "rgba(255, 198, 99, 0.06)",
-              border: "1px solid var(--eh-warning)",
-              borderRadius: "var(--eh-radius-sm)",
-              color: "var(--eh-warning)",
-            }}
-          >
-            <summary style={{ cursor: "pointer" }}>
+          <details open className="eh-details eh-details--warning eh-inset eh-inset--warning">
+            <summary>
               {result.warnings.length} thing{result.warnings.length === 1 ? "" : "s"}{" "}
               worth reading before you share this
             </summary>
-            <div className="eh-stack eh-stack--sm" style={{ marginTop: "var(--eh-sp-2)" }}>
+            <div className="eh-stack eh-stack--sm eh-details__body">
               {/*
                 Ordered by severity, not by which part of the pipeline happened
                 to emit them. warningTone already classifies every line and the
@@ -3670,14 +2999,7 @@ export function DonePanel(props: {
             </div>
           </details>
         )}
-        <div
-          style={{
-            display: "flex",
-            gap: "var(--eh-sp-2)",
-            flexWrap: "wrap",
-            justifyContent: "flex-end",
-          }}
-        >
+        <div className="eh-actions">
           <Button intent="ghost" onClick={handleCopyPath}>
             Copy path
           </Button>
@@ -3713,17 +3035,8 @@ export function DonePanel(props: {
 function ErrorPanel(props: { onRetry: () => void }): JSX.Element {
   return (
     <Card>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--eh-sp-3)",
-          padding: "var(--eh-sp-3)",
-        }}
-      >
-        <h3 style={{ margin: 0, color: "var(--eh-danger)" }}>
-          Something went wrong
-        </h3>
+      <div className="eh-stack">
+        <h3 className="eh-section__title eh-tone--danger">Something went wrong</h3>
         <p
           className="eh-body"
         >
@@ -3745,66 +3058,7 @@ function ErrorPanel(props: { onRetry: () => void }): JSX.Element {
 // Helpers
 // ===========================================================================
 
-function Field(props: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <label
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "var(--eh-sp-1)",
-      }}
-    >
-      <span
-        style={{
-          color: "var(--eh-text-secondary)",
-          fontSize: "var(--eh-text-xs)",
-          textTransform: "uppercase",
-          letterSpacing: "var(--eh-tracking-widest)",
-        }}
-      >
-        {props.label}
-      </span>
-      {props.children}
-      {props.hint !== undefined && (
-        <span
-          style={{
-            color: "var(--eh-text-muted)",
-            fontSize: "var(--eh-text-xs)",
-          }}
-        >
-          {props.hint}
-        </span>
-      )}
-    </label>
-  );
-}
 
-function Stat(props: { label: string; value: string }): JSX.Element {
-  return (
-    <div
-      className="eh-inset"
-    >
-      <div
-        className="eh-label"
-      >
-        {props.label}
-      </div>
-      <div
-        style={{
-          marginTop: "var(--eh-sp-1)",
-          color: "var(--eh-text-primary)",
-          fontWeight: 600,
-        }}
-      >
-        {props.value}
-      </div>
-    </div>
-  );
-}
 
 /**
  * Curator-side mirror of the install Done card's "Rules & ordering"
@@ -3838,54 +3092,36 @@ function BuildRulesScopeSummary(props: {
         ? "fast (size only)"
         : "skipped";
 
+  // Built as a list first so a heading never appears over an empty grid: a
+  // result whose counts are absent (NaN sums are not 0) rendered exactly that.
+  const tiles: Array<{ label: string; value: React.ReactNode }> = [];
+  if (result.ruleCount > 0) tiles.push({ label: "Mod rules", value: result.ruleCount });
+  if (result.loadOrderCount > 0) {
+    tiles.push({ label: "Load order entries", value: result.loadOrderCount });
+  }
+  if (result.pluginOrderCount > 0) tiles.push({ label: "Plugins", value: result.pluginOrderCount });
+  if (result.userlistPluginCount > 0) {
+    tiles.push({ label: "LOOT plugin rules", value: result.userlistPluginCount });
+  }
+  if (result.userlistGroupCount > 0) {
+    tiles.push({ label: "LOOT groups", value: result.userlistGroupCount });
+  }
+  if (result.stagingFileCount > 0) {
+    tiles.push({
+      label: `Integrity (${integrityLabel})`,
+      value: `${result.stagingFileCount.toLocaleString()} files`,
+    });
+  }
+  if (tiles.length === 0) return null;
+
   return (
-    <div
-      className="eh-stack eh-stack--sm"
-    >
-      <div
-        className="eh-label"
-      >
-        Captured into the package
-      </div>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: "var(--eh-sp-2)",
-        }}
-      >
-        {result.ruleCount > 0 && (
-          <Stat label="Mod rules" value={String(result.ruleCount)} />
-        )}
-        {result.loadOrderCount > 0 && (
-          <Stat
-            label="Load order entries"
-            value={String(result.loadOrderCount)}
-          />
-        )}
-        {result.pluginOrderCount > 0 && (
-          <Stat label="Plugins" value={String(result.pluginOrderCount)} />
-        )}
-        {result.userlistPluginCount > 0 && (
-          <Stat
-            label="LOOT plugin rules"
-            value={String(result.userlistPluginCount)}
-          />
-        )}
-        {result.userlistGroupCount > 0 && (
-          <Stat
-            label="LOOT groups"
-            value={String(result.userlistGroupCount)}
-          />
-        )}
-        {result.stagingFileCount > 0 && (
-          <Stat
-            label={`Integrity (${integrityLabel})`}
-            value={`${result.stagingFileCount.toLocaleString()} files`}
-          />
-        )}
-      </div>
-    </div>
+    <Section title="Captured into the package" size="sm">
+      <StatGrid min={180}>
+        {tiles.map((t) => (
+          <StatTile key={t.label} label={t.label} value={t.value} />
+        ))}
+      </StatGrid>
+    </Section>
   );
 }
 
@@ -3903,25 +3139,12 @@ function BuildRulesScopeSummary(props: {
  */
 function DistributionHint(): JSX.Element {
   return (
-    <div
-      style={{
-        padding: "var(--eh-sp-3) var(--eh-sp-4)",
-        background:
-          "color-mix(in srgb, var(--eh-accent) 8%, transparent)",
-        border:
-          "1px solid color-mix(in srgb, var(--eh-accent) 30%, transparent)",
-        borderRadius: "var(--eh-radius-sm)",
-        fontSize: "var(--eh-text-sm)",
-        lineHeight: "var(--eh-leading-relaxed)",
-        color: "var(--eh-text-secondary)",
-      }}
-    >
-      <strong className="eh-strong">Next: share it.</strong>{" "}
+    <Callout tone="info" title="Next: share it.">
       Upload this <code>.ehcoll</code> as a regular Nexus mod
       attachment under your collection&apos;s mod page — testers install it via
       Event Horizon&apos;s install tab. A one-click publish flow is
       tracked in <code>docs/RESEARCH_PUBLISHING.md</code>.
-    </div>
+    </Callout>
   );
 }
 
@@ -3999,62 +3222,25 @@ function DraftRestoredBanner(props: {
   })();
 
   return (
-    <div
-      role="status"
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "var(--eh-sp-3)",
-        padding: "var(--eh-sp-3) var(--eh-sp-4)",
-        border: "1px solid var(--eh-cyan)",
-        background: "rgba(118, 228, 247, 0.08)",
-        borderRadius: "var(--eh-radius-md)",
-        color: "var(--eh-text-primary)",
-      }}
+    <Callout
+      tone="info"
+      title="Draft restored"
+      actions={
+        <>
+          {/* The destructive one looks destructive; the visible words ARE the
+              accessible name (a "Dismiss" label over "Keep it" is a control
+              voice users cannot find). */}
+          <Button intent="danger" size="sm" onClick={props.onDiscard}>
+            Discard draft
+          </Button>
+          <Button intent="ghost" size="sm" onClick={props.onDismiss}>
+            Keep it
+          </Button>
+        </>
+      }
     >
-      <div
-        aria-hidden="true"
-        style={{
-          width: 10,
-          height: 10,
-          borderRadius: 999,
-          background: "var(--eh-cyan)",
-          boxShadow: "0 0 8px var(--eh-cyan)",
-          flexShrink: 0,
-        }}
-      />
-      <div className="eh-fill">
-        <div style={{ fontWeight: 600 }}>Draft restored</div>
-        <div
-          style={{
-            color: "var(--eh-text-secondary)",
-            fontSize: "var(--eh-text-sm)",
-          }}
-          title={absolute}
-        >
-          Picked up where you left off — autosaved {relative}.
-        </div>
-      </div>
-      <Button intent="ghost" size="sm" onClick={props.onDiscard}>
-        Discard draft
-      </Button>
-      <button
-        type="button"
-        aria-label="Dismiss"
-        onClick={props.onDismiss}
-        style={{
-          background: "transparent",
-          border: 0,
-          color: "var(--eh-text-muted)",
-          cursor: "pointer",
-          fontSize: "var(--eh-text-lg)",
-          padding: "0 var(--eh-sp-1)",
-          lineHeight: 1,
-        }}
-      >
-        ×
-      </button>
-    </div>
+      <span title={absolute}>Picked up where you left off — autosaved {relative}.</span>
+    </Callout>
   );
 }
 

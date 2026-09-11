@@ -158,6 +158,8 @@ describe("folding without hiding", () => {
     const fn = src.slice(src.indexOf("function NoticeLines"));
     const body = fn.slice(0, fn.indexOf("\nfunction "));
     expect(body).toMatch(/lines\.length <= INLINE_LINE_LIMIT\) return body/);
-    expect(body).toContain("<details>");
+    // The behaviour is the fold, not the tag's exact spelling: the element
+    // gained a class when the disclosure was styled once for the whole UI.
+    expect(body).toMatch(/<details[ >]/);
   });
 });

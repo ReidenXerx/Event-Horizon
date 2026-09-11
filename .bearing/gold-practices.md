@@ -448,3 +448,12 @@ project rather than this one, it belongs upstream — say so and it can be promo
   losses reading one filename shape, 11 reading two, and 0 once all four were handled — every one
   of the 54 was the parser. Three of the four shapes were produced by this project's own code.
   Reported as a finding to the user before the last two shapes were added.*
+
+- **PP-11** — **A heredoc turns `` into a BACKSPACE byte and `` into a control
+  character, and both are invisible in the file.** GP-32 says a quoted heredoc eats backslashes;
+  the worse shape is when the survivor is a valid escape: `/<details/` written through a heredoc
+  became `/<details` + U+0008 + `/`, a regex that can never match, and `grep`/`sed -n` print the
+  line looking correct. The test failed for no visible reason. When a regex or string literal
+  "does not match" after a shell edit, `od -c` the line before debugging anything else — and write
+  code files with the file-writing tool, not a heredoc. *Scar: two in one session — a toast dedupe
+  separator and a test regex — each costing a round of "but the file looks right".*

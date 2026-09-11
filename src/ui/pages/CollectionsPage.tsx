@@ -30,11 +30,19 @@ import { switchToProfile } from "../../core/installer/profile";
 import type { InstallReceipt } from "../../types/installLedger";
 import {
   Button,
+  Callout,
   Card,
+  EmptyState,
   EventHorizonLogo,
+  Field,
+  Input,
   Modal,
   Pill,
   ProgressRing,
+  Section,
+  Select,
+  StatGrid,
+  StatTile,
   useToast,
 } from "../components";
 import { ErrorBoundary, useErrorReporter, useErrorReporterFormatted } from "../errors";
@@ -124,68 +132,26 @@ export function InterruptedInstalls(props: {
 }): JSX.Element | null {
   if (props.markers.length === 0) return null;
   return (
-    <section
-      aria-label="Interrupted installs"
-      style={{ marginBottom: "var(--eh-sp-4)" }}
-    >
+    <section aria-label="Interrupted installs" className="eh-stack eh-stack--sm">
       {props.markers.map((m) => (
-        <div
+        <Callout
           key={m.packageId}
-          role="status"
-          style={{
-            display: "flex",
-            gap: "var(--eh-sp-3)",
-            alignItems: "flex-start",
-            padding: "var(--eh-sp-4)",
-            marginBottom: "var(--eh-sp-2)",
-            borderRadius: "var(--eh-radius-lg)",
-            background: "var(--eh-bg-elevated)",
-            border: "1px solid var(--eh-warning)",
-          }}
-        >
-          <span
-            aria-hidden="true"
-            style={{ color: "var(--eh-warning)", fontWeight: 700 }}
-          >
-            ⏸
-          </span>
-          <div className="eh-fill">
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--eh-sp-2)",
-                flexWrap: "wrap",
-                marginBottom: "var(--eh-sp-1)",
-              }}
-            >
-              <strong
-                style={{
-                  fontSize: "var(--eh-text-md)",
-                  color: "var(--eh-text-primary)",
-                }}
-              >
-                {m.packageName}
-              </strong>
+          tone="warning"
+          icon="⏸"
+          title={
+            <span className="eh-row eh-row--sm">
+              <span>{m.packageName}</span>
               <Pill intent="warning">unfinished</Pill>
-            </div>
-            <p
-              style={{
-                margin: 0,
-                fontSize: "var(--eh-text-sm)",
-                color: "var(--eh-text-secondary)",
-                lineHeight: "var(--eh-leading-relaxed)",
-              }}
-            >
-              {describeInterruptedInstall(m)}
-            </p>
-            <div style={{ marginTop: "var(--eh-sp-3)" }}>
-              <Button intent="primary" size="sm" onClick={props.onResume}>
-                Run the install again
-              </Button>
-            </div>
-          </div>
-        </div>
+            </span>
+          }
+          actions={
+            <Button intent="primary" size="sm" onClick={props.onResume}>
+              Run the install again
+            </Button>
+          }
+        >
+          {describeInterruptedInstall(m)}
+        </Callout>
       ))}
     </section>
   );
@@ -209,42 +175,13 @@ export function FailedAttempts(props: {
 }): JSX.Element | null {
   if (props.attempts.length === 0) return null;
   return (
-    <section
-      aria-label="Installs that did not finish"
-      style={{ marginBottom: "var(--eh-sp-4)" }}
-    >
+    <section aria-label="Installs that did not finish" className="eh-stack eh-stack--sm">
       {props.attempts.map((a) => (
-        <div
+        <Callout
           key={a.packageId}
-          style={{
-            display: "flex",
-            gap: "var(--eh-sp-3)",
-            alignItems: "flex-start",
-            padding: "var(--eh-sp-4)",
-            marginBottom: "var(--eh-sp-2)",
-            borderRadius: "var(--eh-radius-lg)",
-            background: "var(--eh-bg-elevated)",
-            border: "1px solid var(--eh-border-subtle)",
-          }}
-        >
-          <div className="eh-fill">
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--eh-sp-2)",
-                flexWrap: "wrap",
-                marginBottom: "var(--eh-sp-1)",
-              }}
-            >
-              <strong
-                style={{
-                  fontSize: "var(--eh-text-md)",
-                  color: "var(--eh-text-primary)",
-                }}
-              >
-                {a.packageName}
-              </strong>
+          title={
+            <span className="eh-row eh-row--sm">
+              <span>{a.packageName}</span>
               {/* Absent on a record written before the field existed — show
                   no pill rather than an empty one. */}
               {a.packageVersion !== undefined && a.packageVersion.length > 0 && (
@@ -253,39 +190,23 @@ export function FailedAttempts(props: {
               <Pill intent={a.outcome === "aborted" ? "neutral" : "danger"}>
                 {a.outcome === "aborted" ? "stopped" : "did not finish"}
               </Pill>
-            </div>
-            <p
-              style={{
-                margin: 0,
-                fontSize: "var(--eh-text-sm)",
-                color: "var(--eh-text-secondary)",
-                lineHeight: "var(--eh-leading-relaxed)",
-              }}
-            >
-              {describeInstallAttempt(a)}
-            </p>
+            </span>
+          }
+          actions={
+            <Button intent="ghost" size="sm" onClick={props.onRetry}>
+              Run the install again
+            </Button>
+          }
+        >
+          <div className="eh-stack eh-stack--sm">
+            <p className="eh-body">{describeInstallAttempt(a)}</p>
             {a.error !== undefined && (
               // The reason it stopped, verbatim. Paraphrasing an error the
               // user may need to search for helps nobody.
-              <p
-                style={{
-                  margin: "var(--eh-sp-2) 0 0 0",
-                  fontSize: "var(--eh-text-xs)",
-                  fontFamily: "var(--eh-font-mono)",
-                  color: "var(--eh-text-muted)",
-                  lineHeight: 1.5,
-                }}
-              >
-                {a.error}
-              </p>
+              <p className="eh-mono eh-muted">{a.error}</p>
             )}
-            <div style={{ marginTop: "var(--eh-sp-3)" }}>
-              <Button intent="ghost" size="sm" onClick={props.onRetry}>
-                Run the install again
-              </Button>
-            </div>
           </div>
-        </div>
+        </Callout>
       ))}
     </section>
   );
@@ -465,32 +386,16 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
   if (state.kind === "loading") {
     return (
       <div className="eh-page">
-        <header style={{ marginBottom: "var(--eh-sp-5)" }}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: "var(--eh-text-2xl)",
-              color: "var(--eh-text-primary)",
-            }}
-          >
-            Loading installed collections...
-          </h2>
-        </header>
-        <div
-          style={{
-            padding: "var(--eh-sp-5)",
-            background: "var(--eh-bg-raised)",
-            borderRadius: "var(--eh-radius-lg)",
-            display: "flex",
-            gap: "var(--eh-sp-4)",
-            alignItems: "center",
-          }}
-        >
-          <ProgressRing size={56} />
-          <span className="eh-secondary">
-            Scanning %APPDATA%/Vortex/event-horizon/installs/
-          </span>
-        </div>
+        <Section title="Loading installed collections...">
+          <Card>
+            <div className="eh-row eh-row--lg">
+              <ProgressRing size={56} />
+              <span className="eh-secondary">
+                Scanning %APPDATA%/Vortex/event-horizon/installs/
+              </span>
+            </div>
+          </Card>
+        </Section>
       </div>
     );
   }
@@ -498,7 +403,22 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
   if (state.kind === "empty") {
     return (
       <div className="eh-page">
-        <EmptyState onInstall={(): void => props.onNavigate("install")} />
+        <EmptyState
+          icon={<EventHorizonLogo size={88} />}
+          title="No collections yet"
+          actions={
+            <Button
+              intent="primary"
+              onClick={(): void => props.onNavigate("install")}
+            >
+              Install a collection
+            </Button>
+          }
+        >
+          Install your first .ehcoll collection and Event Horizon will keep a
+          receipt here so you can switch profiles, inspect the mod list, or
+          uninstall in a single click.
+        </EmptyState>
       </div>
     );
   }
@@ -529,181 +449,101 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
         attempts={state.failedAttempts}
         onRetry={(): void => props.onNavigate("install")}
       />
-      <header
-        style={{
-          display: "flex",
-          alignItems: "flex-end",
-          justifyContent: "space-between",
-          gap: "var(--eh-sp-3)",
-          marginBottom: "var(--eh-sp-5)",
-          flexWrap: "wrap",
-        }}
-      >
-        <div>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: "var(--eh-text-2xl)",
-              color: "var(--eh-text-primary)",
-              letterSpacing: "var(--eh-tracking-tight)",
-            }}
-          >
-            Installed collections
-          </h2>
-          <p
-            style={{
-              margin: "var(--eh-sp-2) 0 0 0",
-              color: "var(--eh-text-secondary)",
-              fontSize: "var(--eh-text-md)",
-            }}
-          >
+      <Section
+        className="eh-section--page"
+        title="Installed collections"
+        description={
+          <>
             {state.receipts.length} collection{state.receipts.length === 1 ? "" : "s"} on this machine
             {query.trim().length > 0 &&
               ` · showing ${visibleReceipts.length}`}
             .
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: "var(--eh-sp-2)" }}>
-          <Button intent="ghost" onClick={refresh}>
-            Refresh
-          </Button>
-          <Button
-            intent="primary"
-            onClick={(): void => props.onNavigate("install")}
-          >
-            Install another
-          </Button>
-        </div>
-      </header>
-
-      {state.receipts.length > 1 && (
-        <div
-          style={{
-            display: "flex",
-            gap: "var(--eh-sp-2)",
-            marginBottom: "var(--eh-sp-4)",
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          <input
-            type="search"
-            value={query}
-            onChange={(e): void => setQuery(e.target.value)}
-            placeholder="Search by name, game, or profile..."
-            aria-label="Filter installed collections"
-            style={{
-              flex: "1 1 240px",
-              minWidth: 0,
-              padding: "var(--eh-sp-2) var(--eh-sp-3)",
-              background: "var(--eh-bg-base)",
-              border: "1px solid var(--eh-border-default)",
-              borderRadius: "var(--eh-radius-sm)",
-              color: "var(--eh-text-primary)",
-              fontSize: "var(--eh-text-sm)",
-              fontFamily: "inherit",
-              outline: "none",
-            }}
-          />
-          <label
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "var(--eh-sp-2)",
-              color: "var(--eh-text-secondary)",
-              fontSize: "var(--eh-text-sm)",
-            }}
-          >
-            <span>Sort:</span>
-            <select
-              value={sortKey}
-              onChange={(e): void => setSortKey(e.target.value as SortKey)}
-              aria-label="Sort installed collections"
-              style={{
-                padding: "var(--eh-sp-2) var(--eh-sp-3)",
-                background: "var(--eh-bg-base)",
-                border: "1px solid var(--eh-border-default)",
-                borderRadius: "var(--eh-radius-sm)",
-                color: "var(--eh-text-primary)",
-                fontSize: "var(--eh-text-sm)",
-                fontFamily: "inherit",
-              }}
+          </>
+        }
+        actions={
+          <>
+            <Button intent="ghost" onClick={refresh}>
+              Refresh
+            </Button>
+            <Button
+              intent="primary"
+              onClick={(): void => props.onNavigate("install")}
             >
-              <option value="recent">Most recent</option>
-              <option value="name">Name (A → Z)</option>
-              <option value="mods">Mod count (high → low)</option>
-            </select>
-          </label>
-        </div>
-      )}
-
-      {state.errors.length > 0 && (
-        <div
-          style={{
-            marginBottom: "var(--eh-sp-4)",
-            padding: "var(--eh-sp-3) var(--eh-sp-4)",
-            background: "rgba(255, 91, 120, 0.08)",
-            border: "1px solid var(--eh-danger)",
-            borderRadius: "var(--eh-radius-md)",
-            color: "var(--eh-danger)",
-          }}
-        >
-          <strong>{state.errors.length} receipt{state.errors.length === 1 ? "" : "s"} failed to load.</strong>
-          <ul
-            style={{
-              margin: "var(--eh-sp-2) 0 0 0",
-              paddingLeft: "var(--eh-sp-5)",
-              color: "var(--eh-text-secondary)",
-              fontSize: "var(--eh-text-sm)",
-            }}
-          >
-            {state.errors.slice(0, 5).map((e) => (
-              <li key={e.filename}>
-                {e.filename}: {e.message}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {visibleReceipts.length === 0 && state.receipts.length > 0 ? (
-        <div
-          style={{
-            padding: "var(--eh-sp-6)",
-            background: "var(--eh-bg-elevated)",
-            border: "1px dashed var(--eh-border-default)",
-            borderRadius: "var(--eh-radius-md)",
-            textAlign: "center",
-            color: "var(--eh-text-secondary)",
-          }}
-        >
-          No collections match{" "}
-          <strong className="eh-strong">
-            &quot;{query}&quot;
-          </strong>
-          .{" "}
-          <Button intent="ghost" onClick={(): void => setQuery("")}>
-            Clear search
-          </Button>
-        </div>
-      ) : (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
-            gap: "var(--eh-sp-4)",
-          }}
-        >
-          {visibleReceipts.map((receipt) => (
-            <ReceiptCard
-              key={receipt.packageId}
-              receipt={receipt}
-              isActive={receipt.vortexProfileId === activeProfileId}
-              onOpen={(): void => setSelected(receipt)}
+              Install another
+            </Button>
+          </>
+        }
+      >
+        {state.receipts.length > 1 && (
+          <div className="eh-row">
+            <Input
+              type="search"
+              value={query}
+              onChange={(e): void => setQuery(e.target.value)}
+              placeholder="Search by name, game, or profile..."
+              aria-label="Filter installed collections"
+              className="eh-fill"
             />
-          ))}
-        </div>
-      )}
+            <Field label="Sort:" inline>
+              {(id): JSX.Element => (
+                <Select
+                  id={id}
+                  value={sortKey}
+                  onChange={(e): void => setSortKey(e.target.value as SortKey)}
+                  aria-label="Sort installed collections"
+                  auto
+                >
+                  <option value="recent">Most recent</option>
+                  <option value="name">Name (A → Z)</option>
+                  <option value="mods">Mod count (high → low)</option>
+                </Select>
+              )}
+            </Field>
+          </div>
+        )}
+
+        {state.errors.length > 0 && (
+          <Callout
+            tone="danger"
+            title={`${state.errors.length} receipt${state.errors.length === 1 ? "" : "s"} failed to load.`}
+          >
+            <ul className="eh-list">
+              {state.errors.slice(0, 5).map((e) => (
+                <li key={e.filename}>
+                  {e.filename}: {e.message}
+                </li>
+              ))}
+            </ul>
+          </Callout>
+        )}
+
+        {visibleReceipts.length === 0 && state.receipts.length > 0 ? (
+          <EmptyState
+            title={
+              <>
+                No collections match{" "}
+                <strong className="eh-strong">&quot;{query}&quot;</strong>.
+              </>
+            }
+            actions={
+              <Button intent="ghost" onClick={(): void => setQuery("")}>
+                Clear search
+              </Button>
+            }
+          />
+        ) : (
+          <div className="eh-grid" style={{ ["--eh-grid-min" as string]: "320px" }}>
+            {visibleReceipts.map((receipt) => (
+              <ReceiptCard
+                key={receipt.packageId}
+                receipt={receipt}
+                isActive={receipt.vortexProfileId === activeProfileId}
+                onOpen={(): void => setSelected(receipt)}
+              />
+            ))}
+          </div>
+        )}
+      </Section>
 
       <ReceiptDetailModal
         receipt={selected}
@@ -720,57 +560,6 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
           refresh();
         }}
       />
-    </div>
-  );
-}
-
-// ===========================================================================
-// Empty state
-// ===========================================================================
-
-function EmptyState(props: { onInstall: () => void }): JSX.Element {
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: "var(--eh-sp-4)",
-        padding: "var(--eh-sp-7) var(--eh-sp-5)",
-        background: "var(--eh-bg-glass)",
-        border: "1px dashed var(--eh-border-default)",
-        borderRadius: "var(--eh-radius-lg)",
-        textAlign: "center",
-        animation:
-          "eh-fade-up var(--eh-dur-deliberate) var(--eh-easing) both",
-      }}
-    >
-      <EventHorizonLogo size={88} />
-      <h2
-        style={{
-          margin: 0,
-          color: "var(--eh-text-primary)",
-          fontSize: "var(--eh-text-xl)",
-        }}
-      >
-        No collections yet
-      </h2>
-      <p
-        style={{
-          margin: 0,
-          color: "var(--eh-text-secondary)",
-          maxWidth: "440px",
-          fontSize: "var(--eh-text-sm)",
-          lineHeight: "var(--eh-leading-relaxed)",
-        }}
-      >
-        Install your first .ehcoll collection and Event Horizon will keep a
-        receipt here so you can switch profiles, inspect the mod list, or
-        uninstall in a single click.
-      </p>
-      <Button intent="primary" onClick={props.onInstall}>
-        Install a collection
-      </Button>
     </div>
   );
 }
@@ -795,15 +584,7 @@ function ReceiptCard(props: {
         </span>
       }
     >
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--eh-sp-2)",
-          color: "var(--eh-text-secondary)",
-          fontSize: "var(--eh-text-sm)",
-        }}
-      >
+      <div className="eh-stack eh-stack--sm eh-body">
         <div className="eh-row">
           <Pill intent="info">v{receipt.packageVersion}</Pill>
           <Pill intent="neutral">{receipt.gameId}</Pill>
@@ -821,8 +602,10 @@ function ReceiptCard(props: {
         <div>
           <strong>Profile:</strong> {receipt.vortexProfileName}
         </div>
-        <div>
-          <strong>Mods:</strong> {receipt.mods.length}
+        <div className="eh-row">
+          <span>
+            <strong>Mods:</strong> {receipt.mods.length}
+          </span>
           {/*
             A receipt is also written by a run that did not finish — 978 mods
             with provenance beat 978 mods with none (NS-2). Both facts were
@@ -832,34 +615,22 @@ function ReceiptCard(props: {
           */}
           {(receipt.failedMods?.length ?? 0) > 0 && (
             <span
-              style={{
-                marginLeft: 8,
-                padding: "1px 6px",
-                borderRadius: 3,
-                fontSize: "0.85em",
-                background: "rgba(255,170,0,0.18)",
-                border: "1px solid rgba(255,170,0,0.45)",
-              }}
               title={receipt.failedMods
                 ?.map((m) => `${m.name} — ${m.reason}`)
                 .join("\n")}
             >
-              {receipt.failedMods?.length} could not be installed
+              <Pill intent="warning" plain>
+                {receipt.failedMods?.length} could not be installed
+              </Pill>
             </span>
           )}
           {(receipt.finishingSkipped?.length ?? 0) > 0 && (
             <span
-              style={{
-                marginLeft: 8,
-                padding: "1px 6px",
-                borderRadius: 3,
-                fontSize: "0.85em",
-                background: "rgba(255,170,0,0.18)",
-                border: "1px solid rgba(255,170,0,0.45)",
-              }}
               title={`Not applied: ${receipt.finishingSkipped?.join(", ")}`}
             >
-              stopped before finishing
+              <Pill intent="warning" plain>
+                stopped before finishing
+              </Pill>
             </span>
           )}
         </div>
@@ -1183,19 +954,14 @@ function ReceiptDetailModal(props: {
         <div
           className="eh-stack eh-stack--lg"
         >
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: "var(--eh-sp-3)",
-            }}
-          >
-            <DetailTile
+          <StatGrid min={180}>
+            <StatTile
               label="Profile"
               value={receipt.vortexProfileName}
               sub={`id ${receipt.vortexProfileId}`}
+              subMono
             />
-            <DetailTile
+            <StatTile
               label="Mode"
               value={
                 receipt.installTargetMode === "fresh-profile"
@@ -1203,77 +969,33 @@ function ReceiptDetailModal(props: {
                   : "Current profile"
               }
             />
-            <DetailTile
+            <StatTile
               label="Installed at"
               value={new Date(receipt.installedAt).toLocaleString()}
             />
-            <DetailTile
+            <StatTile
               label="Mod count"
               value={String(receipt.mods.length)}
             />
-          </div>
+          </StatGrid>
 
-          <section>
-            <h4
-              style={{
-                margin: "0 0 var(--eh-sp-2) 0",
-                color: "var(--eh-text-secondary)",
-                fontSize: "var(--eh-text-xs)",
-                textTransform: "uppercase",
-                letterSpacing: "var(--eh-tracking-widest)",
-              }}
-            >
-              Mods recorded
-            </h4>
-            <ul
-              style={{
-                margin: 0,
-                padding: 0,
-                listStyle: "none",
-                maxHeight: "320px",
-                overflowY: "auto",
-                border: "1px solid var(--eh-border-subtle)",
-                borderRadius: "var(--eh-radius-sm)",
-              }}
-            >
+          <Section title="Mods recorded" count={receipt.mods.length} size="sm">
+            <ul className="eh-list-box">
               {receipt.mods.map((m) => (
-                <li
-                  key={m.vortexModId}
-                  style={{
-                    padding: "var(--eh-sp-2) var(--eh-sp-3)",
-                    borderBottom: "1px solid var(--eh-border-subtle)",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: "var(--eh-sp-2)",
-                  }}
-                >
+                <li key={m.vortexModId} className="eh-row eh-row--split">
                   <span className="eh-strong">
                     {m.name}
                   </span>
-                  <span
-                    style={{
-                      color: "var(--eh-text-muted)",
-                      fontSize: "var(--eh-text-xs)",
-                      fontFamily: "var(--eh-font-mono)",
-                    }}
-                  >
+                  <span className="eh-mono eh-muted">
                     {m.source} · {m.vortexModId}
                   </span>
                 </li>
               ))}
             </ul>
-          </section>
+          </Section>
 
           {progress !== null && (
-            <div
-              style={{
-                padding: "var(--eh-sp-3)",
-                background: "var(--eh-bg-base)",
-                borderRadius: "var(--eh-radius-sm)",
-                color: "var(--eh-text-secondary)",
-                fontSize: "var(--eh-text-sm)",
-              }}
-            >
+            <div className="eh-inset eh-body">
               Uninstalling... {progress.current} / {progress.total}
             </div>
           )}
@@ -1321,14 +1043,7 @@ function UninstallConfirmModal(props: {
         </>
       }
     >
-      <p
-        style={{
-          margin: 0,
-          color: "var(--eh-text-secondary)",
-          fontSize: "var(--eh-text-sm)",
-          lineHeight: "var(--eh-leading-relaxed)",
-        }}
-      >
+      <p className="eh-body">
         {(() => {
           /**
            * The number that used to be here was `receipt.mods.length` — every
@@ -1364,51 +1079,6 @@ function UninstallConfirmModal(props: {
         })()}
       </p>
     </Modal>
-  );
-}
-
-// ===========================================================================
-// Helpers
-// ===========================================================================
-
-function DetailTile(props: {
-  label: string;
-  value: string;
-  sub?: string;
-}): JSX.Element {
-  return (
-    <div
-      className="eh-inset"
-    >
-      <div
-        className="eh-label"
-      >
-        {props.label}
-      </div>
-      <div
-        style={{
-          marginTop: "var(--eh-sp-1)",
-          color: "var(--eh-text-primary)",
-          fontSize: "var(--eh-text-sm)",
-          fontWeight: 600,
-          wordBreak: "break-word",
-        }}
-      >
-        {props.value}
-      </div>
-      {props.sub !== undefined && (
-        <div
-          style={{
-            marginTop: 2,
-            color: "var(--eh-text-muted)",
-            fontSize: "var(--eh-text-xs)",
-            fontFamily: "var(--eh-font-mono)",
-          }}
-        >
-          {props.sub}
-        </div>
-      )}
-    </div>
   );
 }
 

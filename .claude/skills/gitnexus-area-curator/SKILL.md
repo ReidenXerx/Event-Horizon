@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-curator
-description: "Skill for the Curator area of Event-Horizon. 151 symbols across 32 files."
+description: "Skill for the Curator area of Event-Horizon. 139 symbols across 28 files."
 ---
 
 # Curator
 
-151 symbols | 32 files | Cohesion: 85%
+139 symbols | 28 files | Cohesion: 87%
 
 ## When to Use
 
@@ -17,13 +17,13 @@ description: "Skill for the Curator area of Event-Horizon. 151 symbols across 32
 
 | File | Symbols |
 |------|---------|
-| `src/ui/pages/curator/CuratorPage.tsx` | orphanPlan, retireCandidates, retirePlan, manualUpdates, shadowed (+28) |
+| `src/ui/pages/curator/CuratorPage.tsx` | orphanPlan, retireCandidates, retirePlan, manualUpdates, shadowed (+29) |
 | `src/core/curator/profileActions.ts` | identityCandidates, fileIdentity, findManualUpdates, findUpdatable, findUpdateShadowed (+7) |
 | `src/ui/pages/curator/curatorSession.ts` | begin, cancel, dismiss, finish, progress (+4) |
-| `src/core/curator/collectionDiff.ts` | settle, describeCollectionDiff, isUnchanged, diffCollectionAgainstProfile, candidate (+4) |
 | `src/core/curator/cleanupPlan.ts` | findSupersededMods, consider, planCleanup, identityKey, orphanArchives (+3) |
 | `src/core/curator/updateOneMod.ts` | UpdateTimeout, installedIdentityReader, asNum, updateOneAndWait, finish (+2) |
 | `src/core/curator/bulkUpdate.test.ts` | update, update, update, wait, candidate (+1) |
+| `src/core/curator/collectionDiff.ts` | settle, diffCollectionAgainstProfile, candidate, firstUnclaimed, nexusModIdOf (+1) |
 | `src/core/curator/runCleanup.ts` | dependsOnFailedRemoval, describeCleanupOutcome, gb, runCleanup, asNumber (+1) |
 | `src/core/curator/readProfile.ts` | asNumber, asString, opt, readCuratorMods, readEnabledModIds |
 | `src/core/curator/fileNameVersion.ts` | escapeForRegExp, nameForms, stripKnownVersion, stripTrailingVersion |
@@ -67,16 +67,16 @@ Start here when exploring this area:
 
 | Flow | Type | Steps |
 |------|------|-------|
-| `PublishedDetailsPanel → GetEventHorizonDir` | cross_community | 10 |
 | `Act → GetEventHorizonDir` | cross_community | 10 |
-| `PublishedDetailsPanel → GetVortexUserDataPath` | cross_community | 10 |
-| `BuildDiffCard → ToPosix` | cross_community | 9 |
 | `Reinstall → GetVortexUserDataPath` | cross_community | 9 |
-| `UpdateAll → GetVortexUserDataPath` | cross_community | 9 |
 | `Act → Clamp` | cross_community | 8 |
 | `Act → Scale` | cross_community | 8 |
-| `PublishedDetailsPanel → Truncate` | cross_community | 8 |
+| `RunEnvironmentGate → EHRuntime` | cross_community | 8 |
+| `RunEnvironmentGate → Notify` | cross_community | 8 |
 | `Act → Truncate` | cross_community | 8 |
+| `Update → GetVortexUserDataPath` | cross_community | 8 |
+| `Act → IsAwaitingUserInput` | cross_community | 7 |
+| `RunEnvironmentGate → GetSnapshot` | cross_community | 7 |
 
 ## How to Explore
 

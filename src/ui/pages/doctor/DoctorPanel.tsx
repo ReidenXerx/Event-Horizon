@@ -16,7 +16,7 @@
 
 import * as React from "react";
 
-import { Button, Card, Pill, ProgressRing } from "../../components";
+import { Button, Callout, Card, LinkButton, Pill, ProgressRing } from "../../components";
 import type { PillIntent } from "../../components";
 import type {
   HealAction,
@@ -54,14 +54,6 @@ export interface DoctorPanelProps {
   unavailableHeal?: (action: HealAction) => string | undefined;
 }
 
-const STATUS_COLOR: Record<HealthStatus, string> = {
-  healthy: "var(--eh-success)",
-  drifted: "var(--eh-warning)",
-  broken: "var(--eh-danger)",
-  unknown: "var(--eh-text-muted)",
-  "not-applicable": "var(--eh-text-disabled)",
-};
-
 const STATUS_PILL: Record<HealthStatus, PillIntent> = {
   healthy: "success",
   drifted: "warning",
@@ -78,6 +70,39 @@ const STATUS_WORD: Record<HealthStatus, string> = {
   "not-applicable": "N/A",
 };
 
+/**
+ * Maps a verdict to the `--success`/`--warning`/`--danger` suffix shared by
+ * the `eh-dot--*` and `eh-tone--*` modifier classes; `undefined` keeps the
+ * neutral dot / default text colour. Shared by the status dot, the quiet
+ * status label, the VerdictRing value and the overall-health headline.
+ */
+const STATUS_TONE: Record<HealthStatus, "success" | "warning" | "danger" | undefined> = {
+  healthy: "success",
+  drifted: "warning",
+  broken: "danger",
+  unknown: undefined,
+  "not-applicable": undefined,
+};
+
+/**
+ * Two concrete builders instead of one generic `(prefix, status)` helper:
+ * the static class-reference checker (theme/classes.test.ts) scans literal
+ * eh-... tokens, and a bare prefix passed around as its own string argument
+ * becomes exactly such a token, while a prefix immediately followed by --
+ * inside one template literal is not. Build the full `eh-dot--<tone>` /
+ * `eh-tone--<tone>` string in one place instead of assembling it from a
+ * passed-in prefix.
+ */
+function dotToneClass(status: HealthStatus): string | undefined {
+  const tone = STATUS_TONE[status];
+  return tone === undefined ? undefined : `eh-dot--${tone}`;
+}
+
+function textToneClass(status: HealthStatus): string | undefined {
+  const tone = STATUS_TONE[status];
+  return tone === undefined ? undefined : `eh-tone--${tone}`;
+}
+
 /** A ring is worth more than a number here: it reads at a glance. */
 function VerdictRing(props: { checks: readonly HealthCheck[] }): JSX.Element {
   const graded = props.checks.filter(
@@ -92,24 +117,12 @@ function VerdictRing(props: { checks: readonly HealthCheck[] }): JSX.Element {
       size={104}
       value={pct / 100}
       label={
-        <span
-          style={{
-            display: "grid",
-            placeItems: "center",
-            lineHeight: 1.1,
-          }}
-        >
-          <span
-            style={{
-              fontSize: "var(--eh-text-xl)",
-              fontWeight: 700,
-              color: STATUS_COLOR[overall.status],
-            }}
-          >
+        <span className="eh-stack eh-stack--xs eh-stack--center">
+          <span className={`eh-figure ${textToneClass(overall.status)}`.trim()}>
             {graded.length === 0 ? "—" : `${good}/${graded.length}`}
           </span>
           {/* "1/7" alone is a fraction of an unnamed thing. Name it. */}
-          <span className="eh-label" style={{ fontSize: "var(--eh-text-xs)" }}>
+          <span className="eh-label">
             {graded.length === 0 ? "checks" : "passing"}
           </span>
         </span>
@@ -135,32 +148,21 @@ function CheckCard(props: {
 
   return (
     <Card inert>
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--eh-sp-3)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--eh-sp-3)" }}>
+      <div className="eh-stack">
+        <div className="eh-row eh-row--lg">
           {/* The status dot carries the whole verdict at a glance. */}
           <span
             aria-hidden="true"
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius: "50%",
-              flex: "none",
-              background: STATUS_COLOR[check.status],
-              boxShadow: isProblem
-                ? `0 0 10px ${STATUS_COLOR[check.status]}`
-                : "none",
-            }}
+            className={[
+              "eh-dot",
+              "eh-dot--lg",
+              dotToneClass(check.status),
+              isProblem ? "eh-dot--glow" : undefined,
+            ]
+              .filter(Boolean)
+              .join(" ")}
           />
-          <span
-            style={{
-              fontSize: "var(--eh-text-md)",
-              fontWeight: 600,
-              color: "var(--eh-text-primary)",
-              flex: 1,
-            }}
-          >
-            {check.title}
-          </span>
+          <span className="eh-fill eh-strong">{check.title}</span>
           {/* Quiet when fine: no badge on a healthy check. */}
           {isProblem && (
             <Pill intent={STATUS_PILL[check.status]} withDot>
@@ -171,60 +173,24 @@ function CheckCard(props: {
           )}
           {!isProblem && (
             <span
-              className="eh-label"
-              style={{ color: STATUS_COLOR[check.status] }}
+              className={["eh-label", textToneClass(check.status)]
+                .filter(Boolean)
+                .join(" ")}
             >
               {STATUS_WORD[check.status]}
             </span>
           )}
         </div>
 
-        <p
-          style={{
-            margin: 0,
-            fontSize: "var(--eh-text-sm)",
-            color: "var(--eh-text-secondary)",
-            lineHeight: 1.5,
-          }}
-        >
-          {check.summary}
-        </p>
+        <p className="eh-body">{check.summary}</p>
 
         {check.detail.length > 0 && (
           <>
-            <button
-              type="button"
-              onClick={() => setOpen((v) => !v)}
-              style={{
-                alignSelf: "flex-start",
-                background: "none",
-                border: "none",
-                padding: 0,
-                cursor: "pointer",
-                color: "var(--eh-cyan)",
-                fontSize: "var(--eh-text-xs)",
-                letterSpacing: "var(--eh-tracking-wide)",
-                textTransform: "uppercase",
-                fontWeight: 600,
-              }}
-            >
+            <LinkButton variant="caps" onClick={() => setOpen((v) => !v)}>
               {open ? "Hide details" : `Show details (${check.detail.length})`}
-            </button>
+            </LinkButton>
             {open && (
-              <ul
-                style={{
-                  margin: 0,
-                  paddingLeft: "var(--eh-sp-4)",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 2,
-                  fontSize: "var(--eh-text-xs)",
-                  fontFamily: "var(--eh-font-mono)",
-                  color: "var(--eh-text-muted)",
-                  maxHeight: 220,
-                  overflowY: "auto",
-                }}
-              >
+              <ul className="eh-list eh-mono eh-muted eh-scroll">
                 {check.detail.map((d, i) => (
                   <li key={i}>{d}</li>
                 ))}
@@ -264,39 +230,27 @@ export function DoctorPanel(props: DoctorPanelProps): JSX.Element {
   const ordered = [...checks].sort((a, b) => rank(a.status) - rank(b.status));
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--eh-sp-5)" }}>
+    <div className="eh-stack eh-stack--xl">
       <Card inert>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--eh-sp-5)",
-            flexWrap: "wrap",
-          }}
-        >
+        <div className="eh-row eh-row--xl">
           <VerdictRing checks={checks} />
-          <div style={{ flex: "1 1 260px", display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="eh-stack eh-stack--sm eh-fill">
             <span className="eh-label">Collection health</span>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: "var(--eh-text-xl)",
-                color: STATUS_COLOR[overall.status],
-              }}
-            >
+            {/* h3, not h2: base.ts already sizes h3 at text-xl with zero
+                margin (matching the inline style this replaces exactly);
+                weight comes out 600 instead of the previous explicit 700 —
+                close enough to not warrant its own style. Colour now comes
+                from eh-tone--* (a real class beats base's :where() colour
+                rule, so no cascade issue here unlike the two NOTEs above). */}
+            <h3 className={textToneClass(overall.status)}>
               {overall.headline}
-            </h2>
-            <span
-              style={{
-                fontSize: "var(--eh-text-sm)",
-                color: "var(--eh-text-secondary)",
-              }}
-            >
+            </h3>
+            <span className="eh-body">
               {props.packageName} v{props.packageVersion} — measured against the
               last install of this collection on this machine.
             </span>
           </div>
-          <div style={{ display: "flex", gap: "var(--eh-sp-2)", flexWrap: "wrap" }}>
+          <div className="eh-row">
             {props.onRecheck !== undefined && (
               <Button intent="ghost" onClick={props.onRecheck}>
                 Re-check
@@ -320,35 +274,14 @@ export function DoctorPanel(props: DoctorPanelProps): JSX.Element {
       </Card>
 
       {props.healingBlocked !== undefined && (
-        <div
-          role="status"
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: "var(--eh-sp-3)",
-            padding: "var(--eh-sp-4)",
-            borderRadius: "var(--eh-radius-lg)",
-            background: "var(--eh-bg-elevated)",
-            border: "1px solid var(--eh-warning)",
-            color: "var(--eh-text-secondary)",
-            fontSize: "var(--eh-text-sm)",
-            lineHeight: 1.5,
-          }}
-        >
-          <span aria-hidden="true" style={{ color: "var(--eh-warning)", fontWeight: 700 }}>
-            ⏸
-          </span>
-          <span>{props.healingBlocked}</span>
-        </div>
+        <Callout tone="warning" icon="⏸">
+          {props.healingBlocked}
+        </Callout>
       )}
 
       <section
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-          gap: "var(--eh-sp-4)",
-          alignItems: "start",
-        }}
+        className="eh-grid eh-grid--start"
+        style={{ ["--eh-grid-min" as string]: "320px" }}
       >
         {ordered.map((c) => (
           <CheckCard

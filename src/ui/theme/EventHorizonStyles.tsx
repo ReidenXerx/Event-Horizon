@@ -23,16 +23,22 @@ import { TOKENS_CSS } from "./tokens";
 import { KEYFRAMES_CSS } from "./keyframes";
 import { BASE_CSS } from "./base";
 import { COMPONENTS_CSS } from "./components";
+import { PRIMITIVES_CSS } from "./primitives";
 import { UTILITIES_CSS } from "./utilities";
 import { LOGO_CSS } from "./logo";
 
 const STYLE_ID = "eh-styles";
 
-const COMBINED_CSS = [
+/**
+ * Exported so the render harness photographs the SAME stylesheet, in the same
+ * order, that the extension ships. Not part of the theme's public API.
+ */
+export const COMBINED_CSS = [
   TOKENS_CSS,
   KEYFRAMES_CSS,
   BASE_CSS,
   COMPONENTS_CSS,
+  PRIMITIVES_CSS,
   // After components: a utility should be able to override a component's
   // default spacing at a call site, which is the whole point of having them.
   UTILITIES_CSS,

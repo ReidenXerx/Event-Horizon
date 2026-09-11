@@ -73,7 +73,18 @@ import {
   getActiveProfileIdFromState,
   getModsForProfile,
 } from "../../../core/getModsListForProfile";
-import { Button, Card, Pill, ProgressRing, useToast } from "../../components";
+import {
+  Button,
+  Callout,
+  Card,
+  Chip,
+  EmptyState,
+  LinkButton,
+  Pill,
+  ProgressRing,
+  Section,
+  useToast,
+} from "../../components";
 import { useApi } from "../../state";
 import type { BuildDraftPayload } from "./buildSession";
 import { getBuildSessionRegistry } from "./buildSessionRegistry";
@@ -150,48 +161,26 @@ export function RecentlyBuiltCard(props: {
   const { built } = props;
   const moved = !isProfileUnmoved(built.drift);
   return (
-    <div className="eh-card">
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: "var(--eh-sp-2)",
-          flexWrap: "wrap",
-        }}
-      >
-        <strong style={{ color: "var(--eh-text-primary)" }}>
-          {built.name}
-        </strong>
+    <div className="eh-card eh-stack eh-stack--sm">
+      <div className="eh-row eh-row--baseline">
+        <strong className="eh-strong">{built.name}</strong>
         <span className="eh-muted">v{built.version}</span>
         <Pill intent="success">built</Pill>
       </div>
 
-      <div className="eh-muted" style={{ marginTop: "var(--eh-sp-1)" }}>
+      <div className="eh-muted">
         {built.modCount.toLocaleString()} mods ·{" "}
         {formatBytes(built.outputBytes)} · {formatRelativeTime(built.builtAt)}
       </div>
 
-      <p
-        style={{
-          margin: "var(--eh-sp-2) 0 0",
-          fontSize: "var(--eh-text-sm)",
-          color: moved ? "var(--eh-warning)" : "var(--eh-text-secondary)",
-        }}
-      >
+      <p className={moved ? "eh-body eh-tone--warning" : "eh-body"}>
         {describeProfileDrift(built.drift)}
         {moved
           ? " Reopening still works — the package is a record of what was built."
           : ""}
       </p>
 
-      <div
-        style={{
-          display: "flex",
-          gap: "var(--eh-sp-2)",
-          marginTop: "var(--eh-sp-3)",
-          flexWrap: "wrap",
-        }}
-      >
+      <div className="eh-row">
         <Button intent="primary" size="sm" onClick={props.onOpen}>
           Open build result
         </Button>
@@ -816,16 +805,7 @@ They are not harmless clutter — a collection's ` +
           newDraftDisabled={true}
           loading={true}
         />
-        <div
-          style={{
-            padding: "var(--eh-sp-5)",
-            background: "var(--eh-bg-raised)",
-            borderRadius: "var(--eh-radius-lg)",
-            display: "flex",
-            gap: "var(--eh-sp-4)",
-            alignItems: "center",
-          }}
-        >
+        <div className="eh-card eh-centred">
           <ProgressRing size={48} />
           <span className="eh-secondary">
             Listing drafts and published collections...
@@ -852,152 +832,119 @@ They are not harmless clutter — a collection's ` +
         }
       />
 
-      {state.errors.length > 0 && (
-        <div
-          style={{
-            marginBottom: "var(--eh-sp-4)",
-            padding: "var(--eh-sp-3) var(--eh-sp-4)",
-            background: "rgba(255, 91, 120, 0.08)",
-            border: "1px solid var(--eh-danger)",
-            borderRadius: "var(--eh-radius-md)",
-            color: "var(--eh-danger)",
-            fontSize: "var(--eh-text-sm)",
-          }}
-        >
-          <strong>{state.errors.length} item{state.errors.length === 1 ? "" : "s"} failed to load.</strong>
-          <ul
-            style={{
-              margin: "var(--eh-sp-2) 0 0 0",
-              paddingLeft: "var(--eh-sp-5)",
-              color: "var(--eh-text-secondary)",
-            }}
+      <div className="eh-stack eh-stack--lg">
+        {state.errors.length > 0 && (
+          <Callout
+            tone="danger"
+            title={`${state.errors.length} item${state.errors.length === 1 ? "" : "s"} failed to load.`}
           >
-            {state.errors.slice(0, 5).map((m, i) => (
-              <li key={i}>{m}</li>
-            ))}
-          </ul>
-        </div>
-      )}
+            <ul className="eh-list">
+              {state.errors.slice(0, 5).map((m, i) => (
+                <li key={i}>{m}</li>
+              ))}
+            </ul>
+          </Callout>
+        )}
 
-      {recentlyBuilt.length > 0 && (
-        <div style={{ marginBottom: "var(--eh-sp-4)" }}>
-          <h3
-            style={{
-              margin: "0 0 var(--eh-sp-2)",
-              fontSize: "var(--eh-text-sm)",
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              color: "var(--eh-text-muted)",
-            }}
+        {recentlyBuilt.length > 0 && (
+          <Section title="Built this session" size="sm">
+            <div className="eh-grid" style={{ ["--eh-grid-min" as string]: "320px" }}>
+              {recentlyBuilt.map((b) => (
+                <RecentlyBuiltCard
+                  key={b.draftId}
+                  built={b}
+                  onOpen={(): void => handleOpenBuilt(b.draftId, b.gameId)}
+                  onDismiss={(): void => handleDismissBuilt(b.draftId)}
+                />
+              ))}
+            </div>
+          </Section>
+        )}
+
+        {items.length === 0 && recentlyBuilt.length === 0 ? (
+          <EmptyState
+            title="No drafts or published collections yet"
+            actions={
+              <Button intent="primary" size="lg" onClick={handleNewDraft}>
+                + New draft
+              </Button>
+            }
           >
-            Built this session
-          </h3>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
-              gap: "var(--eh-sp-4)",
-            }}
-          >
-            {recentlyBuilt.map((b) => (
-              <RecentlyBuiltCard
-                key={b.draftId}
-                built={b}
-                onOpen={(): void => handleOpenBuilt(b.draftId, b.gameId)}
-                onDismiss={(): void => handleDismissBuilt(b.draftId)}
-              />
-            ))}
+            Start a new draft to capture your active profile as an Event
+            Horizon collection. Drafts autosave while you edit, and you
+            can keep several in flight at once — one per collection
+            you're working on.
+          </EmptyState>
+        ) : items.length === 0 ? (
+          <></>
+        ) : (
+          <div className="eh-grid" style={{ ["--eh-grid-min" as string]: "320px" }}>
+            {items.map((item) =>
+              item.kind === "draft" ? (
+                <DraftCard
+                  key={`draft:${item.env.key}`}
+                  env={item.env}
+                  activeGameId={activeGameId}
+                  registrySessionStateKind={
+                    registry
+                      .get(item.env.payload.draftId ?? item.env.key)
+                      ?.getState().kind
+                  }
+                  {...(item.superseded !== undefined
+                    ? {
+                        linkedPublished: {
+                          builtVersion: item.superseded.lastBuiltVersion,
+                          profileChanged:
+                            currentFingerprint !== undefined &&
+                            item.superseded.lastBuiltProfileFingerprint !==
+                              currentFingerprint,
+                        },
+                      }
+                    : {})}
+                  onOpen={(): void => handleOpenDraft(item.env)}
+                  onDiscard={(): void => {
+                    void handleDiscardDraft(item.env);
+                  }}
+                />
+              ) : (
+                <PublishedCard
+                  key={`pub:${item.summary.slug}`}
+                  summary={item.summary}
+                  upToDate={
+                    currentFingerprint !== undefined &&
+                    item.summary.lastBuiltProfileFingerprint === currentFingerprint
+                  }
+                  knownSlugs={publishedSlugs}
+                  onUpdate={(): void => handleUpdatePublished(item.summary)}
+                  onDelete={(): void => {
+                    void handleDeletePublished(item.summary);
+                  }}
+                />
+              ),
+            )}
           </div>
-        </div>
-      )}
+        )}
 
-      {items.length === 0 && recentlyBuilt.length === 0 ? (
-        <EmptyState onNewDraft={handleNewDraft} />
-      ) : items.length === 0 ? (
-        <></>
-      ) : (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
-            gap: "var(--eh-sp-4)",
-          }}
-        >
-          {items.map((item) =>
-            item.kind === "draft" ? (
-              <DraftCard
-                key={`draft:${item.env.key}`}
-                env={item.env}
-                activeGameId={activeGameId}
-                registrySessionStateKind={
-                  registry
-                    .get(item.env.payload.draftId ?? item.env.key)
-                    ?.getState().kind
-                }
-                {...(item.superseded !== undefined
-                  ? {
-                      linkedPublished: {
-                        builtVersion: item.superseded.lastBuiltVersion,
-                        profileChanged:
-                          currentFingerprint !== undefined &&
-                          item.superseded.lastBuiltProfileFingerprint !==
-                            currentFingerprint,
-                      },
-                    }
-                  : {})}
-                onOpen={(): void => handleOpenDraft(item.env)}
-                onDiscard={(): void => {
-                  void handleDiscardDraft(item.env);
-                }}
-              />
-            ) : (
-              <PublishedCard
-                key={`pub:${item.summary.slug}`}
-                summary={item.summary}
-                upToDate={
-                  currentFingerprint !== undefined &&
-                  item.summary.lastBuiltProfileFingerprint === currentFingerprint
-                }
-                knownSlugs={publishedSlugs}
-                onUpdate={(): void => handleUpdatePublished(item.summary)}
-                onDelete={(): void => {
-                  void handleDeletePublished(item.summary);
-                }}
-              />
-            ),
-          )}
-        </div>
-      )}
-
-      {cleanable.length > 0 && (
-        <div
-          style={{
-            marginTop: "var(--eh-sp-4)",
-            fontSize: "var(--eh-text-xs)",
-            color: "var(--eh-text-muted)",
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--eh-sp-2)",
-            flexWrap: "wrap",
-          }}
-        >
-          <span>
-            {cleanable.length} unused collection config
-            {cleanable.length === 1 ? "" : "s"} ({cleanable.map((c) => c.slug).join(", ")})
-            — created by opening the Build page, never built.
-          </span>
-          <Button
-            intent="ghost"
-            size="sm"
-            onClick={(): void => {
-              void handleCleanupUnbuilt();
-            }}
-          >
-            Clean up
-          </Button>
-        </div>
-      )}
-      <DraftsRootHint />
+        {cleanable.length > 0 && (
+          <div className="eh-row">
+            <span className="eh-muted">
+              {cleanable.length} unused collection config
+              {cleanable.length === 1 ? "" : "s"} ({cleanable.map((c) => c.slug).join(", ")})
+              — created by opening the Build page, never built.
+            </span>
+            <Button
+              intent="ghost"
+              size="sm"
+              onClick={(): void => {
+                void handleCleanupUnbuilt();
+              }}
+            >
+              Clean up
+            </Button>
+          </div>
+        )}
+        <DraftsRootHint />
+      </div>
     </div>
   );
 }
@@ -1017,34 +964,10 @@ function DashboardHeader(props: {
   loading?: boolean;
 }): JSX.Element {
   return (
-    <header
-      style={{
-        display: "flex",
-        alignItems: "flex-end",
-        justifyContent: "space-between",
-        gap: "var(--eh-sp-3)",
-        marginBottom: "var(--eh-sp-5)",
-        flexWrap: "wrap",
-      }}
-    >
-      <div>
-        <h2
-          style={{
-            margin: 0,
-            fontSize: "var(--eh-text-2xl)",
-            color: "var(--eh-text-primary)",
-            letterSpacing: "var(--eh-tracking-tight)",
-          }}
-        >
-          Build a collection
-        </h2>
-        <p
-          style={{
-            margin: "var(--eh-sp-2) 0 0 0",
-            color: "var(--eh-text-secondary)",
-            fontSize: "var(--eh-text-md)",
-          }}
-        >
+    <header className="eh-page__header">
+      <div className="eh-page__heading">
+        <h2 className="eh-page__title">Build a collection</h2>
+        <p className="eh-page__subtitle">
           {props.loading
             ? "Loading..."
             : `${props.counts.drafts} draft${
@@ -1060,14 +983,7 @@ function DashboardHeader(props: {
           )}
         </p>
       </div>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--eh-sp-2)",
-          alignItems: "flex-end",
-        }}
-      >
+      <div className="eh-stack eh-stack--sm eh-stack--end">
         <div className="eh-row">
           <Button intent="ghost" onClick={props.onRefresh}>
             Refresh
@@ -1085,88 +1001,19 @@ function DashboardHeader(props: {
             + New draft
           </Button>
         </div>
-        <div style={{ display: "flex", gap: "var(--eh-sp-2)" }}>
+        <div className="eh-row">
           {(["all", "drafts", "published"] as FilterKey[]).map((k) => (
-            <FilterPill
+            <Chip
               key={k}
               active={props.filter === k}
               onClick={(): void => props.onFilter(k)}
             >
               {k === "all" ? "All" : k === "drafts" ? "Drafts" : "Published"}
-            </FilterPill>
+            </Chip>
           ))}
         </div>
       </div>
     </header>
-  );
-}
-
-function FilterPill(props: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <button
-      onClick={props.onClick}
-      style={{
-        padding: "var(--eh-sp-1) var(--eh-sp-3)",
-        background: props.active
-          ? "var(--eh-accent-soft, var(--eh-bg-raised))"
-          : "var(--eh-bg-base)",
-        border: `1px solid ${
-          props.active ? "var(--eh-accent, var(--eh-text-primary))" : "var(--eh-border-default)"
-        }`,
-        borderRadius: "var(--eh-radius-pill, 999px)",
-        color: props.active
-          ? "var(--eh-text-primary)"
-          : "var(--eh-text-secondary)",
-        fontSize: "var(--eh-text-sm)",
-        fontFamily: "inherit",
-        cursor: "pointer",
-      }}
-    >
-      {props.children}
-    </button>
-  );
-}
-
-function EmptyState(props: { onNewDraft: () => void }): JSX.Element {
-  return (
-    <div
-      style={{
-        padding: "var(--eh-sp-7) var(--eh-sp-5)",
-        background: "var(--eh-bg-glass)",
-        border: "1px dashed var(--eh-border-default)",
-        borderRadius: "var(--eh-radius-lg)",
-        textAlign: "center",
-        display: "flex",
-        flexDirection: "column",
-        gap: "var(--eh-sp-4)",
-        alignItems: "center",
-      }}
-    >
-      <h3 style={{ margin: 0, color: "var(--eh-text-primary)" }}>
-        No drafts or published collections yet
-      </h3>
-      <p
-        style={{
-          margin: 0,
-          color: "var(--eh-text-secondary)",
-          maxWidth: 480,
-          lineHeight: "var(--eh-leading-relaxed)",
-          fontSize: "var(--eh-text-sm)",
-        }}
-      >
-        Start a new draft to capture your active profile as an Event
-        Horizon collection. Drafts autosave while you edit, and you
-        can keep several in flight at once — one per collection
-        you're working on.
-      </p>
-      <Button intent="primary" size="lg" onClick={props.onNewDraft}>
-        + New draft
-      </Button>
-    </div>
   );
 }
 
@@ -1280,7 +1127,7 @@ export function DraftCard(props: {
         </span>
       }
     >
-      <div className="eh-stack eh-stack--sm eh-secondary" style={{ fontSize: "var(--eh-text-sm)" }}>
+      <div className="eh-stack eh-stack--sm">
         <div className="eh-row">
           <Pill intent="info">draft</Pill>
           <Pill intent="neutral">{gameId}</Pill>
@@ -1311,13 +1158,7 @@ export function DraftCard(props: {
         {props.linkedPublished?.profileChanged === true && (
           // The whole reason this prop exists. Said on the draft card because
           // the published card that used to say it is not on screen.
-          <div
-            style={{
-              color: "var(--eh-warning)",
-              fontSize: "var(--eh-text-sm)",
-              lineHeight: "var(--eh-leading-relaxed)",
-            }}
-          >
+          <div className="eh-tone--warning">
             Your mods have changed since{" "}
             {props.linkedPublished.builtVersion !== undefined
               ? `v${props.linkedPublished.builtVersion}`
@@ -1346,7 +1187,7 @@ export function DraftCard(props: {
             since the last build — which is exactly when the published card
             turns its Edit into an amber Update. Nothing changed, nothing
             loud. */}
-        <div className="eh-row" style={{ marginTop: "var(--eh-sp-2)" }}>
+        <div className="eh-row">
           <Button
             intent={hasUnbuiltChanges ? "primary" : "ghost"}
             size="sm"
@@ -1377,8 +1218,8 @@ export function DraftCard(props: {
 
 function DetailRow(props: { label: string; children: React.ReactNode }): JSX.Element {
   return (
-    <div className="eh-field">
-      <span className="eh-field__label">{props.label}</span>
+    <div className="eh-kv">
+      <span className="eh-kv__label">{props.label}</span>
       <span className="eh-fill">{props.children}</span>
     </div>
   );
@@ -1496,7 +1337,7 @@ function PublishedDetailsPanel(props: {
   }, [props.summary, props.knownSlugs]);
 
   if (error !== undefined) {
-    return <div style={{ color: "var(--eh-warning)" }}>Couldn't read details: {error}</div>;
+    return <div className="eh-tone--warning">Couldn't read details: {error}</div>;
   }
   if (details === undefined) {
     return <div className="eh-muted">Reading...</div>;
@@ -1504,15 +1345,7 @@ function PublishedDetailsPanel(props: {
 
   const s = details.shipped;
   return (
-    <div
-      className="eh-stack eh-stack--sm"
-      style={{
-        marginTop: "var(--eh-sp-3)",
-        paddingTop: "var(--eh-sp-3)",
-        borderTop: "1px solid var(--eh-border-subtle)",
-        fontSize: "var(--eh-text-sm)",
-      }}
-    >
+    <div className="eh-stack eh-stack--sm eh-divider-top">
       {/* What the last package actually contains. */}
       {s !== undefined ? (
         <>
@@ -1521,53 +1354,31 @@ function PublishedDetailsPanel(props: {
             {s.bundledArchives > 0 ? `, ${s.bundledArchives} bundled archives` : ""}
           </DetailRow>
           {diff !== undefined && (
-            <div
-              style={{
-                marginTop: "var(--eh-sp-2)",
-                marginBottom: "var(--eh-sp-2)",
-                padding: "var(--eh-sp-2)",
-                background: "var(--eh-bg-deep)",
-                borderRadius: "var(--eh-radius-sm)",
-              }}
-            >
-              <div
-                style={{
-                  color: isUnchanged(diff)
-                    ? "var(--eh-text-secondary)"
-                    : "var(--eh-warning)",
-                  marginBottom: isUnchanged(diff) ? 0 : "var(--eh-sp-2)",
-                }}
-              >
+            <div className="eh-inset eh-inset--deep eh-stack eh-stack--sm">
+              <div className={isUnchanged(diff) ? undefined : "eh-tone--warning"}>
                 {describeCollectionDiff(diff)}
               </div>
               {!isUnchanged(diff) && (
-                <div
-                  style={{
-                    fontFamily: "var(--eh-font-mono)",
-                    fontSize: "var(--eh-text-xs)",
-                    maxHeight: 220,
-                    overflowY: "auto",
-                  }}
-                >
+                <div className="eh-mono eh-scroll">
                   {diff.added.slice(0, 40).map((e) => (
-                    <div key={`+${e.name}`} style={{ color: "var(--eh-success)" }}>
+                    <div key={`+${e.name}`} className="eh-tone--success">
                       + {e.name}
                       {e.version !== undefined ? ` ${e.version}` : ""}
                     </div>
                   ))}
                   {diff.removed.slice(0, 40).map((e) => (
-                    <div key={`-${e.name}`} style={{ color: "var(--eh-danger)" }}>
+                    <div key={`-${e.name}`} className="eh-tone--danger">
                       &minus; {e.name}
                       {e.version !== undefined ? ` ${e.version}` : ""}
                     </div>
                   ))}
                   {diff.updated.slice(0, 40).map((e) => (
-                    <div key={`~${e.name}`} style={{ color: "var(--eh-warning)" }}>
+                    <div key={`~${e.name}`} className="eh-tone--warning">
                       ~ {e.name} {e.fromVersion} &rarr; {e.toVersion}
                     </div>
                   ))}
                   {diff.reconfigured.slice(0, 40).map((e) => (
-                    <div key={`r${e.name}`} style={{ color: "var(--eh-warning)" }}>
+                    <div key={`r${e.name}`} className="eh-tone--warning">
                       ! {e.name}{" "}
                       {e.reason === "installer-options"
                         ? "installer options changed"
@@ -1575,7 +1386,7 @@ function PublishedDetailsPanel(props: {
                     </div>
                   ))}
                   {diff.toggled.slice(0, 40).map((e) => (
-                    <div key={`t${e.name}`} style={{ color: "var(--eh-text-secondary)" }}>
+                    <div key={`t${e.name}`} className="eh-secondary">
                       {e.nowEnabled ? "on " : "off"} {e.name}
                     </div>
                   ))}
@@ -1621,9 +1432,7 @@ function PublishedDetailsPanel(props: {
 
       <DetailRow label="Slug">{props.summary.slug}</DetailRow>
       <DetailRow label="Identity">
-        <code style={{ fontFamily: "var(--eh-font-mono)", fontSize: "var(--eh-text-xs)" }}>
-          {props.summary.packageId}
-        </code>
+        <code className="eh-mono">{props.summary.packageId}</code>
       </DetailRow>
       <DetailRow label="Builds on disk">
         {details.packages.length === 0
@@ -1675,7 +1484,7 @@ export function PublishedCard(props: {
         </span>
       }
     >
-      <div className="eh-stack eh-stack--sm eh-secondary" style={{ fontSize: "var(--eh-text-sm)" }}>
+      <div className="eh-stack eh-stack--sm">
         <div className="eh-row">
           <Pill intent="success">published</Pill>
           {summary.lastBuiltVersion !== undefined && (
@@ -1723,10 +1532,7 @@ export function PublishedCard(props: {
             and the row read as an arbitrary 2x2. Grouping makes the wrap
             meaningful: the routine actions stay together and Delete drops as
             its own unit, still at the far edge, still separated. */}
-        <div
-          className="eh-row eh-row--split"
-          style={{ marginTop: "var(--eh-sp-2)" }}
-        >
+        <div className="eh-row eh-row--split">
           <div className="eh-row">
             {/* Both of these OPEN THE EDITOR — `handleUpdatePublished` creates
                 a draft and navigates; nothing is built until the curator
@@ -1808,31 +1614,12 @@ export function PublishedCard(props: {
 function DraftsRootHint(): JSX.Element {
   const [shown, setShown] = React.useState(false);
   return (
-    <div
-      style={{
-        marginTop: "var(--eh-sp-5)",
-        fontSize: "var(--eh-text-xs)",
-        color: "var(--eh-text-muted)",
-      }}
-    >
-      <button
-        onClick={(): void => setShown((s) => !s)}
-        style={{
-          background: "transparent",
-          border: "none",
-          color: "var(--eh-text-muted)",
-          cursor: "pointer",
-          padding: 0,
-          fontFamily: "inherit",
-          fontSize: "inherit",
-        }}
-      >
+    <div className="eh-stack eh-stack--xs eh-small">
+      <LinkButton variant="xs" tone="muted" onClick={(): void => setShown((s) => !s)}>
         {shown ? "Hide" : "Show"} draft folder location
-      </button>
+      </LinkButton>
       {shown && (
-        <div style={{ marginTop: "var(--eh-sp-1)", fontFamily: "var(--eh-font-mono)" }}>
-          {getDraftsRoot(getAppDataPath())}
-        </div>
+        <div className="eh-mono">{getDraftsRoot(getAppDataPath())}</div>
       )}
     </div>
   );

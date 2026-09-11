@@ -24,7 +24,7 @@ import type {
   PluginEnabledDiff,
   PluginPositionDiff,
 } from "../../core/comparePlugins";
-import { DiffSectionBlock, Page } from "../components";
+import { Callout, DiffSectionBlock, EmptyState, Field, Page, Pill, Select } from "../components";
 import { ErrorBoundary, useErrorReporter, useErrorReporterFormatted } from "../errors";
 import type { EventHorizonRoute } from "../routes";
 import { getVortexUserDataPath } from "../../core/paths";
@@ -141,12 +141,10 @@ function PluginDiffsView(): JSX.Element {
         title="Plugin Diffs"
         subtitle="Compare two plugins.txt files to generate a diff report."
       >
-        <div className="eh-plugin-diffs__empty-page">
-          <p className="eh-plugin-diffs__empty-message">
-            No plugin diff files found. Use the{" "}
-            <strong>Compare Plugins</strong> toolbar action to generate one.
-          </p>
-        </div>
+        <EmptyState title="No plugin diff files found.">
+          Use the <strong>Compare Plugins</strong> toolbar action to generate
+          one.
+        </EmptyState>
       </Page>
     );
   }
@@ -155,7 +153,7 @@ function PluginDiffsView(): JSX.Element {
   if (fileListState.kind === "loading") {
     return (
       <Page title="Plugin Diffs">
-        <p className="eh-plugin-diffs__loading">Loading diff files…</p>
+        <p className="eh-note">Loading diff files…</p>
       </Page>
     );
   }
@@ -177,13 +175,13 @@ function PluginDiffsView(): JSX.Element {
 
         {/* Report body */}
         {reportState.kind === "loading" && (
-          <p className="eh-plugin-diffs__loading">Loading report…</p>
+          <p className="eh-note">Loading report…</p>
         )}
 
         {reportState.kind === "error" && (
-          <p className="eh-plugin-diffs__error">
+          <Callout tone="danger">
             Failed to load report: {reportState.message}
-          </p>
+          </Callout>
         )}
 
         {reportState.kind === "loaded" && (
@@ -214,25 +212,26 @@ function FileSelector(props: FileSelectorProps): JSX.Element {
 
   return (
     <div className="eh-plugin-diffs__selector-row">
-      <label htmlFor="eh-diff-file-select" className="eh-plugin-diffs__selector-label">
-        Diff file
-      </label>
-      <select
-        id="eh-diff-file-select"
-        className="eh-plugin-diffs__select"
-        value={selectedFilePath}
-        onChange={(e): void => onSelect(e.target.value)}
-      >
-        {files.map((f) => (
-          <option key={f.filePath} value={f.filePath}>
-            {f.gameId} — {new Date(f.timestampMs).toLocaleString()}
-          </option>
-        ))}
-      </select>
+      <Field inline label="Diff file" id="eh-diff-file-select">
+        {(id) => (
+          <Select
+            id={id}
+            auto
+            value={selectedFilePath}
+            onChange={(e): void => onSelect(e.target.value)}
+          >
+            {files.map((f) => (
+              <option key={f.filePath} value={f.filePath}>
+                {f.gameId} — {new Date(f.timestampMs).toLocaleString()}
+              </option>
+            ))}
+          </Select>
+        )}
+      </Field>
       {displayDate && (
-        <span className="eh-plugin-diffs__selector-date" aria-label="Selected file date">
+        <Pill plain ariaLabel="Selected file date">
           {displayDate}
-        </span>
+        </Pill>
       )}
     </div>
   );
@@ -254,9 +253,9 @@ function ReportView(props: ReportViewProps): JSX.Element {
       {/* Source paths info */}
       <div className="eh-plugin-diffs__meta">
         <span className="eh-plugin-diffs__meta-item">
-          <span className="eh-plugin-diffs__meta-label">Reference:</span>
+          <span className="eh-label">Reference:</span>
           <span
-            className="eh-plugin-diffs__meta-path"
+            className="eh-mono eh-fill"
             title={report.referenceFilePath}
           >
             {report.referenceFilePath}
@@ -264,9 +263,9 @@ function ReportView(props: ReportViewProps): JSX.Element {
         </span>
         <span className="eh-plugin-diffs__meta-separator" aria-hidden="true">vs</span>
         <span className="eh-plugin-diffs__meta-item">
-          <span className="eh-plugin-diffs__meta-label">Current:</span>
+          <span className="eh-label">Current:</span>
           <span
-            className="eh-plugin-diffs__meta-path"
+            className="eh-mono eh-fill"
             title={report.currentFilePath}
           >
             {report.currentFilePath}
@@ -328,11 +327,9 @@ function PluginEntryList(props: PluginEntryListProps): JSX.Element {
             name={entry.name}
             onClick={onPluginClick ? (): void => onPluginClick(entry.name) : undefined}
           />
-          <span
-            className={`eh-plugin-diffs__enabled-badge eh-plugin-diffs__enabled-badge--${entry.enabled ? "on" : "off"}`}
-          >
+          <Pill intent={entry.enabled ? "success" : "neutral"}>
             {entry.enabled ? "enabled" : "disabled"}
-          </span>
+          </Pill>
         </li>
       ))}
     </ul>
@@ -355,13 +352,13 @@ function EnabledMismatchList(props: EnabledMismatchListProps): JSX.Element {
             onClick={onPluginClick ? (): void => onPluginClick(entry.name) : undefined}
           />
           <span className="eh-plugin-diffs__change-detail">
-            <span className={`eh-plugin-diffs__enabled-badge eh-plugin-diffs__enabled-badge--${entry.referenceEnabled ? "on" : "off"}`}>
+            <Pill intent={entry.referenceEnabled ? "success" : "neutral"}>
               {entry.referenceEnabled ? "enabled" : "disabled"}
-            </span>
+            </Pill>
             <span className="eh-plugin-diffs__arrow" aria-hidden="true">→</span>
-            <span className={`eh-plugin-diffs__enabled-badge eh-plugin-diffs__enabled-badge--${entry.currentEnabled ? "on" : "off"}`}>
+            <Pill intent={entry.currentEnabled ? "success" : "neutral"}>
               {entry.currentEnabled ? "enabled" : "disabled"}
-            </span>
+            </Pill>
           </span>
         </li>
       ))}

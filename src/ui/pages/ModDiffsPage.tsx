@@ -34,7 +34,7 @@ import {
   TIER_LABEL,
   type MatchTier,
 } from "../../core/identity/modIdentity";
-import { DiffSectionBlock, Page } from "../components";
+import { Callout, DiffSectionBlock, EmptyState, Field, Page, Pill, Select } from "../components";
 import {
   ErrorBoundary,
   useErrorReporter,
@@ -152,13 +152,10 @@ function ModDiffsView(): JSX.Element {
         title="Mod Diffs"
         subtitle="Compare two mod snapshots to generate a diff report."
       >
-        <div className="eh-mod-diffs__empty-page">
-          <p className="eh-mod-diffs__empty-message">
-            No mod diff files found. Use the{" "}
-            <strong>Compare Current Mods With JSON</strong> toolbar action to
-            generate one.
-          </p>
-        </div>
+        <EmptyState title="No mod diff files found.">
+          Use the <strong>Compare Current Mods With JSON</strong> toolbar
+          action to generate one.
+        </EmptyState>
       </Page>
     );
   }
@@ -166,7 +163,7 @@ function ModDiffsView(): JSX.Element {
   if (fileListState.kind === "loading") {
     return (
       <Page title="Mod Diffs">
-        <p className="eh-mod-diffs__loading">Loading diff files…</p>
+        <p className="eh-note">Loading diff files…</p>
       </Page>
     );
   }
@@ -188,12 +185,12 @@ function ModDiffsView(): JSX.Element {
         />
 
         {reportState.kind === "loading" && (
-          <p className="eh-mod-diffs__loading">Loading report…</p>
+          <p className="eh-note">Loading report…</p>
         )}
         {reportState.kind === "error" && (
-          <p className="eh-mod-diffs__error">
+          <Callout tone="danger">
             Failed to load report: {reportState.message}
-          </p>
+          </Callout>
         )}
         {reportState.kind === "loaded" && (
           <ReportView report={reportState.report} />
@@ -223,31 +220,26 @@ function FileSelector(props: FileSelectorProps): JSX.Element {
 
   return (
     <div className="eh-mod-diffs__selector-row">
-      <label
-        htmlFor="eh-mod-diff-file-select"
-        className="eh-mod-diffs__selector-label"
-      >
-        Diff file
-      </label>
-      <select
-        id="eh-mod-diff-file-select"
-        className="eh-mod-diffs__select"
-        value={selectedFilePath}
-        onChange={(e): void => onSelect(e.target.value)}
-      >
-        {files.map((f) => (
-          <option key={f.filePath} value={f.filePath}>
-            {f.gameId} — {new Date(f.timestampMs).toLocaleString()}
-          </option>
-        ))}
-      </select>
+      <Field inline label="Diff file" id="eh-mod-diff-file-select">
+        {(id) => (
+          <Select
+            id={id}
+            auto
+            value={selectedFilePath}
+            onChange={(e): void => onSelect(e.target.value)}
+          >
+            {files.map((f) => (
+              <option key={f.filePath} value={f.filePath}>
+                {f.gameId} — {new Date(f.timestampMs).toLocaleString()}
+              </option>
+            ))}
+          </Select>
+        )}
+      </Field>
       {displayDate && (
-        <span
-          className="eh-mod-diffs__selector-date"
-          aria-label="Selected file date"
-        >
+        <Pill plain ariaLabel="Selected file date">
           {displayDate}
-        </span>
+        </Pill>
       )}
     </div>
   );
@@ -357,12 +349,12 @@ function SnapshotMeta(props: SnapshotMetaProps): JSX.Element {
 
   return (
     <span className="eh-mod-diffs__meta-item">
-      <span className="eh-mod-diffs__meta-label">{label}</span>
-      <span className="eh-mod-diffs__meta-detail">
+      <span className="eh-label">{label}</span>
+      <span className="eh-mono">
         {info.gameId ?? "—"}
         {info.profileId ? ` / ${info.profileId}` : ""}
       </span>
-      <span className="eh-mod-diffs__meta-count">{info.count} mods</span>
+      <Pill plain>{info.count} mods</Pill>
       {info.exportedAt && (
         <span className="eh-mod-diffs__meta-date">
           {new Date(info.exportedAt).toLocaleString()}
@@ -392,11 +384,9 @@ function ModEntryList(props: ModEntryListProps): JSX.Element {
           {mod.version !== undefined && (
             <span className="eh-mod-diffs__mod-version">v{mod.version}</span>
           )}
-          <span
-            className={`eh-mod-diffs__enabled-badge eh-mod-diffs__enabled-badge--${mod.enabled ? "on" : "off"}`}
-          >
+          <Pill intent={mod.enabled ? "success" : "neutral"}>
             {mod.enabled ? "enabled" : "disabled"}
-          </span>
+          </Pill>
         </li>
       ))}
     </ul>
@@ -549,11 +539,9 @@ function MatchedModList(props: MatchedModListProps): JSX.Element {
           {entry.version !== undefined && (
             <span className="eh-mod-diffs__mod-version">v{entry.version}</span>
           )}
-          <span
-            className={`eh-mod-diffs__enabled-badge eh-mod-diffs__enabled-badge--${entry.enabled ? "on" : "off"}`}
-          >
+          <Pill intent={entry.enabled ? "success" : "neutral"}>
             {entry.enabled ? "enabled" : "disabled"}
-          </span>
+          </Pill>
           <span className="eh-mod-diffs__mod-tier">
             {TIER_LABEL[entry.matchTier]}
           </span>

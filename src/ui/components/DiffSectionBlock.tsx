@@ -46,7 +46,7 @@ export function DiffSectionBlock(props: DiffSectionBlockProps): JSX.Element {
   const pillIntent: PillIntent = intent ?? (count > 0 ? "warning" : "neutral");
   const blockClass = [
     "eh-diff-block",
-    expanded ? "eh-diff-block--expanded" : "eh-diff-block--collapsed",
+    expanded ? "eh-diff-block--expanded" : undefined,
     className,
   ]
     .filter(Boolean)

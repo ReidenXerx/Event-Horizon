@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-doctor
-description: "Skill for the Doctor area of Event-Horizon. 23 symbols across 8 files."
+description: "Skill for the Doctor area of Event-Horizon. 26 symbols across 9 files."
 ---
 
 # Doctor
 
-23 symbols | 8 files | Cohesion: 84%
+26 symbols | 9 files | Cohesion: 86%
 
 ## When to Use
 
@@ -21,6 +21,7 @@ description: "Skill for the Doctor area of Event-Horizon. 23 symbols across 8 fi
 | `src/core/doctor/health.test.ts` | drifted, observations, healthy, on |
 | `src/core/doctor/runHeal.ts` | healImpl, resolveModMaps, runHeal |
 | `src/core/doctor/health.ts` | countCheck, detailList, evaluateHealth |
+| `src/ui/pages/doctor/EnvironmentTools.tsx` | saveLogs, saveSnapshot, formatBytes |
 | `src/core/doctor/heal.ts` | describeHeal, healNeedsManifest |
 | `src/core/identity/compareKey.ts` | nexusModIdOfCompareKey, parseCompareKey |
 | `src/ui/pages/doctor/DoctorPage.tsx` | heal, unavailableHeal |
@@ -34,7 +35,7 @@ Start here when exploring this area:
 - **`runHeal`** (Function) — `src/core/doctor/runHeal.ts:98`
 - **`nexusModIdOfCompareKey`** (Function) — `src/core/identity/compareKey.ts:96`
 - **`parseCompareKey`** (Function) — `src/core/identity/compareKey.ts:79`
-- **`heal`** (Function) — `src/ui/pages/doctor/DoctorPage.tsx:320`
+- **`gatherObservations`** (Function) — `src/core/doctor/gather.ts:115`
 
 ## Key Symbols
 
@@ -44,14 +45,15 @@ Start here when exploring this area:
 | `runHeal` | Function | `src/core/doctor/runHeal.ts` | 98 |
 | `nexusModIdOfCompareKey` | Function | `src/core/identity/compareKey.ts` | 96 |
 | `parseCompareKey` | Function | `src/core/identity/compareKey.ts` | 79 |
-| `heal` | Function | `src/ui/pages/doctor/DoctorPage.tsx` | 320 |
 | `gatherObservations` | Function | `src/core/doctor/gather.ts` | 115 |
 | `evaluateHealth` | Function | `src/core/doctor/health.ts` | 213 |
 | `comparePluginOrder` | Function | `src/core/installer/checkPluginOrder.ts` | 68 |
+| `saveLogs` | Function | `src/ui/pages/doctor/EnvironmentTools.tsx` | 165 |
+| `saveSnapshot` | Function | `src/ui/pages/doctor/EnvironmentTools.tsx` | 122 |
 | `healNeedsManifest` | Function | `src/core/doctor/heal.ts` | 42 |
-| `unavailableHeal` | Function | `src/ui/pages/doctor/DoctorPage.tsx` | 487 |
 | `healImpl` | Function | `src/core/doctor/runHeal.ts` | 133 |
 | `resolveModMaps` | Function | `src/core/doctor/runHeal.ts` | 60 |
+| `heal` | Function | `src/ui/pages/doctor/DoctorPage.tsx` | 321 |
 | `countModRules` | Function | `src/core/doctor/gather.ts` | 70 |
 | `readEnabledModIds` | Function | `src/core/doctor/gather.ts` | 53 |
 | `readInstalledModIds` | Function | `src/core/doctor/gather.ts` | 37 |
@@ -59,7 +61,6 @@ Start here when exploring this area:
 | `countCheck` | Function | `src/core/doctor/health.ts` | 645 |
 | `detailList` | Function | `src/core/doctor/health.ts` | 201 |
 | `key` | Function | `src/core/installer/checkPluginOrder.ts` | 59 |
-| `drifted` | Function | `src/core/doctor/health.test.ts` | 361 |
 
 ## Execution Flows
 

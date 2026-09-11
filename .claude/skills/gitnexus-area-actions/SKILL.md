@@ -1,86 +1,67 @@
 ---
 name: gitnexus-area-actions
-description: "Skill for the Actions area of Event-Horizon. 60 symbols across 15 files."
+description: "Skill for the Actions area of Event-Horizon. 38 symbols across 6 files."
 ---
 
 # Actions
 
-60 symbols | 15 files | Cohesion: 73%
+38 symbols | 6 files | Cohesion: 87%
 
 ## When to Use
 
 - Working with code in `src/`
-- Understanding how createCompareModsAction, createComparePluginsAction, createExportModsAction work
+- Understanding how pickModArchiveFile, action, action work
 - Modifying actions-related functionality
 
 ## Key Files
 
 | File | Symbols |
 |------|---------|
-| `src/actions/installCollectionAction.ts` | collectUserDecisions, formatDivergedConflictText, formatOrphanText, formatPromptUserText, pickConflictChoice (+24) |
-| `src/utils/utils.ts` | exportDiffReport, pickJsonFile, pickTxtFile, pickModArchiveFile, openFile (+1) |
-| `src/core/getModsListForProfile.ts` | getActiveGameId, getActiveProfileId, getActiveProfileIdFromState, belongsToGame, getModsForProfile |
-| `src/actions/compareModsAction.ts` | createCompareModsAction, action, action |
-| `src/actions/comparePluginsAction.ts` | createComparePluginsAction, action, action |
-| `src/actions/exportModsAction.ts` | createExportModsAction, action, action |
-| `src/ui/pages/build/BuildDashboard.tsx` | recentlyBuilt, diff |
-| `src/ui/pages/dashboard/data.ts` | formatGameLabel, readSystemStatus |
-| `src/core/comparePlugins.ts` | exportPluginsDiffReport |
-| `src/core/curator/profileDrift.ts` | profileDriftSince |
+| `src/actions/installCollectionAction.ts` | collectUserDecisions, formatDivergedConflictText, formatOrphanText, formatPromptUserText, pickConflictChoice (+23) |
+| `src/utils/utils.ts` | pickModArchiveFile, openFile, openFolder |
+| `src/actions/compareModsAction.ts` | action, action |
+| `src/actions/comparePluginsAction.ts` | action, action |
+| `src/actions/exportModsAction.ts` | action, action |
+| `src/ui/pages/install/steps.tsx` | handlePickFile |
 
 ## Entry Points
 
 Start here when exploring this area:
 
-- **`createCompareModsAction`** (Function) — `src/actions/compareModsAction.ts:21`
-- **`createComparePluginsAction`** (Function) — `src/actions/comparePluginsAction.ts:16`
-- **`createExportModsAction`** (Function) — `src/actions/exportModsAction.ts:17`
-- **`exportPluginsDiffReport`** (Function) — `src/core/comparePlugins.ts:371`
-- **`profileDriftSince`** (Function) — `src/core/curator/profileDrift.ts:51`
+- **`pickModArchiveFile`** (Function) — `src/utils/utils.ts:113`
+- **`action`** (Function) — `src/actions/compareModsAction.ts:104`
+- **`action`** (Function) — `src/actions/comparePluginsAction.ts:71`
+- **`action`** (Function) — `src/actions/exportModsAction.ts:124`
+- **`openFile`** (Function) — `src/utils/utils.ts:39`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `createCompareModsAction` | Function | `src/actions/compareModsAction.ts` | 21 |
-| `createComparePluginsAction` | Function | `src/actions/comparePluginsAction.ts` | 16 |
-| `createExportModsAction` | Function | `src/actions/exportModsAction.ts` | 17 |
-| `exportPluginsDiffReport` | Function | `src/core/comparePlugins.ts` | 371 |
-| `profileDriftSince` | Function | `src/core/curator/profileDrift.ts` | 51 |
-| `exportModsToJsonFile` | Function | `src/core/exportMods.ts` | 7 |
-| `getActiveGameId` | Function | `src/core/getModsListForProfile.ts` | 272 |
-| `getActiveProfileId` | Function | `src/core/getModsListForProfile.ts` | 277 |
-| `getActiveProfileIdFromState` | Function | `src/core/getModsListForProfile.ts` | 309 |
-| `belongsToGame` | Function | `src/core/getModsListForProfile.ts` | 314 |
-| `getModsForProfile` | Function | `src/core/getModsListForProfile.ts` | 614 |
-| `getVortexUserDataPath` | Function | `src/core/paths/appDataPaths.ts` | 38 |
-| `recentlyBuilt` | Function | `src/ui/pages/build/BuildDashboard.tsx` | 668 |
-| `readSystemStatus` | Function | `src/ui/pages/dashboard/data.ts` | 133 |
-| `exportDiffReport` | Function | `src/utils/utils.ts` | 454 |
-| `pickJsonFile` | Function | `src/utils/utils.ts` | 70 |
-| `pickTxtFile` | Function | `src/utils/utils.ts` | 473 |
 | `pickModArchiveFile` | Function | `src/utils/utils.ts` | 113 |
 | `action` | Function | `src/actions/compareModsAction.ts` | 104 |
 | `action` | Function | `src/actions/comparePluginsAction.ts` | 71 |
-
-## Execution Flows
-
-| Flow | Type | Steps |
-|------|------|-------|
-| `ReadZipEntry → GetVortexUserDataPath` | cross_community | 10 |
-| `RunSelfChecks → GetVortexUserDataPath` | cross_community | 10 |
-| `SelfCheckMod → GetVortexUserDataPath` | cross_community | 10 |
-| `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
-| `PublishedDetailsPanel → GetVortexUserDataPath` | cross_community | 10 |
-| `BuildPage → GetVortexUserDataPath` | cross_community | 10 |
-| `BuildWizard → GetVortexUserDataPath` | cross_community | 10 |
-| `OnRecovered → GetVortexUserDataPath` | cross_community | 10 |
-| `ListArchive → GetVortexUserDataPath` | cross_community | 10 |
-| `LoadDashboardData → GetVortexUserDataPath` | cross_community | 10 |
+| `action` | Function | `src/actions/exportModsAction.ts` | 124 |
+| `openFile` | Function | `src/utils/utils.ts` | 39 |
+| `action` | Function | `src/actions/compareModsAction.ts` | 110 |
+| `action` | Function | `src/actions/comparePluginsAction.ts` | 77 |
+| `action` | Function | `src/actions/exportModsAction.ts` | 128 |
+| `openFolder` | Function | `src/utils/utils.ts` | 35 |
+| `collectUserDecisions` | Function | `src/actions/installCollectionAction.ts` | 857 |
+| `formatDivergedConflictText` | Function | `src/actions/installCollectionAction.ts` | 1069 |
+| `formatOrphanText` | Function | `src/actions/installCollectionAction.ts` | 1168 |
+| `formatPromptUserText` | Function | `src/actions/installCollectionAction.ts` | 1131 |
+| `pickConflictChoice` | Function | `src/actions/installCollectionAction.ts` | 920 |
+| `pickExternalPromptUserChoice` | Function | `src/actions/installCollectionAction.ts` | 965 |
+| `pickOrphanChoice` | Function | `src/actions/installCollectionAction.ts` | 1040 |
+| `truncSha` | Function | `src/actions/installCollectionAction.ts` | 1189 |
+| `handlePickFile` | Function | `src/ui/pages/install/steps.tsx` | 1105 |
+| `formatExternalDeps` | Function | `src/actions/installCollectionAction.ts` | 768 |
+| `formatInstallTarget` | Function | `src/actions/installCollectionAction.ts` | 612 |
 
 ## How to Explore
 
-1. `context({name: "createCompareModsAction"})` — see callers and callees
+1. `context({name: "pickModArchiveFile"})` — see callers and callees
 2. `query({search_query: "actions"})` — find related execution flows
 3. Read key files listed above for implementation details
 4. `explain({target: "<file or symbol>"})` — persisted taint findings (source→sink data flows), when indexed with `--pdg`

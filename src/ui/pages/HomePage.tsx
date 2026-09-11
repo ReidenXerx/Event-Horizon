@@ -22,10 +22,14 @@ import * as React from "react";
 
 import {
   Button,
+  Callout,
   Card,
   EventHorizonMark,
   Pill,
   ProgressRing,
+  Section,
+  StatGrid,
+  StatTile,
 } from "../components";
 import { ErrorBoundary, useErrorReporter, useErrorReporterFormatted } from "../errors";
 import { useApi } from "../state";
@@ -115,14 +119,11 @@ function Dashboard(props: HomePageProps): JSX.Element {
 /** Exported for the render harness alongside {@link DashboardBody}. */
 export function Hero(): JSX.Element {
   return (
-    <section
-      className="eh-hero"
-      style={{ paddingTop: "var(--eh-sp-3)", paddingBottom: "var(--eh-sp-3)" }}
-    >
+    <section className="eh-hero eh-hero--compact">
       <span className="eh-hero__logo">
         <EventHorizonMark size={104} />
       </span>
-      <h1 className="eh-hero__title" style={{ fontSize: "var(--eh-text-2xl)" }}>
+      <h1 className="eh-hero__title">
         <span className="eh-text-gradient">Event Horizon</span>
       </h1>
       <span className="eh-hero__tagline">A Vortex collection installer</span>
@@ -137,14 +138,7 @@ export function Hero(): JSX.Element {
 function LoadingPanel(): JSX.Element {
   return (
     <Card>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--eh-sp-4)",
-          padding: "var(--eh-sp-3)",
-        }}
-      >
+      <div className="eh-row eh-row--xl">
         <ProgressRing size={48} />
         <span className="eh-secondary">
           Reading receipts and configs...
@@ -156,26 +150,18 @@ function LoadingPanel(): JSX.Element {
 
 function ErrorPanel(props: { onRetry: () => void }): JSX.Element {
   return (
-    <Card>
-      <div style={{ padding: "var(--eh-sp-3)" }}>
-        <h3 style={{ margin: 0, color: "var(--eh-danger)" }}>
-          Couldn't load dashboard
-        </h3>
-        <p
-          style={{
-            margin: "var(--eh-sp-2) 0 var(--eh-sp-3) 0",
-            color: "var(--eh-text-secondary)",
-            fontSize: "var(--eh-text-sm)",
-          }}
-        >
-          The error report should already be open. Once you've inspected
-          it you can retry.
-        </p>
+    <Callout
+      tone="danger"
+      title="Couldn't load dashboard"
+      actions={
         <Button intent="primary" onClick={props.onRetry}>
           Retry
         </Button>
-      </div>
-    </Card>
+      }
+    >
+      The error report should already be open. Once you've inspected
+      it you can retry.
+    </Callout>
   );
 }
 
@@ -194,13 +180,7 @@ interface DashboardBodyProps {
 export function DashboardBody(props: DashboardBodyProps): JSX.Element {
   const { data, onNavigate, onRefresh } = props;
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "minmax(0, 1fr)",
-        gap: "var(--eh-sp-5)",
-      }}
-    >
+    <div className="eh-stack eh-stack--xl">
       <SystemStatusBar status={data.status} onRefresh={onRefresh} />
       <QuickActionsRow onNavigate={onNavigate} />
       <PlayerCuratorGrid data={data} onNavigate={onNavigate} />
@@ -220,102 +200,42 @@ function SystemStatusBar(props: {
   const { status, onRefresh } = props;
   return (
     <Card>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--eh-sp-5)",
-          flexWrap: "wrap",
-          padding: "var(--eh-sp-1) var(--eh-sp-2)",
-        }}
-      >
-        <StatusTile
-          label="Active game"
-          value={status.gameLabel}
-          intent={
-            status.gameId === undefined
-              ? "warning"
-              : status.gameIsSupported
-              ? "neutral"
-              : "danger"
-          }
-          sub={status.gameIsSupported ? undefined : "Not supported by Event Horizon"}
-        />
-        <StatusTile
-          label="Profile"
-          value={status.profileName ?? "—"}
-          sub={status.profileId}
-          intent="neutral"
-        />
-        <StatusTile
-          label="Vortex"
-          value={`v${status.vortexVersion}`}
-          intent="neutral"
-        />
+      <div className="eh-row eh-row--xl">
+        <StatGrid min={150} className="eh-fill">
+          <StatTile
+            bare
+            label="Active game"
+            value={status.gameLabel}
+            tone={
+              status.gameId === undefined
+                ? "warning"
+                : status.gameIsSupported
+                ? "neutral"
+                : "danger"
+            }
+            sub={status.gameIsSupported ? undefined : "Not supported by Event Horizon"}
+            subMono
+          />
+          <StatTile
+            bare
+            label="Profile"
+            value={status.profileName ?? "—"}
+            sub={status.profileId}
+            subMono
+            tone="neutral"
+          />
+          <StatTile
+            bare
+            label="Vortex"
+            value={`v${status.vortexVersion}`}
+            tone="neutral"
+          />
+        </StatGrid>
         <Button intent="ghost" onClick={onRefresh}>
           Refresh
         </Button>
       </div>
     </Card>
-  );
-}
-
-function StatusTile(props: {
-  label: string;
-  value: string;
-  sub?: string;
-  intent: "success" | "warning" | "danger" | "info" | "neutral";
-}): JSX.Element {
-  const accent = {
-    success: "var(--eh-success)",
-    warning: "var(--eh-warning)",
-    danger: "var(--eh-danger)",
-    info: "var(--eh-cyan)",
-    // Was text-muted, which made every ordinary fact look de-emphasised while
-    // the coloured ones looked urgent. Neutral is the DEFAULT state and should
-    // read as plain text; colour is reserved for something needing attention.
-    neutral: "var(--eh-text-primary)",
-  }[props.intent];
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 2,
-        // flex-grow so the three tiles spread across the bar. They used to be
-        // fixed-width and left-hugging, with a flex:1 spacer shoving Refresh to
-        // the far edge - which read as an unfinished row rather than a layout.
-        flex: "1 1 0",
-        minWidth: 150,
-      }}
-    >
-      <span
-        className="eh-label"
-      >
-        {props.label}
-      </span>
-      <span
-        style={{
-          color: accent,
-          fontSize: "var(--eh-text-md)",
-          fontWeight: 600,
-        }}
-      >
-        {props.value}
-      </span>
-      {props.sub !== undefined && (
-        <span
-          style={{
-            color: "var(--eh-text-muted)",
-            fontSize: "var(--eh-text-xs)",
-            fontFamily: "var(--eh-font-mono)",
-            wordBreak: "break-all",
-          }}
-        >
-          {props.sub}
-        </span>
-      )}
-    </div>
   );
 }
 
@@ -328,11 +248,7 @@ function QuickActionsRow(props: {
 }): JSX.Element {
   const { onNavigate } = props;
   return (
-    <section
-      className="eh-cta-grid eh-stagger"
-      aria-label="Quick actions"
-      style={{ marginTop: 0 }}
-    >
+    <section className="eh-cta-grid eh-stagger" aria-label="Quick actions">
       <Card
         icon={<span>↓</span>}
         title="Install a collection"
@@ -394,16 +310,13 @@ function PlayerCuratorGrid(props: {
   onNavigate: (route: EventHorizonRoute) => void;
 }): JSX.Element {
   return (
+    // Without eh-grid--start the grid stretches both panels to the taller
+    // one's height, so the shorter panel ends in a large empty box that
+    // looks like content failed to load. --eh-grid-min is the documented
+    // custom-property passthrough, not an inline style.
     <section
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
-        gap: "var(--eh-sp-4)",
-        // Without this the grid stretches both panels to the taller one's
-        // height, so the shorter panel ends in a large empty box that looks
-        // like content failed to load.
-        alignItems: "start",
-      }}
+      className="eh-grid eh-grid--start"
+      style={{ ["--eh-grid-min" as string]: "360px" }}
     >
       <PlayerPanel
         receipts={props.data.receipts}
@@ -429,16 +342,8 @@ function PlayerPanel(props: {
 
   return (
     <Card title="Player — installed collections">
-      <div
-        className="eh-stack"
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "baseline",
-          }}
-        >
+      <div className="eh-stack">
+        <div className="eh-row eh-row--split eh-row--baseline">
           <span className="eh-secondary">
             {receipts.length === 0
               ? "No collections installed yet."
@@ -452,74 +357,31 @@ function PlayerPanel(props: {
         </div>
 
         {receipts.length === 0 && (
-          <div
-            style={{
-              padding: "var(--eh-sp-4)",
-              border: "1px dashed var(--eh-border-default)",
-              borderRadius: "var(--eh-radius-sm)",
-              textAlign: "center",
-            }}
-          >
-            <p
-              style={{
-                margin: "0 0 var(--eh-sp-3) 0",
-                color: "var(--eh-text-secondary)",
-                fontSize: "var(--eh-text-sm)",
-              }}
-            >
-              Install your first .ehcoll to start tracking receipts here.
-            </p>
-            <Button intent="primary" onClick={(): void => onNavigate("install")}>
-              Install a collection
-            </Button>
+          <div className="eh-empty-box">
+            <div className="eh-stack eh-stack--sm">
+              <p className="eh-body">
+                Install your first .ehcoll to start tracking receipts here.
+              </p>
+              <Button intent="primary" onClick={(): void => onNavigate("install")}>
+                Install a collection
+              </Button>
+            </div>
           </div>
         )}
 
         {top.length > 0 && (
-          <ul
-            style={{
-              listStyle: "none",
-              margin: 0,
-              padding: 0,
-              display: "flex",
-              flexDirection: "column",
-              gap: "var(--eh-sp-2)",
-            }}
-          >
+          <ul className="eh-list eh-list--plain eh-stack eh-stack--sm">
             {top.map((receipt) => (
               <li
                 key={receipt.packageId}
                 onClick={(): void => onNavigate("collections")}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "minmax(0, 1fr) auto",
-                  gap: "var(--eh-sp-3)",
-                  padding: "var(--eh-sp-2) var(--eh-sp-3)",
-                  background: "var(--eh-bg-base)",
-                  border: "1px solid var(--eh-border-subtle)",
-                  borderRadius: "var(--eh-radius-sm)",
-                  cursor: "pointer",
-                  alignItems: "center",
-                }}
+                className="eh-inset eh-row eh-row--split eh-clickable"
               >
-                <div style={{ minWidth: 0 }}>
-                  <div
-                    style={{
-                      color: "var(--eh-text-primary)",
-                      fontWeight: 600,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
+                <div className="eh-fill">
+                  <div className="eh-strong eh-truncate">
                     {receipt.packageName}
                   </div>
-                  <div
-                    style={{
-                      color: "var(--eh-text-muted)",
-                      fontSize: "var(--eh-text-xs)",
-                    }}
-                  >
+                  <div className="eh-small">
                     v{receipt.packageVersion} · {receipt.gameId} ·{" "}
                     {receipt.mods.length} mods · {formatRelativeTime(
                       new Date(receipt.installedAt).getTime(),
@@ -546,14 +408,9 @@ function PlayerPanel(props: {
         )}
 
         {receiptErrors.length > 0 && (
-          <div
-            style={{
-              color: "var(--eh-danger)",
-              fontSize: "var(--eh-text-sm)",
-            }}
-          >
+          <Callout tone="danger">
             {receiptErrors.length} receipt{receiptErrors.length === 1 ? "" : "s"} couldn't be parsed.
-          </div>
+          </Callout>
         )}
       </div>
     </Card>
@@ -571,81 +428,46 @@ function CuratorPanel(props: {
 
   return (
     <Card title="Curator — workshop">
-      <div
-        className="eh-stack"
-      >
-        <div
-          style={{
-            display: "flex",
-            gap: "var(--eh-sp-3)",
-            flexWrap: "wrap",
-            alignItems: "baseline",
-          }}
-        >
+      <div className="eh-stack">
+        <div className="eh-row eh-row--lg eh-row--split eh-row--baseline">
           <span className="eh-secondary">
             {configs.length} config{configs.length === 1 ? "" : "s"} ·{" "}
             {builtPackages.length} built package
             {builtPackages.length === 1 ? "" : "s"}
           </span>
-          <div style={{ flex: 1 }} />
           <Button intent="ghost" onClick={(): void => onNavigate("build")}>
             Open workshop →
           </Button>
         </div>
 
         {configs.length === 0 && builtPackages.length === 0 && (
-          <div
-            style={{
-              padding: "var(--eh-sp-4)",
-              border: "1px dashed var(--eh-border-default)",
-              borderRadius: "var(--eh-radius-sm)",
-              textAlign: "center",
-            }}
-          >
-            <p
-              style={{
-                margin: "0 0 var(--eh-sp-3) 0",
-                color: "var(--eh-text-secondary)",
-                fontSize: "var(--eh-text-sm)",
-              }}
-            >
-              You haven't built any collections yet. Snapshot your active
-              profile into an .ehcoll to start a curator lineage.
-            </p>
-            <Button intent="primary" onClick={(): void => onNavigate("build")}>
-              Build a collection
-            </Button>
+          <div className="eh-empty-box">
+            <div className="eh-stack eh-stack--sm">
+              <p className="eh-body">
+                You haven't built any collections yet. Snapshot your active
+                profile into an .ehcoll to start a curator lineage.
+              </p>
+              <Button intent="primary" onClick={(): void => onNavigate("build")}>
+                Build a collection
+              </Button>
+            </div>
           </div>
         )}
 
         {topConfigs.length > 0 && (
-          <section>
-            <h4 style={sectionHeadingStyle}>Recent configs</h4>
-            <ul style={listStyle}>
+          <Section title="Recent configs" size="sm">
+            <ul className="eh-list eh-list--plain eh-stack eh-stack--sm">
               {topConfigs.map((c) => (
                 <li
                   key={c.slug}
-                  style={rowStyle}
+                  className="eh-inset eh-row eh-row--split eh-clickable"
                   onClick={(): void => onNavigate("build")}
                 >
-                  <div style={{ minWidth: 0 }}>
-                    <div
-                      style={{
-                        color: "var(--eh-text-primary)",
-                        fontWeight: 600,
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
+                  <div className="eh-fill">
+                    <div className="eh-strong eh-truncate">
                       {c.slug}
                     </div>
-                    <div
-                      style={{
-                        color: "var(--eh-text-muted)",
-                        fontSize: "var(--eh-text-xs)",
-                      }}
-                    >
+                    <div className="eh-small">
                       {c.error !== undefined
                         ? "parse error"
                         : c.config !== undefined
@@ -659,33 +481,19 @@ function CuratorPanel(props: {
                 </li>
               ))}
             </ul>
-          </section>
+          </Section>
         )}
 
         {topPackages.length > 0 && (
-          <section>
-            <h4 style={sectionHeadingStyle}>Recent builds</h4>
-            <ul style={listStyle}>
+          <Section title="Recent builds" size="sm">
+            <ul className="eh-list eh-list--plain eh-stack eh-stack--sm">
               {topPackages.map((pkg) => (
-                <li key={pkg.packagePath} style={rowStyle}>
-                  <div style={{ minWidth: 0 }}>
-                    <div
-                      style={{
-                        color: "var(--eh-text-primary)",
-                        fontWeight: 600,
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
+                <li key={pkg.packagePath} className="eh-inset eh-row eh-row--split">
+                  <div className="eh-fill">
+                    <div className="eh-strong eh-truncate">
                       {pkg.fileName}
                     </div>
-                    <div
-                      style={{
-                        color: "var(--eh-text-muted)",
-                        fontSize: "var(--eh-text-xs)",
-                      }}
-                    >
+                    <div className="eh-small">
                       {formatBytes(pkg.sizeBytes)} ·{" "}
                       {formatRelativeTime(pkg.modifiedAt)}
                     </div>
@@ -693,7 +501,7 @@ function CuratorPanel(props: {
                 </li>
               ))}
             </ul>
-          </section>
+          </Section>
         )}
       </div>
     </Card>
@@ -706,32 +514,12 @@ function CuratorPanel(props: {
 
 function FooterRow(props: { status: DashboardData["status"] }): JSX.Element {
   return (
-    <section
-      style={{
-        marginTop: "var(--eh-sp-3)",
-        padding: "var(--eh-sp-3) var(--eh-sp-4)",
-        textAlign: "center",
-        color: "var(--eh-text-muted)",
-        fontSize: "var(--eh-text-xs)",
-        animation:
-          "eh-fade-in var(--eh-dur-deliberate) var(--eh-easing) 800ms both",
-      }}
-    >
-      <div
-        style={{
-          letterSpacing: "var(--eh-tracking-widest)",
-          textTransform: "uppercase",
-        }}
-      >
+    <footer className="eh-small eh-centred">
+      <div className="eh-label">
         Skyrim SE / AE · Fallout 3 · New Vegas · Fallout 4 · Starfield
       </div>
       <div
-        style={{
-          marginTop: 4,
-          fontFamily: "var(--eh-font-mono)",
-          opacity: 0.7,
-          wordBreak: "break-all",
-        }}
+        className="eh-mono eh-muted"
         // appDataPath is already %APPDATA%\Vortex (util.getVortexPath("userData")),
         // so this used to render ...\Vortex\Vortex\event-horizon\ - a path that does
         // not exist, under a tooltip saying that is where the user's data lives.
@@ -740,39 +528,6 @@ function FooterRow(props: { status: DashboardData["status"] }): JSX.Element {
       >
         {props.status.appDataPath}\event-horizon\
       </div>
-    </section>
+    </footer>
   );
 }
-
-// ===========================================================================
-// Shared inline styles
-// ===========================================================================
-
-const sectionHeadingStyle: React.CSSProperties = {
-  margin: "0 0 var(--eh-sp-2) 0",
-  color: "var(--eh-text-secondary)",
-  fontSize: "var(--eh-text-xs)",
-  textTransform: "uppercase",
-  letterSpacing: "var(--eh-tracking-widest)",
-};
-
-const listStyle: React.CSSProperties = {
-  listStyle: "none",
-  margin: 0,
-  padding: 0,
-  display: "flex",
-  flexDirection: "column",
-  gap: "var(--eh-sp-2)",
-};
-
-const rowStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "minmax(0, 1fr) auto",
-  gap: "var(--eh-sp-3)",
-  padding: "var(--eh-sp-2) var(--eh-sp-3)",
-  background: "var(--eh-bg-base)",
-  border: "1px solid var(--eh-border-subtle)",
-  borderRadius: "var(--eh-radius-sm)",
-  cursor: "pointer",
-  alignItems: "center",
-};

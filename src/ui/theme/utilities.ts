@@ -59,6 +59,19 @@ export const UTILITIES_CSS = `
    drop as units instead of one stray button being carried down with the
    destructive one. */
 .eh-row--split { justify-content: space-between; }
+.eh-row--xl { gap: var(--eh-sp-5); }
+/* Alignment on the cross axis, for a row that mixes line-heights. */
+.eh-row--baseline { align-items: baseline; }
+.eh-row--top { align-items: flex-start; }
+/* Everything pushed to the far edge (a refresh control above a form). */
+.eh-row--end { justify-content: flex-end; }
+/* A stack whose items hug the right edge (step dots under a header). */
+.eh-stack--end { align-items: flex-end; }
+/* A stack whose items centre (a figure over its label inside a ring). */
+.eh-stack--center { align-items: center; text-align: center; }
+/* Something that navigates on click and is not a button. */
+.eh-clickable { cursor: pointer; }
+
 /* The element that absorbs the leftover width. min-width:0 is what stops a
    long unbroken string (a mod name, a path) forcing the row wider than its
    container — the single most common flexbox surprise. */
@@ -67,10 +80,6 @@ export const UTILITIES_CSS = `
   min-width: 0;
 }
 
-/* ── Text tone ────────────────────────────────────────────────────── */
-.eh-muted { color: var(--eh-text-muted); }
-.eh-secondary { color: var(--eh-text-secondary); }
-.eh-strong { color: var(--eh-text-primary); }
 
 /* Small print: a hint under a field, a caveat under a heading. */
 .eh-note {
@@ -87,17 +96,7 @@ export const UTILITIES_CSS = `
   letter-spacing: var(--eh-tracking-widest);
 }
 
-/* A key/value line: label of fixed width, value taking the rest. */
-.eh-field {
-  display: flex;
-  gap: var(--eh-sp-2);
-  flex-wrap: wrap;
-  font-size: var(--eh-text-sm);
-}
-.eh-field__label {
-  color: var(--eh-text-muted);
-  min-width: 132px;
-}
+/* The key/value line is .eh-kv in primitives.ts; .eh-field is a FORM field. */
 
 /* Body copy inside a card: the default paragraph of this UI. */
 .eh-body {
@@ -122,6 +121,12 @@ export const UTILITIES_CSS = `
   border: 1px solid var(--eh-border-subtle);
   border-radius: var(--eh-radius-sm);
 }
+/* Modifiers sit AFTER their base in the same module: declared in another
+   module that loaded earlier, all three lost to the base's shorthand at
+   equal specificity and six call sites rendered untinted. */
+.eh-inset--warning { border-color: color-mix(in srgb, var(--eh-warning) 55%, transparent); }
+.eh-inset--danger  { border-color: color-mix(in srgb, var(--eh-danger) 55%, transparent); }
+.eh-inset--deep    { background: var(--eh-bg-deep); }
 
 /* The row of actions at the bottom of a step or a card. Right-aligned,
    because that is where the eye finishes and where the primary action for a
@@ -134,10 +139,91 @@ export const UTILITIES_CSS = `
   justify-content: flex-end;
 }
 
+/* One line, cut with an ellipsis: a name in a row that must not wrap. */
+.eh-truncate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Small print that is NOT a label: xs, muted, sentence case. */
+.eh-small {
+  color: var(--eh-text-muted);
+  font-size: var(--eh-text-xs);
+  line-height: var(--eh-leading-normal);
+}
+
+/* A list without bullets, indented off nothing. */
+.eh-list--plain { list-style: none; padding-left: 0; }
+/* A list inside an inset block keeps the bullets but hugs the padding. */
+.eh-list--inset { padding-left: var(--eh-sp-4); }
+/* The trailing "and N more" line of a capped list. */
+.eh-list__more { list-style: none; opacity: 0.7; }
+
+/* A rule above a block that continues a card. */
+.eh-divider-top {
+  border-top: 1px solid var(--eh-border-subtle);
+  padding-top: var(--eh-sp-3);
+}
+
+/* Nothing here: a dashed box saying so, inside a card. */
+.eh-empty-box {
+  padding: var(--eh-sp-4);
+  border: 1px dashed var(--eh-border-default);
+  border-radius: var(--eh-radius-md);
+  color: var(--eh-text-muted);
+  font-size: var(--eh-text-sm);
+  text-align: center;
+}
+
+/* A bordered, scroll-capped list of rows (mods in a receipt). */
+.eh-list-box {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: var(--eh-scroll-max, 320px);
+  overflow-y: auto;
+  border: 1px solid var(--eh-border-subtle);
+  border-radius: var(--eh-radius-sm);
+  background: var(--eh-bg-base);
+}
+
+.eh-list-box > li {
+  padding: var(--eh-sp-2) var(--eh-sp-3);
+  border-bottom: 1px solid var(--eh-border-subtle);
+}
+
+.eh-list-box > li:last-child { border-bottom: 0; }
+
+/* A grid whose cells top-align (cards of different heights). */
+.eh-grid--start { align-items: start; }
+
 /* Monospace for things that are identifiers rather than prose. */
 .eh-mono {
   font-family: var(--eh-font-mono);
   font-size: var(--eh-text-xs);
   word-break: break-all;
+}
+
+/* ── Text tone — declared LAST on purpose ─────────────────────────── */
+/* These only set colour, and they are the caller's last word: a structural
+   class that also sets a colour (.eh-label, .eh-list, .eh-note) must lose to
+   them. Declared earlier, "eh-label eh-tone--warning" rendered muted and
+   "eh-list eh-muted" rendered secondary, because the later rule won. */
+.eh-muted { color: var(--eh-text-muted); }
+.eh-secondary { color: var(--eh-text-secondary); }
+.eh-strong { color: var(--eh-text-primary); }
+.eh-tone--info    { color: var(--eh-cyan); }
+.eh-tone--success { color: var(--eh-success); }
+.eh-tone--warning { color: var(--eh-warning); }
+.eh-tone--danger  { color: var(--eh-danger); }
+
+/* A number that is the point of its tile or ring. */
+.eh-figure {
+  font-size: var(--eh-text-xl);
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 `;
