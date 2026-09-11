@@ -34,6 +34,14 @@ import {
   getModArchivePath,
 } from "../../../core/archiveHashing";
 import {
+  installRequirementStep,
+  type RequirementStepResult,
+} from "../../../core/curator/requirementStep";
+import {
+  downloadIdsForPage,
+  readDownloadRecords,
+} from "../../../core/curator/existingDownload";
+import {
   describeBulkUpdate,
   runBulkUpdate,
 } from "../../../core/curator/bulkUpdate";
@@ -265,86 +273,51 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
   >(undefined);
 
   /**
-   * Download one planned page and wait for Vortex to finish INSTALLING it.
+   * Install one planned page and wait for Vortex to finish INSTALLING it.
    *
-   * `nexusDownload` wants the VORTEX game id (it resolves with gameById) and
-   * resolves when the download lands — Vortex installs after that, so the
-   * wait is on `did-install-mod`, or a sequential update could start on top
-   * of a live install. Vortex swallows its own refusals (not Premium, not
-   * logged in) into a notification and resolves undefined.
+   * The step — the direct download, the guided fallback a refusal turns into,
+   * and what Stop does while an install runs — is `installRequirementStep`;
+   * this wires it to Vortex. `nexusDownload` wants the VORTEX game id (it
+   * resolves with gameById).
    */
   const installOne = async (
     step: PlannedInstall,
     file: NexusFileInfo,
     signal: AbortSignal,
-  ): Promise<{ ok: true; newModId: string } | { ok: false; why: string; refused: boolean }> => {
+  ): Promise<RequirementStepResult> => {
     const game = gameId;
     const download = nexus.download;
     if (game === undefined || download === undefined || step.vortexGameId === undefined) {
-      return { ok: false, why: "this Vortex cannot download for that game", refused: true };
+      ehLog("warn", "curator.requirement.install.unavailable", {
+        mod: step.name,
+        nexusModId: step.nexusModId,
+        game: game ?? null,
+        vortexGameId: step.vortexGameId ?? null,
+        downloadSurface: download !== undefined,
+      });
+      return { ok: false, why: "this Vortex cannot download for that game", refused: true, stopped: false, via: "download" };
     }
     const vortexGame = step.vortexGameId;
-    const stop = new AbortController();
-    const onAbort = (): void => stop.abort();
-    signal.addEventListener("abort", onAbort);
-    /**
-     * ─── GUIDED, FOR EVERYONE WHO IS NOT PREMIUM ────────────────────────
-     * Vortex downloads directly for Premium accounts only. For everyone
-     * else the page is opened and the plan WAITS for the file the user
-     * fetches through "Mod manager download" — any file of that page — to
-     * install, then moves on (settled: one page at a time). A Premium
-     * refusal falls back to the same path instead of failing the step.
-     */
-    const guided = !isPremium(api.getState());
-    const openPageFor = (): void => {
-      if (nexus.openModPage !== undefined) nexus.openModPage(vortexGame, step.nexusModId, "nexus");
-      setProgress(
-        `Waiting for ${step.name}: its page is open — press "Mod manager download" on the file you want, and Vortex ` +
-          `will install it. Stop after this one cancels.`,
-      );
-    };
-    ehLog("info", "curator.requirement.install.start", { mod: step.name, nexusModId: step.nexusModId, fileId: file.file_id, game: vortexGame, guided });
-    let refused = false;
-    try {
-      const newModId = await updateOneAndWait({
-        events: api.events as never,
-        gameId: game,
-        nexusModId: step.nexusModId,
-        toFileId: file.file_id,
-        anyFile: guided,
-        timeoutMs: guided ? 60 * 60 * 1000 : undefined,
-        readInstalled: installedIdentityReader(() => api.getState(), game),
-        signal: stop.signal,
-        start: () => {
-          if (guided) {
-            openPageFor();
-            return;
-          }
-          void download(vortexGame, step.nexusModId, file.file_id, file.file_name, true).then(
-            (dlId) => {
-              ehLog("info", "curator.requirement.install.downloaded", { mod: step.name, dlId });
-              if (dlId === undefined) {
-                // Vortex refused (its notification says why): open the page
-                // and keep waiting for a hand-fetched file instead.
-                refused = true;
-                openPageFor();
-              }
-            },
-            (err) => {
-              ehLog("error", "curator.requirement.install.fail", { mod: step.name, err });
-              refused = true;
-              openPageFor();
-            },
-          );
-        },
-      });
-      ehLog("info", "curator.requirement.install.done", { mod: step.name, newModId, guided: guided || refused });
-      return { ok: true, newModId };
-    } catch (err) {
-      return { ok: false, why: err instanceof Error ? err.message : String(err), refused };
-    } finally {
-      signal.removeEventListener("abort", onAbort);
-    }
+    return installRequirementStep({
+      events: api.events as never,
+      gameId: game,
+      vortexGameId: vortexGame,
+      name: step.name,
+      nexusModId: step.nexusModId,
+      file,
+      premium: isPremium(api.getState()),
+      readInstalled: installedIdentityReader(() => api.getState(), game),
+      download,
+      openPage: () => {
+        if (nexus.openModPage !== undefined) nexus.openModPage(vortexGame, step.nexusModId, "nexus");
+        setProgress(
+          `Waiting for ${step.name}: its page is open — press "Mod manager download" on the file you want, and Vortex ` +
+            `will install it. Stop ends the wait only while nothing has started downloading.`,
+        );
+      },
+      pageDownloadIds: () => downloadIdsForPage(readDownloadRecords(api.getState()), step.nexusModId),
+      signal,
+    });
   };
 
   /**
@@ -583,7 +556,10 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
       n += 1;
       setProgress(`Installing ${n} of ${entries.length} — ${d.fileName}`);
       try {
-        const { vortexModId } = await installFromExistingDownload(api, { gameId: game, archiveId: d.id, signal });
+        // Stop means after this one. Vortex cannot cancel an install from
+        // outside, so abandoning the wait would free the page while Vortex is
+        // still writing — and let the next install start on top of it.
+        const { vortexModId } = await installFromExistingDownload(api, { gameId: game, archiveId: d.id });
         lines.push(`Installed ${d.fileName} as ${vortexModId}.`);
       } catch (err) {
         lines.push(`${d.fileName}: not installed — ${err instanceof Error ? err.message : String(err)}`);

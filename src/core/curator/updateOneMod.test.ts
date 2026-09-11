@@ -13,6 +13,7 @@ import {
   installedIdentityReader,
   updateOneAndWait,
   type InstallEvents,
+  type StartControls,
 } from "./updateOneMod";
 import type { types } from "@nexusmods/vortex-api";
 
@@ -203,6 +204,52 @@ describe("not leaking, and not hanging", () => {
         toFileId: 2,
       }),
     ).rejects.toThrow("nexus said no");
+  });
+});
+
+describe("a start that learns more after it returned", () => {
+  it("widen accepts any file of the page and restarts the clock", async () => {
+    // The refused-download fallback: the user now picks the file, and the
+    // wait must not expire on what was left of the direct clock.
+    vi.useFakeTimers();
+    try {
+      const events = emitter();
+      let controls: StartControls | undefined;
+      const promise = updateOneAndWait({
+        events,
+        start: (c) => {
+          controls = c;
+        },
+        readInstalled: identity(42, 999),
+        gameId: "skyrimse",
+        nexusModId: 42,
+        toFileId: 500,
+        timeoutMs: 1000,
+      });
+      await vi.advanceTimersByTimeAsync(900);
+      controls!.widen({ anyFile: true, timeoutMs: 5000 });
+      await vi.advanceTimersByTimeAsync(2000);
+      events.emit("did-install-mod", "skyrimse", "arc", "picked");
+      await expect(promise).resolves.toBe("picked");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("fail ends the wait with the start's own error and removes the listener", async () => {
+    const events = emitter();
+    const promise = updateOneAndWait({
+      events,
+      start: (c) => {
+        queueMicrotask(() => c.fail(new Error("Download not finished")));
+      },
+      readInstalled: identity(1, 2),
+      gameId: "skyrimse",
+      nexusModId: 1,
+      toFileId: 2,
+    });
+    await expect(promise).rejects.toThrow("Download not finished");
+    expect(events.count()).toBe(0);
   });
 });
 

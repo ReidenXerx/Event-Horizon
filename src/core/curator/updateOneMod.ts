@@ -43,10 +43,32 @@ export type InstallEvents = {
   ) => void;
 };
 
+/**
+ * What `start` may do to the wait it began.
+ *
+ * A start is fire-and-forget, but its request can be answered later: a
+ * direct download that resolves with a refusal, an install whose callback
+ * reports an error. Without these the wait could only sit out its clock on a
+ * request that was no longer running.
+ */
+export type StartControls = {
+  /**
+   * Change what the wait accepts and restart its clock from now.
+   *
+   * For a refused direct download that falls back to the guided wait: the
+   * user picks the file on the page, so any file of it is accepted, and a
+   * hand download gets the guided clock rather than what is left of the
+   * direct one.
+   */
+  widen: (to: { anyFile?: boolean; timeoutMs?: number }) => void;
+  /** End the wait with this error. */
+  fail: (err: unknown) => void;
+};
+
 export type UpdateOneInput = {
   events: InstallEvents;
   /** Ask Vortex to start the update. Fire-and-forget by Vortex's design. */
-  start: () => void;
+  start: (controls: StartControls) => void;
   /** Read what Vortex now records for a mod id it just installed. */
   readInstalled: (
     vortexModId: string,
@@ -92,12 +114,13 @@ export function updateOneAndWait(input: UpdateOneInput): Promise<string> {
     toFileId,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     signal,
-    anyFile = false,
+    anyFile: anyFileAtStart = false,
   } = input;
 
   return new Promise<string>((resolve, reject) => {
     let settled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let anyFile = anyFileAtStart;
 
     const finish = (fn: () => void): void => {
       if (settled) return;
@@ -146,23 +169,39 @@ export function updateOneAndWait(input: UpdateOneInput): Promise<string> {
     // Listen BEFORE starting. Vortex can finish a small mod from cache before
     // the call that requested it has returned, and a listener attached after
     // would wait fifteen minutes for an event that already fired.
+    const arm = (ms: number): void => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = setTimeout(() => {
+        finish(() =>
+          reject(
+            new UpdateTimeout(
+              `Vortex did not report finishing this update within ` +
+                `${Math.round(ms / 60000)} minutes. It may still be ` +
+                `downloading — the rest of the run was left alone.`,
+            ),
+          ),
+        );
+      }, ms);
+    };
+
     events.on("did-install-mod", onInstalled);
     signal?.addEventListener?.("abort", onAbort);
-    timer = setTimeout(() => {
-      finish(() =>
-        reject(
-          new UpdateTimeout(
-            `Vortex did not report finishing this update within ` +
-              `${Math.round(timeoutMs / 60000)} minutes. It may still be ` +
-              `downloading — the rest of the run was left alone.`,
-          ),
-        ),
-      );
-    }, timeoutMs);
+    arm(timeoutMs);
     ehLog("debug", "update.waiting", { nexusModId, toFileId, timeoutMs });
 
+    const controls: StartControls = {
+      widen: (to) => {
+        if (settled) return;
+        if (to.anyFile !== undefined) anyFile = to.anyFile;
+        const ms = to.timeoutMs ?? timeoutMs;
+        arm(ms);
+        ehLog("info", "update.waiting.widened", { nexusModId, toFileId, anyFile, timeoutMs: ms });
+      },
+      fail: (err) => finish(() => reject(err instanceof Error ? err : new Error(String(err)))),
+    };
+
     try {
-      start();
+      start(controls);
     } catch (err) {
       finish(() => reject(err instanceof Error ? err : new Error(String(err))));
     }
