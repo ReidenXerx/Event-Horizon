@@ -31,7 +31,8 @@ const pages = new Map<string, Partial<NexusModRequirements>>([
   [makeModUid(1704, 22854), { nexusRequirements: { totalCount: 1, nodes: [node(53000, "MCM Helper")] } }],
   // A page that needs an FO4 mod (a game this Vortex knows nothing about here).
   [makeModUid(1704, 777), { nexusRequirements: { totalCount: 1, nodes: [node(999, "FO4 thing", 1151)] } }],
-  // Two pages that list each other.
+  // Two pages that list each other, and a page above them.
+  [makeModUid(1704, 6000), { nexusRequirements: { totalCount: 1, nodes: [node(6001, "Loop A")] } }],
   [makeModUid(1704, 6001), { nexusRequirements: { totalCount: 1, nodes: [node(6002, "Loop B")] } }],
   [makeModUid(1704, 6002), { nexusRequirements: { totalCount: 1, nodes: [node(6001, "Loop A")] } }],
 ]);
@@ -122,8 +123,57 @@ describe("planRequirementClosure", () => {
       knownGameIds: ["skyrimse"],
       fetch,
     });
-    expect(loop.steps.map((s) => s.name)).toEqual(["Loop A", "Loop B"]);
+    // The cycle is broken at its deepest member, so B (depth 2) goes first.
+    expect(loop.steps.map((s) => s.name)).toEqual(["Loop B", "Loop A"]);
     expect(loop.truncated).toBe(false);
+
+    // A dependant ABOVE a cycle still installs after the cycle: R → Top → A ⇄ B.
+    const above = await planRequirementClosure({
+      rootName: "Root",
+      roots: [missing("Top", 6000)],
+      mods,
+      activeGame: "skyrimse",
+      games: GAMES,
+      toDomain: nexusDomainOf,
+      knownGameIds: ["skyrimse"],
+      fetch,
+    });
+    expect(above.steps.map((s) => s.name)).toEqual(["Loop B", "Loop A", "Top"]);
+  });
+
+  it("walks the chain of a provider it will ENABLE, from the report it already has", async () => {
+    const disabledProvider = mod({ id: "mcm", name: "MCM Helper", nexusModId: 53000, enabled: false, version: "1.5" });
+    const olderCopy = mod({ id: "mcm-old", name: "MCM Helper (old)", nexusModId: 53000, enabled: false, version: "1.2" });
+    const report = {
+      byMod: new Map([
+        [
+          "mcm",
+          {
+            modId: "mcm",
+            truncatedBy: 0,
+            unfetched: false,
+            requirements: [missing("Address Library", 32444), { ...missing("SkyUI", 12604) }],
+          },
+        ],
+      ]),
+      requiredBy: new Map(),
+      noUid: [],
+    };
+    const plan = await planRequirementClosure({
+      rootName: "Root",
+      roots: [{ source: "nexus", status: "installed-disabled", name: "MCM Helper", nexusModId: 53000, gameDomain: "skyrimspecialedition", satisfiedBy: ["mcm-old", "mcm"] }],
+      mods: [...mods, disabledProvider, olderCopy],
+      activeGame: "skyrimse",
+      games: GAMES,
+      toDomain: nexusDomainOf,
+      knownGameIds: ["skyrimse"],
+      fetch,
+      report,
+    });
+    // One copy comes on — the newer — and what IT needs joins the plan.
+    expect(plan.toEnable.map((m) => m.id)).toEqual(["mcm"]);
+    expect(plan.steps.map((s) => s.name)).toEqual(["Address Library", "SkyUI"]);
+    expect(plan.steps[0]!.neededBy).toEqual(["MCM Helper"]);
   });
 
   it("keeps a requirement for a game this Vortex cannot download for, without a Vortex id", async () => {

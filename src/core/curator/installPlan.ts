@@ -17,12 +17,14 @@ import type { CuratorMod } from "./profileActions";
 import {
   makeModUid,
   pickInstallFile,
+  pickProvider,
   resolveNexusRequirements,
   type GameNumbers,
   type InstallFileChoice,
   type ModRequirement,
   type NexusFileInfo,
   type RequirementsFetcher,
+  type RequirementsReport,
   type ToDomain,
 } from "./requirements";
 
@@ -46,7 +48,7 @@ export type InstallPlan = {
   /**
    * Install order: a dependency before everything that lists it (a
    * topological order over the chain). Pages in a cycle — Nexus has them —
-   * keep their discovery order; no order is right for those.
+   * are broken at the deepest member; no order is right for those.
    */
   steps: PlannedInstall[];
   /** In the pool but disabled: enabling is the whole fix (settled: enable, report). */
@@ -76,6 +78,12 @@ export async function planRequirementClosure(args: {
   toDomain?: ToDomain;
   knownGameIds?: readonly string[];
   fetch: RequirementsFetcher;
+  /**
+   * The page's own report: a provider that will be ENABLED has its
+   * requirements here already (the pool was asked about every Nexus mod,
+   * disabled ones included), so its chain is walked without a fetch.
+   */
+  report?: RequirementsReport;
   maxDepth?: number;
   signal?: AbortSignal;
 }): Promise<InstallPlan> {
@@ -92,12 +100,17 @@ export async function planRequirementClosure(args: {
     for (const q of lines) {
       if (q.source !== "nexus") continue;
       if (q.status === "installed-disabled") {
-        for (const id of q.satisfiedBy) {
-          const m = args.mods.find((x) => x.id === id);
-          if (m !== undefined && !m.enabled && !enableIds.has(id)) {
-            enableIds.add(id);
-            plan.toEnable.push(m);
-          }
+        // One provider per line (two disabled copies of one page would
+        // otherwise both come on), and ITS chain is walked too: an enable
+        // that leaves the enabled mod missing something is the one-level
+        // loop this planner exists to end.
+        const m = pickProvider(q.satisfiedBy.map((id) => args.mods.find((x) => x.id === id)).filter((x): x is CuratorMod => x !== undefined && !x.enabled));
+        if (m !== undefined && !enableIds.has(m.id)) {
+          enableIds.add(m.id);
+          plan.toEnable.push(m);
+          const own = args.report?.byMod.get(m.id)?.requirements ?? [];
+          if (depth < maxDepth) absorb(own, m.name, undefined, depth + 1);
+          else if (own.length > 0) plan.truncated = true;
         }
         continue;
       }
@@ -210,18 +223,26 @@ function topologicalOrder(steps: readonly PlannedInstall[], requires: ReadonlyMa
   }
   const out: PlannedInstall[] = [];
   const done = new Set<string>();
-  let progressed = true;
-  while (progressed) {
-    progressed = false;
+  const release = (s: PlannedInstall): void => {
+    done.add(s.key);
+    out.push(s);
+    for (const d of dependants.get(s.key) ?? []) unmet.set(d, (unmet.get(d) ?? 1) - 1);
+  };
+  while (done.size < steps.length) {
+    let progressed = false;
     for (const s of steps) {
       if (done.has(s.key) || (unmet.get(s.key) ?? 0) > 0) continue;
-      done.add(s.key);
-      out.push(s);
+      release(s);
       progressed = true;
-      for (const d of dependants.get(s.key) ?? []) unmet.set(d, (unmet.get(d) ?? 1) - 1);
     }
+    if (progressed) continue;
+    // A stall means a cycle. Everything left is either in it or above it,
+    // so releasing the DEEPEST leftover (the member furthest from the root)
+    // lets the rest resolve in order; only the cycle itself loses its.
+    const stuck = steps.filter((s) => !done.has(s.key));
+    const deepest = stuck.reduce((a, b) => (b.depth > a.depth ? b : a));
+    release(deepest);
   }
-  for (const s of steps) if (!done.has(s.key)) out.push(s);
   return out;
 }
 

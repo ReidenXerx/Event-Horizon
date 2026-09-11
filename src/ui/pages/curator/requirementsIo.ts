@@ -202,7 +202,11 @@ export async function loadRequirements(args: {
     unavailable =
       "Vortex's Nexus games cache is missing, so mod pages cannot be addressed. Open the Nexus tab once and try again.";
   } else {
-    const reuse = args.previous?.fetched;
+    // Only answers for mods STILL in the pool are carried over, or a removed
+    // mod's page would count as answered and the map would grow forever.
+    const current = new Set(uidByMod.values());
+    const reuse =
+      args.previous === undefined ? undefined : new Map([...args.previous.fetched].filter(([uid]) => current.has(uid)));
     const uids = [...uidByMod.values()].filter((u) => reuse === undefined || !reuse.has(u));
     if (uids.length > 0) {
       args.onProgress?.(`Asking Nexus about ${uids.length} mods…`);
@@ -235,10 +239,17 @@ export async function loadRequirements(args: {
   // (staging for a mod's plugin, the game folder for a native one). Base-game
   // masters are never something to install.
   const listed = readPluginList(api.getState());
-  const listedLower = new Set(listed.map((p) => p.name.toLowerCase()));
-  const fromDisabled = (await pluginsOfDisabledMods(api.getState(), gameId, mods, args.signal)).filter(
-    (p) => !listedLower.has(p.name.toLowerCase()),
-  );
+  const seenLower = new Set(listed.map((p) => p.name.toLowerCase()));
+  // Two disabled installs of one mod ship the same plugin file: keep the
+  // first, or the two rows would share an id and the master would be
+  // attributed to whichever was iterated last.
+  const fromDisabled: PluginEntry[] = [];
+  for (const p of await pluginsOfDisabledMods(api.getState(), gameId, mods, args.signal)) {
+    const key = p.name.toLowerCase();
+    if (seenLower.has(key)) continue;
+    seenLower.add(key);
+    fromDisabled.push(p);
+  }
   const plugins = [...listed, ...fromDisabled];
   const masters = new Map<string, readonly string[]>();
   const headers = new Map<string, PluginHeader>();

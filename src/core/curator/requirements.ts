@@ -509,7 +509,10 @@ export type RequirementsSummary = {
 /**
  * What a requirement line is ABOUT, for counting. A mod that lists USSEP on
  * its page and masters its plugin on USSEP has one requirement, not two —
- * the two lines are kept (they can disagree usefully) but counted once.
+ * the two lines are kept (they can disagree usefully) but counted once
+ * WHEN THE POOL IDENTIFIES THE PROVIDER. With USSEP not installed at all,
+ * nothing links the page id to the file name, and the cell honestly says
+ * "2 missing": one page, one master.
  */
 function requirementKey(q: ModRequirement): string {
   if (q.satisfiedBy.length > 0) return `mod:${[...q.satisfiedBy].sort().join("|")}`;
@@ -602,8 +605,23 @@ export function dependantsOf(
 }
 
 /**
+ * Of several disabled installs of one page, the one to enable.
+ *
+ * The pool can hold two copies of a mod (an old and a new install, both
+ * off). Enabling both hands Vortex a file conflict the curator never
+ * asked for, so one is chosen: the highest version, else the first.
+ */
+export function pickProvider(candidates: readonly CuratorMod[]): CuratorMod | undefined {
+  if (candidates.length === 0) return undefined;
+  return [...candidates].sort((a, b) =>
+    (b.version ?? "").localeCompare(a.version ?? "", undefined, { numeric: true, sensitivity: "base" }),
+  )[0];
+}
+
+/**
  * The installed-but-disabled providers that `modIds` need, so enabling a
- * mod can offer to enable what it depends on in the same act.
+ * mod can offer to enable what it depends on in the same act. One
+ * provider per requirement line (see pickProvider).
  */
 export function disabledProvidersFor(
   report: RequirementsReport,
@@ -616,12 +634,13 @@ export function disabledProvidersFor(
   for (const id of modIds) {
     for (const q of report.byMod.get(id)?.requirements ?? []) {
       if (q.status !== "installed-disabled") continue;
-      for (const p of q.satisfiedBy) {
-        const mod = byId.get(p);
-        if (mod === undefined || mod.enabled || seen.has(p) || modIds.has(p)) continue;
-        seen.add(p);
-        out.push(mod);
-      }
+      const candidates = q.satisfiedBy
+        .map((p) => byId.get(p))
+        .filter((m): m is CuratorMod => m !== undefined && !m.enabled && !modIds.has(m.id));
+      const mod = pickProvider(candidates);
+      if (mod === undefined || seen.has(mod.id)) continue;
+      seen.add(mod.id);
+      out.push(mod);
     }
   }
   return out;

@@ -167,7 +167,16 @@ function watchActiveProfile(api: { onStateChange?: (path: string[], cb: () => vo
 }
 
 /** Which runs honour Stop. The others are single Vortex calls with no checkpoint. */
-const STOPPABLE = new Set<string>(["requirements", "endorse", "update", "reinstall", "cleanup", "remove", "install-download"]);
+const STOPPABLE = new Set<string>([
+  "requirements",
+  "endorse",
+  "update",
+  "reinstall",
+  "cleanup",
+  "remove",
+  "install-download",
+  "install-requirement",
+]);
 
 /** Mod types the game registers, for the kind selector. Empty when Vortex cannot say. */
 function registeredModTypes(gameId: string): string[] {
@@ -431,8 +440,6 @@ function CuratorBody(): JSX.Element {
     const gone = [...views].filter((v) => counts[v] === 0);
     if (gone.length > 0) setViews((prev) => new Set([...prev].filter((v) => counts[v] > 0)));
   }, [views, counts]);
-  const view = mode === "table" ? (views.size === 1 ? [...views][0]! : views.size === 0 ? "all" : "several") : mode;
-  void view;
 
   // Downloads with no installed version: what Disk cleanup refuses to
   // touch, and what this page can install.
@@ -670,10 +677,16 @@ function CuratorBody(): JSX.Element {
           toDomain: nexusDomainForVortexGame,
           knownGameIds: knownGameIds(api.getState()),
           fetch: nexus.getModRequirements,
+          report: cache.load.report,
           signal,
         });
         setProgress(`Asking Nexus which file each of ${num(plan.steps.length)} page(s) ships…`);
         const files = await resolveInstallFiles(plan.steps, nexus.getModFiles, signal);
+        if (signal.aborted) {
+          session.finish(undefined, "Stopped reading the chain; nothing was installed.");
+          setPlanState(undefined);
+          return;
+        }
         session.finish(undefined);
         setPlanState({ rootName, plan, files, picked: {}, thenEnable: [...thenEnable] });
       } catch (err) {
@@ -698,6 +711,7 @@ function CuratorBody(): JSX.Element {
     setPlanState(undefined);
     const lines: string[] = [];
     let n = 0;
+    let failed = 0;
     const todo = st.files.filter((pf) => pf.step.vortexGameId !== undefined && fileForStep(pf, st.picked) !== undefined);
     ehLog("info", "curator.requirement.plan.start", { root: st.rootName, installs: todo.length, enables: st.plan.toEnable.length });
     for (const pf of todo) {
@@ -709,6 +723,7 @@ function CuratorBody(): JSX.Element {
       setProgress(`Installing ${n} of ${todo.length} — ${pf.step.name}`);
       const file = fileForStep(pf, st.picked)!;
       const result = await installOne(pf.step, file, signal);
+      if (!result.ok) failed += 1;
       if (result.ok) {
         lines.push(`Installed ${pf.step.name} (${file.name ?? file.file_name ?? `file ${file.file_id}`}).`);
       } else if (result.refused) {
@@ -720,10 +735,25 @@ function CuratorBody(): JSX.Element {
         lines.push(`${pf.step.name}: did not finish installing — ${result.why}.`);
       }
     }
-    const toEnable = [...st.plan.toEnable, ...st.thenEnable.filter((m) => !st.plan!.toEnable.some((p) => p.id === m.id))];
+    // The providers already in the pool come on regardless; the mod the
+    // curator wanted "made to work" comes on only when the plan actually
+    // worked — they declined "Enable anyway", and a failed download must
+    // not turn into exactly that.
+    const planWorked = failed === 0 && !signal.aborted;
+    const toEnable = [
+      ...st.plan.toEnable,
+      ...(planWorked ? st.thenEnable.filter((m) => !st.plan!.toEnable.some((p) => p.id === m.id)) : []),
+    ];
     if (toEnable.length > 0 && !signal.aborted) {
       setEnabledFor(toEnable, true);
       lines.push(`Enabled ${toEnable.map((m) => m.name).join(", ")}.`);
+    }
+    if (!planWorked && st.thenEnable.length > 0) {
+      lines.push(
+        `${st.thenEnable.map((m) => m.name).join(", ")} left disabled: ${num(failed)} requirement(s) did not install` +
+          (signal.aborted ? " (stopped)" : "") +
+          `. Enable anyway from the table if that is what you want.`,
+      );
     }
     const skipped = st.files.filter((pf) => !todo.includes(pf));
     if (skipped.length > 0) lines.push(`Not installed (no file chosen, no current file, or another game): ${skipped.map((pf) => pf.step.name).join(", ")}.`);
@@ -1262,6 +1292,10 @@ function CuratorBody(): JSX.Element {
   }
 
   const updatableChosen = chosenRows.filter((r) => r.update !== undefined);
+  const hiddenTicked = React.useMemo(() => {
+    const visibleIds = new Set(visibleRows.map((r) => r.mod.id));
+    return chosen.filter((m) => !visibleIds.has(m.id)).length;
+  }, [visibleRows, chosen]);
   const frozenChosen = chosen.filter((m) => m.frozenAtVersion !== undefined);
   const unfrozenChosen = chosen.filter((m) => m.frozenAtVersion === undefined);
   const enabledChosen = chosen.filter((m) => m.enabled);
@@ -1524,10 +1558,10 @@ function CuratorBody(): JSX.Element {
         <div className="eh-actions eh-actions--sticky eh-row--split">
           <span className="eh-strong">
             {num(chosen.length)} ticked
-            {chosen.length > chosenRows.filter((r) => visibleRows.includes(r)).length && (
+            {hiddenTicked > 0 && (
               <span className="eh-muted">
                 {" "}
-                · {num(chosen.length - chosenRows.filter((r) => visibleRows.includes(r)).length)} not in this view
+                · {num(hiddenTicked)} not in this view
               </span>
             )}
             <LinkButton variant="xs" tone="muted" className="eh-actions__clear" onClick={(): void => setSelected(new Set())}>
@@ -1651,7 +1685,10 @@ function CuratorBody(): JSX.Element {
         }
         onConfirm={(): void => void runPlan()}
         onClose={(): void => {
-          if (busy === undefined) setPlanState(undefined);
+          // While the chain is being read, Cancel stops the read; once it is
+          // running, Stop after this one is the way out.
+          if (busy === "install-requirement") session.cancel();
+          else setPlanState(undefined);
         }}
       />
     </div>

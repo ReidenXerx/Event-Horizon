@@ -64,6 +64,8 @@ function nextSort(current: SortState | undefined, key: string): SortState | unde
 
 /** A row's height before the first one has been measured. */
 const ROW_HEIGHT_GUESS = 42;
+/** useLayoutEffect warns under server rendering (the render harness); there it is a no-op anyway. */
+const useIsomorphicLayoutEffect = typeof window !== "undefined" ? React.useLayoutEffect : React.useEffect;
 /** Rows rendered beyond the visible band, so a scroll never shows a gap. */
 const OVERSCAN = 12;
 
@@ -126,7 +128,7 @@ export function DataTable<T>(props: {
   const [viewport, setViewport] = React.useState(props.maxHeight ?? 420);
   const [rowHeight, setRowHeight] = React.useState(ROW_HEIGHT_GUESS);
   const firstRowRef = React.useRef<HTMLTableRowElement>(null);
-  React.useLayoutEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     const h = firstRowRef.current?.getBoundingClientRect().height;
     if (h !== undefined && h > 8 && Math.abs(h - rowHeight) > 0.5) setRowHeight(h);
     const v = wrapRef.current?.clientHeight;
@@ -165,10 +167,16 @@ export function DataTable<T>(props: {
     [viewRows, columns, filters, sort],
   );
 
-  // The window: OVERSCAN rows either side of what is visible.
+  // The window: OVERSCAN rows either side of what is visible. The scroll
+  // position is clamped to the CURRENT list: a filter typed while scrolled
+  // to the bottom of 1,900 rows would otherwise ask for rows past the end
+  // and render a blank table under a spacer the browser unwinds in ~85
+  // scroll events.
   const total = view.rows.length;
-  const start = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN);
-  const end = Math.min(total, Math.ceil((scrollTop + viewport) / rowHeight) + OVERSCAN);
+  const maxTop = Math.max(0, total * rowHeight - viewport);
+  const top = Math.min(scrollTop, maxTop);
+  const start = Math.max(0, Math.floor(top / rowHeight) - OVERSCAN);
+  const end = Math.min(total, Math.ceil((top + viewport) / rowHeight) + OVERSCAN);
   const windowRows = view.rows.slice(start, end);
   const topSpace = start * rowHeight;
   const bottomSpace = Math.max(0, (total - end) * rowHeight);
