@@ -1216,6 +1216,53 @@ describe("render", () => {
     );
   });
 
+  // Settled: a curator plugin switched off is its own status — no Re-apply,
+  // no blame on the sort.
+  it("load order — a curator plugin switched off", () => {
+    const baseline = [
+      { name: "Skyrim.esm", enabled: true },
+      { name: "A.esp", enabled: true },
+      { name: "B.esp", enabled: true },
+      { name: "C.esp", enabled: true },
+    ];
+    const current = [
+      { name: "A.esp", enabled: true },
+      { name: "B.esp", enabled: false },
+      { name: "Mine.esp", enabled: true },
+      { name: "C.esp", enabled: true },
+    ];
+    write(
+      "load-order-plugins-off",
+      React.createElement(LoadOrderCard, {
+        packageName: "Ivy 2 v1.0.11",
+        status: assessLoadOrder({ baseline, current, natives: new Set(["skyrim.esm"]) }),
+        autoSortOn: false,
+        busy: false,
+        onReapply: () => undefined,
+      }),
+    );
+  });
+
+  // Vortex holds one order, the active profile's: another profile's receipt
+  // gets no verdict and no Re-apply.
+  it("load order — installed in another profile", () => {
+    const on = (...names: string[]): { name: string; enabled: boolean }[] => names.map((name) => ({ name, enabled: true }));
+    write(
+      "load-order-other-profile",
+      React.createElement(LoadOrderCard, {
+        packageName: "Ivy 2 v1.0.11",
+        status: assessLoadOrder({
+          baseline: on("A.esp", "B.esp"),
+          current: on("B.esp", "A.esp"),
+          standing: { kind: "other-profile", profileName: "Ivy 2 v1.0.11" },
+        }),
+        autoSortOn: true,
+        busy: false,
+        onReapply: () => undefined,
+      }),
+    );
+  });
+
   it("curator tools — the profile-wide actions", () => {
     // A fake Vortex store shaped like the real one: a mod needing an update,
     // one frozen and holding, one whose freeze was broken from outside, and
