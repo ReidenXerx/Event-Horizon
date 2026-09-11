@@ -205,7 +205,7 @@ export async function gatherObservations(
    */
   let currentPluginLightFlags: Record<string, boolean> | undefined;
   try {
-    const [{ readPluginFlags }, { getGameDirectory }] = await Promise.all([
+    const [{ readPluginFlags, pluginCapabilityFor }, { getGameDirectory }] = await Promise.all([
       import("../manifest/pluginFlags"),
       import("../manifest/externalDependencies"),
     ]);
@@ -220,8 +220,10 @@ export async function gatherObservations(
       const nodePath = await import("path");
       const found: Record<string, boolean> = {};
       for (const p of wanted) {
+        // The game's own light bit (0x100 on Starfield); an unknown game reads nothing.
         const flags = await readPluginFlags(
           nodePath.join(gameDir, "Data", p.name),
+          pluginCapabilityFor(gameId),
         );
         // Absent stays absent — a plugin we could not read is not evidence
         // that its flag changed.

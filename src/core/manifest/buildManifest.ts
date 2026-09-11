@@ -208,6 +208,12 @@ export type BuildManifestInput = {
    * in which case no plugin records a flag and the installer changes none.
    */
   pluginLightFlags?: Record<string, boolean>;
+  /**
+   * The header bit `pluginLightFlags` was read from (0x100 on Starfield,
+   * 0x200 elsewhere), written as `plugins.lightFlagBit`. Without it an
+   * installer has to assume the pre-per-game 0x200, and refuses Starfield.
+   */
+  pluginLightFlagBit?: number;
 
   /** Per-AuditorMod.id overrides for external (non-Nexus) mods. */
   externalMods?: Record<string, ExternalModSpec>;
@@ -472,7 +478,12 @@ export function buildManifest(input: BuildManifestInput): BuildManifestResult {
     },
     mods,
     rules,
-    plugins: { order: pluginsOrder },
+    plugins: {
+      order: pluginsOrder,
+      ...(input.pluginLightFlagBit !== undefined
+        ? { lightFlagBit: input.pluginLightFlagBit }
+        : {}),
+    },
     loadOrder,
     userlist,
     iniTweaks: [],

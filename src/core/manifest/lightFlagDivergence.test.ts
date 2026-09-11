@@ -49,7 +49,9 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { crc32 } from "./readZip";
-import { readPluginFlags, setPluginLightFlag } from "./pluginFlags";
+import { pluginCapabilityFor, readPluginFlags, setPluginLightFlag } from "./pluginFlags";
+
+const SSE = pluginCapabilityFor("skyrimse")!;
 import { verifyStagingAgainstArchive } from "./verifyAgainstArchive";
 import type { ArchiveListing } from "./archiveContents";
 
@@ -77,7 +79,7 @@ describe("what marking a plugin light actually does to the file", () => {
     const before = plugin(0);
     await writeFile(file, before);
 
-    const changed = await setPluginLightFlag(file, true);
+    const changed = await setPluginLightFlag(file, true, SSE);
     expect(changed).toBe(true);
 
     const after = await readFile(file);
@@ -91,13 +93,13 @@ describe("what marking a plugin light actually does to the file", () => {
     const file = join(dir, "Bar.esp");
     const before = plugin(0);
     await writeFile(file, before);
-    await setPluginLightFlag(file, true);
+    await setPluginLightFlag(file, true, SSE);
     const after = await readFile(file);
 
     const differing = [...before.keys()].filter((i) => before[i] !== after[i]);
     expect(differing).toEqual([9]);
     expect(after.readUInt32LE(8) ^ before.readUInt32LE(8)).toBe(0x200);
-    expect((await readPluginFlags(file))?.isLight).toBe(true);
+    expect((await readPluginFlags(file, SSE))?.isLight).toBe(true);
   });
 });
 

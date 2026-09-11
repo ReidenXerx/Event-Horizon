@@ -31,6 +31,8 @@
 
 import * as fsp from "fs/promises";
 
+import { decodePluginFlags, type PluginCapability, type PluginFlags } from "./pluginCapability";
+
 /** Bytes of a TES4 record header before its subrecord data begins. */
 const RECORD_HEADER_BYTES = 24;
 /** Type tag (4) + data size (2). */
@@ -65,16 +67,22 @@ export type PluginMastersRead =
 export async function readPluginMasters(
   filePath: string,
 ): Promise<PluginMastersRead> {
-  const read = await readPluginHeader(filePath);
+  // Masters mean the same thing in every game; the flags do not, and are not needed here.
+  const read = await readPluginHeader(filePath, undefined);
   return read.kind === "ok" ? { kind: "ok", masters: read.masters } : read;
 }
 
-/** Bit 0 of the TES4 record flags: master. Bit 9: light (ESL). Same bits pluginFlags.ts reads. */
-const FLAG_MASTER = 0x1;
-const FLAG_LIGHT = 0x200;
-
 export type PluginHeaderRead =
-  | { kind: "ok"; masters: string[]; flags: { isLight: boolean; isMaster: boolean } }
+  | {
+      kind: "ok";
+      masters: string[];
+      /**
+       * Decoded the way THIS game reads them (pluginCapability.ts). Absent when
+       * no capability was given — a game whose bits are unknown has flags that
+       * cannot be stated, and this file no longer carries its own 0x200.
+       */
+      flags?: PluginFlags;
+    }
   | Exclude<PluginMastersRead, { kind: "ok" }>;
 
 /**
@@ -85,6 +93,7 @@ export type PluginHeaderRead =
  */
 export async function readPluginHeader(
   filePath: string,
+  capability: PluginCapability | undefined,
 ): Promise<PluginHeaderRead> {
   let handle;
   try {
@@ -99,7 +108,7 @@ export async function readPluginHeader(
       return { kind: "not-a-plugin", why: "no TES4 header" };
     }
     const rawFlags = head.readUInt32LE(8);
-    const flags = { isLight: (rawFlags & FLAG_LIGHT) !== 0, isMaster: (rawFlags & FLAG_MASTER) !== 0 };
+    const flags = capability === undefined ? undefined : decodePluginFlags(rawFlags, capability);
 
     const dataSize = head.readUInt32LE(4);
     if (dataSize > MAX_HEADER_BYTES) {

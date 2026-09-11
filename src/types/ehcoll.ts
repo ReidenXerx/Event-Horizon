@@ -626,6 +626,17 @@ export type EhcollPlugins = {
    * rather than nobody having tried.
    */
   order: EhcollPluginEntry[];
+  /**
+   * The TES4 header bit every `order[].light` was read from — 0x200, or 0x100
+   * on Starfield.
+   *
+   * Starfield marks light with 0x100, and 0x200 there is a different flag.
+   * Builds before this field existed read 0x200 for every game, so their
+   * Starfield `light` values say nothing about light. Absent therefore means
+   * 0x200, and the installer applies the values only where that bit IS the
+   * game's light bit (`judgeRecordedLightFlags`).
+   */
+  lightFlagBit?: number;
 };
 
 export type EhcollPluginEntry = {

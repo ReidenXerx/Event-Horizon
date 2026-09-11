@@ -341,16 +341,25 @@ export async function loadRequirements(args: {
   let mastersRead = 0;
   let mastersUnreadable = 0;
   let n = 0;
+  // The flags are decoded the way THIS game reads them; an unknown game gets
+  // masters and no flags rather than a guessed bit.
+  const capability = pluginCapabilityForGame(gameId);
+  ehLog("debug", "curator.plugin-headers.semantics", {
+    gameId,
+    known: capability !== undefined,
+    lightFlagBit: capability?.lightFlagBit,
+    mediumFlagBit: capability?.mediumFlagBit,
+  });
   for (const p of plugins) {
     if (args.signal?.aborted === true) break;
     if (p.filePath === undefined) continue;
     n += 1;
     if (n % 50 === 0) args.onProgress?.(`Reading plugin headers — ${n} of ${plugins.length}`);
-    const read = await readPluginHeader(p.filePath);
+    const read = await readPluginHeader(p.filePath, capability);
     const header: PluginHeader = {};
     if (read.kind === "ok") {
       header.masters = read.masters;
-      header.flags = read.flags;
+      if (read.flags !== undefined) header.flags = read.flags;
       if (p.modId !== undefined && !p.isNative) {
         masters.set(p.name, read.masters);
         mastersRead += 1;

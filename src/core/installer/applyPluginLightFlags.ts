@@ -25,6 +25,15 @@
  * rather than assumed permanent.
  *
  * Only four bytes change, and only the one bit inside them.
+ *
+ * ─── THE GAME'S BIT, OR NONE ───────────────────────────────────────────
+ * Which bit is "light" is the game's (0x100 on Starfield, 0x200 elsewhere),
+ * and the recorded values are only meaningful if they were read from that
+ * same bit. A Starfield package built before flags were per game read 0x200
+ * — a different flag — so applying it would flip that flag inside plugins
+ * Event Horizon did not write (NS-2). Unknown game, a game with no light
+ * plugins, or a bit that does not match: nothing is read or written, and the
+ * refusal is reported with its reason.
  * ──────────────────────────────────────────────────────────────────────
  */
 
@@ -35,6 +44,7 @@ import {
   setPluginLightFlag,
   REGULAR_PLUGIN_LIMIT,
 } from "../manifest/pluginFlags";
+import { judgeRecordedLightFlags, type LightFlagRefusal } from "../manifest/pluginCapability";
 import type { EhcollPluginEntry } from "../../types/ehcoll";
 
 export type PluginFlagRepair = {
@@ -101,12 +111,31 @@ export type PluginFlagRepair = {
    * not start" warning for profiles that start fine.
    */
   regularAfter: number;
+  /**
+   * Set when the step read and wrote NOTHING, and why: the game is unknown,
+   * has no light plugins, or the recorded values came from a bit that is not
+   * this game's light bit. Distinct from a zeroed run on purpose — "refused"
+   * and "every flag already correct" must never look alike in a log.
+   */
+  refused?: { code: LightFlagRefusal; reason: string };
+  /** The game's regular-plugin limit (253 on Starfield). Absent means 254. */
+  regularLimit?: number;
+  /** The header bit read and written as "light" on this run. */
+  lightFlagBit?: number;
 };
 
 export async function applyPluginLightFlags(args: {
   order: readonly EhcollPluginEntry[];
   /** The game's Data folder — where the plugins the game loads actually live. */
   dataDir: string | undefined;
+  /** The Vortex game id: it decides which header bit is "light". */
+  gameId: string;
+  /**
+   * The bit the `light` values were read from, as the package (or receipt)
+   * recorded it. Undefined means a package from before flags were per game,
+   * whose values came from 0x200.
+   */
+  recordedLightFlagBit: number | undefined;
   signal?: AbortSignal;
   onProgress?: (done: number, total: number) => void;
 }): Promise<PluginFlagRepair> {
@@ -123,6 +152,14 @@ export async function applyPluginLightFlags(args: {
     failures: [],
     regularAfter: 0,
   };
+  const verdict = judgeRecordedLightFlags(args.gameId, args.recordedLightFlagBit);
+  if (verdict.capability !== undefined) result.regularLimit = verdict.capability.regularSlots;
+  if (!verdict.usable) {
+    result.refused = { code: verdict.code, reason: verdict.reason };
+    return result;
+  }
+  const capability = verdict.capability;
+  result.lightFlagBit = capability.lightFlagBit;
   if (args.dataDir === undefined) {
     result.failures.push("the game's Data folder could not be located");
     return result;
@@ -135,7 +172,7 @@ export async function applyPluginLightFlags(args: {
     args.onProgress?.(done, args.order.length);
 
     const file = path.join(args.dataDir, plugin.name);
-    const read = await readPluginFlagsDetailed(file);
+    const read = await readPluginFlagsDetailed(file, capability);
     const current = read.kind === "ok" ? read.flags : undefined;
     // "Not there" and "there but we could not open it" ask for different
     // things from the user, so they are counted apart.
@@ -153,7 +190,9 @@ export async function applyPluginLightFlags(args: {
      * takes an index — excluding it is what made the limit alarm deaf.
      */
     const countsAsRegular = (isLight: boolean): void => {
-      if (plugin.enabled && !isLight) result.regularAfter += 1;
+      // A medium plugin (Starfield) takes the shared FD slot, not a regular
+      // one. This step never changes that bit, so the file's answer stands.
+      if (plugin.enabled && !isLight && current?.isMedium !== true) result.regularAfter += 1;
     };
 
     // Absent means the build could not read it. Leave the user's file alone
@@ -177,7 +216,7 @@ export async function applyPluginLightFlags(args: {
     }
 
     try {
-      const changed = await setPluginLightFlag(file, plugin.light);
+      const changed = await setPluginLightFlag(file, plugin.light, capability);
       if (changed) {
         result.corrected += 1;
         result.correctedNames.push(plugin.name);
@@ -212,7 +251,16 @@ export async function applyPluginLightFlags(args: {
 export function describePluginFlagRepair(
   result: PluginFlagRepair,
 ): string[] | undefined {
-  const overLimit = result.regularAfter > REGULAR_PLUGIN_LIMIT;
+  if (result.refused !== undefined) {
+    // A game with no light plugins has nothing to restore, and saying so on
+    // every install would be noise. The other two left flags unapplied that
+    // the collection may need, and the user has to know why.
+    return result.refused.code === "no-light-plugins"
+      ? undefined
+      : [`ESL (light) flags were not applied. ${result.refused.reason}`];
+  }
+  const limit = result.regularLimit ?? REGULAR_PLUGIN_LIMIT;
+  const overLimit = result.regularAfter > limit;
   /**
    * ─── SILENCE IS NOT AN ACCEPTABLE REPORT FOR TOTAL FAILURE ──────────
    * This returned `undefined` whenever nothing was corrected, so both ways
@@ -246,7 +294,7 @@ export function describePluginFlagRepair(
   if (overLimit) {
     lines.push(
       `This profile has ${result.regularAfter} regular plugins against a ` +
-        `limit of ${REGULAR_PLUGIN_LIMIT}. The game will not start until that ` +
+        `limit of ${limit}. The game will not start until that ` +
         `is under the limit — light (ESL) flags are what keep a collection ` +
         `this size loadable, and some could not be restored.`,
     );
@@ -275,7 +323,7 @@ export function describePluginFlagRepair(
       lines.push(
         `Removed the ESL (light) flag from ${result.cleared} plugin(s) to ` +
           `match the curator. Each of these now uses a regular load-order ` +
-          `slot; you have ${Math.max(0, REGULAR_PLUGIN_LIMIT - result.regularAfter)} ` +
+          `slot; you have ${Math.max(0, limit - result.regularAfter)} ` +
           `spare.`,
       );
     }

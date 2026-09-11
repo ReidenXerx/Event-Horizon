@@ -34,7 +34,7 @@ import {
 } from "../comparePlugins";
 
 /** A manifest skeleton the strict parser accepts, so a test can vary one thing. */
-function manifestWith(order: unknown[]): string {
+function manifestWith(order: unknown[], pluginsExtra: Record<string, unknown> = {}): string {
   return JSON.stringify({
     schemaVersion: 1,
     package: {
@@ -59,7 +59,7 @@ function manifestWith(order: unknown[]): string {
     },
     mods: [],
     rules: [],
-    plugins: { order },
+    plugins: { order, ...pluginsExtra },
     loadOrder: [],
     userlist: { plugins: [], groups: [] },
     gameIni: { files: [] },
@@ -113,6 +113,31 @@ describe("the ESL flag survives the parser", () => {
     expect(parsed.manifest.plugins.order[0]).toEqual(full);
   });
 
+});
+
+describe("the bit the light values came from survives the parser", () => {
+  /**
+   * Dropped here, a Starfield package built correctly would read as one from
+   * before flags were per game, and the installer would refuse every flag the
+   * curator recorded. Absent must stay absent: that IS the legacy signal.
+   */
+  it("carries lightFlagBit through, and keeps it absent when it was absent", () => {
+    const withBit = parseManifest(
+      manifestWith([{ name: "A.esm", enabled: true, light: true }], { lightFlagBit: 0x100 }),
+    );
+    expect(withBit.manifest.plugins.lightFlagBit).toBe(0x100);
+
+    const without = parseManifest(manifestWith([{ name: "A.esm", enabled: true, light: true }]));
+    expect("lightFlagBit" in without.manifest.plugins).toBe(false);
+  });
+
+  it("rejects a value that is not a single header bit", () => {
+    for (const bad of [0x300, "0x100", 0, -256]) {
+      expect(() =>
+        parseManifest(manifestWith([{ name: "A.esm", enabled: true }], { lightFlagBit: bad })),
+      ).toThrow(/lightFlagBit must be a single header bit/);
+    }
+  });
 });
 
 describe("plugins.txt is latin1, the way Vortex writes it", () => {

@@ -26,6 +26,7 @@ import {
   readPluginHeader,
   readPluginMasters,
 } from "./pluginMasters";
+import { pluginCapabilityFor } from "./pluginCapability";
 
 // ─── Building real TES4 bytes ───────────────────────────────────────────────
 // 4-byte tag, 4-byte data size, 16 more bytes of record header (24 total),
@@ -270,10 +271,26 @@ describe("readPluginHeader", () => {
       head.writeUInt32LE(0x201, 8);
       const file = path.join(dir, "Light.esp");
       await fsp.writeFile(file, Buffer.concat([head, body]));
-      const read = await readPluginHeader(file);
-      expect(read).toEqual({ kind: "ok", masters: ["Skyrim.esm"], flags: { isLight: true, isMaster: true } });
+      const read = await readPluginHeader(file, pluginCapabilityFor("skyrimse"));
+      expect(read).toEqual({
+        kind: "ok",
+        masters: ["Skyrim.esm"],
+        flags: { isLight: true, isMaster: true, isMedium: false },
+      });
       expect(await readPluginMasters(file)).toEqual({ kind: "ok", masters: ["Skyrim.esm"] });
-      expect((await readPluginHeader(path.join(dir, "missing.esp"))).kind).toBe("not-found");
+      expect((await readPluginHeader(path.join(dir, "missing.esp"), pluginCapabilityFor("skyrimse"))).kind).toBe(
+        "not-found",
+      );
+
+      // The same bytes in Starfield: 0x200 is not its light bit. This file
+      // carried its own copy of 0x200 and read every game that way.
+      const sf = await readPluginHeader(file, pluginCapabilityFor("starfield"));
+      expect(sf.kind === "ok" && sf.flags).toEqual({ isLight: false, isMaster: true, isMedium: false });
+
+      // An unknown game: masters are still facts, flags are not.
+      const unknown = await readPluginHeader(file, undefined);
+      expect(unknown.kind === "ok" && unknown.masters).toEqual(["Skyrim.esm"]);
+      expect(unknown.kind === "ok" && unknown.flags).toBeUndefined();
     } finally {
       await fsp.rm(dir, { recursive: true, force: true });
     }

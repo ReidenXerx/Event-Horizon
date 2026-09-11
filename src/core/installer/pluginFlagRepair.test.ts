@@ -108,6 +108,30 @@ describe("the over-limit alarm", () => {
     expect(describePluginFlagRepair(repair({ regularAfter: 254, alreadyCorrect: 1 })))
       .toBeUndefined();
   });
+
+  it("uses the game's own limit — Starfield's is 253", () => {
+    // 254 regular is fine in Skyrim SE and one over in Starfield, where the
+    // medium slot takes an index. The alarm used the Skyrim number for both.
+    const lines = said(repair({ regularAfter: 254, regularLimit: 253, alreadyCorrect: 1 }));
+    expect(lines).toMatch(/will not start/);
+    expect(lines).toMatch(/limit of 253/);
+  });
+});
+
+describe("a refusal is reported with its reason", () => {
+  it("says why flags were not applied when the recorded bit is not the game's", () => {
+    const lines = said(
+      repair({ refused: { code: "bit-mismatch", reason: "read from 0x200, Starfield uses 0x100" } }),
+    );
+    expect(lines).toMatch(/not applied/);
+    expect(lines).toMatch(/0x200, Starfield uses 0x100/);
+  });
+
+  it("stays quiet for a game that has no light plugins to restore", () => {
+    expect(
+      describePluginFlagRepair(repair({ refused: { code: "no-light-plugins", reason: "none" } })),
+    ).toBeUndefined();
+  });
 });
 
 describe("'not on disk' and 'could not open it' are different problems", () => {

@@ -1073,7 +1073,7 @@ function validateRuleEntry(
 function validatePlugins(
   raw: unknown,
   errors: string[],
-): { order: EhcollPluginEntry[] } | undefined {
+): { order: EhcollPluginEntry[]; lightFlagBit?: number } | undefined {
   if (!isObject(raw)) {
     errors.push(`plugins must be an object, got ${describe(raw)}.`);
     return undefined;
@@ -1120,7 +1120,24 @@ function validatePlugins(
     if (name === undefined || enabled === undefined) return;
     order.push({ name, enabled, ...(light !== undefined ? { light } : {}) });
   });
-  return { order };
+
+  /**
+   * Carried for the same reason `light` is: this parser is a whitelist, and a
+   * dropped `lightFlagBit` reads as "a package from before flags were per
+   * game" — which on Starfield refuses every flag the curator recorded.
+   */
+  let lightFlagBit: number | undefined;
+  if (obj.lightFlagBit !== undefined) {
+    const b = obj.lightFlagBit;
+    if (typeof b !== "number" || !Number.isInteger(b) || b <= 0 || b > 0x8000_0000 || (b & (b - 1)) !== 0) {
+      errors.push(
+        `plugins.lightFlagBit must be a single header bit (a power of two), got ${describe(b)}.`,
+      );
+    } else {
+      lightFlagBit = b;
+    }
+  }
+  return { order, ...(lightFlagBit !== undefined ? { lightFlagBit } : {}) };
 }
 
 // ---------------------------------------------------------------------------

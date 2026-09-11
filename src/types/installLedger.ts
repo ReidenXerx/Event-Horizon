@@ -278,6 +278,13 @@ export type RulesApplicationReceipt = {
    * acceptable. That comparison does not exist yet.
    */
   baselinePluginOrder: ReceiptPluginEntry[];
+  /**
+   * The header bit `baselinePluginOrder[].light` was read from, copied from
+   * the package's `plugins.lightFlagBit`. Absent on receipts whose package
+   * predates it: those values came from 0x200, which is not Starfield's light
+   * bit, so Doctor neither judges nor restores them there.
+   */
+  baselineLightFlagBit?: number;
 };
 
 /**

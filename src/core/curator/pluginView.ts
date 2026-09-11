@@ -16,76 +16,17 @@
 
 import * as path from "path";
 
-import type { PluginFlags } from "../manifest/pluginFlags";
+import type { PluginCapability, PluginFlags } from "../manifest/pluginCapability";
 import type { PluginEntry } from "./pluginPool";
 import type { CuratorMod } from "./profileActions";
 
 // ── What each game's plugin system allows ──────────────────────────────
-
-/**
- * The bit `pluginFlags.ts` reads and writes as "light" (its FLAG_LIGHT).
- * Right for every Bethesda game but Starfield, which uses 0x100.
- */
-const HEADER_READER_LIGHT_BIT = 0x200;
-
-/**
- * What Vortex's plugin management knows about each game it manages.
- *
- * SOURCE, read from the installed Vortex (`resources/app.asar.unpacked/
- * bundledPlugins/gamebryo-plugin-management/index.cjs`):
- *   - its `gameSupport` dictionary (`makeOverlayableDictionary({ skyrim: …,
- *     skyrimse: { …, supportsESL: true }, starfield: { …, supportsESL: true,
- *     supportsMediumMasters: true }, … })`) — a game without `supportsESL`
- *     loads no light plugins;
- *   - its plugin counter: `limit = supportsMediumMasters ? 253 : supportsESL
- *     ? 254 : 255`;
- *   - `ESPFile.isLight`: `gameMode === "starfield" ? flags & 256 : flags & 512`.
- *
- * The extension exposes none of this at runtime (its only `registerAPI`s are
- * `lootSortAsync` and `isBlueprintPlugin`), so the table is copied here, once.
- * A game extension's `details.supportsESL` overrides a row, as Vortex does for
- * Skyrim VR and Fallout 4 VR. A game not in the table is UNKNOWN — no limit is
- * claimed and no flag is offered.
- */
-const GAMEBRYO_PLUGIN_SUPPORT: Readonly<Record<string, { supportsESL: boolean; supportsMediumMasters?: boolean; lightFlagBit?: number }>> = {
-  skyrim: { supportsESL: false },
-  enderal: { supportsESL: false },
-  skyrimse: { supportsESL: true },
-  enderalspecialedition: { supportsESL: true },
-  skyrimvr: { supportsESL: false },
-  fallout3: { supportsESL: false },
-  falloutnv: { supportsESL: false },
-  fallout4: { supportsESL: true },
-  fallout4vr: { supportsESL: false },
-  starfield: { supportsESL: true, supportsMediumMasters: true, lightFlagBit: 0x100 },
-  oblivion: { supportsESL: false },
-  oblivionremastered: { supportsESL: false },
-};
-
-export type PluginCapability = {
-  /** The game loads light (ESL) plugins in the shared FE slot. */
-  lightPlugins: boolean;
-  /** Regular plugins the game can load, as Vortex's own counter says. */
-  regularSlots: number;
-  /** The header bit that means "light" in this game. */
-  lightFlagBit: number;
-};
-
-export function pluginCapabilityFor(gameId: string, details?: { supportsESL?: unknown }): PluginCapability | undefined {
-  const row = GAMEBRYO_PLUGIN_SUPPORT[gameId.toLowerCase()];
-  if (row === undefined) return undefined;
-  const lightPlugins = typeof details?.supportsESL === "boolean" ? details.supportsESL : row.supportsESL;
-  return {
-    lightPlugins,
-    regularSlots: row.supportsMediumMasters === true ? 253 : lightPlugins ? 254 : 255,
-    lightFlagBit: row.lightFlagBit ?? 0x200,
-  };
-}
-
-/** Whether Event Horizon can flag or unflag a plugin light in this game, correctly. */
-export function canWriteLightFlag(capability: PluginCapability | undefined): boolean {
-  return capability?.lightPlugins === true && capability.lightFlagBit === HEADER_READER_LIGHT_BIT;
-}
+//
+// The table lives in manifest/pluginCapability.ts, beside the readers and
+// writers that have to agree with it. It was here, and the header reader used
+// its own 0x200 for every game — so this view could only mark Starfield's
+// light state unknown, while the installer wrote the wrong bit regardless.
+export { canWriteLightFlag, pluginCapabilityFor, type PluginCapability } from "../manifest/pluginCapability";
 
 /**
  * The files a light-flag change is written to: the copy Vortex lists and the
@@ -130,8 +71,10 @@ export type PluginRow = {
   /** From the header flags; undefined when the header was not read. */
   isLight?: boolean;
   isMaster?: boolean;
+  /** Starfield's medium (FD-slot) plugins; set only when the header says so. */
+  isMedium?: boolean;
   unreadable?: string;
-  /** Whether it takes one of the game's regular slots: enabled and not light. */
+  /** Whether it takes one of the game's regular slots: enabled, neither light nor medium. */
   takesSlot: boolean;
 };
 
@@ -167,31 +110,28 @@ export function buildPluginRows(args: {
     });
     const owner = plugin.modId === undefined ? undefined : modById.get(plugin.modId);
     // The .esl EXTENSION forces light + master in a game with light plugins
-    // whatever the header says; the flag alone is what pluginFlags reads. A
-    // game without light plugins has no light plugins, whatever a bit says;
-    // a game whose light bit is not the one pluginFlags reads (Starfield) has
-    // an unknown light state until something reads the right bit.
+    // whatever the header says. The header flags arrive decoded for this
+    // game (pluginCapability.ts), so Starfield's light is its own 0x100 bit.
+    // A game without light (or medium) plugins has none, whatever a bit says.
     const eslExt = /\.esl$/i.test(plugin.name) && cap?.lightPlugins !== false;
-    const headerLight =
-      cap === undefined || (cap.lightPlugins && cap.lightFlagBit === HEADER_READER_LIGHT_BIT)
-        ? header?.flags?.isLight
-        : cap.lightPlugins
-          ? undefined
-          : header === undefined || header.unreadable !== undefined
-            ? undefined
-            : false;
+    const flags = header?.flags;
+    const headerLight = cap?.lightPlugins === false ? (flags === undefined ? undefined : false) : flags?.isLight;
+    const isMedium = cap?.mediumPlugins === false ? false : flags?.isMedium;
     const isLight = eslExt ? true : headerLight;
-    const isMaster = eslExt ? true : header?.flags?.isMaster;
+    const isMaster = eslExt ? true : flags?.isMaster;
     const row: PluginRow = {
       plugin,
       masters,
       missing: masters.filter((m) => m.state === "missing").map((m) => m.name),
       disabled: masters.filter((m) => m.state === "disabled").map((m) => m.name),
-      takesSlot: plugin.enabled && isLight !== true,
+      // Vortex's own counter: regular is neither light nor medium. A light
+      // plugin that is also medium-flagged loads light.
+      takesSlot: plugin.enabled && isLight !== true && isMedium !== true,
     };
     if (owner !== undefined) row.owner = owner;
     if (isLight !== undefined) row.isLight = isLight;
     if (isMaster !== undefined) row.isMaster = isMaster;
+    if (isMedium === true && isLight !== true) row.isMedium = true;
     if (header?.unreadable !== undefined) row.unreadable = header.unreadable;
     return row;
   });
@@ -251,10 +191,12 @@ export type PluginSummary = {
   slotLimit?: number;
   /**
    * Whether `slotsUsed` and `light` can be believed: headers read, and a game
-   * whose light state Event Horizon reads correctly.
+   * whose header bits Event Horizon knows.
    */
   lightKnown: boolean;
   light: number;
+  /** Medium (FD-slot) plugins — Starfield; 0 elsewhere. */
+  medium: number;
   withMissing: number;
   withDisabled: number;
   unreadable: number;
@@ -268,11 +210,9 @@ export function summarizePlugins(rows: readonly PluginRow[], headersRead: boolea
     enabled: rows.filter((r) => r.plugin.enabled).length,
     slotsUsed: rows.filter((r) => r.takesSlot).length,
     ...(capability === undefined ? {} : { slotLimit: capability.regularSlots }),
-    lightKnown:
-      headersRead &&
-      capability !== undefined &&
-      (!capability.lightPlugins || capability.lightFlagBit === HEADER_READER_LIGHT_BIT),
+    lightKnown: headersRead && capability !== undefined,
     light: rows.filter((r) => r.isLight === true).length,
+    medium: rows.filter((r) => r.isMedium === true).length,
     withMissing: rows.filter((r) => r.missing.length > 0).length,
     withDisabled: rows.filter((r) => r.disabled.length > 0).length,
     unreadable: rows.filter((r) => r.unreadable !== undefined).length,
@@ -297,5 +237,6 @@ export function describePluginKind(r: PluginRow): string {
   const parts: string[] = [];
   if (r.isMaster === true) parts.push("master");
   if (r.isLight === true) parts.push("light");
+  if (r.isMedium === true) parts.push("medium");
   return parts.length > 0 ? parts.join(", ") : "regular";
 }

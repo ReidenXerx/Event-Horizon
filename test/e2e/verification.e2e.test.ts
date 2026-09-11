@@ -227,6 +227,8 @@ describe("the curator's ESL flags reach the user", () => {
     const captured = await capturePluginFlags({
       pluginNames: ["Light.esp", "Regular.esp", "NotThere.esp"],
       dataDir: nodePath.join(gameDir, "Data"),
+      // The game decides the bit; this world is Fallout 4, whose light bit is 0x200.
+      gameId: world.gameId,
     });
 
     expect(captured.light).toEqual({ "light.esp": true, "regular.esp": false });

@@ -16,11 +16,17 @@
  * `false`. On the install side an absent flag means "leave this alone", and a
  * false one means "clear the flag" — so guessing here would strip flags from a
  * user's plugins on the strength of a failed read.
+ *
+ * ─── AND WHICH BIT THE VALUES CAME FROM ────────────────────────────────
+ * The light bit is the game's (0x100 on Starfield, 0x200 elsewhere). The bit
+ * read is returned so the package can record it, and an installer can refuse
+ * values that do not mean what its game means by "light". A game with no
+ * light plugins, or one Vortex does not know, records nothing at all.
  */
 
 import * as path from "path";
 
-import { readPluginFlags } from "./pluginFlags";
+import { pluginCapabilityFor, readPluginFlags } from "./pluginFlags";
 
 export type CapturedPluginFlags = {
   /** Keyed by LOWERCASED plugin name — the form every comparison uses. */
@@ -29,19 +35,37 @@ export type CapturedPluginFlags = {
   unreadable: string[];
   /** How many carry the flag, for the build report. */
   lightCount: number;
+  /** Medium (Starfield FD-slot) plugins: not light, and not regular either. */
+  mediumCount: number;
+  /** The header bit `light` was read from. Absent when nothing could be captured for this game. */
+  lightFlagBit?: number;
+  /** Why the whole game was skipped, when it was — for the log. */
+  notCaptured?: string;
 };
 
 export async function capturePluginFlags(args: {
   pluginNames: readonly string[];
   /** The game's Data folder. Omit when it is not known — nothing is recorded. */
   dataDir: string | undefined;
+  /** The Vortex game id: it decides which header bit is "light". */
+  gameId: string;
   signal?: AbortSignal;
   onProgress?: (done: number, total: number) => void;
 }): Promise<CapturedPluginFlags> {
-  const out: CapturedPluginFlags = { light: {}, unreadable: [], lightCount: 0 };
+  const out: CapturedPluginFlags = { light: {}, unreadable: [], lightCount: 0, mediumCount: 0 };
+  const capability = pluginCapabilityFor(args.gameId);
+  if (capability === undefined) {
+    out.notCaptured = `Vortex's plugin management does not know "${args.gameId}", so no header bit is known to mean light there.`;
+    return out;
+  }
+  if (capability.lightFlagBit === undefined) {
+    out.notCaptured = `${args.gameId} has no light plugins.`;
+    return out;
+  }
   if (args.dataDir === undefined || args.pluginNames.length === 0) {
     return out;
   }
+  out.lightFlagBit = capability.lightFlagBit;
 
   let done = 0;
   for (const name of args.pluginNames) {
@@ -49,13 +73,14 @@ export async function capturePluginFlags(args: {
     done += 1;
     args.onProgress?.(done, args.pluginNames.length);
 
-    const flags = await readPluginFlags(path.join(args.dataDir, name));
+    const flags = await readPluginFlags(path.join(args.dataDir, name), capability);
     if (flags === undefined) {
       out.unreadable.push(name);
       continue;
     }
     out.light[name.toLowerCase()] = flags.isLight;
     if (flags.isLight) out.lightCount += 1;
+    else if (flags.isMedium) out.mediumCount += 1;
   }
   return out;
 }
@@ -84,11 +109,13 @@ export function describePluginFlagCapture(
   }
   if (captured.lightCount === 0) return undefined;
 
-  const regular = totalPlugins - captured.lightCount;
+  const regular = totalPlugins - captured.lightCount - captured.mediumCount;
   const headroom = regularLimit - regular;
   const base =
     `${captured.lightCount} of ${totalPlugins} plugin(s) are marked light ` +
-    `(ESL), leaving ${regular} regular against this game's limit of ` +
+    `(ESL)` +
+    (captured.mediumCount > 0 ? ` and ${captured.mediumCount} medium` : ``) +
+    `, leaving ${regular} regular against this game's limit of ` +
     `${regularLimit}.`;
 
   if (headroom < 0) {

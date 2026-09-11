@@ -3429,6 +3429,11 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           ...(p.light !== undefined ? { light: p.light } : {}),
         }),
       ),
+      // And which header bit those values came from, so Doctor can refuse to
+      // judge or restore them in a game where that bit is not "light".
+      ...(plan.manifest.plugins.lightFlagBit !== undefined
+        ? { baselineLightFlagBit: plan.manifest.plugins.lightFlagBit }
+        : {}),
     };
 
     // ── 7b0. put the curator's plugin order on disk ────────────────────
@@ -3526,6 +3531,8 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       : await applyPluginLightFlags({
       order: plan.manifest.plugins.order,
       dataDir: gameDataDirFor(api, plan.manifest.game.id),
+      gameId: plan.manifest.game.id,
+      recordedLightFlagBit: plan.manifest.plugins.lightFlagBit,
       ...(ctx.abortSignal !== undefined ? { signal: ctx.abortSignal } : {}),
       onProgress: (done, total) => {
         reportProgress(
@@ -3551,7 +3558,15 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           "to start, run the install again and let it finish.",
       });
     } else
-    ehLog("info", "plugins.light-flags", {
+    ehLog(pluginFlagRepair.refused !== undefined ? "warn" : "info", "plugins.light-flags", {
+      gameId: plan.manifest.game.id,
+      // Which bit the package says its values came from (absent = a build
+      // from before flags were per game), which bit was written, and why
+      // nothing was, when nothing was.
+      recordedLightFlagBit: plan.manifest.plugins.lightFlagBit,
+      lightFlagBit: pluginFlagRepair.lightFlagBit,
+      refused: pluginFlagRepair.refused,
+      regularLimit: pluginFlagRepair.regularLimit,
       corrected: pluginFlagRepair.corrected,
       set: pluginFlagRepair.set,
       cleared: pluginFlagRepair.cleared,

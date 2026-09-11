@@ -27,33 +27,27 @@
  * ─── THE FORMAT ────────────────────────────────────────────────────────
  * Every plugin begins with a TES4 record: a 4-byte type tag, a 4-byte data
  * size, then a 4-byte flags field at offset 8. This mirrors Vortex's own
- * `ESPFile` exactly — it reads `buf.readUInt32LE(8)` and tests `flags &
- * FLAG_LIGHT`, and its `setLightFlag` rewrites those same four bytes.
+ * `ESPFile` exactly — it reads `buf.readUInt32LE(8)`, and its `setLightFlag`
+ * rewrites those same four bytes.
+ *
+ * ─── WHICH BIT, IS THE GAME'S ANSWER ───────────────────────────────────
+ * This file used one constant, 0x200, for every game. Starfield marks light
+ * with 0x100, so a Starfield package recorded a different flag as "light" and
+ * the installer flipped that other flag inside the user's plugins. Every
+ * function here now takes the game's {@link PluginCapability}, and the bits
+ * live in one table in `pluginCapability.ts`.
  * ──────────────────────────────────────────────────────────────────────
  */
 
 import * as fsp from "fs/promises";
 
-/** Bit 0: this plugin is a master (ESM), regardless of extension. */
-const FLAG_MASTER = 0x1;
-/**
- * Bit 9: light (ESL / "ESP-FE").
- *
- * Starfield uses a different bit, which is why Vortex's ESPFile branches on
- * game mode. Every game Event Horizon supports is a pre-Starfield Bethesda
- * title, so this is the only value in play — stated here so the assumption is
- * visible if that ever changes.
- */
-const FLAG_LIGHT = 0x200;
+import { decodePluginFlags, type PluginCapability, type PluginFlags } from "./pluginCapability";
+
+export { pluginCapabilityFor, type PluginCapability, type PluginFlags } from "./pluginCapability";
 
 /** Offset of the 4-byte flags field inside the TES4 header. */
 const FLAGS_OFFSET = 8;
 const HEADER_BYTES = 12;
-
-export type PluginFlags = {
-  isLight: boolean;
-  isMaster: boolean;
-};
 
 /**
  * Read a plugin's header flags, or `undefined` when it is not a plugin we can
@@ -86,6 +80,7 @@ export type PluginFlagsRead =
 
 export async function readPluginFlagsDetailed(
   filePath: string,
+  capability: PluginCapability,
 ): Promise<PluginFlagsRead> {
   let handle;
   try {
@@ -103,13 +98,9 @@ export async function readPluginFlagsDetailed(
     if (buf.toString("latin1", 0, 4) !== "TES4") {
       return { kind: "not-a-plugin", why: "no TES4 header" };
     }
-    const flags = buf.readUInt32LE(FLAGS_OFFSET);
     return {
       kind: "ok",
-      flags: {
-        isLight: (flags & FLAG_LIGHT) !== 0,
-        isMaster: (flags & FLAG_MASTER) !== 0,
-      },
+      flags: decodePluginFlags(buf.readUInt32LE(FLAGS_OFFSET), capability),
     };
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
@@ -134,16 +125,21 @@ export async function readPluginFlagsDetailed(
  * "leave it alone", and a single `undefined` makes that impossible to get
  * wrong. Callers that must EXPLAIN a failure use
  * {@link readPluginFlagsDetailed}.
+ *
+ * A game whose bits are unknown (`capability` undefined) is one more such
+ * doubt: its flags cannot be stated, the same as a file that cannot be read.
  */
 export async function readPluginFlags(
   filePath: string,
+  capability: PluginCapability | undefined,
 ): Promise<PluginFlags | undefined> {
-  const read = await readPluginFlagsDetailed(filePath);
+  if (capability === undefined) return undefined;
+  const read = await readPluginFlagsDetailed(filePath, capability);
   return read.kind === "ok" ? read.flags : undefined;
 }
 
 /**
- * Set or clear the light flag in place.
+ * Set or clear the light flag in place — the game's light bit, and only that.
  *
  * Reads the current flags and rewrites only that bit, so nothing else in the
  * header is disturbed — the same four-byte read-modify-write Vortex performs.
@@ -152,12 +148,21 @@ export async function readPluginFlags(
  * file's mtime, which the hash cache keys on.
  *
  * Throws on IO failure. Unlike reading, a failed write must be visible: it
- * means the user's game is one plugin closer to not loading.
+ * means the user's game is one plugin closer to not loading. Throws, without
+ * opening the file, for a game with no light bit: there is nothing correct to
+ * write, and 0x200 is not a safe default.
  */
 export async function setPluginLightFlag(
   filePath: string,
   enabled: boolean,
+  capability: PluginCapability,
 ): Promise<boolean> {
+  const bit = capability.lightFlagBit;
+  if (bit === undefined) {
+    throw new Error(
+      `${capability.gameId} has no light plugins, so no header bit means "light" there; "${filePath}" was not changed`,
+    );
+  }
   const handle = await fsp.open(filePath, "r+");
   try {
     const buf = Buffer.alloc(4);
@@ -166,8 +171,8 @@ export async function setPluginLightFlag(
       throw new Error(`"${filePath}" is too short to carry a TES4 header`);
     }
     const before = buf.readUInt32LE(0);
-    const after = enabled ? before | FLAG_LIGHT : before & ~FLAG_LIGHT;
-    if (after === before) return false;
+    const after = enabled ? before | bit : before & ~bit;
+    if (after >>> 0 === before) return false;
     buf.writeUInt32LE(after >>> 0, 0);
     await handle.write(buf, 0, 4, FLAGS_OFFSET);
     return true;
@@ -177,9 +182,11 @@ export async function setPluginLightFlag(
 }
 
 /**
- * How many regular (non-light) plugins a game can address.
+ * How many regular (non-light) plugins Skyrim SE and Fallout 4 can address.
  *
  * Light plugins share the `FE` index and do not count. Used to say something
  * concrete — "you are 3 over the limit" — instead of "some flags are missing".
+ * Per game it is `PluginCapability.regularSlots`: 253 on Starfield, 255 where
+ * a game has no light plugins.
  */
 export const REGULAR_PLUGIN_LIMIT = 254;

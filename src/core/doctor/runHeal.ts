@@ -203,8 +203,21 @@ async function healImpl(
       const repair = await applyPluginLightFlags({
         order: recorded,
         dataDir: nodePath.join(gameDir, "Data"),
+        gameId,
+        // Absent on receipts from before flags were per game: those values
+        // came from 0x200, and on Starfield that is not the light bit.
+        recordedLightFlagBit: receipt.rulesApplication?.baselineLightFlagBit,
         ...(deps.signal !== undefined ? { signal: deps.signal } : {}),
       });
+
+      if (repair.refused !== undefined) {
+        ehLog("warn", "doctor.heal.light-flags.refused", {
+          gameId,
+          recordedLightFlagBit: receipt.rulesApplication?.baselineLightFlagBit,
+          refused: repair.refused,
+        });
+        return { kind: "blocked", reason: repair.refused.reason };
+      }
 
       const lines = describePluginFlagRepair(repair) ?? [];
       // A repair that changed nothing is not a success worth claiming: if

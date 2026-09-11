@@ -378,10 +378,8 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
       setNote(
         `${row.plugin.name}: not changed — ` +
           (capability === undefined
-            ? `Vortex's plugin management does not know ${game}.`
-            : capability.lightPlugins
-              ? `${game} marks light plugins with a header bit Event Horizon does not write.`
-              : `${game} has no light plugins.`),
+            ? `Vortex's plugin management does not know ${game}, so no header bit is known to mean light there.`
+            : `${game} has no light plugins.`),
       );
       return;
     }
@@ -403,12 +401,18 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
         ? undefined
         : stagingRootFromFolder(installRootFor(api.getState(), game), owner.installationPath);
     const paths = lightFlagTargets(row.plugin.filePath, dir, row.plugin.name);
-    ehLog("info", "curator.plugin.set-light.targets", { plugin: row.plugin.name, light, paths });
+    ehLog("info", "curator.plugin.set-light.targets", {
+      plugin: row.plugin.name,
+      light,
+      paths,
+      game,
+      lightFlagBit: capability.lightFlagBit,
+    });
     let changed = 0;
     const errors: string[] = [];
     for (const p of paths) {
       try {
-        if (await setPluginLightFlag(p, light)) changed += 1;
+        if (await setPluginLightFlag(p, light, capability)) changed += 1;
       } catch (err) {
         errors.push(`${p}: ${err instanceof Error ? err.message : String(err)}`);
       }

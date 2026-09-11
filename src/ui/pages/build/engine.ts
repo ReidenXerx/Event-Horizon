@@ -1935,7 +1935,7 @@ export async function runBuildPipeline(
   const { capturePluginFlags, describePluginFlagCapture } = await import(
     "../../../core/manifest/capturePluginFlags"
   );
-  const { REGULAR_PLUGIN_LIMIT } = await import(
+  const { REGULAR_PLUGIN_LIMIT, pluginCapabilityFor } = await import(
     "../../../core/manifest/pluginFlags"
   );
   const { parsePluginsTxt } = await import("../../../core/comparePlugins");
@@ -1951,11 +1951,23 @@ export async function runBuildPipeline(
     pluginNames: flagPluginNames,
     dataDir:
       flagGameDir === undefined ? undefined : path.join(flagGameDir, "Data"),
+    gameId,
+  });
+  // The bit is recorded into the package: an installer applies flags only
+  // when that bit is the one its game means by "light".
+  ehLog("info", "build.plugin-flags.captured", {
+    gameId,
+    plugins: flagPluginNames.length,
+    lightFlagBit: capturedFlags.lightFlagBit,
+    light: capturedFlags.lightCount,
+    medium: capturedFlags.mediumCount,
+    unreadable: capturedFlags.unreadable.length,
+    notCaptured: capturedFlags.notCaptured,
   });
   const flagWarning = describePluginFlagCapture(
     capturedFlags,
     flagPluginNames.length,
-    REGULAR_PLUGIN_LIMIT,
+    pluginCapabilityFor(gameId)?.regularSlots ?? REGULAR_PLUGIN_LIMIT,
   );
 
   /**
@@ -2125,6 +2137,9 @@ export async function runBuildPipeline(
     },
     pluginsTxtContent,
     pluginLightFlags: capturedFlags.light,
+    ...(capturedFlags.lightFlagBit !== undefined
+      ? { pluginLightFlagBit: capturedFlags.lightFlagBit }
+      : {}),
     externalMods: toBuildManifestExternalMods(collectionConfig, externalHints),
     // Mods whose archive we just built from staging. Their identity must not
     // be the repacked archive's hash — it encodes file mtimes, so an
