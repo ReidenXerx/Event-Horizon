@@ -38,7 +38,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
-import type { CuratorMod } from "./profileActions";
+import { fileIdentity, type CuratorMod } from "./profileActions";
 
 // ── Identity ───────────────────────────────────────────────────────────
 
@@ -605,17 +605,74 @@ export function dependantsOf(
 }
 
 /**
+ * Order two mod versions: negative when `a` is older, positive when newer.
+ *
+ * What authors actually write on Nexus: a leading "v", two or three or four
+ * numeric segments, a prerelease tag. Numeric segments compare as numbers
+ * (1.10 after 1.9), a missing segment is 0 (1.0 = 1.0.0), a prerelease sorts
+ * below its release (2.0.0-beta before 2.0.0), and build metadata after "+"
+ * is ignored. A missing version ranks below any version. A string compare —
+ * even a "numeric" one — put 2.0.0-beta above 2.0.0 and v1.2 above 1.10.
+ */
+export function compareVersions(a: string | undefined, b: string | undefined): number {
+  const pa = parseVersion(a);
+  const pb = parseVersion(b);
+  if (pa === undefined || pb === undefined) return pa === pb ? 0 : pa === undefined ? -1 : 1;
+  const n = Math.max(pa.core.length, pb.core.length);
+  for (let i = 0; i < n; i += 1) {
+    const c = compareSegment(pa.core[i] ?? "0", pb.core[i] ?? "0");
+    if (c !== 0) return c;
+  }
+  // Same release: no prerelease beats any prerelease.
+  if (pa.pre.length === 0 || pb.pre.length === 0) return pb.pre.length - pa.pre.length;
+  const m = Math.max(pa.pre.length, pb.pre.length);
+  for (let i = 0; i < m; i += 1) {
+    if (pa.pre[i] === undefined) return -1; // a shorter prerelease is the earlier one
+    if (pb.pre[i] === undefined) return 1;
+    const c = compareSegment(pa.pre[i]!, pb.pre[i]!);
+    if (c !== 0) return c;
+  }
+  return 0;
+}
+
+function parseVersion(raw: string | undefined): { core: string[]; pre: string[] } | undefined {
+  const s = (raw ?? "").trim().replace(/^v(?=\d)/i, "").split("+")[0]!;
+  if (s === "") return undefined;
+  const dash = s.indexOf("-");
+  const core = (dash === -1 ? s : s.slice(0, dash)).split(".").filter((x) => x !== "");
+  const pre = dash === -1 ? [] : s.slice(dash + 1).split(".").filter((x) => x !== "");
+  return { core, pre };
+}
+
+function compareSegment(a: string, b: string): number {
+  const na = /^\d+$/.test(a);
+  const nb = /^\d+$/.test(b);
+  if (na && nb) return Math.sign(Number(a) - Number(b));
+  // A number ranks below a word in a prerelease (semver's rule); elsewhere
+  // ("1.2a") the words compare as text.
+  if (na !== nb) return na ? -1 : 1;
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
  * Of several disabled installs of one page, the one to enable.
  *
  * The pool can hold two copies of a mod (an old and a new install, both
  * off). Enabling both hands Vortex a file conflict the curator never
  * asked for, so one is chosen: the highest version, else the first.
+ *
+ * `preferFile` is a {@link fileIdentity} — which FILE of the page is meant,
+ * when the caller knows. A page hosts a main file and its optional patches
+ * with their own version numbers; "the highest version on the page" can be
+ * a patch at 9.0 over the main file at 5.2. When copies of the preferred file
+ * exist, only they compete.
  */
-export function pickProvider(candidates: readonly CuratorMod[]): CuratorMod | undefined {
+export function pickProvider(candidates: readonly CuratorMod[], preferFile?: string): CuratorMod | undefined {
   if (candidates.length === 0) return undefined;
-  return [...candidates].sort((a, b) =>
-    (b.version ?? "").localeCompare(a.version ?? "", undefined, { numeric: true, sensitivity: "base" }),
-  )[0];
+  const sameFile = preferFile === undefined ? [] : candidates.filter((m) => fileIdentity(m) === preferFile);
+  const pool = sameFile.length > 0 ? sameFile : candidates;
+  // Stable: of equal versions, the first stays first.
+  return pool.reduce((best, m) => (compareVersions(m.version, best.version) > 0 ? m : best));
 }
 
 /**
