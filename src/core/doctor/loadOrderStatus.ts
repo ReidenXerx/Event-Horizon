@@ -327,8 +327,9 @@ export function describeLoadOrder(status: LoadOrderStatus): {
         tone: "warning",
         headline: `${curatorPluginsOff(n)}: enabled in the collection, not enabled or not installed here`,
         detail: [
-          `${status.missing.slice(0, 5).join(", ")}${n > 5 ? ` and ${(n - 5).toLocaleString()} more` : ""}.`,
-          `The ${status.owned.toLocaleString()} that are on load in the curator's order. Re-applying the order does not turn a plugin back on — enable it in Vortex if switching it off was not deliberate.`,
+          // No sentence period after the list: "B.esp." reads as a file name.
+          `Off: ${status.missing.slice(0, 5).join(", ")}${n > 5 ? ` and ${(n - 5).toLocaleString()} more` : ""}`,
+          `The other ${status.owned.toLocaleString()} load in the curator's order. Re-applying the order does not turn a plugin back on — enable it in Vortex if switching it off was not deliberate.`,
         ],
       };
     }
