@@ -77,9 +77,10 @@ describe("parseArgs", () => {
 });
 
 describe("refuseExtensionPage", () => {
-  it("refuses the section and the mod id Event Horizon itself is published under", () => {
+  it("refuses the section Event Horizon itself is published in, and only that section", () => {
     expect(() => refuseExtensionPage({ game: "site", modScopedId: "999" }, EXTENSION)).toThrow(/where Event Horizon itself is published/);
-    expect(() => refuseExtensionPage({ game: "fallout4", modScopedId: "2235" }, EXTENSION)).toThrow(/Event Horizon's own mod id/);
+    // Mod ids are per game: fallout4/2235 is somebody else's page, not the extension's.
+    expect(() => refuseExtensionPage({ game: "fallout4", modScopedId: "2235" }, EXTENSION)).not.toThrow();
     expect(() => refuseExtensionPage({ game: "fallout4", modScopedId: "108944" }, EXTENSION)).not.toThrow();
   });
 });

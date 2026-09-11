@@ -95,18 +95,17 @@ export function parseArgs(argv) {
 }
 
 /**
- * Event Horizon's own page is never a target: not the section it is published
- * in, and not its mod id. `extension` is package.json's "nexus" block.
+ * Event Horizon's own page is never a target: nothing is uploaded into the
+ * section it is published in. `extension` is package.json's "nexus" block.
+ * Mod ids are per game, so the same number under another game is a different
+ * page and is allowed.
  */
-export function refuseExtensionPage({ game, modScopedId }, extension) {
+export function refuseExtensionPage({ game }, extension) {
   if (game === "site" || (extension?.gameDomain !== undefined && game === extension.gameDomain)) {
     throw new UsageError(
       `--game ${game} is where Event Horizon itself is published (package.json "nexus": ${extension?.gameDomain ?? "site"}/mods/${extension?.modId ?? "?"}); ` +
         "a collection package belongs on its game's mod page",
     );
-  }
-  if (extension?.modId !== undefined && String(extension.modId) === String(modScopedId)) {
-    throw new UsageError(`--mod ${modScopedId} is Event Horizon's own mod id (package.json "nexus".modId); refusing, so a package cannot land on the extension's page`);
   }
 }
 
