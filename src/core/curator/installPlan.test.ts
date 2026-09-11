@@ -123,8 +123,8 @@ describe("planRequirementClosure", () => {
       knownGameIds: ["skyrimse"],
       fetch,
     });
-    // The cycle is broken at its deepest member, so B (depth 2) goes first.
-    expect(loop.steps.map((s) => s.name)).toEqual(["Loop B", "Loop A"]);
+    // A cycle installs as one block, its members in the order they were found.
+    expect(loop.steps.map((s) => s.name)).toEqual(["Loop A", "Loop B"]);
     expect(loop.truncated).toBe(false);
 
     // A dependant ABOVE a cycle still installs after the cycle: R → Top → A ⇄ B.
@@ -138,7 +138,35 @@ describe("planRequirementClosure", () => {
       knownGameIds: ["skyrimse"],
       fetch,
     });
-    expect(above.steps.map((s) => s.name)).toEqual(["Loop B", "Loop A", "Top"]);
+    expect(above.steps.map((s) => s.name)).toEqual(["Loop A", "Loop B", "Top"]);
+  });
+
+  it("installs a cycle before a chain that leads into it, however deep that chain is", async () => {
+    // root → A ⇄ B, and root → S → T → U → A. U is deeper than the cycle;
+    // releasing "the deepest leftover" installed U before the A it needs.
+    const probe = new Map<string, Partial<NexusModRequirements>>([
+      [makeModUid(1704, 100), { nexusRequirements: { totalCount: 1, nodes: [node(101, "B")] } }],
+      [makeModUid(1704, 101), { nexusRequirements: { totalCount: 1, nodes: [node(100, "A")] } }],
+      [makeModUid(1704, 200), { nexusRequirements: { totalCount: 1, nodes: [node(201, "T")] } }],
+      [makeModUid(1704, 201), { nexusRequirements: { totalCount: 1, nodes: [node(202, "U")] } }],
+      [makeModUid(1704, 202), { nexusRequirements: { totalCount: 1, nodes: [node(100, "A")] } }],
+    ]);
+    const plan = await planRequirementClosure({
+      rootName: "Root",
+      roots: [missing("A", 100), missing("S", 200)],
+      mods,
+      activeGame: "skyrimse",
+      games: GAMES,
+      toDomain: nexusDomainOf,
+      knownGameIds: ["skyrimse"],
+      fetch: async (uids) => Object.fromEntries(uids.map((u) => [u, probe.get(u)])),
+    });
+    const names = plan.steps.map((s) => s.name);
+    expect(names).toEqual(["A", "B", "U", "T", "S"]);
+    // Every page after everything it requires, outside the cycle.
+    expect(names.indexOf("U")).toBeGreaterThan(names.indexOf("A"));
+    expect(names.indexOf("T")).toBeGreaterThan(names.indexOf("U"));
+    expect(names.indexOf("S")).toBeGreaterThan(names.indexOf("T"));
   });
 
   it("walks the chain of a provider it will ENABLE, from the report it already has", async () => {

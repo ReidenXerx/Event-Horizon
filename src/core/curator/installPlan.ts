@@ -48,7 +48,8 @@ export type InstallPlan = {
   /**
    * Install order: a dependency before everything that lists it (a
    * topological order over the chain). Pages in a cycle — Nexus has them —
-   * are broken at the deepest member; no order is right for those.
+   * install together, in the order they were found: no order inside a cycle
+   * is right, but everything outside it still is.
    */
   steps: PlannedInstall[];
   /** In the pool but disabled: enabling is the whole fix (settled: enable, report). */
@@ -205,43 +206,89 @@ export async function planRequirementClosure(args: {
 }
 
 /**
- * Dependencies before dependants; ties and cycles in discovery order.
+ * Dependencies before dependants; ties in discovery order; a cycle as one
+ * block, its members in discovery order.
  *
- * Kahn's algorithm over "this page requires that page", restricted to pages
- * in the plan. Whatever is left when nothing has zero unmet dependencies is
- * a cycle: appended as discovered, and the preview says nothing about it
- * because there is no right order to say.
+ * The order is taken over the graph's strongly connected components (Tarjan),
+ * not its pages. A cycle is one component, so everything the cycle needs is
+ * installed before any of it, and everything that needs any member of the
+ * cycle after all of it. Breaking a stall at "the deepest leftover page"
+ * instead released the wrong page whenever a chain into the cycle was deeper
+ * than the cycle itself: root → A ⇄ B plus root → S → T → U → A installed U,
+ * which needs A, before A.
+ *
+ * The components are then ordered with Kahn's algorithm, always releasing
+ * the ready component discovered first, so the order is deterministic.
  */
 function topologicalOrder(steps: readonly PlannedInstall[], requires: ReadonlyMap<string, ReadonlySet<string>>): PlannedInstall[] {
-  const inPlan = new Set(steps.map((s) => s.key));
-  const unmet = new Map<string, number>();
-  const dependants = new Map<string, string[]>();
-  for (const s of steps) {
-    const deps = [...(requires.get(s.key) ?? [])].filter((k) => inPlan.has(k) && k !== s.key);
-    unmet.set(s.key, deps.length);
-    for (const d of deps) dependants.set(d, [...(dependants.get(d) ?? []), s.key]);
-  }
-  const out: PlannedInstall[] = [];
-  const done = new Set<string>();
-  const release = (s: PlannedInstall): void => {
-    done.add(s.key);
-    out.push(s);
-    for (const d of dependants.get(s.key) ?? []) unmet.set(d, (unmet.get(d) ?? 1) - 1);
-  };
-  while (done.size < steps.length) {
-    let progressed = false;
-    for (const s of steps) {
-      if (done.has(s.key) || (unmet.get(s.key) ?? 0) > 0) continue;
-      release(s);
-      progressed = true;
+  const indexOf = new Map(steps.map((s, i) => [s.key, i]));
+  const depsOf = (key: string): string[] =>
+    [...(requires.get(key) ?? [])].filter((k) => indexOf.has(k) && k !== key).sort((a, b) => indexOf.get(a)! - indexOf.get(b)!);
+
+  // ── Tarjan: component id per page. ──
+  const componentOf = new Map<string, number>();
+  const components: string[][] = [];
+  const low = new Map<string, number>();
+  const order = new Map<string, number>();
+  const stack: string[] = [];
+  const onStack = new Set<string>();
+  let counter = 0;
+  const visit = (key: string): void => {
+    order.set(key, counter);
+    low.set(key, counter);
+    counter += 1;
+    stack.push(key);
+    onStack.add(key);
+    for (const d of depsOf(key)) {
+      if (!order.has(d)) {
+        visit(d);
+        low.set(key, Math.min(low.get(key)!, low.get(d)!));
+      } else if (onStack.has(d)) {
+        low.set(key, Math.min(low.get(key)!, order.get(d)!));
+      }
     }
-    if (progressed) continue;
-    // A stall means a cycle. Everything left is either in it or above it,
-    // so releasing the DEEPEST leftover (the member furthest from the root)
-    // lets the rest resolve in order; only the cycle itself loses its.
-    const stuck = steps.filter((s) => !done.has(s.key));
-    const deepest = stuck.reduce((a, b) => (b.depth > a.depth ? b : a));
-    release(deepest);
+    if (low.get(key) === order.get(key)) {
+      const members: string[] = [];
+      for (;;) {
+        const top = stack.pop()!;
+        onStack.delete(top);
+        componentOf.set(top, components.length);
+        members.push(top);
+        if (top === key) break;
+      }
+      components.push(members.sort((a, b) => indexOf.get(a)! - indexOf.get(b)!));
+    }
+  };
+  for (const s of steps) if (!order.has(s.key)) visit(s.key);
+
+  // ── Kahn over the components, earliest-discovered ready component first. ──
+  const first = components.map((members) => indexOf.get(members[0]!)!);
+  const unmet = components.map(() => new Set<number>());
+  const dependants = components.map(() => new Set<number>());
+  components.forEach((members, c) => {
+    for (const m of members) {
+      for (const d of depsOf(m)) {
+        const dc = componentOf.get(d)!;
+        if (dc === c) continue;
+        unmet[c]!.add(dc);
+        dependants[dc]!.add(c);
+      }
+    }
+  });
+  const stepByKey = new Map(steps.map((s) => [s.key, s]));
+  const out: PlannedInstall[] = [];
+  const released = new Set<number>();
+  while (released.size < components.length) {
+    let next: number | undefined;
+    components.forEach((_, c) => {
+      if (released.has(c) || unmet[c]!.size > 0) return;
+      if (next === undefined || first[c]! < first[next]!) next = c;
+    });
+    // The condensation of any graph is acyclic, so something is always ready.
+    const c = next!;
+    released.add(c);
+    for (const key of components[c]!) out.push(stepByKey.get(key)!);
+    for (const d of dependants[c]!) unmet[d]!.delete(c);
   }
   return out;
 }
