@@ -32,6 +32,8 @@ import {
   DecisionsStep,
   DoneStep,
   InstallingStep,
+  LinkFetchingStep,
+  LinkManualStep,
   LoadingStep,
   PickStep,
   PreviewStep,
@@ -191,8 +193,26 @@ function InstallWizard(props: InstallPageProps): JSX.Element {
           <ConcurrentOpBanner self="install" />
           <PickStep
             onPick={(zipPath): void => session.pickFile(api, zipPath)}
+            onLink={(input): void => session.installFromLink(api, input)}
           />
         </>
+      );
+
+    case "link-fetching":
+      return (
+        <LinkFetchingStep
+          state={state}
+          onCancel={(): void => session.cancelLink()}
+        />
+      );
+
+    case "link-manual":
+      return (
+        <LinkManualStep
+          state={state}
+          onPickDownloaded={(): void => session.pickDownloadedFile(api)}
+          onBack={(): void => session.reset()}
+        />
       );
 
     case "loading":

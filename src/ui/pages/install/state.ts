@@ -98,8 +98,46 @@ export interface PreviewBundle {
   environment?: EnvironmentReport;
 }
 
+/** What "fetching a link" is doing right now. */
+export type LinkPhase =
+  /** Reading the mod page's file list. */
+  | "resolving"
+  /** Event Horizon is downloading the bytes itself. */
+  | "downloading"
+  /** Vortex's download manager has the file; waiting for it to land. */
+  | "waiting-for-vortex";
+
 export type WizardState =
   | { kind: "pick" }
+  /**
+   * A pasted link is being turned into a file on disk. `nexus` goes through
+   * Vortex's Nexus integration (Premium), `direct` is fetched by Event
+   * Horizon itself; both end in `pickFile` with the path, so everything
+   * after this state is the ordinary flow.
+   */
+  | {
+      kind: "link-fetching";
+      link: string;
+      source: "nexus" | "direct";
+      phase: LinkPhase;
+      fileName?: string;
+      received?: number;
+      total?: number;
+    }
+  /**
+   * Nexus will not hand this account a download link (no Premium, or not
+   * signed in), so the file page was opened in the browser and the user
+   * brings the file back by hand. The ordinary picker, with the file named.
+   */
+  | {
+      kind: "link-manual";
+      link: string;
+      pageUrl: string;
+      fileName: string;
+      size?: number;
+      version?: string;
+      why: string;
+    }
   | {
       kind: "loading";
       zipPath: string;
@@ -219,7 +257,24 @@ export type WizardAction =
   | { type: "install-progress"; progress: DriverProgress }
   | { type: "install-result"; result: InstallResult }
   | { type: "set-error"; error: FormattedError }
-  | { type: "reset" };
+  | { type: "reset" }
+  | { type: "link-start"; link: string; source: "nexus" | "direct" }
+  | {
+      type: "link-progress";
+      phase: LinkPhase;
+      fileName?: string;
+      received?: number;
+      total?: number;
+    }
+  | {
+      type: "link-manual";
+      link: string;
+      pageUrl: string;
+      fileName: string;
+      size?: number;
+      version?: string;
+      why: string;
+    };
 
 // ===========================================================================
 // Reducer
@@ -372,6 +427,28 @@ export function wizardReducer(
         bundle: state.bundle,
       };
     }
+    case "link-start":
+      return { kind: "link-fetching", link: action.link, source: action.source, phase: "resolving" };
+    case "link-progress": {
+      if (state.kind !== "link-fetching") return state;
+      return {
+        ...state,
+        phase: action.phase,
+        ...(action.fileName !== undefined ? { fileName: action.fileName } : {}),
+        ...(action.received !== undefined ? { received: action.received } : {}),
+        ...(action.total !== undefined ? { total: action.total } : {}),
+      };
+    }
+    case "link-manual":
+      return {
+        kind: "link-manual",
+        link: action.link,
+        pageUrl: action.pageUrl,
+        fileName: action.fileName,
+        ...(action.size !== undefined ? { size: action.size } : {}),
+        ...(action.version !== undefined ? { version: action.version } : {}),
+        why: action.why,
+      };
     case "set-error":
       return { kind: "error", error: action.error, previous: state };
     case "reset":

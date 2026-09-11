@@ -46,6 +46,8 @@ import {
   runLoadingPipeline,
   runLoadingPipelineWithReceipt,
 } from "./engine";
+import { fetchLink } from "./fetchLink";
+import { parseInstallLink } from "../../../core/installer/installLink";
 import type { ConflictChoice, OrphanChoice } from "../../../types/installDriver";
 import type { FomodReplayMode } from "../../../core/installer/fomodReplayMode";
 import { blocksInstall as autoDeployBlocks } from "../../../core/installer/autoDeploy";
@@ -207,6 +209,90 @@ class InstallSession {
   cancelLoading(): void {
     if (this.state.kind !== "loading") return;
     this.loadingController?.abort();
+  }
+
+  // ── Phase: pick → link-fetching → loading ─────────────────────────
+
+  /**
+   * User pasted a link instead of picking a file. Nexus mod pages go
+   * through Vortex's Nexus integration, direct links are fetched by Event
+   * Horizon; either way the outcome is a path handed to {@link pickFile},
+   * or a "download it yourself" screen when Nexus will not issue a link to
+   * this account. A bad link is reported without leaving the picker.
+   */
+  installFromLink(api: types.IExtensionApi, input: string): void {
+    const link = parseInstallLink(input);
+    if (link.kind === "invalid") {
+      this.failWith(new Error(link.why), {
+        title: "That link can't be used",
+        context: { step: "link", input: input.trim().slice(0, 200) },
+      });
+      return;
+    }
+    this.loadingController?.abort();
+    const controller = new AbortController();
+    this.loadingController = controller;
+    const trimmed = input.trim();
+    this.dispatch({ type: "link-start", link: trimmed, source: link.kind });
+    void (async (): Promise<void> => {
+      try {
+        const outcome = await fetchLink(api, link, controller.signal, {
+          onPhase: (phase, detail): void => {
+            if (this.loadingController !== controller) return;
+            this.dispatch({ type: "link-progress", phase, ...detail });
+          },
+        });
+        if (this.loadingController !== controller) return;
+        this.loadingController = undefined;
+        if (outcome.kind === "manual") {
+          this.dispatch({
+            type: "link-manual",
+            link: trimmed,
+            pageUrl: outcome.pageUrl,
+            fileName: outcome.fileName,
+            ...(outcome.size !== undefined ? { size: outcome.size } : {}),
+            ...(outcome.version !== undefined ? { version: outcome.version } : {}),
+            why: outcome.why,
+          });
+          return;
+        }
+        this.pickFile(api, outcome.zipPath);
+      } catch (err) {
+        if (this.loadingController !== controller) return;
+        this.loadingController = undefined;
+        if (isAbortError(err)) {
+          this.dispatch({ type: "reset" });
+          return;
+        }
+        this.failWith(err, {
+          title: "Couldn't fetch the collection",
+          context: { step: "link", link: trimmed.slice(0, 200) },
+        });
+      }
+    })();
+  }
+
+  /**
+   * Stop waiting for a link. A direct download is cut and its part kept
+   * for next time; a download Vortex is running is left to Vortex.
+   */
+  cancelLink(): void {
+    if (this.state.kind !== "link-fetching") return;
+    this.loadingController?.abort();
+  }
+
+  /** From the "download it yourself" screen: the ordinary picker, then the ordinary flow. */
+  pickDownloadedFile(api: types.IExtensionApi): void {
+    if (this.state.kind !== "link-manual") return;
+    void (async (): Promise<void> => {
+      try {
+        const { pickEhcollFile } = await import("../../../utils/utils");
+        const file = await pickEhcollFile(api);
+        if (file !== undefined) this.pickFile(api, file);
+      } catch (err) {
+        this.failWith(err, { title: "Couldn't open file picker", context: { step: "link-manual" } });
+      }
+    })();
   }
 
   // ── Phase: stale-receipt → resume loading ────────────────────────

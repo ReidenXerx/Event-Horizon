@@ -37,6 +37,8 @@ import {
   DecisionsStep,
   DoneStep,
   InstallingStep,
+  LinkFetchingStep,
+  LinkManualStep,
   LoadingStep,
   PickStep,
   PreviewStep,
@@ -1754,7 +1756,41 @@ describe("render", () => {
   });
 
   it("pick — the first step, and the drop zone", () => {
-    write("pick", React.createElement(PickStep, { onPick: () => undefined }));
+    write("pick", React.createElement(PickStep, { onPick: () => undefined, onLink: () => undefined }));
+  });
+
+  it("link — a pasted link being fetched, and the hand-off when Nexus will not issue one", () => {
+    write(
+      "link-fetching",
+      React.createElement(LinkFetchingStep, {
+        state: {
+          kind: "link-fetching",
+          link: "https://www.nexusmods.com/skyrimspecialedition/mods/191460",
+          source: "nexus",
+          phase: "waiting-for-vortex",
+          fileName: "meridia-panties-1.0.15.ehcoll",
+          received: 4_200_000_000,
+          total: 10_679_496_477,
+        },
+        onCancel: () => undefined,
+      }),
+    );
+    write(
+      "link-manual",
+      React.createElement(LinkManualStep, {
+        state: {
+          kind: "link-manual",
+          link: "https://www.nexusmods.com/fallout4/mods/108944",
+          pageUrl: "https://www.nexusmods.com/fallout4/mods/108944?tab=files&file_id=410973",
+          fileName: "ivy-panties-1.0.19.ehcoll",
+          size: 3_430_197_672,
+          version: "1.0.19",
+          why: "Nexus hands direct download links to Premium accounts only. Without one, download the file yourself from its page:",
+        },
+        onPickDownloaded: () => undefined,
+        onBack: () => undefined,
+      }),
+    );
   });
 
   it("loading — the hashing pass, which is what a user stares at", () => {

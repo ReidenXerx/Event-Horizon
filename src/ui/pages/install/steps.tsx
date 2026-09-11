@@ -30,7 +30,9 @@ import {
   Card,
   ChoiceCard,
   EventHorizonMark,
+  Field,
   HashingCard,
+  Input,
   Modal,
   Notice,
   Page,
@@ -174,6 +176,8 @@ function StepFrame(props: {
 
 export interface PickStepProps {
   onPick: (zipPath: string) => void;
+  /** A pasted link: a Nexus mod page, or a direct link to a .ehcoll. */
+  onLink?: (input: string) => void;
 }
 
 export function PickStep(props: PickStepProps): JSX.Element {
@@ -181,6 +185,11 @@ export function PickStep(props: PickStepProps): JSX.Element {
   const showToast = useToast();
   const api = useApi();
   const [isDragging, setDragging] = React.useState(false);
+  const [link, setLink] = React.useState("");
+  const submitLink = (): void => {
+    if (link.trim().length === 0 || props.onLink === undefined) return;
+    props.onLink(link);
+  };
   // Track nested dragenter/dragleave: child elements fire leave when
   // we cross internal boundaries, which would clear the highlight
   // even though the cursor is still over the drop zone.
@@ -292,6 +301,147 @@ export function PickStep(props: PickStepProps): JSX.Element {
           }}
         >
           Choose .ehcoll file...
+        </Button>
+      </div>
+      {props.onLink !== undefined && (
+        <Card className="eh-stack eh-stack--sm">
+          <Field
+            label="Or paste the collection's link"
+            hint="The Nexus page the curator sent you to, or a direct link to a .ehcoll file. Nexus downloads go through Vortex (Premium); a direct link is fetched here and can be resumed."
+          >
+            <Input
+              type="url"
+              className="eh-input--mono"
+              value={link}
+              placeholder="https://www.nexusmods.com/skyrimspecialedition/mods/191460"
+              onChange={(e): void => setLink(e.target.value)}
+              onKeyDown={(e): void => {
+                if (e.key === "Enter") submitLink();
+              }}
+            />
+          </Field>
+          <div className="eh-row eh-row--end">
+            <Button intent="primary" disabled={link.trim().length === 0} onClick={submitLink}>
+              Fetch the collection
+            </Button>
+          </div>
+        </Card>
+      )}
+    </StepFrame>
+  );
+}
+
+// ===========================================================================
+// 1b. LinkFetchingStep / LinkManualStep — "paste this link"
+// ===========================================================================
+
+const LINK_PHASE_LABELS: Record<Extract<WizardState, { kind: "link-fetching" }>["phase"], string> = {
+  resolving: "Reading the page's files",
+  downloading: "Downloading",
+  "waiting-for-vortex": "Vortex is downloading it",
+};
+
+export function LinkFetchingStep(props: {
+  state: Extract<WizardState, { kind: "link-fetching" }>;
+  onCancel: () => void;
+}): JSX.Element {
+  const { state } = props;
+  const ratio =
+    state.received !== undefined && state.total !== undefined && state.total > 0
+      ? Math.min(1, state.received / state.total)
+      : undefined;
+  const bytes =
+    state.received !== undefined
+      ? `${formatBytes(state.received)}${state.total !== undefined ? ` of ${formatBytes(state.total)}` : ""}`
+      : state.total !== undefined
+        ? formatBytes(state.total)
+        : undefined;
+  return (
+    <StepFrame
+      current="loading"
+      title="Fetching the collection..."
+      subtitle={
+        state.source === "nexus"
+          ? "The package is coming through Vortex's Nexus download. Nothing is installed until you have seen the plan."
+          : "The package is being downloaded by Event Horizon. If the connection drops, paste the link again and it continues from where it stopped."
+      }
+    >
+      <div className="eh-progress-panel">
+        <ProgressRing {...(ratio !== undefined ? { value: ratio } : {})} size={88} />
+        <div className="eh-fill eh-stack eh-stack--xs">
+          <strong className="eh-progress-panel__title">{LINK_PHASE_LABELS[state.phase]}</strong>
+          {state.fileName !== undefined && <span className="eh-mono">{state.fileName}</span>}
+          {bytes !== undefined && <span className="eh-secondary">{bytes}</span>}
+          <span className="eh-mono eh-secondary">{state.link}</span>
+        </div>
+        <Button intent="ghost" onClick={props.onCancel}>
+          Cancel
+        </Button>
+      </div>
+      {state.phase === "waiting-for-vortex" && (
+        <p className="eh-secondary">
+          Cancel stops the waiting here; the download itself continues in Vortex's Downloads tab, and the file can be
+          picked from there afterwards. Do not press Install on it in Vortex: it is a collection package, not a mod.
+        </p>
+      )}
+    </StepFrame>
+  );
+}
+
+export function LinkManualStep(props: {
+  state: Extract<WizardState, { kind: "link-manual" }>;
+  onPickDownloaded: () => void;
+  onBack: () => void;
+}): JSX.Element {
+  const { state } = props;
+  const [openFailed, setOpenFailed] = React.useState(false);
+  return (
+    <StepFrame
+      current="pick"
+      showStepper={false}
+      title="Download the package yourself"
+      subtitle="The link was read and the file found. Nexus will not issue this account a direct download, so the last step is yours."
+    >
+      <Callout tone="info" title={state.fileName}>
+        <p>{state.why}</p>
+        <div className="eh-row">
+          <span className="eh-mono eh-fill">{state.pageUrl}</span>
+          <Button
+            intent="ghost"
+            onClick={(): void => {
+              void (async (): Promise<void> => {
+                const outcome = await openExternalUrl(state.pageUrl);
+                setOpenFailed(outcome.kind === "failed");
+              })();
+            }}
+          >
+            Open the page
+          </Button>
+        </div>
+        {openFailed && (
+          <p className="eh-secondary">
+            Nothing opened. Copy the address above into your browser.
+          </p>
+        )}
+        <ul className="eh-stack eh-stack--xs">
+          <li>
+            On the page, choose <strong>Manual download</strong>, then <strong>Slow download</strong>. Not "Mod manager
+            download": that would hand the package to Vortex as if it were a mod.
+          </li>
+          <li>
+            Save it anywhere
+            {state.size !== undefined ? ` (${formatBytes(state.size)})` : ""}
+            {state.version !== undefined ? `, revision ${state.version}` : ""}.
+          </li>
+          <li>Come back here and pick the file. Event Horizon takes it from there.</li>
+        </ul>
+      </Callout>
+      <div className="eh-row eh-row--end">
+        <Button intent="ghost" onClick={props.onBack}>
+          Back
+        </Button>
+        <Button intent="primary" onClick={props.onPickDownloaded}>
+          Pick the downloaded file...
         </Button>
       </div>
     </StepFrame>

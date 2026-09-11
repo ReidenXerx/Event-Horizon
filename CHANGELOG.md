@@ -8,7 +8,21 @@ Vortex ignores everything after the dash when it decides whether an extension ha
 could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
-(7 September 2026), then 0.1.151 and 0.1.152.
+(7 September 2026), then 0.1.151, 0.1.152 and 0.1.153.
+
+## [0.1.153] — 2026-09-11
+
+A collection can be installed from its link.
+
+### Install a collection
+- **Paste the link.** Under the drop zone the Install page now takes a link: the Nexus mod page a collection lives on,
+  or a direct link to a .ehcoll file. A Nexus page's files are read and the package found. With Nexus Premium, Vortex
+  downloads it — download only, it is never installed as a mod — and the plan opens the moment it lands. Without
+  Premium, the file's page opens in your browser with the exact file named, and you pick it once it is down.
+- **A direct link is fetched by Event Horizon itself**, into its own downloads folder. If the connection drops, paste
+  the link again and it continues from where it stopped; the finished file's SHA-256 goes in the log.
+- A link for a different game says which game to switch Vortex to. A page with several packages asks for the specific
+  file's link rather than guessing.
 
 ## [0.1.152] — 2026-09-11
 
