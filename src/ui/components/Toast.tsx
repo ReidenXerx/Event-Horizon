@@ -12,16 +12,20 @@
  * or a confirmation Modal instead.
  *
  * Two behaviours a user notices when they are missing:
- *   - The timer PAUSES while the pointer is over a toast. A 4-second toast
- *     with a path in it cannot be read in 4 seconds; moving the mouse to it
- *     is the universal "wait, let me read that", and it used to vanish
- *     under the cursor.
+ *   - The timer PAUSES while the pointer is over a toast, or keyboard focus
+ *     is inside it. A 4-second toast with a path in it cannot be read in 4
+ *     seconds; moving the mouse to it is the universal "wait, let me read
+ *     that", and it used to vanish under the cursor. It resumes when both
+ *     have left — see toastModel.ts for the clock, and for the version that
+ *     never resumed at all.
  *   - A `danger` toast announces assertively (`role="alert"`); the rest are
  *     polite. Screen readers otherwise read "Receipt saved" and "Install
  *     failed" in the same voice.
  */
 
 import * as React from "react";
+
+import { createToastTimers, type ToastHold, type ToastTimers } from "./toastModel";
 
 export type ToastIntent = "success" | "info" | "warning" | "danger";
 
@@ -83,13 +87,6 @@ export interface ToastProviderProps {
   children: React.ReactNode;
 }
 
-interface Timer {
-  handle: number;
-  /** When the timer will fire, so a pause can compute what is left. */
-  due: number;
-  remaining: number;
-}
-
 export function ToastProvider(props: ToastProviderProps): JSX.Element {
   const [toasts, setToasts] = React.useState<ToastInstance[]>([]);
   /**
@@ -104,61 +101,36 @@ export function ToastProvider(props: ToastProviderProps): JSX.Element {
    */
   const toastsRef = React.useRef<ToastInstance[]>([]);
   const counterRef = React.useRef(0);
-  const timersRef = React.useRef<Map<number, Timer>>(new Map());
 
   const commit = React.useCallback((next: ToastInstance[]): void => {
     toastsRef.current = next;
     setToasts(next);
   }, []);
 
-  const clearTimer = React.useCallback((id: number): void => {
-    const t = timersRef.current.get(id);
-    if (t !== undefined) {
-      window.clearTimeout(t.handle);
-      timersRef.current.delete(id);
-    }
-  }, []);
+  /** Read through a ref so the timers can be created once, before `dismiss` exists. */
+  const expireRef = React.useRef<(id: number) => void>(() => undefined);
+  const timersRef = React.useRef<ToastTimers | null>(null);
+  if (timersRef.current === null) {
+    timersRef.current = createToastTimers((id) => expireRef.current(id));
+  }
+  const timers = timersRef.current;
 
   const dismiss = React.useCallback(
     (id: number): void => {
       commit(toastsRef.current.filter((t) => t.id !== id));
-      clearTimer(id);
+      timers.forget(id);
     },
-    [clearTimer, commit],
+    [commit, timers],
   );
+  expireRef.current = dismiss;
 
-  const arm = React.useCallback(
-    (id: number, ms: number): void => {
-      const paused = timersRef.current.get(id);
-      if (paused !== undefined && paused.handle === -1) {
-        // The pointer is over it: extend what resumes, do not restart the
-        // clock under the cursor.
-        paused.remaining = Math.max(paused.remaining, ms);
-        return;
-      }
-      clearTimer(id);
-      if (ms <= 0) return;
-      const handle = window.setTimeout(() => dismiss(id), ms);
-      timersRef.current.set(id, { handle, due: Date.now() + ms, remaining: ms });
-    },
-    [clearTimer, dismiss],
+  const hold = React.useCallback(
+    (id: number, why: ToastHold): void => timers.hold(id, why),
+    [timers],
   );
-
-  const pause = React.useCallback((id: number): void => {
-    const t = timersRef.current.get(id);
-    if (t === undefined) return;
-    window.clearTimeout(t.handle);
-    t.remaining = Math.max(500, t.due - Date.now());
-    t.handle = -1;
-  }, []);
-
-  const resume = React.useCallback(
-    (id: number): void => {
-      const t = timersRef.current.get(id);
-      if (t === undefined || t.handle !== -1) return;
-      arm(id, t.remaining);
-    },
-    [arm],
+  const release = React.useCallback(
+    (id: number, why: ToastHold): void => timers.release(id, why),
+    [timers],
   );
 
   const show = React.useCallback(
@@ -169,7 +141,7 @@ export function ToastProvider(props: ToastProviderProps): JSX.Element {
       // Dedupe: an identical toast already on screen is kept and re-armed.
       const existing = toastsRef.current.find((t) => t.key === key);
       if (existing !== undefined) {
-        arm(existing.id, ttl);
+        timers.arm(existing.id, ttl);
         return existing.id;
       }
 
@@ -181,23 +153,17 @@ export function ToastProvider(props: ToastProviderProps): JSX.Element {
       // error that matters belongs in the ErrorReportModal, not here.
       if (next.length > MAX_STACK) {
         const overflow = next.length - MAX_STACK;
-        for (let i = 0; i < overflow; i++) clearTimer(next[i]!.id);
+        for (let i = 0; i < overflow; i++) timers.forget(next[i]!.id);
         next = next.slice(overflow);
       }
       commit(next);
-      arm(id, ttl);
+      timers.arm(id, ttl);
       return id;
     },
-    [arm, clearTimer, commit],
+    [commit, timers],
   );
 
-  React.useEffect(() => {
-    const timers = timersRef.current;
-    return (): void => {
-      for (const t of timers.values()) window.clearTimeout(t.handle);
-      timers.clear();
-    };
-  }, []);
+  React.useEffect(() => (): void => timers.dispose(), [timers]);
 
   const value = React.useMemo<ToastContextValue>(
     () => ({ show, dismiss }),
@@ -207,7 +173,7 @@ export function ToastProvider(props: ToastProviderProps): JSX.Element {
   return (
     <ToastContext.Provider value={value}>
       {props.children}
-      <ToastHost toasts={toasts} onDismiss={dismiss} onPause={pause} onResume={resume} />
+      <ToastHost toasts={toasts} onDismiss={dismiss} onHold={hold} onRelease={release} />
     </ToastContext.Provider>
   );
 }
@@ -245,8 +211,8 @@ function nodeToText(node: React.ReactNode): string {
 function ToastHost(props: {
   toasts: ToastInstance[];
   onDismiss: (id: number) => void;
-  onPause: (id: number) => void;
-  onResume: (id: number) => void;
+  onHold: (id: number, why: ToastHold) => void;
+  onRelease: (id: number, why: ToastHold) => void;
 }): JSX.Element {
   return (
     <div className="eh-toast-host" aria-live="polite" role="region" aria-label="Notifications">
@@ -255,8 +221,8 @@ function ToastHost(props: {
           key={toast.id}
           toast={toast}
           onDismiss={(): void => props.onDismiss(toast.id)}
-          onPause={(): void => props.onPause(toast.id)}
-          onResume={(): void => props.onResume(toast.id)}
+          onHold={(why): void => props.onHold(toast.id, why)}
+          onRelease={(why): void => props.onRelease(toast.id, why)}
         />
       ))}
     </div>
@@ -266,20 +232,26 @@ function ToastHost(props: {
 function ToastCard(props: {
   toast: ToastInstance;
   onDismiss: () => void;
-  onPause: () => void;
-  onResume: () => void;
+  onHold: (why: ToastHold) => void;
+  onRelease: (why: ToastHold) => void;
 }): JSX.Element {
-  const { toast, onDismiss } = props;
+  const { toast, onDismiss, onHold, onRelease } = props;
   const intent = toast.intent ?? "info";
 
   return (
     <div
       className={`eh-toast eh-toast--${intent}`}
       role={intent === "danger" ? "alert" : "status"}
-      onMouseEnter={props.onPause}
-      onMouseLeave={props.onResume}
-      onFocus={props.onPause}
-      onBlur={props.onResume}
+      onMouseEnter={(): void => onHold("hover")}
+      onMouseLeave={(): void => onRelease("hover")}
+      onFocus={(): void => onHold("focus")}
+      onBlur={(e): void => {
+        // Focus moving from the action button to the close button is still
+        // inside the toast; only focus leaving it releases the hold.
+        const to = e.relatedTarget as Node | null;
+        if (to !== null && e.currentTarget.contains(to)) return;
+        onRelease("focus");
+      }}
     >
       <div className="eh-fill">
         {toast.title !== undefined && <div className="eh-toast__title">{toast.title}</div>}
