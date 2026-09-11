@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-build
-description: "Skill for the Build area of Event-Horizon. 238 symbols across 41 files."
+description: "Skill for the Build area of Event-Horizon. 244 symbols across 40 files."
 ---
 
 # Build
 
-238 symbols | 41 files | Cohesion: 70%
+244 symbols | 40 files | Cohesion: 71%
 
 ## When to Use
 
@@ -18,10 +18,10 @@ description: "Skill for the Build area of Event-Horizon. 238 symbols across 41 f
 | File | Symbols |
 |------|---------|
 | `src/ui/pages/build/buildSession.ts` | queuePosition, isAbortError, _runBuild, begin, discardDraft (+26) |
-| `src/ui/pages/build/engine.ts` | BuildRefusedError, BundleResolutionError, applyPostProcessedDeclarations, buildOutputFileName, collectMirrorPayload (+25) |
-| `src/ui/pages/build/BuildPage.tsx` | handle, handleDiscardDraft, BuildRulesScopeSummary, DistributionHint, DonePanel (+19) |
+| `src/ui/pages/build/engine.ts` | BuildRefusedError, BundleResolutionError, applyPostProcessedDeclarations, buildOutputFileName, collectMirrorPayload (+24) |
+| `src/ui/pages/build/BuildPage.tsx` | handle, handleDiscardDraft, handleChange, handleDismissDraftBanner, BuildRulesScopeSummary (+22) |
 | `src/ui/pages/build/buildSessionRegistry.ts` | BuildSessionRegistry, getBuildSessionRegistry, ensure, get, makeHooks (+13) |
-| `src/ui/pages/build/BuildDashboard.tsx` | slugsInUse, registry, handleCleanupUnbuilt, handleDeletePublished, handleDiscardDraft (+12) |
+| `src/ui/pages/build/BuildDashboard.tsx` | slugsInUse, registry, DetailRow, PublishedDetailsPanel, formatBytes (+12) |
 | `src/ui/pages/build/buildDiff.test.ts` | findPackages, findPackages, findPackages, findPackages, findPackages (+9) |
 | `src/core/build/nexusAvailability.ts` | categoryOf, checkNexusAvailability, classifyFile, currentMainFile, fileIdOf (+6) |
 | `src/core/draftStorage.ts` | deleteDraft, getAppDataPath, getDraftPath, isPlainObject, loadDraft (+4) |
@@ -75,8 +75,8 @@ Start here when exploring this area:
 | `OnRecovered → GetVortexUserDataPath` | cross_community | 10 |
 | `WriteEnvironmentSnapshot → GetVortexUserDataPath` | cross_community | 9 |
 | `HandleCleanupUnbuilt → GetVortexUserDataPath` | cross_community | 9 |
-| `Handle → GetVortexUserDataPath` | cross_community | 9 |
 | `RunEnvironmentGate → Notify` | cross_community | 8 |
+| `PublishedDetailsPanel → Truncate` | cross_community | 8 |
 
 ## How to Explore
 

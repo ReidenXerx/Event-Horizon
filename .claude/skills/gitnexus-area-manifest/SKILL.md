@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-manifest
-description: "Skill for the Manifest area of Event-Horizon. 515 symbols across 131 files."
+description: "Skill for the Manifest area of Event-Horizon. 529 symbols across 139 files."
 ---
 
 # Manifest
 
-515 symbols | 131 files | Cohesion: 74%
+529 symbols | 139 files | Cohesion: 74%
 
 ## When to Use
 
@@ -18,15 +18,15 @@ description: "Skill for the Manifest area of Event-Horizon. 515 symbols across 1
 | File | Symbols |
 |------|---------|
 | `src/core/manifest/parseManifest.ts` | ParseManifestError, describe, expectArray, expectBoolean, expectEnum (+43) |
-| `src/core/manifest/collectionConfig.ts` | reconcileExternalModsConfig, isUuid, listNeverBuiltConfigs, listPublishedCollections, parseAndValidate (+14) |
-| `src/core/manifest/packageZip.ts` | describeBytes, packageEhcoll, checkAbort, prepareStagingDir, runSevenZipAdd (+14) |
-| `src/core/manifest/buildManifest.ts` | toPosixPath, buildExternalMod, buildModEntry, buildModInstallSpec, buildModInstallState (+12) |
+| `src/core/manifest/packageZip.ts` | isAbortLikeError, describeBytes, packageEhcoll, checkAbort, prepareStagingDir (+14) |
+| `src/core/manifest/collectionConfig.ts` | reconcileExternalModsConfig, createDefaultConfig, getCollectionConfigPath, loadOrCreateCollectionConfig, saveCollectionConfig (+14) |
+| `src/core/manifest/buildManifest.ts` | buildExternalMod, buildModEntry, buildModInstallSpec, buildModInstallState, buildNexusMod (+12) |
 | `src/core/manifest/readZip.ts` | ZipReadError, extractZipEntryToFile, findDataOffset, findEntry, findZip64Extra (+11) |
 | `src/core/resolver/userState.ts` | buildSuggestedProfileName, buildUserSideState, judgeResumeCandidate, lookupProfile, pickInstallTarget (+10) |
 | `src/core/manifest/externalHints.ts` | countBy, downloadsFromState, modsFromState, asMode, collectExternalHints (+8) |
 | `src/core/manifest/readEhcoll.ts` | crossCheckBundled, prepareStagingDir, readEhcoll, safeRmDir, ReadEhcollError (+7) |
+| `src/core/manifest/runSelfChecks.ts` | recoverArchive, describeDivergedMods, makeReadEntry, runSelfChecks, divergenceFingerprint (+5) |
 | `src/core/manifest/parseModuleConfig.ts` | collectPluginStateDependencies, walk, decodeModuleConfig, parseConditionals, parseFiles (+5) |
-| `src/core/manifest/sevenZip.ts` | assertOk, cancelOnAbort, sevenZipAdd, sevenZipExtractFull, sevenZipList (+5) |
 
 ## Entry Points
 
@@ -42,10 +42,9 @@ Start here when exploring this area:
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `AbortError` | Class | `src/utils/abortError.ts` | 22 |
 | `ParseManifestError` | Class | `src/core/manifest/parseManifest.ts` | 123 |
 | `ZipReadError` | Class | `src/core/manifest/readZip.ts` | 77 |
-| `BuildManifestError` | Class | `src/core/manifest/buildManifest.ts` | 256 |
+| `BuildManifestError` | Class | `src/core/manifest/buildManifest.ts` | 262 |
 | `CollectionConfigError` | Class | `src/core/manifest/collectionConfig.ts` | 290 |
 | `PackageEhcollError` | Class | `src/core/manifest/packageZip.ts` | 172 |
 | `ReadEhcollError` | Class | `src/core/manifest/readEhcoll.ts` | 131 |
@@ -57,11 +56,12 @@ Start here when exploring this area:
 | `enrichModsWithArchiveHashes` | Function | `src/core/archiveHashing.ts` | 184 |
 | `hashFileSha256` | Function | `src/core/archiveHashing.ts` | 39 |
 | `cleanup` | Function | `src/core/archiveHashing.ts` | 59 |
-| `onAbort` | Function | `src/core/archiveHashing.ts` | 51 |
 | `recoverMissingArchives` | Function | `src/core/archiveRecovery.ts` | 248 |
 | `discoveredStore` | Function | `src/core/comparePlugins.ts` | 160 |
 | `exportPluginsDiffReport` | Function | `src/core/comparePlugins.ts` | 371 |
 | `liveStagingShapes` | Function | `src/core/curator/liveStagingShapes.ts` | 41 |
+| `lightFlagTargets` | Function | `src/core/curator/pluginView.ts` | 38 |
+| `key` | Function | `src/core/curator/pluginView.ts` | 41 |
 
 ## Execution Flows
 

@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-curator
-description: "Skill for the Curator area of Event-Horizon. 458 symbols across 109 files."
+description: "Skill for the Curator area of Event-Horizon. 567 symbols across 131 files."
 ---
 
 # Curator
 
-458 symbols | 109 files | Cohesion: 77%
+567 symbols | 131 files | Cohesion: 80%
 
 ## When to Use
 
@@ -17,16 +17,16 @@ description: "Skill for the Curator area of Event-Horizon. 458 symbols across 10
 
 | File | Symbols |
 |------|---------|
-| `src/ui/pages/curator/useCuratorActions.ts` | removeMod, openPageFor, start, refreshUpdates, removeMods (+33) |
-| `src/ui/pages/curator/CuratorPage.tsx` | CuratorBody, onSelect, setNote, toggleView, CuratorPage (+28) |
-| `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildWizard, BuildingPanel, DecisionsGate, DraftRestoredBanner (+19) |
-| `src/core/curator/requirements.ts` | dependantsOf, disabledProvidersFor, fetchRequirements, pickProvider, parseGameList (+17) |
+| `src/ui/pages/curator/useCuratorActions.ts` | num, useCuratorActions, removeMod, askThree, disableWithDependants (+38) |
+| `src/ui/pages/curator/CuratorPage.tsx` | CuratorBody, onSelect, setNote, toggleView, CuratorPage (+29) |
+| `src/core/curator/requirements.ts` | dependantClosure, dependantsOf, describeEnableQuestion, list, losesALine (+28) |
+| `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildDiffCard, BuildWizard, BuildingPanel, DecisionsGate (+18) |
+| `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, DecisionsStep, DoneStep, ExternalDownloadGuide (+18) |
 | `src/ui/pages/curator/DiskCleanupView.tsx` | DiskCleanupView, freedByRetiring, run, num, render (+13) |
-| `src/ui/pages/install/steps.tsx` | ConfirmStep, DoneStep, ExternalDownloadGuide, FomodModeModal, LoadingStep (+8) |
 | `src/core/curator/cleanupPlan.ts` | archivesFreedByRemoval, cleanupSubset, describeEvidence, formatSize, findSupersededMods (+7) |
+| `src/ui/pages/CollectionsPage.tsx` | CollectionsList, handleContinueInstall, refresh, FailedAttempts, InterruptedInstalls (+7) |
 | `src/ui/pages/curator/PluginsView.tsx` | PluginsView, render, render, render, num (+7) |
-| `src/core/curator/profileActions.ts` | identityCandidates, findDuplicates, findEndorsable, findFrozen, summarizeProfile (+7) |
-| `src/ui/components/Field.tsx` | Checkbox, Chip, ChoiceCard, ChoiceControl, Field (+5) |
+| `src/core/curator/profileActions.ts` | findDuplicates, findEndorsable, findFrozen, findManualUpdates, findUpdatable (+7) |
 
 ## Entry Points
 
@@ -36,32 +36,32 @@ Start here when exploring this area:
 - **`cleanupSubset`** (Function) — `src/core/curator/cleanupPlan.ts:521`
 - **`describeEvidence`** (Function) — `src/core/curator/cleanupPlan.ts:274`
 - **`formatSize`** (Function) — `src/core/curator/cleanupPlan.ts:475`
-- **`describeMastersCell`** (Function) — `src/core/curator/pluginView.ts:167`
+- **`describeMastersCell`** (Function) — `src/core/curator/pluginView.ts:223`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `UpdateTimeout` | Class | `src/core/curator/updateOneMod.ts` | 74 |
 | `CannotReinstall` | Class | `src/core/curator/reinstallMod.ts` | 45 |
+| `UpdateTimeout` | Class | `src/core/curator/updateOneMod.ts` | 96 |
 | `archivesFreedByRemoval` | Function | `src/core/curator/cleanupPlan.ts` | 509 |
 | `cleanupSubset` | Function | `src/core/curator/cleanupPlan.ts` | 521 |
 | `describeEvidence` | Function | `src/core/curator/cleanupPlan.ts` | 274 |
 | `formatSize` | Function | `src/core/curator/cleanupPlan.ts` | 475 |
-| `describeMastersCell` | Function | `src/core/curator/pluginView.ts` | 167 |
-| `describePluginKind` | Function | `src/core/curator/pluginView.ts` | 177 |
+| `describeMastersCell` | Function | `src/core/curator/pluginView.ts` | 223 |
+| `describePluginKind` | Function | `src/core/curator/pluginView.ts` | 233 |
 | `describeProfileDrift` | Function | `src/core/curator/profileDrift.ts` | 106 |
 | `isProfileUnmoved` | Function | `src/core/curator/profileDrift.ts` | 90 |
+| `doctorLightFlagBaseline` | Function | `src/core/doctor/health.ts` | 188 |
+| `overallHealth` | Function | `src/core/doctor/health.ts` | 861 |
+| `canReapply` | Function | `src/core/doctor/loadOrderStatus.ts` | 254 |
+| `getDraftsRoot` | Function | `src/core/draftStorage.ts` | 122 |
+| `listDrafts` | Function | `src/core/draftStorage.ts` | 163 |
 | `describeInstallAttempt` | Function | `src/core/installer/attemptRecord.ts` | 231 |
 | `describeFomodModes` | Function | `src/core/installer/fomodReplayMode.ts` | 78 |
 | `s` | Function | `src/core/installer/fomodReplayMode.ts` | 84 |
 | `mustAskReplayMode` | Function | `src/core/installer/fomodReplayMode.ts` | 183 |
 | `countKinds` | Function | `src/core/manifest/unexplainedFiles.ts` | 175 |
-| `describeUnexplainedFile` | Function | `src/core/manifest/unexplainedFiles.ts` | 153 |
-| `formatBytes` | Function | `src/core/manifest/unexplainedFiles.ts` | 139 |
-| `listModDiffFiles` | Function | `src/core/modDiffStorage.ts` | 60 |
-| `readModDiffReport` | Function | `src/core/modDiffStorage.ts` | 95 |
-| `listPluginDiffFiles` | Function | `src/core/pluginDiffStorage.ts` | 60 |
 
 ## Execution Flows
 

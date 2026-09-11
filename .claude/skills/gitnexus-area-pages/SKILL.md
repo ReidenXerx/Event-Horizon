@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-pages
-description: "Skill for the Pages area of Event-Horizon. 29 symbols across 11 files."
+description: "Skill for the Pages area of Event-Horizon. 28 symbols across 10 files."
 ---
 
 # Pages
 
-29 symbols | 11 files | Cohesion: 74%
+28 symbols | 10 files | Cohesion: 74%
 
 ## When to Use
 
@@ -25,8 +25,8 @@ description: "Skill for the Pages area of Event-Horizon. 29 symbols across 11 fi
 | `src/ui/pages/CollectionsPage.tsx` | CollectionsPage |
 | `src/ui/pages/HomePage.tsx` | HomePage |
 | `src/ui/pages/build/BuildPage.tsx` | BuildPage |
-| `src/ui/pages/doctor/DoctorPage.tsx` | DoctorPage |
 | `src/ui/pages/install/InstallPage.tsx` | InstallPage |
+| `src/ui/components/DiffSectionBlock.tsx` | DiffSectionBlock |
 
 ## Entry Points
 
@@ -48,8 +48,7 @@ Start here when exploring this area:
 | `ModDiffsPage` | Function | `src/ui/pages/ModDiffsPage.tsx` | 67 |
 | `PluginDiffsPage` | Function | `src/ui/pages/PluginDiffsPage.tsx` | 53 |
 | `BuildPage` | Function | `src/ui/pages/build/BuildPage.tsx` | 139 |
-| `DoctorPage` | Function | `src/ui/pages/doctor/DoctorPage.tsx` | 522 |
-| `InstallPage` | Function | `src/ui/pages/install/InstallPage.tsx` | 50 |
+| `InstallPage` | Function | `src/ui/pages/install/InstallPage.tsx` | 53 |
 | `DiffSectionBlock` | Function | `src/ui/components/DiffSectionBlock.tsx` | 33 |
 | `AppShell` | Function | `src/ui/EventHorizonMainPage.tsx` | 88 |
 | `NavBar` | Function | `src/ui/EventHorizonMainPage.tsx` | 113 |
@@ -62,6 +61,7 @@ Start here when exploring this area:
 | `partitionDiffs` | Function | `src/ui/pages/ModDiffsPage.tsx` | 424 |
 | `MatchedModList` | Function | `src/ui/pages/ModDiffsPage.tsx` | 528 |
 | `ModEntryList` | Function | `src/ui/pages/ModDiffsPage.tsx` | 374 |
+| `ReportView` | Function | `src/ui/pages/ModDiffsPage.tsx` | 255 |
 
 ## Execution Flows
 

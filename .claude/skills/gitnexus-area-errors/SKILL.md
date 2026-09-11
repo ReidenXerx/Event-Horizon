@@ -62,14 +62,14 @@ Start here when exploring this area:
 |------|------|-------|
 | `OnError → ToPosix` | cross_community | 7 |
 | `OnRejection → ToPosix` | cross_community | 7 |
+| `InstallFromLink → ToPosix` | cross_community | 7 |
 | `OnError → GuessGenericHints` | cross_community | 6 |
 | `OnError → GuessGenericTitle` | cross_community | 6 |
 | `OnError → CountProblems` | cross_community | 6 |
 | `OnRejection → GuessGenericHints` | cross_community | 6 |
 | `OnRejection → GuessGenericTitle` | cross_community | 6 |
 | `OnRejection → CountProblems` | cross_community | 6 |
-| `OnError → StackOf` | cross_community | 5 |
-| `OnError → ManifestHints` | cross_community | 5 |
+| `InstallFromLink → GuessGenericHints` | cross_community | 6 |
 
 ## How to Explore
 

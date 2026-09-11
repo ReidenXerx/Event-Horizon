@@ -1,86 +1,86 @@
 ---
 name: gitnexus-area-doctor
-description: "Skill for the Doctor area of Event-Horizon. 52 symbols across 16 files."
+description: "Skill for the Doctor area of Event-Horizon. 70 symbols across 16 files."
 ---
 
 # Doctor
 
-52 symbols | 16 files | Cohesion: 76%
+70 symbols | 16 files | Cohesion: 76%
 
 ## When to Use
 
 - Working with code in `src/`
-- Understanding how readPluginList, healingBlockedReason, assessLoadOrder work
+- Understanding how livePluginList, readPluginList, activeContextFromState work
 - Modifying doctor-related functionality
 
 ## Key Files
 
 | File | Symbols |
 |------|---------|
-| `src/core/doctor/loadOrderStatus.ts` | assessLoadOrder, currentOrderFromState, describeLoadOrder, driftSignature, key (+2) |
-| `src/core/doctor/loadOrderWatcher.ts` | activeGameIdOf, assessActiveGame, baselineOf, latestReceiptWithOrder, startLoadOrderWatcher (+2) |
-| `src/core/doctor/health.ts` | healingBlockedReason, countCheck, detailList, evaluateHealth, overallHealth |
+| `src/core/doctor/loadOrderStatus.ts` | activeContextFromState, assessReceiptOrder, baselineOf, currentOrderFromState, installedAtMs (+14) |
+| `src/core/doctor/loadOrderWatcher.ts` | assessActiveOrder, readReceipts, reapplyOwned, startLoadOrderWatcher, dismiss (+6) |
+| `src/core/doctor/loadOrderWatcher.test.ts` | on, receipt, on, fire, reorder (+1) |
+| `src/core/doctor/health.ts` | countCheck, detailList, evaluateHealth, healingBlockedReason, assessObservedLoadOrder |
 | `src/core/doctor/gather.ts` | countModRules, gatherObservations, readEnabledModIds, readInstalledModIds, readProfileIds |
-| `src/ui/pages/doctor/DoctorPage.tsx` | CollectionDoctor, toHealthView, heal, unavailableHeal |
-| `src/ui/pages/doctor/DoctorPanel.tsx` | DoctorPanel, VerdictRing, rank, textToneClass |
 | `src/core/doctor/health.test.ts` | drifted, observations, healthy, on |
-| `src/core/doctor/runHeal.ts` | healImpl, resolveModMaps, runHeal |
+| `src/ui/pages/doctor/LoadOrderBadge.test.ts` | on, receipt, getState, stateOn |
 | `src/ui/pages/doctor/EnvironmentTools.tsx` | saveLogs, saveSnapshot, formatBytes |
-| `src/core/doctor/heal.ts` | describeHeal, healNeedsManifest |
+| `src/core/curator/pluginPool.ts` | livePluginList, readPluginList |
+| `src/ui/pages/doctor/LoadOrderBadge.tsx` | status, badgePill |
 
 ## Entry Points
 
 Start here when exploring this area:
 
+- **`livePluginList`** (Function) — `src/core/curator/pluginPool.ts:95`
 - **`readPluginList`** (Function) — `src/core/curator/pluginPool.ts:51`
-- **`healingBlockedReason`** (Function) — `src/core/doctor/health.ts:790`
-- **`assessLoadOrder`** (Function) — `src/core/doctor/loadOrderStatus.ts:60`
-- **`currentOrderFromState`** (Function) — `src/core/doctor/loadOrderStatus.ts:45`
-- **`describeLoadOrder`** (Function) — `src/core/doctor/loadOrderStatus.ts:92`
+- **`activeContextFromState`** (Function) — `src/core/doctor/loadOrderStatus.ts:95`
+- **`assessReceiptOrder`** (Function) — `src/core/doctor/loadOrderStatus.ts:232`
+- **`baselineOf`** (Function) — `src/core/doctor/loadOrderStatus.ts:110`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
+| `livePluginList` | Function | `src/core/curator/pluginPool.ts` | 95 |
 | `readPluginList` | Function | `src/core/curator/pluginPool.ts` | 51 |
-| `healingBlockedReason` | Function | `src/core/doctor/health.ts` | 790 |
-| `assessLoadOrder` | Function | `src/core/doctor/loadOrderStatus.ts` | 60 |
-| `currentOrderFromState` | Function | `src/core/doctor/loadOrderStatus.ts` | 45 |
-| `describeLoadOrder` | Function | `src/core/doctor/loadOrderStatus.ts` | 92 |
-| `driftSignature` | Function | `src/core/doctor/loadOrderStatus.ts` | 84 |
-| `nativeNamesFromState` | Function | `src/core/doctor/loadOrderStatus.ts` | 52 |
-| `previewRepin` | Function | `src/core/doctor/loadOrderStatus.ts` | 150 |
-| `assessActiveGame` | Function | `src/core/doctor/loadOrderWatcher.ts` | 60 |
-| `baselineOf` | Function | `src/core/doctor/loadOrderWatcher.ts` | 55 |
-| `latestReceiptWithOrder` | Function | `src/core/doctor/loadOrderWatcher.ts` | 43 |
-| `startLoadOrderWatcher` | Function | `src/core/doctor/loadOrderWatcher.ts` | 100 |
-| `look` | Function | `src/core/doctor/loadOrderWatcher.ts` | 107 |
-| `schedule` | Function | `src/core/doctor/loadOrderWatcher.ts` | 172 |
-| `status` | Function | `src/ui/pages/doctor/LoadOrderBadge.tsx` | 20 |
-| `describeHeal` | Function | `src/core/doctor/heal.ts` | 66 |
-| `runHeal` | Function | `src/core/doctor/runHeal.ts` | 98 |
-| `nexusModIdOfCompareKey` | Function | `src/core/identity/compareKey.ts` | 96 |
-| `parseCompareKey` | Function | `src/core/identity/compareKey.ts` | 79 |
-| `gatherObservations` | Function | `src/core/doctor/gather.ts` | 115 |
+| `activeContextFromState` | Function | `src/core/doctor/loadOrderStatus.ts` | 95 |
+| `assessReceiptOrder` | Function | `src/core/doctor/loadOrderStatus.ts` | 232 |
+| `baselineOf` | Function | `src/core/doctor/loadOrderStatus.ts` | 110 |
+| `currentOrderFromState` | Function | `src/core/doctor/loadOrderStatus.ts` | 174 |
+| `nativeNamesFromState` | Function | `src/core/doctor/loadOrderStatus.ts` | 181 |
+| `orderOwner` | Function | `src/core/doctor/loadOrderStatus.ts` | 140 |
+| `pinnedAnOrder` | Function | `src/core/doctor/loadOrderStatus.ts` | 123 |
+| `receiptLabel` | Function | `src/core/doctor/loadOrderStatus.ts` | 154 |
+| `skippedPluginOrder` | Function | `src/core/doctor/loadOrderStatus.ts` | 118 |
+| `standingOf` | Function | `src/core/doctor/loadOrderStatus.ts` | 159 |
+| `assessActiveOrder` | Function | `src/core/doctor/loadOrderWatcher.ts` | 102 |
+| `status` | Function | `src/ui/pages/doctor/LoadOrderBadge.tsx` | 105 |
+| `evaluateHealth` | Function | `src/core/doctor/health.ts` | 318 |
+| `curatorPluginsOff` | Function | `src/core/doctor/loadOrderStatus.ts` | 362 |
+| `describeLoadOrder` | Function | `src/core/doctor/loadOrderStatus.ts` | 276 |
+| `badgePill` | Function | `src/ui/pages/doctor/LoadOrderBadge.tsx` | 61 |
+| `startLoadOrderWatcher` | Function | `src/core/doctor/loadOrderWatcher.ts` | 205 |
+| `dismiss` | Function | `src/core/doctor/loadOrderWatcher.ts` | 217 |
 
 ## Execution Flows
 
 | Flow | Type | Steps |
 |------|------|-------|
-| `StartLoadOrderWatcher → Key` | cross_community | 7 |
 | `StartLoadOrderWatcher → GetVortexUserDataPath` | cross_community | 7 |
-| `StartLoadOrderWatcher → Key` | intra_community | 6 |
-| `Heal → EHRuntime` | cross_community | 6 |
-| `Heal → Notify` | cross_community | 6 |
-| `StartLoadOrderWatcher → ActiveGameIdOf` | intra_community | 5 |
-| `StartLoadOrderWatcher → LatestReceiptWithOrder` | intra_community | 5 |
-| `Heal → GetSnapshot` | cross_community | 5 |
-| `StartLoadOrderWatcher → EHRuntime` | cross_community | 5 |
-| `StartLoadOrderWatcher → GetSnapshot` | intra_community | 4 |
+| `Look → BaselineOf` | cross_community | 5 |
+| `Look → SkippedPluginOrder` | cross_community | 5 |
+| `Look → InstalledAtMs` | cross_community | 4 |
+| `Look → Key` | cross_community | 3 |
+| `Look → ActiveContextFromState` | cross_community | 3 |
+| `Look → ReadReceipts` | cross_community | 3 |
+| `LoadOrderCard → CuratorPluginsOff` | cross_community | 3 |
+| `StartLoadOrderWatcher → EHRuntime` | cross_community | 3 |
+| `Look → EHRuntime` | cross_community | 3 |
 
 ## How to Explore
 
-1. `context({name: "readPluginList"})` — see callers and callees
+1. `context({name: "livePluginList"})` — see callers and callees
 2. `query({search_query: "doctor"})` — find related execution flows
 3. Read key files listed above for implementation details
 4. `explain({target: "<file or symbol>"})` — persisted taint findings (source→sink data flows), when indexed with `--pdg`
