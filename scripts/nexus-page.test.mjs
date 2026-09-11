@@ -7,7 +7,25 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { firstDifference, parseArgs, withNewTab } from "./nexus-page.mjs";
+import { firstDifference, lineBreaksDropped, parseArgs, withNewTab } from "./nexus-page.mjs";
+
+describe("lineBreaksDropped", () => {
+  const written = "[quote]Not a Vortex collection.[/quote]\n[size=5]Install[/size]\n[list]\n[*]one\n[/list]\nChecksum below.\nSecond line";
+
+  it("forgives only the break the site's editor drops after [/list] and [/quote]", () => {
+    const onPage = "[quote]Not a Vortex collection.[/quote][size=5]Install[/size]\n[list]\n[*]one\n[/list]Checksum below.\nSecond line";
+    expect(lineBreaksDropped(written, onPage)).toBe(2);
+    expect(lineBreaksDropped(written, written)).toBe(0);
+  });
+
+  it("still reports a break dropped between words, which joins them on the page", () => {
+    expect(lineBreaksDropped(written, written.replace("below.\nSecond", "below.Second"))).toBeUndefined();
+  });
+
+  it("still reports any other change", () => {
+    expect(lineBreaksDropped(written, written.replace("[/list]\nChecksum", "[/list]Check sum"))).toBeUndefined();
+  });
+});
 
 describe("parseArgs", () => {
   const pkg = { description: "Summary", nexus: { gameDomain: "site", modId: 2235 } };

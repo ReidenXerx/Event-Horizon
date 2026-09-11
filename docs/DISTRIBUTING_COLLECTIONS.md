@@ -17,7 +17,17 @@ every revision would be quarantined again pending a manual review by email.
 The curator chose pixeldrain, which the collections already used for their
 BodySlide and FaceGen outputs.
 
-**How a collection reaches its users:**
+**Nexus moderation, 2026-09-11 (blocks the flow below):** both pages were
+hidden "under moderation" with a staff message: *"linking off-site downloads
+while files are quarantined is not allowed for the safety of our users. To
+have your file reviewed for release from quarantine, please email
+support@nexusmods.com"*. Every pixeldrain link was removed from both
+descriptions the same evening (verified by re-reading the pages) and a review
+of the quarantined `.ehcoll` files was requested by email. Until Nexus
+answers, a page must not link to the package off-site — not in the
+description and not in a file on the page — so steps 2–3 below are on hold.
+
+**How a collection reaches its users (on hold, see above):**
 
 1. The curator builds the `.ehcoll` (Curator Tools → Build).
 2. Upload it to pixeldrain with the account key (`~/.pixeldrain/api-key`, never

@@ -87,6 +87,24 @@ export function firstDifference(expected, actual) {
 }
 
 /**
+ * How many line breaks the site's editor dropped, when that is the ONLY
+ * difference; undefined when anything else differs.
+ *
+ * Measured on three pages (2026-09-11): saving through SCEditor removes the
+ * line break straight after [/list] and [/quote] — 8 on one page, 4 on
+ * another — and nothing else. Only a break after one of those closing tags is
+ * forgiven: a break dropped between two words would join them on the page, and
+ * that is still reported as a difference.
+ */
+export function lineBreaksDropped(expected, actual) {
+  const collapse = (s) => normalizeText(s).replace(/(\[\/(?:list|quote)\])\n/gi, "$1");
+  if (collapse(expected) !== collapse(actual)) return undefined;
+  const breaks = (s) => (normalizeText(s).match(/\n/g) ?? []).length;
+  const dropped = breaks(expected) - breaks(actual);
+  return dropped >= 0 ? dropped : undefined;
+}
+
+/**
  * Which page, which text, and what to do with it. Returns `{ error }` for a
  * command line that would do something other than what it says.
  *
@@ -239,9 +257,14 @@ async function editPage(ws, { editUrl, summary, bbcode, save, dumpFile, gameDoma
   await sleep(9000);
   const back = await readPage();
   const summaryDiff = summary === undefined ? undefined : firstDifference(summary, back.summary);
-  const descriptionDiff = firstDifference(bbcode, back.description);
+  const exactDiff = firstDifference(bbcode, back.description);
+  const dropped = exactDiff === undefined ? 0 : lineBreaksDropped(bbcode, back.description);
+  const descriptionDiff = dropped === undefined ? exactDiff : undefined;
   if (summaryDiff === undefined && descriptionDiff === undefined) {
-    console.log(`Saved and verified: the page holds exactly the ${normalizeText(bbcode).length}-character description${summary === undefined ? "" : " and the summary"}.`);
+    console.log(
+      `Saved and verified: the page holds the ${normalizeText(bbcode).length}-character description${summary === undefined ? "" : " and the summary"}` +
+        (dropped > 0 ? `; the site's editor dropped ${dropped} line break(s) after [/list] or [/quote], its own normalisation, nothing else differs.` : "."),
+    );
   } else {
     for (const [what, d] of [["summary", summaryDiff], ["description", descriptionDiff]]) {
       if (d !== undefined) console.log(`Saved, but the page's ${what} differs at line ${d.line}:\n  written: ${JSON.stringify(d.expected)}\n  on page: ${JSON.stringify(d.actual)}`);
