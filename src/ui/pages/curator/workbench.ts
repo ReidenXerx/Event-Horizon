@@ -151,7 +151,12 @@ export function buildRows(mods: readonly CuratorMod[], report: RequirementsRepor
 
 const OUTSIDE_DATA_KINDS = new Set(["dinput", "enb", "engine-injector"]);
 
-export function rowsForView(rows: readonly WorkRow[], view: ViewId): WorkRow[] {
+export type ViewOptions = {
+  /** Count disabled mods' missing requirements too (default: enabled only — settled with the user). */
+  includeDisabled?: boolean;
+};
+
+export function rowsForView(rows: readonly WorkRow[], view: ViewId, opts: ViewOptions = {}): WorkRow[] {
   switch (view) {
     case "all":
       return [...rows];
@@ -162,10 +167,10 @@ export function rowsForView(rows: readonly WorkRow[], view: ViewId): WorkRow[] {
     case "frozen":
       return rows.filter((r) => r.frozen !== undefined);
     case "requirements":
-      return rows.filter((r) =>
-        (r.requirements?.requirements ?? []).some(
-          (q) => q.status === "missing" || q.status === "installed-disabled",
-        ),
+      return rows.filter(
+        (r) =>
+          (opts.includeDisabled === true || r.mod.enabled) &&
+          (r.requirements?.requirements ?? []).some((q) => q.status === "missing" || q.status === "installed-disabled"),
       );
     case "dependants":
       return rows.filter((r) => r.requiredBy.length > 0);
@@ -186,9 +191,9 @@ export function rowsForView(rows: readonly WorkRow[], view: ViewId): WorkRow[] {
 }
 
 /** The count each chip shows. */
-export function viewCounts(rows: readonly WorkRow[]): Record<ViewId, number> {
+export function viewCounts(rows: readonly WorkRow[], opts: ViewOptions = {}): Record<ViewId, number> {
   const out = {} as Record<ViewId, number>;
-  for (const v of VIEWS) out[v.id] = rowsForView(rows, v.id).length;
+  for (const v of VIEWS) out[v.id] = rowsForView(rows, v.id, opts).length;
   return out;
 }
 

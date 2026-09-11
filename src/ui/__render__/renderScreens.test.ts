@@ -63,6 +63,7 @@ import { CuratorPanel } from "../pages/curator/CuratorPage";
 import { RequirementsPanel } from "../pages/curator/RequirementsPanel";
 import { DiskCleanupView } from "../pages/curator/DiskCleanupView";
 import { PluginsView } from "../pages/curator/PluginsView";
+import { InstallPlanModal } from "../pages/curator/InstallPlanModal";
 import { buildPluginRows, type PluginHeader } from "../../core/curator/pluginView";
 import { readPluginList } from "../../core/curator/pluginPool";
 import { readDownloads } from "../../core/curator/runCleanup";
@@ -1221,6 +1222,62 @@ describe("render", () => {
     );
   });
 
+  // "Make it work": the closure preview — one page ready, one where the
+  // curator must choose between two current files, one with no file, one
+  // for a game this Vortex does not manage, plus an enable and an off-Nexus
+  // link. Everything the modal can say, on one screen.
+  it("curator tools — install plan preview", () => {
+    const step = (key: string, name: string, nexusModId: number, neededBy: string[], depth: number, vortexGameId?: string) => ({
+      key,
+      name,
+      nexusModId,
+      gameDomain: key.split(":")[0]!,
+      neededBy,
+      depth,
+      ...(vortexGameId === undefined ? {} : { vortexGameId }),
+    });
+    const steps = [
+      step("skyrimspecialedition:53000", "MCM Helper", 53000, ["SkyUI"], 2, "skyrimse"),
+      step("skyrimspecialedition:12604", "SkyUI", 12604, ["Apocalypse - Magic of Skyrim"], 1, "skyrimse"),
+      step("skyrimspecialedition:22854", "Papyrus Extender", 22854, ["Apocalypse - Magic of Skyrim"], 1, "skyrimse"),
+      step("fallout4:999", "Some FO4 page", 999, ["SkyUI"], 2),
+    ];
+    write(
+      "curator-install-plan",
+      React.createElement(InstallPlanModal, {
+        open: true,
+        rootName: "Apocalypse - Magic of Skyrim",
+        plan: {
+          steps,
+          toEnable: [{ id: "addr", name: "Address Library for SKSE Plugins", enabled: false, modType: "" }],
+          external: [{ source: "nexus", status: "external", name: "ENB Series", url: "http://enbdev.com", satisfiedBy: [] }],
+          unfetched: ["Some FO4 page"],
+          truncated: false,
+        },
+        files: [
+          { step: steps[0]!, choice: { kind: "one", file: { file_id: 1, category_id: 1, name: "MCM Helper 1.5.0", version: "1.5.0" } } },
+          {
+            step: steps[1]!,
+            choice: {
+              kind: "choose",
+              candidates: [
+                { file_id: 2, category_id: 1, name: "SkyUI 5.2 SE", version: "5.2SE" },
+                { file_id: 3, category_id: 1, name: "SkyUI 5.2 SE (AE build)", version: "5.2SE-AE" },
+              ],
+            },
+          },
+          { step: steps[2]!, choice: { kind: "none" } },
+          { step: steps[3]!, choice: { kind: "one", file: { file_id: 9, category_id: 1, name: "x" } } },
+        ],
+        picked: {},
+        onPick: () => undefined,
+        onOpenPage: () => undefined,
+        onConfirm: () => undefined,
+        onClose: () => undefined,
+      }),
+    );
+  });
+
   // The same profile after "Read requirements": the Requires column fills,
   // the "Missing requirements" chip appears, and the details panel shows one
   // mod with every requirement state at once — satisfied, installed but
@@ -1312,6 +1369,7 @@ describe("render", () => {
                 onClose: () => undefined,
                 onEnable: () => undefined,
                 onInstall: () => undefined,
+                onInstallAll: () => undefined,
                 onOpenPage: () => undefined,
                 onFocus: () => undefined,
               }),

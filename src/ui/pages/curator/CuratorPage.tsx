@@ -89,6 +89,7 @@ import {
   Button,
   Callout,
   Card,
+  Checkbox,
   Chip,
   DataTable,
   Field,
@@ -110,10 +111,19 @@ import { getCuratorSession, type CuratorSnapshot } from "./curatorSession";
 import { DiskCleanupView, type Confirmer } from "./DiskCleanupView";
 import { RequirementsPanel } from "./RequirementsPanel";
 import { PluginsView } from "./PluginsView";
+import { InstallPlanModal } from "./InstallPlanModal";
+import {
+  fileForStep,
+  planRequirementClosure,
+  resolveInstallFiles,
+  type InstallPlan,
+  type PlannedFile,
+  type PlannedInstall,
+} from "../../../core/curator/installPlan";
 import { readPluginList } from "../../../core/curator/pluginPool";
 import { buildPluginRows } from "../../../core/curator/pluginView";
 import { isBaseGameMaster } from "../../../core/manifest/pluginMasters";
-import { loadRequirements, nexusExtOf } from "./requirementsIo";
+import { knownGameIds, loadRequirements, nexusDomainForVortexGame, nexusExtOf } from "./requirementsIo";
 import {
   VIEWS,
   buildRows,
@@ -122,6 +132,7 @@ import {
   viewCounts,
   visibleViews,
   type ViewId,
+  type ViewOptions,
   type WorkRow,
 } from "./workbench";
 
@@ -354,20 +365,30 @@ function CuratorBody(): JSX.Element {
   const requirements =
     run.requirements !== undefined && run.requirements.gameId === gameId ? run.requirements : undefined;
   const report = requirements?.load.report;
+  // Settled with the user: a disabled mod's missing requirement is not
+  // tonight's problem. The toggle brings them in.
+  const [includeDisabledReqs, setIncludeDisabledReqs] = React.useState(false);
+  const viewOpts = React.useMemo<ViewOptions>(() => ({ includeDisabled: includeDisabledReqs }), [includeDisabledReqs]);
   const reqSummary = React.useMemo(
-    () => (report === undefined ? undefined : summarizeRequirements(report)),
-    [report],
+    () =>
+      report === undefined
+        ? undefined
+        : summarizeRequirements(
+            report,
+            includeDisabledReqs ? {} : { onlyModIds: new Set(mods.filter((m) => m.enabled).map((m) => m.id)) },
+          ),
+    [report, mods, includeDisabledReqs],
   );
 
   const rows = React.useMemo(() => buildRows(mods, report), [mods, report]);
-  const counts = React.useMemo(() => viewCounts(rows), [rows]);
+  const counts = React.useMemo(() => viewCounts(rows, viewOpts), [rows, viewOpts]);
   const chips = React.useMemo(() => visibleViews(counts), [counts]);
 
   const [view, setView] = React.useState<ViewId | "disk" | "plugins">("all");
   const tableView = view !== "disk" && view !== "plugins";
   const visibleRows = React.useMemo(
-    () => (tableView ? rowsForView(rows, view as ViewId) : []),
-    [rows, view, tableView],
+    () => (tableView ? rowsForView(rows, view as ViewId, viewOpts) : []),
+    [rows, view, tableView, viewOpts],
   );
   const viewSpec = tableView ? VIEWS.find((v) => v.id === view) : undefined;
   // A view that emptied under the user (every update taken) falls back to All.
@@ -483,33 +504,32 @@ function CuratorBody(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId, mods.length, requirements, busy]);
 
-  const [chooseFile, setChooseFile] = React.useState<
-    { req: ModRequirement; candidates: NexusFileInfo[]; picked?: number } | undefined
+  // ── "Make it work": the closure plan ─────────────────────────────────
+  const [planState, setPlanState] = React.useState<
+    { rootName: string; plan: InstallPlan | undefined; files: PlannedFile[]; picked: Record<string, number | undefined> } | undefined
   >(undefined);
 
-  const downloadRequirement = guard("Installing a requirement", async (req: ModRequirement, file: NexusFileInfo): Promise<void> => {
+  /**
+   * Download one planned page and wait for Vortex to finish INSTALLING it.
+   *
+   * `nexusDownload` wants the VORTEX game id (it resolves with gameById) and
+   * resolves when the download lands — Vortex installs after that, so the
+   * wait is on `did-install-mod`, or a sequential update could start on top
+   * of a live install. Vortex swallows its own refusals (not Premium, not
+   * logged in) into a notification and resolves undefined.
+   */
+  const installOne = async (
+    step: PlannedInstall,
+    file: NexusFileInfo,
+    signal: AbortSignal,
+  ): Promise<{ ok: true; newModId: string } | { ok: false; why: string; refused: boolean }> => {
     const game = gameId;
     const download = nexus.download;
-    // `nexusDownload` resolves its game with Vortex's `gameById`: it needs the
-    // VORTEX id, not the Nexus domain, and refuses a game it does not manage.
-    if (game === undefined || req.nexusModId === undefined || req.vortexGameId === undefined || download === undefined) return;
-    const signal = session.begin("install-requirement", { keepReport: true });
-    if (signal === undefined) {
-      setNote("Something else is still running — try again when it finishes.");
-      return;
+    if (game === undefined || download === undefined || step.vortexGameId === undefined) {
+      return { ok: false, why: "this Vortex cannot download for that game", refused: true };
     }
-    const nexusModId = req.nexusModId;
-    const vortexGame = req.vortexGameId;
-    setProgress(`Downloading ${req.name} — ${file.name ?? file.file_name ?? `file ${file.file_id}`}`);
-    ehLog("info", "curator.requirement.install.start", {
-      mod: req.name,
-      nexusModId,
-      fileId: file.file_id,
-      game: vortexGame,
-    });
-    // The download promise resolves when the DOWNLOAD lands; Vortex then
-    // installs. The session stays busy until the install has landed too, or a
-    // sequential update could start on top of a live Vortex install.
+    const vortexGame = step.vortexGameId;
+    ehLog("info", "curator.requirement.install.start", { mod: step.name, nexusModId: step.nexusModId, fileId: file.file_id, game: vortexGame });
     const stop = new AbortController();
     const onAbort = (): void => stop.abort();
     signal.addEventListener("abort", onAbort);
@@ -518,79 +538,126 @@ function CuratorBody(): JSX.Element {
       const newModId = await updateOneAndWait({
         events: api.events as never,
         gameId: game,
-        nexusModId,
+        nexusModId: step.nexusModId,
         toFileId: file.file_id,
         readInstalled: installedIdentityReader(() => api.getState(), game),
         signal: stop.signal,
         start: () => {
-          void download(vortexGame, nexusModId, file.file_id, file.file_name, true).then(
+          void download(vortexGame, step.nexusModId, file.file_id, file.file_name, true).then(
             (dlId) => {
-              ehLog("info", "curator.requirement.install.downloaded", { mod: req.name, dlId });
-              // Vortex swallows its own refusals (not Premium, not logged in)
-              // into a notification and resolves undefined.
+              ehLog("info", "curator.requirement.install.downloaded", { mod: step.name, dlId });
               if (dlId === undefined) {
                 refused = true;
                 stop.abort();
               }
             },
             (err) => {
-              ehLog("error", "curator.requirement.install.fail", { mod: req.name, err });
+              ehLog("error", "curator.requirement.install.fail", { mod: step.name, err });
               refused = true;
               stop.abort();
             },
           );
         },
       });
-      ehLog("info", "curator.requirement.install.done", { mod: req.name, newModId });
-      session.finish(
-        undefined,
-        `Installed ${req.name}. Press Re-read requirements to refresh the report.`,
-      );
+      ehLog("info", "curator.requirement.install.done", { mod: step.name, newModId });
+      return { ok: true, newModId };
     } catch (err) {
-      session.finish(
-        undefined,
-        refused
-          ? `Vortex did not download ${req.name}. Its own notification says why — Nexus only lets Vortex fetch files ` +
-              `directly for Premium members; otherwise open the mod page and use "Mod manager download", which lands in Vortex.`
-          : `${req.name} did not finish installing: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      return { ok: false, why: err instanceof Error ? err.message : String(err), refused };
     } finally {
       signal.removeEventListener("abort", onAbort);
     }
-    setTick((t) => t + 1);
-  });
+  };
 
-  const installRequirement = guard("Installing a requirement", async (req: ModRequirement): Promise<void> => {
-    if (req.nexusModId === undefined || req.gameDomain === undefined) return;
-    if (nexus.getModFiles === undefined || nexus.download === undefined) {
-      setNote("This Vortex build does not expose the Nexus download surface, so the file has to be fetched from the mod page.");
+  /** Read the chain for a mod (or for one of its lines) and open the preview. */
+  const openPlan = guard("Planning an install", async (root: CuratorMod, only?: ModRequirement): Promise<void> => {
+    const game = gameId;
+    const cache = requirements;
+    if (game === undefined || cache === undefined) return;
+    if (nexus.getModRequirements === undefined || nexus.getModFiles === undefined || nexus.download === undefined) {
+      setNote("This Vortex build does not expose the Nexus download surface, so requirements have to be fetched from their mod pages.");
       return;
     }
+    const lines = only !== undefined ? [only] : (cache.load.report.byMod.get(root.id)?.requirements ?? []);
     const signal = session.begin("install-requirement", { keepReport: true });
     if (signal === undefined) {
       setNote("Something else is still running — try again when it finishes.");
       return;
     }
-    setProgress(`Asking Nexus which file ${req.name} ships…`);
-    let files: NexusFileInfo[] = [];
+    setPlanState({ rootName: root.name, plan: undefined, files: [], picked: {} });
+    setProgress(`Reading what ${root.name}'s requirements need themselves…`);
     try {
-      files = await nexus.getModFiles(req.gameDomain, req.nexusModId);
+      const plan = await planRequirementClosure({
+        rootName: root.name,
+        roots: lines,
+        mods,
+        activeGame: game,
+        games: cache.load.games,
+        toDomain: nexusDomainForVortexGame,
+        knownGameIds: knownGameIds(api.getState()),
+        fetch: nexus.getModRequirements,
+        signal,
+      });
+      setProgress(`Asking Nexus which file each of ${num(plan.steps.length)} page(s) ships…`);
+      const files = await resolveInstallFiles(plan.steps, nexus.getModFiles, signal);
+      session.finish(undefined);
+      setPlanState({ rootName: root.name, plan, files, picked: {} });
     } catch (err) {
-      session.finish(undefined, `Could not list ${req.name}'s files: ${err instanceof Error ? err.message : String(err)}`);
-      return;
-    }
-    const choice = pickInstallFile(files);
-    session.finish(undefined);
-    if (choice.kind === "one") {
-      await downloadRequirement(req, choice.file);
-    } else if (choice.kind === "choose") {
-      // Several current files: the LE build, the AE build, a "lite". The
-      // wrong one installs cleanly and is wrong forever, so the curator picks.
-      setChooseFile({ req, candidates: choice.candidates });
-    } else {
-      setNote(`${req.name} has no current file on Nexus to download. Its page may explain.`);
+      session.finish(undefined, `Could not plan the install: ${err instanceof Error ? err.message : String(err)}`);
+      setPlanState(undefined);
     }
   });
+
+  /** Run the previewed plan: downloads in order, each waited for, then the enables. */
+  const runPlan = guard("Installing requirements", async (): Promise<void> => {
+    const st = planState;
+    if (st === undefined || st.plan === undefined) return;
+    const signal = session.begin("install-requirement", { keepReport: false });
+    if (signal === undefined) {
+      setNote("Something else is still running — try again when it finishes.");
+      return;
+    }
+    setPlanState(undefined);
+    const lines: string[] = [];
+    let n = 0;
+    const todo = st.files.filter((pf) => pf.step.vortexGameId !== undefined && fileForStep(pf, st.picked) !== undefined);
+    ehLog("info", "curator.requirement.plan.start", { root: st.rootName, installs: todo.length, enables: st.plan.toEnable.length });
+    for (const pf of todo) {
+      if (signal.aborted) {
+        lines.push(`Stopped before ${pf.step.name}.`);
+        break;
+      }
+      n += 1;
+      setProgress(`Installing ${n} of ${todo.length} — ${pf.step.name}`);
+      const file = fileForStep(pf, st.picked)!;
+      const result = await installOne(pf.step, file, signal);
+      if (result.ok) {
+        lines.push(`Installed ${pf.step.name} (${file.name ?? file.file_name ?? `file ${file.file_id}`}).`);
+      } else if (result.refused) {
+        lines.push(
+          `${pf.step.name}: Vortex did not download it — its own notification says why. Nexus only lets Vortex fetch files ` +
+            `directly for Premium members; otherwise open the page and use "Mod manager download", which lands in Vortex.`,
+        );
+      } else {
+        lines.push(`${pf.step.name}: did not finish installing — ${result.why}.`);
+      }
+    }
+    if (st.plan.toEnable.length > 0 && !signal.aborted) {
+      setEnabledFor(st.plan.toEnable, true);
+      lines.push(`Enabled ${st.plan.toEnable.map((m) => m.name).join(", ")}.`);
+    }
+    const skipped = st.files.filter((pf) => !todo.includes(pf));
+    if (skipped.length > 0) lines.push(`Not installed (no file chosen, no current file, or another game): ${skipped.map((pf) => pf.step.name).join(", ")}.`);
+    ehLog("info", "curator.requirement.plan.done", { root: st.rootName, lines: lines.length, stopped: signal.aborted });
+    session.finish(lines);
+    setTick((t) => t + 1);
+    // The pool changed; the report is re-read so the panel and the column agree with it.
+    if (!signal.aborted) void readRequirements();
+  });
+
+  const installRequirement = (req: ModRequirement): void => {
+    if (focusMod === undefined) return;
+    void openPlan(focusMod, req);
+  };
 
   const openPage = (req: ModRequirement): void => {
     if (req.nexusModId !== undefined && req.gameDomain !== undefined && nexus.openModPage !== undefined) {
@@ -897,24 +964,18 @@ function CuratorBody(): JSX.Element {
   const enableWithProviders = async (targets: readonly CuratorMod[]): Promise<void> => {
     const ids = new Set(targets.map((m) => m.id));
     const providers = report === undefined ? [] : disabledProvidersFor(report, mods, ids);
+    setEnabledFor([...targets, ...providers], true);
     if (providers.length > 0) {
-      const ok = await confirm({
-        title: `Also enable ${num(providers.length)} requirement(s)?`,
-        text:
-          `${targets.length === 1 ? targets[0]!.name : `${num(targets.length)} of these mods`} ` +
-          `list${targets.length === 1 ? "s" : ""} mods you have installed but disabled:\n\n` +
+      setNote(
+        `Enabled ${num(targets.length)} mod(s) and ${num(providers.length)} requirement(s) they list that were installed but off: ` +
           providers
             .slice(0, 12)
-            .map((p) => `  • ${p.name}`)
-            .join("\n") +
-          (providers.length > 12 ? `\n  … and ${providers.length - 12} more` : "") +
-          `\n\nEnable those too? Choosing Cancel enables only what you ticked.`,
-        confirmLabel: "Enable all",
-      });
-      setEnabledFor(ok ? [...targets, ...providers] : targets, true);
-      return;
+            .map((p) => p.name)
+            .join(", ") +
+          (providers.length > 12 ? ` and ${providers.length - 12} more` : "") +
+          `.`,
+      );
     }
-    setEnabledFor(targets, true);
   };
 
   /** Disable, after saying what depends on it. */
@@ -1120,6 +1181,15 @@ function CuratorBody(): JSX.Element {
         </Chip>
       </div>
 
+      {view === "requirements" && (
+        <Checkbox
+          label="Include disabled mods"
+          description="Off by default: a disabled mod's missing requirement is not tonight's problem."
+          checked={includeDisabledReqs}
+          onChange={(e): void => setIncludeDisabledReqs(e.target.checked)}
+        />
+      )}
+
       {view === "disk" ? (
         <DiskCleanupView mods={mods} downloads={downloads} busy={!idle} confirm={confirm} applyCleanup={applyCleanup} />
       ) : view === "plugins" ? (
@@ -1182,7 +1252,8 @@ function CuratorBody(): JSX.Element {
           canInstall={nexus.download !== undefined && nexus.getModFiles !== undefined}
           onClose={(): void => setFocusId(undefined)}
           onEnable={(providers): void => setEnabledFor(providers, true)}
-          onInstall={(req): void => void installRequirement(req)}
+          onInstall={installRequirement}
+          onInstallAll={(): void => void openPlan(focusMod)}
           onOpenPage={openPage}
           onFocus={setFocusId}
         />
@@ -1296,51 +1367,23 @@ function CuratorBody(): JSX.Element {
         </div>
       )}
 
-      <Modal
-        open={chooseFile !== undefined}
-        onClose={(): void => setChooseFile(undefined)}
-        title={chooseFile === undefined ? "" : `Which file of ${chooseFile.req.name}?`}
-        subtitle="Nexus lists more than one current file for this mod. The wrong one installs cleanly and is wrong forever, so this is your choice."
-        footer={
-          <>
-            <Button intent="ghost" onClick={(): void => setChooseFile(undefined)}>
-              Cancel
-            </Button>
-            <Button
-              intent="primary"
-              disabled={chooseFile?.picked === undefined}
-              onClick={(): void => {
-                if (chooseFile === undefined || chooseFile.picked === undefined) return;
-                const file = chooseFile.candidates.find((f) => f.file_id === chooseFile.picked);
-                // begin() is synchronous inside downloadRequirement, so by the
-                // time the modal closes the run holds the session — or has
-                // said why it could not.
-                if (file !== undefined) void downloadRequirement(chooseFile.req, file);
-                setChooseFile(undefined);
-              }}
-            >
-              Download and install
-            </Button>
-          </>
+      <InstallPlanModal
+        open={planState !== undefined}
+        rootName={planState?.rootName ?? ""}
+        plan={planState?.plan}
+        files={planState?.files ?? []}
+        picked={planState?.picked ?? {}}
+        onPick={(key, fileId): void =>
+          setPlanState((st) => (st === undefined ? st : { ...st, picked: { ...st.picked, [key]: fileId } }))
         }
-      >
-        {chooseFile !== undefined && (
-          <div className="eh-stack eh-stack--sm" role="radiogroup" aria-label="Files">
-            {chooseFile.candidates.map((f) => (
-              <Radio
-                key={f.file_id}
-                name="requirement-file"
-                checked={chooseFile.picked === f.file_id}
-                onChange={(): void => setChooseFile({ ...chooseFile, picked: f.file_id })}
-                label={f.name ?? f.file_name ?? `file ${f.file_id}`}
-                description={[f.category_name, f.version !== undefined ? `v${f.version}` : undefined]
-                  .filter(Boolean)
-                  .join(" · ")}
-              />
-            ))}
-          </div>
-        )}
-      </Modal>
+        onOpenPage={(url, domain, modId): void =>
+          openPage({ source: "nexus", status: "missing", name: "", satisfiedBy: [], ...(url === undefined ? {} : { url }), gameDomain: domain, nexusModId: modId })
+        }
+        onConfirm={(): void => void runPlan()}
+        onClose={(): void => {
+          if (busy === undefined) setPlanState(undefined);
+        }}
+      />
     </div>
   );
 }

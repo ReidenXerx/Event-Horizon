@@ -61,6 +61,16 @@ describe("workbench rows", () => {
     expect(ids("manual")).toEqual(["b"]);
     expect(ids("frozen")).toEqual(["c"]);
     expect(ids("requirements")).toEqual(["a"]);
+    // A disabled mod's missing requirement is not tonight's problem unless asked for.
+    const withOff = buildRows([...mods, mod({ id: "off", name: "Off", enabled: false })], {
+      ...report,
+      byMod: new Map([
+        ...report.byMod,
+        ["off", { modId: "off", truncatedBy: 0, unfetched: false, requirements: [{ source: "nexus", status: "missing", name: "X", satisfiedBy: [] }] }],
+      ]),
+    });
+    expect(rowsForView(withOff, "requirements").map((r) => r.mod.id)).toEqual(["a"]);
+    expect(rowsForView(withOff, "requirements", { includeDisabled: true }).map((r) => r.mod.id)).toEqual(["a", "off"]);
     expect(ids("dependants")).toEqual(["c"]);
     expect(ids("duplicates")).toEqual(["c", "e"]);
     expect(ids("disabled")).toEqual(["d"]);

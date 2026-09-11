@@ -524,7 +524,10 @@ export function countDistinct(r: ModRequirementReport, status: RequirementStatus
   return keys.size;
 }
 
-export function summarizeRequirements(report: RequirementsReport): RequirementsSummary {
+export function summarizeRequirements(
+  report: RequirementsReport,
+  opts: { /** Count only these mods (the enabled ones, by default on the page). */ onlyModIds?: ReadonlySet<string> } = {},
+): RequirementsSummary {
   const out: RequirementsSummary = {
     modsWithMissing: 0,
     missing: 0,
@@ -535,6 +538,7 @@ export function summarizeRequirements(report: RequirementsReport): RequirementsS
     truncated: 0,
   };
   for (const r of report.byMod.values()) {
+    if (opts.onlyModIds !== undefined && !opts.onlyModIds.has(r.modId)) continue;
     const missing = countDistinct(r, "missing");
     out.missing += missing;
     out.installedDisabled += countDistinct(r, "installed-disabled");

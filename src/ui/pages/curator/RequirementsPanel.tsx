@@ -40,6 +40,8 @@ export function RequirementsPanel(props: {
   onClose: () => void;
   onEnable: (mods: readonly CuratorMod[]) => void;
   onInstall: (req: ModRequirement) => void;
+  /** Plan and run the whole chain: every missing Nexus requirement, recursively, plus enables. */
+  onInstallAll: () => void;
   onOpenPage: (req: ModRequirement) => void;
   onFocus: (modId: string) => void;
 }): JSX.Element {
@@ -135,7 +137,22 @@ export function RequirementsPanel(props: {
           </Callout>
         ) : (
           <>
-            <Section title="Requires" size="sm" count={requirements.length} countIntent="neutral">
+            <Section
+              title="Requires"
+              size="sm"
+              count={requirements.length}
+              countIntent="neutral"
+              actions={
+                props.canInstall &&
+                requirements.some(
+                  (q) => (q.status === "missing" && q.nexusModId !== undefined && q.vortexGameId !== undefined) || q.status === "installed-disabled",
+                ) ? (
+                  <Button size="sm" intent="primary" disabled={busy} onClick={props.onInstallAll} title="Read each requirement's own requirements, show the whole plan, then install and enable in order">
+                    Make it work
+                  </Button>
+                ) : undefined
+              }
+            >
               {requirements.length === 0 ? (
                 <p className="eh-body">Nothing listed on its Nexus page, and its plugins declare no masters beyond the game's own.</p>
               ) : (
