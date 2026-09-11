@@ -63,6 +63,9 @@ export type {
   ChoiceCardProps,
 } from "./Field";
 
+export { Menu } from "./Menu";
+export type { MenuProps, MenuItem } from "./Menu";
+
 export { Modal } from "./Modal";
 export type { ModalProps, ModalSize } from "./Modal";
 

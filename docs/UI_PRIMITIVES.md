@@ -36,7 +36,9 @@ To LOOK at the result: `npm run ui:shots` renders every screen in
 | A toggling filter pill | `Chip` | `active` |
 | Blocking question | `Modal` | focus-trapped; only the topmost handles Esc |
 | Non-blocking message | `useToast()` | pauses on hover; `danger` is sticky |
-| Sortable, filterable list | `DataTable` | selection survives filters; the table is fixed-layout, so give `actionsWidth` when rows have action buttons or the name column pays for them |
+| Sortable, filterable list | `DataTable` | selection survives filters; renders a window of rows over the whole list (no cap); the table is fixed-layout, so give `actionsWidth` when rows have action buttons and `minWidth` when it can be squeezed beside something |
+| Rarely-wanted actions | `Menu` | a `<details>` overflow menu; never the primary action of a page |
+| A list with an inspector beside it | `eh-split` + `eh-split__aside` | the aside sticks while the list scrolls; stacks under 1100px |
 | Working indicator | `Spinner` | sized in `em`, coloured by `currentColor` |
 | Slow pass reassurance | `HashingCard` | |
 | Wizard position | `StepDots` | |

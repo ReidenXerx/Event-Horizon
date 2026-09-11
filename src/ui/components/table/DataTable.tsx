@@ -62,11 +62,19 @@ function nextSort(current: SortState | undefined, key: string): SortState | unde
   return undefined;
 }
 
+/** A row's height before the first one has been measured. */
+const ROW_HEIGHT_GUESS = 42;
+/** Rows rendered beyond the visible band, so a scroll never shows a gap. */
+const OVERSCAN = 12;
+
 export function DataTable<T>(props: {
   rows: readonly T[];
   idOf: (row: T) => string;
   columns: readonly Column<T>[];
-  /** How many rows to render at once. The banner always says the real count. */
+  /**
+   * Unused since the table renders a window of rows over the whole list;
+   * kept so callers need not change. The banner always says the real count.
+   */
   limit?: number;
   /** What one row is called, for the banner. */
   noun?: string;
@@ -86,6 +94,12 @@ export function DataTable<T>(props: {
    * small buttons. Set it when the actions have a known size.
    */
   actionsWidth?: number | string;
+  /**
+   * The table's minimum width. A fixed-layout table squeezed narrower than
+   * the sum of its column widths gives the unsized name column nothing;
+   * past this width the wrapper scrolls sideways instead.
+   */
+  minWidth?: number;
   maxHeight?: number;
   /**
    * What a button above this table should act on, whenever it changes.
@@ -102,7 +116,22 @@ export function DataTable<T>(props: {
 
   const [filters, setFilters] = React.useState<Record<string, string>>({});
   const [sort, setSort] = React.useState<SortState | undefined>(undefined);
-  const [showAll, setShowAll] = React.useState(false);
+  /**
+   * The rendered window. Every row is in the model (sort, filter, select-all
+   * see all of them); only the rows near the scroll position exist in the
+   * DOM. 1,900 mods × 8 cells × 2 buttons is not a DOM a page can carry.
+   */
+  const wrapRef = React.useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = React.useState(0);
+  const [viewport, setViewport] = React.useState(props.maxHeight ?? 420);
+  const [rowHeight, setRowHeight] = React.useState(ROW_HEIGHT_GUESS);
+  const firstRowRef = React.useRef<HTMLTableRowElement>(null);
+  React.useLayoutEffect(() => {
+    const h = firstRowRef.current?.getBoundingClientRect().height;
+    if (h !== undefined && h > 8 && Math.abs(h - rowHeight) > 0.5) setRowHeight(h);
+    const v = wrapRef.current?.clientHeight;
+    if (v !== undefined && v > 0 && v !== viewport) setViewport(v);
+  });
   /**
    * The last row the curator clicked, for shift-click ranges.
    *
@@ -132,10 +161,17 @@ export function DataTable<T>(props: {
         columns,
         filters,
         sort,
-        limit: showAll ? undefined : props.limit,
       }),
-    [viewRows, columns, filters, sort, showAll, props.limit],
+    [viewRows, columns, filters, sort],
   );
+
+  // The window: OVERSCAN rows either side of what is visible.
+  const total = view.rows.length;
+  const start = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN);
+  const end = Math.min(total, Math.ceil((scrollTop + viewport) / rowHeight) + OVERSCAN);
+  const windowRows = view.rows.slice(start, end);
+  const topSpace = start * rowHeight;
+  const bottomSpace = Math.max(0, (total - end) * rowHeight);
 
   const matchedIds = React.useMemo(() => {
     // Everything the filter kept — including rows the cap left unrendered,
@@ -264,11 +300,7 @@ export function DataTable<T>(props: {
             Clear filters
           </LinkButton>
         )}
-        {view.capped && (
-          <LinkButton variant="xs" onClick={(): void => setShowAll(true)}>
-            Show all {view.matched.toLocaleString()}
-          </LinkButton>
-        )}
+
         {selection !== undefined &&
           (selection.selected.size > 0 ? (
             <>
@@ -286,14 +318,23 @@ export function DataTable<T>(props: {
       </div>
 
       <div
+        ref={wrapRef}
         className="eh-table-wrap"
+        onScroll={(e): void => setScrollTop(e.currentTarget.scrollTop)}
         style={
           props.maxHeight !== undefined
             ? ({ ["--eh-table-max-height" as string]: `${props.maxHeight}px` } as React.CSSProperties)
             : undefined
         }
       >
-        <table className={selection !== undefined ? "eh-table eh-table--selectable" : "eh-table"}>
+        <table
+          className={selection !== undefined ? "eh-table eh-table--selectable" : "eh-table"}
+          style={
+            props.minWidth !== undefined
+              ? ({ ["--eh-table-min-width" as string]: `${props.minWidth}px` } as React.CSSProperties)
+              : undefined
+          }
+        >
           <thead>
             <tr>
               {selection !== undefined && (
@@ -412,12 +453,18 @@ export function DataTable<T>(props: {
                 </td>
               </tr>
             )}
-            {view.rows.map((viewRow) => {
+            {topSpace > 0 && (
+              <tr className="eh-table__spacer" aria-hidden="true" style={{ ["--eh-spacer" as string]: `${topSpace}px` } as React.CSSProperties}>
+                <td colSpan={colCount} />
+              </tr>
+            )}
+            {windowRows.map((viewRow, i) => {
               const row = byId.get(viewRow.id)!;
               const selected = selection?.selected.has(viewRow.id) === true;
               return (
                 <tr
                   key={viewRow.id}
+                  ref={i === 0 ? firstRowRef : undefined}
                   className={selected ? "eh-table__row--selected" : undefined}
                   aria-selected={selection !== undefined ? selected : undefined}
                   onClick={
@@ -458,6 +505,11 @@ export function DataTable<T>(props: {
                 </tr>
               );
             })}
+            {bottomSpace > 0 && (
+              <tr className="eh-table__spacer" aria-hidden="true" style={{ ["--eh-spacer" as string]: `${bottomSpace}px` } as React.CSSProperties}>
+                <td colSpan={colCount} />
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

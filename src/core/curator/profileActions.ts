@@ -106,6 +106,8 @@ export type CuratorMod = {
   archiveId?: string;
   /** The mod's folder name under the game's staging root. */
   installationPath?: string;
+  /** The curator's own note (our attribute). */
+  notes?: string;
   /**
    * OUR flag: the version the curator froze this mod at.
    *

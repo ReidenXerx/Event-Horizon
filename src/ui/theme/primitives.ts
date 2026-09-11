@@ -905,6 +905,7 @@ input[type="checkbox"].eh-check:indeterminate::before {
 
 .eh-table {
   width: 100%;
+  min-width: var(--eh-table-min-width, 0);
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
@@ -1047,6 +1048,82 @@ input[type="checkbox"].eh-check:indeterminate::before {
 
 /* The "clear" beside the ticked count in a sticky action bar. */
 .eh-actions__clear { margin-left: var(--eh-sp-2); }
+
+/* ── Table window spacers: the rows that are not in the DOM ──────────
+   A windowed table keeps the scrollbar honest with one empty row above
+   and below the rendered band, sized to what they stand in for. */
+.eh-table__spacer td {
+  height: var(--eh-spacer, 0);
+  padding: 0;
+  border: 0;
+}
+
+/* ── Overflow menu ─────────────────────────────────────────────────── */
+.eh-menu {
+  position: relative;
+  display: inline-block;
+}
+.eh-menu__summary {
+  list-style: none;
+  cursor: pointer;
+}
+.eh-menu__summary::-webkit-details-marker { display: none; }
+.eh-menu__list {
+  position: absolute;
+  top: calc(100% + var(--eh-sp-1));
+  right: 0;
+  z-index: var(--eh-z-raised);
+  min-width: 240px;
+  padding: var(--eh-sp-1);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--eh-bg-raised);
+  border: 1px solid var(--eh-border-default);
+  border-radius: var(--eh-radius-md);
+  box-shadow: var(--eh-shadow-modal);
+}
+.eh-menu--start .eh-menu__list { right: auto; left: 0; }
+.eh-menu__item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: var(--eh-sp-2) var(--eh-sp-3);
+  border: 0;
+  border-radius: var(--eh-radius-sm);
+  background: transparent;
+  color: var(--eh-text-primary);
+  font: inherit;
+  font-size: var(--eh-text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.eh-menu__item:hover:not(:disabled),
+.eh-menu__item:focus-visible { background: var(--eh-bg-overlay); outline: none; }
+.eh-menu__item:disabled { color: var(--eh-text-muted); cursor: default; }
+.eh-menu__item--danger { color: var(--eh-danger); }
+.eh-menu__hint { font-size: var(--eh-text-xs); color: var(--eh-text-muted); }
+
+/* ── Split: a list with an inspector beside it ─────────────────────
+   The inspector sticks while the list scrolls; under ~1100px it stacks. */
+.eh-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 34%);
+  gap: var(--eh-sp-4);
+  align-items: start;
+}
+.eh-split__aside {
+  position: sticky;
+  top: var(--eh-sp-3);
+  max-height: calc(100vh - var(--eh-sp-6));
+  overflow: auto;
+}
+@media (max-width: 1100px) {
+  .eh-split { grid-template-columns: minmax(0, 1fr); }
+  .eh-split__aside { position: static; max-height: none; }
+}
 
 /* ── Key / value line (was .eh-field; a form field owns that now) ─── */
 .eh-kv {

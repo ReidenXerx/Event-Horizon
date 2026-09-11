@@ -18,7 +18,7 @@ import type {
   ModRequirementReport,
   RequirementsReport,
 } from "../../../core/curator/requirements";
-import { Button, Callout, Card, LinkButton, Pill, Section, type PillIntent } from "../../components";
+import { Button, Callout, Card, LinkButton, Pill, Section, Textarea, type PillIntent } from "../../components";
 
 const STATUS_PILL: Record<ModRequirement["status"], { label: string; intent: PillIntent }> = {
   satisfied: { label: "ok", intent: "success" },
@@ -44,8 +44,13 @@ export function RequirementsPanel(props: {
   onInstallAll: () => void;
   onOpenPage: (req: ModRequirement) => void;
   onFocus: (modId: string) => void;
+  /** Save the curator's note on this mod (our attribute; empty clears it). */
+  onSaveNote: (mod: CuratorMod, text: string) => void;
 }): JSX.Element {
   const { mod, mods, report, entry, busy } = props;
+  const [noteText, setNoteText] = React.useState(mod.notes ?? "");
+  React.useEffect(() => setNoteText(mod.notes ?? ""), [mod.id, mod.notes]);
+  const noteDirty = noteText !== (mod.notes ?? "");
   const byId = React.useMemo(() => new Map(mods.map((m) => [m.id, m])), [mods]);
   const dependants = (report?.requiredBy.get(mod.id) ?? [])
     .map((id) => byId.get(id))
@@ -129,6 +134,28 @@ export function RequirementsPanel(props: {
       }
     >
       <div className="eh-stack eh-stack--lg">
+        <Section title="Note" size="sm" description="Yours, kept on the mod in Vortex; the build never reads it.">
+          <div className="eh-stack eh-stack--xs">
+            <Textarea
+              aria-label="Note"
+              rows={2}
+              placeholder="Why it is here, what it conflicts with, what to check after an update…"
+              value={noteText}
+              onChange={(e): void => setNoteText(e.target.value)}
+            />
+            {noteDirty && (
+              <div className="eh-row eh-row--sm">
+                <Button size="sm" intent="primary" onClick={(): void => props.onSaveNote(mod, noteText.trim())}>
+                  Save note
+                </Button>
+                <Button size="sm" intent="ghost" onClick={(): void => setNoteText(mod.notes ?? "")}>
+                  Discard
+                </Button>
+              </div>
+            )}
+          </div>
+        </Section>
+
         {entry === undefined || (entry.unfetched && requirements.length === 0) ? (
           <Callout tone="info">
             {mod.nexusModId === undefined || (mod.source !== undefined && mod.source !== "nexus")

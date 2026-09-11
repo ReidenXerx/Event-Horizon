@@ -190,6 +190,40 @@ export function rowsForView(rows: readonly WorkRow[], view: ViewId, opts: ViewOp
   }
 }
 
+/**
+ * Several views at once: the rows in EVERY active view ("updatable AND
+ * frozen", "disabled AND needed by others"). An empty set is "all".
+ */
+export function rowsForViews(rows: readonly WorkRow[], views: ReadonlySet<ViewId>, opts: ViewOptions = {}): WorkRow[] {
+  let out = [...rows];
+  for (const v of views) {
+    if (v === "all") continue;
+    const keep = new Set(rowsForView(rows, v, opts).map((r) => r.mod.id));
+    out = out.filter((r) => keep.has(r.mod.id));
+  }
+  return out;
+}
+
+/**
+ * A search over what a curator knows a mod by: its name, the names of what
+ * it requires (a page, a master), and the names of the mods that provide
+ * them — so "who needs SkyUI" is a search, not a scroll.
+ */
+export function matchesSearch(row: WorkRow, query: string, modNameById: ReadonlyMap<string, string>): boolean {
+  const q = query.trim().toLowerCase();
+  if (q === "") return true;
+  if (row.mod.name.toLowerCase().includes(q)) return true;
+  if (row.mod.id.toLowerCase().includes(q)) return true;
+  for (const req of row.requirements?.requirements ?? []) {
+    if (req.name.toLowerCase().includes(q)) return true;
+    if (req.master !== undefined && req.master.toLowerCase().includes(q)) return true;
+    if (req.plugin !== undefined && req.plugin.toLowerCase().includes(q)) return true;
+    for (const id of req.satisfiedBy) if ((modNameById.get(id) ?? "").toLowerCase().includes(q)) return true;
+  }
+  for (const id of row.requiredBy) if ((modNameById.get(id) ?? "").toLowerCase().includes(q)) return true;
+  return false;
+}
+
 /** The count each chip shows. */
 export function viewCounts(rows: readonly WorkRow[], opts: ViewOptions = {}): Record<ViewId, number> {
   const out = {} as Record<ViewId, number>;

@@ -64,13 +64,13 @@ import {
   describeEndorseDuration,
   endorseIsLong,
 } from "../../../core/curator/endorsePace";
-import { type CleanupPlan, type DownloadEntry } from "../../../core/curator/cleanupPlan";
+import { planCleanup, type CleanupPlan, type DownloadEntry } from "../../../core/curator/cleanupPlan";
 import {
   describeCleanupOutcome,
   readDownloads,
   runCleanup,
 } from "../../../core/curator/runCleanup";
-import { FROZEN_ATTRIBUTE } from "../../../core/curator/readProfile";
+import { FROZEN_ATTRIBUTE, NOTES_ATTRIBUTE } from "../../../core/curator/readProfile";
 import {
   installedIdentityReader,
   updateOneAndWait,
@@ -95,6 +95,7 @@ import {
   Field,
   Input,
   LinkButton,
+  Menu,
   Modal,
   Page,
   Pill,
@@ -109,6 +110,7 @@ import { ErrorBoundary } from "../../errors";
 import { ehLog } from "../../../core/logging/ehLog";
 import { getCuratorSession, type CuratorSnapshot } from "./curatorSession";
 import { DiskCleanupView, type Confirmer } from "./DiskCleanupView";
+import { DownloadsView } from "./DownloadsView";
 import { RequirementsPanel } from "./RequirementsPanel";
 import { PluginsView } from "./PluginsView";
 import { InstallPlanModal } from "./InstallPlanModal";
@@ -128,7 +130,8 @@ import {
   VIEWS,
   buildRows,
   describeRowState,
-  rowsForView,
+  matchesSearch,
+  rowsForViews,
   viewCounts,
   visibleViews,
   type ViewId,
@@ -164,7 +167,7 @@ function watchActiveProfile(api: { onStateChange?: (path: string[], cb: () => vo
 }
 
 /** Which runs honour Stop. The others are single Vortex calls with no checkpoint. */
-const STOPPABLE = new Set<string>(["requirements", "endorse", "update", "reinstall", "cleanup"]);
+const STOPPABLE = new Set<string>(["requirements", "endorse", "update", "reinstall", "cleanup", "remove", "install-download"]);
 
 /** Mod types the game registers, for the kind selector. Empty when Vortex cannot say. */
 function registeredModTypes(gameId: string): string[] {
@@ -218,7 +221,19 @@ const kindOf = (mod: CuratorMod): string => (mod.modType === "" ? "default" : mo
 const rowId = (r: WorkRow): string => r.mod.id;
 
 const WORK_COLUMNS: Column<WorkRow>[] = [
-  { key: "name", header: "Mod", value: (r) => r.mod.name },
+  {
+    key: "name",
+    header: "Mod",
+    value: (r) => r.mod.name,
+    render: (r) => (
+      <span title={r.mod.notes}>
+        {r.mod.name}
+        {r.mod.notes !== undefined && r.mod.notes !== "" && (
+          <span className="eh-muted eh-small"> · note</span>
+        )}
+      </span>
+    ),
+  },
   {
     key: "version",
     header: "Version",
@@ -384,17 +399,47 @@ function CuratorBody(): JSX.Element {
   const counts = React.useMemo(() => viewCounts(rows, viewOpts), [rows, viewOpts]);
   const chips = React.useMemo(() => visibleViews(counts), [counts]);
 
-  const [view, setView] = React.useState<ViewId | "disk" | "plugins">("all");
-  const tableView = view !== "disk" && view !== "plugins";
-  const visibleRows = React.useMemo(
-    () => (tableView ? rowsForView(rows, view as ViewId, viewOpts) : []),
-    [rows, view, tableView, viewOpts],
+  // Views compose: every active chip is another filter over the same rows
+  // ("updatable AND frozen"). An empty set is All mods. The other modes
+  // (plugins, downloads, disk) show different rows altogether.
+  const [mode, setMode] = React.useState<"table" | "disk" | "plugins" | "downloads">("table");
+  const [views, setViews] = React.useState<ReadonlySet<ViewId>>(new Set());
+  const tableView = mode === "table";
+  const [query, setQuery] = React.useState("");
+  const modNameById = React.useMemo(() => new Map(mods.map((m) => [m.id, m.name])), [mods]);
+  const searched = React.useMemo(
+    () => (query.trim() === "" ? rows : rows.filter((r) => matchesSearch(r, query, modNameById))),
+    [rows, query, modNameById],
   );
-  const viewSpec = tableView ? VIEWS.find((v) => v.id === view) : undefined;
-  // A view that emptied under the user (every update taken) falls back to All.
+  const visibleRows = React.useMemo(
+    () => (tableView ? rowsForViews(searched, views, viewOpts) : []),
+    [searched, views, tableView, viewOpts],
+  );
+  const activeSpecs = React.useMemo(() => VIEWS.filter((v) => views.has(v.id)), [views]);
+  const toggleView = (id: ViewId): void => {
+    setMode("table");
+    setViews((prev) => {
+      if (id === "all") return new Set();
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  // A view that emptied under the user (every update taken) drops out.
   React.useEffect(() => {
-    if (tableView && view !== "all" && counts[view as ViewId] === 0) setView("all");
-  }, [view, counts, tableView]);
+    const gone = [...views].filter((v) => counts[v] === 0);
+    if (gone.length > 0) setViews((prev) => new Set([...prev].filter((v) => counts[v] > 0)));
+  }, [views, counts]);
+  const view = mode === "table" ? (views.size === 1 ? [...views][0]! : views.size === 0 ? "all" : "several") : mode;
+  void view;
+
+  // Downloads with no installed version: what Disk cleanup refuses to
+  // touch, and what this page can install.
+  const notInstalled = React.useMemo<DownloadEntry[]>(
+    () => planCleanup({ mods, downloads }).unclearOrphans.map((o) => o.entry),
+    [mods, downloads],
+  );
 
   // The plugin list is Vortex's; the headers come with the requirements pass.
   const plugins = React.useMemo(
@@ -435,6 +480,23 @@ function CuratorBody(): JSX.Element {
     [api],
   );
 
+  /** A question with two real answers besides Cancel. Returns the chosen label, or undefined. */
+  const askThree = async (title: string, text: string, labels: [string, string]): Promise<string | undefined> => {
+    const showDialog = (api as unknown as { showDialog?: unknown }).showDialog;
+    if (typeof showDialog !== "function") return undefined;
+    const result = (await (
+      showDialog as (
+        type: string,
+        title: string,
+        content: { text: string },
+        actions: { label: string }[],
+      ) => PromiseLike<{ action?: string } | undefined>
+    )("question", title, { text }, [{ label: "Cancel" }, { label: labels[0] }, { label: labels[1] }])) as
+      | { action?: string }
+      | undefined;
+    return result?.action === "Cancel" ? undefined : result?.action;
+  };
+
   /** A run that throws outside its runner must not leave the session busy forever. */
   const guard = <A extends unknown[]>(label: string, fn: (...a: A) => Promise<void>) =>
     async (...a: A): Promise<void> => {
@@ -453,18 +515,22 @@ function CuratorBody(): JSX.Element {
 
   // ── Requirements ─────────────────────────────────────────────────────
 
-  const readRequirements = guard("Reading requirements", async (): Promise<void> => {
+  const readRequirements = guard("Reading requirements", async (incremental?: boolean): Promise<void> => {
     const game = gameId;
     if (game === undefined) return;
     const signal = session.begin("requirements", { keepReport: true });
     if (signal === undefined) return;
     try {
+      // After an install only the NEW mods' pages are asked for; the button
+      // re-reads everything.
+      const previous = incremental === true && requirements !== undefined ? requirements.load : undefined;
       const load = await loadRequirements({
         api,
         gameId: game,
-        mods,
+        mods: readCuratorMods(api.getState(), game, readEnabledModIds(api.getState(), game)),
         signal,
         onProgress: setProgress,
+        ...(previous === undefined ? {} : { previous }),
       });
       if (load.stopped) {
         // A partial report would show "0 missing" and "headers read" for
@@ -506,7 +572,15 @@ function CuratorBody(): JSX.Element {
 
   // ── "Make it work": the closure plan ─────────────────────────────────
   const [planState, setPlanState] = React.useState<
-    { rootName: string; plan: InstallPlan | undefined; files: PlannedFile[]; picked: Record<string, number | undefined> } | undefined
+    | {
+        rootName: string;
+        plan: InstallPlan | undefined;
+        files: PlannedFile[];
+        picked: Record<string, number | undefined>;
+        /** Mods to enable once the plan has run (the "enable, but make it work first" path). */
+        thenEnable: CuratorMod[];
+      }
+    | undefined
   >(undefined);
 
   /**
@@ -569,43 +643,48 @@ function CuratorBody(): JSX.Element {
   };
 
   /** Read the chain for a mod (or for one of its lines) and open the preview. */
-  const openPlan = guard("Planning an install", async (root: CuratorMod, only?: ModRequirement): Promise<void> => {
-    const game = gameId;
-    const cache = requirements;
-    if (game === undefined || cache === undefined) return;
-    if (nexus.getModRequirements === undefined || nexus.getModFiles === undefined || nexus.download === undefined) {
-      setNote("This Vortex build does not expose the Nexus download surface, so requirements have to be fetched from their mod pages.");
-      return;
-    }
-    const lines = only !== undefined ? [only] : (cache.load.report.byMod.get(root.id)?.requirements ?? []);
-    const signal = session.begin("install-requirement", { keepReport: true });
-    if (signal === undefined) {
-      setNote("Something else is still running — try again when it finishes.");
-      return;
-    }
-    setPlanState({ rootName: root.name, plan: undefined, files: [], picked: {} });
-    setProgress(`Reading what ${root.name}'s requirements need themselves…`);
-    try {
-      const plan = await planRequirementClosure({
-        rootName: root.name,
-        roots: lines,
-        mods,
-        activeGame: game,
-        games: cache.load.games,
-        toDomain: nexusDomainForVortexGame,
-        knownGameIds: knownGameIds(api.getState()),
-        fetch: nexus.getModRequirements,
-        signal,
-      });
-      setProgress(`Asking Nexus which file each of ${num(plan.steps.length)} page(s) ships…`);
-      const files = await resolveInstallFiles(plan.steps, nexus.getModFiles, signal);
-      session.finish(undefined);
-      setPlanState({ rootName: root.name, plan, files, picked: {} });
-    } catch (err) {
-      session.finish(undefined, `Could not plan the install: ${err instanceof Error ? err.message : String(err)}`);
-      setPlanState(undefined);
-    }
-  });
+  const openPlan = guard(
+    "Planning an install",
+    async (rootName: string, lines: readonly ModRequirement[], thenEnable: readonly CuratorMod[] = []): Promise<void> => {
+      const game = gameId;
+      const cache = requirements;
+      if (game === undefined || cache === undefined) return;
+      if (nexus.getModRequirements === undefined || nexus.getModFiles === undefined || nexus.download === undefined) {
+        setNote("This Vortex build does not expose the Nexus download surface, so requirements have to be fetched from their mod pages.");
+        return;
+      }
+      const signal = session.begin("install-requirement", { keepReport: true });
+      if (signal === undefined) {
+        setNote("Something else is still running — try again when it finishes.");
+        return;
+      }
+      setPlanState({ rootName, plan: undefined, files: [], picked: {}, thenEnable: [...thenEnable] });
+      setProgress(`Reading what ${rootName}'s requirements need themselves…`);
+      try {
+        const plan = await planRequirementClosure({
+          rootName,
+          roots: lines,
+          mods,
+          activeGame: game,
+          games: cache.load.games,
+          toDomain: nexusDomainForVortexGame,
+          knownGameIds: knownGameIds(api.getState()),
+          fetch: nexus.getModRequirements,
+          signal,
+        });
+        setProgress(`Asking Nexus which file each of ${num(plan.steps.length)} page(s) ships…`);
+        const files = await resolveInstallFiles(plan.steps, nexus.getModFiles, signal);
+        session.finish(undefined);
+        setPlanState({ rootName, plan, files, picked: {}, thenEnable: [...thenEnable] });
+      } catch (err) {
+        session.finish(undefined, `Could not plan the install: ${err instanceof Error ? err.message : String(err)}`);
+        setPlanState(undefined);
+      }
+    },
+  );
+
+  /** The lines a plan for a mod starts from: its own report entry. */
+  const linesOf = (m: CuratorMod): ModRequirement[] => requirements?.load.report.byMod.get(m.id)?.requirements ?? [];
 
   /** Run the previewed plan: downloads in order, each waited for, then the enables. */
   const runPlan = guard("Installing requirements", async (): Promise<void> => {
@@ -641,22 +720,119 @@ function CuratorBody(): JSX.Element {
         lines.push(`${pf.step.name}: did not finish installing — ${result.why}.`);
       }
     }
-    if (st.plan.toEnable.length > 0 && !signal.aborted) {
-      setEnabledFor(st.plan.toEnable, true);
-      lines.push(`Enabled ${st.plan.toEnable.map((m) => m.name).join(", ")}.`);
+    const toEnable = [...st.plan.toEnable, ...st.thenEnable.filter((m) => !st.plan!.toEnable.some((p) => p.id === m.id))];
+    if (toEnable.length > 0 && !signal.aborted) {
+      setEnabledFor(toEnable, true);
+      lines.push(`Enabled ${toEnable.map((m) => m.name).join(", ")}.`);
     }
     const skipped = st.files.filter((pf) => !todo.includes(pf));
     if (skipped.length > 0) lines.push(`Not installed (no file chosen, no current file, or another game): ${skipped.map((pf) => pf.step.name).join(", ")}.`);
     ehLog("info", "curator.requirement.plan.done", { root: st.rootName, lines: lines.length, stopped: signal.aborted });
     session.finish(lines);
     setTick((t) => t + 1);
-    // The pool changed; the report is re-read so the panel and the column agree with it.
-    if (!signal.aborted) void readRequirements();
+    // The pool changed; only the new mods' pages are asked for.
+    if (!signal.aborted) void readRequirements(true);
   });
 
   const installRequirement = (req: ModRequirement): void => {
     if (focusMod === undefined) return;
-    void openPlan(focusMod, req);
+    void openPlan(focusMod.name, [req]);
+  };
+
+  /** Uninstall from the pool. The user's explicit choice, confirmed; archives stay (Disk cleanup lists them). */
+  const removeMods = guard("Removing", async (targets: readonly CuratorMod[]): Promise<void> => {
+    const game = gameId;
+    if (game === undefined || targets.length === 0) return;
+    const ids = new Set(targets.map((m) => m.id));
+    const broken = report === undefined ? [] : dependantsOf(report, mods, ids);
+    const ok = await confirm({
+      title: `Remove ${num(targets.length)} mod(s) from this game?`,
+      text:
+        `Each is uninstalled from Vortex — its staging folder is deleted and it leaves every profile. ` +
+        `Its archive stays in Downloads, so it can be installed again; Disk cleanup lists such archives.\n\n` +
+        targets
+          .slice(0, 10)
+          .map((m) => `  • ${m.name}`)
+          .join("\n") +
+        (targets.length > 10 ? `\n  … and ${targets.length - 10} more` : "") +
+        (broken.length > 0
+          ? `\n\nSTILL NEEDED: ` +
+            broken
+              .slice(0, 6)
+              .map((b) => `${b.provider.name} by ${b.dependants.map((d) => d.name).join(", ")}`)
+              .join("; ") +
+            `.`
+          : ""),
+      confirmLabel: "Remove",
+    });
+    if (!ok) return;
+    const signal = session.begin("remove");
+    if (signal === undefined) return;
+    const lines: string[] = [];
+    let n = 0;
+    for (const m of targets) {
+      if (signal.aborted) {
+        lines.push(`Stopped before ${m.name}.`);
+        break;
+      }
+      n += 1;
+      setProgress(`Removing ${n} of ${targets.length} — ${m.name}`);
+      try {
+        await uninstallMod(api, { gameId: game, modId: m.id });
+        lines.push(`Removed ${m.name}.`);
+      } catch (err) {
+        lines.push(`${m.name}: not removed — ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    ehLog("info", "curator.remove.done", { asked: targets.length, lines: lines.length, stopped: signal.aborted });
+    session.finish(lines);
+    setSelected((prev) => new Set([...prev].filter((id) => !ids.has(id))));
+    setFocusId((f) => (f !== undefined && ids.has(f) ? undefined : f));
+    setTick((t) => t + 1);
+  });
+
+  /** Install downloaded archives nothing was made from, one at a time, through Vortex's installer. */
+  const installDownloads = guard("Installing downloads", async (entries: readonly DownloadEntry[]): Promise<void> => {
+    const game = gameId;
+    if (game === undefined || entries.length === 0) return;
+    const signal = session.begin("install-download");
+    if (signal === undefined) {
+      setNote("Something else is still running — try again when it finishes.");
+      return;
+    }
+    const lines: string[] = [];
+    let n = 0;
+    for (const d of entries) {
+      if (signal.aborted) {
+        lines.push(`Stopped before ${d.fileName}.`);
+        break;
+      }
+      n += 1;
+      setProgress(`Installing ${n} of ${entries.length} — ${d.fileName}`);
+      try {
+        const { vortexModId } = await installFromExistingDownload(api, { gameId: game, archiveId: d.id, signal });
+        lines.push(`Installed ${d.fileName} as ${vortexModId}.`);
+      } catch (err) {
+        lines.push(`${d.fileName}: not installed — ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    ehLog("info", "curator.install-download.done", { asked: entries.length, lines: lines.length, stopped: signal.aborted });
+    session.finish(lines);
+    setTick((t) => t + 1);
+    if (!signal.aborted && requirements !== undefined) void readRequirements(true);
+  });
+
+  const saveNote = (m: CuratorMod, text: string): void => {
+    if (gameId === undefined) return;
+    api.store?.dispatch(vortexActions.setModAttribute(gameId, m.id, NOTES_ATTRIBUTE, text === "" ? undefined : text) as never);
+    setTick((t) => t + 1);
+  };
+
+  /** Plugins: Vortex's own action, dispatched raw (verified against the plugin-management source). */
+  const setPluginEnabled = (pluginName: string, enabled: boolean): void => {
+    api.store?.dispatch({ type: "SET_PLUGIN_ENABLED", payload: { pluginName, enabled } } as never);
+    ehLog("info", "curator.plugin.set-enabled", { pluginName, enabled });
+    setTick((t) => t + 1);
   };
 
   const openPage = (req: ModRequirement): void => {
@@ -964,6 +1140,29 @@ function CuratorBody(): JSX.Element {
   const enableWithProviders = async (targets: readonly CuratorMod[]): Promise<void> => {
     const ids = new Set(targets.map((m) => m.id));
     const providers = report === undefined ? [] : disabledProvidersFor(report, mods, ids);
+    // Settled: a still-missing requirement offers "Make it work" first; the
+    // curator can enable anyway.
+    const missingLines = targets.flatMap((m) =>
+      linesOf(m).filter((q) => q.status === "missing" && q.nexusModId !== undefined && q.vortexGameId !== undefined),
+    );
+    if (missingLines.length > 0 && nexus.download !== undefined) {
+      const names = [...new Set(missingLines.map((q) => q.name))];
+      const answer = await askThree(
+        `${targets.length === 1 ? targets[0]!.name : `${num(targets.length)} mods`} still need${targets.length === 1 ? "s" : ""} ${num(names.length)} thing(s) that are not installed`,
+        names
+          .slice(0, 10)
+          .map((n) => `  • ${n}`)
+          .join("\n") +
+          (names.length > 10 ? `\n  … and ${names.length - 10} more` : "") +
+          `\n\n"Make it work" reads the whole chain, shows the plan, installs it, then enables. "Enable anyway" enables now and leaves the gaps.`,
+        ["Enable anyway", "Make it work"],
+      );
+      if (answer === undefined) return;
+      if (answer === "Make it work") {
+        void openPlan(targets.length === 1 ? targets[0]!.name : `${num(targets.length)} mods`, targets.flatMap(linesOf), targets);
+        return;
+      }
+    }
     setEnabledFor([...targets, ...providers], true);
     if (providers.length > 0) {
       setNote(
@@ -983,18 +1182,22 @@ function CuratorBody(): JSX.Element {
     const ids = new Set(targets.map((m) => m.id));
     const broken = report === undefined ? [] : dependantsOf(report, mods, ids);
     if (broken.length > 0) {
-      const ok = await confirm({
-        title: `Disable anyway? ${num(broken.length)} of these are required by others`,
-        text:
-          broken
-            .slice(0, 10)
-            .map((b) => `  • ${b.provider.name} — needed by ${b.dependants.map((d) => d.name).join(", ")}`)
-            .join("\n") +
+      const dependants = [...new Map(broken.flatMap((b) => b.dependants).map((d) => [d.id, d])).values()];
+      const answer = await askThree(
+        `${num(broken.length)} of these are needed by ${num(dependants.length)} other mod(s)`,
+        broken
+          .slice(0, 10)
+          .map((b) => `  • ${b.provider.name} — needed by ${b.dependants.map((d) => d.name).join(", ")}`)
+          .join("\n") +
           (broken.length > 10 ? `\n  … and ${broken.length - 10} more` : "") +
-          `\n\nThose dependants stay enabled and will be missing something. Disable anyway?`,
-        confirmLabel: "Disable",
-      });
-      if (!ok) return;
+          `\n\n"Disable only these" leaves the dependants on and missing something. "Disable dependants too" takes the ${num(dependants.length)} down with them.`,
+        ["Disable only these", "Disable dependants too"],
+      );
+      if (answer === undefined) return;
+      if (answer === "Disable dependants too") {
+        setEnabledFor([...targets, ...dependants.filter((d) => !ids.has(d.id))], false);
+        return;
+      }
     }
     setEnabledFor(targets, false);
   };
@@ -1101,28 +1304,30 @@ function CuratorBody(): JSX.Element {
         >
           {requirements === undefined ? "Read requirements" : "Re-read requirements"}
         </Button>
-        <Button
-          intent="ghost"
-          onClick={(): void => {
-            setTick((t) => t + 1);
-            setNote(
-              `Re-read ${num(mods.length)} mod(s) from Vortex: ${num(counts.updates)} updatable, ` +
-                `${num(counts.manual)} need a manual update, ${num(counts.frozen)} frozen. This reads ` +
-                `Vortex only — use "Re-check Nexus for updates" to ask Nexus itself.`,
-            );
-          }}
-        >
-          Reload
-        </Button>
-        <Button
-          intent="ghost"
-          disabled={!idle || endorsable.length === 0}
-          busy={busy === "endorse"}
-          onClick={(): void => void endorseAll()}
-        >
-          {`Endorse ${num(endorsable.length)} mod(s)` +
-            (endorseIsLong(endorsable.length) ? ` — ${describeEndorseDuration(endorsable.length)}` : "")}
-        </Button>
+        <Menu
+          label="More"
+          items={[
+            {
+              label: `Endorse ${num(endorsable.length)} mod(s)`,
+              hint: endorseIsLong(endorsable.length)
+                ? `${describeEndorseDuration(endorsable.length)}, paced; stops between mods`
+                : "Asks Vortex to endorse each unendorsed Nexus mod",
+              disabled: !idle || endorsable.length === 0,
+              onSelect: (): void => void endorseAll(),
+            },
+            {
+              label: "Reload from Vortex",
+              hint: "Re-reads the mod list without asking Nexus",
+              onSelect: (): void => {
+                setTick((t) => t + 1);
+                setNote(
+                  `Re-read ${num(mods.length)} mod(s) from Vortex: ${num(counts.updates)} updatable, ` +
+                    `${num(counts.manual)} need a manual update, ${num(counts.frozen)} frozen.`,
+                );
+              },
+            },
+          ]}
+        />
         {busy !== undefined && STOPPABLE.has(busy) && (
           <Button intent="ghost" onClick={(): void => session.cancel()}>
             Stop after this one
@@ -1163,25 +1368,45 @@ function CuratorBody(): JSX.Element {
         <Callout tone="warning">{requirements.load.unavailable}</Callout>
       )}
 
-      {/* Views: the same rows, one filter at a time. */}
+      {/* Views: the same rows; every active chip is one more filter. */}
       <div className="eh-row eh-row--sm" role="tablist" aria-label="Views">
         {chips.map((v) => (
-          <Chip key={v.id} active={view === v.id} onClick={(): void => setView(v.id)} title={v.description}>
+          <Chip
+            key={v.id}
+            active={tableView && (v.id === "all" ? views.size === 0 : views.has(v.id))}
+            onClick={(): void => toggleView(v.id)}
+            title={v.id === "all" ? v.description : `${v.description} Click again to remove; chips combine.`}
+          >
             {v.label}
             {v.id !== "all" && <span className="eh-muted"> {num(counts[v.id])}</span>}
           </Chip>
         ))}
         {plugins.length > 0 && (
-          <Chip active={view === "plugins"} onClick={(): void => setView("plugins")} title="Load order, masters, light flags and owning mods">
+          <Chip active={mode === "plugins"} onClick={(): void => setMode("plugins")} title="Load order, masters, light flags and owning mods">
             Plugins <span className="eh-muted">{num(plugins.length)}</span>
           </Chip>
         )}
-        <Chip active={view === "disk"} onClick={(): void => setView("disk")} title="Orphaned archives and superseded installs">
+        {notInstalled.length > 0 && (
+          <Chip active={mode === "downloads"} onClick={(): void => setMode("downloads")} title="Downloaded archives with no installed version">
+            Downloads <span className="eh-muted">{num(notInstalled.length)}</span>
+          </Chip>
+        )}
+        <Chip active={mode === "disk"} onClick={(): void => setMode("disk")} title="Orphaned archives and superseded installs">
           Disk cleanup
         </Chip>
+        {tableView && (
+          <Input
+            small
+            aria-label="Search mods and requirements"
+            placeholder="search: a mod, a requirement, a plugin…"
+            value={query}
+            onChange={(e): void => setQuery(e.target.value)}
+            className="eh-fill"
+          />
+        )}
       </div>
 
-      {view === "requirements" && (
+      {views.has("requirements") && (
         <Checkbox
           label="Include disabled mods"
           description="Off by default: a disabled mod's missing requirement is not tonight's problem."
@@ -1190,14 +1415,28 @@ function CuratorBody(): JSX.Element {
         />
       )}
 
-      {view === "disk" ? (
+      <div className={focusMod !== undefined ? "eh-split" : undefined}>
+      <div className="eh-stack">
+      {mode === "disk" ? (
         <DiskCleanupView mods={mods} downloads={downloads} busy={!idle} confirm={confirm} applyCleanup={applyCleanup} />
-      ) : view === "plugins" ? (
-        <PluginsView rows={pluginRows} headersRead={requirements !== undefined} onFocus={setFocusId} />
+      ) : mode === "plugins" ? (
+        <PluginsView
+          rows={pluginRows}
+          headersRead={requirements !== undefined}
+          onFocus={setFocusId}
+          busy={!idle}
+          onSetEnabled={(r, enabled): void => setPluginEnabled(r.plugin.name, enabled)}
+        />
+      ) : mode === "downloads" ? (
+        <DownloadsView downloads={notInstalled} busy={!idle} onInstall={(entries): void => void installDownloads(entries)} />
       ) : (
         <div className="eh-stack">
-          {viewSpec !== undefined && viewSpec.id !== "all" && <p className="eh-note eh-prose">{viewSpec.description}</p>}
-          {view === "requirements" && reqSummary !== undefined && reqSummary.unfetched > 0 && (
+          {activeSpecs.map((v) => (
+            <p key={v.id} className="eh-note eh-prose">
+              <span className="eh-strong">{v.label}:</span> {v.description}
+            </p>
+          ))}
+          {views.has("requirements") && reqSummary !== undefined && reqSummary.unfetched > 0 && (
             <p className="eh-note">
               {num(reqSummary.unfetched)} Nexus mod(s) were not answered for; their requirements are unknown, not empty.
             </p>
@@ -1209,11 +1448,24 @@ function CuratorBody(): JSX.Element {
             noun="mod"
             limit={200}
             maxHeight={520}
-            actionsWidth={200}
+            actionsWidth={290}
+            minWidth={1180}
             selection={{ selected, onChange: setSelected }}
             empty={<p className="eh-body">Nothing in this view.</p>}
             actions={(r): JSX.Element => (
               <div className="eh-row eh-row--sm eh-row--nowrap">
+                <Button
+                  size="sm"
+                  intent="ghost"
+                  disabled={!idle}
+                  title={r.mod.enabled ? "Disable in the active profile" : "Enable in the active profile"}
+                  onClick={(e): void => {
+                    e.stopPropagation();
+                    void (r.mod.enabled ? disableWithDependants([r.mod]) : enableWithProviders([r.mod]));
+                  }}
+                >
+                  {r.mod.enabled ? "Disable" : "Enable"}
+                </Button>
                 {r.update !== undefined && (
                   <Button size="sm" intent="ghost" disabled={!idle} onClick={(): void => void updateAll([r])}>
                     Update
@@ -1232,7 +1484,10 @@ function CuratorBody(): JSX.Element {
                 <Button
                   size="sm"
                   intent={focusId === r.mod.id ? "primary" : "ghost"}
-                  onClick={(): void => setFocusId(focusId === r.mod.id ? undefined : r.mod.id)}
+                  onClick={(e): void => {
+                    e.stopPropagation();
+                    setFocusId(focusId === r.mod.id ? undefined : r.mod.id);
+                  }}
                 >
                   Requirements
                 </Button>
@@ -1242,22 +1497,27 @@ function CuratorBody(): JSX.Element {
         </div>
       )}
 
+      </div>
       {focusMod !== undefined && (
-        <RequirementsPanel
-          mod={focusMod}
-          mods={mods}
-          report={report}
-          entry={report?.byMod.get(focusMod.id)}
-          busy={!idle}
-          canInstall={nexus.download !== undefined && nexus.getModFiles !== undefined}
-          onClose={(): void => setFocusId(undefined)}
-          onEnable={(providers): void => setEnabledFor(providers, true)}
-          onInstall={installRequirement}
-          onInstallAll={(): void => void openPlan(focusMod)}
-          onOpenPage={openPage}
-          onFocus={setFocusId}
-        />
+        <aside className="eh-split__aside">
+          <RequirementsPanel
+            mod={focusMod}
+            mods={mods}
+            report={report}
+            entry={report?.byMod.get(focusMod.id)}
+            busy={!idle}
+            canInstall={nexus.download !== undefined && nexus.getModFiles !== undefined}
+            onClose={(): void => setFocusId(undefined)}
+            onEnable={(providers): void => setEnabledFor(providers, true)}
+            onInstall={installRequirement}
+            onInstallAll={(): void => void openPlan(focusMod.name, linesOf(focusMod))}
+            onOpenPage={openPage}
+            onFocus={setFocusId}
+            onSaveNote={saveNote}
+          />
+        </aside>
       )}
+      </div>
 
       {/* The action bar: only while something is ticked, only what applies. */}
       {chosen.length > 0 && tableView && (
@@ -1330,6 +1590,16 @@ function CuratorBody(): JSX.Element {
             )}
             <Button size="sm" intent="ghost" disabled={!idle} busy={busy === "reinstall"} onClick={(): void => void reinstall(chosen)}>
               Reinstall {num(chosen.length)}
+            </Button>
+            <Button
+              size="sm"
+              intent="danger"
+              disabled={!idle}
+              busy={busy === "remove"}
+              title="Uninstall from this game; archives stay in Downloads"
+              onClick={(): void => void removeMods(chosen)}
+            >
+              Remove {num(chosen.length)}
             </Button>
             <Field label="Kind" inline>
               {(id): JSX.Element =>

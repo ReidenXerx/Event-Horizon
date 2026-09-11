@@ -162,6 +162,8 @@ export type RequirementsLoad = {
   headers: Map<string, PluginHeader>;
   /** The curator pressed Stop: the report is partial and must not pose as whole. */
   stopped: boolean;
+  /** What Nexus said, by UID, so a later read after an install asks only about the new mods. */
+  fetched: Map<string, Partial<NexusModRequirements>>;
 };
 
 /**
@@ -174,6 +176,12 @@ export async function loadRequirements(args: {
   mods: readonly CuratorMod[];
   signal?: AbortSignal;
   onProgress?: (message: string) => void;
+  /**
+   * A previous load for the same game: its Nexus answers are reused and
+   * only UIDs it did not have are fetched. Plugin headers are always
+   * re-read (local, and the pool may have new plugins).
+   */
+  previous?: RequirementsLoad;
 }): Promise<RequirementsLoad> {
   const { api, gameId, mods } = args;
   const ext = nexusExtOf(api);
@@ -194,16 +202,20 @@ export async function loadRequirements(args: {
     unavailable =
       "Vortex's Nexus games cache is missing, so mod pages cannot be addressed. Open the Nexus tab once and try again.";
   } else {
-    const uids = [...uidByMod.values()];
-    args.onProgress?.(`Asking Nexus about ${uids.length} mods…`);
-    const result = await fetchRequirements({
-      uids,
-      fetch: ext.getModRequirements,
-      signal: args.signal,
-      onProgress: (done, total) => args.onProgress?.(`Asking Nexus about mods — ${done} of ${total}`),
-    });
-    fetched = result.byUid;
-    failed = new Set(result.failedUids);
+    const reuse = args.previous?.fetched;
+    const uids = [...uidByMod.values()].filter((u) => reuse === undefined || !reuse.has(u));
+    if (uids.length > 0) {
+      args.onProgress?.(`Asking Nexus about ${uids.length} mods…`);
+      const result = await fetchRequirements({
+        uids,
+        fetch: ext.getModRequirements,
+        signal: args.signal,
+        onProgress: (done, total) => args.onProgress?.(`Asking Nexus about mods — ${done} of ${total}`),
+      });
+      fetched = result.byUid;
+      failed = new Set(result.failedUids);
+    }
+    if (reuse !== undefined) for (const [uid, raw] of reuse) if (!fetched.has(uid)) fetched.set(uid, raw);
   }
 
   let report = resolveNexusRequirements({
@@ -283,5 +295,6 @@ export async function loadRequirements(args: {
     plugins,
     headers,
     stopped: args.signal?.aborted === true,
+    fetched,
   };
 }

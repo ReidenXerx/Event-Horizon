@@ -43,6 +43,8 @@ export type CuratorBusy =
   | "refresh"
   | "requirements"
   | "install-requirement"
+  | "remove"
+  | "install-download"
   | undefined;
 
 /**

@@ -30,6 +30,8 @@ import type { CuratorMod } from "./profileActions";
 
 /** Our attribute key. Namespaced so Vortex can never grow one that collides. */
 export const FROZEN_ATTRIBUTE = "eventHorizonFrozenAtVersion";
+/** A curator's free-text note on a mod. This Vortex build has no notes attribute of its own. */
+export const NOTES_ATTRIBUTE = "eventHorizonNotes";
 
 /** Numeric ids arrive as numbers or strings; only a real number is usable. */
 function asNumber(raw: unknown): number | undefined {
@@ -103,6 +105,7 @@ export function readCuratorMods(
       ...opt("fileName", asString(attributes.fileName)),
       ...opt("downloadGame", asString(attributes.downloadGame)),
       ...opt("frozenAtVersion", asString(attributes[FROZEN_ATTRIBUTE])),
+      ...opt("notes", asString(attributes[NOTES_ATTRIBUTE])),
       ...opt("archiveId", asString(mod?.archiveId)),
       ...opt("installationPath", asString(mod?.installationPath)),
     });

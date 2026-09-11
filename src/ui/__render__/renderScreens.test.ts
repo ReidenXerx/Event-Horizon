@@ -64,6 +64,8 @@ import { RequirementsPanel } from "../pages/curator/RequirementsPanel";
 import { DiskCleanupView } from "../pages/curator/DiskCleanupView";
 import { PluginsView } from "../pages/curator/PluginsView";
 import { InstallPlanModal } from "../pages/curator/InstallPlanModal";
+import { DownloadsView } from "../pages/curator/DownloadsView";
+import { planCleanup } from "../../core/curator/cleanupPlan";
 import { buildPluginRows, type PluginHeader } from "../../core/curator/pluginView";
 import { readPluginList } from "../../core/curator/pluginPool";
 import { readDownloads } from "../../core/curator/runCleanup";
@@ -1218,7 +1220,20 @@ describe("render", () => {
     });
     write(
       "curator-plugins",
-      React.createElement(PluginsView, { rows, headersRead: true, onFocus: () => undefined }),
+      React.createElement(PluginsView, { rows, headersRead: true, onFocus: () => undefined, onSetEnabled: () => undefined, busy: false }),
+    );
+  });
+
+  // Downloads with no installed version: the archives Disk cleanup refuses
+  // to touch, offered for install instead.
+  it("curator tools — downloads not installed", () => {
+    const state = curatorState();
+    const mods = readCuratorMods(state as never, "skyrimse", readEnabledModIds(state as never, "skyrimse"));
+    const downloads = readDownloads(state as never, "skyrimse");
+    const notInstalled = planCleanup({ mods, downloads }).unclearOrphans.map((o) => o.entry);
+    write(
+      "curator-downloads",
+      React.createElement(DownloadsView, { downloads: notInstalled, busy: false, onInstall: () => undefined }),
     );
   });
 
@@ -1355,11 +1370,15 @@ describe("render", () => {
         React.createElement(ApiProvider, {
           api: { getState: () => state, store: { dispatch: () => undefined } },
           children: React.createElement(ToastProvider, {
+            // The page's own split: the list left, the inspector sticky on the right.
             children: React.createElement(
               "div",
-              { className: "eh-stack eh-stack--lg" },
-              React.createElement(CuratorPanel, {}),
-              React.createElement(RequirementsPanel, {
+              { className: "eh-split" },
+              React.createElement("div", { className: "eh-stack" }, React.createElement(CuratorPanel, {})),
+              React.createElement(
+                "aside",
+                { className: "eh-split__aside" },
+                React.createElement(RequirementsPanel, {
                 mod: mods.find((m) => m.id === "needs-update")!,
                 mods,
                 report,
@@ -1372,7 +1391,9 @@ describe("render", () => {
                 onInstallAll: () => undefined,
                 onOpenPage: () => undefined,
                 onFocus: () => undefined,
-              }),
+                onSaveNote: () => undefined,
+                }),
+              ),
             ),
           } as never),
         } as never),

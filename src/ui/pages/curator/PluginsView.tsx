@@ -19,7 +19,7 @@ import {
   type PluginRow,
   type PluginViewId,
 } from "../../../core/curator/pluginView";
-import { Callout, Chip, DataTable, EmptyState, LinkButton, Pill, StatGrid, StatTile, type Column } from "../../components";
+import { Button, Callout, Chip, DataTable, EmptyState, LinkButton, Pill, StatGrid, StatTile, type Column } from "../../components";
 
 const num = (n: number): string => n.toLocaleString();
 
@@ -29,6 +29,11 @@ const stateOf = (r: PluginRow): string =>
   r.plugin.fromDisabledMod === true ? "mod disabled" : r.plugin.enabled ? "enabled" : "disabled";
 
 function makeColumns(onFocus: (modId: string) => void): Column<PluginRow>[] {
+  void onFocus;
+  return makeColumnsWith(onFocus);
+}
+
+function makeColumnsWith(onFocus: (modId: string) => void): Column<PluginRow>[] {
   return [
     {
       key: "order",
@@ -101,6 +106,9 @@ export function PluginsView(props: {
   /** Whether plugin headers have been read (they come with "Read requirements"). */
   headersRead: boolean;
   onFocus: (modId: string) => void;
+  /** Absent when the page cannot dispatch (no store): the view stays read-only. */
+  onSetEnabled?: (plugin: PluginRow, enabled: boolean) => void;
+  busy?: boolean;
 }): JSX.Element {
   const { rows, headersRead, onFocus } = props;
   const [view, setView] = React.useState<PluginViewId>("all");
@@ -168,8 +176,8 @@ export function PluginsView(props: {
       )}
 
       <p className="eh-note">
-        Read-only for now: enabling, reordering and flagging stay in Vortex&rsquo;s Plugins tab. Plugins of disabled
-        mods are listed too (state &ldquo;mod disabled&rdquo;), which Vortex&rsquo;s tab does not show.
+        Enable and disable here; reordering and the light flag stay in Vortex&rsquo;s Plugins tab for now. Plugins of
+        disabled mods are listed too (state &ldquo;mod disabled&rdquo;), which Vortex&rsquo;s tab does not show.
       </p>
 
       <div className="eh-row eh-row--sm" role="tablist" aria-label="Plugin views">
@@ -182,7 +190,37 @@ export function PluginsView(props: {
       </div>
       {spec !== undefined && spec.id !== "all" && <p className="eh-note eh-prose">{spec.description}</p>}
 
-      <DataTable rows={visible} idOf={rowId} columns={columns} noun="plugin" limit={300} maxHeight={520} />
+      <DataTable
+        rows={visible}
+        idOf={rowId}
+        columns={columns}
+        noun="plugin"
+        maxHeight={520}
+        actionsWidth={110}
+        actions={
+          props.onSetEnabled === undefined
+            ? undefined
+            : (r): JSX.Element => (
+                <div className="eh-row eh-row--sm eh-row--nowrap">
+                  {!r.plugin.isNative && r.plugin.fromDisabledMod !== true && (
+                    <Button
+                      size="sm"
+                      intent="ghost"
+                      disabled={props.busy === true}
+                      title={
+                        !r.plugin.enabled && r.disabled.length > 0
+                          ? `Its master(s) ${r.disabled.join(", ")} are disabled; the game will not load it until they are on`
+                          : undefined
+                      }
+                      onClick={(): void => props.onSetEnabled!(r, !r.plugin.enabled)}
+                    >
+                      {r.plugin.enabled ? "Disable" : "Enable"}
+                    </Button>
+                  )}
+                </div>
+              )
+        }
+      />
     </div>
   );
 }
