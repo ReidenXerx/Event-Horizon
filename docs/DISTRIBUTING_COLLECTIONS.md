@@ -31,18 +31,39 @@ BodySlide and FaceGen outputs.
    accepted too). The page's own file is a small zip holding a text file with
    the link, the file name, the size and the SHA-256, so the page has a file
    and a checksum without hosting the package.
-4. The mod page is created and edited through the curator's own browser over
-   the DevTools protocol, the same way `scripts/nexus-page.mjs` writes the
-   extension's page; the API uploads files but cannot create a mod or write a
-   description. The page requires the Event Horizon file (file-to-file
-   requirement, min 0.1.152) and carries the adult tags.
+4. The mod page is created and edited in a browser over the DevTools
+   protocol, the same way `scripts/nexus-page.mjs` writes the extension's page:
+   a dedicated browser profile (its own `--user-data-dir`, logged into Nexus
+   and nothing else), closed as soon as the edit is done — while its debugging
+   port is open, any program on the machine can read that profile's cookies
+   ([`PUBLISHING.md`](PUBLISHING.md) step 4 has the details). The API uploads
+   files but cannot create a mod or write a description. The page requires
+   the Event Horizon file (file-to-file requirement, min 0.1.152) and carries
+   the adult tags.
 
 `scripts/nexus-collection-file.mjs` (`uploadArchiveFromDisk` in
 `scripts/lib/nexusRelease.mjs`) puts any file on a mod page, multipart above
-100 MiB: one presigned PUT per part, three in flight, four attempts each,
-ETags folded into the completion XML, then finalise and wait for `available`.
-Measured 2026-09-11: 3.4 GB in 64 s, 10.7 GB in 2 min 40 s. It is what uploads
-the link zip now, and it is ready if Nexus ever whitelists the packages.
+100 MiB: one presigned PUT per part, three in flight, ETags folded into the
+completion XML, then finalise and wait for `available`.
+
+- **Checked before a byte is uploaded:** every argument (an option is never
+  read as another option's value), the file name (printable ASCII — it goes
+  into a signed header), that the page is not Event Horizon's own, and that
+  `--file-id` is a file on the `--mod` page.
+- **Verified:** each part's ETag must be the MD5 of the bytes sent, the
+  assembled object's ETag must be the one those parts make, and the file must
+  not change on disk, or the upload is not finalised. The whole file's MD5 and
+  SHA-256 are logged; the MD5 is not sent, because the multipart create
+  request has no `md5` field (`openapi.yaml`, read 2026-09-11).
+- **Failures:** a failed part is retried with exponential backoff for at least
+  four minutes. A part that cannot succeed (an expired presigned URL answers
+  403) stops the whole upload at once. There is **no resume**: the API cannot
+  reopen a multipart session, so a failed run starts again from the first
+  part, and an unfinished upload adds nothing to the page.
+
+Measured 2026-09-11 with the earlier uploader, before the per-part
+verification: 3.4 GB in 64 s, 10.7 GB in 2 min 40 s. It is what uploads the
+link zip now, and it is ready if Nexus ever whitelists the packages.
 `--file-id <id>` adds a new VERSION of an existing file.
 
 The first two pages: Fallout 4 mod 108944 (Ivy's Panties, pixeldrain 4gheZH7F)

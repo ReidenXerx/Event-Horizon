@@ -208,13 +208,29 @@ image strip — the same files, from `docs/screenshots/`.
 The description itself cannot be written through the Nexus API: v3 exposes
 mods read-only (only collections have an edit endpoint, checked against
 `api.nexusmods.com/openapi.yaml` on 2026-09-11). `scripts/nexus-page.mjs`
-writes it through YOUR browser instead: start the browser with
-`--remote-debugging-port=9222` on its normal, logged-in profile (the exact
-command is in the script's header), run the script for a dry run, then with
-`--save`. It fills the summary from `package.json`'s `description` and the
-description from this file through the editor's source mode, saves, reloads
-and verifies. The page's editor is SCEditor; its WYSIWYG mode re-serialises
-BBCode and nests block tags, which is why the source mode is used.
+writes it through a browser instead, over the DevTools protocol, in a tab it
+opens for itself and closes afterwards:
+
+1. Start a browser on a **dedicated profile** — its own `--user-data-dir`,
+   never the everyday one — with `--remote-debugging-port=9222`. The exact
+   command is in the script's header. The first time, log into Nexus in the
+   window it opens; the profile keeps that login for next time.
+2. `node scripts/nexus-page.mjs` for a dry run, then again with `--save`.
+3. **Close that browser** as soon as the script is done.
+
+Why a separate profile, and why close it: while a browser listens on a
+debugging port, any program running on the machine can connect to it with no
+password, read the cookies of every site in that profile and act as you on
+each of them. On a profile that is only logged into Nexus, what is exposed is
+the Nexus login, and only while that browser is running. (Chrome 136 and later
+ignore the port switch on the default profile for the same reason.)
+
+The script fills the summary from `package.json`'s `description` and the
+description from this file through the editor's source mode, saves, reloads,
+and compares the page's text with what was written: the same text, ignoring
+line endings and trailing spaces, or it prints the first line that differs.
+The page's editor is SCEditor; its WYSIWYG mode re-serialises BBCode and nests
+block tags, which is why the source mode is used.
 
 The banner already carries the wordmark and the tagline, so the text title
 below it is deliberate duplication — it is what the page still says if the
