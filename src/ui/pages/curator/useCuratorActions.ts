@@ -43,6 +43,7 @@ import {
   readDownloadRecords,
 } from "../../../core/curator/existingDownload";
 import {
+  planBlockers,
   runRequirementPlan,
 } from "../../../core/curator/runRequirementPlan";
 import {
@@ -440,9 +441,33 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
           setPlanState(undefined);
           return;
         }
+        // The preview, as the curator will see it: a run's log has to show
+        // what was offered, not only what was done.
+        ehLog("info", "curator.requirement.plan.preview", {
+          root: rootName,
+          steps: files.map((pf) => ({
+            key: pf.step.key,
+            depth: pf.step.depth,
+            game: pf.step.vortexGameId ?? null,
+            choice: pf.choice.kind,
+            fileIds:
+              pf.choice.kind === "one"
+                ? [pf.choice.file.file_id]
+                : pf.choice.kind === "choose"
+                  ? pf.choice.candidates.map((f) => f.file_id)
+                  : [],
+          })),
+          toEnable: plan.toEnable.map((m) => m.id),
+          external: plan.external.map((q) => q.name),
+          unfetched: plan.unfetched,
+          truncated: plan.truncated,
+          thenEnable: thenEnable.map((m) => m.id),
+          blockers: planBlockers(plan, files, {}),
+        });
         session.finish(undefined);
         setPlanState({ rootName, plan, files, picked: {}, thenEnable: [...thenEnable] });
       } catch (err) {
+        ehLog("warn", "curator.requirement.plan.fail", { root: rootName, err });
         session.finish(undefined, `Could not plan the install: ${err instanceof Error ? err.message : String(err)}`);
         setPlanState(undefined);
       }
@@ -487,6 +512,17 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
         if (readEnabledModIds(state, game).has(vortexModId)) return "already-enabled";
         api.store?.dispatch(vortexActions.setModEnabled(profileId, vortexModId, true) as never);
         return "enabled";
+      },
+      installedFile: (vortexModId) => {
+        const game = gameId;
+        if (game === undefined) return undefined;
+        const m = readCuratorMods(api.getState(), game, new Set()).find((x) => x.id === vortexModId);
+        if (m === undefined) return undefined;
+        const name = m.logicalFileName ?? m.fileName;
+        return {
+          ...(m.nexusFileId === undefined ? {} : { fileId: m.nexusFileId }),
+          ...(name === undefined ? {} : { name }),
+        };
       },
       enableMods: (targets) => setEnabledFor(targets, true),
       onProgress: setProgress,
@@ -546,6 +582,7 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
         await uninstallMod(api, { gameId: game, modId: m.id });
         lines.push(`Removed ${m.name}.`);
       } catch (err) {
+        ehLog("warn", "curator.remove.fail", { modId: m.id, err });
         lines.push(`${m.name}: not removed — ${err instanceof Error ? err.message : String(err)}`);
       }
     }
@@ -581,6 +618,7 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
         const { vortexModId } = await installFromExistingDownload(api, { gameId: game, archiveId: d.id });
         lines.push(`Installed ${d.fileName} as ${vortexModId}.`);
       } catch (err) {
+        ehLog("warn", "curator.install-download.fail", { archiveId: d.id, err });
         lines.push(`${d.fileName}: not installed — ${err instanceof Error ? err.message : String(err)}`);
       }
     }
@@ -592,6 +630,8 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
 
   const saveNote = (m: CuratorMod, text: string): void => {
     if (gameId === undefined) return;
+    // The length, not the note: the curator's words are theirs.
+    ehLog("info", "curator.note.set", { modId: m.id, cleared: text === "", length: text.length });
     api.store?.dispatch(vortexActions.setModAttribute(gameId, m.id, NOTES_ATTRIBUTE, text === "" ? undefined : text) as never);
     setTick((t) => t + 1);
   };
@@ -617,6 +657,12 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
 
   const setFrozen = (mod: CuratorMod, version: string | undefined): void => {
     const { key, value } = freezeAttribute(version);
+    ehLog("info", "curator.freeze.set", {
+      modId: mod.id,
+      nexusModId: mod.nexusModId ?? null,
+      frozenAt: value ?? null,
+      installedVersion: mod.version ?? null,
+    });
     api.store?.dispatch(vortexActions.setModAttribute(gameId!, mod.id, key, value) as never);
     setTick((t) => t + 1);
   };
@@ -950,6 +996,12 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
     )?.settings?.profiles?.activeProfileId;
     const changes = planEnableChanges(targets, to);
     setNote(describeEnableChanges(changes));
+    ehLog("info", "curator.enable.set", {
+      to,
+      asked: targets.length,
+      changed: changes.map((c) => c.mod.id),
+      profileId: profileId ?? null,
+    });
     if (profileId === undefined) return;
     for (const change of changes) {
       api.store?.dispatch(vortexActions.setModEnabled(profileId, change.mod.id, change.to) as never);

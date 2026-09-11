@@ -87,10 +87,16 @@ export async function runRequirementPlan(input: {
   installStep: (step: PlannedInstall, file: NexusFileInfo) => Promise<PlanStepOutcome>;
   /** Switch on a requirement this run just installed, by its new Vortex id. */
   enableInstalled: (vortexModId: string) => EnableInstalledResult;
+  /**
+   * The Nexus file Vortex recorded for a mod this run just installed. A guided
+   * step accepts any file of the page, so what landed can differ from the plan.
+   */
+  installedFile: (vortexModId: string) => { fileId?: number; name?: string } | undefined;
   enableMods: (mods: readonly CuratorMod[]) => void;
   onProgress: (message: string) => void;
 }): Promise<PlanRunReport> {
-  const { rootName, plan, files, picked, thenEnable, signal, installStep, enableInstalled, enableMods, onProgress } = input;
+  const { rootName, plan, files, picked, thenEnable, signal, installStep, enableInstalled, installedFile, enableMods, onProgress } =
+    input;
   const todo = files.filter((pf) => pf.step.vortexGameId !== undefined && fileForStep(pf, picked) !== undefined);
   const skipped = files.filter((pf) => !todo.includes(pf));
   const known = planBlockers(plan, files, picked);
@@ -122,6 +128,21 @@ export async function runRequirementPlan(input: {
     const result = await installStep(pf.step, file);
     if (result.ok) {
       installed.push(pf.step.name);
+      // Name what actually landed: a guided step takes whichever file of the
+      // page the user fetched, and the plan's pick is then only a guess.
+      const planned = file.name ?? file.file_name ?? `file ${file.file_id}`;
+      const actual = installedFile(result.newModId);
+      const actualName = actual?.name ?? (actual?.fileId === undefined ? undefined : `file ${actual.fileId}`);
+      const shown =
+        actual?.fileId !== undefined && actual.fileId !== file.file_id
+          ? `${actualName} — picked on the page instead of the planned ${planned}`
+          : (actualName ?? planned);
+      ehLog("info", "curator.requirement.plan.step-installed", {
+        mod: pf.step.name,
+        vortexModId: result.newModId,
+        plannedFileId: file.file_id,
+        installedFileId: actual?.fileId ?? null,
+      });
       const enabled = enableInstalled(result.newModId);
       ehLog("info", "curator.requirement.plan.enable-installed", {
         mod: pf.step.name,
@@ -131,7 +152,7 @@ export async function runRequirementPlan(input: {
       if (enabled === "enabled" || enabled === "already-enabled") enabledInstalled.push(result.newModId);
       else notEnabled.push(pf.step.name);
       lines.push(
-        `Installed ${pf.step.name} (${file.name ?? file.file_name ?? `file ${file.file_id}`})` +
+        `Installed ${pf.step.name} (${shown})` +
           (enabled === "enabled" || enabled === "already-enabled"
             ? " and enabled it."
             : enabled === "not-found"

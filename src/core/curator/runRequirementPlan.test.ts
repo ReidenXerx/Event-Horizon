@@ -45,6 +45,7 @@ async function run(
     plan?: Partial<InstallPlan>;
     installStep?: (step: PlannedInstall) => Promise<PlanStepOutcome>;
     enableInstalled?: (id: string) => EnableInstalledResult;
+    installedFile?: (id: string) => { fileId?: number; name?: string } | undefined;
     signal?: AbortSignal;
     events?: string[];
   } = {},
@@ -59,6 +60,7 @@ async function run(
     signal: over.signal ?? new AbortController().signal,
     installStep: over.installStep ?? (async () => ({ ok: true, newModId: "new" })),
     enableInstalled: over.enableInstalled ?? (() => "enabled"),
+    installedFile: over.installedFile ?? (() => undefined),
     enableMods: (mods) => enabled.push(...mods.map((m) => m.id)),
     onProgress: () => undefined,
   });
@@ -81,6 +83,18 @@ describe("the requirements it installs", () => {
       },
     });
     expect(events).toEqual(["install A", "enable new-A", "install B", "enable new-B"]);
+  });
+
+  it("are reported by the file that actually landed, not the one the plan guessed", async () => {
+    // A guided step accepts any file of the page; the report named the
+    // planned file whatever the user fetched.
+    const r = await run([withFile(step("A"))], { installedFile: () => ({ fileId: 77, name: "A - AE build" }) });
+    expect(r.lines[0]).toBe("Installed A (A - AE build — picked on the page instead of the planned A main) and enabled it.");
+  });
+
+  it("are reported by the planned file when that is what landed", async () => {
+    const r = await run([withFile(step("A"))], { installedFile: () => ({ fileId: 10, name: "A main" }) });
+    expect(r.lines[0]).toBe("Installed A (A main) and enabled it.");
   });
 
   it("keep the root off when one of them could not be enabled, and say which", async () => {
