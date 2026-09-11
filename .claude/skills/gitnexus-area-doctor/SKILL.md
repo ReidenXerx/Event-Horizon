@@ -66,12 +66,10 @@ Start here when exploring this area:
 
 | Flow | Type | Steps |
 |------|------|-------|
-| `GatherObservations → GetVortexUserDataPath` | cross_community | 8 |
 | `Heal → EHRuntime` | cross_community | 6 |
 | `Heal → Notify` | cross_community | 6 |
 | `Heal → GetSnapshot` | cross_community | 5 |
 | `Heal → WizardReducer` | cross_community | 4 |
-| `GatherObservations → Truncate` | cross_community | 4 |
 
 ## How to Explore
 

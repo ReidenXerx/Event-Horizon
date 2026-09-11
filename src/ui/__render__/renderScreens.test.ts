@@ -60,6 +60,17 @@ import {
 } from "../pages/CollectionsPage";
 import { DoctorPanel } from "../pages/doctor/DoctorPanel";
 import { CuratorPanel } from "../pages/curator/CuratorPage";
+import { RequirementsPanel } from "../pages/curator/RequirementsPanel";
+import { DiskCleanupView } from "../pages/curator/DiskCleanupView";
+import { readDownloads } from "../../core/curator/runCleanup";
+import { getCuratorSession } from "../pages/curator/curatorSession";
+import { readCuratorMods, readEnabledModIds } from "../../core/curator/readProfile";
+import {
+  addMasterRequirements,
+  makeModUid,
+  resolveNexusRequirements,
+  uidsFor,
+} from "../../core/curator/requirements";
 import { evaluateHealth, healingBlockedReason } from "../../core/doctor/health";
 
 /**
@@ -866,10 +877,8 @@ describe("render", () => {
     );
   });
 
-  it("curator tools — the profile-wide actions", () => {
-    // A fake Vortex store shaped like the real one: a mod needing an update,
-    // one frozen and holding, one whose freeze was broken from outside, and
-    // two installs of the same Nexus page.
+  // The fake Vortex store both curator screens render from.
+  function curatorState(): Record<string, unknown> {
     const modsById: Record<string, unknown> = {
       "needs-update": {
         attributes: {
@@ -1111,6 +1120,14 @@ describe("render", () => {
       },
       settings: { profiles: { activeProfileId: "p1", activeGameId: "skyrimse" } },
     };
+    return state;
+  }
+
+  it("curator tools — the profile-wide actions", () => {
+    // A fake Vortex store shaped like the real one: a mod needing an update,
+    // one frozen and holding, one whose freeze was broken from outside, and
+    // two installs of the same Nexus page.
+    const state = curatorState();
     write(
       "curator-tools",
       React.createElement(ApiProvider, {
@@ -1120,6 +1137,113 @@ describe("render", () => {
         } as never),
       } as never),
     );
+  });
+
+  // The Disk cleanup view: orphaned archives and superseded installs, with
+  // the unproven same-page group kept apart. Nothing is pre-ticked.
+  it("curator tools — disk cleanup", () => {
+    const state = curatorState();
+    const mods = readCuratorMods(state as never, "skyrimse", readEnabledModIds(state as never, "skyrimse"));
+    write(
+      "curator-disk-cleanup",
+      React.createElement(DiskCleanupView, {
+        mods,
+        downloads: readDownloads(state as never, "skyrimse"),
+        busy: false,
+        confirm: async () => false,
+        applyCleanup: async () => undefined,
+      }),
+    );
+  });
+
+  // The same profile after "Read requirements": the Requires column fills,
+  // the "Missing requirements" chip appears, and the details panel shows one
+  // mod with every requirement state at once — satisfied, installed but
+  // disabled, missing, off-Nexus, and a plugin master. The report is built
+  // through the real resolver from a Nexus-shaped answer, not hand-typed.
+  it("curator tools — requirements read", () => {
+    const state = curatorState();
+    const mods = readCuratorMods(state as never, "skyrimse", readEnabledModIds(state as never, "skyrimse"));
+    const games = new Map([["skyrimse", 1704]]);
+    const { uidByMod, noUid } = uidsFor(mods, games, "skyrimse");
+    const node = (modId: number, modName: string, notes?: string): Record<string, unknown> => ({
+      id: `${1704}-${modId}`,
+      gameId: 1704,
+      modId,
+      modName,
+      notes: notes ?? null,
+      url: `https://www.nexusmods.com/skyrimspecialedition/mods/${modId}`,
+    });
+    const fetched = new Map<string, Record<string, unknown>>([
+      [
+        makeModUid(1704, 1090),
+        {
+          nexusRequirements: {
+            totalCount: 5,
+            nodes: [
+              node(30379, "SKSE64", "Hard requirement"),
+              node(32444, "Address Library for SKSE Plugins"),
+              node(37085, "Embers XD", "For the fire visuals"),
+              node(12604, "SkyUI", "For the MCM"),
+              { id: "ext-1", externalRequirement: true, modName: "ENB Series", url: "http://enbdev.com" },
+            ],
+          },
+        },
+      ],
+      [makeModUid(1704, 30379), { nexusRequirements: { totalCount: 0, nodes: [] } }],
+      [makeModUid(1704, 32444), { nexusRequirements: { totalCount: 1, nodes: [node(30379, "SKSE64")] } }],
+      [makeModUid(1704, 47213), { nexusRequirements: { totalCount: 1, nodes: [node(32444, "Address Library for SKSE Plugins")] } }],
+    ]);
+    const nexusOnly = resolveNexusRequirements({
+      mods,
+      activeGame: "skyrimse",
+      games,
+      uidByMod,
+      fetched: fetched as never,
+      noUid,
+    });
+    const report = addMasterRequirements(nexusOnly, {
+      mods,
+      owners: [{ plugin: "Apocalypse - Magic of Skyrim.esp", modId: "needs-update" }],
+      masters: new Map([["Apocalypse - Magic of Skyrim.esp", ["Skyrim.esm", "Update.esm", "Dawnguard.esm", "MysticOrdinator.esp"]]]),
+      isBaseGame: (m) => /^(skyrim|update|dawnguard|hearthfires|dragonborn)\.esm$/i.test(m),
+    });
+    const session = getCuratorSession();
+    session.setRequirements({
+      gameId: "skyrimse",
+      fetchedAt: Date.now(),
+      load: { report, games, asked: uidByMod.size, answered: fetched.size, mastersRead: 1, mastersUnreadable: 0 },
+    });
+    try {
+      write(
+        "curator-requirements",
+        React.createElement(ApiProvider, {
+          api: { getState: () => state, store: { dispatch: () => undefined } },
+          children: React.createElement(ToastProvider, {
+            children: React.createElement(
+              "div",
+              { className: "eh-stack eh-stack--lg" },
+              React.createElement(CuratorPanel, {}),
+              React.createElement(RequirementsPanel, {
+                mod: mods.find((m) => m.id === "needs-update")!,
+                mods,
+                report,
+                entry: report.byMod.get("needs-update"),
+                busy: false,
+                canInstall: true,
+                onClose: () => undefined,
+                onEnable: () => undefined,
+                onInstall: () => undefined,
+                onOpenPage: () => undefined,
+                onFocus: () => undefined,
+              }),
+            ),
+          } as never),
+        } as never),
+      );
+    } finally {
+      session.setRequirements(undefined);
+    }
   });
 
   it("preview — what the plan will do", () => {

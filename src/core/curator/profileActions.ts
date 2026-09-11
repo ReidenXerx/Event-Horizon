@@ -70,6 +70,11 @@ export type CuratorMod = {
   /** Vortex's endorsement state: "Undecided" | "Endorsed" | "Abstained". */
   endorsed?: string;
   /**
+   * Where the archive came from: "nexus" for a Nexus download. Only a Nexus
+   * mod has a page whose requirements can be asked about.
+   */
+  source?: string;
+  /**
    * The NEXUS FILE's own display name — not the mod page's.
    *
    * The distinction one Nexus page hides. A page hosts many different files:

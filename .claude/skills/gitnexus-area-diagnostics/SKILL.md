@@ -48,10 +48,6 @@ Start here when exploring this area:
 
 | Flow | Type | Steps |
 |------|------|-------|
-| `WriteZip → Write` | cross_community | 3 |
-| `WriteZip → Write` | cross_community | 3 |
-| `WriteZip → Write` | cross_community | 3 |
-| `WriteZip → Write` | cross_community | 3 |
 | `CollectLogSources → ToPosix` | cross_community | 3 |
 
 ## How to Explore

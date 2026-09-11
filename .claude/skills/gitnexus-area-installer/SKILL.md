@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-installer
-description: "Skill for the Installer area of Event-Horizon. 319 symbols across 73 files."
+description: "Skill for the Installer area of Event-Horizon. 311 symbols across 73 files."
 ---
 
 # Installer
 
-319 symbols | 73 files | Cohesion: 76%
+311 symbols | 73 files | Cohesion: 75%
 
 ## When to Use
 
@@ -17,15 +17,15 @@ description: "Skill for the Installer area of Event-Horizon. 319 symbols across 
 
 | File | Symbols |
 |------|---------|
-| `src/core/installer/runInstall.ts` | buildAbortedResult, buildDisplayNameByModId, buildFailReceipt, buildManifestIndex, buildNexusModIdMap (+61) |
-| `src/core/installer/modInstall.ts` | safeRmTempDir, delayRespectingAbort, downloadFolderFor, downloadNexusArchiveOnly, installFromBundledArchive (+24) |
+| `src/core/installer/runInstall.ts` | buildAbortedResult, buildDisplayNameByModId, buildFailReceipt, buildManifestIndex, buildNexusModIdMap (+58) |
+| `src/core/installer/modInstall.ts` | safeRmTempDir, uninstallMod, delayRespectingAbort, downloadFolderFor, downloadNexusArchiveOnly (+24) |
 | `src/core/installLedger.ts` | InstallLedgerError, expectString, getInstallLedgerDir, getReceiptPath, isIso8601 (+10) |
 | `src/core/installer/applyUserlist.ts` | applyGroupDefinition, applyGroupRule, applyPluginEntry, applyPluginGroup, applyPluginRuleWithCollectionWins (+8) |
 | `src/core/installer/bundledPrefetch.ts` | BundledPrefetchPool, dispose, prime, pump, runExtraction (+2) |
 | `src/core/installer/applyGameIni.ts` | describeGameIniApplication, shouldApplyGameIni, applyGameIni, describeIniChanges, isSectionHeader (+2) |
 | `src/core/installer/installJournal.ts` | logJournalSummary, ownedModIds, clearJournal, appendJournalEntry, getJournalDir (+2) |
 | `src/core/installer/checkNexusAccount.ts` | hasNexusSlice, nexusSlice, readNexusAccount, readUserInfo, readViaSelectors (+2) |
-| `src/core/installer/profile.ts` | createFreshProfile, makeAbortError, pickNonCollidingName, switchToProfile, disableModInProfile (+1) |
+| `src/core/installer/profile.ts` | createFreshProfile, enableModInProfile, makeAbortError, pickNonCollidingName, switchToProfile (+1) |
 | `src/core/installer/timeBudgets.ts` | countMods, clamp, deployBudgetMs, profileSwitchBudgetMs, scale (+1) |
 
 ## Entry Points
@@ -67,7 +67,6 @@ Start here when exploring this area:
 
 | Flow | Type | Steps |
 |------|------|-------|
-| `InstallNexusViaApi → GetEventHorizonRoot` | cross_community | 10 |
 | `ExecutePromptUserChoice → GetEventHorizonDir` | cross_community | 10 |
 | `RunInstallImpl → GetEventHorizonRoot` | cross_community | 10 |
 | `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
@@ -77,6 +76,7 @@ Start here when exploring this area:
 | `ExecutePromptUserChoice → Truncate` | cross_community | 9 |
 | `Act → Clamp` | cross_community | 8 |
 | `Act → Scale` | cross_community | 8 |
+| `Act → Truncate` | cross_community | 8 |
 
 ## How to Explore
 

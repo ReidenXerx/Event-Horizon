@@ -64,15 +64,14 @@ Start here when exploring this area:
 | Flow | Type | Steps |
 |------|------|-------|
 | `OnRecovered → NexusCompareKey` | cross_community | 5 |
-| `MatchSnapshots → StripVersionTokens` | cross_community | 4 |
-| `MatchSnapshots → StripVortexPin` | cross_community | 4 |
-| `MatchSnapshots → Str` | cross_community | 4 |
 | `Diff → IsNexusSourced` | cross_community | 4 |
 | `Diff → NexusCompareKey` | cross_community | 4 |
 | `LoadBuildDiff → IsNexusSourced` | cross_community | 4 |
 | `LoadBuildDiff → NexusCompareKey` | cross_community | 4 |
-| `MatchSnapshots → DiceCoefficient` | intra_community | 3 |
-| `MatchSnapshots → ArchiveShaKey` | cross_community | 3 |
+| `CurrentFingerprint → GroupBy` | cross_community | 3 |
+| `RefreshProfileMembership → GroupBy` | cross_community | 3 |
+| `CurrentFingerprint → NexusCompareKey` | cross_community | 3 |
+| `RefreshProfileMembership → NexusCompareKey` | cross_community | 3 |
 
 ## How to Explore
 

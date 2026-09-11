@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-resolver
-description: "Skill for the Resolver area of Event-Horizon. 53 symbols across 9 files."
+description: "Skill for the Resolver area of Event-Horizon. 54 symbols across 10 files."
 ---
 
 # Resolver
 
-53 symbols | 9 files | Cohesion: 83%
+54 symbols | 10 files | Cohesion: 83%
 
 ## When to Use
 
@@ -26,6 +26,7 @@ description: "Skill for the Resolver area of Event-Horizon. 53 symbols across 9 
 | `src/core/manifest/storeCompatibility.ts` | describeStoreMismatch, scriptExtenderMods |
 | `src/core/resolver/resumeIdentity.test.ts` | decide, manifest |
 | `src/actions/installCollectionAction.ts` | logPlanSummary |
+| `src/core/resolver/installEpochs.ts` | planInstallEpochs |
 
 ## Entry Points
 
@@ -46,6 +47,7 @@ Start here when exploring this area:
 | `scriptExtenderMods` | Function | `src/core/manifest/storeCompatibility.ts` | 98 |
 | `resolveCompatibility` | Function | `src/core/resolver/resolveInstallPlan.ts` | 182 |
 | `resolveInstallPlan` | Function | `src/core/resolver/resolveInstallPlan.ts` | 93 |
+| `planInstallEpochs` | Function | `src/core/resolver/installEpochs.ts` | 85 |
 | `logInstallPlan` | Function | `src/core/resolver/logInstallPlan.ts` | 95 |
 | `collectStagingSetHashTargetsForTest` | Function | `src/core/resolver/enrichStagingSetHashes.ts` | 371 |
 | `compareVersions` | Function | `src/core/resolver/gameVersionGuidance.ts` | 167 |
@@ -60,14 +62,6 @@ Start here when exploring this area:
 | `findInstalledBySha` | Function | `src/core/resolver/resolveInstallPlan.ts` | 1069 |
 | `findInstalledByStagingSetHash` | Function | `src/core/resolver/resolveInstallPlan.ts` | 1087 |
 | `resolveExternalMod` | Function | `src/core/resolver/resolveInstallPlan.ts` | 567 |
-| `resolveModResolutions` | Function | `src/core/resolver/resolveInstallPlan.ts` | 425 |
-
-## Execution Flows
-
-| Flow | Type | Steps |
-|------|------|-------|
-| `EnrichInstalledModsWithStagingSetHashes → ArchiveExtensionOf` | cross_community | 5 |
-| `EnrichInstalledModsWithStagingSetHashes → NormalizeName` | cross_community | 3 |
 
 ## How to Explore
 

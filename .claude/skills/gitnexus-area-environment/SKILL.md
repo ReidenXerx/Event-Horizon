@@ -73,10 +73,10 @@ Start here when exploring this area:
 | `ScanGameFolder → ToPosix` | cross_community | 8 |
 | `LoadBuildDiff → ToPosix` | cross_community | 8 |
 | `ScanGameFolder → GetVortexUserDataPath` | cross_community | 8 |
-| `WriteFiles → GetVortexUserDataPath` | cross_community | 8 |
 | `OnSpawned → GetVortexUserDataPath` | cross_community | 7 |
 | `QuarantineFiles → GetVortexUserDataPath` | cross_community | 7 |
 | `RestoreQuarantine → GetVortexUserDataPath` | cross_community | 7 |
+| `ScanGameFolder → ReadObject` | cross_community | 6 |
 
 ## How to Explore
 

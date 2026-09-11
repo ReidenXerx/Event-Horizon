@@ -95,6 +95,7 @@ export function readCuratorMods(
         ? { newestFileUnknown: true }
         : {}),
       ...opt("endorsed", asString(attributes.endorsed)),
+      ...opt("source", asString(attributes.source)),
       // The FILE's name, which is what separates two different files on
       // one Nexus page from two versions of the same file.
       ...opt("logicalFileName", asString(attributes.logicalFileName)),

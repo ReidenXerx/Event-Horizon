@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-components
-description: "Skill for the Components area of Event-Horizon. 21 symbols across 6 files."
+description: "Skill for the Components area of Event-Horizon. 24 symbols across 7 files."
 ---
 
 # Components
 
-21 symbols | 6 files | Cohesion: 88%
+24 symbols | 7 files | Cohesion: 88%
 
 ## When to Use
 
@@ -17,8 +17,9 @@ description: "Skill for the Components area of Event-Horizon. 21 symbols across 
 
 | File | Symbols |
 |------|---------|
-| `src/ui/components/Toast.tsx` | arm, handle, clearTimer, dismiss, resume (+8) |
+| `src/ui/components/Toast.tsx` | arm, handle, clearTimer, commit, dismiss (+9) |
 | `src/ui/components/Field.tsx` | Checkbox, ChoiceControl, Radio, useIndeterminate |
+| `src/ui/components/noInlineStyle.test.ts` | inlineStyles, styleExpression |
 | `src/ui/EventHorizonMainPage.tsx` | EventHorizonMainPage |
 | `src/ui/errors/ErrorContext.tsx` | ErrorProvider |
 | `src/ui/state/ApiContext.tsx` | ApiProvider |
@@ -28,36 +29,36 @@ description: "Skill for the Components area of Event-Horizon. 21 symbols across 
 
 Start here when exploring this area:
 
-- **`arm`** (Function) — `src/ui/components/Toast.tsx:114`
-- **`handle`** (Function) — `src/ui/components/Toast.tsx:117`
-- **`clearTimer`** (Function) — `src/ui/components/Toast.tsx:97`
-- **`dismiss`** (Function) — `src/ui/components/Toast.tsx:106`
-- **`resume`** (Function) — `src/ui/components/Toast.tsx:132`
+- **`arm`** (Function) — `src/ui/components/Toast.tsx:130`
+- **`handle`** (Function) — `src/ui/components/Toast.tsx:140`
+- **`clearTimer`** (Function) — `src/ui/components/Toast.tsx:113`
+- **`commit`** (Function) — `src/ui/components/Toast.tsx:108`
+- **`dismiss`** (Function) — `src/ui/components/Toast.tsx:122`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `arm` | Function | `src/ui/components/Toast.tsx` | 114 |
-| `handle` | Function | `src/ui/components/Toast.tsx` | 117 |
-| `clearTimer` | Function | `src/ui/components/Toast.tsx` | 97 |
-| `dismiss` | Function | `src/ui/components/Toast.tsx` | 106 |
-| `resume` | Function | `src/ui/components/Toast.tsx` | 132 |
-| `show` | Function | `src/ui/components/Toast.tsx` | 141 |
+| `arm` | Function | `src/ui/components/Toast.tsx` | 130 |
+| `handle` | Function | `src/ui/components/Toast.tsx` | 140 |
+| `clearTimer` | Function | `src/ui/components/Toast.tsx` | 113 |
+| `commit` | Function | `src/ui/components/Toast.tsx` | 108 |
+| `dismiss` | Function | `src/ui/components/Toast.tsx` | 122 |
+| `resume` | Function | `src/ui/components/Toast.tsx` | 155 |
+| `show` | Function | `src/ui/components/Toast.tsx` | 164 |
 | `EventHorizonMainPage` | Function | `src/ui/EventHorizonMainPage.tsx` | 65 |
 | `ToastProvider` | Function | `src/ui/components/Toast.tsx` | 92 |
 | `ErrorProvider` | Function | `src/ui/errors/ErrorContext.tsx` | 85 |
 | `ApiProvider` | Function | `src/ui/state/ApiContext.tsx` | 25 |
 | `EventHorizonStyles` | Function | `src/ui/theme/EventHorizonStyles.tsx` | 47 |
-| `Checkbox` | Function | `src/ui/components/Field.tsx` | 216 |
-| `Radio` | Function | `src/ui/components/Field.tsx` | 223 |
+| `Checkbox` | Function | `src/ui/components/Field.tsx` | 217 |
+| `Radio` | Function | `src/ui/components/Field.tsx` | 224 |
+| `inlineStyles` | Function | `src/ui/components/noInlineStyle.test.ts` | 38 |
 | `ToastInput` | Interface | `src/ui/components/Toast.tsx` | 27 |
-| `nodeToText` | Function | `src/ui/components/Toast.tsx` | 217 |
-| `toastDedupKey` | Function | `src/ui/components/Toast.tsx` | 208 |
-| `ToastCard` | Function | `src/ui/components/Toast.tsx` | 250 |
-| `ToastHost` | Function | `src/ui/components/Toast.tsx` | 229 |
-| `ChoiceControl` | Function | `src/ui/components/Field.tsx` | 179 |
-| `useIndeterminate` | Function | `src/ui/components/Field.tsx` | 170 |
+| `nodeToText` | Function | `src/ui/components/Toast.tsx` | 232 |
+| `toastDedupKey` | Function | `src/ui/components/Toast.tsx` | 223 |
+| `ToastCard` | Function | `src/ui/components/Toast.tsx` | 265 |
+| `ToastHost` | Function | `src/ui/components/Toast.tsx` | 244 |
 
 ## Execution Flows
 

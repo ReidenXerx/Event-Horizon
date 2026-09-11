@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-manifest
-description: "Skill for the Manifest area of Event-Horizon. 551 symbols across 142 files."
+description: "Skill for the Manifest area of Event-Horizon. 540 symbols across 140 files."
 ---
 
 # Manifest
 
-551 symbols | 142 files | Cohesion: 74%
+540 symbols | 140 files | Cohesion: 73%
 
 ## When to Use
 
@@ -19,7 +19,7 @@ description: "Skill for the Manifest area of Event-Horizon. 551 symbols across 1
 |------|---------|
 | `src/core/manifest/parseManifest.ts` | ParseManifestError, describe, expectArray, expectBoolean, expectEnum (+43) |
 | `src/core/manifest/collectionConfig.ts` | mode, reconcileExternalModsConfig, createDefaultConfig, getCollectionConfigPath, loadOrCreateCollectionConfig (+15) |
-| `src/core/manifest/packageZip.ts` | describeBytes, packageEhcoll, checkAbort, prepareStagingDir, runSevenZipAdd (+14) |
+| `src/core/manifest/packageZip.ts` | describeBytes, packageEhcoll, checkAbort, prepareStagingDir, runSevenZipAdd (+13) |
 | `src/core/manifest/buildManifest.ts` | toPosixPath, BuildManifestError, buildLoadOrder, buildManifest, buildPackageMetadata (+12) |
 | `src/core/manifest/readZip.ts` | ZipReadError, extractZipEntryToFile, findDataOffset, findEntry, findZip64Extra (+11) |
 | `src/core/resolver/userState.ts` | buildSuggestedProfileName, buildUserSideState, judgeResumeCandidate, lookupProfile, pickInstallTarget (+10) |
@@ -59,24 +59,24 @@ Start here when exploring this area:
 | `cleanup` | Function | `src/core/archiveHashing.ts` | 59 |
 | `onAbort` | Function | `src/core/archiveHashing.ts` | 51 |
 | `recoverMissingArchives` | Function | `src/core/archiveRecovery.ts` | 248 |
-| `checkNexusAvailability` | Function | `src/core/build/nexusAvailability.ts` | 241 |
 | `discoveredStore` | Function | `src/core/comparePlugins.ts` | 160 |
 | `exportPluginsDiffReport` | Function | `src/core/comparePlugins.ts` | 371 |
+| `liveStagingShapes` | Function | `src/core/curator/liveStagingShapes.ts` | 41 |
 
 ## Execution Flows
 
 | Flow | Type | Steps |
 |------|------|-------|
 | `LaunchGame → GetVortexUserDataPath` | cross_community | 10 |
-| `InstallNexusViaApi → GetEventHorizonRoot` | cross_community | 10 |
 | `ExecutePromptUserChoice → GetEventHorizonDir` | cross_community | 10 |
-| `ReadZipEntry → GetVortexUserDataPath` | cross_community | 10 |
 | `RunInstallImpl → GetEventHorizonRoot` | cross_community | 10 |
+| `ReadZipEntry → GetVortexUserDataPath` | cross_community | 10 |
 | `PublishedDetailsPanel → GetEventHorizonDir` | cross_community | 10 |
-| `RunSelfChecks → GetVortexUserDataPath` | cross_community | 10 |
 | `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
+| `RunSelfChecks → GetVortexUserDataPath` | cross_community | 10 |
 | `Act → GetEventHorizonDir` | cross_community | 10 |
-| `SelfCheckMod → GetVortexUserDataPath` | cross_community | 10 |
+| `LoadPublishedDetails → GetEventHorizonRoot` | cross_community | 10 |
+| `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
 
 ## How to Explore
 

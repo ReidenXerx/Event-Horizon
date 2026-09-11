@@ -36,7 +36,7 @@ To LOOK at the result: `npm run ui:shots` renders every screen in
 | A toggling filter pill | `Chip` | `active` |
 | Blocking question | `Modal` | focus-trapped; only the topmost handles Esc |
 | Non-blocking message | `useToast()` | pauses on hover; `danger` is sticky |
-| Sortable, filterable list | `DataTable` | selection survives filters |
+| Sortable, filterable list | `DataTable` | selection survives filters; the table is fixed-layout, so give `actionsWidth` when rows have action buttons or the name column pays for them |
 | Working indicator | `Spinner` | sized in `em`, coloured by `currentColor` |
 | Slow pass reassurance | `HashingCard` | |
 | Wizard position | `StepDots` | |
@@ -50,7 +50,7 @@ To LOOK at the result: `npm run ui:shots` renders every screen in
 | The item that absorbs leftover width | `eh-fill` |
 | Responsive grid | `eh-grid` (`--tight`, `--start`); `--eh-grid-min` sets the column minimum |
 | Body copy at a readable width | `eh-prose` |
-| The actions row of a step | `eh-actions`; `eh-actions--sticky` on a long step |
+| The actions row of a step | `eh-actions`; `eh-actions--sticky` on a long step; `eh-actions__clear` for the small link beside a ticked count |
 | Key / value line | `eh-kv` + `eh-kv__label` |
 | Recessed block inside a card | `eh-inset` |
 | Micro-label | `eh-label` |

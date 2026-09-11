@@ -41,7 +41,19 @@ export type CuratorBusy =
   | "cleanup"
   | "endorse"
   | "refresh"
+  | "requirements"
+  | "install-requirement"
   | undefined;
+
+/**
+ * The requirements report, kept here so it outlives the page: fetching it
+ * asks Nexus about every mod, and a tab switch must not throw that away.
+ */
+export type RequirementsCache = {
+  gameId: string;
+  fetchedAt: number;
+  load: import("./requirementsIo").RequirementsLoad;
+};
 
 export type CuratorSnapshot = {
   busy: CuratorBusy;
@@ -51,6 +63,7 @@ export type CuratorSnapshot = {
   lines: string[];
   /** A one-off note, e.g. the result of a Nexus re-check. */
   note?: string;
+  requirements?: RequirementsCache;
 };
 
 export type CuratorListener = (snap: CuratorSnapshot) => void;
@@ -145,6 +158,11 @@ class CuratorSession {
     this.set({ ...this.state, ...(note === undefined ? {} : { note }) });
   }
 
+  setRequirements(cache: RequirementsCache | undefined): void {
+    const { requirements: _drop, ...rest } = this.state;
+    this.set(cache === undefined ? rest : { ...rest, requirements: cache });
+  }
+
   /** Ask the running action to stop at its next checkpoint. */
   cancel(): void {
     this.controller?.abort();
@@ -154,7 +172,11 @@ class CuratorSession {
   /** Clear a finished report once the curator has read it. */
   dismiss(): void {
     if (this.state.busy !== undefined) return;
-    this.set(IDLE);
+    // The report goes; the requirements survive — they cost a Nexus round.
+    this.set({
+      ...IDLE,
+      ...(this.state.requirements === undefined ? {} : { requirements: this.state.requirements }),
+    });
   }
 
   private set(next: CuratorSnapshot): void {

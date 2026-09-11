@@ -1,13 +1,29 @@
 /**
- * Curator Tools — the profile-wide actions Vortex does badly or never built.
+ * ──────────────────────────────────────────────────────────────────────
+ * Curator Tools: the workbench.
  *
- * Read-first by construction: the page opens showing what it FOUND, and every
- * action is a separate deliberate click. Vortex's own bulk update is a single
- * button that starts dozens of concurrent installs and loses files while doing
- * it, and the shape of that UI is part of why — there is no moment where the
- * curator sees what is about to happen.
+ * One list of mods, one selection, one row of actions that follows it.
  *
- * The lists are the product. The buttons are what you do after reading them.
+ * The first version of this page was six cards, each with its own table,
+ * its own tick set and its own buttons — the same mod could be ticked in
+ * three places meaning three different things, and the action for a row sat
+ * a screen away from the row. The user's words: counter-intuitive, not
+ * friendly. Now:
+ *
+ *   - the STATUS STRIP says what needs doing;
+ *   - a row of VIEW chips filters the same rows (updates, frozen, missing
+ *     requirements, duplicates …) — a chip only appears when it has
+ *     something;
+ *   - the TABLE is the same table in every view, so a tick means the same
+ *     thing everywhere;
+ *   - the ACTION BAR sticks to the bottom while something is ticked and
+ *     offers only what applies;
+ *   - DETAILS opens a mod's requirements and dependants in a panel with the
+ *     one right action per line.
+ *
+ * Every long action still runs one mod at a time and survives a tab switch
+ * (`curatorSession`). Nothing here deletes without a confirmation dialog.
+ * ──────────────────────────────────────────────────────────────────────
  */
 
 import * as fsp from "fs/promises";
@@ -16,12 +32,7 @@ import * as React from "react";
 import { actions as vortexActions, selectors } from "@nexusmods/vortex-api";
 
 import {
-  findDuplicates,
   findEndorsable,
-  findFrozen,
-  findUpdatable,
-  findManualUpdates,
-  findUpdateShadowed,
   summarizeProfile,
   type CuratorMod,
 } from "../../../core/curator/profileActions";
@@ -53,20 +64,7 @@ import {
   describeEndorseDuration,
   endorseIsLong,
 } from "../../../core/curator/endorsePace";
-import {
-  archivesFreedByRemoval,
-  cleanupSubset,
-  describeEvidence,
-  findSupersededMods,
-  provenSupersedes,
-  unprovenSupersedes,
-  formatSize,
-  orphanArchives,
-  planCleanup,
-  tickedArchives,
-  type CleanupPlan,
-  type DownloadEntry,
-} from "../../../core/curator/cleanupPlan";
+import { type CleanupPlan, type DownloadEntry } from "../../../core/curator/cleanupPlan";
 import {
   describeCleanupOutcome,
   readDownloads,
@@ -79,68 +77,53 @@ import {
 } from "../../../core/curator/updateOneMod";
 import { verifyUpdatedMod } from "../../../core/curator/verifyAfterUpdate";
 import {
+  dependantsOf,
+  disabledProvidersFor,
+  pickInstallFile,
+  summarizeRequirements,
+  type ModRequirement,
+  type NexusFileInfo,
+} from "../../../core/curator/requirements";
+import {
   Button,
   Callout,
   Card,
+  Chip,
   DataTable,
   Field,
   Input,
+  LinkButton,
+  Modal,
   Page,
   Pill,
+  Radio,
   StatGrid,
   StatTile,
-  describeTarget,
   type Column,
-  type TargetSet,
 } from "../../components";
 import { useApi } from "../../state";
 import { ErrorBoundary } from "../../errors";
 import { ehLog } from "../../../core/logging/ehLog";
 import { getCuratorSession, type CuratorSnapshot } from "./curatorSession";
+import { DiskCleanupView, type Confirmer } from "./DiskCleanupView";
+import { RequirementsPanel } from "./RequirementsPanel";
+import { loadRequirements, nexusExtOf } from "./requirementsIo";
+import {
+  VIEWS,
+  buildRows,
+  describeRowState,
+  rowsForView,
+  viewCounts,
+  visibleViews,
+  type ViewId,
+  type WorkRow,
+} from "./workbench";
 
-/**
- * How Vortex's Nexus integration is ACTUALLY reached.
- *
- * Not as methods on the api. `INexusAPIExtension` exists in the typings but is
- * referenced by nothing, and calling `api.nexusCheckModsVersion` found
- * `undefined` — which this page reported, correctly, as "not available".
- *
- * Vortex drives its own buttons through events, and this is copied from what
- * its mod-update toolbar and endorse control actually do:
- *
- *   api.emitAndAwait("check-mods-version", gameId, mods, force)
- *   api.events.emit("endorse-mod", gameId, vortexModId, status)
- *   api.events.emit("mod-update", gameId, nexusModId, newestFileId, source)
- *
- * Note the endorse id: Vortex passes `mod.id` — its OWN mod id — while the
- * update passes `attributes.modId`, the NEXUS one. Two ids, adjacent calls,
- * and the wrong one endorses nothing.
- */
 type EmitAndAwait = {
   emitAndAwait?: (event: string, ...args: unknown[]) => PromiseLike<unknown>;
 };
 
 const num = (n: number): string => n.toLocaleString();
-
-/**
- * ─── EVERY IRREVERSIBLE ACT ON THIS PAGE ASKS FIRST ────────────────────
- * Three buttons here permanently delete files or uninstall mods, and each was
- * a single unconfirmed click — the archive one defaulting to EVERY orphan it
- * found, which on the profile this was built for is tens of gigabytes gone on
- * a misclick with no undo anywhere in Vortex.
- *
- * Shaped as a function rather than repeated inline so all three say the same
- * kind of thing: what happens, how much of it, and that it cannot be undone.
- *
- * A Vortex build with no `showDialog` REFUSES rather than proceeds. It is core
- * API and present everywhere in practice; if it ever is not, silently doing
- * the destructive thing unconfirmed is the wrong way to fail.
- */
-type Confirmer = (args: {
-  title: string;
-  text: string;
-  confirmLabel: string;
-}) => Promise<boolean>;
 
 function makeConfirmer(
   api: { showDialog?: (...args: never[]) => PromiseLike<unknown> },
@@ -174,230 +157,97 @@ function makeConfirmer(
   };
 }
 
-/**
- * ─── COLUMN DEFINITIONS LIVE AT MODULE LEVEL, DELIBERATELY ─────────────
- * `DataTable` projects every row through its columns inside a `useMemo` keyed
- * on the column array's identity. An array literal written inside the
- * component is a new array on every render, so that memo would never hit and
- * a 1,900-mod profile would be re-projected on every keystroke in a filter
- * box. Defined once here, they are stable for the life of the module.
- *
- * The types are read off the finders rather than imported by name, so a
- * change to what a finder returns is a compile error here rather than a
- * column quietly rendering `undefined`.
- */
-type UpdateRow = ReturnType<typeof findUpdatable>[number];
-type FrozenRow = ReturnType<typeof findFrozen>[number];
-type ShadowRow = ReturnType<typeof findUpdateShadowed>[number];
-type ManualRow = ReturnType<typeof findManualUpdates>[number];
-type RetireRow = ReturnType<typeof findSupersededMods>[number];
-type DuplicateRow = ReturnType<typeof findDuplicates>[number];
-type RemovalRow = CleanupPlan["removeMods"][number];
-type ArchiveRow = CleanupPlan["deleteArchives"][number];
+// ── The one table ──────────────────────────────────────────────────────
 
-/** Vortex's empty modType is the default one. Say so rather than showing "". */
-const kindOf = (mod: CuratorMod): string =>
-  mod.modType === "" ? "default" : mod.modType;
-const stateOf = (mod: CuratorMod): string =>
-  mod.enabled ? "enabled" : "disabled";
+const kindOf = (mod: CuratorMod): string => (mod.modType === "" ? "default" : mod.modType);
 
-const UPDATE_COLUMNS: Column<UpdateRow>[] = [
-  { key: "name", header: "Mod", value: (c) => c.mod.name },
-  { key: "from", header: "Installed", value: (c) => c.fromVersion, width: 130 },
-  { key: "to", header: "Available", value: (c) => c.toVersion, width: 130 },
-  {
-    key: "state",
-    header: "State",
-    match: "exact",
-    width: 110,
-    value: (c) => stateOf(c.mod),
-  },
-];
+const rowId = (r: WorkRow): string => r.mod.id;
 
-const FROZEN_COLUMNS: Column<FrozenRow>[] = [
-  { key: "name", header: "Mod", value: (f) => f.mod.name },
-  { key: "at", header: "Frozen at", value: (f) => f.frozenAtVersion, width: 130 },
-  {
-    key: "status",
-    header: "Status",
-    match: "exact",
-    width: 180,
-    value: (f) =>
-      f.driftedTo !== undefined
-        ? "drifted"
-        : f.updateWithheld
-          ? "holding an update"
-          : "holding",
-    render: (f) =>
-      f.driftedTo !== undefined ? (
-        <Pill intent="danger">now {f.driftedTo}</Pill>
-      ) : (
-        <Pill intent={f.updateWithheld ? "warning" : "neutral"}>
-          {f.updateWithheld ? "holding an update" : "holding"}
-        </Pill>
-      ),
-  },
-];
-
-const SHADOW_COLUMNS: Column<ShadowRow>[] = [
-  { key: "name", header: "Older install", value: (r) => r.mod.name },
-  { key: "version", header: "Version", value: (r) => r.mod.version, width: 130 },
-  {
-    key: "newer",
-    header: "Newer copy already installed",
-    value: (r) => r.newerInstall.name,
-  },
-];
-
-const MANUAL_COLUMNS: Column<ManualRow>[] = [
+const WORK_COLUMNS: Column<WorkRow>[] = [
   { key: "name", header: "Mod", value: (r) => r.mod.name },
-  { key: "from", header: "You have", value: (r) => r.fromVersion, width: 130 },
-  { key: "to", header: "Nexus has", value: (r) => r.toVersion, width: 130 },
-  {
-    key: "page",
-    header: "Mod page",
-    width: 220,
-    value: (r) => r.url ?? "",
-    render: (r) =>
-      r.url === undefined ? (
-        <span className="eh-muted">no page recorded</span>
-      ) : (
-        <a href={r.url} target="_blank" rel="noreferrer">
-          open on Nexus
-        </a>
-      ),
-  },
-];
-
-const MOD_COLUMNS: Column<CuratorMod>[] = [
-  { key: "name", header: "Mod", value: (m) => m.name },
-  { key: "version", header: "Version", value: (m) => m.version, width: 130 },
-  { key: "kind", header: "Kind", match: "exact", width: 120, value: kindOf },
-  { key: "state", header: "State", match: "exact", width: 110, value: stateOf },
-];
-
-const shownVersion = (v: string | undefined): string => v ?? "unknown";
-
-const RETIRE_COLUMNS: Column<RetireRow>[] = [
-  { key: "name", header: "Older install", value: (c) => c.mod.name },
   {
     key: "version",
     header: "Version",
-    width: 190,
-    // The transition, not just the installed side. "1.0" alone says nothing
-    // about what would replace it, which is the fact being decided here.
-    value: (c) =>
-      `${shownVersion(c.mod.version)} → ${shownVersion(c.supersededBy.version)}`,
-  },
-  {
-    key: "newer",
-    header: "Replaced by",
-    value: (c) => c.supersededBy.name,
-  },
-  {
-    key: "evidence",
-    header: "Why",
-    match: "exact",
-    width: 200,
-    // On the row, because this card deletes things. A curator should not have
-    // to remember which rule put a line here.
-    value: (c) => describeEvidence(c.evidence),
-    render: (c) => (
-      <Pill intent={c.evidence === "same-page-only" ? "warning" : "neutral"}>
-        {describeEvidence(c.evidence)}
-      </Pill>
+    width: 170,
+    value: (r) => r.mod.version ?? "",
+    render: (r) => (
+      <span>
+        {r.mod.version ?? <span className="eh-muted">unknown</span>}
+        {r.update !== undefined && (
+          <span className="eh-tone--warning"> → {r.update.to}</span>
+        )}
+        {r.manual !== undefined && (
+          <span className="eh-tone--warning" title="Newer on Nexus; update from the mod page">
+            {" "}
+            → {r.manual.to} (manual)
+          </span>
+        )}
+      </span>
     ),
   },
   {
     key: "state",
     header: "State",
     match: "exact",
-    width: 110,
-    value: (c) => stateOf(c.mod),
+    width: 200,
+    value: describeRowState,
+    render: (r) => {
+      const s = describeRowState(r);
+      const intent =
+        r.frozen?.driftedTo !== undefined
+          ? "danger"
+          : r.frozen !== undefined
+            ? "info"
+            : r.update !== undefined || r.manual !== undefined
+              ? "warning"
+              : r.mod.enabled
+                ? "success"
+                : "neutral";
+      return (
+        <Pill intent={intent} plain>
+          {s}
+        </Pill>
+      );
+    },
   },
-];
-
-const DUPLICATE_COLUMNS: Column<DuplicateRow>[] = [
+  { key: "kind", header: "Kind", match: "exact", width: 110, value: (r) => kindOf(r.mod) },
   {
-    key: "names",
-    header: "Installs sharing a Nexus page",
-    value: (g) => g.mods.map((m) => m.name).join("  ·  "),
-  },
-  {
-    key: "kind",
-    header: "Verdict",
+    key: "requirements",
+    header: "Requires",
     match: "exact",
-    width: 220,
-    value: (g) =>
-      g.kind === "same-file" ? "same file twice" : "same page, different files",
-    render: (g) => (
-      <Pill intent={g.kind === "same-file" ? "danger" : "warning"}>
-        {g.kind === "same-file"
-          ? "same file twice"
-          : "same page, different files"}
-      </Pill>
-    ),
+    width: 150,
+    value: (r) => r.requirementCell,
+    render: (r) =>
+      r.requirementCell === "" ? (
+        <span className="eh-muted">—</span>
+      ) : r.requirementCell === "ok" ? (
+        <span className="eh-tone--success">ok</span>
+      ) : r.requirementCell === "not checked" ? (
+        <span className="eh-muted">not checked</span>
+      ) : (
+        <span className="eh-tone--warning">{r.requirementCell}</span>
+      ),
   },
-];
-
-const REMOVAL_COLUMNS: Column<RemovalRow>[] = [
-  { key: "name", header: "Install to remove", value: (r) => r.mod.name },
-  { key: "newer", header: "Superseded by", value: (r) => r.supersededBy.name },
-];
-
-const ARCHIVE_COLUMNS: Column<ArchiveRow>[] = [
-  { key: "file", header: "Archive to delete", value: (a) => a.entry.fileName },
   {
-    key: "bytes",
-    header: "Size",
+    key: "requiredBy",
+    header: "Required by",
     numeric: true,
     align: "right",
-    width: 120,
-    value: (a) => a.entry.bytes,
-    render: (a) => formatSize(a.entry.bytes),
+    width: 110,
+    value: (r) => r.requiredBy.length,
+    render: (r) => (r.requiredBy.length === 0 ? <span className="eh-muted">—</span> : r.requiredBy.length),
   },
 ];
 
-/** Stable row identities, for the same memo reason as the columns above. */
-const updateId = (c: UpdateRow): string => c.mod.id;
-const frozenId = (f: FrozenRow): string => f.mod.id;
-const shadowId = (r: ShadowRow): string => r.mod.id;
-const manualId = (r: ManualRow): string => r.mod.id;
-const curatorModId = (m: CuratorMod): string => m.id;
-const retireId = (c: RetireRow): string => c.mod.id;
-const duplicateId = (g: DuplicateRow): string => String(g.nexusModId);
-const removalId = (r: RemovalRow): string => r.mod.id;
-const archiveId = (a: ArchiveRow): string => a.entry.id;
+// ── The page ───────────────────────────────────────────────────────────
 
 function CuratorBody(): JSX.Element {
   const api = useApi();
   const [tick, setTick] = React.useState(0);
 
-  /**
-   * ─── THE RUNNING STATE LIVES OUTSIDE THIS COMPONENT ─────────────────
-   * `RouteOutlet` keys every page on its route, so clicking another tab
-   * UNMOUNTS this one. `busy`, `progress` and the report were `useState`
-   * here, and a bulk update over forty mods runs for many minutes.
-   *
-   * Tab away mid-run and all three died with the component: the report was
-   * gone — including the LOST lines that are the entire product of verifying
-   * each mod — the buttons came back enabled, so a SECOND bulk update could
-   * start on top of the live one, and the first kept running invisibly
-   * against staging folders a build might be about to hash. The expected bug
-   * report is "I clicked Update, looked at something else, came back, and it
-   * said nothing happened."
-   *
-   * `buildSession` and `installSession` already solved this; this is the same
-   * shape. Only what must OUTLIVE the component moved — the effects stay
-   * here, where they can read `api` and the profile.
-   */
   const session = React.useMemo(() => getCuratorSession(), []);
-  const [run, setRun] = React.useState<CuratorSnapshot>(() =>
-    session.getSnapshot(),
-  );
+  const [run, setRun] = React.useState<CuratorSnapshot>(() => session.getSnapshot());
   React.useEffect(() => {
-    // Re-read on mount as well as subscribing: a run that finished while this
-    // page was unmounted has already published its final state to nobody.
     setRun(session.getSnapshot());
     return session.subscribe(setRun);
   }, [session]);
@@ -406,8 +256,7 @@ function CuratorBody(): JSX.Element {
   const lines = run.lines;
   const note = run.note;
   const setNote = (message: string | undefined): void => session.say(message);
-  const setProgress = (message: string | undefined): void =>
-    session.progress(message);
+  const setProgress = (message: string | undefined): void => session.progress(message);
   const confirm = React.useMemo(
     () => makeConfirmer(api as never, (why) => session.say(why)),
     [api, session],
@@ -417,22 +266,14 @@ function CuratorBody(): JSX.Element {
     const state = api.getState();
     try {
       const fromSelector = selectors.activeGameId(state);
-      if (typeof fromSelector === "string" && fromSelector !== "") {
-        return fromSelector;
-      }
+      if (typeof fromSelector === "string" && fromSelector !== "") return fromSelector;
     } catch {
-      // Selector unavailable or a partial state. Fall through rather than
-      // rendering "no active game" over a machine that plainly has one.
+      /* fall through to the profile's own game */
     }
-    // The active profile knows its own game, and a page that shows nothing is
-    // indistinguishable from a page that found nothing — the worse of the two,
-    // because only one of them makes the curator go looking.
-    const settings = (
-      state as unknown as {
-        settings?: { profiles?: { activeProfileId?: string } };
-        persistent?: { profiles?: Record<string, { gameId?: string }> };
-      }
-    );
+    const settings = state as unknown as {
+      settings?: { profiles?: { activeProfileId?: string } };
+      persistent?: { profiles?: Record<string, { gameId?: string }> };
+    };
     const activeProfileId = settings?.settings?.profiles?.activeProfileId;
     if (activeProfileId === undefined) return undefined;
     return settings?.persistent?.profiles?.[activeProfileId]?.gameId;
@@ -447,181 +288,168 @@ function CuratorBody(): JSX.Element {
   }, [api, gameId, tick]);
 
   const summary = React.useMemo(() => summarizeProfile(mods), [mods]);
-  const updatable = React.useMemo(() => findUpdatable(mods), [mods]);
-  const frozen = React.useMemo(() => findFrozen(mods), [mods]);
-  const duplicates = React.useMemo(() => findDuplicates(mods), [mods]);
-  /**
-   * Older installs of a mod that already has a newer copy installed.
-   *
-   * They are deliberately NOT offered an update — updating both would install
-   * the new file twice and leave four copies where there were two, which is
-   * the exact mess this page exists to clean up. Shown so the omission is
-   * something the curator reads rather than something they notice missing.
-   */
-  const shadowed = React.useMemo(() => findUpdateShadowed(mods), [mods]);
-  /**
-   * Out of date, but not automatable.
-   *
-   * Vortex sets `newestVersion` and `newestFileId` from two different parts
-   * of its update check, and the file id — the one `mod-update` actually
-   * needs — is missing for plenty of real mods. Those used to appear
-   * NOWHERE, so a curator with a hundred out-of-date mods saw a handful and
-   * concluded the check was broken.
-   */
-  const manualUpdates = React.useMemo(() => findManualUpdates(mods), [mods]);
   const endorsable = React.useMemo(() => findEndorsable(mods), [mods]);
-
-  const ext = api as unknown as EmitAndAwait;
-  /**
-   * Vortex gives an updated mod a NEW id; verification must use that one.
-   *
-   * Built fresh per run rather than kept in a ref. A ref outlives every run,
-   * and Vortex derives a mod id from its archive name — so a later install can
-   * be handed an id an earlier run already mapped, and verification would then
-   * check a mod that no longer exists.
-   */
-  const [selected, setSelected] = React.useState<ReadonlySet<string>>(new Set());
-  const chosen = React.useMemo(
-    () => mods.filter((m) => selected.has(m.id)),
-    [mods, selected],
-  );
-  const [typeValue, setTypeValue] = React.useState("");
-  /**
-   * ─── ONE TICK SET PER TABLE ────────────────────────────────────────
-   * Each table answers a different question, so a tick in one must not mean
-   * anything in another. Held here rather than inside `DataTable` so the
-   * buttons above each table can act on them.
-   */
-  const [updateSel, setUpdateSel] = React.useState<ReadonlySet<string>>(new Set());
-  const [frozenSel, setFrozenSel] = React.useState<ReadonlySet<string>>(new Set());
-  const [dupSel, setDupSel] = React.useState<ReadonlySet<string>>(new Set());
-  const [archiveSel, setArchiveSel] = React.useState<ReadonlySet<string>>(new Set());
-
-  /**
-   * What each table's button acts on: ticks if any, else the filtered rows.
-   *
-   * `undefined` until the table has reported once, and the fallback below is
-   * "everything" — so the label is right on the very first render instead of
-   * flashing zero before the effect lands.
-   */
-  const [updateAim, setUpdateAim] = React.useState<TargetSet | undefined>();
-  const [frozenAim, setFrozenAim] = React.useState<TargetSet | undefined>();
-  const [dupAim, setDupAim] = React.useState<TargetSet | undefined>();
-
-  /**
-   * Every finished download, read straight from Vortex's state.
-   *
-   * There used to be a "Scan for old versions" button in front of this, and
-   * it protected nothing: `readDownloads` reads Redux, touches no disk and
-   * deletes nothing. All the button did was hide both lists behind a step
-   * whose purpose nobody could see — which is most of why this section was
-   * unreadable. The gate that matters is Apply, and that one is still here.
-   *
-   * Keyed on `tick` like `mods`, so both cleanup questions and the profile
-   * always describe the same moment.
-   */
   const downloads = React.useMemo<readonly DownloadEntry[]>(
     () => (gameId === undefined ? [] : readDownloads(api.getState(), gameId)),
     [api, gameId, tick],
   );
-  /**
-   * Old installs the curator has TICKED for removal.
-   *
-   * Never pre-filled. A lower Nexus file id does not prove an older version —
-   * a page ships a main file and its optional patches under one mod id — and
-   * the planner used to act on that guess.
-   */
-  const [retire, setRetire] = React.useState<ReadonlySet<string>>(new Set());
-  const retireCandidates = React.useMemo(
-    () => findSupersededMods(mods),
-    [mods],
-  );
-  /**
-   * Backed by evidence versus merely sharing a mod page.
-   *
-   * Kept apart because they are different claims. "Same page" produced plain
-   * false positives on the real profile — a bodypaint's CBBE variant offered
-   * for deletion because a Male variant had a higher file id — so those are
-   * shown separately, below, and never mixed in with the ones Nexus or the
-   * file's own name actually vouches for.
-   */
-  const provenRetire = React.useMemo(
-    () => provenSupersedes(retireCandidates),
-    [retireCandidates],
-  );
-  const unprovenRetire = React.useMemo(
-    () => unprovenSupersedes(retireCandidates),
-    [retireCandidates],
+
+  // The requirements report is the session's: it outlives this component.
+  const requirements =
+    run.requirements !== undefined && run.requirements.gameId === gameId ? run.requirements : undefined;
+  const report = requirements?.load.report;
+  const reqSummary = React.useMemo(
+    () => (report === undefined ? undefined : summarizeRequirements(report)),
+    [report],
   );
 
-  /**
-   * Two plans from one scan, because they are two different acts.
-   *
-   * `orphanPlan` assumes NO removals, so its orphans are archives that are
-   * already free — deletable on their own. `retirePlan` assumes the ticked
-   * removals, and the archives it frees are only free AFTER those happen.
-   * Deriving both from the same `downloads` is what stops the two cards
-   * describing different disks.
-   */
-  const orphanPlan = React.useMemo(
-    () => planCleanup({ mods, downloads }),
-    [mods, downloads],
-  );
-  const retirePlan = React.useMemo(
-    () => planCleanup({ mods, downloads, removeModIds: retire }),
-    [mods, downloads, retire],
-  );
-  const orphans = React.useMemo(() => orphanArchives(orphanPlan), [orphanPlan]);
+  const rows = React.useMemo(() => buildRows(mods, report), [mods, report]);
+  const counts = React.useMemo(() => viewCounts(rows), [rows]);
+  const chips = React.useMemo(() => visibleViews(counts), [counts]);
 
-  /** The duplicate groups the button will really add: ticks, else filtered. */
-  const dupGroups = React.useMemo(() => {
-    const ids = new Set(dupAim?.ids ?? duplicates.map((g) => String(g.nexusModId)));
-    return duplicates.filter((g) => ids.has(String(g.nexusModId)));
-  }, [duplicates, dupAim]);
+  const [view, setView] = React.useState<ViewId | "disk">("all");
+  const visibleRows = React.useMemo(
+    () => (view === "disk" ? [] : rowsForView(rows, view)),
+    [rows, view],
+  );
+  const viewSpec = view === "disk" ? undefined : VIEWS.find((v) => v.id === view);
+  // A view that emptied under the user (every update taken) falls back to All.
+  React.useEffect(() => {
+    if (view !== "all" && view !== "disk" && counts[view] === 0) setView("all");
+  }, [view, counts]);
 
-  /**
-   * ─── THE ARCHIVES THE DELETE BUTTON WILL REMOVE — TICKED ONLY ────────
-   * Deliberately NOT `effectiveTarget`'s ticks-else-filtered default, which
-   * every other button on this page uses. That default means "no ticks = all
-   * of them", and here "all of them" was every orphan found: on the profile
-   * this was built for, one unconfirmed click on a freshly opened page
-   * permanently deleted tens of gigabytes of archives.
-   *
-   * Ticks-else-filtered is right for an action you can redo. This one you
-   * cannot: Vortex has no undo and the files do not go to the recycle bin.
-   * Card 2 below already worked this way ("nothing is pre-ticked"), and the
-   * two cards being inconsistent about it was itself part of the trap.
-   */
-  const archiveRemovals = React.useMemo(
-    () => tickedArchives(orphans, archiveSel),
-    [orphans, archiveSel],
-  );
-  const archiveBytes = React.useMemo(
-    () => archiveRemovals.reduce((n, a) => n + a.entry.bytes, 0),
-    [archiveRemovals],
-  );
-  /** What retiring the ticked installs frees, once they are gone. */
-  const freedByRetiring = React.useMemo(
-    () =>
-      archivesFreedByRemoval(retirePlan).reduce((n, a) => n + a.entry.bytes, 0),
-    [retirePlan],
-  );
+  const [selected, setSelected] = React.useState<ReadonlySet<string>>(new Set());
+  const chosen = React.useMemo(() => mods.filter((m) => selected.has(m.id)), [mods, selected]);
+  const chosenRows = React.useMemo(() => rows.filter((r) => selected.has(r.mod.id)), [rows, selected]);
+  const [typeValue, setTypeValue] = React.useState("");
+  const [focusId, setFocusId] = React.useState<string | undefined>(undefined);
+  const focusMod = focusId === undefined ? undefined : mods.find((m) => m.id === focusId);
 
-  /** The rows each button will really act on. */
-  const updateRows = React.useMemo(() => {
-    const ids = new Set(updateAim?.ids ?? updatable.map((c) => c.mod.id));
-    return updatable.filter((c) => ids.has(c.mod.id));
-  }, [updatable, updateAim]);
-  const frozenRows = React.useMemo(() => {
-    const ids = new Set(frozenAim?.ids ?? frozen.map((f) => f.mod.id));
-    return frozen.filter((f) => ids.has(f.mod.id));
-  }, [frozen, frozenAim]);
+  const ext = api as unknown as EmitAndAwait;
+  const nexus = React.useMemo(() => nexusExtOf(api), [api]);
+
+  // ── Requirements ─────────────────────────────────────────────────────
+
+  const readRequirements = async (): Promise<void> => {
+    const game = gameId;
+    if (game === undefined) return;
+    const signal = session.begin("requirements", { keepReport: true });
+    if (signal === undefined) return;
+    try {
+      const load = await loadRequirements({
+        api,
+        gameId: game,
+        mods,
+        signal,
+        onProgress: setProgress,
+      });
+      session.setRequirements({ gameId: game, fetchedAt: Date.now(), load });
+      const s = summarizeRequirements(load.report);
+      session.finish(
+        undefined,
+        load.unavailable ??
+          `Read requirements: ${num(load.answered)} of ${num(load.asked)} Nexus pages answered, ` +
+            `${num(load.mastersRead)} plugin header(s) read. ` +
+            `${num(s.modsWithMissing)} mod(s) are missing something; ` +
+            `${num(s.installedDisabled)} requirement(s) are installed but disabled.`,
+      );
+    } catch (err) {
+      ehLog("error", "curator.requirements.fail", { err });
+      session.finish(
+        undefined,
+        `Could not read requirements: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  };
+
+  // Once per game, unasked: one batched call per fifty mods, and the column
+  // is blank without it. A re-read is a button.
+  const autoReadRef = React.useRef<string | undefined>(undefined);
+  React.useEffect(() => {
+    if (gameId === undefined || mods.length === 0) return;
+    if (requirements !== undefined || autoReadRef.current === gameId) return;
+    if (busy !== undefined) return;
+    if (nexus.getModRequirements === undefined) return;
+    autoReadRef.current = gameId;
+    void readRequirements();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameId, mods.length, requirements, busy]);
+
+  const [chooseFile, setChooseFile] = React.useState<
+    { req: ModRequirement; candidates: NexusFileInfo[]; picked?: number } | undefined
+  >(undefined);
+
+  const downloadRequirement = async (req: ModRequirement, file: NexusFileInfo): Promise<void> => {
+    if (req.nexusModId === undefined || req.gameDomain === undefined || nexus.download === undefined) return;
+    const signal = session.begin("install-requirement", { keepReport: true });
+    if (signal === undefined) return;
+    setProgress(`Downloading ${req.name} — ${file.name ?? file.file_name ?? `file ${file.file_id}`}`);
+    ehLog("info", "curator.requirement.install.start", {
+      mod: req.name,
+      nexusModId: req.nexusModId,
+      fileId: file.file_id,
+      game: req.gameDomain,
+    });
+    try {
+      const dlId = await nexus.download(req.gameDomain, req.nexusModId, file.file_id, file.file_name, true);
+      ehLog("info", "curator.requirement.install.downloaded", { mod: req.name, dlId });
+      session.finish(
+        undefined,
+        dlId === undefined
+          ? `Vortex did not start the download for ${req.name}. Its own notification says why; the mod page is a click away.`
+          : `Downloaded ${req.name}. Vortex is installing it now — press Reload in a moment, then re-read requirements.`,
+      );
+    } catch (err) {
+      ehLog("error", "curator.requirement.install.fail", { mod: req.name, err });
+      session.finish(undefined, `Could not download ${req.name}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    setTick((t) => t + 1);
+  };
+
+  const installRequirement = async (req: ModRequirement): Promise<void> => {
+    if (req.nexusModId === undefined || req.gameDomain === undefined) return;
+    if (nexus.getModFiles === undefined || nexus.download === undefined) {
+      setNote("This Vortex build does not expose the Nexus download surface, so the file has to be fetched from the mod page.");
+      return;
+    }
+    const signal = session.begin("install-requirement", { keepReport: true });
+    if (signal === undefined) return;
+    setProgress(`Asking Nexus which file ${req.name} ships…`);
+    let files: NexusFileInfo[] = [];
+    try {
+      files = await nexus.getModFiles(req.gameDomain, req.nexusModId);
+    } catch (err) {
+      session.finish(undefined, `Could not list ${req.name}'s files: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    const choice = pickInstallFile(files);
+    session.finish(undefined);
+    if (choice.kind === "one") {
+      await downloadRequirement(req, choice.file);
+    } else if (choice.kind === "choose") {
+      // Several current files: the LE build, the AE build, a "lite". The
+      // wrong one installs cleanly and is wrong forever, so the curator picks.
+      setChooseFile({ req, candidates: choice.candidates });
+    } else {
+      setNote(`${req.name} has no current file on Nexus to download. Its page may explain.`);
+    }
+  };
+
+  const openPage = (req: ModRequirement): void => {
+    if (req.nexusModId !== undefined && req.gameDomain !== undefined && nexus.openModPage !== undefined) {
+      nexus.openModPage(req.gameDomain, req.nexusModId, "nexus");
+      return;
+    }
+    if (req.url !== undefined) {
+      void import("../../../core/revealPath").then(({ openExternalUrl }) => openExternalUrl(req.url as string));
+    }
+  };
+
+  // ── Actions kept verbatim from the first version ──────────────────────
 
   const setFrozen = (mod: CuratorMod, version: string | undefined): void => {
     const { key, value } = freezeAttribute(version);
-    api.store?.dispatch(
-      vortexActions.setModAttribute(gameId!, mod.id, key, value) as never,
-    );
+    api.store?.dispatch(vortexActions.setModAttribute(gameId!, mod.id, key, value) as never);
     setTick((t) => t + 1);
   };
 
@@ -635,27 +463,19 @@ function CuratorBody(): JSX.Element {
     if (session.begin("refresh", { keepReport: true }) === undefined) return;
     setNote("Asking Nexus about every mod — this takes a moment.");
     try {
-      // Read-only: this asks Vortex to refresh what Nexus says. Nothing is
-      // installed and nothing on disk changes. Same call Vortex's own
-      // "check for updates" toolbar button makes.
-      ehLog("info", "curator.recheck.start", {
-        gameId,
-        mods: Object.keys(byId).length,
-      });
+      ehLog("info", "curator.recheck.start", { gameId, mods: Object.keys(byId).length });
       await ext.emitAndAwait("check-mods-version", gameId, byId, true);
       ehLog("info", "curator.recheck.ok", { gameId });
     } catch (err) {
       ehLog("error", "curator.recheck.fail", { err });
       session.finish(
         undefined,
-        `Vortex could not check for updates: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        `Vortex could not check for updates: ${err instanceof Error ? err.message : String(err)}`,
       );
       setTick((t) => t + 1);
       return;
     }
-    session.finish(undefined, "Nexus re-checked. The counts below are current.");
+    session.finish(undefined, "Nexus re-checked. The counts are current.");
     setTick((t) => t + 1);
   };
 
@@ -665,17 +485,9 @@ function CuratorBody(): JSX.Element {
     const signal = session.begin("endorse", { keepReport: true });
     if (signal === undefined) return;
     let done = 0;
-    // Paced, not parallel. `endorse-mod` is fire-and-forget — Vortex gives no
-    // promise to await — so the only way to avoid firing 1,500 requests at
-    // Nexus in one tick is to space them. A ban is not a faster result.
     for (const mod of endorsable) {
-      // Endorsing cannot be undone one at a time, but it CAN be stopped
-      // part-way — which is the difference between a curator who changed
-      // their mind at mod 30 of 1,500 and one who has to close Vortex.
       if (signal.aborted) break;
       if (mod.nexusModId === undefined) continue;
-      // Vortex's OWN mod id here, not the Nexus one: that is what its endorse
-      // control passes, and the other id endorses nothing.
       api.events.emit("endorse-mod", game, mod.id, "Endorsed");
       done += 1;
       setProgress(
@@ -695,70 +507,36 @@ function CuratorBody(): JSX.Element {
     );
   };
 
-  /**
-   * Update every candidate, one at a time, verifying each before the next.
-   *
-   * The awaiting is the feature. `updateOneAndWait` resolves only when Vortex
-   * reports finishing THIS mod — matched on its Nexus ids, not on "some
-   * install finished" — and `runBulkUpdate` cannot begin the next until it
-   * has. Vortex's own bulk update starts them together, which is why it loses
-   * files.
-   */
-  const updateAll = async (candidates: UpdateRow[]): Promise<void> => {
-    // Narrowed here rather than relied on from the guard below: this function
-    // is defined above it, so the compiler cannot see that check — the same
-    // shape as the closure bugs that crashed two releases of the build page.
+  const updateAll = async (candidates: readonly WorkRow[]): Promise<void> => {
     const game = gameId;
     if (game === undefined) return;
-    // The session owns the signal, so the Cancel button below can reach it.
-    // It used to be a local `AbortController` that nothing ever aborted.
     const signal = session.begin("update");
     if (signal === undefined) return;
     const installedIds = new Map<string, string>();
-    // This flow logged nothing at all, so an update that did literally
-    // nothing looked exactly like one that was working — and the only way to
-    // tell them apart was to read Vortex's log and find it empty too.
-    ehLog("info", "curator.bulk-update.start", {
-      candidates: candidates.length,
-      gameId: game,
-    });
+    const list = candidates
+      .filter((r) => r.update !== undefined)
+      .map((r) => ({
+        mod: r.mod,
+        fromVersion: r.update!.from,
+        toVersion: r.update!.to,
+        fromFileId: r.mod.nexusFileId ?? 0,
+        toFileId: r.update!.toFileId,
+      }));
+    ehLog("info", "curator.bulk-update.start", { candidates: list.length, gameId: game });
     const startedAt = Date.now();
     const report = await runBulkUpdate({
-      candidates,
+      candidates: list,
       signal,
-      onProgress: (n, total, m) =>
-        setProgress(`Updating ${n + 1} of ${total} — ${m.name}`),
+      onProgress: (n, total, m) => setProgress(`Updating ${n + 1} of ${total} — ${m.name}`),
       update: async (candidate) => {
         const newModId = await updateOneAndWait({
           events: api.events as never,
           gameId: game,
           nexusModId: candidate.mod.nexusModId!,
           toFileId: candidate.toFileId,
-          // The getter, never a snapshot: the mod being waited for does
-          // not exist in any state captured before the update started.
           readInstalled: installedIdentityReader(() => api.getState(), game),
           start: () => {
-            /**
-             * ─── THE LAST ARGUMENT IS A DISCRIMINATOR, NOT A LABEL ──────
-             * Vortex's `onModUpdate` opens with:
-             *
-             *     if (source !== "nexus") {
-             *       // not a mod from nexus mods
-             *       return;
-             *     }
-             *
-             * It was passed "event-horizon-curator-tools", read as an
-             * attribution tag because Vortex's own caller passes
-             * `mod.attributes.source` there. The handler returned
-             * immediately — no download, no error, and not one line in
-             * Vortex's log or ours — and the page sat on "Updating 1 of 4"
-             * until the fifteen-minute timeout. Vortex's own bulk update
-             * hardcodes "nexus" at this exact call; so does this.
-             */
             const source = "nexus";
-            // Differs from the active game for a compatible download — a
-            // Skyrim LE file installed under SSE — and Vortex reads it here
-            // for exactly that case.
             const downloadGame = candidate.mod.downloadGame ?? game;
             ehLog("info", "curator.update.start", {
               mod: candidate.mod.name,
@@ -796,31 +574,13 @@ function CuratorBody(): JSX.Element {
       }, {}),
     });
     session.finish(describeBulkUpdate(report));
-    // Clear the ticks, as every other action on this page does. Vortex gives
-    // an updated mod a NEW id, so these ids are stale the moment the run
-    // finishes: the button would keep reading "Update 12 ticked mods" while
-    // acting on the 7 that still exist, and `from: "ticked"` would pin the
-    // target there — leaving the remaining updates unreachable by filtering.
-    setUpdateSel(new Set());
+    setSelected(new Set());
     setTick((t) => t + 1);
   };
 
-  /**
-   * Reinstall the mods that lost files, one at a time.
-   *
-   * The repair for what the update check finds. Everything the uninstall
-   * would destroy — FOMOD answers, modType, enabled state, the freeze — is
-   * read BEFORE it happens and put back after, or the mod returns as a
-   * default install of the same archive: silently different from what the
-   * curator had.
-   */
   const reinstall = async (targets: readonly CuratorMod[]): Promise<void> => {
     const game = gameId;
     if (game === undefined || targets.length === 0) return;
-    /**
-     * Reinstalling UNINSTALLS first, so this is destructive before it is
-     * restorative. Said plainly, with the count, before anything is removed.
-     */
     const ok = await confirm({
       title: `Reinstall ${num(targets.length)} mod(s)?`,
       text:
@@ -837,32 +597,16 @@ function CuratorBody(): JSX.Element {
     const signal = session.begin("reinstall");
     if (signal === undefined) return;
     const installedIds = new Map<string, string>();
-    /**
-     * Mods whose UNINSTALL succeeded.
-     *
-     * The report cannot tell "the reinstall failed and the mod is untouched"
-     * from "the reinstall failed and the mod is gone" without this — and
-     * those two sentences ask the curator to do opposite things.
-     */
     const removed = new Set<string>();
     const state0 = api.getState();
     const enabledNow = readEnabledModIds(state0, game);
 
     const report = await runSequentially<CuratorMod>({
       items: targets,
-      onProgress: (n, total, m) =>
-        setProgress(`Reinstalling ${n + 1} of ${total} — ${m.name}`),
+      onProgress: (n, total, m) => setProgress(`Reinstalling ${n + 1} of ${total} — ${m.name}`),
       act: async (m) => {
-        const preserved = captureForReinstall(
-          api.getState(),
-          game,
-          m.id,
-          enabledNow,
-          FROZEN_ATTRIBUTE,
-        );
+        const preserved = captureForReinstall(api.getState(), game, m.id, enabledNow, FROZEN_ATTRIBUTE);
         await uninstallMod(api, { gameId: game, modId: m.id });
-        // Past this line the mod is NOT in the setup. Anything that throws
-        // from here on leaves it that way.
         removed.add(m.id);
         const { vortexModId } = await installFromExistingDownload(api, {
           gameId: game,
@@ -870,42 +614,21 @@ function CuratorBody(): JSX.Element {
         } as never);
         installedIds.set(m.id, vortexModId);
 
-        const fresh = readCuratorMods(
-          api.getState(),
-          game,
-          new Set(),
-        ).find((x) => x.id === vortexModId);
-        const restore = restorationFor(preserved, {
-          modType: fresh?.modType ?? "",
-        });
+        const fresh = readCuratorMods(api.getState(), game, new Set()).find((x) => x.id === vortexModId);
+        const restore = restorationFor(preserved, { modType: fresh?.modType ?? "" });
         if (restore.setModType !== undefined) {
-          api.store?.dispatch(
-            vortexActions.setModType(game, vortexModId, restore.setModType) as never,
-          );
+          api.store?.dispatch(vortexActions.setModType(game, vortexModId, restore.setModType) as never);
         }
         if (restore.setFrozenAtVersion !== undefined) {
           api.store?.dispatch(
-            vortexActions.setModAttribute(
-              game,
-              vortexModId,
-              FROZEN_ATTRIBUTE,
-              restore.setFrozenAtVersion,
-            ) as never,
+            vortexActions.setModAttribute(game, vortexModId, FROZEN_ATTRIBUTE, restore.setFrozenAtVersion) as never,
           );
         }
         const profileId = (
-          api.getState() as unknown as {
-            settings?: { profiles?: { activeProfileId?: string } };
-          }
+          api.getState() as unknown as { settings?: { profiles?: { activeProfileId?: string } } }
         )?.settings?.profiles?.activeProfileId;
         if (profileId !== undefined) {
-          api.store?.dispatch(
-            vortexActions.setModEnabled(
-              profileId,
-              vortexModId,
-              restore.enable,
-            ) as never,
-          );
+          api.store?.dispatch(vortexActions.setModEnabled(profileId, vortexModId, restore.enable) as never);
         }
       },
       verify: async (m) =>
@@ -929,13 +652,8 @@ function CuratorBody(): JSX.Element {
               ? { kind: "files-dropped" as const, mod: o.item, missing: o.missing }
               : o.kind === "failed"
                 ? // A failure AFTER the uninstall is not "did not update" —
-                  // the mod has left the setup and nothing will bring it back.
                   removed.has(o.item.id)
-                  ? {
-                      kind: "removed-not-reinstalled" as const,
-                      mod: o.item,
-                      why: o.why,
-                    }
+                  ? { kind: "removed-not-reinstalled" as const, mod: o.item, why: o.why }
                   : { kind: "failed" as const, mod: o.item, why: o.why }
                 : { kind: "unverified" as const, mod: o.item, why: o.why },
         ),
@@ -946,19 +664,66 @@ function CuratorBody(): JSX.Element {
 
   const setEnabledFor = (targets: readonly CuratorMod[], to: boolean): void => {
     const profileId = (
-      api.getState() as unknown as {
-        settings?: { profiles?: { activeProfileId?: string } };
-      }
+      api.getState() as unknown as { settings?: { profiles?: { activeProfileId?: string } } }
     )?.settings?.profiles?.activeProfileId;
     const changes = planEnableChanges(targets, to);
     setNote(describeEnableChanges(changes));
     if (profileId === undefined) return;
     for (const change of changes) {
-      api.store?.dispatch(
-        vortexActions.setModEnabled(profileId, change.mod.id, change.to) as never,
-      );
+      api.store?.dispatch(vortexActions.setModEnabled(profileId, change.mod.id, change.to) as never);
     }
     setTick((t) => t + 1);
+  };
+
+  /**
+   * Enable, and offer the requirements that are installed but off.
+   *
+   * The requirements report knows which providers a mod needs and that they
+   * are one click from working; enabling a mod without them reproduces the
+   * "everything is enabled and it still does not load" report.
+   */
+  const enableWithProviders = async (targets: readonly CuratorMod[]): Promise<void> => {
+    const ids = new Set(targets.map((m) => m.id));
+    const providers = report === undefined ? [] : disabledProvidersFor(report, mods, ids);
+    if (providers.length > 0) {
+      const ok = await confirm({
+        title: `Also enable ${num(providers.length)} requirement(s)?`,
+        text:
+          `${targets.length === 1 ? targets[0]!.name : `${num(targets.length)} of these mods`} ` +
+          `list${targets.length === 1 ? "s" : ""} mods you have installed but disabled:\n\n` +
+          providers
+            .slice(0, 12)
+            .map((p) => `  • ${p.name}`)
+            .join("\n") +
+          (providers.length > 12 ? `\n  … and ${providers.length - 12} more` : "") +
+          `\n\nEnable those too? Choosing Cancel enables only what you ticked.`,
+        confirmLabel: "Enable all",
+      });
+      setEnabledFor(ok ? [...targets, ...providers] : targets, true);
+      return;
+    }
+    setEnabledFor(targets, true);
+  };
+
+  /** Disable, after saying what depends on it. */
+  const disableWithDependants = async (targets: readonly CuratorMod[]): Promise<void> => {
+    const ids = new Set(targets.map((m) => m.id));
+    const broken = report === undefined ? [] : dependantsOf(report, mods, ids);
+    if (broken.length > 0) {
+      const ok = await confirm({
+        title: `Disable anyway? ${num(broken.length)} of these are required by others`,
+        text:
+          broken
+            .slice(0, 10)
+            .map((b) => `  • ${b.provider.name} — needed by ${b.dependants.map((d) => d.name).join(", ")}`)
+            .join("\n") +
+          (broken.length > 10 ? `\n  … and ${broken.length - 10} more` : "") +
+          `\n\nThose dependants stay enabled and will be missing something. Disable anyway?`,
+        confirmLabel: "Disable",
+      });
+      if (!ok) return;
+    }
+    setEnabledFor(targets, false);
   };
 
   const setTypeFor = (targets: readonly CuratorMod[], to: string): void => {
@@ -967,22 +732,11 @@ function CuratorBody(): JSX.Element {
     const changes = planTypeChanges(targets, to);
     setNote(describeTypeChanges(changes));
     for (const change of changes) {
-      api.store?.dispatch(
-        vortexActions.setModType(game, change.mod.id, change.to) as never,
-      );
+      api.store?.dispatch(vortexActions.setModType(game, change.mod.id, change.to) as never);
     }
     setTick((t) => t + 1);
   };
 
-
-
-  /**
-   * Apply the plan that is on screen — never a freshly computed one.
-   *
-   * The caller passes the very object the table rendered from, so what runs
-   * is what was read. Re-planning here would act on something the curator
-   * never saw, which is the whole point of the dry run.
-   */
   const applyCleanup = async (plan: CleanupPlan): Promise<void> => {
     const game = gameId;
     if (game === undefined) return;
@@ -1000,21 +754,6 @@ function CuratorBody(): JSX.Element {
         if (full === undefined) {
           throw new Error("its path on disk could not be resolved");
         }
-        /**
-         * ─── CONFIRM THE FILE IS THERE BEFORE CLAIMING TO FREE IT ───────
-         * `rm(force: true)` swallows ENOENT, so a path that resolved to the
-         * WRONG place — the compatible-download case puts a Skyrim LE file
-         * under a different game's folder than the active one — succeeded
-         * silently. The run then counted the archive's bytes as freed, told
-         * the curator the disk was that much emptier, and dropped Vortex's
-         * download record for a file still sitting on disk: the archive
-         * becomes invisible to Vortex AND to this page, so nothing can
-         * clean it up afterwards.
-         *
-         * Throwing instead puts it in `archivesFailed` with the path we
-         * looked at, which is both honest about the bytes and the one piece
-         * of information a bug report needs.
-         */
         try {
           await fsp.stat(full);
         } catch {
@@ -1025,664 +764,342 @@ function CuratorBody(): JSX.Element {
           );
         }
         await fsp.rm(full, { force: true });
-        // Outside the throwing path on purpose. The file IS gone by here, so a
-        // failed dispatch must not be reported as a failed deletion — that
-        // would understate what was freed and describe a success as an error.
-        // The worst case is a download entry Vortex still lists, which shows
-        // up as "missing" rather than as lost disk.
         try {
           api.store?.dispatch(vortexActions.removeDownload(dlEntry.id) as never);
         } catch {
-          /* the bytes are freed either way */
+          /* the file is gone; a stale download record is the lesser evil */
         }
       },
     });
     session.finish(describeCleanupOutcome(outcome));
-    setRetire(new Set());
-    setArchiveSel(new Set());
     setTick((t) => t + 1);
   };
+
+  // ── Render ───────────────────────────────────────────────────────────
 
   if (gameId === undefined) {
     return (
       <Card title="No active game">
-        <p className="eh-body">
-          Vortex is not managing a game right now, so there is no profile to act
-          on.
-        </p>
+        <p className="eh-body">Vortex is not managing a game right now, so there is no profile to act on.</p>
       </Card>
     );
   }
 
+  const updatableChosen = chosenRows.filter((r) => r.update !== undefined);
+  const frozenChosen = chosen.filter((m) => m.frozenAtVersion !== undefined);
+  const unfrozenChosen = chosen.filter((m) => m.frozenAtVersion === undefined);
+  const enabledChosen = chosen.filter((m) => m.enabled);
+  const disabledChosen = chosen.filter((m) => !m.enabled);
+  const endorsableChosen = chosen.filter((m) => endorsable.some((e) => e.id === m.id));
+  const idle = busy === undefined;
+
   return (
-    <div className="eh-stack">
-      <StatGrid min={120}>
+    <div className="eh-stack eh-stack--lg">
+      <StatGrid min={150}>
+        <StatTile label="Mods" value={num(summary.total)} tone={summary.total === 0 ? "quiet" : "neutral"} />
+        <StatTile label="Enabled" value={num(summary.enabled)} tone={summary.enabled === 0 ? "quiet" : "neutral"} />
+        <StatTile label="Updatable" value={num(summary.updatable)} tone={summary.updatable === 0 ? "quiet" : "warning"} />
         <StatTile
-          label="Mods"
-          value={num(summary.total)}
-          tone={summary.total === 0 ? "quiet" : "neutral"}
+          label="Missing reqs"
+          value={reqSummary === undefined ? "?" : num(reqSummary.modsWithMissing)}
+          tone={reqSummary === undefined ? "quiet" : reqSummary.modsWithMissing === 0 ? "success" : "danger"}
+          title={reqSummary === undefined ? "Not read yet" : `${num(reqSummary.missing)} requirement(s) across ${num(reqSummary.modsWithMissing)} mod(s)`}
         />
         <StatTile
-          label="Enabled"
-          value={num(summary.enabled)}
-          tone={summary.enabled === 0 ? "quiet" : "neutral"}
+          label="Reqs disabled"
+          value={reqSummary === undefined ? "?" : num(reqSummary.installedDisabled)}
+          tone={reqSummary === undefined ? "quiet" : reqSummary.installedDisabled === 0 ? "quiet" : "warning"}
+          title="Requirements that are in the pool but not enabled"
         />
-        <StatTile
-          label="Updatable"
-          value={num(summary.updatable)}
-          tone={summary.updatable === 0 ? "quiet" : "warning"}
-        />
-        <StatTile
-          label="Frozen"
-          value={num(summary.frozen)}
-          tone={summary.frozen === 0 ? "quiet" : "neutral"}
-        />
-        <StatTile
-          label="Freeze broken"
-          value={num(summary.frozenDrifted)}
-          tone={summary.frozenDrifted === 0 ? "quiet" : "danger"}
-        />
-        <StatTile
-          label="Unendorsed"
-          value={num(summary.endorsable)}
-          tone={summary.endorsable === 0 ? "quiet" : "neutral"}
-        />
-        <StatTile
-          label="Duplicate groups"
-          value={num(summary.duplicateGroups)}
-          tone={summary.duplicateGroups === 0 ? "quiet" : "neutral"}
-        />
+        <StatTile label="Frozen" value={num(summary.frozen)} tone={summary.frozen === 0 ? "quiet" : "info"} />
+        <StatTile label="Freeze broken" value={num(summary.frozenDrifted)} tone={summary.frozenDrifted === 0 ? "quiet" : "danger"} />
+        <StatTile label="Unendorsed" value={num(summary.endorsable)} tone={summary.endorsable === 0 ? "quiet" : "neutral"} />
       </StatGrid>
 
       <div className="eh-row">
-        <Button intent="ghost" onClick={(): void => void refreshUpdates()}>
+        <Button intent="ghost" busy={busy === "refresh"} onClick={(): void => void refreshUpdates()}>
           Re-check Nexus for updates
+        </Button>
+        <Button
+          intent="ghost"
+          busy={busy === "requirements"}
+          onClick={(): void => void readRequirements()}
+          title="Read every mod page's Requirements section and every plugin's masters"
+        >
+          {requirements === undefined ? "Read requirements" : "Re-read requirements"}
         </Button>
         <Button
           intent="ghost"
           onClick={(): void => {
             setTick((t) => t + 1);
-            /**
-             * Reload re-reads Vortex; it does not ask Nexus anything. When
-             * nothing has changed on the machine, nothing on screen moves —
-             * so with no feedback at all it was indistinguishable from a dead
-             * button, and got reported as one. Say what was read.
-             */
             setNote(
-              `Re-read ${num(mods.length)} mod(s) from Vortex: ` +
-                `${num(updatable.length)} updatable, ` +
-                `${num(manualUpdates.length)} need a manual update, ` +
-                `${num(frozen.length)} frozen. This reads Vortex only — use ` +
-                `"Re-check Nexus for updates" to ask Nexus itself.`,
+              `Re-read ${num(mods.length)} mod(s) from Vortex: ${num(counts.updates)} updatable, ` +
+                `${num(counts.manual)} need a manual update, ${num(counts.frozen)} frozen. This reads ` +
+                `Vortex only — use "Re-check Nexus for updates" to ask Nexus itself.`,
             );
           }}
         >
           Reload
         </Button>
         <Button
-          intent="primary"
-          disabled={busy !== undefined || updateRows.length === 0}
-          onClick={(): void => void updateAll(updateRows)}
-        >
-          {busy === "update"
-            ? "Updating..."
-            : `Update ${describeTarget(
-                updateAim ?? { ids: updatable.map((c) => c.mod.id), from: "all" },
-                "mod",
-              )}, one at a time`}
-        </Button>
-        <Button
           intent="ghost"
-          disabled={busy !== undefined || endorsable.length === 0}
+          disabled={!idle || endorsable.length === 0}
+          busy={busy === "endorse"}
           onClick={(): void => void endorseAll()}
         >
-          {busy === "endorse"
-            ? "Endorsing..."
-            : `Endorse ${num(endorsable.length)} mod(s)` +
-              (endorseIsLong(endorsable.length)
-                ? ` — ${describeEndorseDuration(endorsable.length)}`
-                : "")}
+          {`Endorse ${num(endorsable.length)} mod(s)` +
+            (endorseIsLong(endorsable.length) ? ` — ${describeEndorseDuration(endorsable.length)}` : "")}
         </Button>
+        {!idle && (
+          <Button intent="ghost" onClick={(): void => session.cancel()}>
+            Stop after this one
+          </Button>
+        )}
       </div>
 
-      {endorseIsLong(endorsable.length) && busy === undefined && (
+      {endorseIsLong(endorsable.length) && idle && (
         <Callout tone="warning">
-          Endorsing {num(endorsable.length)} mods takes{" "}
-          {describeEndorseDuration(endorsable.length)} and cannot be stopped
-          once it starts. Vortex gives no way to confirm an endorsement
-          finished, so they are spaced {ENDORSE_PACE_MS}ms apart — sending
-          them all at once is a rate-limit, not a faster result. Leave the page
-          open while it runs.
+          Endorsing {num(endorsable.length)} mods takes {describeEndorseDuration(endorsable.length)} and
+          cannot be stopped once it starts. Vortex gives no way to confirm an endorsement finished, so
+          they are spaced {ENDORSE_PACE_MS}ms apart — sending them all at once is a rate-limit, not a
+          faster result. Leave the page open while it runs.
         </Callout>
       )}
 
       {progress !== undefined && (
-        <div className="eh-row">
+        <Callout tone="info" icon={null}>
           <span className="eh-strong">{progress}</span>
-          {/*
-            The stop this page has always claimed to have.
-
-            `runSequentially` and `runCleanup` both check their signal between
-            items and report `cancelled`; nothing ever aborted one, so the
-            "Stopped early" line was unreachable code and a curator who
-            started a 900-mod run had no way out but closing Vortex.
-
-            It stops BETWEEN mods, never mid-install — interrupting Vortex
-            halfway through writing a mod is how files get lost, which is the
-            thing this whole page exists to avoid.
-          */}
-          {busy !== undefined && (
-            <Button intent="ghost" onClick={(): void => session.cancel()}>
-              Stop after this one
-            </Button>
-          )}
-        </div>
+        </Callout>
       )}
 
       {lines.length > 0 && (
-        <Card title="Update report">
+        <Card
+          title="Report"
+          actions={
+            idle ? (
+              <Button size="sm" intent="ghost" onClick={(): void => session.dismiss()}>
+                Dismiss
+              </Button>
+            ) : undefined
+          }
+        >
           <div className="eh-stack eh-stack--sm">
             {lines.map((l) => (
-              <span
-                key={l}
-                className={l.includes("LOST") ? "eh-tone--danger" : "eh-secondary"}
-              >
+              <span key={l} className={l.includes("LOST") ? "eh-tone--danger" : "eh-secondary"}>
                 {l}
               </span>
             ))}
           </div>
-          {/*
-            The report OUTLIVES the run and the page now, so it needs a way
-            to be put down — otherwise the last run's lines sit above the next
-            one's forever, and a curator cannot tell which run they describe.
-          */}
-          {busy === undefined && (
-            <Button intent="ghost" onClick={(): void => session.dismiss()}>
-              Dismiss report
-            </Button>
-          )}
         </Card>
       )}
 
       {note !== undefined && <Callout tone="info">{note}</Callout>}
 
-      <Card
-        title={`Updates available (${updatable.length})`}
-        subtitle={
-          "Frozen mods are not listed here. Installing these is a separate " +
-          "step and runs one mod at a time — Vortex's own bulk update runs " +
-          "them concurrently, which is why it loses files."
-        }
-      >
-        <div className="eh-stack eh-stack--lg">
-          <DataTable
-            rows={updatable}
-            idOf={updateId}
-            columns={UPDATE_COLUMNS}
-            noun="update"
-            limit={200}
-            selection={{ selected: updateSel, onChange: setUpdateSel }}
-            onTarget={setUpdateAim}
-            empty={
-              <p className="eh-body">
-                Nothing to update, as far as Vortex currently knows. Re-check
-                Nexus if that looks wrong.
-              </p>
-            }
-            actions={(c): JSX.Element => (
-              <Button
-                size="sm"
-                intent="ghost"
-                onClick={(): void => setFrozen(c.mod, c.mod.version ?? "")}
-              >
-                Freeze here
-              </Button>
-            )}
-          />
+      {requirements?.load.unavailable !== undefined && (
+        <Callout tone="warning">{requirements.load.unavailable}</Callout>
+      )}
 
-          {shadowed.length > 0 && (
-            <div className="eh-stack eh-stack--xs">
-              <p className="eh-body">
-                {shadowed.length} older install(s) also have a newer file on
-                Nexus and are deliberately NOT listed above — you already have a
-                newer copy of each installed, so updating both would install the
-                new file twice. Retire them under Disk cleanup instead.
-              </p>
-              <DataTable
-                rows={shadowed}
-                idOf={shadowId}
-                columns={SHADOW_COLUMNS}
-                noun="older install"
-                limit={100}
-                maxHeight={240}
-              />
-            </div>
-          )}
+      {/* Views: the same rows, one filter at a time. */}
+      <div className="eh-row eh-row--sm" role="tablist" aria-label="Views">
+        {chips.map((v) => (
+          <Chip key={v.id} active={view === v.id} onClick={(): void => setView(v.id)} title={v.description}>
+            {v.label}
+            {v.id !== "all" && <span className="eh-muted"> {num(counts[v.id])}</span>}
+          </Chip>
+        ))}
+        <Chip active={view === "disk"} onClick={(): void => setView("disk")} title="Orphaned archives and superseded installs">
+          Disk cleanup
+        </Chip>
+      </div>
 
-          {manualUpdates.length > 0 && (
-            <div className="eh-stack eh-stack--xs">
-              <Callout tone="warning">
-                {num(manualUpdates.length)} mod(s) have a newer version on Nexus
-                that Event Horizon CANNOT update for you. Vortex knows the new
-                version number but not which file it is — the update button
-                needs a file id, and Nexus did not give it one. These are real
-                updates; they just have to be done from the mod page. Nothing
-                above is missing them, and nothing here is a duplicate of it.
-              </Callout>
-              <DataTable
-                rows={manualUpdates}
-                idOf={manualId}
-                columns={MANUAL_COLUMNS}
-                noun="manual update"
-                limit={200}
-                maxHeight={320}
-              />
-            </div>
-          )}
-        </div>
-      </Card>
-
-      <Card
-        title={`Frozen (${frozen.length})`}
-        subtitle={
-          "A freeze keeps a mod out of this page's bulk update. It cannot stop " +
-          "Vortex's own update button — Vortex has no such concept — so if the " +
-          "version moves anyway, it is reported here rather than hidden."
-        }
-      >
-        <div className="eh-stack eh-stack--sm">
-          {frozen.length > 0 && (
-            <Button
-              size="sm"
-              intent="ghost"
-              disabled={busy !== undefined || frozenRows.length === 0}
-              onClick={(): void => {
-                for (const f of frozenRows) setFrozen(f.mod, undefined);
-                setFrozenSel(new Set());
-              }}
-            >
-              Unfreeze {describeTarget(
-                frozenAim ?? { ids: frozen.map((f) => f.mod.id), from: "all" },
-                "mod",
-              )}
-            </Button>
+      {view === "disk" ? (
+        <DiskCleanupView mods={mods} downloads={downloads} busy={!idle} confirm={confirm} applyCleanup={applyCleanup} />
+      ) : (
+        <div className="eh-stack">
+          {viewSpec !== undefined && viewSpec.id !== "all" && <p className="eh-note eh-prose">{viewSpec.description}</p>}
+          {view === "requirements" && reqSummary !== undefined && reqSummary.unfetched > 0 && (
+            <p className="eh-note">
+              {num(reqSummary.unfetched)} Nexus mod(s) were not answered for; their requirements are unknown, not empty.
+            </p>
           )}
           <DataTable
-            rows={frozen}
-            idOf={frozenId}
-            columns={FROZEN_COLUMNS}
-            noun="frozen mod"
+            rows={visibleRows}
+            idOf={rowId}
+            columns={WORK_COLUMNS}
+            noun="mod"
             limit={200}
-            maxHeight={320}
-            selection={{ selected: frozenSel, onChange: setFrozenSel }}
-            onTarget={setFrozenAim}
-            empty={
-              <p className="eh-body">
-                Nothing frozen. Freeze a mod when its current version is the one
-                your setup depends on.
-              </p>
-            }
-            actions={(f): JSX.Element => (
-              <Button
-                size="sm"
-                intent="ghost"
-                onClick={(): void => setFrozen(f.mod, undefined)}
-              >
-                Unfreeze
-              </Button>
+            maxHeight={520}
+            actionsWidth={200}
+            selection={{ selected, onChange: setSelected }}
+            empty={<p className="eh-body">Nothing in this view.</p>}
+            actions={(r): JSX.Element => (
+              <div className="eh-row eh-row--sm eh-row--nowrap">
+                {r.update !== undefined && (
+                  <Button size="sm" intent="ghost" disabled={!idle} onClick={(): void => void updateAll([r])}>
+                    Update
+                  </Button>
+                )}
+                {r.manual?.url !== undefined && (
+                  <LinkButton variant="xs" onClick={(): void => openPage({ source: "nexus", status: "missing", name: r.mod.name, url: r.manual!.url, satisfiedBy: [] })}>
+                    mod page
+                  </LinkButton>
+                )}
+                <Button
+                  size="sm"
+                  intent={focusId === r.mod.id ? "primary" : "ghost"}
+                  onClick={(): void => setFocusId(focusId === r.mod.id ? undefined : r.mod.id)}
+                >
+                  Details
+                </Button>
+              </div>
             )}
           />
         </div>
-      </Card>
+      )}
 
-      <Card
-        title={`Selected (${chosen.length} of ${mods.length})`}
-        subtitle={
-          "Tick mods below, then act on all of them at once. Enabling and " +
-          "setting a kind are state writes — Vortex re-deploys once at the " +
-          "end. Reinstalling moves files, so it runs one mod at a time and " +
-          "checks each against its archive before starting the next."
-        }
-      >
-        <div className="eh-stack eh-stack--sm">
-          <div className="eh-row">
-            <Button
-              size="sm"
-              intent="ghost"
-              disabled={busy !== undefined || chosen.length === 0}
-              onClick={(): void => setEnabledFor(chosen, true)}
-            >
-              Enable
+      {focusMod !== undefined && (
+        <RequirementsPanel
+          mod={focusMod}
+          mods={mods}
+          report={report}
+          entry={report?.byMod.get(focusMod.id)}
+          busy={!idle}
+          canInstall={nexus.download !== undefined && nexus.getModFiles !== undefined}
+          onClose={(): void => setFocusId(undefined)}
+          onEnable={(providers): void => setEnabledFor(providers, true)}
+          onInstall={(req): void => void installRequirement(req)}
+          onOpenPage={openPage}
+          onFocus={setFocusId}
+        />
+      )}
+
+      {/* The action bar: only while something is ticked, only what applies. */}
+      {chosen.length > 0 && view !== "disk" && (
+        <div className="eh-actions eh-actions--sticky eh-row--split">
+          <span className="eh-strong">
+            {num(chosen.length)} ticked
+            <LinkButton variant="xs" tone="muted" className="eh-actions__clear" onClick={(): void => setSelected(new Set())}>
+              clear
+            </LinkButton>
+          </span>
+          <div className="eh-row eh-row--sm">
+            {disabledChosen.length > 0 && (
+              <Button size="sm" intent="ghost" disabled={!idle} onClick={(): void => void enableWithProviders(disabledChosen)}>
+                Enable {num(disabledChosen.length)}
+              </Button>
+            )}
+            {enabledChosen.length > 0 && (
+              <Button size="sm" intent="ghost" disabled={!idle} onClick={(): void => void disableWithDependants(enabledChosen)}>
+                Disable {num(enabledChosen.length)}
+              </Button>
+            )}
+            {updatableChosen.length > 0 && (
+              <Button size="sm" intent="primary" disabled={!idle} busy={busy === "update"} onClick={(): void => void updateAll(updatableChosen)}>
+                Update {num(updatableChosen.length)}, one at a time
+              </Button>
+            )}
+            {unfrozenChosen.length > 0 && (
+              <Button
+                size="sm"
+                intent="ghost"
+                disabled={!idle}
+                title="Keep these out of bulk update at their current version"
+                onClick={(): void => {
+                  for (const m of unfrozenChosen) setFrozen(m, m.version ?? "");
+                }}
+              >
+                Freeze {num(unfrozenChosen.length)}
+              </Button>
+            )}
+            {frozenChosen.length > 0 && (
+              <Button
+                size="sm"
+                intent="ghost"
+                disabled={!idle}
+                onClick={(): void => {
+                  for (const m of frozenChosen) setFrozen(m, undefined);
+                }}
+              >
+                Unfreeze {num(frozenChosen.length)}
+              </Button>
+            )}
+            {endorsableChosen.length > 0 && (
+              <Button
+                size="sm"
+                intent="ghost"
+                disabled={!idle}
+                onClick={(): void => {
+                  for (const m of endorsableChosen) api.events.emit("endorse-mod", gameId, m.id, "Endorsed");
+                  setNote(`Asked Vortex to endorse ${num(endorsableChosen.length)} mod(s). Press Reload to see the counts settle.`);
+                }}
+              >
+                Endorse {num(endorsableChosen.length)}
+              </Button>
+            )}
+            <Button size="sm" intent="ghost" disabled={!idle} busy={busy === "reinstall"} onClick={(): void => void reinstall(chosen)}>
+              Reinstall {num(chosen.length)}
             </Button>
-            <Button
-              size="sm"
-              intent="ghost"
-              disabled={busy !== undefined || chosen.length === 0}
-              onClick={(): void => setEnabledFor(chosen, false)}
-            >
-              Disable
-            </Button>
-            <Button
-              size="sm"
-              intent="ghost"
-              disabled={busy !== undefined || chosen.length === 0}
-              onClick={(): void => void reinstall(chosen)}
-            >
-              {busy === "reinstall"
-                ? "Reinstalling..."
-                : `Reinstall ${chosen.length}`}
-            </Button>
-            <Field label="Mod kind" inline>
+            <Field label="Kind" inline>
               {(id): JSX.Element => (
                 <Input
                   id={id}
                   mono
                   small
-                  placeholder="mod kind, e.g. dinput"
+                  placeholder="e.g. dinput"
                   value={typeValue}
                   onChange={(e): void => setTypeValue(e.target.value)}
                 />
               )}
             </Field>
-            <Button
-              size="sm"
-              intent="ghost"
-              disabled={busy !== undefined || chosen.length === 0}
-              onClick={(): void => setTypeFor(chosen, typeValue)}
-            >
+            <Button size="sm" intent="ghost" disabled={!idle} onClick={(): void => setTypeFor(chosen, typeValue)}>
               Set kind
             </Button>
-            <Button
-              size="sm"
-              intent="ghost"
-              disabled={selected.size === 0}
-              onClick={(): void => setSelected(new Set())}
-            >
-              Clear
-            </Button>
           </div>
-
-          <DataTable
-            rows={mods}
-            idOf={curatorModId}
-            columns={MOD_COLUMNS}
-            noun="mod"
-            limit={200}
-            maxHeight={420}
-            selection={{ selected, onChange: setSelected }}
-          />
         </div>
-      </Card>
+      )}
 
-      <Card
-        title="Disk cleanup — 1. Orphaned archives"
-        subtitle={
-          "Downloaded files that no installed mod points at, where a NEWER " +
-          "version of that same file is installed — the same file, not merely " +
-          "the same mod page, so an addon you never installed is never read " +
-          "as an old version of the main file. Deleting these changes nothing " +
-          "about your setup — it is only disk, and this is where almost all " +
-          "the space is. Nothing is pre-ticked: the files are deleted " +
-          "permanently, so you choose which."
-        }
-      >
-        <div className="eh-stack eh-stack--sm">
-        {orphans.length === 0 ? (
-          <p className="eh-body">
-            No orphaned archives. Every download is either in use by an
-            installed mod, or is something with no installed version at all.
-          </p>
-        ) : (
+      <Modal
+        open={chooseFile !== undefined}
+        onClose={(): void => setChooseFile(undefined)}
+        title={chooseFile === undefined ? "" : `Which file of ${chooseFile.req.name}?`}
+        subtitle="Nexus lists more than one current file for this mod. The wrong one installs cleanly and is wrong forever, so this is your choice."
+        footer={
           <>
-            <div className="eh-row">
-              <Button
-                intent="danger"
-                disabled={busy !== undefined || archiveRemovals.length === 0}
-                onClick={(): void =>
-                  void (async (): Promise<void> => {
-                    const ok = await confirm({
-                      title: `Permanently delete ${num(
-                        archiveRemovals.length,
-                      )} archive(s)?`,
-                      text:
-                        `This frees ${formatSize(archiveBytes)} and cannot be ` +
-                        `undone — the files are removed from disk, not sent ` +
-                        `to the recycle bin, and Vortex has no undo.\n\n` +
-                        `No mod is uninstalled and your profile does not ` +
-                        `change. What you lose is the ability to reinstall ` +
-                        `these exact files offline: each one would have to be ` +
-                        `downloaded from Nexus again.`,
-                      confirmLabel: "Delete",
-                    });
-                    if (!ok) return;
-                    await applyCleanup(
-                      cleanupSubset({
-                        plan: orphanPlan,
-                        removeMods: [],
-                        deleteArchives: archiveRemovals,
-                      }),
-                    );
-                  })()
-                }
-              >
-                {busy === "cleanup"
-                  ? "Deleting..."
-                  : archiveRemovals.length === 0
-                    ? "Tick the archives you want deleted"
-                    : `Delete ${num(archiveRemovals.length)} ticked ` +
-                      `archive(s) — frees ${formatSize(archiveBytes)}`}
-              </Button>
-              <span className="eh-note">
-                Deleted permanently, not recycled. Nothing is uninstalled.
-              </span>
-            </div>
-            <DataTable
-              rows={orphans}
-              idOf={archiveId}
-              columns={ARCHIVE_COLUMNS}
-              noun="archive"
-              limit={200}
-              maxHeight={320}
-              selection={{ selected: archiveSel, onChange: setArchiveSel }}
-            />
-          </>
-        )}
-
-        {orphanPlan.keptReferenced > 0 && (
-          <span className="eh-note">
-            {num(orphanPlan.keptReferenced)} archive(s) are not listed because
-            an installed mod still points at them. Event Horizon hashes those
-            when you build, so they are never candidates here.
-          </span>
-        )}
-
-        {orphanPlan.staleLinked.length > 0 && (
-          <Callout tone="warning">
-            {num(orphanPlan.staleLinked.length)} download(s) worth{" "}
-            {formatSize(orphanPlan.staleLinkedBytes)} ARE the archives of mods
-            you have installed, but Vortex has lost the link to them — which is
-            what an in-place mod update leaves behind. They are kept and can
-            never be deleted from here. The same broken link stops a build
-            examining those mods{"'"} installers, so re-scanning the Downloads
-            tab is worth doing before your next build.
-          </Callout>
-        )}
-
-        {orphanPlan.unclearOrphans.length > 0 && (
-          <Callout tone="info">
-            {num(orphanPlan.unclearOrphans.length)} more download(s) worth{" "}
-            {formatSize(orphanPlan.unclearBytes)} have NO version of that mod
-            installed. Those are not listed above and never selected: a file
-            you downloaded on purpose and have not installed yet looks exactly
-            like a leftover from here.
-          </Callout>
-        )}
-        </div>
-      </Card>
-
-      <Card
-        title="Disk cleanup — 2. Old mod installs"
-        subtitle={
-          "This one changes your setup, so nothing is pre-ticked. An install " +
-          "is only listed here when Nexus's own update chain says it was " +
-          "replaced, or when the same FILE is installed at a lower version — " +
-          "sharing a mod page proves nothing on its own. Removing an install " +
-          "frees its archive too."
-        }
-      >
-        <div className="eh-stack eh-stack--sm">
-        {retireCandidates.length === 0 ? (
-          <p className="eh-body">
-            No install has been replaced by another one you have installed.
-          </p>
-        ) : (
-          <>
-            <div className="eh-row">
-              <Button
-                intent="danger"
-                disabled={busy !== undefined || retirePlan.removeMods.length === 0}
-                onClick={(): void =>
-                  void (async (): Promise<void> => {
-                    const alsoDeleted = archivesFreedByRemoval(retirePlan);
-                    const ok = await confirm({
-                      title: `Remove ${num(
-                        retirePlan.removeMods.length,
-                      )} install(s) from your setup?`,
-                      text:
-                        `Each is uninstalled from this profile, and the ` +
-                        `${num(alsoDeleted.length)} archive(s) that frees are ` +
-                        `then deleted from disk — ${formatSize(
-                          freedByRetiring,
-                        )} in total. Neither step can be undone.\n\n` +
-                        `This CHANGES your setup. If any of these is not ` +
-                        `really an old version — a patch or a variant from the ` +
-                        `same mod page, say — you lose it and would have to ` +
-                        `download it again. Removals happen first, and an ` +
-                        `archive is only deleted once its install is gone.`,
-                      confirmLabel: "Remove",
-                    });
-                    if (!ok) return;
-                    await applyCleanup(
-                      cleanupSubset({
-                        plan: retirePlan,
-                        removeMods: retirePlan.removeMods,
-                        deleteArchives: alsoDeleted,
-                      }),
-                    );
-                  })()
-                }
-              >
-                {busy === "cleanup"
-                  ? "Removing..."
-                  : retirePlan.removeMods.length === 0
-                    ? "Tick the installs you want removed"
-                    : `Remove ${num(retirePlan.removeMods.length)} ticked ` +
-                      `install(s) — frees ${formatSize(freedByRetiring)}`}
-              </Button>
-              {retire.size > 0 && (
-                <Button
-                  intent="ghost"
-                  disabled={busy !== undefined}
-                  onClick={(): void => setRetire(new Set())}
-                >
-                  Clear ticks
-                </Button>
-              )}
-            </div>
-            {provenRetire.length === 0 ? (
-              <p className="eh-body">
-                Nothing here is backed by evidence. Everything found only
-                shares a mod page, and is listed below.
-              </p>
-            ) : (
-              <DataTable
-                rows={provenRetire}
-                idOf={retireId}
-                columns={RETIRE_COLUMNS}
-                noun="older install"
-                limit={200}
-                maxHeight={320}
-                selection={{ selected: retire, onChange: setRetire }}
-              />
-            )}
-
-            {unprovenRetire.length > 0 && (
-              <div className="eh-stack eh-stack--xs">
-                <Callout tone="warning">
-                  {num(unprovenRetire.length)} more install(s) share a Nexus
-                  page with a newer file and NOTHING ELSE. That is not an old
-                  version — one page ships a main file, optional files,
-                  variants and patches, so this is where
-                  &ldquo;Bodypaints - CBBE&rdquo; sits next to
-                  &ldquo;Bodypaints - Male&rdquo;. Listed so nothing is hidden;
-                  tick one only if you know it yourself.
-                </Callout>
-                <DataTable
-                  rows={unprovenRetire}
-                  idOf={retireId}
-                  columns={RETIRE_COLUMNS}
-                  noun="unproven install"
-                  limit={200}
-                  maxHeight={280}
-                  selection={{ selected: retire, onChange: setRetire }}
-                />
-              </div>
-            )}
-          </>
-        )}
-        </div>
-      </Card>
-
-      <Card
-        title={`Installed more than once (${duplicates.length})`}
-        subtitle={
-          "Mods sharing a Nexus page. The same FILE twice is always redundant; " +
-          "two different files from one page might be a main plus an optional, " +
-          "so those are shown as something to look at rather than a verdict."
-        }
-      >
-        <div className="eh-stack eh-stack--sm">
-          {duplicates.length > 0 && (
+            <Button intent="ghost" onClick={(): void => setChooseFile(undefined)}>
+              Cancel
+            </Button>
             <Button
-              size="sm"
-              intent="ghost"
-              disabled={dupGroups.length === 0}
+              intent="primary"
+              disabled={chooseFile?.picked === undefined}
               onClick={(): void => {
-                // Into the main selection, where Disable / Reinstall / Set
-                // kind already live. Deliberately NOT "delete the older one":
-                // two files from one page can be a main plus an optional, and
-                // this page does not guess which of those it is looking at.
-                const next = new Set(selected);
-                for (const group of dupGroups) {
-                  for (const m of group.mods) next.add(m.id);
-                }
-                setSelected(next);
-                setDupSel(new Set());
+                if (chooseFile === undefined || chooseFile.picked === undefined) return;
+                const file = chooseFile.candidates.find((f) => f.file_id === chooseFile.picked);
+                setChooseFile(undefined);
+                if (file !== undefined) void downloadRequirement(chooseFile.req, file);
               }}
             >
-              Add {describeTarget(
-                dupAim ?? { ids: duplicates.map((g) => String(g.nexusModId)), from: "all" },
-                "group",
-              )} to the selection above
+              Download and install
             </Button>
-          )}
-          <DataTable
-            rows={duplicates}
-            idOf={duplicateId}
-            columns={DUPLICATE_COLUMNS}
-            noun="group"
-            limit={200}
-            maxHeight={320}
-            selection={{ selected: dupSel, onChange: setDupSel }}
-            onTarget={setDupAim}
-            empty={
-              <p className="eh-body">
-                No mod is installed twice.
-              </p>
-            }
-          />
-        </div>
-      </Card>
+          </>
+        }
+      >
+        {chooseFile !== undefined && (
+          <div className="eh-stack eh-stack--sm" role="radiogroup" aria-label="Files">
+            {chooseFile.candidates.map((f) => (
+              <Radio
+                key={f.file_id}
+                name="requirement-file"
+                checked={chooseFile.picked === f.file_id}
+                onChange={(): void => setChooseFile({ ...chooseFile, picked: f.file_id })}
+                label={f.name ?? f.file_name ?? `file ${f.file_id}`}
+                description={[f.category_name, f.version !== undefined ? `v${f.version}` : undefined]
+                  .filter(Boolean)
+                  .join(" · ")}
+              />
+            ))}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
@@ -1696,9 +1113,9 @@ export function CuratorPage(): JSX.Element {
   return (
     <Page
       title="Curator Tools"
-      subtitle="Profile-wide actions, done one mod at a time."
+      subtitle="Your whole profile, one table: updates, freezes, requirements and cleanup — every action one mod at a time."
     >
-      <ErrorBoundary where="Curator Tools">
+      <ErrorBoundary where="curator tools">
         <CuratorBody />
       </ErrorBoundary>
     </Page>

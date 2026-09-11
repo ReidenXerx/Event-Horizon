@@ -53,30 +53,30 @@ Start here when exploring this area:
 | `AppShell` | Function | `src/ui/EventHorizonMainPage.tsx` | 88 |
 | `NavBar` | Function | `src/ui/EventHorizonMainPage.tsx` | 113 |
 | `RouteOutlet` | Function | `src/ui/EventHorizonMainPage.tsx` | 162 |
-| `EnabledMismatchList` | Function | `src/ui/pages/PluginDiffsPage.tsx` | 339 |
-| `PluginEntryList` | Function | `src/ui/pages/PluginDiffsPage.tsx` | 315 |
-| `PluginNameCell` | Function | `src/ui/pages/PluginDiffsPage.tsx` | 399 |
-| `PositionChangedList` | Function | `src/ui/pages/PluginDiffsPage.tsx` | 369 |
-| `ReportView` | Function | `src/ui/pages/PluginDiffsPage.tsx` | 243 |
-| `ChangedModList` | Function | `src/ui/pages/ModDiffsPage.tsx` | 399 |
-| `ChangedModRow` | Function | `src/ui/pages/ModDiffsPage.tsx` | 433 |
-| `FieldDiffRow` | Function | `src/ui/pages/ModDiffsPage.tsx` | 557 |
-| `TierBadge` | Function | `src/ui/pages/ModDiffsPage.tsx` | 312 |
+| `ChangedModList` | Function | `src/ui/pages/ModDiffsPage.tsx` | 403 |
+| `ChangedModRow` | Function | `src/ui/pages/ModDiffsPage.tsx` | 437 |
+| `FieldDiffRow` | Function | `src/ui/pages/ModDiffsPage.tsx` | 561 |
+| `TierBadge` | Function | `src/ui/pages/ModDiffsPage.tsx` | 316 |
+| `formatFieldValue` | Function | `src/ui/pages/ModDiffsPage.tsx` | 584 |
+| `partitionDiffs` | Function | `src/ui/pages/ModDiffsPage.tsx` | 424 |
+| `MatchedModList` | Function | `src/ui/pages/ModDiffsPage.tsx` | 528 |
+| `ModEntryList` | Function | `src/ui/pages/ModDiffsPage.tsx` | 374 |
+| `ReportView` | Function | `src/ui/pages/ModDiffsPage.tsx` | 255 |
 
 ## Execution Flows
 
 | Flow | Type | Steps |
 |------|------|-------|
 | `BuildPage → GetVortexUserDataPath` | cross_community | 10 |
-| `RouteOutlet → Fail` | cross_community | 7 |
-| `RouteOutlet → Ok` | cross_community | 7 |
-| `RouteOutlet → ProfileId` | cross_community | 7 |
-| `RouteOutlet → BelongsToGame` | cross_community | 7 |
-| `RouteOutlet → GetActiveGameId` | cross_community | 6 |
-| `RouteOutlet → ResolveProfileName` | cross_community | 6 |
-| `RouteOutlet → ResolveVortexVersion` | cross_community | 6 |
+| `HomePage → Fail` | cross_community | 6 |
+| `HomePage → Ok` | cross_community | 6 |
+| `HomePage → ProfileId` | cross_community | 6 |
+| `HomePage → BelongsToGame` | cross_community | 6 |
 | `BuildPage → NotifyStateChanged` | cross_community | 6 |
 | `BuildPage → Truncate` | cross_community | 6 |
+| `HomePage → GetActiveGameId` | cross_community | 5 |
+| `HomePage → ResolveProfileName` | cross_community | 5 |
+| `HomePage → ResolveVortexVersion` | cross_community | 5 |
 
 ## How to Explore
 

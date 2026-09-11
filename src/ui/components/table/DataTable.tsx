@@ -79,6 +79,13 @@ export function DataTable<T>(props: {
   };
   /** A trailing cell of buttons for one row. */
   actions?: (row: T) => React.ReactNode;
+  /**
+   * Width of the actions column. The table is fixed-layout, so a column
+   * with no width shares the leftover space equally with every other
+   * unsized column - which squeezes the name column to make room for two
+   * small buttons. Set it when the actions have a known size.
+   */
+  actionsWidth?: number | string;
   maxHeight?: number;
   /**
    * What a button above this table should act on, whenever it changes.
@@ -90,7 +97,7 @@ export function DataTable<T>(props: {
    */
   onTarget?: (target: TargetSet) => void;
 }): JSX.Element {
-  const { rows, idOf, columns, selection, actions } = props;
+  const { rows, idOf, columns, selection, actions, actionsWidth } = props;
   const noun = props.noun ?? "item";
 
   const [filters, setFilters] = React.useState<Record<string, string>>({});
@@ -343,7 +350,20 @@ export function DataTable<T>(props: {
                   </th>
                 );
               })}
-              {actions !== undefined && <th scope="col" />}
+              {actions !== undefined && (
+                <th
+                  scope="col"
+                  className="eh-table__actions"
+                  style={
+                    actionsWidth !== undefined
+                      ? ({
+                          ["--eh-col-width" as string]:
+                            typeof actionsWidth === "number" ? `${actionsWidth}px` : actionsWidth,
+                        } as React.CSSProperties)
+                      : undefined
+                  }
+                />
+              )}
             </tr>
             {anyFilterable && (
               <tr className="eh-table__filters">

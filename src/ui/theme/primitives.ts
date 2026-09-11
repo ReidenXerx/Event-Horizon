@@ -996,10 +996,16 @@ input[type="checkbox"].eh-check:indeterminate::before {
    cell rule above cuts anything that overflows, and a 16px box plus padding
    in a 36px cell photographed as a checkbox followed by "…". */
 .eh-table__tick {
-  width: 44px;
   text-overflow: clip;
   text-align: center;
 }
+
+/* Column widths live on the HEADER cell, and the generic th rule above sets
+   width from the column spec - so these are qualified with th, or they lose
+   on order and a fixed-layout table hands the tick column a third of the
+   width (photographed: a 230px gap before the first column). */
+.eh-table th.eh-table__tick { width: 44px; }
+.eh-table th.eh-table__actions { width: var(--eh-col-width, auto); }
 
 .eh-table__actions { text-align: right; }
 
@@ -1038,6 +1044,9 @@ input[type="checkbox"].eh-check:indeterminate::before {
   -webkit-backdrop-filter: blur(12px);
   border-top: 1px solid var(--eh-border-subtle);
 }
+
+/* The "clear" beside the ticked count in a sticky action bar. */
+.eh-actions__clear { margin-left: var(--eh-sp-2); }
 
 /* ── Key / value line (was .eh-field; a form field owns that now) ─── */
 .eh-kv {
