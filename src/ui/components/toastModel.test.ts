@@ -1,6 +1,13 @@
+import * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { MIN_RESUME_MS, createToastTimers, type ToastTimers } from "./toastModel";
+import {
+  MIN_RESUME_MS,
+  createToastTimers,
+  findDuplicateToast,
+  toastDedupKey,
+  type ToastTimers,
+} from "./toastModel";
 
 describe("toast timers", () => {
   let expired: number[];
@@ -105,5 +112,46 @@ describe("toast timers", () => {
     vi.advanceTimersByTime(10_000);
     expect(expired).toEqual([]);
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("toast de-duplication", () => {
+  it("merges the same text", () => {
+    const a = toastDedupKey({ intent: "success", title: "Saved", message: "receipt.json" });
+    const b = toastDedupKey({ intent: "success", title: "Saved", message: ["receipt", ".json"] });
+    expect(a).toBeDefined();
+    expect(a).toBe(b);
+    expect(findDuplicateToast([{ id: 1, key: a }], b)).toEqual({ id: 1, key: a });
+  });
+
+  it("keeps different text apart", () => {
+    const a = toastDedupKey({ intent: "info", title: "a", message: "bc" });
+    const b = toastDedupKey({ intent: "info", title: "ab", message: "c" });
+    expect(a).not.toBe(b);
+    expect(toastDedupKey({ intent: "info", message: "x" })).not.toBe(
+      toastDedupKey({ intent: "danger", message: "x" }),
+    );
+  });
+
+  it("never merges two different element messages", () => {
+    // Both used to hash to "[node]" and the second toast was dropped.
+    const first = toastDedupKey({
+      intent: "success",
+      message: React.createElement("span", null, "Installed ", React.createElement("code", null, "SKSE")),
+    });
+    const second = toastDedupKey({
+      intent: "success",
+      message: React.createElement("span", null, "Installed ", React.createElement("code", null, "USSEP")),
+    });
+    const shown = [{ id: 1, key: first }];
+    expect(findDuplicateToast(shown, second)).toBeUndefined();
+  });
+
+  it("never merges a message that mixes text and an element", () => {
+    const mixed = ["Saved to ", React.createElement("code", { key: "p" }, "C:\\a")];
+    const shown = [{ id: 1, key: toastDedupKey({ message: mixed }) }];
+    expect(findDuplicateToast(shown, toastDedupKey({ message: mixed }))).toBeUndefined();
+    const titled = [{ id: 2, key: toastDedupKey({ title: React.createElement("b"), message: "x" }) }];
+    expect(findDuplicateToast(titled, toastDedupKey({ title: React.createElement("i"), message: "x" }))).toBeUndefined();
   });
 });

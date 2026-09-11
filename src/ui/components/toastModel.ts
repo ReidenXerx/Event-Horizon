@@ -1,6 +1,7 @@
 /**
- * The parts of a toast that are decisions rather than markup, without
- * React, so they can be tested with fake timers.
+ * The parts of a toast that are decisions rather than markup: when it goes
+ * away, and whether a new one is the same as one already on screen. They
+ * live here, without React, so they can be tested with fake timers.
  *
  * ─── A TOAST HELD OPEN MUST STILL CLOSE ────────────────────────────────
  * Hovering a toast pauses its clock; leaving it resumes. Resuming used to go
@@ -18,6 +19,8 @@
  * already stopped — it used to, and 3 s left became 0.5 s. A clock runs
  * only when nothing is holding the toast open.
  */
+
+import type { ReactNode } from "react";
 
 export type ToastHold = "hover" | "focus";
 
@@ -123,4 +126,54 @@ export function createToastTimers(onExpire: (id: number) => void): ToastTimers {
       holds.clear();
     },
   };
+}
+
+// ===========================================================================
+// Dedup
+// ===========================================================================
+
+/**
+ * The key two toasts must share to be the same toast, or `undefined` when
+ * this one must never be merged with another.
+ *
+ * Only text can be compared. An element — `<>Saved <code>{path}</code></>` —
+ * used to hash to "[node]", so two different element messages with the same
+ * intent and no title were "identical" and the second was silently dropped.
+ * Rendering an element to text is not ours to do (a component can render
+ * anything), so a toast carrying one is simply never a duplicate.
+ */
+export function toastDedupKey(input: {
+  intent?: string;
+  title?: ReactNode;
+  message: ReactNode;
+}): string | undefined {
+  const title = nodeToText(input.title);
+  const message = nodeToText(input.message);
+  if (title === undefined || message === undefined) return undefined;
+  // A separator, so ("a","bc") and ("ab","c") do not collide.
+  return [input.intent ?? "info", title, message].join("\u0001");
+}
+
+/** The toast already on screen that `key` duplicates, if any. */
+export function findDuplicateToast<T extends { key: string | undefined }>(
+  shown: readonly T[],
+  key: string | undefined,
+): T | undefined {
+  return key === undefined ? undefined : shown.find((t) => t.key === key);
+}
+
+/** Text for text-only nodes; `undefined` for anything containing an element. */
+function nodeToText(node: ReactNode): string | undefined {
+  if (node === undefined || node === null || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) {
+    let text = "";
+    for (const child of node as readonly ReactNode[]) {
+      const part = nodeToText(child);
+      if (part === undefined) return undefined;
+      text += part;
+    }
+    return text;
+  }
+  return undefined;
 }

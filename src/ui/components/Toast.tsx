@@ -25,7 +25,13 @@
 
 import * as React from "react";
 
-import { createToastTimers, type ToastHold, type ToastTimers } from "./toastModel";
+import {
+  createToastTimers,
+  findDuplicateToast,
+  toastDedupKey,
+  type ToastHold,
+  type ToastTimers,
+} from "./toastModel";
 
 export type ToastIntent = "success" | "info" | "warning" | "danger";
 
@@ -45,8 +51,8 @@ export interface ToastInput {
 
 interface ToastInstance extends ToastInput {
   id: number;
-  /** Stable hash used to dedupe identical toasts back-to-back. */
-  key: string;
+  /** Identical text toasts share it; `undefined` is never a duplicate. */
+  key: string | undefined;
   ttl: number;
 }
 
@@ -139,7 +145,7 @@ export function ToastProvider(props: ToastProviderProps): JSX.Element {
       const key = toastDedupKey(input);
 
       // Dedupe: an identical toast already on screen is kept and re-armed.
-      const existing = toastsRef.current.find((t) => t.key === key);
+      const existing = findDuplicateToast(toastsRef.current, key);
       if (existing !== undefined) {
         timers.arm(existing.id, ttl);
         return existing.id;
@@ -176,32 +182,6 @@ export function ToastProvider(props: ToastProviderProps): JSX.Element {
       <ToastHost toasts={toasts} onDismiss={dismiss} onHold={hold} onRelease={release} />
     </ToastContext.Provider>
   );
-}
-
-// ===========================================================================
-// Dedup
-// ===========================================================================
-
-/** Best-effort hash over the user-visible content of a toast. Two
- * toasts with the same intent + title + message dedupe, regardless of
- * action button. ReactNode -> string is intentionally shallow: we
- * stringify primitives and fall back to `[node]` so distinct elements
- * still hash distinctly via the surrounding intent/title slots. */
-function toastDedupKey(input: ToastInput): string {
-  return [
-    input.intent ?? "info",
-    nodeToText(input.title),
-    nodeToText(input.message),
-  // A separator, so ("a","bc") and ("ab","c") do not collide.
-  ].join("\u0001");
-}
-
-function nodeToText(node: React.ReactNode): string {
-  if (node === undefined || node === null) return "";
-  if (typeof node === "string" || typeof node === "number") return String(node);
-  if (typeof node === "boolean") return "";
-  if (Array.isArray(node)) return node.map(nodeToText).join("");
-  return "[node]";
 }
 
 // ===========================================================================
