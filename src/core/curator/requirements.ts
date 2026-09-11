@@ -802,32 +802,124 @@ export function pickProvider(candidates: readonly CuratorMod[], preferFile?: str
   return pool.reduce((best, m) => (compareVersions(m.version, best.version) > 0 ? m : best));
 }
 
+/** A requirement still missing after an enable, and the mod (a target or a provider) that lists it. */
+export type EnableGap = { requirement: ModRequirement; neededBy: string };
+
+export type EnablePlan = {
+  /** Installed-but-disabled providers to enable with the targets: the whole chain, one per line. */
+  providers: CuratorMod[];
+  /** Missing Nexus pages this Vortex can download: "Make it work" can install these. */
+  installable: EnableGap[];
+  /** Missing requirements nothing here can install: a plugin master, a page for another game. */
+  gaps: EnableGap[];
+};
+
 /**
- * The installed-but-disabled providers that `modIds` need, so enabling a
- * mod can offer to enable what it depends on in the same act. One
- * provider per requirement line (see pickProvider).
+ * What enabling `modIds` brings with it, and what it still leaves missing.
+ *
+ * Settled: enabling a mod enables its installed-but-disabled providers and
+ * reports them. The providers have providers: T needs disabled P, P needs
+ * disabled Q — enabling T and P leaves P broken, the "everything is enabled
+ * and it still does not load" report. So the chain is walked from the
+ * report, the way the install planner's `absorb` walks it: each provider
+ * chosen (one per line, see pickProvider) has its own lines read. A line a
+ * target or an already-chosen provider covers needs nothing more, which also
+ * ends a cycle.
+ */
+export function planEnable(report: RequirementsReport, mods: readonly CuratorMod[], modIds: ReadonlySet<string>): EnablePlan {
+  const byId = new Map(mods.map((m) => [m.id, m]));
+  const plan: EnablePlan = { providers: [], installable: [], gaps: [] };
+  const coming = new Set(modIds);
+  const gapKeys = new Set<string>();
+  const queue = [...modIds];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    const neededBy = byId.get(id)?.name ?? id;
+    for (const q of report.byMod.get(id)?.requirements ?? []) {
+      if (q.status === "installed-disabled") {
+        const candidates = q.satisfiedBy.map((p) => byId.get(p)).filter((m): m is CuratorMod => m !== undefined && !m.enabled);
+        if (candidates.some((m) => coming.has(m.id))) continue;
+        const pick = pickProvider(candidates);
+        if (pick === undefined) continue;
+        coming.add(pick.id);
+        plan.providers.push(pick);
+        queue.push(pick.id);
+        continue;
+      }
+      if (q.status !== "missing") continue;
+      const key = requirementKey(q);
+      if (gapKeys.has(key)) continue;
+      gapKeys.add(key);
+      const gap = { requirement: q, neededBy };
+      if (q.source === "nexus" && q.nexusModId !== undefined && q.vortexGameId !== undefined) plan.installable.push(gap);
+      else plan.gaps.push(gap);
+    }
+  }
+  return plan;
+}
+
+/**
+ * The installed-but-disabled providers that `modIds` need, the whole chain
+ * (see {@link planEnable}).
  */
 export function disabledProvidersFor(
   report: RequirementsReport,
   mods: readonly CuratorMod[],
   modIds: ReadonlySet<string>,
 ): CuratorMod[] {
-  const byId = new Map(mods.map((m) => [m.id, m]));
-  const seen = new Set<string>();
-  const out: CuratorMod[] = [];
-  for (const id of modIds) {
-    for (const q of report.byMod.get(id)?.requirements ?? []) {
-      if (q.status !== "installed-disabled") continue;
-      const candidates = q.satisfiedBy
-        .map((p) => byId.get(p))
-        .filter((m): m is CuratorMod => m !== undefined && !m.enabled && !modIds.has(m.id));
-      const mod = pickProvider(candidates);
-      if (mod === undefined || seen.has(mod.id)) continue;
-      seen.add(mod.id);
-      out.push(mod);
-    }
+  return planEnable(report, mods, modIds).providers;
+}
+
+export type EnableQuestion =
+  | { kind: "none" }
+  /** Something can be installed: "Make it work" or "Enable anyway". */
+  | { kind: "make-it-work"; title: string; text: string }
+  /** Only gaps nothing here can install: "Enable anyway", or cancel. */
+  | { kind: "confirm"; title: string; text: string };
+
+/**
+ * The question to ask before enabling, from its plan. Nothing missing → no
+ * question. A missing master is asked about too: a plugin whose master is
+ * absent stops the game loading, and enabling it silently is the worst way
+ * to find that out. Every dialog names the providers that come on with it.
+ */
+export function describeEnableQuestion(plan: EnablePlan, what: string, canDownload: boolean): EnableQuestion {
+  const installable = canDownload ? plan.installable : [];
+  const gaps = canDownload ? plan.gaps : [...plan.installable, ...plan.gaps];
+  if (installable.length === 0 && gaps.length === 0) return { kind: "none" };
+  const list = (items: readonly EnableGap[]): string =>
+    items
+      .slice(0, 10)
+      .map(
+        (g) =>
+          `  • ${g.requirement.name}` +
+          (g.requirement.source === "master" ? ` (a master of ${g.requirement.plugin ?? "its plugin"})` : "") +
+          ` — needed by ${g.neededBy}`,
+      )
+      .join("\n") + (items.length > 10 ? `\n  … and ${items.length - 10} more` : "");
+  const providers =
+    plan.providers.length === 0
+      ? ""
+      : `\n\nEnabled with it, because they are installed but off and listed as needed: ${plan.providers
+          .slice(0, 12)
+          .map((p) => p.name)
+          .join(", ")}${plan.providers.length > 12 ? ` and ${plan.providers.length - 12} more` : ""}.`;
+  const all = [...installable, ...gaps];
+  if (installable.length > 0) {
+    return {
+      kind: "make-it-work",
+      title: `${what} still needs ${all.length} thing(s) that are not installed`,
+      text:
+        list(all) +
+        providers +
+        `\n\n"Make it work" reads the whole chain, shows the plan, installs it, then enables. "Enable anyway" enables now and leaves the gaps.`,
+    };
   }
-  return out;
+  return {
+    kind: "confirm",
+    title: `${what} still needs ${gaps.length} thing(s) Event Horizon cannot install`,
+    text: list(gaps) + providers + `\n\n"Enable anyway" enables now and leaves them missing; a missing master stops the game loading.`,
+  };
 }
 
 // ── Which file to install ──────────────────────────────────────────────

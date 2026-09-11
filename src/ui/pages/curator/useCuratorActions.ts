@@ -104,7 +104,8 @@ import {
 import {
   dependantClosure,
   dependantsOf,
-  disabledProvidersFor,
+  describeEnableQuestion,
+  planEnable,
   summarizeRequirements,
   type ModRequirement,
   type NexusFileInfo,
@@ -1043,29 +1044,31 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
    */
   const enableWithProviders = async (targets: readonly CuratorMod[]): Promise<void> => {
     const ids = new Set(targets.map((m) => m.id));
-    const providers = report === undefined ? [] : disabledProvidersFor(report, mods, ids);
-    // Settled: a still-missing requirement offers "Make it work" first; the
-    // curator can enable anyway.
-    const missingLines = targets.flatMap((m) =>
-      linesOf(m).filter((q) => q.status === "missing" && q.nexusModId !== undefined && q.vortexGameId !== undefined),
-    );
-    if (missingLines.length > 0 && nexus.download !== undefined) {
-      const names = [...new Set(missingLines.map((q) => q.name))];
-      const answer = await askThree(
-        `${targets.length === 1 ? targets[0]!.name : `${num(targets.length)} mods`} still need${targets.length === 1 ? "s" : ""} ${num(names.length)} thing(s) that are not installed`,
-        names
-          .slice(0, 10)
-          .map((n) => `  • ${n}`)
-          .join("\n") +
-          (names.length > 10 ? `\n  … and ${names.length - 10} more` : "") +
-          `\n\n"Make it work" reads the whole chain, shows the plan, installs it, then enables. "Enable anyway" enables now and leaves the gaps.`,
-        ["Enable anyway", "Make it work"],
-      );
+    const what = targets.length === 1 ? targets[0]!.name : `${num(targets.length)} mods`;
+    // The whole installed-but-disabled chain comes on (settled), and what is
+    // still missing along it is asked about first.
+    const plan = report === undefined ? { providers: [], installable: [], gaps: [] } : planEnable(report, mods, ids);
+    const providers = plan.providers;
+    const question = describeEnableQuestion(plan, what, nexus.download !== undefined);
+    ehLog("info", "curator.enable.plan", {
+      targets: [...ids],
+      providers: providers.map((p) => p.id),
+      installable: plan.installable.map((g) => g.requirement.name),
+      gaps: plan.gaps.map((g) => g.requirement.name),
+      ask: question.kind,
+    });
+    if (question.kind === "make-it-work") {
+      // Settled: a still-missing requirement offers "Make it work" first; the
+      // curator can enable anyway.
+      const answer = await askThree(question.title, question.text, ["Enable anyway", "Make it work"]);
+      ehLog("info", "curator.enable.answer", { targets: [...ids], answer: answer ?? "cancel" });
       if (answer === undefined) return;
       if (answer === "Make it work") {
-        void openPlan(targets.length === 1 ? targets[0]!.name : `${num(targets.length)} mods`, targets.flatMap(linesOf), targets);
+        void openPlan(what, targets.flatMap(linesOf), targets);
         return;
       }
+    } else if (question.kind === "confirm") {
+      if (!(await confirm({ title: question.title, text: question.text, confirmLabel: "Enable anyway" }))) return;
     }
     setEnabledFor([...targets, ...providers], true);
     if (providers.length > 0) {
