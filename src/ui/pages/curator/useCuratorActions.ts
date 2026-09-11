@@ -1014,15 +1014,21 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
     )?.settings?.profiles?.activeProfileId;
     const changes = planEnableChanges(targets, to);
     setNote(describeEnableChanges(changes));
-    ehLog("info", "curator.enable.set", {
+    ehLog("info", "curator.enable.plan", {
       to,
       asked: targets.length,
       changed: changes.map((c) => c.mod.id),
       profileId: profileId ?? null,
     });
-    if (profileId === undefined) return;
+    if (profileId === undefined) {
+      ehLog("warn", "curator.enable.no-profile", { to, asked: targets.map((m) => m.id) });
+      return;
+    }
+    // One mod at a time, each logged: a partly enabled page's files, a
+    // provider chain, a dependant list all come through here.
     for (const change of changes) {
       api.store?.dispatch(vortexActions.setModEnabled(profileId, change.mod.id, change.to) as never);
+      ehLog("info", "curator.enable.set", { profileId, mod: change.mod.id, name: change.mod.name, enabled: change.to });
     }
     setTick((t) => t + 1);
   };

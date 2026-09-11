@@ -4,6 +4,7 @@
  *
  * Every requirement gets the one action that fits its state and no other:
  *   installed-disabled → Enable (a state write, instant)
+ *   partial            → Enable the page's files that have no enabled copy
  *   missing            → Install (fetches the file list; installs only when
  *                        the choice is not a judgement — see pickInstallFile)
  *   external / dlc     → Open (a link is all there is)
@@ -13,16 +14,18 @@
 import * as React from "react";
 
 import type { CuratorMod } from "../../../core/curator/profileActions";
-import type {
-  ModRequirement,
-  ModRequirementReport,
-  RequirementsReport,
+import {
+  partialProvidersToEnable,
+  type ModRequirement,
+  type ModRequirementReport,
+  type RequirementsReport,
 } from "../../../core/curator/requirements";
 import { Button, Callout, Card, LinkButton, Pill, Section, Textarea, type PillIntent } from "../../components";
 
 const STATUS_PILL: Record<ModRequirement["status"], { label: string; intent: PillIntent }> = {
   satisfied: { label: "ok", intent: "success" },
   "installed-disabled": { label: "installed, disabled", intent: "warning" },
+  partial: { label: "partly enabled", intent: "warning" },
   missing: { label: "missing", intent: "danger" },
   external: { label: "off Nexus", intent: "neutral" },
   dlc: { label: "DLC", intent: "neutral" },
@@ -81,7 +84,13 @@ export function RequirementsPanel(props: {
             )}
           </span>
           {q.notes !== undefined && <span className="eh-small">{q.notes}</span>}
-          {q.status === "satisfied" && q.satisfiedBy.length > 0 && (
+          {q.status === "partial" && q.files !== undefined && (
+            <span className="eh-small">
+              partly enabled: {q.files.enabled} of {q.files.total} files — the page ships {q.files.total} different files,
+              all installed, and {q.files.total - q.files.enabled} {q.files.total - q.files.enabled === 1 ? "is" : "are"} off
+            </span>
+          )}
+          {(q.status === "satisfied" || q.status === "partial") && q.satisfiedBy.length > 0 && (
             <span className="eh-small">
               provided by{" "}
               {providers.map((p, j) => (
@@ -99,6 +108,19 @@ export function RequirementsPanel(props: {
           {q.status === "installed-disabled" && (
             <Button size="sm" intent="primary" disabled={busy} onClick={(): void => props.onEnable(providers)}>
               Enable {providers.length > 1 ? `${providers.length} providers` : providerNames(q)}
+            </Button>
+          )}
+          {q.status === "partial" && partialProvidersToEnable(q, mods).length > 0 && (
+            <Button
+              size="sm"
+              intent="ghost"
+              disabled={busy}
+              title={`Enable ${partialProvidersToEnable(q, mods)
+                .map((p) => p.name)
+                .join(", ")}: one copy of each file that has none on`}
+              onClick={(): void => props.onEnable(partialProvidersToEnable(q, mods))}
+            >
+              Enable {partialProvidersToEnable(q, mods).length} file{partialProvidersToEnable(q, mods).length === 1 ? "" : "s"}
             </Button>
           )}
           {q.status === "missing" && q.nexusModId !== undefined && q.vortexGameId !== undefined && props.canInstall && (

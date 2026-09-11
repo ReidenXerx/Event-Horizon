@@ -191,6 +191,7 @@ describe("resolveNexusRequirements", () => {
       modsWithMissing: 1,
       missing: 1,
       installedDisabled: 1,
+      partial: 0,
       external: 1,
       dlc: 1,
       unfetched: 2, // skse and addr were never fetched in this fixture

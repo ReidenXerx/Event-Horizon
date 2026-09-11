@@ -189,6 +189,14 @@ export type RequirementStatus =
   | "satisfied"
   /** A mod in the pool provides it but is disabled — one click away. */
   | "installed-disabled"
+  /**
+   * The page ships several distinct FILES, the pool has them all, and only
+   * some are enabled ("partly enabled: 1 of 2 files"). Not missing and not
+   * plainly satisfied: settled with the user as a warning, with an Enable for
+   * the disabled files. Two copies of ONE file (versions, variants of the same
+   * logical file) are never partial.
+   */
+  | "partial"
   /** Nothing in the pool provides it. */
   | "missing"
   /** Not a Nexus mod; a link and a name is all there is. */
@@ -218,6 +226,8 @@ export type ModRequirement = {
   notes?: string;
   /** Vortex mod ids that provide it (one, usually; two when the pool holds duplicates). */
   satisfiedBy: string[];
+  /** For a "partial" line: how many of the page's distinct files have an enabled copy. */
+  files?: { enabled: number; total: number };
   /** For a master: the plugin that needs it and the master file name. */
   plugin?: string;
   master?: string;
@@ -254,9 +264,45 @@ function poolIndex(mods: readonly CuratorMod[], activeGame: string, toDomain: To
   return idx;
 }
 
-function statusOf(providers: CuratorMod[] | undefined): RequirementStatus {
-  if (providers === undefined || providers.length === 0) return "missing";
-  return providers.some((m) => m.enabled) ? "satisfied" : "installed-disabled";
+/**
+ * A page's installs grouped by the FILE each came from ({@link fileIdentity}),
+ * or undefined when any install's file cannot be told apart — then nothing
+ * can be said about distinct files, and none is guessed.
+ */
+function byFile(providers: readonly CuratorMod[]): Map<string, CuratorMod[]> | undefined {
+  const groups = new Map<string, CuratorMod[]>();
+  for (const m of providers) {
+    const id = fileIdentity(m);
+    if (id === undefined) return undefined;
+    groups.set(id, [...(groups.get(id) ?? []), m]);
+  }
+  return groups;
+}
+
+function statusOf(providers: CuratorMod[] | undefined): { status: RequirementStatus; files?: { enabled: number; total: number } } {
+  if (providers === undefined || providers.length === 0) return { status: "missing" };
+  if (!providers.some((m) => m.enabled)) return { status: "installed-disabled" };
+  const groups = byFile(providers);
+  if (groups === undefined || groups.size < 2) return { status: "satisfied" };
+  const enabled = [...groups.values()].filter((copies) => copies.some((m) => m.enabled)).length;
+  return enabled === groups.size ? { status: "satisfied" } : { status: "partial", files: { enabled, total: groups.size } };
+}
+
+/**
+ * What "Enable" on a partly enabled line turns on: one copy of each file of
+ * the page that has no enabled copy — the newest copy of that file.
+ */
+export function partialProvidersToEnable(q: ModRequirement, mods: readonly CuratorMod[]): CuratorMod[] {
+  if (q.status !== "partial") return [];
+  const byId = new Map(mods.map((m) => [m.id, m]));
+  const providers = q.satisfiedBy.map((id) => byId.get(id)).filter((m): m is CuratorMod => m !== undefined);
+  const out: CuratorMod[] = [];
+  for (const [file, copies] of byFile(providers) ?? []) {
+    if (copies.some((m) => m.enabled)) continue;
+    const pick = pickProvider(copies, file);
+    if (pick !== undefined) out.push(pick);
+  }
+  return out;
 }
 
 /**
@@ -380,13 +426,14 @@ export function resolveNexusRequirements(args: {
         // a "see also"). A mod does not require itself.
         if (key === ownKey) continue;
         const providers = pool.get(key);
-        const status = statusOf(providers);
+        const { status, files } = statusOf(providers);
         const satisfiedBy = (providers ?? []).map((p) => p.id);
         for (const p of satisfiedBy) addRequiredBy(p, m.id);
         const vortexGameId = vortexIdByDomain.get(domain);
         report.requirements.push({
           source: "nexus",
           status,
+          ...(files === undefined ? {} : { files }),
           name: node.modName ?? providers?.[0]?.name ?? `mod ${reqModId}`,
           nexusModId: reqModId,
           gameDomain: domain,
@@ -500,6 +547,8 @@ export type RequirementsSummary = {
   modsWithMissing: number;
   missing: number;
   installedDisabled: number;
+  /** Pages the pool has every file of, some of them disabled. Not missing. */
+  partial: number;
   external: number;
   dlc: number;
   unfetched: number;
@@ -535,6 +584,7 @@ export function summarizeRequirements(
     modsWithMissing: 0,
     missing: 0,
     installedDisabled: 0,
+    partial: 0,
     external: 0,
     dlc: 0,
     unfetched: 0,
@@ -545,6 +595,7 @@ export function summarizeRequirements(
     const missing = countDistinct(r, "missing");
     out.missing += missing;
     out.installedDisabled += countDistinct(r, "installed-disabled");
+    out.partial += countDistinct(r, "partial");
     out.external += countDistinct(r, "external");
     out.dlc += countDistinct(r, "dlc");
     if (missing > 0) out.modsWithMissing += 1;
@@ -556,16 +607,18 @@ export function summarizeRequirements(
 
 /**
  * The cell's CATEGORY, for an exact-match filter:
- * "missing" | "disabled" | "not checked" | "incomplete" | "ok" | "".
+ * "missing" | "disabled" | "partial" | "not checked" | "incomplete" | "ok" | "".
  *
- * "incomplete" is a mod whose page lists more requirements than Nexus
- * returned (Vortex asks for ten): what came back may all be met, and the
- * rest is unknown — which is not "ok".
+ * "partial" is a required page whose files are all installed and only some
+ * enabled — a warning, never "missing". "incomplete" is a mod whose page
+ * lists more requirements than Nexus returned (Vortex asks for ten): what
+ * came back may all be met, and the rest is unknown — which is not "ok".
  */
 export function requirementCellCategory(r: ModRequirementReport | undefined): string {
   if (r === undefined) return "";
   if (countDistinct(r, "missing") > 0) return "missing";
   if (countDistinct(r, "installed-disabled") > 0) return "disabled";
+  if (countDistinct(r, "partial") > 0) return "partial";
   if (r.unfetched) return "not checked";
   if (r.truncatedBy > 0) return "incomplete";
   return r.requirements.some((q) => q.status === "satisfied") ? "ok" : "";
@@ -576,9 +629,11 @@ export function describeRequirementCell(r: ModRequirementReport | undefined): st
   if (r === undefined) return "";
   const missing = countDistinct(r, "missing");
   const disabled = countDistinct(r, "installed-disabled");
+  const partial = countDistinct(r, "partial");
   const parts: string[] = [];
   if (missing > 0) parts.push(`${missing} missing`);
   if (disabled > 0) parts.push(`${disabled} disabled`);
+  if (partial > 0) parts.push(`${partial} partly enabled`);
   if (parts.length === 0) {
     if (r.unfetched) return "not checked";
     if (r.truncatedBy > 0) return "incomplete";
