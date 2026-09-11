@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import type { CuratorMod } from "../../../core/curator/profileActions";
 import type { RequirementsReport } from "../../../core/curator/requirements";
-import { buildRows, describeRowState, rowsForView, viewCounts, visibleViews } from "./workbench";
+import { buildRows, describeRowState, outsideDataTypes, rowsForView, viewCounts, visibleViews } from "./workbench";
+
+/** Where Vortex deploys each type for this fixture's game: dinput to the game root. */
+const OUTSIDE = { outsideDataTypes: outsideDataTypes({ "": "C:\\G\\Data", dinput: "C:\\G" })! };
 
 const mod = (over: Partial<CuratorMod> & { id: string; name: string }): CuratorMod => ({
   enabled: true,
@@ -74,12 +77,12 @@ describe("workbench rows", () => {
     expect(ids("dependants")).toEqual(["c"]);
     expect(ids("duplicates")).toEqual(["c", "e"]);
     expect(ids("disabled")).toEqual(["d"]);
-    expect(ids("outside-data")).toEqual(["d"]);
+    expect(rowsForView(rows, "outside-data", OUTSIDE).map((r) => r.mod.id)).toEqual(["d"]);
     expect(ids("not-nexus")).toEqual(["d", "f"]);
   });
 
   it("shows only the chips that have something, and always All", () => {
-    const counts = viewCounts(rows);
+    const counts = viewCounts(rows, OUTSIDE);
     expect(counts.all).toBe(6);
     expect(visibleViews(counts).map((v) => v.id)).toEqual([
       "all",

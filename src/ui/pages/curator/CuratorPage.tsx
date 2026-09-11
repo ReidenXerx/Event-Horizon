@@ -125,7 +125,7 @@ import {
 import { livePluginList, readPluginList } from "../../../core/curator/pluginPool";
 import { buildPluginRows } from "../../../core/curator/pluginView";
 import { isBaseGameMaster } from "../../../core/manifest/pluginMasters";
-import { knownGameIds, loadRequirements, nexusDomainForVortexGame, nexusExtOf, pluginCapabilityForGame } from "./requirementsIo";
+import { knownGameIds, loadRequirements, modPathsOf, nexusDomainForVortexGame, nexusExtOf, pluginCapabilityForGame } from "./requirementsIo";
 import { isPremium, useCuratorActions } from "./useCuratorActions";
 import { setPluginLightFlag } from "../../../core/manifest/pluginFlags";
 import { installRootFor, stagingRootFromFolder } from "../../../core/stagingPath";
@@ -135,6 +135,7 @@ import {
   buildRows,
   describeRowState,
   matchesSearch,
+  outsideDataTypes,
   rowsForViews,
   viewCounts,
   visibleViews,
@@ -421,7 +422,16 @@ function CuratorBody(): JSX.Element {
   // Settled with the user: a disabled mod's missing requirement is not
   // tonight's problem. The toggle brings them in.
   const [includeDisabledReqs, setIncludeDisabledReqs] = React.useState(false);
-  const viewOpts = React.useMemo<ViewOptions>(() => ({ includeDisabled: includeDisabledReqs }), [includeDisabledReqs]);
+  // Which mod types deploy outside Data: from where Vortex itself deploys
+  // each type for this game, not from a list of kind names.
+  const outsideData = React.useMemo(
+    () => (gameId === undefined ? undefined : outsideDataTypes(modPathsOf(api.getState(), gameId))),
+    [api, gameId, tick],
+  );
+  const viewOpts = React.useMemo<ViewOptions>(
+    () => ({ includeDisabled: includeDisabledReqs, ...(outsideData === undefined ? {} : { outsideDataTypes: outsideData }) }),
+    [includeDisabledReqs, outsideData],
+  );
   const reqSummary = React.useMemo(
     () =>
       report === undefined

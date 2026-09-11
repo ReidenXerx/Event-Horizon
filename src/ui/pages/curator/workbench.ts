@@ -149,11 +149,41 @@ export function buildRows(mods: readonly CuratorMod[], report: RequirementsRepor
   });
 }
 
-const OUTSIDE_DATA_KINDS = new Set(["dinput", "enb", "engine-injector"]);
+/**
+ * The mod types that deploy OUTSIDE the game's Data folder, from where Vortex
+ * itself deploys each type for this game.
+ *
+ * `modPaths` is `selectors.modPathsForGame(state, gameId)` — Vortex's
+ * `game.getModPaths(discoveryPath)`: `""` is the default mod path (Data, for
+ * a Bethesda game) and every other key is a type id with its own target. A
+ * type whose target is neither that folder nor inside it deploys outside Data
+ * — a script extender or ENB to the game root, whatever a game extension
+ * registers. A fixed list of kinds knew three names and was wrong for every
+ * other type and every game that places one differently.
+ *
+ * Undefined when Vortex gives no paths (the game is not discovered): nothing
+ * is then claimed to be outside.
+ */
+export function outsideDataTypes(modPaths: Readonly<Record<string, string>> | undefined): ReadonlySet<string> | undefined {
+  const dataPath = modPaths?.[""];
+  if (modPaths === undefined || typeof dataPath !== "string" || dataPath === "") return undefined;
+  const norm = (p: string): string => p.replace(/[\\/]+/g, "/").replace(/\/$/, "").toLowerCase();
+  const data = norm(dataPath);
+  const out = new Set<string>();
+  for (const [typeId, target] of Object.entries(modPaths)) {
+    if (typeId === "" || typeof target !== "string" || target === "") continue;
+    const t = norm(target);
+    if (t === data || t.startsWith(`${data}/`)) continue;
+    out.add(typeId.toLowerCase());
+  }
+  return out;
+}
 
 export type ViewOptions = {
   /** Count disabled mods' missing requirements too (default: enabled only — settled with the user). */
   includeDisabled?: boolean;
+  /** Mod types that deploy outside Data (see {@link outsideDataTypes}); absent = unknown, the view is empty. */
+  outsideDataTypes?: ReadonlySet<string>;
 };
 
 export function rowsForView(rows: readonly WorkRow[], view: ViewId, opts: ViewOptions = {}): WorkRow[] {
@@ -178,8 +208,11 @@ export function rowsForView(rows: readonly WorkRow[], view: ViewId, opts: ViewOp
       return rows.filter((r) => r.duplicateOf !== undefined);
     case "disabled":
       return rows.filter((r) => !r.mod.enabled);
-    case "outside-data":
-      return rows.filter((r) => r.mod.modType !== "" && OUTSIDE_DATA_KINDS.has(r.mod.modType.toLowerCase()));
+    case "outside-data": {
+      const outside = opts.outsideDataTypes;
+      if (outside === undefined) return [];
+      return rows.filter((r) => r.mod.modType !== "" && outside.has(r.mod.modType.toLowerCase()));
+    }
     case "not-nexus":
       return rows.filter((r) => r.mod.nexusModId === undefined || (r.mod.source !== undefined && r.mod.source !== "nexus"));
     default: {

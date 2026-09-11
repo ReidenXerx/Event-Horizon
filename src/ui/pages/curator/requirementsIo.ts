@@ -13,7 +13,7 @@
 import * as fsp from "fs/promises";
 import * as path from "path";
 
-import { util, type types } from "@nexusmods/vortex-api";
+import { selectors, util, type types } from "@nexusmods/vortex-api";
 
 import { ehLog } from "../../../core/logging/ehLog";
 import { readPluginHeader, isBaseGameMaster } from "../../../core/manifest/pluginMasters";
@@ -51,19 +51,58 @@ export type NexusExt = {
 };
 
 /**
- * Vortex id → Nexus domain, the way Vortex converts it: a game extension's
- * `details.nexusPageId` first, then the short table, then the id itself.
+ * Vortex id → Nexus domain, AS VORTEX CONVERTS IT.
+ *
+ * Vortex exports the converter: `util.nexusGameId(game, fallbackGameId)`
+ * (vortex-api typings; present at runtime — the installed app.asar exports
+ * `exports.nexusGameId = function nexusGameId(game, fallbackGameId)`, which
+ * returns `game.details.nexusPageId` when set, else its own table, else the
+ * id). It is asked first, with the game Vortex has for the id, so a game
+ * extension Vortex knows and this code does not is converted correctly.
+ * `nexusDomainOf` in the core — the same rule, with a copy of Vortex's table
+ * — is only the fallback for a Vortex that does not export it.
  */
 export function nexusDomainForVortexGame(vortexGameId: string): string {
-  let pageId: string | undefined;
+  const u = util as unknown as {
+    nexusGameId?: (game: unknown, fallbackGameId?: string) => unknown;
+    getGame?: (id: string) => { details?: { nexusPageId?: unknown } } | undefined;
+  };
+  let game: { details?: { nexusPageId?: unknown } } | undefined;
   try {
-    const getGame = (util as unknown as { getGame?: (id: string) => { details?: { nexusPageId?: unknown } } | undefined }).getGame;
-    const raw = typeof getGame === "function" ? getGame(vortexGameId)?.details?.nexusPageId : undefined;
-    pageId = typeof raw === "string" ? raw : undefined;
+    game = typeof u.getGame === "function" ? u.getGame(vortexGameId) : undefined;
   } catch {
-    pageId = undefined;
+    game = undefined; // getGame on an id Vortex does not know
   }
-  return nexusDomainOf(vortexGameId, pageId);
+  if (typeof u.nexusGameId === "function") {
+    try {
+      const domain = u.nexusGameId(game, vortexGameId);
+      if (typeof domain === "string" && domain !== "") return domain;
+    } catch {
+      /* fall through to the documented fallback */
+    }
+  }
+  const pageId = game?.details?.nexusPageId;
+  return nexusDomainOf(vortexGameId, typeof pageId === "string" ? pageId : undefined);
+}
+
+/**
+ * Where Vortex deploys each mod type for a game: `selectors.modPathsForGame`,
+ * which is `game.getModPaths(discovery.path)` — `{ "": <default mod path>,
+ * <typeId>: <path> }` (read from the installed app.asar). Undefined when this
+ * Vortex has no such selector, the game is not discovered, or it throws.
+ */
+export function modPathsOf(state: unknown, gameId: string): Record<string, string> | undefined {
+  try {
+    const select = (selectors as unknown as { modPathsForGame?: (s: unknown, id: string) => unknown }).modPathsForGame;
+    const paths = typeof select === "function" ? select(state, gameId) : undefined;
+    if (paths === null || typeof paths !== "object") return undefined;
+    const out: Record<string, string> = {};
+    for (const [typeId, p] of Object.entries(paths as Record<string, unknown>)) if (typeof p === "string") out[typeId] = p;
+    return out;
+  } catch (err) {
+    ehLog("warn", "curator.mod-paths.unreadable", { gameId, err });
+    return undefined;
+  }
 }
 
 /**

@@ -92,10 +92,17 @@ export function parseGameList(json: string): GameNumbers {
  * Vortex's game id → the Nexus domain the games cache and mod pages use.
  *
  * They are NOT the same namespace: Vortex says `skyrimse`, Nexus says
- * `skyrimspecialedition`. This mirrors Vortex's own `nexusGameId`: a game
- * extension may declare `details.nexusPageId`; otherwise a short table; else
- * the id itself. Every UID, pool key and requirement key in this module is in
- * NEXUS domains — convert once at the edge, never mix.
+ * `skyrimspecialedition`. Every UID, pool key and requirement key in this
+ * module is in NEXUS domains — convert once at the edge, never mix; the core
+ * takes the converter as `toDomain`, so it stays pure.
+ *
+ * At runtime the edge asks Vortex's own `util.nexusGameId` first
+ * (`requirementsIo.nexusDomainForVortexGame`). This function is the same rule
+ * — a game extension's `details.nexusPageId`, else Vortex's table, else the
+ * id — and exists as the FALLBACK for a Vortex that does not export the
+ * converter, and for tests. The table is a copy of the one inside that
+ * function in the installed app.asar (`convertGameId.nexusGameId`); do not
+ * extend it here instead of there.
  */
 const NEXUS_DOMAIN_BY_VORTEX_ID: Record<string, string> = {
   skyrimse: "skyrimspecialedition",
