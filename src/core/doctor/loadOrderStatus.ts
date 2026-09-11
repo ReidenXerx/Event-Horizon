@@ -364,17 +364,50 @@ export function curatorPluginsOff(n: number): string {
 }
 
 /**
+ * The order a re-apply writes. ONE function, called by the heal and by the
+ * preview, so the card cannot list one order while the button writes another.
+ *
+ * It could, and did: the preview merged only the ENABLED recorded plugins
+ * while the heal merged every recorded name, and the preview read Vortex's
+ * state while the heal read plugins.txt. Baseline [A, D(off), B] against
+ * [D, B, A] previewed [D, A, B] and wrote [A, D, B] — divergent exactly when
+ * the card was warning that the file lagged the state.
+ *
+ * The install's rule, which runInstall's re-pin applies with every name in
+ * the manifest's plugin order, disabled ones included: every recorded plugin
+ * owns its slot, so one the curator shipped switched off keeps the curator's
+ * position for the day the user turns it on; the user's own plugins keep
+ * theirs. Enabled flags are the CURRENT ones — an ordering operation asserts
+ * no enabled state.
+ *
+ * `current` is Vortex's state (currentOrderFromState): the order the Doctor
+ * compares, the watcher reads, and the re-apply asks Vortex to persist.
+ */
+export function buildRepinOrder(
+  baseline: readonly PluginOrderEntry[],
+  current: readonly PluginOrderEntry[],
+): PluginOrderEntry[] {
+  const merged = repinCuratorOrder(
+    baseline.map((p) => p.name),
+    current.map((p) => p.name),
+  );
+  const enabled = new Map(current.map((p) => [key(p.name), p.enabled] as const));
+  // `merged` holds exactly current's members, so every lookup hits; the
+  // fallback never invents an enabled plugin.
+  return merged.map((name) => ({ name, enabled: enabled.get(key(name)) ?? false }));
+}
+
+/**
  * What re-applying would do to the CURRENT order, before it does it: which
- * plugins move, and where. The same merge the re-apply runs, so the
- * preview cannot disagree with the act.
+ * plugins move, and where. `buildRepinOrder`, so the preview cannot disagree
+ * with the act — provided it is handed the same `current` (Vortex's state).
  */
 export function previewRepin(
   baseline: readonly PluginOrderEntry[],
   current: readonly PluginOrderEntry[],
 ): { moves: Array<{ name: string; from: number; to: number }>; total: number } {
-  const curatorNames = baseline.filter((p) => p.enabled).map((p) => p.name);
   const currentNames = current.map((p) => p.name);
-  const merged = repinCuratorOrder(curatorNames, currentNames);
+  const merged = buildRepinOrder(baseline, current).map((p) => p.name);
   const before = new Map(currentNames.map((n, i) => [key(n), i]));
   const moves: Array<{ name: string; from: number; to: number }> = [];
   merged.forEach((name, to) => {

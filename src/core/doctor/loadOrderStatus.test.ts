@@ -4,6 +4,7 @@ import {
   activeContextFromState,
   assessLoadOrder,
   assessReceiptOrder,
+  buildRepinOrder,
   canReapply,
   currentOrderFromState,
   describeLoadOrder,
@@ -218,5 +219,62 @@ describe("a curator plugin switched off is not drift", () => {
     expect(moved.kind).toBe("drifted");
     expect(movedAndOff.kind).toBe("drifted");
     expect(driftSignature(movedAndOff)).toBe(driftSignature(moved));
+  });
+});
+
+/**
+ * The card's preview and the re-apply build their order with one function,
+ * from one source. They used to differ — enabled-only recorded names in the
+ * preview, every recorded name in the heal — and the probe that found it:
+ * baseline [A, D(off), B] against [D, B, A] previewed [D, A, B] and wrote
+ * [A, D, B].
+ */
+describe("the preview and the re-apply build one order", () => {
+  const baseline = [
+    { name: "A.esp", enabled: true },
+    { name: "D.esp", enabled: false },
+    { name: "B.esp", enabled: true },
+  ];
+  const current = [
+    { name: "D.esp", enabled: false },
+    { name: "B.esp", enabled: true },
+    { name: "A.esp", enabled: true },
+  ];
+
+  it("gives a plugin the curator shipped switched off its curator slot — the install's rule", () => {
+    expect(buildRepinOrder(baseline, current)).toEqual([
+      { name: "A.esp", enabled: true },
+      { name: "D.esp", enabled: false },
+      { name: "B.esp", enabled: true },
+    ]);
+  });
+
+  it("previews exactly the order the re-apply writes", () => {
+    const preview = previewRepin(baseline, current);
+    const written = buildRepinOrder(baseline, current).map((p) => p.name);
+    const replayed = [...current.map((p) => p.name)];
+    for (const m of preview.moves) replayed[m.to] = m.name;
+    expect(replayed).toEqual(written);
+    expect(preview).toEqual({
+      total: 3,
+      moves: [
+        { name: "A.esp", from: 2, to: 0 },
+        { name: "D.esp", from: 0, to: 1 },
+        { name: "B.esp", from: 1, to: 2 },
+      ],
+    });
+  });
+
+  it("keeps every plugin's enabled flag as it is — an ordering operation asserts none", () => {
+    const flags = buildRepinOrder(on("A.esp", "B.esp"), [
+      { name: "B.esp", enabled: false },
+      { name: "Mine.esp", enabled: true },
+      { name: "A.esp", enabled: true },
+    ]);
+    expect(flags).toEqual([
+      { name: "A.esp", enabled: true },
+      { name: "Mine.esp", enabled: true },
+      { name: "B.esp", enabled: false },
+    ]);
   });
 });

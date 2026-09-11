@@ -292,23 +292,40 @@ async function healImpl(
             `Switch profiles first — re-applying now would reorder a profile it was never installed into.`,
         };
       }
-      const [{ readUserPluginsTxt }, { applyPluginOrder }] = await Promise.all([
-        import("../installer/checkPluginOrder"),
-        import("../installer/applyPluginOrder"),
-      ]);
+      const [{ applyPluginOrder }, { buildRepinOrder, currentOrderFromState }] =
+        await Promise.all([
+          import("../installer/applyPluginOrder"),
+          import("./loadOrderStatus"),
+        ]);
       /**
-       * Store-aware. Without it, a GOG or Xbox install reads the STEAM
-       * plugins.txt — which usually does not exist, so `current` falls back
-       * to `[]` and the rebuild silently drops every plugin the user has
-       * added. A heal that strips the user's own plugins is worse than no
-       * heal at all.
+       * ─── THE ORDER THE CARD PREVIEWS, FROM THE SAME SOURCE ────────────
+       * This read plugins.txt while the Load order card previewed Vortex's
+       * state, and ran a different merge (see buildRepinOrder) — so the moves
+       * the card listed were not the moves the button made, exactly when the
+       * card was warning that the file lagged the state.
+       *
+       * Vortex's state is the settled source for the Doctor's order: what it
+       * compares, what the watcher reads, and what the write below asks
+       * Vortex to persist. A plugins.txt that has not caught up is Vortex's
+       * own pending write of that state; a hand-edited one is reported on the
+       * card and not read here. It also retires the store problem this read
+       * had — a GOG or Xbox game's plugins.txt lives in a different folder,
+       * and a missed file came back as `[]`, dropping every plugin of the
+       * user's own from the rebuilt order.
        */
-      const { discoveredStore } = await import("../comparePlugins");
-      const current =
-        (await readUserPluginsTxt(
+      const current = currentOrderFromState(api.getState());
+      if (current === undefined) {
+        ehLog("warn", "doctor.heal.repin.refused", {
+          why: "no-plugin-list",
           gameId,
-          discoveredStore(deps.api.getState(), gameId),
-        )) ?? [];
+        });
+        return {
+          kind: "blocked",
+          reason:
+            "Vortex lists no plugins for this game right now, so there is " +
+            "no order to re-apply into.",
+        };
+      }
       /**
        * ─── THE SAME MERGE THE INSTALL USES, AND NO SECOND SORT ──────────
        * This heal used to call `rebuildPluginOrder` — the curator's plugins
@@ -331,24 +348,14 @@ async function healImpl(
        * every plugin of the user's own keeps the position LOOT gave it.
        * Nothing moves to the end, and nothing is re-sorted afterwards.
        *
-       * Enabled flags come from the CURRENT file, never from the receipt —
-       * the receipt describes install time, and asserting those would undo
-       * every plugin the user has toggled since.
+       * Enabled flags come from Vortex's CURRENT state, never from the
+       * receipt — the receipt describes install time, and asserting those
+       * would undo every plugin the user has toggled since.
+       *
+       * `buildRepinOrder` wraps that rule, and the card's preview calls it
+       * with the same `current`.
        */
-      const { repinCuratorOrder } = await import(
-        "../installer/repinPluginOrder"
-      );
-      const enabledByName = new Map(
-        current.map((pl) => [pl.name.toLowerCase(), pl.enabled] as const),
-      );
-      const merged = repinCuratorOrder(
-        recorded.map((e) => e.name),
-        current.map((pl) => pl.name),
-      );
-      const order = merged.map((name) => ({
-        name,
-        enabled: enabledByName.get(name.toLowerCase()) ?? true,
-      }));
+      const order = buildRepinOrder(recorded, current);
       const result = await applyPluginOrder({
         api,
         gameId,

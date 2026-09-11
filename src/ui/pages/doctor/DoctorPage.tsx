@@ -475,13 +475,19 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
           packageName={loaded.selected.packageName}
           // The same assessment the plugin-order health check makes.
           status={assessObservedLoadOrder(toHealthView(loaded.selected), obs)}
-          {...((obs.currentPluginOrderFromState ?? obs.currentPluginOrder) !== undefined
-            ? { preview: previewRepin(baselineOf(loaded.selected), (obs.currentPluginOrderFromState ?? obs.currentPluginOrder)!) }
+          // Vortex's state, which the re-apply reads too — never the file —
+          // so the moves listed are the moves the button makes.
+          {...(obs.currentPluginOrderFromState !== undefined
+            ? { preview: previewRepin(baselineOf(loaded.selected), obs.currentPluginOrderFromState) }
             : {})}
           {...(obs.pluginsTxtMismatch === true ? { fileMismatch: true } : {})}
           {...(readsAutoSort(api.getState()) !== undefined ? { autoSortOn: readsAutoSort(api.getState()) } : {})}
           busy={busyCheckId === "plugin-order"}
-          {...(blocked !== undefined ? { blocked } : {})}
+          {...(blocked !== undefined
+            ? { blocked }
+            : obs.currentPluginOrderFromState === undefined
+              ? { blocked: "Vortex lists no plugins for this game right now, so there is no order to re-apply into." }
+              : {})}
           onReapply={(): void => heal("repin-plugin-order", "plugin-order")}
           onDisableAutoSort={(): void => {
             // Read back before saying so: a success toast over a setting that
