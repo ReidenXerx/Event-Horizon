@@ -174,6 +174,9 @@ function init(context: types.IExtensionContext): boolean {
   context.once(() => {
     probeInstallerApi(context.api);
     watchInstallCalls(context.api);
+    // The curator's load order is undone by Vortex's own sort, silently;
+    // this is the one thing that says so without opening Doctor.
+    void import("./core/doctor/loadOrderWatcher").then(({ startLoadOrderWatcher }) => startLoadOrderWatcher(context.api));
     // Whether this account can download at all is the other thing the
     // typings cannot answer. Logged for the same reason: so a check that
     // never works is visible as that, rather than as silence.

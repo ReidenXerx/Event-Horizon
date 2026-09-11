@@ -37,6 +37,11 @@ import type { InstallReceipt } from "../../../types/installLedger";
 import type { EhcollManifest } from "../../../types/ehcoll";
 import { stagingRootForModId } from "../../../core/stagingPath";
 import { EnvironmentTools } from "./EnvironmentTools";
+import { LoadOrderCard } from "./LoadOrderCard";
+import { assessLoadOrder, nativeNamesFromState, previewRepin } from "../../../core/doctor/loadOrderStatus";
+import { baselineOf } from "../../../core/doctor/loadOrderWatcher";
+import { ACTION_SET_AUTOSORT_ENABLED, readsAutoSort } from "../../../core/installer/autoSort";
+import type { HealthObservations } from "../../../core/doctor/health";
 
 export interface DoctorPageProps {
   onNavigate: (route: EventHorizonRoute) => void;
@@ -145,6 +150,8 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
   const [loaded, setLoaded] = React.useState<Loaded | undefined>(undefined);
   const [loadError, setLoadError] = React.useState<string | undefined>(undefined);
   const [checks, setChecks] = React.useState<HealthCheck[] | undefined>(undefined);
+  /** Kept beside the checks: the load-order card reads the current order from it. */
+  const [obs, setObs] = React.useState<HealthObservations | undefined>(undefined);
   const [busyCheckId, setBusyCheckId] = React.useState<string | undefined>(undefined);
   const [drifted, setDrifted] = React.useState<readonly string[] | undefined>(undefined);
   const [pkg, setPkg] = React.useState<
@@ -242,6 +249,7 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
           ...(drifted !== undefined ? { driftedCompareKeys: drifted } : {}),
         });
         if (!alive) return;
+        setObs(obs);
         setChecks(evaluateHealth(toHealthView(loaded.selected), obs));
       } catch (err) {
         if (!alive) return;
@@ -455,6 +463,29 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
         >
           {missingPackage}
         </Callout>
+      )}
+
+      {checks !== undefined && obs !== undefined && (
+        <LoadOrderCard
+          packageName={loaded.selected.packageName}
+          status={assessLoadOrder({
+            baseline: baselineOf(loaded.selected),
+            current: obs.currentPluginOrder,
+            natives: nativeNamesFromState(api.getState()),
+          })}
+          {...(obs.currentPluginOrder !== undefined
+            ? { preview: previewRepin(baselineOf(loaded.selected), obs.currentPluginOrder) }
+            : {})}
+          {...(readsAutoSort(api.getState()) !== undefined ? { autoSortOn: readsAutoSort(api.getState()) } : {})}
+          busy={busyCheckId === "plugin-order"}
+          {...(blocked !== undefined ? { blocked } : {})}
+          onReapply={(): void => heal("repin-plugin-order", "plugin-order")}
+          onDisableAutoSort={(): void => {
+            api.store?.dispatch({ type: ACTION_SET_AUTOSORT_ENABLED, payload: false } as never);
+            toast({ intent: "success", message: "Automatic sorting is off. Vortex keeps the order until you sort by hand." });
+            setTick((n) => n + 1);
+          }}
+        />
       )}
 
       {checks === undefined ? (

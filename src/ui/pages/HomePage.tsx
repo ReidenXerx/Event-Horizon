@@ -41,6 +41,7 @@ import {
 } from "./dashboard/data";
 import type { EventHorizonRoute } from "../routes";
 import { PlayGameButton } from "../play/PlayGameButton";
+import { LoadOrderBadge } from "./doctor/LoadOrderBadge";
 
 export interface HomePageProps {
   onNavigate: (route: EventHorizonRoute) => void;
@@ -389,6 +390,7 @@ function PlayerPanel(props: {
                   </div>
                 </div>
                 <div className="eh-row">
+                  <LoadOrderBadge receipt={receipt} />
                   <Pill
                     intent={
                       receipt.installTargetMode === "fresh-profile"

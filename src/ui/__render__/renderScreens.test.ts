@@ -64,6 +64,8 @@ import { RequirementsPanel } from "../pages/curator/RequirementsPanel";
 import { DiskCleanupView } from "../pages/curator/DiskCleanupView";
 import { PluginsView } from "../pages/curator/PluginsView";
 import { InstallPlanModal } from "../pages/curator/InstallPlanModal";
+import { LoadOrderCard } from "../pages/doctor/LoadOrderCard";
+import { assessLoadOrder, previewRepin } from "../../core/doctor/loadOrderStatus";
 import { DownloadsView } from "../pages/curator/DownloadsView";
 import { planCleanup } from "../../core/curator/cleanupPlan";
 import { buildPluginRows, type PluginHeader } from "../../core/curator/pluginView";
@@ -1172,6 +1174,45 @@ describe("render", () => {
       ["Skyland Patch.esp", { masters: ["Skyland AIO.esp"], flags: { isLight: true, isMaster: false } }],
       ["Loose Tweak.esp", { masters: ["Skyland Patch.esp", "Embers XD.esp"], unreadable: undefined, flags: { isLight: false, isMaster: false } }],
     ]);
+
+  // The load order as its own instrument: drifted after a LOOT sort, with
+  // the preview of what re-applying moves and auto-sort still on; and the
+  // quiet state when it matches.
+  it("load order — drifted after a sort", () => {
+    const on = (...names: string[]): { name: string; enabled: boolean }[] => names.map((name) => ({ name, enabled: true }));
+    const baseline = on("Skyrim.esm", "Unofficial Skyrim Special Edition Patch.esp", "SkyUI_SE.esp", "Ordinator.esp", "Apocalypse.esp", "Wintersun.esp");
+    const current = on("Skyrim.esm", "SkyUI_SE.esp", "MyOwnTweak.esp", "Unofficial Skyrim Special Edition Patch.esp", "Wintersun.esp", "Apocalypse.esp", "Ordinator.esp");
+    const natives = new Set(["skyrim.esm"]);
+    write(
+      "load-order-drifted",
+      React.createElement(LoadOrderCard, {
+        packageName: "Ivy 2 v1.0.11",
+        status: assessLoadOrder({ baseline, current, natives }),
+        preview: previewRepin(baseline, current),
+        autoSortOn: true,
+        busy: false,
+        onReapply: () => undefined,
+        onDisableAutoSort: () => undefined,
+      }),
+    );
+  });
+
+  it("load order — matches", () => {
+    const on = (...names: string[]): { name: string; enabled: boolean }[] => names.map((name) => ({ name, enabled: true }));
+    const baseline = on("Skyrim.esm", "A.esp", "B.esp", "C.esp");
+    const current = on("Skyrim.esm", "A.esp", "Mine.esp", "B.esp", "C.esp");
+    write(
+      "load-order-matches",
+      React.createElement(LoadOrderCard, {
+        packageName: "Ivy 2 v1.0.11",
+        status: assessLoadOrder({ baseline, current, natives: new Set(["skyrim.esm"]) }),
+        preview: previewRepin(baseline, current),
+        autoSortOn: false,
+        busy: false,
+        onReapply: () => undefined,
+      }),
+    );
+  });
 
   it("curator tools — the profile-wide actions", () => {
     // A fake Vortex store shaped like the real one: a mod needing an update,
