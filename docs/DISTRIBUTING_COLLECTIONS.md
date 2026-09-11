@@ -25,12 +25,19 @@ BodySlide and FaceGen outputs.
    Basic auth (empty user, the key as password), streaming from disk. Verify by
    size and a few sampled Range reads; pixeldrain serves Ranges, which is what
    Event Horizon's resumable direct download needs.
-3. The mod page's description says: install Event Horizon, then **paste this
-   link**: `https://pixeldrain.com/api/file/<id>?download` (the direct form
-   works on 0.1.153; from 0.1.154 the share page `pixeldrain.com/u/<id>` is
-   accepted too). The page's own file is a small zip holding a text file with
-   the link, the file name, the size and the SHA-256, so the page has a file
-   and a checksum without hosting the package.
+3. The mod page's description says: install Event Horizon (0.1.155 or newer),
+   then **paste this link**:
+   `https://pixeldrain.com/api/file/<id>?download#sha256=<sha256 of the .ehcoll>`.
+   The fragment never reaches the server; Event Horizon checks the finished
+   file against it and refuses a mismatch (settled with the curator,
+   2026-09-11). A link without `#sha256=` still installs, and says it was not
+   verified. The share page `pixeldrain.com/u/<id>` is accepted too.
+   The page's own file is a small zip holding `event-horizon-link.json` —
+   `{"format":"event-horizon-link","version":1,"url":"https://pixeldrain.com/api/file/<id>?download","sha256":"<64 hex>","fileName":"<name>.ehcoll","size":<bytes>}`
+   — plus a readme. Pasting the page's address follows that file with a
+   Premium account (Vortex downloads the zip), and a zip without a SHA-256 is
+   refused. Older zips holding a plain text file with exactly one https link
+   and one SHA-256 are read too.
 4. The mod page is created and edited in a browser over the DevTools
    protocol, the same way `scripts/nexus-page.mjs` writes the extension's page:
    a dedicated browser profile (its own `--user-data-dir`, logged into Nexus

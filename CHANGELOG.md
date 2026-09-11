@@ -10,6 +10,52 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.154.
 
+## [0.1.155] — 2026-09-11
+
+A review of 0.1.152 to 0.1.154 found real problems in what those builds added. This build fixes every one of them.
+
+### Load order
+- **"Turn automatic sorting off" works.** It sent Vortex an action nothing listens to and then said it had worked, both
+  from the install prompt and from the Doctor card, so Vortex kept re-sorting. It now uses the action Vortex handles and
+  checks the setting really changed; if it did not, you are told before the install goes on.
+- **The load-order check looks at the right game and profile.** A collection installed into another game or profile no
+  longer shows as moved, and Re-apply can no longer write one game's or profile's order into another.
+- **Two collections on one profile:** the newest install owns the order; the older one says "superseded by …" and offers
+  no Re-apply.
+- **A curator plugin you switched off** shows as "N curator plugins off", not as the sort undoing the order.
+- The preview and Re-apply now compute the same order. Re-apply waits while an install runs and cannot run twice.
+
+### Install by link
+- **A link can carry its checksum:** `…#sha256=<hex>`. The finished file is checked against it and refused if it
+  differs; without one, the install says plainly that the file was not verified. The checksum is shown on screen.
+- **Resuming is safe.** A partial download is tied to its link and to the server's version of the file; if the file
+  changed, the download starts over instead of joining two different files.
+- Plain http links, and redirects to http, are refused. An HTML page (a captcha, an error page) is never saved as the
+  package. A connection that goes silent gives up after 60 seconds and can be resumed. A full disk is reported as a full
+  disk, not as a dropped connection.
+- Pasting a collection's Nexus page follows the link file on that page. A page with several packages asks which one.
+
+### Curator Tools
+- **Make it work** installs a requirement whose archive is already in Downloads (it used to wait 15 minutes and fail),
+  switches on what it installed, and leaves the mod off when anything in the chain was skipped, saying what.
+- **Stop** waits for the install that is already running before the page is free again.
+- Enabling a mod turns on the whole chain of disabled requirements, not only the first level. A required page with
+  some of its files off shows as "partly enabled".
+- Choosing between copies of a mod compares versions properly (2.0.0 over 2.0.0-beta).
+- Remove names the mods that have no archive on disk and so cannot be reinstalled.
+- Endorse checks that you are logged in and that the mod has a version before sending anything.
+- The Plugins view updates right after enable or disable, counts slots per game, and offers the light flag only in
+  games that have light plugins.
+- The page no longer breaks when the active game changes, and the table no longer breaks while scrolling rows of
+  different heights.
+- Private notes stay out of mod exports.
+- A notification you hovered over closes by itself again.
+
+### Under the hood
+- `npm run ui:check` now catches a changed screen; a blank page or one recoloured button used to pass.
+- The collection upload script checks every uploaded part against its bytes, rides out network drops for minutes, and
+  refuses a file id from another page. The Nexus page script uses its own browser profile and its own tab.
+
 ## [0.1.154] — 2026-09-11
 
 ### Install a collection
