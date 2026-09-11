@@ -9,20 +9,26 @@
  *     wherever the first stopped (HTTP Range);
  *   - a part is continued only when it provably belongs to the same file:
  *     `<dest>.part.json` records the link, the server's version tag (ETag or
- *     Last-Modified) and the size, the tag goes out as If-Range, and every
- *     answer is checked against the part — a 206 must start exactly where
- *     the part ends, a 416 is "done" only when the part IS the whole file.
- *     Anything else discards the part and starts over (NS-1: two different
- *     files stitched together are not a package, however quickly they came);
+ *     Last-Modified), the size and the checksum it was fetched against, the
+ *     tag goes out as If-Range, and every answer is checked against the
+ *     part — a 206 must start exactly where the part ends, a 416 is "done"
+ *     only when the part IS the whole file. Anything else discards the part
+ *     and starts over (NS-1: two different files stitched together are not
+ *     a package, however quickly they came);
  *   - an answer that is not a file (a web page, a JSON error, a compressed
  *     body) is refused before anything on disk is opened or deleted, and the
  *     drive's free space is checked against the size before the first byte;
  *   - a server that goes quiet for a minute is an interrupted download, the
  *     resumable kind, not a wait with no end; a disk that fails a write is a
  *     disk error, reported as one;
- *   - the finished file is hashed and the SHA-256 returned, so the page's
- *     stated hash can be checked and the install log can name what was
- *     actually installed (NS-4: integrity is its own pass);
+ *   - the finished file is hashed. When the link published a SHA-256 the
+ *     file must match it or it is deleted and refused — never renamed into
+ *     place, never opened as a package; when it did not, the result says
+ *     "unverified" and the hash is returned for the page's own to be
+ *     compared by eye (NS-4: integrity is its own pass);
+ *   - a body with no length that ends by the server closing the connection
+ *     looks the same whole or cut short, so it is only accepted when the
+ *     checksum proves it;
  *   - cancellation destroys the socket and keeps the part for next time.
  *
  * Node's http/https are used rather than the renderer's fetch: the renderer
@@ -54,7 +60,30 @@ export type DownloadedFile = {
   sha256: string;
   /** True when this run continued a part left by an earlier one. */
   resumed: boolean;
+  /**
+   * `match`: the SHA-256 equals the one the caller was given (a mismatch never
+   * returns, it throws). `unverified`: no checksum was given to compare with.
+   */
+  verified: "match" | "unverified";
 };
+
+/** The file arrived and is not the one the published checksum describes. */
+export class ChecksumMismatchError extends Error {
+  readonly expected: string;
+  readonly actual: string;
+  readonly size: number;
+  constructor(args: { expected: string; actual: string; size: number; disposition: string }) {
+    super(
+      `The downloaded file is not the package the link describes: its SHA-256 is ${args.actual}, and the link ` +
+        `says ${args.expected} (${args.size} bytes arrived). ${args.disposition} If the link was copied whole, the ` +
+        "file on the server is not the published package; tell whoever published the link.",
+    );
+    this.name = "ChecksumMismatchError";
+    this.expected = args.expected;
+    this.actual = args.actual;
+    this.size = args.size;
+  }
+}
 
 export type RequestImpl = (
   url: string,
@@ -87,14 +116,20 @@ type PartRecord = {
   lastModified?: string;
   /** Size of the whole file, when the server said. */
   total?: number;
+  /** The checksum the part is being fetched against, when there was one. */
+  sha256?: string;
 };
+
+/** How the end of the body was known to be the end of the file. */
+type LengthProof = "length" | "chunked" | "none";
 
 /**
  * Download `url` to `destPath`.
  *
  * `onProgress` fires on every chunk with the running byte count; the caller
- * throttles its own rendering. Rejects with `AbortError` on cancel, and
- * with a plain Error naming the HTTP status otherwise.
+ * throttles its own rendering. Rejects with `AbortError` on cancel,
+ * `ChecksumMismatchError` when `expectedSha256` is not what arrived, and a
+ * plain Error naming the cause otherwise.
  */
 export async function downloadToFile(args: {
   url: string;
@@ -102,6 +137,8 @@ export async function downloadToFile(args: {
   signal?: AbortSignal;
   onProgress?: (p: DownloadProgress) => void;
   request?: RequestImpl;
+  /** The published SHA-256, lowercase hex. The file must match it. */
+  expectedSha256?: string;
   /** Default {@link IDLE_TIMEOUT_MS}. */
   idleTimeoutMs?: number;
   /** Free bytes on the drive holding `dir`; undefined when it cannot be told. Injected by tests. */
@@ -125,6 +162,7 @@ async function download(
 ): Promise<DownloadedFile> {
   const request = args.request ?? defaultRequest;
   const idleMs = args.idleTimeoutMs ?? IDLE_TIMEOUT_MS;
+  const expected = args.expectedSha256?.toLowerCase();
   await fs.promises.mkdir(path.dirname(args.destPath), { recursive: true });
 
   const part = await readPart(partPath);
@@ -132,7 +170,7 @@ async function download(
   let partOnDisk = part.size;
   let record = part.record;
   if (part.size > 0) {
-    const refusal = resumeRefusal(part.size, part.record, args.url);
+    const refusal = resumeRefusal(part.size, part.record, args.url, expected);
     if (refusal === undefined) {
       existing = part.size;
     } else {
@@ -147,10 +185,12 @@ async function download(
     file: path.basename(args.destPath),
     partSize: part.size,
     resumeFrom: existing,
+    checksum: expected !== undefined,
   });
 
   let resumed = false;
   let total: number | undefined;
+  let lengthProof: LengthProof = "none";
   for (let attempt = 1; ; attempt += 1) {
     const ifRange = existing > 0 ? (record?.etag ?? record?.lastModified) : undefined;
     const opened = await openRange(
@@ -172,7 +212,7 @@ async function download(
       ...(opened.hops.length > 0 ? { redirectHosts: opened.hops } : {}),
       attempt,
     });
-    const plan = planResponse(res, existing, record, args.url, opened.url);
+    const plan = planResponse(res, existing, record, args.url, opened.url, expected);
     if (plan.kind === "fail") {
       res.resume();
       throw new Error(plan.message);
@@ -196,6 +236,7 @@ async function download(
       res.resume();
       resumed = true;
       total = plan.total;
+      lengthProof = "length";
       break;
     }
 
@@ -226,6 +267,7 @@ async function download(
     resumed = plan.append;
     total = plan.total;
     record = plan.record;
+    lengthProof = total !== undefined ? "length" : /\bchunked\b/i.test(headerOf(res, "transfer-encoding") ?? "") ? "chunked" : "none";
     await writeRecord(partPath, record);
 
     let received = existing;
@@ -289,18 +331,18 @@ async function download(
         why: outcome.idle ? "idle" : String((outcome.net as Error)?.message ?? outcome.net),
       });
       if (outcome.idle) {
-        throw new Error(`Nothing arrived for ${formatDuration(idleMs)} after ${received}${of} bytes. ${retryHint(record)}`);
+        throw new Error(`Nothing arrived for ${formatDuration(idleMs)} after ${received}${of} bytes. ${retryHint(record, expected)}`);
       }
       // A connection that dropped mid-body is the resumable case, and the
       // message says so; the socket error underneath ("socket hang up",
       // ECONNRESET) would send someone diagnosing their network instead.
       if (total !== undefined && received < total) {
-        throw new Error(`The connection closed after ${received} of ${total} bytes. ${retryHint(record)}`);
+        throw new Error(`The connection closed after ${received} of ${total} bytes. ${retryHint(record, expected)}`);
       }
       throw outcome.net instanceof Error ? outcome.net : new Error(String(outcome.net));
     }
     if (total !== undefined && received !== total) {
-      throw new Error(`The connection closed after ${received} of ${total} bytes. ${retryHint(record)}`);
+      throw new Error(`The connection closed after ${received} of ${total} bytes. ${retryHint(record, expected)}`);
     }
     break;
   }
@@ -312,10 +354,39 @@ async function download(
     throw new Error(`The part on disk is ${size} bytes and the file is ${total}; it was discarded. Paste the link again.`);
   }
   const sha256 = await hashFile(partPath, args.signal);
+  if (expected !== undefined && sha256 !== expected) {
+    // Deleted, not kept aside: resuming on these bytes can only reproduce the
+    // mismatch, and a wrong 10 GB file next to the right name is one a person
+    // can pick by hand. The two hashes and the size are in the log.
+    await discardPart(partPath);
+    ehLog("error", "link.direct.done", { bytes: size, sha256, expectedSha256: expected, verified: "mismatch", resumed, lengthProof });
+    throw new ChecksumMismatchError({
+      expected,
+      actual: sha256,
+      size,
+      disposition: "The download was deleted and nothing was installed.",
+    });
+  }
+  if (lengthProof === "none" && expected === undefined) {
+    await discardPart(partPath);
+    ehLog("warn", "link.direct.done", { bytes: size, sha256, verified: false, resumed, lengthProof, refused: "no length" });
+    throw new Error(
+      `The server sent no size for the file and ended it by closing the connection, which looks the same whether ` +
+        `the file is whole or cut short (${size} bytes arrived). It was not kept. A link that carries #sha256= can ` +
+        "be checked instead; ask whoever published it for the checksum.",
+    );
+  }
   await fs.promises.rm(args.destPath, { force: true });
   await fs.promises.rename(partPath, args.destPath);
   await fs.promises.rm(recordPath(partPath), { force: true });
-  return { path: args.destPath, size, sha256, resumed };
+  ehLog("info", "link.direct.done", {
+    bytes: size,
+    sha256,
+    verified: expected !== undefined,
+    resumed,
+    lengthProof,
+  });
+  return { path: args.destPath, size, sha256, resumed, verified: expected !== undefined ? "match" : "unverified" };
 }
 
 type ResponsePlan =
@@ -331,11 +402,13 @@ function planResponse(
   record: PartRecord | undefined,
   url: string,
   finalUrl: string,
+  expected: string | undefined,
 ): ResponsePlan {
   const status = res.statusCode ?? 0;
   const etag = strongEtag(headerOf(res, "etag"));
   const lastModified = headerOf(res, "last-modified");
   const contentRange = (headerOf(res, "content-range") ?? "").trim();
+  const sha = expected !== undefined ? { sha256: expected } : {};
 
   if (status === 200 || status === 206) {
     const type = (headerOf(res, "content-type") ?? "").split(";")[0].trim().toLowerCase();
@@ -363,7 +436,13 @@ function planResponse(
       kind: "body",
       append: false,
       ...(total !== undefined ? { total } : {}),
-      record: { url, ...(etag !== undefined ? { etag } : {}), ...(lastModified !== undefined ? { lastModified } : {}), ...(total !== undefined ? { total } : {}) },
+      record: {
+        url,
+        ...(etag !== undefined ? { etag } : {}),
+        ...(lastModified !== undefined ? { lastModified } : {}),
+        ...(total !== undefined ? { total } : {}),
+        ...sha,
+      },
     };
   }
 
@@ -393,6 +472,7 @@ function planResponse(
       ...((etag ?? record?.etag) !== undefined ? { etag: etag ?? record?.etag } : {}),
       ...((lastModified ?? record?.lastModified) !== undefined ? { lastModified: lastModified ?? record?.lastModified } : {}),
       ...((total ?? record?.total) !== undefined ? { total: total ?? record?.total } : {}),
+      ...sha,
     };
     return { kind: "body", append: existing > 0, ...(merged.total !== undefined ? { total: merged.total } : {}), record: merged };
   }
@@ -420,10 +500,20 @@ function planResponse(
 }
 
 /** Why a part on disk cannot be continued, or undefined when it can. */
-function resumeRefusal(size: number, record: PartRecord | undefined, url: string): string | undefined {
+function resumeRefusal(
+  size: number,
+  record: PartRecord | undefined,
+  url: string,
+  expected: string | undefined,
+): string | undefined {
   if (record === undefined) return "nothing records which link the part came from";
   if (record.url !== url) return "the part was downloaded from a different link";
-  if (record.etag === undefined && record.lastModified === undefined) {
+  if (record.sha256 !== undefined && expected !== undefined && record.sha256 !== expected) {
+    return "the part was fetched for a different checksum";
+  }
+  // Without a version tag a changed file cannot be told apart mid-way; with a
+  // checksum the end result is proven anyway, so the resume is safe to try.
+  if (record.etag === undefined && record.lastModified === undefined && expected === undefined) {
     return "the server named no version (ETag or Last-Modified) for it, so a changed file could not be told apart";
   }
   if (record.total !== undefined && size > record.total) {
@@ -433,8 +523,8 @@ function resumeRefusal(size: number, record: PartRecord | undefined, url: string
 }
 
 /** The honest end of an interruption message: only promise a resume that will happen. */
-function retryHint(record: PartRecord | undefined): string {
-  return record !== undefined && resumeRefusal(0, record, record.url) === undefined
+function retryHint(record: PartRecord | undefined, expected: string | undefined): string {
+  return record !== undefined && resumeRefusal(0, record, record.url, expected) === undefined
     ? "Paste the link again to continue from there."
     : "Paste the link again to retry; this server names no version for the file, so the download will start over.";
 }
@@ -461,6 +551,7 @@ async function readPart(partPath: string): Promise<{ size: number; record?: Part
       typeof parsed.url === "string" &&
       (parsed.etag === undefined || typeof parsed.etag === "string") &&
       (parsed.lastModified === undefined || typeof parsed.lastModified === "string") &&
+      (parsed.sha256 === undefined || typeof parsed.sha256 === "string") &&
       (parsed.total === undefined || (typeof parsed.total === "number" && Number.isSafeInteger(parsed.total)));
     return ok ? { size, record: parsed as PartRecord } : { size };
   } catch {
@@ -689,6 +780,11 @@ function openRange(
     req.on("response", () => signal?.removeEventListener("abort", onAbort));
     req.end();
   });
+}
+
+/** SHA-256 of a file on disk, lowercase hex. Cancellable. */
+export async function sha256OfFile(filePath: string, signal?: AbortSignal): Promise<string> {
+  return hashFile(filePath, signal);
 }
 
 async function hashFile(filePath: string, signal?: AbortSignal): Promise<string> {

@@ -76,6 +76,12 @@ beforeAll(async () => {
     if (url === "/hang") {
       return; // never answers
     }
+    if (url === "/chunked") {
+      res.writeHead(200, { etag: '"v1"' }); // no length: Node frames it as chunked
+      res.write(BODY.subarray(0, 100_000));
+      res.end(BODY.subarray(100_000));
+      return;
+    }
     if (url === "/stall") {
       res.writeHead(200, { "content-length": String(BODY.length), etag: '"v1"' });
       res.write(BODY.subarray(0, 1000));
@@ -453,13 +459,103 @@ describe("downloadToFile", () => {
     expect(record.url).toBe(`${base}/file.ehcoll`);
   });
 
-  it("logs where a run starts and what the server answered, without the link's query", async () => {
+  it("logs where a run starts, what the server answered and what arrived, without the link's query", async () => {
     const dest = path.join(tmp, "logged.ehcoll");
     await downloadToFile({ url: `${base}/file.ehcoll?token=secret`, destPath: dest });
     const start = logged.find((l) => l.event === "link.direct.start");
     const response = logged.find((l) => l.event === "link.direct.response");
+    const done = logged.find((l) => l.event === "link.direct.done");
     expect(start?.data).toMatchObject({ partSize: 0, resumeFrom: 0 });
     expect(response?.data).toMatchObject({ status: 200, redirects: 0 });
+    expect(done?.data).toMatchObject({ bytes: BODY.length, sha256: BODY_SHA, verified: false });
     expect(JSON.stringify(logged)).not.toMatch(/secret/);
+  });
+});
+
+describe("downloadToFile with a published checksum", () => {
+  beforeEach(() => {
+    resetKnobs();
+    logged.length = 0;
+  });
+
+  it("says unverified when the link carried no checksum", async () => {
+    const got = await downloadToFile({ url: `${base}/file.ehcoll`, destPath: path.join(tmp, "unverified.ehcoll") });
+    expect(got.verified).toBe("unverified");
+    expect(got.sha256).toBe(BODY_SHA);
+  });
+
+  it("says match when the file is the one the checksum names", async () => {
+    const got = await downloadToFile({
+      url: `${base}/file.ehcoll`,
+      destPath: path.join(tmp, "match.ehcoll"),
+      expectedSha256: BODY_SHA.toUpperCase(),
+    });
+    expect(got.verified).toBe("match");
+    expect(logged.find((l) => l.event === "link.direct.done")?.data).toMatchObject({ verified: true });
+  });
+
+  it("refuses and deletes a file that is not the one the checksum names, leaving a finished file alone", async () => {
+    const dest = path.join(tmp, "mismatch.ehcoll");
+    await fs.promises.writeFile(dest, "GOOD");
+    const err = await downloadToFile({ url: `${base}/file.ehcoll`, destPath: dest, expectedSha256: OTHER_SHA }).catch(
+      (e: Error) => e,
+    );
+    expect(err).toMatchObject({ name: "ChecksumMismatchError", expected: OTHER_SHA, actual: BODY_SHA });
+    expect((err as Error).message).toMatch(/deleted and nothing was installed/);
+    expect(await fs.promises.readFile(dest, "utf8")).toBe("GOOD");
+    await expect(fs.promises.stat(`${dest}.part`)).rejects.toBeTruthy();
+    await expect(fs.promises.stat(`${dest}.part.json`)).rejects.toBeTruthy();
+    expect(logged.find((l) => l.event === "link.direct.done")?.data).toMatchObject({ verified: "mismatch" });
+  });
+
+  it("resumes from a server with no version tag, because the checksum proves the result", async () => {
+    const dest = path.join(tmp, "novalidator-hash.ehcoll");
+    knobs.etag = undefined;
+    await cutRun(`${base}/file.ehcoll`, dest);
+    const got = await downloadToFile({ url: `${base}/file.ehcoll`, destPath: dest, expectedSha256: BODY_SHA });
+    expect(got.resumed).toBe(true);
+    expect(got.verified).toBe("match");
+  });
+
+  it("accepts a chunked body without a length: its terminator proves the end", async () => {
+    const got = await downloadToFile({ url: `${base}/chunked`, destPath: path.join(tmp, "chunked.ehcoll") });
+    expect(got.sha256).toBe(BODY_SHA);
+  });
+
+  describe("a body that ends only because the server closed the connection", () => {
+    let raw: import("net").Server;
+    let rawBase = "";
+    let payload = BODY;
+    beforeAll(async () => {
+      const net = await import("net");
+      raw = net.createServer((socket) => {
+        socket.once("data", () => {
+          socket.write("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n");
+          socket.end(payload);
+        });
+      });
+      await new Promise<void>((r) => raw.listen(0, "127.0.0.1", r));
+      rawBase = `http://127.0.0.1:${(raw.address() as { port: number }).port}`;
+    });
+    afterAll(async () => {
+      await new Promise<void>((r) => raw.close(() => r()));
+    });
+
+    it("is refused without a checksum, whole or not", async () => {
+      payload = BODY.subarray(0, 1234);
+      const dest = path.join(tmp, "closed.ehcoll");
+      await expect(downloadToFile({ url: `${rawBase}/f`, destPath: dest })).rejects.toThrow(/no size for the file/);
+      await expect(fs.promises.stat(dest)).rejects.toBeTruthy();
+    });
+
+    it("is accepted when the checksum proves it whole", async () => {
+      payload = BODY;
+      const got = await downloadToFile({
+        url: `${rawBase}/f`,
+        destPath: path.join(tmp, "closed-hash.ehcoll"),
+        expectedSha256: BODY_SHA,
+      });
+      expect(got.verified).toBe("match");
+    });
   });
 });

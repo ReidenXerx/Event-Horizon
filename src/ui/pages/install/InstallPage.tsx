@@ -43,6 +43,7 @@ import {
   getInstallSession,
   type InstallSessionSnapshot,
 } from "./installSession";
+import { LinkReceiptNotice } from "./LinkReceiptNotice";
 import type { WizardAction, WizardState } from "./state";
 import type { EventHorizonRoute } from "../../routes";
 
@@ -78,6 +79,19 @@ function InstallWizard(props: InstallPageProps): JSX.Element {
   }, [session]);
 
   const state = snapshot.state;
+
+  // The link's checksum verdict stays in view while its file is loaded and
+  // previewed: that is where someone decides whether to trust the package.
+  const workingPath =
+    state.kind === "loading" || state.kind === "stale-receipt"
+      ? state.zipPath
+      : state.kind === "preview"
+        ? state.bundle.zipPath
+        : undefined;
+  const receiptNotice =
+    snapshot.linkReceipt !== undefined && workingPath !== undefined && snapshot.linkReceipt.zipPath === workingPath ? (
+      <LinkReceiptNotice receipt={snapshot.linkReceipt} />
+    ) : null;
 
   // ── One-shot side effects on transitions ─────────────────────────
   //
@@ -217,32 +231,41 @@ function InstallWizard(props: InstallPageProps): JSX.Element {
 
     case "loading":
       return (
-        <LoadingStep
-          phase={state.phase}
-          hashCount={state.hashCount}
-          hashDone={state.hashDone}
-          hashCurrent={state.hashCurrent}
-          onCancel={(): void => session.cancelLoading()}
-        />
+        <>
+          {receiptNotice}
+          <LoadingStep
+            phase={state.phase}
+            hashCount={state.hashCount}
+            hashDone={state.hashDone}
+            hashCurrent={state.hashCurrent}
+            onCancel={(): void => session.cancelLoading()}
+          />
+        </>
       );
 
     case "stale-receipt":
       return (
-        <StaleReceiptStep
-          state={state}
-          onResolved={(resolution): void => {
-            session.resolveStaleReceipt(api, resolution);
-          }}
-        />
+        <>
+          {receiptNotice}
+          <StaleReceiptStep
+            state={state}
+            onResolved={(resolution): void => {
+              session.resolveStaleReceipt(api, resolution);
+            }}
+          />
+        </>
       );
 
     case "preview":
       return (
-        <PreviewStep
-          bundle={state.bundle}
-          onContinue={(): void => session.openDecisionsFromPreview()}
-          onCancel={(): void => session.reset()}
-        />
+        <>
+          {receiptNotice}
+          <PreviewStep
+            bundle={state.bundle}
+            onContinue={(): void => session.openDecisionsFromPreview()}
+            onCancel={(): void => session.reset()}
+          />
+        </>
       );
 
     case "decisions":

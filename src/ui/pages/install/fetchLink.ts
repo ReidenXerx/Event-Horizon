@@ -16,18 +16,29 @@
  *   Direct link     → fetched by Event Horizon itself, resumably, into
  *                     its own downloads folder.
  *
+ * Either way the file is hashed, and a link that published a SHA-256
+ * (`#sha256=`) must match it or nothing is opened; a link that did not is
+ * reported as unverified, with the hash, in the log and on screen.
+ *
  * Either way the result is a path, and everything after it is the
  * ordinary `pickFile` flow. Nothing here writes to a profile (NS-2).
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import * as fs from "fs";
 import * as path from "path";
 
 import { selectors, type types } from "@nexusmods/vortex-api";
 
 import { getActiveGameId } from "../../../core/getModsListForProfile";
 import { readNexusAccount } from "../../../core/installer/checkNexusAccount";
-import { downloadToFile, probeFileName } from "../../../core/installer/downloadDirect";
+import {
+  ChecksumMismatchError,
+  downloadToFile,
+  probeFileName,
+  redactUrl,
+  sha256OfFile,
+} from "../../../core/installer/downloadDirect";
 import {
   chooseEhcollFile,
   fileSizeOf,
@@ -46,8 +57,18 @@ export type FetchLinkEvents = {
   onPhase: (phase: LinkPhase, detail?: { fileName?: string; received?: number; total?: number }) => void;
 };
 
+/** What arrived, and whether anything published proves it is the package. */
+export type LinkReceipt = {
+  fileName: string;
+  size: number;
+  sha256: string;
+  /** `match`: equals the link's `#sha256=`. `unverified`: the link published none. */
+  verified: "match" | "unverified";
+  source: "direct" | "nexus";
+};
+
 export type FetchLinkOutcome =
-  | { kind: "file"; zipPath: string }
+  | { kind: "file"; zipPath: string; receipt: LinkReceipt }
   | {
       kind: "manual";
       pageUrl: string;
@@ -67,11 +88,16 @@ export async function fetchLink(
   events: FetchLinkEvents,
 ): Promise<FetchLinkOutcome> {
   return link.kind === "direct"
-    ? fetchDirect(link.url, signal, events)
+    ? fetchDirect(link.url, link.sha256, signal, events)
     : fetchFromNexus(api, link, signal, events);
 }
 
-async function fetchDirect(url: string, signal: AbortSignal, events: FetchLinkEvents): Promise<FetchLinkOutcome> {
+async function fetchDirect(
+  url: string,
+  expectedSha256: string | undefined,
+  signal: AbortSignal,
+  events: FetchLinkEvents,
+): Promise<FetchLinkOutcome> {
   events.onPhase("resolving");
   // The server's own name for the file, when it gives one: a pixeldrain link
   // ends in an id, and a file named after that would hide which package it is.
@@ -84,6 +110,7 @@ async function fetchDirect(url: string, signal: AbortSignal, events: FetchLinkEv
     url,
     destPath,
     signal,
+    ...(expectedSha256 !== undefined ? { expectedSha256 } : {}),
     onProgress: (p) => {
       const now = Date.now();
       if (now - lastReport < PROGRESS_EVERY_MS && (p.total === undefined || p.received < p.total)) return;
@@ -92,13 +119,24 @@ async function fetchDirect(url: string, signal: AbortSignal, events: FetchLinkEv
     },
   });
   ehLog("info", "install.link.direct-downloaded", {
-    url,
+    link: redactUrl(url),
     path: got.path,
     size: got.size,
     sha256: got.sha256,
     resumed: got.resumed,
+    verified: got.verified === "match",
   });
-  return { kind: "file", zipPath: got.path };
+  if (got.verified === "unverified") {
+    ehLog("warn", "install.link.unverified", {
+      sha256: got.sha256,
+      why: "the link carries no #sha256=, so the file was not checked against a published checksum",
+    });
+  }
+  return {
+    kind: "file",
+    zipPath: got.path,
+    receipt: { fileName, size: got.size, sha256: got.sha256, verified: got.verified, source: "direct" },
+  };
 }
 
 async function fetchFromNexus(
@@ -157,8 +195,17 @@ async function fetchFromNexus(
       const baseDir = selectors.downloadPathForGame(api.getState(), gameId);
       if (!baseDir) throw new Error(`Could not resolve Vortex's download folder for "${gameId}".`);
       const zipPath = path.join(baseDir, dl.localPath as string);
-      ehLog("info", "install.link.nexus-downloaded", { modId: link.modId, fileId: file.file_id, zipPath });
-      return { kind: "file", zipPath };
+      const receipt = await verifyVortexDownload(zipPath, fileName, link.sha256, signal);
+      ehLog("info", "install.link.nexus-downloaded", {
+        downloadId,
+        modId: link.modId,
+        fileId: file.file_id,
+        zipPath,
+        size: receipt.size,
+        sha256: receipt.sha256,
+        verified: receipt.verified === "match",
+      });
+      return { kind: "file", zipPath, receipt };
     }
     if (account.kind === "premium") {
       throw new Error(
@@ -176,6 +223,39 @@ async function fetchFromNexus(
       : "Nexus hands direct download links to Premium accounts only. Without one, download the file yourself from its page:";
   ehLog("info", "install.link.manual", { modId: link.modId, fileId: file.file_id, account: account.kind, opened: opened.kind });
   return { kind: "manual", pageUrl, fileName, ...(size !== undefined ? { size } : {}), ...(file.version !== undefined ? { version: file.version } : {}), why };
+}
+
+/**
+ * Hash the file Vortex downloaded and hold it to the link's checksum.
+ *
+ * A mismatch leaves the file where it is: it belongs to Vortex's download
+ * list, and deleting it under Vortex would leave a download record pointing
+ * at nothing. The message says to remove it there.
+ */
+async function verifyVortexDownload(
+  zipPath: string,
+  fileName: string,
+  expectedSha256: string | undefined,
+  signal: AbortSignal,
+): Promise<LinkReceipt> {
+  const size = (await fs.promises.stat(zipPath)).size;
+  const sha256 = await sha256OfFile(zipPath, signal);
+  if (expectedSha256 !== undefined && sha256 !== expectedSha256) {
+    ehLog("error", "install.link.nexus-checksum-mismatch", { zipPath, size, sha256, expectedSha256 });
+    throw new ChecksumMismatchError({
+      expected: expectedSha256,
+      actual: sha256,
+      size,
+      disposition: `Nothing was installed; remove "${path.basename(zipPath)}" from Vortex's Downloads tab.`,
+    });
+  }
+  if (expectedSha256 === undefined) {
+    ehLog("warn", "install.link.unverified", {
+      sha256,
+      why: "the link carries no #sha256=, so the file was not checked against a published checksum",
+    });
+  }
+  return { fileName, size, sha256, verified: expectedSha256 !== undefined ? "match" : "unverified", source: "nexus" };
 }
 
 function throwIfAborted(signal: AbortSignal): void {

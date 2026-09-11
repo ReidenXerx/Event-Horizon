@@ -46,7 +46,7 @@ import {
   runLoadingPipeline,
   runLoadingPipelineWithReceipt,
 } from "./engine";
-import { fetchLink } from "./fetchLink";
+import { fetchLink, type LinkReceipt } from "./fetchLink";
 import { parseInstallLink } from "../../../core/installer/installLink";
 import type { ConflictChoice, OrphanChoice } from "../../../types/installDriver";
 import type { FomodReplayMode } from "../../../core/installer/fomodReplayMode";
@@ -76,6 +76,12 @@ import {
 export interface InstallSessionSnapshot {
   state: WizardState;
   errorSeq: number;
+  /**
+   * What the last pasted link delivered: the file's SHA-256 and whether a
+   * published checksum proved it. Keyed by the path it landed at, so the
+   * page shows it only while that file is the one being worked on.
+   */
+  linkReceipt?: LinkReceipt & { zipPath: string };
 }
 
 export type InstallSessionListener = (snapshot: InstallSessionSnapshot) => void;
@@ -101,8 +107,15 @@ class InstallSession {
   /** Abort handle for the in-flight install; undefined when none is running. */
   private installController: AbortController | undefined;
 
+  /** What the last pasted link delivered; see {@link InstallSessionSnapshot.linkReceipt}. */
+  private linkReceipt: (LinkReceipt & { zipPath: string }) | undefined;
+
   getSnapshot(): InstallSessionSnapshot {
-    return { state: this.state, errorSeq: this.errorSeq };
+    return {
+      state: this.state,
+      errorSeq: this.errorSeq,
+      ...(this.linkReceipt !== undefined ? { linkReceipt: this.linkReceipt } : {}),
+    };
   }
 
   subscribe(listener: InstallSessionListener): () => void {
@@ -232,6 +245,7 @@ class InstallSession {
     this.loadingController?.abort();
     const controller = new AbortController();
     this.loadingController = controller;
+    this.linkReceipt = undefined;
     const trimmed = input.trim();
     this.dispatch({ type: "link-start", link: trimmed, source: link.kind });
     void (async (): Promise<void> => {
@@ -256,6 +270,7 @@ class InstallSession {
           });
           return;
         }
+        this.linkReceipt = { ...outcome.receipt, zipPath: outcome.zipPath };
         this.pickFile(api, outcome.zipPath);
       } catch (err) {
         if (this.loadingController !== controller) return;
@@ -264,9 +279,11 @@ class InstallSession {
           this.dispatch({ type: "reset" });
           return;
         }
+        const mismatch = (err as { name?: unknown } | undefined)?.name === "ChecksumMismatchError";
         this.failWith(err, {
-          title: "Couldn't fetch the collection",
-          context: { step: "link", link: trimmed.slice(0, 200) },
+          title: mismatch ? "The package failed its checksum" : "Couldn't fetch the collection",
+          // The link as pasted, minus any query: a signed CDN link carries its credentials there.
+          context: { step: "link", link: trimmed.replace(/\?[^#]*/, "?…").slice(0, 200) },
         });
       }
     })();
