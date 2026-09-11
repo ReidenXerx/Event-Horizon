@@ -39,6 +39,7 @@ import {
 } from "../../../core/curator/requirementStep";
 import {
   downloadIdsForPage,
+  existingArchiveFor,
   readDownloadRecords,
 } from "../../../core/curator/existingDownload";
 import {
@@ -307,6 +308,26 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
       file,
       premium: isPremium(api.getState()),
       readInstalled: installedIdentityReader(() => api.getState(), game),
+      existingArchive: async () => {
+        const probe = await existingArchiveFor(api.getState(), vortexGame, step.nexusModId, file.file_id, (p) =>
+          fsp.stat(p).then(
+            () => true,
+            () => false,
+          ),
+        );
+        if (probe.found !== undefined) {
+          ehLog("info", "curator.requirement.install.existing-archive", {
+            mod: step.name,
+            nexusModId: step.nexusModId,
+            fileId: file.file_id,
+            dlId: probe.found.id,
+            state: probe.found.state ?? null,
+            onDisk: probe.onDisk,
+            installable: probe.installable !== undefined,
+          });
+        }
+        return probe.installable;
+      },
       download,
       openPage: () => {
         if (nexus.openModPage !== undefined) nexus.openModPage(vortexGame, step.nexusModId, "nexus");

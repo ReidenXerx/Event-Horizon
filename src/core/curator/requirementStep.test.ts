@@ -1,14 +1,20 @@
 /**
- * One requirement of a "Make it work" plan: what a refusal turns into, and
- * what Stop does while Vortex is installing.
+ * One requirement of a "Make it work" plan: the archive already in
+ * Downloads, what a refusal turns into, and what Stop does while Vortex is
+ * installing.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { installRequirementStep, type RequirementStepInput } from "./requirementStep";
-import type { InstallEvents } from "./updateOneMod";
+import { installRequirementStep, type RequirementStepInput, type StepEvents } from "./requirementStep";
 
-function emitter(): InstallEvents & { emit: (event: string, ...args: unknown[]) => void; count: () => number } {
+function emitter(
+  onEmit: (event: string, args: unknown[], fire: (event: string, ...args: unknown[]) => void) => void = () => undefined,
+): StepEvents & { fire: (event: string, ...args: unknown[]) => void; count: () => number; emitted: unknown[][] } {
   const handlers = new Map<string, Set<(...a: unknown[]) => void>>();
+  const emitted: unknown[][] = [];
+  const fire = (event: string, ...args: unknown[]): void => {
+    for (const h of [...(handlers.get(event) ?? [])]) h(...args);
+  };
   return {
     on: (event, handler) => {
       const set = handlers.get(event) ?? new Set();
@@ -19,13 +25,17 @@ function emitter(): InstallEvents & { emit: (event: string, ...args: unknown[]) 
       handlers.get(event)?.delete(handler);
     },
     emit: (event, ...args) => {
-      for (const h of [...(handlers.get(event) ?? [])]) h(...args);
+      emitted.push([event, ...args]);
+      onEmit(event, args, fire);
     },
+    fire,
+    emitted,
     count: () => [...handlers.values()].reduce((n, s) => n + s.size, 0),
   };
 }
 
 const MIN = 60_000;
+const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 function input(over: Partial<RequirementStepInput> = {}): RequirementStepInput {
   return {
@@ -37,6 +47,7 @@ function input(over: Partial<RequirementStepInput> = {}): RequirementStepInput {
     file: { file_id: 500, file_name: "plugin-500.7z" },
     premium: true,
     readInstalled: () => ({ nexusModId: 42, nexusFileId: 500 }),
+    existingArchive: async () => undefined,
     download: async () => "dl-1",
     openPage: () => undefined,
     pageDownloadIds: () => [],
@@ -49,6 +60,45 @@ function input(over: Partial<RequirementStepInput> = {}): RequirementStepInput {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe("the planned file already in Downloads", () => {
+  it("is installed from that archive, and Vortex is not asked to download it", async () => {
+    // Vortex's downloadFile hands back an existing download's id and installs
+    // nothing; asking it would have waited out the whole clock.
+    const events = emitter((event, args, fire) => {
+      if (event === "start-install-download") fire("did-install-mod", "skyrimse", args[0], "from-disk");
+    });
+    const download = vi.fn(async () => "dl-new");
+    const result = await installRequirementStep(input({ events, download, existingArchive: async () => "dl-old" }));
+    expect(result).toEqual({ ok: true, newModId: "from-disk", via: "existing-download" });
+    expect(download).not.toHaveBeenCalled();
+    expect(events.emitted[0]!.slice(0, 2)).toEqual(["start-install-download", "dl-old"]);
+  });
+
+  it("needs no Premium: a guided account installs from disk without opening the page", async () => {
+    const events = emitter((event, _args, fire) => {
+      if (event === "start-install-download") fire("did-install-mod", "skyrimse", "dl-old", "from-disk");
+    });
+    const openPage = vi.fn();
+    const result = await installRequirementStep(
+      input({ events, premium: false, openPage, existingArchive: async () => "dl-old" }),
+    );
+    expect(result).toMatchObject({ ok: true, via: "existing-download" });
+    expect(openPage).not.toHaveBeenCalled();
+  });
+
+  it("reports Vortex's own refusal from the install callback instead of waiting it out", async () => {
+    const events = emitter((event, args) => {
+      if (event === "start-install-download") {
+        const callback = args[2] as (err: Error | null) => void;
+        queueMicrotask(() => callback(new Error("Download not finished (state: paused), cannot install")));
+      }
+    });
+    const result = await installRequirementStep(input({ events, existingArchive: async () => "dl-old" }));
+    expect(result).toMatchObject({ ok: false, why: "Download not finished (state: paused), cannot install" });
+    expect(events.count()).toBe(0);
+  });
 });
 
 describe("a refused direct download", () => {
@@ -71,7 +121,7 @@ describe("a refused direct download", () => {
     expect(openPage).toHaveBeenCalledTimes(1);
 
     await vi.advanceTimersByTimeAsync(20 * MIN);
-    events.emit("did-install-mod", "skyrimse", "arc", "picked-on-page");
+    events.fire("did-install-mod", "skyrimse", "arc", "picked-on-page");
 
     await expect(promise).resolves.toEqual({ ok: true, newModId: "picked-on-page", via: "guided" });
   });
@@ -90,11 +140,12 @@ describe("Stop means after this one", () => {
     // run at once. Letting go here freed the page mid-install.
     const events = emitter();
     const stop = new AbortController();
-    const promise = installRequirementStep(
-      input({ events, signal: stop.signal, download: () => new Promise<string | undefined>(() => undefined) }),
-    );
+    const download = vi.fn(() => new Promise<string | undefined>(() => undefined));
+    const promise = installRequirementStep(input({ events, signal: stop.signal, download }));
+    await tick();
+    expect(download).toHaveBeenCalled();
     stop.abort();
-    events.emit("did-install-mod", "skyrimse", "arc", "landed");
+    events.fire("did-install-mod", "skyrimse", "arc", "landed");
     await expect(promise).resolves.toEqual({ ok: true, newModId: "landed", via: "download" });
   });
 
@@ -105,9 +156,10 @@ describe("Stop means after this one", () => {
     const promise = installRequirementStep(
       input({ events, premium: false, signal: stop.signal, pageDownloadIds: () => ids }),
     );
+    await tick();
     ids = ["user-clicked"];
     stop.abort();
-    events.emit("did-install-mod", "skyrimse", "arc", "landed");
+    events.fire("did-install-mod", "skyrimse", "arc", "landed");
     await expect(promise).resolves.toMatchObject({ ok: true, newModId: "landed", via: "guided" });
   });
 
@@ -115,6 +167,7 @@ describe("Stop means after this one", () => {
     const events = emitter();
     const stop = new AbortController();
     const promise = installRequirementStep(input({ events, premium: false, signal: stop.signal }));
+    await tick();
     stop.abort();
     await expect(promise).resolves.toMatchObject({ ok: false, stopped: true });
     expect(events.count()).toBe(0);
@@ -131,6 +184,7 @@ describe("Stop means after this one", () => {
         download: () => new Promise<string | undefined>((r) => (refuse = r)),
       }),
     );
+    await tick();
     stop.abort();
     refuse(undefined);
     await expect(promise).resolves.toMatchObject({ ok: false, stopped: true, refused: true });

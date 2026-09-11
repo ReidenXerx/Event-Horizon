@@ -8,6 +8,16 @@
  * page at a time). The wait itself is `updateOneAndWait`, which matches the
  * finished install on the Nexus identity Vortex recorded.
  *
+ * ─── AN ARCHIVE ALREADY IN DOWNLOADS IS INSTALLED, NOT RE-REQUESTED ────
+ * Vortex's `downloadFile` looks for a download of the same game, mod and
+ * file whose archive is on disk, and resolves ITS id — with no download and
+ * no install (verified in the deployed bundle). Remove keeps archives, so a
+ * requirement the curator once removed is exactly this case: the step sat
+ * out its fifteen minutes and the mod it was for stayed disabled. The step
+ * looks first, the same way, and installs from that archive through
+ * `start-install-download` — for every account, since installing from disk
+ * needs no Premium.
+ *
  * ─── A REFUSAL BECOMES THE GUIDED WAIT, NOT A LONGER DIRECT ONE ────────
  * `nexusDownload` swallows its own refusals (not Premium, logged out, an
  * expired login) into a notification and resolves undefined. The page opens
@@ -20,10 +30,10 @@
  *
  * ─── STOP MEANS "AFTER THIS ONE" ───────────────────────────────────────
  * Vortex has no way to cancel an install from outside, and it loses files
- * when two run at once. So once something for this step is running — a
- * download this step asked for, or one the user started from the page —
- * Stop does not end the wait: the step keeps waiting for the install to
- * land, and the run stays busy until it does. Only a guided wait with
+ * when two run at once. So once something for this step is running — an
+ * install or download this step asked for, or a download the user started
+ * from the page — Stop does not end the wait: the step keeps waiting for the
+ * install to land, and the run stays busy until it does. Only a wait with
  * nothing started yet ends at once, because there is nothing to wait for.
  * ──────────────────────────────────────────────────────────────────────
  */
@@ -34,10 +44,13 @@ import { updateOneAndWait, type InstallEvents, type UpdateOneInput } from "./upd
 /** How long a guided step waits for the user to fetch the file by hand. */
 export const GUIDED_WAIT_MS = 60 * 60 * 1000;
 
-export type RequirementStepVia = "download" | "guided";
+export type RequirementStepVia = "existing-download" | "download" | "guided";
+
+/** Vortex's event bus: listening, and emitting `start-install-download`. */
+export type StepEvents = InstallEvents & { emit: (event: string, ...args: unknown[]) => unknown };
 
 export type RequirementStepInput = {
-  events: InstallEvents;
+  events: StepEvents;
   /** The managed game `did-install-mod` is matched on. */
   gameId: string;
   /** The game the page is downloaded for (Vortex's id). */
@@ -49,6 +62,11 @@ export type RequirementStepInput = {
   /** Whether Vortex will download directly for this account. */
   premium: boolean;
   readInstalled: UpdateOneInput["readInstalled"];
+  /**
+   * The download id of the planned file's archive when Vortex already has it,
+   * finished and on disk; undefined otherwise.
+   */
+  existingArchive: () => Promise<string | undefined>;
   /** Vortex's `nexusDownload`: resolves a download id, or undefined when it refused. */
   download: (
     vortexGameId: string,
@@ -118,15 +136,27 @@ export async function installRequirementStep(input: RequirementStepInput): Promi
   };
   signal.addEventListener("abort", onStop);
 
-  ehLog("info", "curator.requirement.install.start", {
-    mod: name,
-    nexusModId,
-    fileId: file.file_id,
-    game: vortexGameId,
-    via,
-  });
-
   try {
+    let archiveId: string | undefined;
+    try {
+      archiveId = await input.existingArchive();
+    } catch (err) {
+      ehLog("warn", "curator.requirement.install.existing-probe-failed", { mod: name, nexusModId, err });
+    }
+    if (wait.signal.aborted) {
+      return { ok: false, why: "stopped before it started", refused: false, stopped: true, via };
+    }
+    if (archiveId !== undefined) via = "existing-download";
+
+    ehLog("info", "curator.requirement.install.start", {
+      mod: name,
+      nexusModId,
+      fileId: file.file_id,
+      game: vortexGameId,
+      via,
+      ...(archiveId === undefined ? {} : { dlId: archiveId }),
+    });
+
     const newModId = await updateOneAndWait({
       events,
       gameId,
@@ -137,6 +167,19 @@ export async function installRequirementStep(input: RequirementStepInput): Promi
       readInstalled,
       signal: wait.signal,
       start: (controls) => {
+        if (archiveId !== undefined) {
+          ourRequestRunning = true;
+          // Vortex's handler: (downloadId, options, callback). The callback
+          // is the only channel for a refusal ("Download not finished",
+          // "Unknown Download", a cancelled installer dialog).
+          events.emit("start-install-download", archiveId, undefined, (err: unknown) => {
+            if (err !== null && err !== undefined) {
+              ourRequestRunning = false;
+              controls.fail(err);
+            }
+          });
+          return;
+        }
         if (via === "guided") {
           openPage();
           return;
