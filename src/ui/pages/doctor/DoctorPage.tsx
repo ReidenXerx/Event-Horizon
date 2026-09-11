@@ -26,7 +26,7 @@ import { useApi } from "../../state";
 import { useErrorReporter } from "../../errors";
 import { useToast } from "../../components/Toast";
 import { DoctorPanel } from "./DoctorPanel";
-import { evaluateHealth, healingBlockedReason } from "../../../core/doctor/health";
+import { assessObservedLoadOrder, evaluateHealth, healingBlockedReason } from "../../../core/doctor/health";
 import type { HealAction, HealthCheck, HealthReceiptView } from "../../../core/doctor/health";
 import { gatherObservations } from "../../../core/doctor/gather";
 import { describeHeal, healNeedsManifest } from "../../../core/doctor/heal";
@@ -38,8 +38,7 @@ import type { EhcollManifest } from "../../../types/ehcoll";
 import { stagingRootForModId } from "../../../core/stagingPath";
 import { EnvironmentTools } from "./EnvironmentTools";
 import { LoadOrderCard } from "./LoadOrderCard";
-import { assessLoadOrder, nativeNamesFromState, previewRepin } from "../../../core/doctor/loadOrderStatus";
-import { baselineOf } from "../../../core/doctor/loadOrderWatcher";
+import { baselineOf, previewRepin } from "../../../core/doctor/loadOrderStatus";
 import { disableAutoSort, readsAutoSort } from "../../../core/installer/autoSort";
 import type { HealthObservations } from "../../../core/doctor/health";
 
@@ -64,7 +63,9 @@ function toHealthView(receipt: InstallReceipt): HealthReceiptView {
   return {
     packageName: receipt.packageName,
     packageVersion: receipt.packageVersion,
+    gameId: receipt.gameId,
     vortexProfileId: receipt.vortexProfileId,
+    vortexProfileName: receipt.vortexProfileName,
     mods: receipt.mods.map((m) => ({
       vortexModId: m.vortexModId,
       compareKey: m.compareKey,
@@ -238,6 +239,10 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
           api,
           gameId,
           receiptProfileId: loaded.selected.vortexProfileId,
+          // Whose load order it is depends on every receipt: the newest
+          // install into the active profile owns it.
+          orderReceipt: loaded.selected,
+          receipts: loaded.receipts,
           // The ESL flags live in the plugin FILES, so checking them needs
           // the curator's recorded values to compare against.
           ...(loaded.selected.rulesApplication?.baselinePluginOrder !== undefined
@@ -468,11 +473,8 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
       {checks !== undefined && obs !== undefined && (
         <LoadOrderCard
           packageName={loaded.selected.packageName}
-          status={assessLoadOrder({
-            baseline: baselineOf(loaded.selected),
-            current: obs.currentPluginOrderFromState ?? obs.currentPluginOrder,
-            natives: nativeNamesFromState(api.getState()),
-          })}
+          // The same assessment the plugin-order health check makes.
+          status={assessObservedLoadOrder(toHealthView(loaded.selected), obs)}
           {...((obs.currentPluginOrderFromState ?? obs.currentPluginOrder) !== undefined
             ? { preview: previewRepin(baselineOf(loaded.selected), (obs.currentPluginOrderFromState ?? obs.currentPluginOrder)!) }
             : {})}

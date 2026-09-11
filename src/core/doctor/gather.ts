@@ -21,6 +21,7 @@ import type { types } from "@nexusmods/vortex-api";
 
 import { beginOp, ehLog } from "../logging/ehLog";
 import type { HealthObservations } from "./health";
+import type { OrderReceipt, OrderStanding } from "./loadOrderStatus";
 
 /** Profiles that exist for a game, by id. */
 function readProfileIds(state: unknown, gameId: string): string[] {
@@ -104,6 +105,15 @@ export interface GatherOptions {
    * rather than "fine".
    */
   recordedPlugins?: readonly { name: string; light?: boolean }[];
+  /**
+   * The receipt being diagnosed, and every receipt on the machine. Whether
+   * its load order may be judged at all depends on both: Vortex holds one
+   * order — the active game's active profile — and the newest install into
+   * that profile owns it. Without them the order check falls back to the
+   * profile comparison alone.
+   */
+  orderReceipt?: OrderReceipt;
+  receipts?: readonly OrderReceipt[];
 }
 
 /**
@@ -230,11 +240,32 @@ export async function gatherObservations(
   // from the file side so the two compare like with like.
   let currentPluginOrderFromState: { name: string; enabled: boolean }[] | undefined;
   let pluginsTxtMismatch: boolean | undefined;
+  let nativePluginNames: string[] | undefined;
+  let loadOrderStanding: OrderStanding | undefined;
   try {
-    const { currentOrderFromState, nativeNamesFromState } = await import("./loadOrderStatus");
+    const { currentOrderFromState, nativeNamesFromState, activeContextFromState, standingOf } = await import(
+      "./loadOrderStatus"
+    );
     currentPluginOrderFromState = currentOrderFromState(state);
+    const natives = nativeNamesFromState(state);
+    nativePluginNames = [...natives];
+    if (opts.orderReceipt !== undefined) {
+      const active = activeContextFromState(state);
+      loadOrderStanding = standingOf(opts.orderReceipt, opts.receipts ?? [], active);
+      // Which receipt was compared against which order: without this a
+      // report of "Doctor says drifted" cannot be told from one about the
+      // wrong profile.
+      ehLog("info", "doctor.gather.load-order-standing", {
+        package: opts.orderReceipt.packageName,
+        receiptGame: opts.orderReceipt.gameId,
+        receiptProfile: opts.orderReceipt.vortexProfileName ?? opts.orderReceipt.vortexProfileId,
+        activeGame: active.gameId,
+        activeProfile: active.profileName ?? active.profileId,
+        standing: loadOrderStanding.kind,
+        ...(loadOrderStanding.kind === "superseded" ? { supersededBy: loadOrderStanding.by } : {}),
+      });
+    }
     if (currentPluginOrderFromState !== undefined && currentPluginOrder !== undefined) {
-      const natives = nativeNamesFromState(state);
       const fileNonNative = currentPluginOrder
         .filter((p) => !natives.has(p.name.trim().toLowerCase()))
         .filter((p) => p.enabled)
@@ -264,6 +295,8 @@ export async function gatherObservations(
     currentPluginOrder,
     ...(currentPluginOrderFromState !== undefined ? { currentPluginOrderFromState } : {}),
     ...(pluginsTxtMismatch !== undefined ? { pluginsTxtMismatch } : {}),
+    ...(nativePluginNames !== undefined ? { nativePluginNames } : {}),
+    ...(loadOrderStanding !== undefined ? { loadOrderStanding } : {}),
     currentModRuleCount: countModRules(state, gameId),
     currentUserlistRuleCount,
     currentUserlistGroupAssignmentCount,

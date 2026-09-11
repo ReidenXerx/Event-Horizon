@@ -9,7 +9,7 @@
 
 import * as React from "react";
 
-import { describeLoadOrder, type LoadOrderStatus } from "../../../core/doctor/loadOrderStatus";
+import { canReapply, describeLoadOrder, type LoadOrderStatus } from "../../../core/doctor/loadOrderStatus";
 import { Button, Callout, Card, LinkButton, Pill, type PillIntent } from "../../components";
 
 const num = (n: number): string => n.toLocaleString();
@@ -39,7 +39,9 @@ export function LoadOrderCard(props: {
   const { status, preview } = props;
   const said = describeLoadOrder(status);
   const [showMoves, setShowMoves] = React.useState(false);
-  const canAct = status.kind === "matches" || status.kind === "drifted";
+  // Only the order this receipt owns, in the profile the user is on, may be
+  // re-applied — see canReapply.
+  const canAct = canReapply(status);
   const drifted = status.kind === "drifted";
 
   return (
@@ -62,7 +64,17 @@ export function LoadOrderCard(props: {
     >
       <div className="eh-stack">
         <div className="eh-row eh-row--sm">
-          <Pill intent={TONE_PILL[said.tone]}>{status.kind === "matches" ? "matches" : status.kind === "drifted" ? "drifted" : "unknown"}</Pill>
+          <Pill intent={TONE_PILL[said.tone]}>
+            {(
+              {
+                matches: "matches",
+                drifted: "drifted",
+                "not-active-game": "other game",
+                "other-profile": "other profile",
+                superseded: "superseded",
+              } as Partial<Record<LoadOrderStatus["kind"], string>>
+            )[status.kind] ?? "unknown"}
+          </Pill>
           <span className="eh-strong">{said.headline}</span>
         </div>
         {props.fileMismatch === true && (

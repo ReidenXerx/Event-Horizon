@@ -30,9 +30,16 @@
 /** Which aspect of the collection a check covers. */
 import type { FomodReplayMode } from "../installer/fomodReplayMode";
 import {
-  comparePluginOrder,
   type PluginOrderEntry,
 } from "../installer/checkPluginOrder";
+import {
+  assessLoadOrder,
+  canReapply,
+  describeLoadOrder,
+  skippedPluginOrder,
+  type LoadOrderStatus,
+  type OrderStanding,
+} from "./loadOrderStatus";
 
 export type HealthCheckId =
   /**
@@ -137,6 +144,19 @@ export interface HealthObservations {
   /** plugins.txt on disk disagrees with Vortex's state right now (a write in flight, or a hand edit). */
   pluginsTxtMismatch?: boolean;
   /**
+   * The game's own plugins, lowercased. Vortex never writes them to
+   * `loadOrder`, so the state order has none; the curator's baseline may.
+   * Excluded from both sides — the card always did, and a check that did not
+   * reported every native as a missing plugin.
+   */
+  nativePluginNames?: readonly string[];
+  /**
+   * Whether this receipt's order is the one Vortex has active: its game, its
+   * profile, and not superseded by a newer install into that profile.
+   * Absent, the order check falls back to comparing profiles alone.
+   */
+  loadOrderStanding?: OrderStanding;
+  /**
    * ESL / light flag of each recorded plugin as it is on disk NOW, keyed by
    * LOWERCASED name. `undefined` when it could not be read at all — which is
    * "not checked", never "no drift".
@@ -159,7 +179,11 @@ export interface HealthObservations {
 export interface HealthReceiptView {
   packageName: string;
   packageVersion: string;
+  /** The game the collection was installed for; the order check names it. */
+  gameId?: string;
   vortexProfileId: string;
+  /** Display name of that profile, for "installed in profile X". */
+  vortexProfileName?: string;
   mods: ReadonlyArray<{ vortexModId: string; compareKey: string; name: string }>;
   rulesApplication?: {
     appliedRuleCount?: number;
@@ -202,6 +226,43 @@ export interface HealthReceiptView {
    */
   failedMods?: ReadonlyArray<{ name: string; reason: string }>;
   finishingSkipped?: readonly string[];
+}
+
+/**
+ * ─── ONE ASSESSMENT OF THE LOAD ORDER ─────────────────────────────────
+ * The plugin-order check below and the Doctor's Load order card both call
+ * this. They used to compute their own answers: the card dropped natives and
+ * the check did not, the check decided "not applicable" from plugins.txt while
+ * comparing Vortex's state, and neither asked whether the order on screen was
+ * this receipt's at all. Two answers on one page, one of them with a button.
+ *
+ * The order compared is Vortex's state (settled: Doctor and the live watcher
+ * must agree instantly), with plugins.txt only when the state lists nothing.
+ */
+export function assessObservedLoadOrder(
+  receipt: HealthReceiptView,
+  obs: HealthObservations,
+): LoadOrderStatus {
+  const baseline = receipt.rulesApplication?.baselinePluginOrder;
+  if (baseline === undefined || baseline.length === 0) return { kind: "no-baseline" };
+  if (skippedPluginOrder(receipt.finishingSkipped)) return { kind: "not-applied" };
+  /**
+   * Without a gathered standing, the profile comparison alone still holds:
+   * the order Vortex reports is the ACTIVE profile's, so a receipt for any
+   * other profile is not judged — including when the active one is unknown.
+   */
+  const standing: OrderStanding =
+    obs.loadOrderStanding ??
+    (obs.activeProfileId === receipt.vortexProfileId
+      ? { kind: "owner" }
+      : { kind: "other-profile", profileName: receipt.vortexProfileName ?? receipt.vortexProfileId });
+  return assessLoadOrder({
+    baseline: baseline.map((e) => ({ name: e.name, enabled: e.enabled })),
+    current: obs.currentPluginOrderFromState ?? obs.currentPluginOrder,
+    natives: new Set((obs.nativePluginNames ?? []).map((n) => n.trim().toLowerCase())),
+    standing,
+    ...(receipt.gameId !== undefined ? { gameId: receipt.gameId } : {}),
+  });
 }
 
 const MAX_DETAIL = 25;
@@ -409,9 +470,8 @@ export function evaluateHealth(
    * "Not applied" and "applied then changed" are different facts with
    * different remedies, and only one of them is the user'''s doing.
    */
-  const orderNotApplied = finishingSkipped.some((phase) =>
-    phase.toLowerCase().includes("plugin order"),
-  );
+  const orderNotApplied = skippedPluginOrder(finishingSkipped);
+  const assessedOrder = assessObservedLoadOrder(receipt, obs);
   if (orderNotApplied) {
     checks.push({
       id: "plugin-order",
@@ -434,13 +494,26 @@ export function evaluateHealth(
       detail: [],
       affectedCount: 0,
     });
-  } else if (obs.currentPluginOrder === undefined) {
+  } else if (!canReapply(assessedOrder)) {
+    /**
+     * ─── NOT THIS RECEIPT'S ORDER TO JUDGE ──────────────────────────────
+     * Another game, another profile, or a newer install into this profile —
+     * or no plugin list at all. No verdict and, above all, no heal: the
+     * re-apply writes into whatever order Vortex has active.
+     */
+    const said = describeLoadOrder(assessedOrder);
     checks.push({
       id: "plugin-order",
       title: "Plugin order",
-      status: "not-applicable",
-      summary: "This game does not use a plugins.txt.",
-      detail: [],
+      status:
+        assessedOrder.kind === "no-baseline" || assessedOrder.kind === "not-applied"
+          ? "unknown"
+          : "not-applicable",
+      summary:
+        assessedOrder.kind === "not-applicable"
+          ? "This game does not use a plugins.txt."
+          : said.headline,
+      detail: said.detail,
       affectedCount: 0,
     });
   } else {
@@ -464,8 +537,13 @@ export function evaluateHealth(
      */
     // Settled with the user: Vortex's state is the source, so Doctor and the
     // live watcher agree instantly; the file is reported when it disagrees.
-    const drift = comparePluginOrder(baseline, obs.currentPluginOrderFromState ?? obs.currentPluginOrder);
-    const same = drift.misordered.length === 0 && drift.missing.length === 0;
+    // Read off the one assessment (see assessObservedLoadOrder), never
+    // recomputed here.
+    const drift =
+      assessedOrder.kind === "drifted"
+        ? assessedOrder.drift
+        : { missing: [], extra: [], misordered: [], compared: assessedOrder.owned };
+    const same = assessedOrder.kind === "matches";
     checks.push({
       id: "plugin-order",
       title: "Plugin order",

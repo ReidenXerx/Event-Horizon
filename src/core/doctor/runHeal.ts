@@ -247,6 +247,51 @@ async function healImpl(
             "to restore.",
         };
       }
+      /**
+       * ─── ONLY INTO THE ORDER THIS RECEIPT WAS PINNED INTO ───────────────
+       * Vortex's `set-plugin-list` handler takes a list of names and nothing
+       * else — no game, no profile — and dispatches UPDATE_PLUGIN_ORDER into
+       * the ONE `loadOrder` it holds, creating an entry for every name it does
+       * not know. So this heal writes into whatever game and profile are
+       * active. Run for a receipt of another game, it wrote that game's
+       * plugin names into this one's order; run from the Default profile for
+       * a collection installed into a fresh one, it reordered Default's
+       * plugins.txt — an order Event Horizon never installed (NS-2's class of
+       * harm). Refused, and logged, rather than written.
+       */
+      const { activeContextFromState } = await import("./loadOrderStatus");
+      const active = activeContextFromState(api.getState());
+      if (receipt.gameId !== active.gameId || gameId !== receipt.gameId) {
+        ehLog("warn", "doctor.heal.repin.refused", {
+          why: "not-active-game",
+          receiptGame: receipt.gameId,
+          healGame: gameId,
+          activeGame: active.gameId,
+        });
+        return {
+          kind: "blocked",
+          reason:
+            `This collection is for ${receipt.gameId}, but Vortex is managing ` +
+            `${active.gameId ?? "no game"} right now. Switch to ${receipt.gameId} first — ` +
+            `re-applying now would write into the other game's load order.`,
+        };
+      }
+      if (receipt.vortexProfileId !== active.profileId) {
+        ehLog("warn", "doctor.heal.repin.refused", {
+          why: "other-profile",
+          receiptProfile: receipt.vortexProfileId,
+          receiptProfileName: receipt.vortexProfileName,
+          activeProfile: active.profileId,
+          activeProfileName: active.profileName,
+        });
+        return {
+          kind: "blocked",
+          reason:
+            `This collection was installed into the profile "${receipt.vortexProfileName}", ` +
+            `and you are on "${active.profileName ?? active.profileId ?? "another profile"}". ` +
+            `Switch profiles first — re-applying now would reorder a profile it was never installed into.`,
+        };
+      }
       const [{ readUserPluginsTxt }, { applyPluginOrder }] = await Promise.all([
         import("../installer/checkPluginOrder"),
         import("../installer/applyPluginOrder"),

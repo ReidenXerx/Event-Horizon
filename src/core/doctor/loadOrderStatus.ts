@@ -18,9 +18,19 @@
  * load in the curator's order among themselves; extra plugins are expected
  * and never a fault.
  *
- * Pure. The current order is read from Vortex's plugin state by the caller
- * (or from plugins.txt, which is what the game reads); natives are excluded
- * because Vortex fixes their place and never writes them to loadOrder.
+ * ─── WHOSE ORDER IS IT ─────────────────────────────────────────────────
+ * Vortex's `loadOrder` is ONE order: the active profile's, of the active
+ * game. A receipt describes an order pinned into ONE game and ONE profile.
+ * Compared against anything else the answer is noise with a Re-apply button
+ * on it — and that button writes into whatever order is active, because
+ * Vortex's `set-plugin-list` handler takes no game and no profile.
+ *
+ * And two collections installed into the same profile can share plugins in
+ * different orders. Settled with the user: the NEWEST install owns the order;
+ * an older one is "superseded", with no drift, no notification and no
+ * Re-apply — otherwise re-applying one drifts the other, forever.
+ *
+ * Pure. Every Vortex read is a function of the state handed in.
  * ──────────────────────────────────────────────────────────────────────
  */
 
@@ -33,10 +43,116 @@ const key = (name: string): string => name.trim().toLowerCase();
 export type LoadOrderStatus =
   /** The receipt recorded no order (an old receipt, or a stopped install). */
   | { kind: "no-baseline" }
+  /** The run recorded an order and was stopped before it applied it. */
+  | { kind: "not-applied" }
+  /** The receipt belongs to a game Vortex is not managing right now. */
+  | { kind: "not-active-game"; gameId: string; activeGameId: string | undefined }
+  /** Right game, but installed into a profile the user is not on. */
+  | { kind: "other-profile"; profileName: string }
+  /** A newer collection was installed into the same profile and owns the order. */
+  | { kind: "superseded"; by: string }
   /** This game has no plugin list. */
   | { kind: "not-applicable" }
   | { kind: "matches"; owned: number; extra: number }
   | { kind: "drifted"; owned: number; extra: number; drift: PluginOrderDrift };
+
+/** What an order check needs from a receipt. `InstallReceipt` satisfies it. */
+export type OrderReceipt = {
+  packageId: string;
+  packageName: string;
+  packageVersion?: string;
+  gameId: string;
+  vortexProfileId: string;
+  vortexProfileName?: string;
+  installedAt: string;
+  rulesApplication?: { baselinePluginOrder?: readonly PluginOrderEntry[] };
+  finishingSkipped?: readonly string[];
+};
+
+/** Which game and profile Vortex's `loadOrder` belongs to right now. */
+export type ActiveContext = {
+  gameId: string | undefined;
+  profileId: string | undefined;
+  profileName: string | undefined;
+};
+
+/**
+ * Vortex keeps the active profile in `settings.profiles.activeProfileId`,
+ * never on the profile object; the game is that profile's `gameId`.
+ */
+export function activeContextFromState(state: unknown): ActiveContext {
+  const s = state as {
+    settings?: { profiles?: { activeProfileId?: unknown } };
+    persistent?: { profiles?: Record<string, { gameId?: unknown; name?: unknown } | undefined> };
+  };
+  const none: ActiveContext = { gameId: undefined, profileId: undefined, profileName: undefined };
+  const pid = s?.settings?.profiles?.activeProfileId;
+  if (typeof pid !== "string" || pid === "") return none;
+  const profile = s?.persistent?.profiles?.[pid];
+  const gameId = typeof profile?.gameId === "string" && profile.gameId !== "" ? profile.gameId : undefined;
+  if (gameId === undefined) return none;
+  return { gameId, profileId: pid, profileName: typeof profile?.name === "string" ? profile.name : undefined };
+}
+
+/** The receipt's order in the shape the assessment reads. */
+export function baselineOf(receipt: Pick<OrderReceipt, "rulesApplication">): PluginOrderEntry[] {
+  return (receipt.rulesApplication?.baselinePluginOrder ?? []).map((e) => ({ name: e.name, enabled: e.enabled }));
+}
+
+/**
+ * The run skipped its plugin-order phase. `finishingSkipped` carries the
+ * phase names the driver stopped before; the order phase is "plugin order".
+ */
+export function skippedPluginOrder(finishingSkipped: readonly string[] | undefined): boolean {
+  return (finishingSkipped ?? []).some((phase) => phase.toLowerCase().includes("plugin order"));
+}
+
+/** Did this install actually pin an order into its profile? */
+export function pinnedAnOrder(receipt: OrderReceipt): boolean {
+  return baselineOf(receipt).length > 0 && !skippedPluginOrder(receipt.finishingSkipped);
+}
+
+const installedAtMs = (r: OrderReceipt): number => {
+  const ms = Date.parse(String(r.installedAt));
+  return Number.isNaN(ms) ? Number.NEGATIVE_INFINITY : ms;
+};
+
+const sameReceipt = (a: OrderReceipt, b: OrderReceipt): boolean =>
+  a.packageId === b.packageId && String(a.installedAt) === String(b.installedAt);
+
+/**
+ * The receipt that owns the active profile's order: the newest install into
+ * this game AND profile that pinned one. Ties break on package id, so two
+ * callers can never pick different owners from the same receipts.
+ */
+export function orderOwner<R extends OrderReceipt>(receipts: readonly R[], active: ActiveContext): R | undefined {
+  if (active.gameId === undefined || active.profileId === undefined) return undefined;
+  return receipts
+    .filter((r) => r.gameId === active.gameId && r.vortexProfileId === active.profileId && pinnedAnOrder(r))
+    .sort((a, b) => installedAtMs(b) - installedAtMs(a) || a.packageId.localeCompare(b.packageId))[0];
+}
+
+export type OrderStanding =
+  | { kind: "owner" }
+  | { kind: "not-active-game"; activeGameId: string | undefined }
+  | { kind: "other-profile"; profileName: string }
+  | { kind: "superseded"; by: string };
+
+/** Human name for a receipt: "Ivy 2 v1.0.11". */
+export function receiptLabel(r: Pick<OrderReceipt, "packageName" | "packageVersion">): string {
+  return r.packageVersion !== undefined && r.packageVersion !== "" ? `${r.packageName} v${r.packageVersion}` : r.packageName;
+}
+
+/** May this receipt's order be judged — and re-applied — against the active one? */
+export function standingOf(receipt: OrderReceipt, receipts: readonly OrderReceipt[], active: ActiveContext): OrderStanding {
+  if (receipt.gameId !== active.gameId) return { kind: "not-active-game", activeGameId: active.gameId };
+  if (receipt.vortexProfileId !== active.profileId) {
+    return { kind: "other-profile", profileName: receipt.vortexProfileName || receipt.vortexProfileId };
+  }
+  const owner = orderOwner([receipt, ...receipts], active);
+  if (owner !== undefined && !sameReceipt(owner, receipt)) return { kind: "superseded", by: receiptLabel(owner) };
+  return { kind: "owner" };
+}
 
 /**
  * The order Vortex holds right now, natives excluded, as the persistor will
@@ -63,9 +179,28 @@ export function assessLoadOrder(args: {
   current: readonly PluginOrderEntry[] | undefined;
   /** Lowercased native plugin names; excluded from both sides. */
   natives?: ReadonlySet<string>;
+  /**
+   * Whether this receipt's order is the one to compare at all. Omitted means
+   * the caller established it; every live caller passes it.
+   */
+  standing?: OrderStanding;
+  /** The receipt's game, for the "not the active game" wording. */
+  gameId?: string;
 }): LoadOrderStatus {
-  const { baseline, current } = args;
+  const { baseline, current, standing } = args;
   if (baseline === undefined || baseline.length === 0) return { kind: "no-baseline" };
+  if (standing !== undefined) {
+    switch (standing.kind) {
+      case "not-active-game":
+        return { kind: "not-active-game", gameId: args.gameId ?? "another game", activeGameId: standing.activeGameId };
+      case "other-profile":
+        return { kind: "other-profile", profileName: standing.profileName };
+      case "superseded":
+        return { kind: "superseded", by: standing.by };
+      case "owner":
+        break;
+    }
+  }
   if (current === undefined) return { kind: "not-applicable" };
   const natives = args.natives ?? new Set<string>();
   const curator = baseline.filter((p) => !natives.has(key(p.name)));
@@ -75,6 +210,35 @@ export function assessLoadOrder(args: {
   const extra = drift.extra.length;
   if (drift.misordered.length === 0 && drift.missing.length === 0) return { kind: "matches", owned, extra };
   return { kind: "drifted", owned, extra, drift };
+}
+
+/**
+ * One receipt against Vortex's live state — the badge and the watcher.
+ * Doctor reaches the same `assessLoadOrder` through its observations.
+ */
+export function assessReceiptOrder(args: {
+  receipt: OrderReceipt;
+  receipts: readonly OrderReceipt[];
+  state: unknown;
+}): LoadOrderStatus {
+  const { receipt, receipts, state } = args;
+  const baseline = baselineOf(receipt);
+  if (baseline.length === 0) return { kind: "no-baseline" };
+  if (skippedPluginOrder(receipt.finishingSkipped)) return { kind: "not-applied" };
+  return assessLoadOrder({
+    baseline,
+    current: currentOrderFromState(state),
+    natives: nativeNamesFromState(state),
+    standing: standingOf(receipt, receipts, activeContextFromState(state)),
+    gameId: receipt.gameId,
+  });
+}
+
+/** Only these statuses describe the active order, and only they may offer a re-apply. */
+export function canReapply(
+  status: LoadOrderStatus,
+): status is Extract<LoadOrderStatus, { kind: "matches" | "drifted" }> {
+  return status.kind === "matches" || status.kind === "drifted";
 }
 
 /**
@@ -100,6 +264,30 @@ export function describeLoadOrder(status: LoadOrderStatus): {
       return {
         tone: "neutral",
         headline: "This install recorded no plugin order, so there is nothing to compare against.",
+        detail: [],
+      };
+    case "not-applied":
+      return {
+        tone: "neutral",
+        headline: "This install was stopped before it applied the load order, so there is nothing to compare against.",
+        detail: [],
+      };
+    case "not-active-game":
+      return {
+        tone: "neutral",
+        headline: `Installed for ${status.gameId}, which is not the game Vortex is managing right now.`,
+        detail: [`Switch Vortex to ${status.gameId} to check this collection's load order.`],
+      };
+    case "other-profile":
+      return {
+        tone: "neutral",
+        headline: `Installed in profile "${status.profileName}", not the one you are on.`,
+        detail: [`The order you are looking at belongs to another profile. Switch to "${status.profileName}" to check this collection's.`],
+      };
+    case "superseded":
+      return {
+        tone: "neutral",
+        headline: `Superseded by ${status.by}, installed into this profile later — that collection owns the load order now.`,
         detail: [],
       };
     case "not-applicable":

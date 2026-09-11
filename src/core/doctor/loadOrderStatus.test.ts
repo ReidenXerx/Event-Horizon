@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  activeContextFromState,
   assessLoadOrder,
+  assessReceiptOrder,
+  canReapply,
   currentOrderFromState,
   describeLoadOrder,
   driftSignature,
   nativeNamesFromState,
+  orderOwner,
   previewRepin,
+  type OrderReceipt,
 } from "./loadOrderStatus";
 
 const on = (...names: string[]): { name: string; enabled: boolean }[] => names.map((name) => ({ name, enabled: true }));
@@ -87,5 +92,97 @@ describe("previewRepin", () => {
       { name: "C.esp", from: 1, to: 3 },
     ]);
     expect(previewRepin(baseline, on("A.esp", "B.esp", "C.esp")).moves).toEqual([]);
+  });
+});
+
+/**
+ * Vortex holds ONE order — the active game's active profile — and its
+ * `set-plugin-list` handler takes no game and no profile. A verdict about any
+ * other receipt's order is noise with a Re-apply button that writes into the
+ * wrong order.
+ */
+describe("whose order it is", () => {
+  const receipt = (over: Partial<OrderReceipt> = {}): OrderReceipt => ({
+    packageId: "pkg-ivy",
+    packageName: "Ivy 2",
+    packageVersion: "1.0.11",
+    gameId: "skyrimse",
+    vortexProfileId: "prof-ivy",
+    vortexProfileName: "Ivy 2",
+    installedAt: "2026-09-01T10:00:00.000Z",
+    rulesApplication: { baselinePluginOrder: on("A.esp", "B.esp") },
+    ...over,
+  });
+
+  /** A real-shaped Vortex state: active profile in settings, plugins in session + loadOrder. */
+  const stateOn = (activeProfileId: string, order: string[]): unknown => ({
+    settings: { profiles: { activeProfileId } },
+    persistent: {
+      profiles: {
+        "prof-ivy": { gameId: "skyrimse", name: "Ivy 2" },
+        default: { gameId: "skyrimse", name: "Default" },
+        "prof-fo4": { gameId: "fallout4", name: "Fallout 4" },
+      },
+    },
+    session: { plugins: { pluginList: Object.fromEntries(order.map((n) => [n.toLowerCase(), {}])) } },
+    loadOrder: Object.fromEntries(order.map((n, i) => [n.toLowerCase(), { name: n, enabled: true, loadOrder: i }])),
+  });
+
+  it("reads the active game and profile from settings, not the profile object", () => {
+    expect(activeContextFromState(stateOn("default", []))).toEqual({ gameId: "skyrimse", profileId: "default", profileName: "Default" });
+    expect(activeContextFromState({}).gameId).toBeUndefined();
+  });
+
+  it("does not judge a receipt for another game against the active game's order", () => {
+    // The same two names, swapped, in FALLOUT 4's order: compared, it is drift.
+    const r = receipt();
+    const status = assessReceiptOrder({ receipt: r, receipts: [r], state: stateOn("prof-fo4", ["B.esp", "A.esp"]) });
+    expect(status).toEqual({ kind: "not-active-game", gameId: "skyrimse", activeGameId: "fallout4" });
+    expect(canReapply(status)).toBe(false);
+  });
+
+  it("does not judge a receipt installed into another profile", () => {
+    const r = receipt();
+    const status = assessReceiptOrder({ receipt: r, receipts: [r], state: stateOn("default", ["B.esp", "A.esp"]) });
+    expect(status).toEqual({ kind: "other-profile", profileName: "Ivy 2" });
+    expect(canReapply(status)).toBe(false);
+    expect(describeLoadOrder(status).headline).toMatch(/Installed in profile "Ivy 2"/);
+  });
+
+  it("judges the receipt in its own profile", () => {
+    const r = receipt();
+    const status = assessReceiptOrder({ receipt: r, receipts: [r], state: stateOn("prof-ivy", ["B.esp", "A.esp"]) });
+    expect(status.kind).toBe("drifted");
+    expect(canReapply(status)).toBe(true);
+  });
+
+  it("gives the order to the NEWEST install into the profile; the older one is superseded", () => {
+    const older = receipt();
+    const newer = receipt({
+      packageId: "pkg-other",
+      packageName: "Other",
+      packageVersion: "2.0.0",
+      installedAt: "2026-09-05T10:00:00.000Z",
+      rulesApplication: { baselinePluginOrder: on("B.esp", "A.esp") },
+    });
+    const receipts = [older, newer];
+    const state = stateOn("prof-ivy", ["B.esp", "A.esp"]);
+    const olderStatus = assessReceiptOrder({ receipt: older, receipts, state });
+    expect(olderStatus).toEqual({ kind: "superseded", by: "Other v2.0.0" });
+    expect(canReapply(olderStatus)).toBe(false);
+    expect(driftSignature(olderStatus)).toBe("");
+    expect(assessReceiptOrder({ receipt: newer, receipts, state }).kind).toBe("matches");
+    // Receipts arrive in readdir order; the owner does not depend on it.
+    expect(orderOwner([newer, older], activeContextFromState(state))).toBe(newer);
+    expect(orderOwner([older, newer], activeContextFromState(state))).toBe(newer);
+  });
+
+  it("does not hand the order to a newer run that never applied one", () => {
+    const older = receipt();
+    const stopped = receipt({ packageId: "pkg-stopped", installedAt: "2026-09-05T10:00:00.000Z", finishingSkipped: ["plugin order"] });
+    const state = stateOn("prof-ivy", ["A.esp", "B.esp"]);
+    expect(orderOwner([older, stopped], activeContextFromState(state))).toBe(older);
+    expect(assessReceiptOrder({ receipt: stopped, receipts: [older, stopped], state }).kind).toBe("not-applied");
+    expect(assessReceiptOrder({ receipt: older, receipts: [older, stopped], state }).kind).toBe("matches");
   });
 });

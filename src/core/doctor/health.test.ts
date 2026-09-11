@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  assessObservedLoadOrder,
   evaluateHealth,
   healingBlockedReason,
   overallHealth,
@@ -542,5 +543,72 @@ describe("a partial install, seen by the Doctor", () => {
     // one people learn to skip.
     const checks = evaluateHealth(receipt(), observations());
     expect(checks.find((c) => c.id === "install-incomplete")).toBeUndefined();
+  });
+});
+
+/**
+ * Vortex holds ONE plugin order — the active game's active profile — and the
+ * heal behind this check writes into whatever order is active. So the check
+ * first asks whose order it is looking at, and it is the same assessment the
+ * Load order card renders.
+ */
+describe("the plugin-order check asks whose order it is", () => {
+  it("does not judge — or offer to re-apply into — another profile's order", () => {
+    const checks = evaluateHealth(
+      receipt({ vortexProfileName: "Ivy 2" }),
+      healthy({ activeProfileId: "default", currentPluginOrderFromState: on("c.esp", "b.esp", "a.esp") }),
+    );
+    const c = byId(checks, "plugin-order");
+    expect(c.status).toBe("not-applicable");
+    expect(c.heal).toBeUndefined();
+    expect(c.summary).toMatch(/"Ivy 2"/);
+  });
+
+  it("defers to a newer collection installed into the same profile", () => {
+    const checks = evaluateHealth(
+      receipt(),
+      healthy({
+        currentPluginOrderFromState: on("c.esp", "b.esp", "a.esp"),
+        loadOrderStanding: { kind: "superseded", by: "Other v2.0.0" },
+      }),
+    );
+    const c = byId(checks, "plugin-order");
+    expect(c.status).toBe("not-applicable");
+    expect(c.heal).toBeUndefined();
+    expect(c.summary).toMatch(/Other v2\.0\.0/);
+  });
+
+  it("does not judge a receipt for a game Vortex is not managing", () => {
+    const checks = evaluateHealth(
+      receipt({ gameId: "skyrimse" }),
+      healthy({
+        currentPluginOrderFromState: on("c.esp", "b.esp", "a.esp"),
+        loadOrderStanding: { kind: "not-active-game", activeGameId: "fallout4" },
+      }),
+    );
+    const c = byId(checks, "plugin-order");
+    expect(c.status).toBe("not-applicable");
+    expect(c.heal).toBeUndefined();
+    expect(c.summary).toMatch(/skyrimse/);
+  });
+
+  it("excludes the game's own plugins, exactly as the Load order card does", () => {
+    // Vortex never writes natives to loadOrder; the curator's baseline has
+    // them. Not excluding them read every native as a missing plugin.
+    const r = receipt({
+      rulesApplication: { baselinePluginOrder: [{ name: "Skyrim.esm", enabled: true }, ...on("a.esp", "b.esp", "c.esp")] },
+    });
+    const obs = healthy({ currentPluginOrderFromState: on("a.esp", "b.esp", "c.esp"), nativePluginNames: ["skyrim.esm"] });
+    expect(byId(evaluateHealth(r, obs), "plugin-order").status).toBe("healthy");
+    expect(assessObservedLoadOrder(r, obs).kind).toBe("matches");
+  });
+
+  it("decides 'not applicable' from the order it compares, not from the file", () => {
+    // plugins.txt unreadable, Vortex's order present and drifted.
+    const checks = evaluateHealth(
+      receipt(),
+      healthy({ currentPluginOrder: undefined, currentPluginOrderFromState: on("a.esp", "c.esp", "b.esp") }),
+    );
+    expect(byId(checks, "plugin-order").status).toBe("drifted");
   });
 });

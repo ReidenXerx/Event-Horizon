@@ -14,9 +14,13 @@
  * with the fix on it. When the order comes back — the re-apply, or the
  * user's own Sort undone — the notification goes away by itself.
  *
- * Quiet while Event Horizon's own install or heal is writing the order:
- * the install pins, sorts and re-pins in three steps, and the middle one
- * is drift by design.
+ * ─── WHICH RECEIPT IS COMPARED ─────────────────────────────────────────
+ * Vortex holds one order: the active game's active profile. The receipt
+ * compared is the one that OWNS it — the newest install into that game and
+ * profile that pinned an order (`orderOwner`). A receipt for another game or
+ * another profile is never compared, and when there is no owner the
+ * notification is dismissed: left up, its Re-apply would be bound to a
+ * receipt whose order is not the one on screen.
  * ──────────────────────────────────────────────────────────────────────
  */
 
@@ -25,8 +29,22 @@ import type { types } from "@nexusmods/vortex-api";
 import { ehLog } from "../logging/ehLog";
 import { getEHRuntime } from "../../ui/runtime/ehRuntime";
 import type { InstallReceipt } from "../../types/installLedger";
-import { assessLoadOrder, currentOrderFromState, describeLoadOrder, driftSignature, nativeNamesFromState, type LoadOrderStatus } from "./loadOrderStatus";
+import {
+  activeContextFromState,
+  assessReceiptOrder,
+  baselineOf,
+  canReapply,
+  describeLoadOrder,
+  driftSignature,
+  orderOwner,
+  pinnedAnOrder,
+  receiptLabel,
+  type ActiveContext,
+  type LoadOrderStatus,
+} from "./loadOrderStatus";
 import type { HealOutcome } from "./runHeal";
+
+export { baselineOf };
 
 export const LOAD_ORDER_NOTIFICATION_ID = "event-horizon-load-order-drift";
 
@@ -36,72 +54,98 @@ const SETTLE_MS = 2000;
 const FIRST_LOOK_MS = 8000;
 
 /**
- * The newest receipt for a game that recorded a plugin order.
+ * Every receipt on the machine.
  *
  * Read from disk each time: receipts are a handful of small files, and an
  * install that just finished must be seen without a restart.
  */
-export async function latestReceiptWithOrder(gameId: string): Promise<InstallReceipt | undefined> {
+async function readReceipts(): Promise<InstallReceipt[]> {
   const [{ listReceipts }, { getVortexUserDataPath }] = await Promise.all([
     import("../installLedger"),
     import("../paths"),
   ]);
-  const receipts = await listReceipts(getVortexUserDataPath());
-  return receipts
-    .filter((r) => r.gameId === gameId && (r.rulesApplication?.baselinePluginOrder?.length ?? 0) > 0)
-    .sort((a, b) => b.installedAt.localeCompare(a.installedAt))[0];
+  return listReceipts(getVortexUserDataPath());
 }
 
-/** The receipt's order in the shape the assessment reads. */
-export function baselineOf(receipt: InstallReceipt): { name: string; enabled: boolean }[] {
-  return (receipt.rulesApplication?.baselinePluginOrder ?? []).map((e) => ({ name: e.name, enabled: e.enabled }));
-}
+export type ActiveOrderLook =
+  | {
+      kind: "nothing";
+      /** Why there is no receipt whose order this is. */
+      reason: "no-active-game" | "no-receipt" | "other-profile";
+      active: ActiveContext;
+      /** Receipts for this game that live in other profiles, by label. */
+      elsewhere: string[];
+    }
+  | {
+      kind: "assessed";
+      active: ActiveContext;
+      receipt: InstallReceipt;
+      status: LoadOrderStatus;
+      /** Older installs into the same profile, which this one supersedes. */
+      superseded: string[];
+    };
 
-/** Assess the active game's order from Vortex's state, against the newest receipt. */
-export async function assessActiveGame(
-  api: types.IExtensionApi,
-): Promise<{ gameId: string; receipt: InstallReceipt; status: LoadOrderStatus } | undefined> {
+/** The active order, against the receipt that owns it — or why there is none. */
+export async function assessActiveOrder(api: types.IExtensionApi): Promise<ActiveOrderLook> {
   const state = api.getState();
-  const gameId = activeGameIdOf(state);
-  if (gameId === undefined) return undefined;
-  const receipt = await latestReceiptWithOrder(gameId);
-  if (receipt === undefined) return undefined;
-  const status = assessLoadOrder({
-    baseline: baselineOf(receipt),
-    current: currentOrderFromState(state),
-    natives: nativeNamesFromState(state),
-  });
-  return { gameId, receipt, status };
+  const active = activeContextFromState(state);
+  if (active.gameId === undefined) return { kind: "nothing", reason: "no-active-game", active, elsewhere: [] };
+  const receipts = await readReceipts();
+  const owner = orderOwner(receipts, active);
+  const sameGame = receipts.filter((r) => r.gameId === active.gameId && pinnedAnOrder(r));
+  if (owner === undefined) {
+    return {
+      kind: "nothing",
+      reason: sameGame.length > 0 ? "other-profile" : "no-receipt",
+      active,
+      elsewhere: sameGame.map((r) => `${receiptLabel(r)} in "${r.vortexProfileName}"`),
+    };
+  }
+  return {
+    kind: "assessed",
+    active,
+    receipt: owner,
+    status: assessReceiptOrder({ receipt: owner, receipts, state }),
+    superseded: sameGame.filter((r) => r !== owner && r.vortexProfileId === active.profileId).map(receiptLabel),
+  };
 }
 
 /**
  * Put the curator's order back: the install's own merge, no second sort.
- * Runs the Doctor heal so the two doors cannot disagree.
+ * Runs the Doctor heal so the two doors cannot disagree — and refuses first
+ * unless this receipt owns the order that is active right now.
  */
 export async function reapplyCuratorOrder(api: types.IExtensionApi, receipt: InstallReceipt): Promise<HealOutcome> {
+  const receipts = await readReceipts();
+  const status = assessReceiptOrder({ receipt, receipts, state: api.getState() });
+  if (!canReapply(status)) {
+    ehLog("warn", "loadorder.reapply.refused", {
+      package: receiptLabel(receipt),
+      gameId: receipt.gameId,
+      profile: receipt.vortexProfileName,
+      status: status.kind,
+    });
+    return {
+      kind: "blocked",
+      reason: `${describeLoadOrder(status).headline} Its order is not the one Vortex has active, so there is nothing to re-apply it into.`,
+    };
+  }
   const { runHeal } = await import("./runHeal");
   return runHeal("repin-plugin-order", { api, gameId: receipt.gameId, receipt });
-}
-
-function activeGameIdOf(state: unknown): string | undefined {
-  const s = state as { settings?: { profiles?: { activeProfileId?: string } }; persistent?: { profiles?: Record<string, { gameId?: string }> } };
-  const pid = s?.settings?.profiles?.activeProfileId;
-  if (pid === undefined) return undefined;
-  const gameId = s?.persistent?.profiles?.[pid]?.gameId;
-  return typeof gameId === "string" && gameId !== "" ? gameId : undefined;
 }
 
 /**
  * Start watching. Idempotent per process.
  *
  * `api.onStateChange` has no unsubscribe, so this registers exactly once
- * and keeps its own last-seen fingerprint per game.
+ * and keeps what it last showed.
  */
 let started = false;
 export function startLoadOrderWatcher(api: types.IExtensionApi): void {
   if (started) return;
   started = true;
-  const lastSignature = new Map<string, string>();
+  /** The receipt (game|profile|package) and drift signature last acted on. */
+  let shown: { key: string; sig: string } | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let running = false;
 
@@ -112,20 +156,31 @@ export function startLoadOrderWatcher(api: types.IExtensionApi): void {
       // Our own install or heal is rewriting the order; the middle of that
       // is drift by design.
       if (getEHRuntime().getSnapshot().installBusy) return;
-      const found = await assessActiveGame(api);
-      if (found === undefined) return;
-      const { gameId, receipt, status } = found;
+      const found = await assessActiveOrder(api);
+      if (found.kind === "nothing") {
+        // Nothing of ours to judge. A notification still up would carry a
+        // Re-apply bound to another game's or profile's receipt.
+        if (shown !== undefined) {
+          api.dismissNotification?.(LOAD_ORDER_NOTIFICATION_ID);
+          shown = undefined;
+        }
+        return;
+      }
+      const { active, receipt, status } = found;
+      const key = `${active.gameId}|${active.profileId}|${receipt.packageId}`;
       const sig = driftSignature(status);
-      const prev = lastSignature.get(gameId) ?? "";
-      if (sig === prev) return;
-      lastSignature.set(gameId, sig);
+      if (shown !== undefined && shown.key === key && shown.sig === sig) return;
+      const wasShowing = shown !== undefined && shown.sig !== "";
+      shown = { key, sig };
       if (sig === "") {
-        api.dismissNotification?.(LOAD_ORDER_NOTIFICATION_ID);
-        ehLog("info", "loadorder.watch.restored", { gameId });
+        if (wasShowing) {
+          api.dismissNotification?.(LOAD_ORDER_NOTIFICATION_ID);
+          ehLog("info", "loadorder.watch.restored", { gameId: active.gameId, profile: active.profileName, package: receiptLabel(receipt) });
+        }
         return;
       }
       const said = describeLoadOrder(status);
-      ehLog("warn", "loadorder.watch.drifted", { gameId, package: receipt.packageName, headline: said.headline });
+      ehLog("warn", "loadorder.watch.drifted", { gameId: active.gameId, profile: active.profileName, package: receiptLabel(receipt), headline: said.headline });
       api.sendNotification?.({
         id: LOAD_ORDER_NOTIFICATION_ID,
         type: "warning",

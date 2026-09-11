@@ -390,7 +390,9 @@ function PlayerPanel(props: {
                   </div>
                 </div>
                 <div className="eh-row">
-                  <LoadOrderBadge receipt={receipt} />
+                  {/* Every receipt, not just the three shown: the newest
+                      install into a profile owns its order. */}
+                  <LoadOrderBadge receipt={receipt} receipts={receipts} />
                   <Pill
                     intent={
                       receipt.installTargetMode === "fresh-profile"

@@ -168,4 +168,38 @@ describe("gatherObservations", () => {
     expect(obs.currentModRuleCount).toBeUndefined();
     expect(obs.existingProfileIds).toEqual([]);
   });
+
+  it("records whether the receipt's load order may be judged, and the natives to drop", async () => {
+    // Vortex's loadOrder is the ACTIVE profile's. A collection installed into
+    // prof-1, looked at from Default, must not be compared against it.
+    const state = {
+      settings: { profiles: { activeProfileId: "default" } },
+      persistent: {
+        profiles: {
+          "prof-1": { gameId: "fallout4", name: "Ivy 2" },
+          default: { gameId: "fallout4", name: "Default" },
+        },
+      },
+      session: { plugins: { pluginList: { "fallout4.esm": { isNative: true }, "a.esp": {} } } },
+      loadOrder: { "a.esp": { name: "a.esp", enabled: true, loadOrder: 0 } },
+    };
+    const orderReceipt = {
+      packageId: "pkg",
+      packageName: "Ivy 2",
+      gameId: "fallout4",
+      vortexProfileId: "prof-1",
+      vortexProfileName: "Ivy 2",
+      installedAt: "2026-09-01T00:00:00.000Z",
+      rulesApplication: { baselinePluginOrder: [{ name: "a.esp", enabled: true }] },
+    };
+    const obs = await gatherObservations({
+      api: api(state),
+      gameId: "fallout4",
+      receiptProfileId: "prof-1",
+      orderReceipt,
+      receipts: [orderReceipt],
+    });
+    expect(obs.loadOrderStanding).toEqual({ kind: "other-profile", profileName: "Ivy 2" });
+    expect(obs.nativePluginNames).toEqual(["fallout4.esm"]);
+  });
 });
