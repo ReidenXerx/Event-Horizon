@@ -72,6 +72,7 @@ export function LoadOrderCard(props: {
                 "not-active-game": "other game",
                 "other-profile": "other profile",
                 superseded: "superseded",
+                "plugins-off": "plugins off",
               } as Partial<Record<LoadOrderStatus["kind"], string>>
             )[status.kind] ?? "unknown"}
           </Pill>

@@ -611,4 +611,22 @@ describe("the plugin-order check asks whose order it is", () => {
     );
     expect(byId(checks, "plugin-order").status).toBe("drifted");
   });
+
+  it("reports a curator plugin switched off on its own, with no re-apply and no blame on the sort", () => {
+    const checks = evaluateHealth(
+      receipt(),
+      healthy({
+        currentPluginOrderFromState: [
+          { name: "a.esp", enabled: true },
+          { name: "b.esp", enabled: false },
+          { name: "c.esp", enabled: true },
+        ],
+      }),
+    );
+    const c = byId(checks, "plugin-order");
+    expect(c.status).toBe("drifted");
+    expect(c.summary).toMatch(/^1 curator plugin off/);
+    expect(c.heal).toBeUndefined();
+    expect([c.summary, ...c.detail].join(" ")).not.toMatch(/sort/i);
+  });
 });

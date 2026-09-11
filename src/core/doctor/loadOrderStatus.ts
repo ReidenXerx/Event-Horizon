@@ -30,6 +30,13 @@
  * an older one is "superseded", with no drift, no notification and no
  * Re-apply — otherwise re-applying one drifts the other, forever.
  *
+ * ─── OFF IS NOT OUT OF ORDER ───────────────────────────────────────────
+ * A curator plugin the user switched off (or never got) is a different fact
+ * from a sort that moved plugins, with a different fix. Settled with the
+ * user: its own status, "N curator plugins off" — no drift notification, no
+ * Re-apply offer (the re-apply keeps every plugin's enabled flag, so it
+ * cannot turn one back on), and no wording that blames the sort.
+ *
  * Pure. Every Vortex read is a function of the state handed in.
  * ──────────────────────────────────────────────────────────────────────
  */
@@ -54,6 +61,12 @@ export type LoadOrderStatus =
   /** This game has no plugin list. */
   | { kind: "not-applicable" }
   | { kind: "matches"; owned: number; extra: number }
+  /**
+   * The order holds, but plugins the curator enabled are off or absent here.
+   * Nothing was moved; nothing a re-apply can fix.
+   */
+  | { kind: "plugins-off"; owned: number; extra: number; missing: string[] }
+  /** Collection plugins load out of the curator's order (and some may also be off). */
   | { kind: "drifted"; owned: number; extra: number; drift: PluginOrderDrift };
 
 /** What an order check needs from a receipt. `InstallReceipt` satisfies it. */
@@ -208,8 +221,9 @@ export function assessLoadOrder(args: {
   const drift = comparePluginOrder(curator, user);
   const owned = drift.compared;
   const extra = drift.extra.length;
-  if (drift.misordered.length === 0 && drift.missing.length === 0) return { kind: "matches", owned, extra };
-  return { kind: "drifted", owned, extra, drift };
+  if (drift.misordered.length > 0) return { kind: "drifted", owned, extra, drift };
+  if (drift.missing.length > 0) return { kind: "plugins-off", owned, extra, missing: drift.missing };
+  return { kind: "matches", owned, extra };
 }
 
 /**
@@ -234,7 +248,10 @@ export function assessReceiptOrder(args: {
   });
 }
 
-/** Only these statuses describe the active order, and only they may offer a re-apply. */
+/**
+ * Only these statuses describe an order this receipt owns that a re-apply
+ * can act on. `plugins-off` is excluded on purpose: the order already holds.
+ */
 export function canReapply(
   status: LoadOrderStatus,
 ): status is Extract<LoadOrderStatus, { kind: "matches" | "drifted" }> {
@@ -244,13 +261,16 @@ export function canReapply(
 /**
  * A stable fingerprint of a drift, so a watcher notifies on a CHANGE of
  * drift and not on every state tick while the same drift persists. Empty
- * when nothing is wrong.
+ * when nothing is out of order.
+ *
+ * The misordered plugins only. A plugin switched off is not drift (see the
+ * header), so toggling one while the order is also off must not re-announce
+ * the same sort.
  */
 export function driftSignature(status: LoadOrderStatus): string {
   if (status.kind !== "drifted") return "";
   const m = status.drift.misordered.map((x) => key(x.name)).sort();
-  const g = status.drift.missing.map(key).sort();
-  return `m:${m.join("|")};g:${g.join("|")}`;
+  return `m:${m.join("|")}`;
 }
 
 /** One headline and the lines under it, for a card or a notification. */
@@ -301,6 +321,17 @@ export function describeLoadOrder(status: LoadOrderStatus): {
             ? [`${status.extra.toLocaleString()} plugin(s) of your own sit between them where LOOT placed them.`]
             : [],
       };
+    case "plugins-off": {
+      const n = status.missing.length;
+      return {
+        tone: "warning",
+        headline: `${curatorPluginsOff(n)}: enabled in the collection, not enabled or not installed here`,
+        detail: [
+          `${status.missing.slice(0, 5).join(", ")}${n > 5 ? ` and ${(n - 5).toLocaleString()} more` : ""}.`,
+          `The ${status.owned.toLocaleString()} that are on load in the curator's order. Re-applying the order does not turn a plugin back on — enable it in Vortex if switching it off was not deliberate.`,
+        ],
+      };
+    }
     case "drifted": {
       const d = status.drift;
       const detail: string[] = [];
@@ -308,18 +339,14 @@ export function describeLoadOrder(status: LoadOrderStatus): {
       if (d.misordered.length > 6) detail.push(`and ${d.misordered.length - 6} more out of place.`);
       if (d.missing.length > 0) {
         detail.push(
-          `Not present or not enabled here: ${d.missing.slice(0, 5).join(", ")}` +
+          `Also off or not installed here: ${d.missing.slice(0, 5).join(", ")}` +
             (d.missing.length > 5 ? ` and ${d.missing.length - 5} more` : "") +
             `.`,
         );
       }
-      const moved = d.misordered.length;
       return {
-        tone: moved > 0 ? "danger" : "warning",
-        headline:
-          moved > 0
-            ? `${moved.toLocaleString()} of ${status.owned.toLocaleString()} collection plugins no longer load in the curator's order`
-            : `${d.missing.length.toLocaleString()} plugin(s) the curator enabled are not enabled here`,
+        tone: "danger",
+        headline: `${d.misordered.length.toLocaleString()} of ${status.owned.toLocaleString()} collection plugins no longer load in the curator's order`,
         detail,
       };
     }
@@ -329,6 +356,11 @@ export function describeLoadOrder(status: LoadOrderStatus): {
       return { tone: "neutral", headline: "", detail: [] };
     }
   }
+}
+
+/** "1 curator plugin off", "3 curator plugins off" — the card's and the badge's words. */
+export function curatorPluginsOff(n: number): string {
+  return `${n.toLocaleString()} curator plugin${n === 1 ? "" : "s"} off`;
 }
 
 /**

@@ -15,7 +15,7 @@
 
 import * as React from "react";
 
-import { assessReceiptOrder, canReapply, type LoadOrderStatus } from "../../../core/doctor/loadOrderStatus";
+import { assessReceiptOrder, canReapply, curatorPluginsOff, type LoadOrderStatus } from "../../../core/doctor/loadOrderStatus";
 import { reapplyCuratorOrder } from "../../../core/doctor/loadOrderWatcher";
 import type { InstallReceipt } from "../../../types/installLedger";
 import { Button, Pill, type PillIntent } from "../../components";
@@ -68,14 +68,19 @@ export function badgePill(status: LoadOrderStatus): { intent: PillIntent; text: 
       return { intent: "neutral", text: `superseded by ${status.by}`, title: "A newer collection installed into this profile owns its load order." };
     case "matches":
       return { intent: "success", text: "load order ok", title: "The collection's plugins load in the curator's order" };
-    case "drifted": {
-      const moved = status.drift.misordered.length;
+    case "plugins-off":
+      // Not drift, and not the sort's doing: the order holds.
+      return {
+        intent: "warning",
+        text: curatorPluginsOff(status.missing.length),
+        title: "Plugins the curator enabled are off or not installed here; the order itself matches.",
+      };
+    case "drifted":
       return {
         intent: "danger",
-        text: `load order: ${moved > 0 ? `${moved.toLocaleString()} moved` : `${status.drift.missing.length.toLocaleString()} missing`}`,
+        text: `load order: ${status.drift.misordered.length.toLocaleString()} moved`,
         title: "Vortex's sort replaced the curator's order for these plugins",
       };
-    }
     default: {
       const exhaustive: never = status;
       void exhaustive;

@@ -119,3 +119,27 @@ describe("watchLoadOrderState — the badge re-reads live", () => {
     }
   });
 });
+
+describe("LoadOrderBadge — a curator plugin switched off", () => {
+  it("says how many are off, and offers no Re-apply", () => {
+    // Order intact (A before B), B switched off.
+    const state = {
+      ...(stateOn("prof-ivy") as object),
+      loadOrder: {
+        "a.esp": { name: "A.esp", enabled: true, loadOrder: 0 },
+        "b.esp": { name: "B.esp", enabled: false, loadOrder: 1 },
+      },
+    };
+    const html = renderToStaticMarkup(
+      React.createElement(ApiProvider, {
+        api: { getState: () => state } as never,
+        children: React.createElement(ToastProvider, {
+          children: React.createElement(LoadOrderBadge, { receipt: receipt(), receipts: [receipt()] }),
+        }),
+      }),
+    );
+    expect(html).toContain("1 curator plugin off");
+    expect(html).not.toContain("Re-apply");
+    expect(html).not.toContain("moved");
+  });
+});

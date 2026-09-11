@@ -494,6 +494,23 @@ export function evaluateHealth(
       detail: [],
       affectedCount: 0,
     });
+  } else if (assessedOrder.kind === "plugins-off") {
+    /**
+     * ─── OFF, NOT OUT OF ORDER ──────────────────────────────────────────
+     * Settled with the user: its own status. The order holds; plugins the
+     * curator enabled are off or not installed. No heal — the re-apply keeps
+     * every enabled flag, so it would report success and change nothing —
+     * and no wording that blames a sort that did not happen.
+     */
+    const said = describeLoadOrder(assessedOrder);
+    checks.push({
+      id: "plugin-order",
+      title: "Plugin order",
+      status: "drifted",
+      summary: said.headline,
+      detail: said.detail,
+      affectedCount: assessedOrder.missing.length,
+    });
   } else if (!canReapply(assessedOrder)) {
     /**
      * ─── NOT THIS RECEIPT'S ORDER TO JUDGE ──────────────────────────────

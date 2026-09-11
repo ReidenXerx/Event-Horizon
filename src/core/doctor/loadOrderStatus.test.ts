@@ -186,3 +186,37 @@ describe("whose order it is", () => {
     expect(assessReceiptOrder({ receipt: older, receipts: [older, stopped], state }).kind).toBe("matches");
   });
 });
+
+/**
+ * Settled with the user: a curator plugin switched off (or never installed),
+ * with the relative order intact, is its own status — no drift notification,
+ * no Re-apply offer, no wording blaming the sort.
+ */
+describe("a curator plugin switched off is not drift", () => {
+  const baseline = on("A.esp", "B.esp", "C.esp");
+
+  it("is its own status: nothing to re-apply, no notification signature, no blame on the sort", () => {
+    const status = assessLoadOrder({
+      baseline,
+      current: [
+        { name: "A.esp", enabled: true },
+        { name: "B.esp", enabled: false },
+        { name: "C.esp", enabled: true },
+      ],
+    });
+    expect(status).toEqual({ kind: "plugins-off", owned: 2, extra: 0, missing: ["B.esp"] });
+    expect(canReapply(status)).toBe(false);
+    expect(driftSignature(status)).toBe("");
+    const said = describeLoadOrder(status);
+    expect(said.headline).toMatch(/^1 curator plugin off/);
+    expect([said.headline, ...said.detail].join(" ")).not.toMatch(/sort/i);
+  });
+
+  it("does not re-announce a real drift because a plugin was also switched off", () => {
+    const moved = assessLoadOrder({ baseline, current: on("B.esp", "A.esp", "C.esp") });
+    const movedAndOff = assessLoadOrder({ baseline, current: [...on("B.esp", "A.esp"), { name: "C.esp", enabled: false }] });
+    expect(moved.kind).toBe("drifted");
+    expect(movedAndOff.kind).toBe("drifted");
+    expect(driftSignature(movedAndOff)).toBe(driftSignature(moved));
+  });
+});
