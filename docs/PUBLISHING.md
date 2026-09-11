@@ -199,11 +199,16 @@ are 2 MB each and want resizing before they go anywhere.
 | `icon-512.png` | transparent mark, for anywhere square |
 | `wordmark.png` | transparent lockup, for a light-on-dark header |
 
-`NEXUS_MOD_PAGE.bbcode` opens with `[img]PASTE_BANNER_URL_HERE[/img]`. Nexus
-does not serve images from a repo, so upload `banner.jpg` to the mod's image
-gallery first, then paste the URL Nexus gives it over that placeholder. The
-token is deliberately not a valid URL: left unreplaced it breaks visibly on
-the page rather than quietly rendering nothing.
+`NEXUS_MOD_PAGE.bbcode` embeds its images straight from the repository on
+GitHub (`raw.githubusercontent.com/.../docs/branding/banner.jpg` and
+`docs/screenshots/*.png`), so the description needs no gallery upload to
+render. The gallery is still worth filling for the page's thumbnail and the
+image strip — the same files, from `docs/screenshots/`.
+
+The description itself cannot be written through the Nexus API: v3 exposes
+mods read-only (only collections have an edit endpoint, checked against
+`api.nexusmods.com/openapi.yaml` on 2026-09-11). Paste the file's contents into
+the page's description editor by hand after a release that changes it.
 
 The banner already carries the wordmark and the tagline, so the text title
 below it is deliberate duplication — it is what the page still says if the

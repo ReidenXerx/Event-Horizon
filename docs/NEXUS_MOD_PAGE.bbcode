@@ -1,131 +1,82 @@
-[center][img]PASTE_BANNER_URL_HERE[/img][/center]
+[center][img]https://raw.githubusercontent.com/ReidenXerx/Event-Horizon/master/docs/branding/banner.jpg[/img][/center]
 [center][size=6][b]EVENT HORIZON[/b][/size][/center]
-[center][b]Reproduce a curator's exact mod state. Verified, not hoped.[/b][/center]
+[center][b]Build a collection that arrives the way you built it. Then keep it that way.[/b][/center]
 
-[center][b]A Vortex extension for building and installing collections that actually arrive the way they were built.[/b][/center]
+A Vortex extension in two halves. [b]Curators[/b] get a workbench that sees the whole profile at once, reads what every mod requires, installs what is missing, and packs the exact working setup into a hash-verified package. [b]Players[/b] get an installer that rebuilds that setup one mod at a time, proves every archive matches, pins the curator's load order, and says so the moment anything drifts.
 
-
-[size=5][b]The problem[/b][/size]
-
-Vortex's collection system is a good idea that loses state.
-
-Mod rules go missing. FOMOD selections get dropped. File overrides reset. Load order comes out subtly different. And "the same collection" produces a different install on a different machine — [b]silently[/b], which is the part that costs you a weekend.
-
-Nothing fails. Nothing warns you. The game just behaves differently from the curator's, and neither of you can point at why.
-
-[b]Event Horizon attacks that from the other end.[/b] It captures every load-bearing piece of state on the curator's side into a portable, hash-verified package, then rebuilds it on the user's side through Vortex's own installer and deploy primitives. It never touches the vanilla collection codepath.
-
-
-[size=5][b]How is it different from a Vortex Collection?[/b][/size]
-
-A Vortex Collection is a [b]list of mods[/b]. It tells your machine what to fetch.
-
-An Event Horizon package is a [b]snapshot of a working setup[/b]. It records what the curator actually had, and checks that you ended up with it.
-
-[quote][b]Vortex Collection:[/b] "Here are the mods. Install them."
+[quote][b]A Vortex Collection:[/b] "Here are the mods. Install them."
 [b]Event Horizon:[/b] "Here is the exact state that worked. Rebuild it, and prove it matches."[/quote]
 
-That difference is the whole point. It is why the package carries SHA-256 hashes for every archive, the curator's plugin order, their ESL flags, and their mod rules — and why the installer tells you when what landed on your disk is not what the curator had.
+[center][img]https://raw.githubusercontent.com/ReidenXerx/Event-Horizon/master/docs/screenshots/dashboard-home.png[/img][/center]
 
 
-[size=5][b]What it does[/b][/size]
+[size=5][b]For players[/b][/size]
 
-[b]On the curator's side[/b]
-Snapshots the active profile — mod identity and archive SHA-256, enabled state, mod rules, install order, load order, per-modtype deployment manifests, and the ESL/light flag on every plugin. Packs it into a [b].ehcoll[/b] file: a self-contained ZIP with a versioned manifest. External mods that can't be linked can be bundled into the package itself.
+[b]Install a collection.[/b] Drop a .ehcoll file. The plan is shown before anything is written: what you already have, what installs silently, what needs you, what can no longer be downloaded. Your game setup is checked first — an unmanaged game, a never-started game, a file from a different store's copy, an install under Program Files — and the install stops with the steps to fix it, not an hour later.
 
-[b]On the user's side[/b]
-Resolves every mod against what you already have, downloads or extracts the rest, and installs them [b]one at a time[/b]. Then:
+[center][img]https://raw.githubusercontent.com/ReidenXerx/Event-Horizon/master/docs/screenshots/preview.png[/img][/center]
 
-[list]
-[*][b]Verifies what landed.[/b] Every installed archive is hashed against the manifest and reported as [b]matches[/b], [b]differs[/b], [b]damaged[/b] or [b]unknown[/b]. Telling [i]differs[/i] from [i]damaged[/i] matters: only a damaged archive is fixed by downloading it again, and only that one isn't the curator's problem.
-[*][b]Applies the curator's mod rules and LOOT userlist.[/b] See the warning below — this one replaces yours.
-[*][b]Pins the curator's plugin order and restores ESL flags.[/b] Plugins you have that the collection doesn't know about are integrated LOOT-style, not dumped at the bottom.
-[*][b]Replays the curator's FOMOD answers — and asks you first.[/b] Before the install starts you choose once: apply the curator's answers automatically, or open every installer with them pre-filled so you can watch and change them. Automatic is the default and it is [i]much[/i] faster — one tester's run spent under 5 ms per mod on the automatic path and up to eight minutes on a single dialog he was reading. Choosing to differ is fine, and the page tells you what it costs before you pick.
-[*][b]Applies the curator's INI tweaks and game settings.[/b] A mod's optional [i]ini tweaks[/i] get re-ticked exactly as the curator had them — additively, so it never unticks something you chose yourself. A tweak is invisible until the game runs differently, which is the worst kind of thing to silently lose.
-[*][b]Writes a receipt[/b], which is how it recognises an upgrade later instead of treating it as a fresh install.
-[/list]
+[b]One mod at a time.[/b] Vortex loses files when mods install at once, so this never does. Every archive is hashed against the manifest and reported as [b]matches[/b], [b]differs[/b], [b]damaged[/b] or [b]unknown[/b]. The curator's FOMOD answers are replayed; you choose once whether to watch them or let them apply.
 
-[b]Every ending leaves a trace.[/b] A finished install writes a receipt. A crash leaves a marker. A run that failed or was cancelled records which step it stopped at and how far it got — and all three show up under [b]My Collections[/b]. If an install stops at mod 900 of 967 you can see that, instead of finding an empty list and a machine full of mods.
+[b]The load order is the curator's, and it stays that way.[/b] The install pins the curator's order for the collection's plugins, lets LOOT place your own plugins between them, then puts the collection's plugins back in the curator's sequence. Afterwards Event Horizon keeps watching: the moment Vortex's automatic sort or a Sort click replaces that order, a notification tells you, with [b]Re-apply curator's order[/b] right on it. Home and the Doctor show the state at a glance.
 
-[b]Auditing[/b]
-Export a snapshot to JSON and diff it later. Diff a reference plugins.txt against your live one. Reports are browsable in-app.
+[center][img]https://raw.githubusercontent.com/ReidenXerx/Event-Horizon/master/docs/screenshots/load-order-drifted.png[/img][/center]
+
+[b]Collection Doctor.[/b] Is this collection still what was installed? Profile, mods present, mods enabled, staged files, plugin order, ESL flags, mod rules, LOOT rules — each answered separately, and "not checked" is never shown as "fine". Every finding that can be repaired has the repair on its card, run through the same step the install used.
+
+[center][img]https://raw.githubusercontent.com/ReidenXerx/Event-Horizon/master/docs/screenshots/doctor.png[/img][/center]
+
+[b]An interrupted install continues where it stopped[/b], in the same profile, even after Vortex was killed. Every ending leaves a trace under [b]My Collections[/b]: a finished install writes a receipt, a failed or cancelled one records exactly where it stopped.
+
+[b]Linux and Steam Deck are supported targets, not tolerated ones.[/b] Event Horizon reads its own packages with its own ZIP reader, so nothing is spawned inside a Proton prefix that can fail for reasons unrelated to your files. A 950-mod collection has been installed and verified under umu/Proton.
 
 
-[size=5][b]Linux and Steam Deck are first-class[/b][/size]
+[size=5][b]For curators[/b][/size]
 
-[b]This is not "it might work under Proton". It is a supported target, and real work went into making it one.[/b]
+[b]Curator Tools is one workbench.[/b] Your whole profile in one table: updates, manual updates, frozen mods, missing requirements, mods others depend on, duplicates, disabled, outside-Data kinds, non-Nexus archives. Views combine, a search box finds a mod, a requirement, a plugin or a provider by name, and the action bar offers only what applies to what you ticked.
 
-Vortex bundles 7-Zip, and 7-Zip is spawned as an external process. Under a Wine/Proton prefix that spawn fails for reasons that have nothing to do with your files — and it surfaces as [i]"7z failed to list"[/i], which reads as [b]"your collection is corrupt"[/b] when it is perfectly fine. That single misleading error is enough to make a Linux user abandon a collection that would have installed.
-
-So Event Horizon reads its own packages with its own ZIP reader — no external process, nothing to fail in a prefix. Timeouts are platform-aware too, because a Proton prefix legitimately needs longer than Windows, and a fixed deadline turns a slow-but-healthy install into a fake hang.
-
-[b]The whole 950+ mod collection has been installed and verified on Linux under umu/Proton, not only on Windows.[/b] If you mod on a Steam Deck or a Linux desktop, this was built for you rather than tolerated on you.
-
-
-[size=5][b]It refuses to start work it cannot finish[/b][/size]
-
-An hour into a 900-mod install is the worst possible place to discover your machine was never able to do it. Two things are checked [b]before[/b] anything is written:
+[center][img]https://raw.githubusercontent.com/ReidenXerx/Event-Horizon/master/docs/screenshots/curator-requirements.png[/img][/center]
 
 [list]
-[*][b]A broken extractor stops the install[/b] — and offers to install the Microsoft runtimes for you, then re-tests and tells you what the [i]test[/i] said rather than trusting an installer's exit code.
-[*][b]No working deployment method stops the install.[/b] Vortex can stage every mod perfectly and still have no way to link them into your game folder — common under Proton — and it names the exact setting that fixes it. One tester lost 70 minutes to this before the check existed.
+[*][b]Requirements, read and acted on.[/b] Every mod's Nexus requirements and every plugin's masters, resolved against your pool: satisfied, installed but disabled, missing, off Nexus, DLC. Each line gets the one action that fits. Enabling a mod enables the providers it lists; disabling a provider tells you who needs it and offers to take them down too.
+[*][b]Make it work.[/b] One button reads the whole chain of what a mod is missing — each requirement's own requirements too — shows the plan, lets you choose where a page ships several files, then installs in dependency order and waits for each to land. Without Nexus Premium it runs guided, opening each page in turn.
+[*][b]Bulk update, one mod at a time[/b], each verified against its archive afterwards. [b]Freeze[/b] a mod at a version and be told loudly if Vortex's own update button moves it anyway. [b]Endorse[/b] with Nexus's answer read back per mod.
+[*][b]Plugins:[/b] which mod ships each plugin, missing versus disabled masters, the light flag, and the regular-slot count against the 254 limit. Enable, disable and flag light from here.
+[*][b]Downloads[/b] nothing was ever made from, installed on request. [b]Disk cleanup[/b] that never chooses removals for you, and separates proven old versions from files that merely share a page.
+[*][b]Notes[/b] on a mod. Start one with @users and it ships in the collection, shown to installers under "From the curator".
 [/list]
 
-While it runs, one bad mod costs one mod rather than the run. A [i]streak[/i] of failures is treated as a problem with the machine and stops immediately, and downloads are retried with a wait that matches the failure: a deleted file answers in under a second and is not worth waiting for, a rate limit hangs for twenty and is.
+[center][img]https://raw.githubusercontent.com/ReidenXerx/Event-Horizon/master/docs/screenshots/curator-install-plan.png[/img][/center]
+
+[center][img]https://raw.githubusercontent.com/ReidenXerx/Event-Horizon/master/docs/screenshots/curator-plugins.png[/img][/center]
+
+[b]Build.[/b] The build asks Nexus about every mod in your collection and separates [b]file gone[/b] from [b]page gone[/b] — you are the one person who cannot notice, because your copy is already on disk. A mod that can no longer be downloaded ships as an external dependency, by hash, with a bundle, a link or instructions. Mirroring reproduces your staging folder byte for byte; a fourth FOMOD answer, "leave it out", is measured instead of guessed; two builds cannot share a version number.
+
+[center][img]https://raw.githubusercontent.com/ReidenXerx/Event-Horizon/master/docs/screenshots/build-form.png[/img][/center]
 
 
-[size=5][b]The Collection Doctor[/b][/size]
-
-[b]Is this collection still what was installed?[/b] Ask any time, and get an answer per aspect rather than a single green tick: your profile, mods present, mods enabled, staged files, plugin order, mod rules, LOOT rules.
-
-It measures against [b]what actually got installed on your machine[/b], not against the curator's disk — so it reports drift [i]you[/i] caused rather than drift that was never yours. Anything it can repair, it can repair on the spot, by re-running the same step the install used. An optional deep scan hashes every staged file when you want certainty rather than a quick answer.
-
-Checks it could not perform say so. "Not checked" is never shown as "fine".
-
-
-[size=5][b]For curators: it tells you what your users cannot download[/b][/size]
-
-You are the one person who cannot notice that Nexus has deleted a mod in your collection — your copy is already on disk, so it packs and ships perfectly and fails only on somebody else's machine, hundreds of mods into their install.
-
-The build page asks Nexus about every mod in your collection and separates [b]file gone[/b] (an author tidying up an old version — it names the current file) from [b]page gone[/b] (usually deliberate). It also lists files filed as old or archived: they download today, and they are exactly how a collection quietly stops working six months from now.
-
-A mod that can no longer be downloaded can be shipped as an [b]external dependency[/b] instead, with a bundle, a link, or instructions — so the collection stays installable.
-
-
-[size=5][b]⚠ Two things it will do that you should know about[/b][/size]
+[size=5][b]Two things it will do that you should know about[/b][/size]
 
 [b]1. It replaces your mod rules and LOOT userlist. It does not merge them.[/b]
 
-Everything is backed up first, and the backup reaching disk is a hard interlock — the purge does not run without it.
+Everything is backed up first, and the backup reaching disk is a hard interlock — the purge does not run without it. Merging the collection's rules into yours would produce a rule set that exists on nobody else's machine, and it fails invisibly: every file verifies, and the game still loads something different.
 
-This is deliberate. Merging the collection's rules into yours produces a rule set that exists on nobody else's machine, and it fails [i]invisibly[/i]: every file verifies, every hash matches, and the game still loads something different. Vortex stores mod rules per-mod and the LOOT userlist per-game, so this also clears rules you set for [b]other profiles of the same game[/b]. That is not recoverable from Vortex itself, which is why the backup exists.
+[b]2. Nexus Premium is recommended, not required.[/b]
 
-[b]2. Nexus Premium is strongly recommended.[/b]
-
-Without it, installing a large collection means one manual click per mod. It is not blocked, and you will be warned — but a 900-mod collection without Premium is an afternoon of clicking.
+Without it, large installs and "Make it work" run guided: one page opened at a time, one "Mod manager download" click from you per mod. Nothing is blocked, and you are told before it starts.
 
 
-[size=5][b]Roadmap[/b][/size]
+[size=5][b]Known gap[/b][/size]
 
-This is an [b]alpha[/b], and it is actively being worked on. What is coming:
-
-[list]
-[*][b]Applying file overrides.[/b] Captured in full today and preserved in every package — the remaining work is applying them on the user's side. It is the last captured thing that is recorded and not yet used.
-[*][b]Resuming an install where it stopped.[/b] Re-running already picks up from what is on your disk, because it re-matches by hash rather than trusting a record. Making that a single button is the next step.
-[*][b]Undo an install.[/b] Today a failed run leaves what it installed in place. A clean rollback is wanted.
-[*][b]Richer drift reporting.[/b] Show exactly what changed between the curator's setup and yours, not merely that something did.
-[*][b]More UI polish.[/b] Clearer progress while a long install runs, and better reporting when something needs your attention.
-[/list]
-
-Requests and bug reports genuinely shape this list — see [b]Source and issues[/b] below.
+File overrides are captured in every package and not yet applied on the install side. It is the last captured thing that is recorded and not used, and it is said here rather than buried because it bounds the word "deterministic".
 
 
 [size=5][b]Requirements[/b][/size]
 
 [list]
 [*][b]Vortex 2.x.[/b] Built against vortex-api 2.6.0-beta.2 (React 18). It will [b]not[/b] run on Vortex 1.16.
-[*][b]Nexus Premium[/b] — strongly recommended, not required.
-[*][b]Windows, or Linux via Proton.[/b] Both fully supported — see above.
+[*][b]Windows, or Linux via Proton.[/b] Both supported.
+[*][b]Nexus Premium[/b] recommended, not required.
 [/list]
 
 
@@ -135,38 +86,33 @@ Requests and bug reports genuinely shape this list — see [b]Source and issues[
 [*]Download the archive from this page.
 [*]In Vortex, open [b]Extensions[/b] and drop the zip onto the drop zone at the bottom of the list.
 [*]Restart Vortex when prompted.
-[*][b]Event Horizon[/b] appears in the sidebar.
+[*][b]Event Horizon[/b] appears in the sidebar. There is nothing to configure.
 [/list]
-
-There is nothing to configure. Open the page and it is ready.
 
 
 [size=5][b]Supported games[/b][/size]
 
 [list]
-[*][b]Fallout 4[/b]
 [*][b]Skyrim Special Edition[/b]
+[*][b]Fallout 4[/b]
 [*][b]Fallout 3[/b]
 [*][b]Fallout New Vegas[/b]
 [*][b]Starfield[/b]
 [/list]
 
-Proven on a real [b]950+ mod Fallout 4 collection[/b], on Windows and on Linux under Proton.
+Proven on a real 950-mod Fallout 4 collection, on Windows and on Linux under Proton, and on a 1,900-mod Skyrim Special Edition profile.
 
 
-[size=5][b]Source and issues[/b][/size]
+[size=5][b]Source, changelog and issues[/b][/size]
 
-Source, issue tracker and full technical documentation:
+Source, issue tracker, full technical documentation and a changelog written for the people who use it:
 [url=https://github.com/ReidenXerx/Event-Horizon]github.com/ReidenXerx/Event-Horizon[/url]
 
-Bug reports are far more useful than endorsements at this stage. If an install goes wrong, the extension can export a diagnostic report — attach that.
+Bug reports are far more useful than endorsements. If an install goes wrong, the Doctor can save every log into one zip — attach that.
 
 
 [size=5][b]Credits[/b][/size]
 
-Built by [b]DuduPhudu[/b] and [b]Bluuuk[/b].
-
-MIT licensed.
-
+Built by [b]DuduPhudu[/b] and [b]Bluuuk[/b]. MIT licensed.
 
 [center][i]Vortex is a black hole. Collections, rules, FOMOD selections, conflict overrides — they all get pulled in and never come out the same on the other side. Event Horizon is the boundary that captures everything before it crosses over.[/i][/center]
