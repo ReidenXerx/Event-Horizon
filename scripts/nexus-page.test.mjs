@@ -18,6 +18,12 @@ describe("lineBreaksDropped", () => {
     expect(lineBreaksDropped(written, written)).toBe(0);
   });
 
+  it("forgives the second break of a blank line after [/list], as the EH page showed", () => {
+    const withBlank = "[list]\n[*]one\n[/list]\n\n[size=5]Installation[/size]";
+    expect(lineBreaksDropped(withBlank, "[list]\n[*]one\n[/list]\n[size=5]Installation[/size]")).toBe(1);
+    expect(lineBreaksDropped(withBlank, "[list]\n[*]one\n[/list][size=5]Installation[/size]")).toBe(2);
+  });
+
   it("still reports a break dropped between words, which joins them on the page", () => {
     expect(lineBreaksDropped(written, written.replace("below.\nSecond", "below.Second"))).toBeUndefined();
   });

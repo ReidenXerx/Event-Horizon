@@ -90,14 +90,15 @@ export function firstDifference(expected, actual) {
  * How many line breaks the site's editor dropped, when that is the ONLY
  * difference; undefined when anything else differs.
  *
- * Measured on three pages (2026-09-11): saving through SCEditor removes the
- * line break straight after [/list] and [/quote] — 8 on one page, 4 on
- * another — and nothing else. Only a break after one of those closing tags is
- * forgiven: a break dropped between two words would join them on the page, and
- * that is still reported as a difference.
+ * Measured on three pages (2026-09-11): saving through SCEditor removes line
+ * breaks straight after [/list] and [/quote] — 7 on one page, 4 on another,
+ * 5 on the third, two of those the second break of a blank line — and nothing
+ * else. Only breaks right after one of those closing tags are forgiven: a
+ * break dropped between two words would join them on the page, and that is
+ * still reported as a difference.
  */
 export function lineBreaksDropped(expected, actual) {
-  const collapse = (s) => normalizeText(s).replace(/(\[\/(?:list|quote)\])\n/gi, "$1");
+  const collapse = (s) => normalizeText(s).replace(/(\[\/(?:list|quote)\])\n+/gi, "$1");
   if (collapse(expected) !== collapse(actual)) return undefined;
   const breaks = (s) => (normalizeText(s).match(/\n/g) ?? []).length;
   const dropped = breaks(expected) - breaks(actual);
