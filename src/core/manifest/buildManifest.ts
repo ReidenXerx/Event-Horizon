@@ -19,6 +19,7 @@
  *    {@link BuildManifestResult.warnings} for the UI to surface.
  */
 
+import { publicNote } from "../curator/readProfile";
 import { shipsAsExternal } from "./shipsAsExternal";
 
 import { toPosix } from "../paths";
@@ -759,11 +760,12 @@ function buildModInstallState(
 }
 
 function buildUiAttributes(
-  _mod: AuditorMod,
+  mod: AuditorMod,
 ): EhcollMod["attributes"] {
-  // No-op for now — AuditorMod doesn't currently carry category/description.
-  // Schema field is optional; emit undefined and let future capture passes fill it in.
-  return undefined;
+  // Only a note the curator marked for users ships; a private note is the
+  // curator's own and never leaves their machine (settled with the user).
+  const note = publicNote(mod.curatorNote);
+  return note === undefined ? undefined : { curatorNote: note };
 }
 
 // ---------------------------------------------------------------------------

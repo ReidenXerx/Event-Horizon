@@ -129,6 +129,14 @@ export interface HealthObservations {
    */
   currentPluginOrder: readonly PluginOrderEntry[] | undefined;
   /**
+   * The order Vortex HOLDS right now (its loadOrder state), natives excluded.
+   * What the watcher compares and what plugins.txt is about to become; the
+   * file lags it by a moment. Absent when the plugin extension lists nothing.
+   */
+  currentPluginOrderFromState?: readonly PluginOrderEntry[];
+  /** plugins.txt on disk disagrees with Vortex's state right now (a write in flight, or a hand edit). */
+  pluginsTxtMismatch?: boolean;
+  /**
    * ESL / light flag of each recorded plugin as it is on disk NOW, keyed by
    * LOWERCASED name. `undefined` when it could not be read at all — which is
    * "not checked", never "no drift".
@@ -454,7 +462,9 @@ export function evaluateHealth(
      * A diagnostic that is red on healthy machines teaches people to ignore
      * it, which is the expensive direction for a tool nobody can inspect.
      */
-    const drift = comparePluginOrder(baseline, obs.currentPluginOrder);
+    // Settled with the user: Vortex's state is the source, so Doctor and the
+    // live watcher agree instantly; the file is reported when it disagrees.
+    const drift = comparePluginOrder(baseline, obs.currentPluginOrderFromState ?? obs.currentPluginOrder);
     const same = drift.misordered.length === 0 && drift.missing.length === 0;
     checks.push({
       id: "plugin-order",
@@ -476,6 +486,9 @@ export function evaluateHealth(
               .map((m) => `"${m.name}" should load after "${m.expectedAfter}"`),
             ...(drift.missing.length > 0
               ? [`Not present or not enabled: ${drift.missing.slice(0, 4).join(", ")}`]
+              : []),
+            ...(obs.pluginsTxtMismatch === true
+              ? ["plugins.txt on disk does not yet match what Vortex holds; it is written a moment after a change."]
               : []),
           ],
       affectedCount: same ? 0 : drift.misordered.length + drift.missing.length,

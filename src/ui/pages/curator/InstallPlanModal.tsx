@@ -26,6 +26,8 @@ export function InstallPlanModal(props: {
   onOpenPage: (url: string | undefined, gameDomain: string, nexusModId: number) => void;
   onConfirm: () => void;
   onClose: () => void;
+  /** Not a Premium account: each page is opened for a hand download, one at a time. */
+  guided?: boolean;
 }): JSX.Element {
   const { plan, files, picked } = props;
   const counts = plan === undefined ? undefined : describePlan(plan, files, picked);
@@ -57,6 +59,13 @@ export function InstallPlanModal(props: {
         <p className="eh-body">Reading the chain…</p>
       ) : (
         <div className="eh-stack eh-stack--lg">
+          {props.guided === true && files.length > 0 && (
+            <Callout tone="info">
+              Nexus lets Vortex download directly for Premium accounts only, so this runs guided: each page opens in
+              turn, you press &ldquo;Mod manager download&rdquo; on the file you want, Vortex installs it, and the next
+              page opens. Whatever file you pick on the page is the one used.
+            </Callout>
+          )}
           {plan.steps.length === 0 && plan.toEnable.length === 0 && (
             <Callout tone="info">Nothing to install: every Nexus requirement in the chain is already in the pool and enabled.</Callout>
           )}

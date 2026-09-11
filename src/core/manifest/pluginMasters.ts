@@ -65,18 +65,41 @@ export type PluginMastersRead =
 export async function readPluginMasters(
   filePath: string,
 ): Promise<PluginMastersRead> {
+  const read = await readPluginHeader(filePath);
+  return read.kind === "ok" ? { kind: "ok", masters: read.masters } : read;
+}
+
+/** Bit 0 of the TES4 record flags: master. Bit 9: light (ESL). Same bits pluginFlags.ts reads. */
+const FLAG_MASTER = 0x1;
+const FLAG_LIGHT = 0x200;
+
+export type PluginHeaderRead =
+  | { kind: "ok"; masters: string[]; flags: { isLight: boolean; isMaster: boolean } }
+  | Exclude<PluginMastersRead, { kind: "ok" }>;
+
+/**
+ * Masters and flags in ONE open. The requirements pass reads ~800 plugin
+ * headers on a real profile; opening each file twice — once for MAST, once
+ * for the flags at offset 8 of the same record header — doubled the
+ * syscalls for nothing.
+ */
+export async function readPluginHeader(
+  filePath: string,
+): Promise<PluginHeaderRead> {
   let handle;
   try {
     handle = await fsp.open(filePath, "r");
 
-    const head = Buffer.alloc(8);
-    const { bytesRead } = await handle.read(head, 0, 8, 0);
-    if (bytesRead < 8) {
+    const head = Buffer.alloc(RECORD_HEADER_BYTES);
+    const { bytesRead } = await handle.read(head, 0, RECORD_HEADER_BYTES, 0);
+    if (bytesRead < 12) {
       return { kind: "not-a-plugin", why: "too short to hold a TES4 header" };
     }
     if (head.toString("latin1", 0, 4) !== "TES4") {
       return { kind: "not-a-plugin", why: "no TES4 header" };
     }
+    const rawFlags = head.readUInt32LE(8);
+    const flags = { isLight: (rawFlags & FLAG_LIGHT) !== 0, isMaster: (rawFlags & FLAG_MASTER) !== 0 };
 
     const dataSize = head.readUInt32LE(4);
     if (dataSize > MAX_HEADER_BYTES) {
@@ -141,7 +164,7 @@ export async function readPluginMasters(
       };
     }
 
-    return { kind: "ok", masters };
+    return { kind: "ok", masters, flags };
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOENT") return { kind: "not-found" };

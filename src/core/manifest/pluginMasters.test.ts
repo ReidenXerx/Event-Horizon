@@ -23,6 +23,7 @@ import {
   isBaseGameMaster,
   isCreationClubMaster,
   isUserOwnedMaster,
+  readPluginHeader,
   readPluginMasters,
 } from "./pluginMasters";
 
@@ -253,5 +254,28 @@ describe("the base masters of every supported game", () => {
   it("still answers false for a game it has never heard of", () => {
     // Unknown stays unknown. Inventing a list would be worse than refusing.
     expect(isBaseGameMaster("Skyrim.esm", "morrowind")).toBe(false);
+  });
+});
+
+describe("readPluginHeader", () => {
+  it("reads masters and flags from one open, and agrees with readPluginMasters", async () => {
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "eh-header-"));
+    try {
+      const hedr = subrecord("HEDR", Buffer.alloc(12));
+      const body = Buffer.concat([hedr, subrecord("MAST", Buffer.from("Skyrim.esm\0", "latin1"))]);
+      const head = Buffer.alloc(24);
+      head.write("TES4", 0, 4, "latin1");
+      head.writeUInt32LE(body.length, 4);
+      // Bit 0 (master) and bit 9 (light) set.
+      head.writeUInt32LE(0x201, 8);
+      const file = path.join(dir, "Light.esp");
+      await fsp.writeFile(file, Buffer.concat([head, body]));
+      const read = await readPluginHeader(file);
+      expect(read).toEqual({ kind: "ok", masters: ["Skyrim.esm"], flags: { isLight: true, isMaster: true } });
+      expect(await readPluginMasters(file)).toEqual({ kind: "ok", masters: ["Skyrim.esm"] });
+      expect((await readPluginHeader(path.join(dir, "missing.esp"))).kind).toBe("not-found");
+    } finally {
+      await fsp.rm(dir, { recursive: true, force: true });
+    }
   });
 });

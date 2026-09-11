@@ -1,0 +1,9 @@
+# One line ending in the repository, whatever the editor. Every commit on
+# Windows printed a CRLF warning per file, and the same class of surprise —
+# a shell eating bytes it was not meant to — is recorded as a scar.
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.7z binary
+*.zip binary
+*.ehcoll binary

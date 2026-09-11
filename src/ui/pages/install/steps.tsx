@@ -616,6 +616,26 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
         </StatGrid>
       </Section>
 
+      {plan.manifest.mods.some((m) => m.attributes?.curatorNote !== undefined) && (
+        <Section
+          title="From the curator"
+          count={plan.manifest.mods.filter((m) => m.attributes?.curatorNote !== undefined).length}
+          countIntent="neutral"
+          description="Notes the curator wrote on specific mods for the people installing this collection."
+        >
+          <ul className="eh-list eh-stack eh-stack--xs">
+            {plan.manifest.mods
+              .filter((m) => m.attributes?.curatorNote !== undefined)
+              .map((m) => (
+                <li key={m.compareKey}>
+                  <span className="eh-strong">{m.name}</span>
+                  <span className="eh-secondary"> — {m.attributes!.curatorNote}</span>
+                </li>
+              ))}
+          </ul>
+        </Section>
+      )}
+
       <Section title="What needs you">
         <StatGrid min={200}>
           <StatTile

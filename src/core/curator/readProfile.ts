@@ -33,6 +33,23 @@ export const FROZEN_ATTRIBUTE = "eventHorizonFrozenAtVersion";
 /** A curator's free-text note on a mod. This Vortex build has no notes attribute of its own. */
 export const NOTES_ATTRIBUTE = "eventHorizonNotes";
 
+/** The marker that makes a note public: settled with the user, only marked notes ship. */
+export const PUBLIC_NOTE_MARKER = "@users";
+
+/**
+ * The part of a note that ships in the collection, or nothing.
+ *
+ * A note is private unless it starts with `@users` (case-insensitive, then
+ * any punctuation and whitespace). The marker itself is not shipped.
+ */
+export function publicNote(note: string | undefined): string | undefined {
+  if (note === undefined) return undefined;
+  const m = /^\s*@users\b[\s:,-]*/i.exec(note);
+  if (m === null) return undefined;
+  const body = note.slice(m[0].length).trim();
+  return body === "" ? undefined : body;
+}
+
 /** Numeric ids arrive as numbers or strings; only a real number is usable. */
 function asNumber(raw: unknown): number | undefined {
   if (typeof raw === "number") return Number.isFinite(raw) ? raw : undefined;

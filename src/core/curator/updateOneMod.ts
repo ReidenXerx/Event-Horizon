@@ -64,6 +64,12 @@ export type UpdateOneInput = {
    */
   timeoutMs?: number;
   signal?: AbortSignal;
+  /**
+   * Accept any file of the page, not only `toFileId`. For the guided install
+   * where the USER picks the file on the Nexus page: the plan knows the mod,
+   * not which of its files the user will click.
+   */
+  anyFile?: boolean;
 };
 
 export class UpdateTimeout extends Error {}
@@ -86,6 +92,7 @@ export function updateOneAndWait(input: UpdateOneInput): Promise<string> {
     toFileId,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     signal,
+    anyFile = false,
   } = input;
 
   return new Promise<string>((resolve, reject) => {
@@ -110,7 +117,7 @@ export function updateOneAndWait(input: UpdateOneInput): Promise<string> {
       const installed = readInstalled(vortexModId);
       if (
         installed?.nexusModId !== nexusModId ||
-        installed?.nexusFileId !== toFileId
+        (!anyFile && installed?.nexusFileId !== toFileId)
       ) {
         // Logged, because a REJECTED event is the whole failure mode here and
         // it used to look identical to no event at all. When the reader was

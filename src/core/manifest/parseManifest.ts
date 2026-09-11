@@ -992,9 +992,15 @@ function validateUiAttributes(
       ? undefined
       : expectString(obj.description, `${path}.description`, errors);
 
+  const curatorNote =
+    obj.curatorNote === undefined
+      ? undefined
+      : expectString(obj.curatorNote, `${path}.curatorNote`, errors);
+
   const out: ModUiAttributes = {};
   if (category !== undefined) out.category = category;
   if (description !== undefined) out.description = description;
+  if (curatorNote !== undefined && curatorNote !== "") out.curatorNote = curatorNote;
   return out;
 }
 

@@ -31,6 +31,8 @@ export function LoadOrderCard(props: {
   busy: boolean;
   /** Absent while an install runs (healing is blocked), with the reason. */
   blocked?: string;
+  /** plugins.txt on disk has not caught up with Vortex's state. */
+  fileMismatch?: boolean;
   onReapply: () => void;
   onDisableAutoSort?: () => void;
 }): JSX.Element {
@@ -63,6 +65,12 @@ export function LoadOrderCard(props: {
           <Pill intent={TONE_PILL[said.tone]}>{status.kind === "matches" ? "matches" : status.kind === "drifted" ? "drifted" : "unknown"}</Pill>
           <span className="eh-strong">{said.headline}</span>
         </div>
+        {props.fileMismatch === true && (
+          <p className="eh-small eh-tone--warning">
+            Read from Vortex&rsquo;s state. plugins.txt on disk does not match it yet — Vortex writes the file a moment
+            after a change; if this stays, something edited the file by hand.
+          </p>
+        )}
         {said.detail.length > 0 && (
           <ul className="eh-list eh-stack eh-stack--xs">
             {said.detail.map((d) => (

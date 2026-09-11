@@ -7,6 +7,20 @@
  */
 import { describe, expect, it } from "vitest";
 
+import { publicNote } from "./readProfile";
+
+describe("publicNote", () => {
+  it("ships only a note marked for users, without the marker", () => {
+    expect(publicNote(undefined)).toBeUndefined();
+    expect(publicNote("private: check after every update")).toBeUndefined();
+    expect(publicNote("@users Needs its MCM opened once")).toBe("Needs its MCM opened once");
+    expect(publicNote("@Users: disable in Solstheim")).toBe("disable in Solstheim");
+    expect(publicNote("  @users  ")).toBeUndefined();
+    // The marker must START the note; mentioning it later keeps it private.
+    expect(publicNote("tell @users nothing")).toBeUndefined();
+  });
+});
+
 import {
   FROZEN_ATTRIBUTE,
   freezeAttribute,

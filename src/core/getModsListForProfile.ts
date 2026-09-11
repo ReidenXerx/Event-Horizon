@@ -90,6 +90,11 @@ export type AuditorMod = {
    */
   recoveredDownloadId?: string;
   /**
+   * The curator's note on this mod, as written (our own attribute). Only the
+   * part marked for users reaches the manifest — see `publicNote`.
+   */
+  curatorNote?: string;
+  /**
    * The curator declared this mod's staging deliberately post-processed.
    *
    * Not read from Vortex — it is the curator's own answer, applied from the
@@ -725,6 +730,9 @@ function readMods(
         : {}),
 
       installTime: normalizeInstallTime(attributes.installTime),
+      ...(typeof attributes.eventHorizonNotes === "string" && attributes.eventHorizonNotes !== ""
+        ? { curatorNote: attributes.eventHorizonNotes }
+        : {}),
       installOrder: 0,
       installationPath:
         typeof mod?.installationPath === "string" &&

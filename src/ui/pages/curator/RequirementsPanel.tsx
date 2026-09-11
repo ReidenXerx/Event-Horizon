@@ -134,7 +134,11 @@ export function RequirementsPanel(props: {
       }
     >
       <div className="eh-stack eh-stack--lg">
-        <Section title="Note" size="sm" description="Yours, kept on the mod in Vortex; the build never reads it.">
+        <Section
+          title="Note"
+          size="sm"
+          description="Yours, kept on the mod in Vortex. Start it with @users and it ships in the collection, shown to installers on the plan; anything else stays private."
+        >
           <div className="eh-stack eh-stack--xs">
             <Textarea
               aria-label="Note"

@@ -126,6 +126,10 @@ import { readPluginList } from "../../../core/curator/pluginPool";
 import { buildPluginRows } from "../../../core/curator/pluginView";
 import { isBaseGameMaster } from "../../../core/manifest/pluginMasters";
 import { knownGameIds, loadRequirements, nexusDomainForVortexGame, nexusExtOf } from "./requirementsIo";
+import { statusToSend, waitForEndorseOutcome } from "../../../core/curator/endorseOutcome";
+import { setPluginLightFlag } from "../../../core/manifest/pluginFlags";
+import { installRootFor, stagingRootFromFolder } from "../../../core/stagingPath";
+import type { PluginRow } from "../../../core/curator/pluginView";
 import {
   VIEWS,
   buildRows,
@@ -165,6 +169,40 @@ function watchActiveProfile(api: { onStateChange?: (path: string[], cb: () => vo
     profileListeners.delete(fn);
   };
 }
+
+/**
+ * The mods hive, throttled: an install finishing elsewhere in Vortex, an
+ * attribute Vortex wrote, a mod removed from its own tab. The page re-reads
+ * on the next quiet moment; while one of OUR runs is busy the run bumps
+ * `tick` itself, so this stays out of the way.
+ */
+const modsListeners = new Set<() => void>();
+let modsWatched = false;
+function watchModsHive(api: { onStateChange?: (path: string[], cb: () => void) => void }, fn: () => void): () => void {
+  modsListeners.add(fn);
+  if (!modsWatched && typeof api.onStateChange === "function") {
+    modsWatched = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    api.onStateChange(["persistent", "mods"], () => {
+      if (timer !== undefined) return;
+      timer = setTimeout(() => {
+        timer = undefined;
+        for (const l of modsListeners) l();
+      }, 2000);
+    });
+  }
+  return () => {
+    modsListeners.delete(fn);
+  };
+}
+
+/** Nexus Premium: the only accounts Vortex will download for directly. */
+function isPremium(state: unknown): boolean {
+  return (state as { persistent?: { nexus?: { userInfo?: { isPremium?: unknown } } } })?.persistent?.nexus?.userInfo?.isPremium === true;
+}
+
+/** How long a requirements read stays fresh enough to reuse after an install. */
+const REUSE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /** Which runs honour Stop. The others are single Vortex calls with no checkpoint. */
 const STOPPABLE = new Set<string>([
@@ -487,6 +525,18 @@ function CuratorBody(): JSX.Element {
     [api],
   );
 
+  // Live: re-read when Vortex's mods hive settles, unless one of our runs is
+  // on (it re-reads when it finishes).
+  const busyRef = React.useRef(busy);
+  busyRef.current = busy;
+  React.useEffect(
+    () =>
+      watchModsHive(api as never, () => {
+        if (busyRef.current === undefined) setTick((t) => t + 1);
+      }),
+    [api],
+  );
+
   /** A question with two real answers besides Cancel. Returns the chosen label, or undefined. */
   const askThree = async (title: string, text: string, labels: [string, string]): Promise<string | undefined> => {
     const showDialog = (api as unknown as { showDialog?: unknown }).showDialog;
@@ -530,7 +580,10 @@ function CuratorBody(): JSX.Element {
     try {
       // After an install only the NEW mods' pages are asked for; the button
       // re-reads everything.
-      const previous = incremental === true && requirements !== undefined ? requirements.load : undefined;
+      const previous =
+        incremental === true && requirements !== undefined && Date.now() - requirements.fetchedAt < REUSE_MAX_AGE_MS
+          ? requirements.load
+          : undefined;
       const load = await loadRequirements({
         api,
         gameId: game,
@@ -610,10 +663,26 @@ function CuratorBody(): JSX.Element {
       return { ok: false, why: "this Vortex cannot download for that game", refused: true };
     }
     const vortexGame = step.vortexGameId;
-    ehLog("info", "curator.requirement.install.start", { mod: step.name, nexusModId: step.nexusModId, fileId: file.file_id, game: vortexGame });
     const stop = new AbortController();
     const onAbort = (): void => stop.abort();
     signal.addEventListener("abort", onAbort);
+    /**
+     * ─── GUIDED, FOR EVERYONE WHO IS NOT PREMIUM ────────────────────────
+     * Vortex downloads directly for Premium accounts only. For everyone
+     * else the page is opened and the plan WAITS for the file the user
+     * fetches through "Mod manager download" — any file of that page — to
+     * install, then moves on (settled: one page at a time). A Premium
+     * refusal falls back to the same path instead of failing the step.
+     */
+    const guided = !isPremium(api.getState());
+    const openPageFor = (): void => {
+      if (nexus.openModPage !== undefined) nexus.openModPage(vortexGame, step.nexusModId, "nexus");
+      setProgress(
+        `Waiting for ${step.name}: its page is open — press "Mod manager download" on the file you want, and Vortex ` +
+          `will install it. Stop after this one cancels.`,
+      );
+    };
+    ehLog("info", "curator.requirement.install.start", { mod: step.name, nexusModId: step.nexusModId, fileId: file.file_id, game: vortexGame, guided });
     let refused = false;
     try {
       const newModId = await updateOneAndWait({
@@ -621,26 +690,34 @@ function CuratorBody(): JSX.Element {
         gameId: game,
         nexusModId: step.nexusModId,
         toFileId: file.file_id,
+        anyFile: guided,
+        timeoutMs: guided ? 60 * 60 * 1000 : undefined,
         readInstalled: installedIdentityReader(() => api.getState(), game),
         signal: stop.signal,
         start: () => {
+          if (guided) {
+            openPageFor();
+            return;
+          }
           void download(vortexGame, step.nexusModId, file.file_id, file.file_name, true).then(
             (dlId) => {
               ehLog("info", "curator.requirement.install.downloaded", { mod: step.name, dlId });
               if (dlId === undefined) {
+                // Vortex refused (its notification says why): open the page
+                // and keep waiting for a hand-fetched file instead.
                 refused = true;
-                stop.abort();
+                openPageFor();
               }
             },
             (err) => {
               ehLog("error", "curator.requirement.install.fail", { mod: step.name, err });
               refused = true;
-              stop.abort();
+              openPageFor();
             },
           );
         },
       });
-      ehLog("info", "curator.requirement.install.done", { mod: step.name, newModId });
+      ehLog("info", "curator.requirement.install.done", { mod: step.name, newModId, guided: guided || refused });
       return { ok: true, newModId };
     } catch (err) {
       return { ok: false, why: err instanceof Error ? err.message : String(err), refused };
@@ -648,6 +725,51 @@ function CuratorBody(): JSX.Element {
       signal.removeEventListener("abort", onAbort);
     }
   };
+
+  /**
+   * Flip the ESL bit in a plugin's files: the staging copy (what the build
+   * reads and what a purge restores from) and the deployed copy when it is a
+   * different file. Under hardlink deployment they are one file.
+   */
+  const setLight = guard("Flagging a plugin", async (row: PluginRow, light: boolean): Promise<void> => {
+    const game = gameId;
+    if (game === undefined) return;
+    const ok = await confirm({
+      title: `${light ? "Set" : "Clear"} the ESL flag on ${row.plugin.name}?`,
+      text:
+        (light
+          ? `This writes the light flag into the plugin file itself. It is only safe when every record the plugin adds ` +
+            `fits the light range (FormIDs up to 0xFFF, one file's worth); Event Horizon cannot check that — xEdit can ` +
+            `("Check for ESL support"). A plugin flagged light that does not qualify breaks in game silently.\n\n`
+          : `This clears the light flag; the plugin takes one of the ${254} regular slots again.\n\n`) +
+        `The change is written to the staging copy and to the deployed copy, and the build records it.`,
+      confirmLabel: light ? "Flag light" : "Clear flag",
+    });
+    if (!ok) return;
+    const paths = new Set<string>();
+    if (row.plugin.filePath !== undefined) paths.add(row.plugin.filePath);
+    const owner = row.owner;
+    if (owner?.installationPath !== undefined) {
+      const dir = stagingRootFromFolder(installRootFor(api.getState(), game), owner.installationPath);
+      if (dir !== undefined) paths.add(`${dir}\\${row.plugin.name}`);
+    }
+    let changed = 0;
+    const errors: string[] = [];
+    for (const p of paths) {
+      try {
+        if (await setPluginLightFlag(p, light)) changed += 1;
+      } catch (err) {
+        errors.push(`${p}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    ehLog("info", "curator.plugin.set-light", { plugin: row.plugin.name, light, changed, errors: errors.length });
+    setNote(
+      `${row.plugin.name}: ${light ? "flagged light" : "flag cleared"} in ${num(changed)} file(s)` +
+        (errors.length > 0 ? `; could not write ${errors.join("; ")}` : "") +
+        `. Headers are re-read now.`,
+    );
+    void readRequirements(true);
+  });
 
   /** Read the chain for a mod (or for one of its lines) and open the preview. */
   const openPlan = guard(
@@ -916,38 +1038,61 @@ function CuratorBody(): JSX.Element {
       const ok = await confirm({
         title: `Endorse ${num(endorsable.length)} mods — ${describeEndorseDuration(endorsable.length)}?`,
         text:
-          `Vortex gives no way to confirm an endorsement finished, so they are sent ` +
-          `${ENDORSE_PACE_MS}ms apart — sending them all at once is a rate limit, not a ` +
-          `faster result. Leave the page open while it runs; "Stop after this one" ` +
-          `stops between mods.`,
+          `Each one is sent to Nexus through Vortex and its answer is read back before the ` +
+          `next is sent. Leave the page open while it runs; "Stop after this one" stops ` +
+          `between mods.`,
         confirmLabel: "Endorse",
       });
       if (!ok) return;
     }
     const signal = session.begin("endorse", { keepReport: true });
     if (signal === undefined) return;
-    let done = 0;
-    for (const mod of endorsable) {
+    const outcome = await endorseEach(endorsable, signal);
+    setTick((t) => t + 1);
+    session.finish(undefined, describeEndorse(outcome, endorsable.length, signal.aborted));
+  });
+
+  /**
+   * Endorse a list, one at a time, reading Vortex's answer off the mod's
+   * `endorsed` attribute. The status handed to Vortex is the mod's CURRENT
+   * one: its handler toggles, so sending "Endorsed" asks Nexus to abstain.
+   */
+  const endorseEach = async (
+    targets: readonly CuratorMod[],
+    signal: AbortSignal,
+  ): Promise<{ endorsed: number; failed: string[]; timedOut: string[]; sent: number }> => {
+    const game = gameId!;
+    let endorsed = 0;
+    const failed: string[] = [];
+    const timedOut: string[] = [];
+    let sent = 0;
+    const readStatus = (id: string): string | undefined =>
+      (api.getState() as unknown as { persistent?: { mods?: Record<string, Record<string, { attributes?: { endorsed?: unknown } }>> } })
+        ?.persistent?.mods?.[game]?.[id]?.attributes?.endorsed as string | undefined;
+    for (const mod of targets) {
       if (signal.aborted) break;
       if (mod.nexusModId === undefined) continue;
-      api.events.emit("endorse-mod", game, mod.id, "Endorsed");
-      done += 1;
-      setProgress(
-        `Endorsing ${done} of ${endorsable.length} — ${mod.name} ` +
-          `(${describeEndorseDuration(endorsable.length - done)} left)`,
-      );
+      const before = readStatus(mod.id);
+      api.events.emit("endorse-mod", game, mod.id, statusToSend(before));
+      sent += 1;
+      setProgress(`Endorsing ${sent} of ${targets.length} — ${mod.name}`);
+      const result = await waitForEndorseOutcome({ read: () => readStatus(mod.id), before, timeoutMs: 15_000 });
+      if (result === "endorsed") endorsed += 1;
+      else if (result === "timeout") timedOut.push(mod.name);
+      else failed.push(mod.name);
+      // Nexus rate-limits; a short gap between answered requests is enough.
       await new Promise((r) => setTimeout(r, ENDORSE_PACE_MS));
     }
-    setTick((t) => t + 1);
-    ehLog("info", "curator.endorse.done", { asked: done, stopped: signal.aborted });
-    session.finish(
-      undefined,
-      `Asked Vortex to endorse ${done} of ${endorsable.length} mod(s)` +
-        (signal.aborted ? " before you stopped it" : "") +
-        `. Vortex reports each result in its own notifications; press Reload ` +
-        `to see the counts settle.`,
-    );
-  });
+    ehLog("info", "curator.endorse.done", { asked: sent, endorsed, failed: failed.length, timedOut: timedOut.length, stopped: signal.aborted });
+    return { endorsed, failed, timedOut, sent };
+  };
+
+  const describeEndorse = (o: { endorsed: number; failed: string[]; timedOut: string[]; sent: number }, asked: number, stopped: boolean): string =>
+    `Endorsed ${num(o.endorsed)} of ${num(asked)} mod(s)` +
+    (stopped ? " before you stopped it" : "") +
+    (o.failed.length > 0 ? `; Nexus refused ${num(o.failed.length)} (${o.failed.slice(0, 5).join(", ")}${o.failed.length > 5 ? "…" : ""}) — Vortex's notifications say why` : "") +
+    (o.timedOut.length > 0 ? `; ${num(o.timedOut.length)} gave no answer within 15 seconds and may still land` : "") +
+    ".";
 
   const updateAll = guard("Updating", async (candidates: readonly WorkRow[]): Promise<void> => {
     const game = gameId;
@@ -1460,6 +1605,7 @@ function CuratorBody(): JSX.Element {
           onFocus={setFocusId}
           busy={!idle}
           onSetEnabled={(r, enabled): void => setPluginEnabled(r.plugin.name, enabled)}
+          onSetLight={(r, light): void => void setLight(r, light)}
         />
       ) : mode === "downloads" ? (
         <DownloadsView downloads={notInstalled} busy={!idle} onInstall={(entries): void => void installDownloads(entries)} />
@@ -1614,10 +1760,15 @@ function CuratorBody(): JSX.Element {
                 size="sm"
                 intent="ghost"
                 disabled={!idle}
-                onClick={(): void => {
-                  for (const m of endorsableChosen) api.events.emit("endorse-mod", gameId, m.id, "Endorsed");
-                  setNote(`Asked Vortex to endorse ${num(endorsableChosen.length)} mod(s). Press Reload to see the counts settle.`);
-                }}
+                onClick={(): void =>
+                  void guard("Endorsing", async (): Promise<void> => {
+                    const signal = session.begin("endorse", { keepReport: true });
+                    if (signal === undefined) return;
+                    const outcome = await endorseEach(endorsableChosen, signal);
+                    setTick((t) => t + 1);
+                    session.finish(undefined, describeEndorse(outcome, endorsableChosen.length, signal.aborted));
+                  })()
+                }
               >
                 Endorse {num(endorsableChosen.length)}
               </Button>
@@ -1684,6 +1835,7 @@ function CuratorBody(): JSX.Element {
           openPage({ source: "nexus", status: "missing", name: "", satisfiedBy: [], ...(url === undefined ? {} : { url }), gameDomain: domain, nexusModId: modId })
         }
         onConfirm={(): void => void runPlan()}
+        guided={!isPremium(api.getState())}
         onClose={(): void => {
           // While the chain is being read, Cancel stops the read; once it is
           // running, Stop after this one is the way out.

@@ -108,6 +108,8 @@ export function PluginsView(props: {
   onFocus: (modId: string) => void;
   /** Absent when the page cannot dispatch (no store): the view stays read-only. */
   onSetEnabled?: (plugin: PluginRow, enabled: boolean) => void;
+  /** Flip the ESL bit in the plugin file(s). Absent when the page cannot write. */
+  onSetLight?: (plugin: PluginRow, light: boolean) => void;
   busy?: boolean;
 }): JSX.Element {
   const { rows, headersRead, onFocus } = props;
@@ -176,8 +178,8 @@ export function PluginsView(props: {
       )}
 
       <p className="eh-note">
-        Enable and disable here; reordering and the light flag stay in Vortex&rsquo;s Plugins tab for now. Plugins of
-        disabled mods are listed too (state &ldquo;mod disabled&rdquo;), which Vortex&rsquo;s tab does not show.
+        Enable, disable and flag light here; reordering stays in Vortex&rsquo;s Plugins tab. Plugins of disabled mods
+        are listed too (state &ldquo;mod disabled&rdquo;), which Vortex&rsquo;s tab does not show.
       </p>
 
       <div className="eh-row eh-row--sm" role="tablist" aria-label="Plugin views">
@@ -215,6 +217,21 @@ export function PluginsView(props: {
                       onClick={(): void => props.onSetEnabled!(r, !r.plugin.enabled)}
                     >
                       {r.plugin.enabled ? "Disable" : "Enable"}
+                    </Button>
+                  )}
+                  {props.onSetLight !== undefined && !r.plugin.isNative && r.isLight !== undefined && !/\.esl$/i.test(r.plugin.name) && (
+                    <Button
+                      size="sm"
+                      intent="ghost"
+                      disabled={props.busy === true}
+                      title={
+                        r.isLight
+                          ? "Clear the ESL flag in the plugin file: it takes a regular slot again"
+                          : "Set the ESL flag in the plugin file. Only safe for a plugin whose records fit the light range; Event Horizon cannot check that — xEdit can."
+                      }
+                      onClick={(): void => props.onSetLight!(r, !r.isLight)}
+                    >
+                      {r.isLight ? "Unflag light" : "Flag light"}
                     </Button>
                   )}
                 </div>

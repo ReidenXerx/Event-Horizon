@@ -566,6 +566,12 @@ export type EhcollStagingFile = {
 export type ModUiAttributes = {
   category?: string;
   description?: string;
+  /**
+   * What the curator wanted the installer to know about this mod: why it is
+   * here, what to check after an update. Only notes the curator marked for
+   * users are shipped; shown on the install plan.
+   */
+  curatorNote?: string;
 };
 
 // ---------------------------------------------------------------------------

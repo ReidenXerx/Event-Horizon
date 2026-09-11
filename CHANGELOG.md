@@ -8,7 +8,55 @@ Vortex ignores everything after the dash when it decides whether an extension ha
 could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
-(7 September 2026), then 0.1.151.
+(7 September 2026), then 0.1.151 and 0.1.152.
+
+## [0.1.152] — 2026-09-11
+
+Curator Tools is rebuilt around one idea: your whole profile is one table, and the tool knows what every mod
+needs. And the curator's load order gets a voice on the player's machine.
+
+### Curator Tools — one workbench
+- **One table, one selection.** Every view — updates, manual updates, frozen, missing requirements, needed by others,
+  duplicates, disabled, outside Data, not from Nexus — is a filter over the same rows, and the views combine. A search
+  box finds a mod, a requirement, a plugin or a provider by name. The table shows every mod without a cap.
+- **The action bar follows the ticks** and offers only what applies: enable, disable, update, freeze, unfreeze,
+  endorse, reinstall, remove, set kind. Every row has its own Enable/Disable and Requirements buttons.
+- **Requirements are read and acted on.** Every mod's Nexus requirements and every plugin's masters are read once per
+  game and resolved against what you have: satisfied, installed but disabled, missing, off Nexus, DLC. Each line gets
+  the one action that fits — Enable, Install or Open page. Enabling a mod also enables the providers it lists that
+  were off; disabling a provider says who needs it and offers to take them down too.
+- **Make it work.** One button reads the whole chain of what a mod is missing — each requirement's own requirements
+  too — shows the plan (downloads in dependency order, enables, off-Nexus links, pages Nexus did not answer for), lets
+  you choose where a page ships several files, then installs one at a time and waits for each to land. Nexus
+  downloads directly for Premium accounts only; for everyone else it runs guided, opening each page in turn and
+  waiting for the file you fetch through "Mod manager download".
+- **Plugins view**: Vortex's plugin list with the mod that ships each plugin, missing versus disabled masters, the
+  light flag, and the regular-slot count against the 254 limit. Plugins of disabled mods are listed too. Enable,
+  disable and flag light from here.
+- **Downloads view**: archives in Vortex's cache that nothing was ever made from, installed one at a time.
+- **Notes** on a mod, kept on the mod in Vortex. Start one with `@users` and it ships in the collection: installers
+  see it on the plan, under "From the curator".
+- **Reinstall is safe again.** It checked that Vortex recorded an archive, not that the file exists, and would have
+  uninstalled a mod it could not put back. The archive is looked for on disk first; a mod without one is skipped and
+  named.
+- **Bulk endorse endorses.** It was sending Vortex the state it wanted, and Vortex's handler toggles, so it had been
+  asking Nexus to abstain. It now sends the current state and reads Nexus's answer back for each mod.
+- Reads the game's requirements under Vortex's own name for the game (skyrimse) while Nexus uses another
+  (skyrimspecialedition); on Skyrim Special Edition nothing resolved before.
+
+### Load order
+- **A Load Order card on Doctor** says how the collection's order works — the curator's order pinned for the
+  collection's plugins, your own plugins placed by LOOT between them — shows whether it still holds, exactly which
+  plugins re-applying would move, and the Restore button. Vortex's automatic sorting can be turned off from it.
+- **You are told when it changes.** A Vortex notification appears the moment a sort — automatic on deploy, or the
+  Sort button — replaces the collection's order, with "Re-apply curator's order" on it, and goes away by itself when
+  the order is back. Home shows "load order ok" or "N moved" on every installed collection.
+- Doctor reads the order Vortex holds, so it agrees with the notification instantly, and says when plugins.txt on
+  disk has not caught up.
+
+### Under the hood
+- Every screen has a golden fingerprint; `npm run ui:check` names any screen whose look changed.
+- One line ending in the repository; the plugin header is read once per file instead of twice.
 
 ## [0.1.151] — 2026-09-11
 

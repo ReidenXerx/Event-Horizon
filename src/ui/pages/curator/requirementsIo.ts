@@ -16,8 +16,7 @@ import * as path from "path";
 import { util, type types } from "@nexusmods/vortex-api";
 
 import { ehLog } from "../../../core/logging/ehLog";
-import { readPluginMasters, isBaseGameMaster } from "../../../core/manifest/pluginMasters";
-import { readPluginFlagsDetailed } from "../../../core/manifest/pluginFlags";
+import { readPluginHeader, isBaseGameMaster } from "../../../core/manifest/pluginMasters";
 import type { PluginHeader } from "../../../core/curator/pluginView";
 import { getVortexUserDataPath } from "../../../core/paths";
 import { installRootFor, stagingRootFromFolder } from "../../../core/stagingPath";
@@ -261,10 +260,11 @@ export async function loadRequirements(args: {
     if (p.filePath === undefined) continue;
     n += 1;
     if (n % 50 === 0) args.onProgress?.(`Reading plugin headers — ${n} of ${plugins.length}`);
-    const [read, flags] = await Promise.all([readPluginMasters(p.filePath), readPluginFlagsDetailed(p.filePath)]);
+    const read = await readPluginHeader(p.filePath);
     const header: PluginHeader = {};
     if (read.kind === "ok") {
       header.masters = read.masters;
+      header.flags = read.flags;
       if (p.modId !== undefined && !p.isNative) {
         masters.set(p.name, read.masters);
         mastersRead += 1;
@@ -273,7 +273,6 @@ export async function loadRequirements(args: {
       header.unreadable = read.kind === "not-found" ? `no file at ${p.filePath}` : `${read.why} (${p.filePath})`;
       if (p.modId !== undefined && !p.isNative) mastersUnreadable += 1;
     }
-    if (flags.kind === "ok") header.flags = flags.flags;
     headers.set(p.name, header);
   }
   if (masters.size > 0) {

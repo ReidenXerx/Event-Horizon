@@ -224,6 +224,29 @@ export async function gatherObservations(
     currentPluginLightFlags = undefined;
   }
 
+  // Vortex's own order (what the watcher compares), and whether the file
+  // on disk has caught up with it. Natives are excluded on the state side
+  // because Vortex never writes them to loadOrder; the same set is dropped
+  // from the file side so the two compare like with like.
+  let currentPluginOrderFromState: { name: string; enabled: boolean }[] | undefined;
+  let pluginsTxtMismatch: boolean | undefined;
+  try {
+    const { currentOrderFromState, nativeNamesFromState } = await import("./loadOrderStatus");
+    currentPluginOrderFromState = currentOrderFromState(state);
+    if (currentPluginOrderFromState !== undefined && currentPluginOrder !== undefined) {
+      const natives = nativeNamesFromState(state);
+      const fileNonNative = currentPluginOrder
+        .filter((p) => !natives.has(p.name.trim().toLowerCase()))
+        .filter((p) => p.enabled)
+        .map((p) => p.name.trim().toLowerCase());
+      const stateEnabled = currentPluginOrderFromState.filter((p) => p.enabled).map((p) => p.name.trim().toLowerCase());
+      pluginsTxtMismatch = fileNonNative.join("\n") !== stateEnabled.join("\n");
+    }
+  } catch (err) {
+    ehLog("debug", "doctor.gather.state-order-unreadable", { err });
+    currentPluginOrderFromState = undefined;
+  }
+
   let activeProfileId: string | undefined;
   try {
     activeProfileId = getActiveProfileId(state);
@@ -239,6 +262,8 @@ export async function gatherObservations(
     enabledModIds: readEnabledModIds(state, receiptProfileId),
     driftedCompareKeys: opts.driftedCompareKeys,
     currentPluginOrder,
+    ...(currentPluginOrderFromState !== undefined ? { currentPluginOrderFromState } : {}),
+    ...(pluginsTxtMismatch !== undefined ? { pluginsTxtMismatch } : {}),
     currentModRuleCount: countModRules(state, gameId),
     currentUserlistRuleCount,
     currentUserlistGroupAssignmentCount,

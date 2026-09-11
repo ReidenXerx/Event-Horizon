@@ -470,12 +470,13 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
           packageName={loaded.selected.packageName}
           status={assessLoadOrder({
             baseline: baselineOf(loaded.selected),
-            current: obs.currentPluginOrder,
+            current: obs.currentPluginOrderFromState ?? obs.currentPluginOrder,
             natives: nativeNamesFromState(api.getState()),
           })}
-          {...(obs.currentPluginOrder !== undefined
-            ? { preview: previewRepin(baselineOf(loaded.selected), obs.currentPluginOrder) }
+          {...((obs.currentPluginOrderFromState ?? obs.currentPluginOrder) !== undefined
+            ? { preview: previewRepin(baselineOf(loaded.selected), (obs.currentPluginOrderFromState ?? obs.currentPluginOrder)!) }
             : {})}
+          {...(obs.pluginsTxtMismatch === true ? { fileMismatch: true } : {})}
           {...(readsAutoSort(api.getState()) !== undefined ? { autoSortOn: readsAutoSort(api.getState()) } : {})}
           busy={busyCheckId === "plugin-order"}
           {...(blocked !== undefined ? { blocked } : {})}
