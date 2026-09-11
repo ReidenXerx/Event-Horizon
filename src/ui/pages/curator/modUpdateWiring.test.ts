@@ -32,13 +32,13 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-const PAGE = join(__dirname, "CuratorPage.tsx");
+const PAGE = join(__dirname, "useCuratorActions.ts");
 
 /** The `mod-update` emit call, whitespace-normalised. */
 function modUpdateEmit(): string {
   const src = readFileSync(PAGE, "utf8");
   const at = src.indexOf('"mod-update"');
-  expect(at, "CuratorPage no longer emits mod-update").toBeGreaterThan(-1);
+  expect(at, "the curator actions no longer emit mod-update").toBeGreaterThan(-1);
   // From the emit to the end of its argument list.
   const close = src.indexOf(");", at);
   return src.slice(at, close).replace(/\s+/g, " ");
