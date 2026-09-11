@@ -207,8 +207,14 @@ image strip — the same files, from `docs/screenshots/`.
 
 The description itself cannot be written through the Nexus API: v3 exposes
 mods read-only (only collections have an edit endpoint, checked against
-`api.nexusmods.com/openapi.yaml` on 2026-09-11). Paste the file's contents into
-the page's description editor by hand after a release that changes it.
+`api.nexusmods.com/openapi.yaml` on 2026-09-11). `scripts/nexus-page.mjs`
+writes it through YOUR browser instead: start the browser with
+`--remote-debugging-port=9222` on its normal, logged-in profile (the exact
+command is in the script's header), run the script for a dry run, then with
+`--save`. It fills the summary from `package.json`'s `description` and the
+description from this file through the editor's source mode, saves, reloads
+and verifies. The page's editor is SCEditor; its WYSIWYG mode re-serialises
+BBCode and nests block tags, which is why the source mode is used.
 
 The banner already carries the wordmark and the tagline, so the text title
 below it is deliberate duplication — it is what the page still says if the
