@@ -436,6 +436,11 @@ export function findEndorsable(mods: readonly CuratorMod[]): CuratorMod[] {
   return mods.filter(
     (m) =>
       m.nexusModId !== undefined &&
+      // Vortex's endorse handler returns without sending for a mod with no
+      // version ("You can't endorse a mod that has no version set"), so one
+      // is not endorsable, however unanswered.
+      m.version !== undefined &&
+      m.version !== "" &&
       // Vortex writes "Undecided" for untouched and leaves the field absent on
       // mods it has never asked about. Both mean "not answered".
       (m.endorsed === undefined || m.endorsed === "Undecided"),

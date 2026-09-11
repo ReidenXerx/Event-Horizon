@@ -130,10 +130,18 @@ describe("freezing, and noticing when it did not hold", () => {
 
 describe("what can be endorsed", () => {
   it("includes an untouched Nexus mod", () => {
-    expect(findEndorsable([mod({ nexusModId: 5 })])).toHaveLength(1);
+    expect(findEndorsable([mod({ nexusModId: 5, version: "1.0" })])).toHaveLength(1);
     expect(
-      findEndorsable([mod({ nexusModId: 5, endorsed: "Undecided" })]),
+      findEndorsable([mod({ nexusModId: 5, version: "1.0", endorsed: "Undecided" })]),
     ).toHaveLength(1);
+  });
+
+  it("skips a mod with no version: Vortex will not send an endorsement for one", () => {
+    // Its handler shows "You can't endorse a mod that has no version set" and
+    // returns; the bulk endorse then read the unchanged attribute as a
+    // request that "may still land".
+    expect(findEndorsable([mod({ nexusModId: 5 })])).toEqual([]);
+    expect(findEndorsable([mod({ nexusModId: 5, version: "" })])).toEqual([]);
   });
 
   it("leaves an answered one alone, either way", () => {
@@ -199,11 +207,11 @@ describe("the headline counts", () => {
   it("counts each thing once, and frozen drift separately", () => {
     expect(
       summarizeProfile([
-        mod({ id: "a", nexusModId: 1, nexusFileId: 1, newestFileId: 2 }),
+        mod({ id: "a", nexusModId: 1, nexusFileId: 1, newestFileId: 2, version: "1" }),
         mod({ id: "b", enabled: false, version: "2", frozenAtVersion: "1" }),
-        mod({ id: "c", nexusModId: 3, endorsed: "Endorsed" }),
-        mod({ id: "d", nexusModId: 4, nexusFileId: 9 }),
-        mod({ id: "e", nexusModId: 4, nexusFileId: 9 }),
+        mod({ id: "c", nexusModId: 3, endorsed: "Endorsed", version: "1" }),
+        mod({ id: "d", nexusModId: 4, nexusFileId: 9, version: "1" }),
+        mod({ id: "e", nexusModId: 4, nexusFileId: 9, version: "1" }),
       ]),
     ).toEqual({
       total: 5,

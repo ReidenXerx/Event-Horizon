@@ -50,6 +50,15 @@ import {
   splitByArchiveOnDisk,
 } from "../../../core/curator/archiveOnDisk";
 import {
+  describeEndorseRun,
+  endorseRefusal,
+  pendingGameFor,
+  type EndorseRun,
+} from "../../../core/curator/endorseOutcome";
+import {
+  readNexusAccount,
+} from "../../../core/installer/checkNexusAccount";
+import {
   describeBulkUpdate,
   runBulkUpdate,
 } from "../../../core/curator/bulkUpdate";
@@ -664,42 +673,84 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
    * `endorsed` attribute. The status handed to Vortex is the mod's CURRENT
    * one: its handler toggles, so sending "Endorsed" asks Nexus to abstain.
    */
-  const endorseEach = async (
-    targets: readonly CuratorMod[],
-    signal: AbortSignal,
-  ): Promise<{ endorsed: number; failed: string[]; timedOut: string[]; sent: number }> => {
+  const endorseEach = async (targets: readonly CuratorMod[], signal: AbortSignal): Promise<EndorseRun> => {
     const game = gameId!;
-    let endorsed = 0;
-    const failed: string[] = [];
-    const timedOut: string[] = [];
-    let sent = 0;
-    const readStatus = (id: string): string | undefined =>
-      (api.getState() as unknown as { persistent?: { mods?: Record<string, Record<string, { attributes?: { endorsed?: unknown } }>> } })
-        ?.persistent?.mods?.[game]?.[id]?.attributes?.endorsed as string | undefined;
+    const run: EndorseRun = { endorsed: 0, failed: [], timedOut: [], unreadable: [], notSent: [], sent: 0 };
+    type ModsByGame = Record<string, Record<string, { attributes?: Record<string, unknown> }> | undefined>;
+    const pool = (): ModsByGame | undefined =>
+      (api.getState() as unknown as { persistent?: { mods?: ModsByGame } })?.persistent?.mods;
+    const statusUnder = (g: string, id: string): string | undefined =>
+      pool()?.[g]?.[id]?.attributes?.endorsed as string | undefined;
+    // Vortex's activeGameId is the active profile's game; its handler looks
+    // the mod up there, not under the game this page was opened for.
+    const activeGameNow = (): string | undefined => {
+      const s = api.getState() as unknown as {
+        settings?: { profiles?: { activeProfileId?: string } };
+        persistent?: { profiles?: Record<string, { gameId?: string }> };
+      };
+      const profileId = s?.settings?.profiles?.activeProfileId;
+      return profileId === undefined ? undefined : s?.persistent?.profiles?.[profileId]?.gameId;
+    };
+    // Only a definite "logged-out" refuses; an account state Vortex does not
+    // describe is not reported as logged out.
+    const account = readNexusAccount(api as never).kind;
     for (const mod of targets) {
       if (signal.aborted) break;
-      if (mod.nexusModId === undefined) continue;
-      const before = readStatus(mod.id);
+      const attributes = pool()?.[game]?.[mod.id]?.attributes;
+      const why = endorseRefusal({ account, activeGameId: activeGameNow(), gameId: game, attributes });
+      if (why !== undefined) {
+        run.notSent.push({ name: mod.name, why });
+        ehLog("debug", "curator.endorse.not-sent", { modId: mod.id, why });
+        continue;
+      }
+      // "pending" lands under downloadGame, and only when the mod is in that
+      // game's pool; the answer lands under the active game.
+      const markerGame = pendingGameFor(pool(), attributes?.downloadGame, mod.id);
+      const before = statusUnder(game, mod.id);
       api.events.emit("endorse-mod", game, mod.id, statusToSend(before));
-      sent += 1;
-      setProgress(`Endorsing ${sent} of ${targets.length} — ${mod.name}`);
-      const result = await waitForEndorseOutcome({ read: () => readStatus(mod.id), before, timeoutMs: 15_000 });
-      if (result === "endorsed") endorsed += 1;
-      else if (result === "timeout") timedOut.push(mod.name);
-      else failed.push(mod.name);
+      run.sent += 1;
+      setProgress(`Endorsing ${run.sent} of ${targets.length} — ${mod.name}`);
+      const result = await waitForEndorseOutcome({
+        read: () => statusUnder(game, mod.id),
+        ...(markerGame === undefined ? {} : { readPending: () => statusUnder(markerGame, mod.id) }),
+        before,
+        timeoutMs: 15_000,
+      });
+      ehLog("debug", "curator.endorse.result", {
+        modId: mod.id,
+        nexusModId: mod.nexusModId ?? null,
+        result,
+        markerGame: markerGame ?? null,
+      });
+      if (result === "not-sent") {
+        run.sent -= 1;
+        run.notSent.push({ name: mod.name, why: "Vortex did not start the request (its notification, if any, says why)" });
+        continue;
+      }
+      if (result === "endorsed") run.endorsed += 1;
+      else if (result === "timeout") (markerGame === undefined ? run.unreadable : run.timedOut).push(mod.name);
+      else run.failed.push(mod.name);
       // Nexus rate-limits; a short gap between answered requests is enough.
       await new Promise((r) => setTimeout(r, ENDORSE_PACE_MS));
     }
-    ehLog("info", "curator.endorse.done", { asked: sent, endorsed, failed: failed.length, timedOut: timedOut.length, stopped: signal.aborted });
-    return { endorsed, failed, timedOut, sent };
+    ehLog("info", "curator.endorse.done", {
+      asked: targets.length,
+      sent: run.sent,
+      endorsed: run.endorsed,
+      failed: run.failed.length,
+      timedOut: run.timedOut.length,
+      unreadable: run.unreadable.length,
+      notSent: run.notSent.reduce<Record<string, number>>((acc, n) => {
+        acc[n.why] = (acc[n.why] ?? 0) + 1;
+        return acc;
+      }, {}),
+      account,
+      stopped: signal.aborted,
+    });
+    return run;
   };
 
-  const describeEndorse = (o: { endorsed: number; failed: string[]; timedOut: string[]; sent: number }, asked: number, stopped: boolean): string =>
-    `Endorsed ${num(o.endorsed)} of ${num(asked)} mod(s)` +
-    (stopped ? " before you stopped it" : "") +
-    (o.failed.length > 0 ? `; Nexus refused ${num(o.failed.length)} (${o.failed.slice(0, 5).join(", ")}${o.failed.length > 5 ? "…" : ""}) — Vortex's notifications say why` : "") +
-    (o.timedOut.length > 0 ? `; ${num(o.timedOut.length)} gave no answer within 15 seconds and may still land` : "") +
-    ".";
+  const describeEndorse = (o: EndorseRun, asked: number, stopped: boolean): string => describeEndorseRun(o, asked, stopped);
 
   const updateAll = guard("Updating", async (candidates: readonly WorkRow[]): Promise<void> => {
     const game = gameId;
