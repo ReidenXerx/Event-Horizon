@@ -6,6 +6,7 @@
  * and still hashes the whole file.
  */
 import { createHash } from "crypto";
+import { EventEmitter } from "events";
 import * as fs from "fs";
 import * as http from "http";
 import * as os from "os";
@@ -13,7 +14,7 @@ import * as path from "path";
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { downloadToFile, probeFileName } from "./downloadDirect";
+import { downloadToFile, probeFileName, type RequestImpl } from "./downloadDirect";
 
 const BODY = Buffer.alloc(300_000);
 for (let i = 0; i < BODY.length; i += 1) BODY[i] = (i * 7 + (i >> 8)) & 0xff;
@@ -160,6 +161,41 @@ describe("downloadToFile", () => {
     const dest = path.join(tmp, "five.ehcoll");
     const got = await downloadToFile({ url: `${base}/redirect/3`, destPath: dest });
     expect(got.sha256).toBe(BODY_SHA);
+  });
+
+  it("refuses a plain http link that leaves this machine, before any request", async () => {
+    let requests = 0;
+    const request = ((): never => {
+      requests += 1;
+      throw new Error("must not be called");
+    }) as unknown as RequestImpl;
+    await expect(
+      downloadToFile({ url: "http://files.example.com/pkg.ehcoll", destPath: path.join(tmp, "http.ehcoll"), request }),
+    ).rejects.toThrow(/Plain http/);
+    expect(requests).toBe(0);
+  });
+
+  it("refuses an https link that redirects to plain http", async () => {
+    const asked: string[] = [];
+    // A fake transport: the https "server" answers 302 to an http address.
+    const request: RequestImpl = (url, _options, onResponse) => {
+      asked.push(url);
+      const req = new EventEmitter() as EventEmitter & { end: () => void; destroy: () => void };
+      req.destroy = (): void => undefined;
+      req.end = (): void => {
+        const res = Object.assign(new EventEmitter(), {
+          statusCode: 302,
+          headers: { location: "http://cdn.example.com/pkg.ehcoll" },
+          resume: () => undefined,
+        });
+        onResponse(res as never);
+      };
+      return req as never;
+    };
+    await expect(
+      downloadToFile({ url: "https://files.example.com/pkg.ehcoll", destPath: path.join(tmp, "down.ehcoll"), request }),
+    ).rejects.toThrow(/from https to plain http/);
+    expect(asked).toEqual(["https://files.example.com/pkg.ehcoll"]);
   });
 
   it("names the HTTP status when the link is dead", async () => {

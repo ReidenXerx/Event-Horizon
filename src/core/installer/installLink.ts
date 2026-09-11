@@ -30,11 +30,62 @@ export type InstallLink =
       modId: number;
       /** Only when the link names one file (`file_id=` or an nxm link). */
       fileId?: number;
+      /** The package's published SHA-256, from a `#sha256=` fragment. Lowercase hex. */
+      sha256?: string;
     }
-  | { kind: "direct"; url: string }
+  | {
+      kind: "direct";
+      /** The download address: no fragment, no credentials. */
+      url: string;
+      /** The package's published SHA-256, from a `#sha256=` fragment. Lowercase hex. */
+      sha256?: string;
+    }
   | { kind: "invalid"; why: string };
 
 const NEXUS_HOSTS = new Set(["www.nexusmods.com", "nexusmods.com"]);
+
+/**
+ * A host on this machine. Plain http to it never crosses a network, so
+ * nothing between the two ends can change the bytes; everywhere else it can.
+ */
+export function isLoopbackHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return h === "localhost" || h === "::1" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
+}
+
+/** Why a web address may not carry a package, or undefined when it may. */
+export function insecureLinkReason(url: URL): string | undefined {
+  if (url.protocol === "https:") return undefined;
+  if (url.protocol === "http:" && isLoopbackHost(url.hostname)) return undefined;
+  if (url.protocol === "http:") {
+    return (
+      "Plain http links are refused: anything between you and the server can change the bytes on the way, and a " +
+      "collection package installs DLLs. Use the https:// form of the link."
+    );
+  }
+  return `Only web links are accepted, not "${url.protocol.replace(/:$/, "")}" links.`;
+}
+
+/**
+ * The `#sha256=<64 hex>` a link may carry. A fragment is never sent to the
+ * server, so the checksum travels with the link without changing what is
+ * downloaded. A fragment that mentions sha256 but is not exactly that shape
+ * is refused rather than ignored: whoever wrote it meant the file to be
+ * checked, and silently not checking is the one wrong answer.
+ */
+function checksumOf(url: URL): { sha256?: string; why?: string } {
+  const fragment = url.hash.replace(/^#/, "");
+  if (!/sha-?256/i.test(fragment)) return {};
+  const m = /^sha256=([0-9a-f]{64})$/i.exec(fragment);
+  if (m === null) {
+    return {
+      why:
+        "The link's #sha256= is not a SHA-256 checksum. It must be exactly 64 hexadecimal characters after " +
+        "#sha256=, as the collection's page gives it.",
+    };
+  }
+  return { sha256: m[1].toLowerCase() };
+}
 
 /** What the user pasted, classified. Whitespace around it is ignored. */
 export function parseInstallLink(input: string): InstallLink {
@@ -51,6 +102,10 @@ export function parseInstallLink(input: string): InstallLink {
     };
   }
 
+  const checksum = checksumOf(url);
+  if (checksum.why !== undefined) return { kind: "invalid", why: checksum.why };
+  const sha = checksum.sha256 !== undefined ? { sha256: checksum.sha256 } : {};
+
   if (url.protocol === "nxm:") {
     // nxm://skyrimspecialedition/mods/191460/files/803758?key=...&expires=...
     const m = /^\/mods\/(\d+)\/files\/(\d+)/.exec(url.pathname);
@@ -58,15 +113,11 @@ export function parseInstallLink(input: string): InstallLink {
     if (m === null || domain.length === 0) {
       return { kind: "invalid", why: "That nxm link does not name a mod file." };
     }
-    return { kind: "nexus", domain, modId: Number(m[1]), fileId: Number(m[2]) };
+    return { kind: "nexus", domain, modId: Number(m[1]), fileId: Number(m[2]), ...sha };
   }
 
-  if (url.protocol !== "https:" && url.protocol !== "http:") {
-    return {
-      kind: "invalid",
-      why: `Only web links are accepted, not "${url.protocol.replace(/:$/, "")}" links.`,
-    };
-  }
+  const insecure = insecureLinkReason(url);
+  if (insecure !== undefined) return { kind: "invalid", why: insecure };
 
   if (NEXUS_HOSTS.has(url.hostname.toLowerCase())) {
     const m = /^\/(?:games\/)?([a-z0-9]+)\/mods\/(\d+)(?:\/|$)/i.exec(url.pathname);
@@ -77,16 +128,34 @@ export function parseInstallLink(input: string): InstallLink {
       };
     }
     const fileIdRaw = url.searchParams.get("file_id");
-    const fileId = fileIdRaw !== null && /^\d+$/.test(fileIdRaw) ? Number(fileIdRaw) : undefined;
+    let fileId: number | undefined;
+    if (fileIdRaw !== null) {
+      // `file_id=1e3` is not file 1000 and not "no file named": the link
+      // meant one file, and quietly choosing among the page's files instead
+      // would install something its author did not point at.
+      if (!/^[1-9]\d*$/.test(fileIdRaw) || !Number.isSafeInteger(Number(fileIdRaw))) {
+        return {
+          kind: "invalid",
+          why: `The link's file_id "${fileIdRaw.slice(0, 40)}" is not a file number. Copy the file's link from the page's Files tab again.`,
+        };
+      }
+      fileId = Number(fileIdRaw);
+    }
     return {
       kind: "nexus",
       domain: m[1].toLowerCase(),
       modId: Number(m[2]),
       ...(fileId !== undefined ? { fileId } : {}),
+      ...sha,
     };
   }
 
-  return { kind: "direct", url: directDownloadUrl(url) };
+  // Credentials in a link would be sent to every host a redirect reaches and
+  // written into the log; the fragment is ours, not the server's.
+  url.username = "";
+  url.password = "";
+  url.hash = "";
+  return { kind: "direct", url: directDownloadUrl(url), ...sha };
 }
 
 /**

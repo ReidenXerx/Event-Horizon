@@ -71,6 +71,55 @@ describe("parseInstallLink", () => {
     expect((r as { why: string }).why).toMatch(/mods\/108944/);
   });
 
+  it("refuses plain http, which anything on the way can rewrite, except on this machine", () => {
+    const r = parseInstallLink("http://pixeldrain.com/api/file/Qc8K6SYR?download");
+    expect(r.kind).toBe("invalid");
+    expect((r as { why: string }).why).toMatch(/https:\/\//);
+    expect(parseInstallLink("http://www.nexusmods.com/fallout4/mods/108944").kind).toBe("invalid");
+    expect(parseInstallLink("http://127.0.0.1:8080/pkg.ehcoll").kind).toBe("direct");
+    expect(parseInstallLink("http://localhost/pkg.ehcoll").kind).toBe("direct");
+  });
+
+  it("carries a #sha256= checksum, and the address it downloads has no fragment", () => {
+    const hex = "AB".repeat(32);
+    expect(parseInstallLink(`https://pixeldrain.com/u/Qc8K6SYR#sha256=${hex}`)).toEqual({
+      kind: "direct",
+      url: "https://pixeldrain.com/api/file/Qc8K6SYR?download",
+      sha256: hex.toLowerCase(),
+    });
+    expect(parseInstallLink(`https://www.nexusmods.com/fallout4/mods/108944#sha256=${hex}`)).toEqual({
+      kind: "nexus",
+      domain: "fallout4",
+      modId: 108944,
+      sha256: hex.toLowerCase(),
+    });
+    // An unrelated fragment is not a checksum and is not refused.
+    expect(parseInstallLink("https://example.com/pkg.ehcoll#top")).toEqual({
+      kind: "direct",
+      url: "https://example.com/pkg.ehcoll",
+    });
+  });
+
+  it("refuses a checksum fragment that is not a SHA-256, rather than skipping the check", () => {
+    expect(parseInstallLink("https://example.com/pkg.ehcoll#sha256=abc").kind).toBe("invalid");
+    expect(parseInstallLink(`https://example.com/pkg.ehcoll#sha256=${"g".repeat(64)}`).kind).toBe("invalid");
+    expect(parseInstallLink(`https://example.com/pkg.ehcoll#SHA-256=${"a".repeat(64)}`).kind).toBe("invalid");
+  });
+
+  it("drops credentials from a direct link", () => {
+    expect(parseInstallLink("https://user:secret@example.com/pkg.ehcoll")).toEqual({
+      kind: "direct",
+      url: "https://example.com/pkg.ehcoll",
+    });
+  });
+
+  it("refuses a file_id that is not a whole file number instead of ignoring it", () => {
+    for (const bad of ["1e3", "", "0x10", "-4", "12.0"]) {
+      const r = parseInstallLink(`https://www.nexusmods.com/skyrimspecialedition/mods/191460?tab=files&file_id=${bad}`);
+      expect(r.kind, bad).toBe("invalid");
+    }
+  });
+
   it("refuses non-web schemes and empty input", () => {
     expect(parseInstallLink("file:///C:/x.ehcoll").kind).toBe("invalid");
     expect(parseInstallLink("").kind).toBe("invalid");

@@ -26,6 +26,7 @@ import * as https from "https";
 import * as path from "path";
 
 import { AbortError, isAbort } from "../../utils/abortError";
+import { insecureLinkReason } from "./installLink";
 
 export type DownloadProgress = {
   /** Bytes on disk so far, including what an earlier attempt left. */
@@ -222,6 +223,20 @@ function openRange(
       reject(new AbortError("download cancelled"));
       return;
     }
+    if (hops === 0) {
+      let start: URL;
+      try {
+        start = new URL(url);
+      } catch {
+        reject(new Error("That is not a link."));
+        return;
+      }
+      const insecure = insecureLinkReason(start);
+      if (insecure !== undefined) {
+        reject(new Error(insecure));
+        return;
+      }
+    }
     const headers: Record<string, string> = { "user-agent": "EventHorizon/collection-link" };
     if (range !== undefined) headers.range = range;
     let req: http.ClientRequest;
@@ -237,14 +252,30 @@ function openRange(
             reject(new Error(`The link redirects more than ${MAX_REDIRECTS} times.`));
             return;
           }
-          let next: string;
+          let next: URL;
           try {
-            next = new URL(location, url).toString();
+            next = new URL(location, url);
           } catch {
-            reject(new Error(`The link redirected somewhere unreadable: ${location}`));
+            reject(new Error("The link redirected somewhere unreadable."));
             return;
           }
-          resolve(openRange(request, next, range, signal, hops + 1));
+          // An https link that redirects to plain http has handed the bytes
+          // to anyone on the path; the https the user saw proves nothing then.
+          if (next.protocol === "http:" && new URL(url).protocol === "https:") {
+            reject(
+              new Error(
+                `The link redirected from https to plain http (${next.host}), and a package fetched over plain http ` +
+                  "can be altered on the way. Refused; ask whoever published the link for one that stays on https.",
+              ),
+            );
+            return;
+          }
+          const insecure = insecureLinkReason(next);
+          if (insecure !== undefined) {
+            reject(new Error(`The link redirected to ${next.host || next.protocol}: ${insecure}`));
+            return;
+          }
+          resolve(openRange(request, next.toString(), range, signal, hops + 1));
           return;
         }
         resolve({ res, url });
