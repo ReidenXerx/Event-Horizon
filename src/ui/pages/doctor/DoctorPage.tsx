@@ -26,7 +26,8 @@ import { useApi } from "../../state";
 import { useErrorReporter } from "../../errors";
 import { useToast } from "../../components/Toast";
 import { DoctorPanel } from "./DoctorPanel";
-import { assessObservedLoadOrder, evaluateHealth, healingBlockedReason } from "../../../core/doctor/health";
+import { assessObservedLoadOrder, doctorLightFlagBaseline, evaluateHealth, healingBlockedReason } from "../../../core/doctor/health";
+import { ehLog } from "../../../core/logging/ehLog";
 import type { HealAction, HealthCheck, HealthReceiptView } from "../../../core/doctor/health";
 import { gatherObservations } from "../../../core/doctor/gather";
 import { describeHeal, healNeedsManifest } from "../../../core/doctor/heal";
@@ -59,7 +60,13 @@ type Loaded = {
  * compare them against a list of strings and report every plugin as drifted.
  */
 function toHealthView(receipt: InstallReceipt): HealthReceiptView {
-  const baseline = receipt.rulesApplication?.baselinePluginOrder;
+  // Light values recorded from a bit that is not this game's light bit are
+  // dropped here, and the reason travels in their place.
+  const { baseline, refused: lightFlagsRefused } = doctorLightFlagBaseline(
+    receipt.gameId,
+    receipt.rulesApplication?.baselinePluginOrder,
+    receipt.rulesApplication?.baselineLightFlagBit,
+  );
   return {
     packageName: receipt.packageName,
     packageVersion: receipt.packageVersion,
@@ -92,6 +99,7 @@ function toHealthView(receipt: InstallReceipt): HealthReceiptView {
                   })),
                 }
               : {}),
+            ...(lightFlagsRefused !== undefined ? { lightFlagsRefused } : {}),
           },
         }
       : {}),
@@ -235,6 +243,18 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
     void (async (): Promise<void> => {
       try {
         const gameId = loaded.selected.gameId;
+        const recordedLight = doctorLightFlagBaseline(
+          gameId,
+          loaded.selected.rulesApplication?.baselinePluginOrder,
+          loaded.selected.rulesApplication?.baselineLightFlagBit,
+        );
+        if (recordedLight.refused !== undefined) {
+          ehLog("warn", "doctor.light-flags.refused", {
+            gameId,
+            recordedLightFlagBit: loaded.selected.rulesApplication?.baselineLightFlagBit,
+            reason: recordedLight.refused,
+          });
+        }
         const obs = await gatherObservations({
           api,
           gameId,
@@ -245,11 +265,8 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
           receipts: loaded.receipts,
           // The ESL flags live in the plugin FILES, so checking them needs
           // the curator's recorded values to compare against.
-          ...(loaded.selected.rulesApplication?.baselinePluginOrder !== undefined
-            ? {
-                recordedPlugins:
-                  loaded.selected.rulesApplication.baselinePluginOrder,
-              }
+          ...(recordedLight.baseline !== undefined
+            ? { recordedPlugins: recordedLight.baseline }
             : {}),
           ...(drifted !== undefined ? { driftedCompareKeys: drifted } : {}),
         });

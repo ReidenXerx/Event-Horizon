@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   assessObservedLoadOrder,
+  doctorLightFlagBaseline,
   evaluateHealth,
   healingBlockedReason,
   overallHealth,
@@ -463,6 +464,49 @@ describe("the ESL flags, which decide whether the game starts", () => {
     };
     const checks = evaluateHealth(stripped, healthy());
     expect(byId(checks, "plugin-light-flags").status).toBe("unknown");
+  });
+});
+
+describe("ESL flags recorded from a bit that is not the game's light bit", () => {
+  /**
+   * A Starfield receipt from before flags were per game holds values read
+   * from 0x200, and Starfield's light bit is 0x100. Compared against a
+   * correct read of the disk, they "drift" on every plugin that differs in
+   * two unrelated bits — and the heal would then write those values back.
+   */
+  it("is UNKNOWN with the reason, and offers no heal, even when the values disagree with disk", () => {
+    const r = receipt();
+    const view: HealthReceiptView = {
+      ...r,
+      rulesApplication: {
+        ...r.rulesApplication!,
+        lightFlagsRefused: "They were read from header bit 0x200, but starfield marks a light plugin with 0x100.",
+      },
+    };
+    const c = byId(
+      evaluateHealth(view, healthy({ currentPluginLightFlags: { "a.esp": false, "b.esp": true } })),
+      "plugin-light-flags",
+    );
+    expect(c.status).toBe("unknown");
+    expect(c.summary).toMatch(/0x100/);
+    expect(c.heal).toBeUndefined();
+  });
+
+  it("strips a legacy Starfield receipt's values and says why, and leaves Skyrim SE's alone", () => {
+    const base = [
+      { name: "a.esm", enabled: true, light: true },
+      { name: "b.esm", enabled: true },
+    ];
+    const sf = doctorLightFlagBaseline("starfield", base, undefined);
+    expect(sf.refused).toMatch(/0x200/);
+    expect(sf.baseline!.map((e) => e.name)).toEqual(["a.esm", "b.esm"]);
+    expect(sf.baseline!.some((e) => "light" in e)).toBe(false);
+
+    expect(doctorLightFlagBaseline("starfield", base, 0x100)).toEqual({ baseline: base });
+    expect(doctorLightFlagBaseline("skyrimse", base, undefined)).toEqual({ baseline: base });
+    // Nothing recorded: nothing to refuse, and "no flags recorded" stays the honest answer.
+    const bare = [{ name: "a.esm", enabled: true }];
+    expect(doctorLightFlagBaseline("starfield", bare, undefined)).toEqual({ baseline: bare });
   });
 });
 

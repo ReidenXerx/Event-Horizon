@@ -40,6 +40,7 @@ import {
   type LoadOrderStatus,
   type OrderStanding,
 } from "./loadOrderStatus";
+import { judgeRecordedLightFlags } from "../manifest/pluginCapability";
 
 export type HealthCheckId =
   /**
@@ -175,6 +176,35 @@ export interface HealthObservations {
   currentUserlistGroupAssignmentCount: number | undefined;
 }
 
+/**
+ * The recorded ESL flags Doctor may judge in this game, and why not when not.
+ *
+ * A receipt's `light` values mean "light" only if they were read from the
+ * game's own light bit. One from before flags were per game was read at 0x200,
+ * which is not Starfield's light bit — judged against a correct read of the
+ * disk it reports drift on unrelated bits, and restoring it writes them. Such
+ * values are removed, and the reason is carried instead, for both the health
+ * check and the read of the disk.
+ */
+export function doctorLightFlagBaseline<T extends { name: string; enabled: boolean; light?: boolean }>(
+  gameId: string,
+  baseline: readonly T[] | undefined,
+  recordedLightFlagBit: number | undefined,
+): { baseline: T[] | undefined; refused?: string } {
+  if (baseline === undefined) return { baseline: undefined };
+  if (!baseline.some((e) => e.light !== undefined)) return { baseline: [...baseline] };
+  const verdict = judgeRecordedLightFlags(gameId, recordedLightFlagBit);
+  if (verdict.usable) return { baseline: [...baseline] };
+  return {
+    baseline: baseline.map((e) => {
+      const { light, ...rest } = e;
+      void light;
+      return rest as T;
+    }),
+    refused: verdict.reason,
+  };
+}
+
 /** The minimum of a receipt these checks read. */
 export interface HealthReceiptView {
   packageName: string;
@@ -191,6 +221,12 @@ export interface HealthReceiptView {
       /** The curator's ESL flag, when the package recorded one. */
       light?: boolean;
     })[];
+    /**
+     * Why the recorded flags cannot be judged in this game, when they cannot
+     * (see {@link doctorLightFlagBaseline}). Shown in place of a verdict, with
+     * nothing offered to restore.
+     */
+    lightFlagsRefused?: string;
   };
   userlistApplication?: {
     appliedRuleCount?: number;
@@ -623,7 +659,19 @@ export function evaluateHealth(
    */
   const recordedFlags = (baseline ?? []).filter((p) => p.light !== undefined);
   const onDisk = obs.currentPluginLightFlags;
-  if (recordedFlags.length === 0) {
+  const lightFlagsRefused = receipt.rulesApplication?.lightFlagsRefused;
+  if (lightFlagsRefused !== undefined) {
+    // Checked before the values are looked at: they are not evidence of
+    // anything in this game, so neither "healthy" nor "drifted" is honest.
+    checks.push({
+      id: "plugin-light-flags",
+      title: "ESL (light) flags",
+      status: "unknown",
+      summary: `The ESL flags this install recorded were not checked. ${lightFlagsRefused}`,
+      detail: [],
+      affectedCount: 0,
+    });
+  } else if (recordedFlags.length === 0) {
     checks.push({
       id: "plugin-light-flags",
       title: "ESL (light) flags",
