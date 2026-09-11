@@ -18,6 +18,7 @@ import {
   parseInstallLink,
   safeDownloadName,
   sanitizeFileName,
+  vortexGamesForNexusDomain,
   type NexusFileCandidate,
 } from "./installLink";
 
@@ -133,13 +134,21 @@ describe("chooseEhcollFile", () => {
   const pkg = (over: Partial<NexusFileCandidate>): NexusFileCandidate => ({
     file_id: 1,
     file_name: "x.ehcoll",
-    category_id: 1,
+    category_name: "MAIN",
     ...over,
   });
 
-  it("takes the named file even when it is not a .ehcoll", () => {
-    const files = [pkg({ file_id: 1 }), pkg({ file_id: 2, file_name: "notes.zip" })];
-    expect(chooseEhcollFile(files, 2)).toEqual({ kind: "one", file: files[1] });
+  it("takes a named package, treats a named zip as the link file, and refuses anything else by name", () => {
+    const files = [
+      pkg({ file_id: 1 }),
+      pkg({ file_id: 2, file_name: "ivy-link.zip" }),
+      pkg({ file_id: 3, file_name: "readme.txt" }),
+    ];
+    expect(chooseEhcollFile(files, 1)).toEqual({ kind: "one", file: files[0] });
+    expect(chooseEhcollFile(files, 2)).toEqual({ kind: "carrier", file: files[1] });
+    const r = chooseEhcollFile(files, 3);
+    expect(r.kind).toBe("none");
+    expect((r as { why: string }).why).toMatch(/readme\.txt/);
   });
 
   it("reports a named file the page does not have", () => {
@@ -150,35 +159,74 @@ describe("chooseEhcollFile", () => {
   it("ignores non-package files and retired versions", () => {
     const files = [
       pkg({ file_id: 1, file_name: "readme.txt" }),
-      pkg({ file_id: 2, category_id: 4 }), // old version
+      pkg({ file_id: 2, category_name: "OLD_VERSION" }),
+      pkg({ file_id: 4, category_name: "ARCHIVED" }),
       pkg({ file_id: 3 }),
     ];
-    expect(chooseEhcollFile(files)).toEqual({ kind: "one", file: files[2] });
+    expect(chooseEhcollFile(files)).toEqual({ kind: "one", file: files[3] });
+  });
+
+  it("reads a file's category by the name Nexus gives it, not by a numeric id", () => {
+    const files = [
+      pkg({ file_id: 1, category_id: 4, category_name: "MAIN" }),
+      pkg({ file_id: 2, category_id: 1, category_name: "OLD_VERSION" }),
+    ];
+    expect(chooseEhcollFile(files)).toEqual({ kind: "one", file: files[0] });
   });
 
   it("prefers the page's primary file", () => {
-    const files = [pkg({ file_id: 1 }), pkg({ file_id: 2, is_primary: true }), pkg({ file_id: 3, category_id: 2 })];
+    const files = [pkg({ file_id: 1 }), pkg({ file_id: 2, is_primary: true }), pkg({ file_id: 3, category_name: "UPDATE" })];
     expect(chooseEhcollFile(files)).toEqual({ kind: "one", file: files[1] });
   });
 
-  it("with several Main files and dates, takes the newest", () => {
+  it("asks rather than taking the newest when several Main packages remain", () => {
     const files = [
       pkg({ file_id: 1, uploaded_timestamp: 100 }),
       pkg({ file_id: 2, uploaded_timestamp: 300 }),
-      pkg({ file_id: 3, uploaded_timestamp: 200 }),
+      pkg({ file_id: 3, category_name: "OPTIONAL", uploaded_timestamp: 200 }),
     ];
-    expect(chooseEhcollFile(files)).toEqual({ kind: "one", file: files[1] });
+    expect(chooseEhcollFile(files)).toEqual({ kind: "several", files: [files[0], files[1]] });
   });
 
   it("does not guess between equals", () => {
-    const files = [pkg({ file_id: 1, category_id: 2 }), pkg({ file_id: 2, category_id: 2 })];
+    const files = [pkg({ file_id: 1, category_name: "UPDATE" }), pkg({ file_id: 2, category_name: "UPDATE" })];
     const r = chooseEhcollFile(files);
     expect(r.kind).toBe("several");
+  });
+
+  it("on a landing page with no package, chooses the link file", () => {
+    const files = [
+      pkg({ file_id: 7, file_name: "ivy-panties-link.zip" }),
+      pkg({ file_id: 8, file_name: "ivy-panties-link-old.zip", category_name: "OLD_VERSION" }),
+    ];
+    expect(chooseEhcollFile(files)).toEqual({ kind: "carrier", file: files[0] });
+  });
+
+  it("a package on the page wins over a link file", () => {
+    const files = [pkg({ file_id: 7, file_name: "link.zip" }), pkg({ file_id: 8 })];
+    expect(chooseEhcollFile(files)).toEqual({ kind: "one", file: files[1] });
   });
 
   it("explains an empty page and a page without packages differently", () => {
     expect((chooseEhcollFile([]) as { why: string }).why).toMatch(/no files/);
     expect((chooseEhcollFile([pkg({ file_name: "mod.7z" })]) as { why: string }).why).toMatch(/no \.ehcoll/);
+  });
+});
+
+describe("vortexGamesForNexusDomain", () => {
+  it("names every Vortex game that maps to the page's Nexus domain, and none for an unknown one", () => {
+    const known = [
+      { id: "skyrimse", name: "Skyrim Special Edition" },
+      { id: "skyrimvr", name: "Skyrim VR" },
+      { id: "fallout4", name: "Fallout 4" },
+    ];
+    const table: Record<string, string> = { skyrimse: "skyrimspecialedition", skyrimvr: "skyrimspecialedition" };
+    const toDomain = (id: string): string => table[id] ?? id;
+    expect(vortexGamesForNexusDomain(known, "skyrimspecialedition", toDomain).map((g) => g.name)).toEqual([
+      "Skyrim Special Edition",
+      "Skyrim VR",
+    ]);
+    expect(vortexGamesForNexusDomain(known, "starfield", toDomain)).toEqual([]);
   });
 });
 

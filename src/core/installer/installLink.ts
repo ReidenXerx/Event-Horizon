@@ -192,63 +192,114 @@ export type NexusFileCandidate = {
 };
 
 export type ChosenFile =
+  /** The collection package itself. */
   | { kind: "one"; file: NexusFileCandidate }
+  /**
+   * No package on the page, and this small zip is what it offers instead: a
+   * landing page whose file carries the package's link and SHA-256 (read by
+   * `core/installer/linkCarrier.ts`).
+   */
+  | { kind: "carrier"; file: NexusFileCandidate }
   | { kind: "several"; files: NexusFileCandidate[] }
   | { kind: "none"; why: string };
 
-/** Nexus's category id for Main Files. */
-const MAIN_CATEGORY = 1;
+/**
+ * Nexus's file categories, by the NAME the listing gives them ("MAIN",
+ * "OLD_VERSION"). The names are what the site shows and what this code
+ * means; the numeric ids were guessed, and one of the guesses was wrong.
+ */
+const MAIN_CATEGORY = "MAIN";
 /** Old versions, archived and deleted files carry these; never offered. */
-const RETIRED_CATEGORIES = new Set([4, 6, 7]);
+const RETIRED_CATEGORIES = new Set(["OLD_VERSION", "ARCHIVED", "DELETED", "REMOVED"]);
+
+function categoryOf(file: NexusFileCandidate): string {
+  return (file.category_name ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
 
 function isEhcoll(file: NexusFileCandidate): boolean {
   return /\.ehcoll$/i.test(file.file_name ?? "");
 }
 
+function isZip(file: NexusFileCandidate): boolean {
+  return /\.zip$/i.test(file.file_name ?? "");
+}
+
 /**
  * Which file on the page is the collection.
  *
- * A named `fileId` wins outright, whatever its extension — the link's author
- * chose it. Otherwise only `.ehcoll` files are considered, retired ones are
- * dropped, and the page's primary file is preferred; then a single Main
- * file; then the newest Main file. Several equally good candidates are
- * returned as a choice rather than guessed (NS-8's spirit: an ambiguous
- * package is a question, not a coin toss).
+ * A named `fileId` is the link author's choice: a `.ehcoll` is the package,
+ * a `.zip` is a link file, and anything else is refused by name rather than
+ * downloaded and failed on later. Otherwise retired files are dropped and the
+ * `.ehcoll` files considered: the page's primary file, then a single Main
+ * file. Two or more still equal are a question for the person, never a pick
+ * by upload date (NS-8's spirit: an ambiguous package is a question, not a
+ * coin toss). A page with no package but a link file is a landing page, and
+ * the same rules choose among its zips.
  */
 export function chooseEhcollFile(files: NexusFileCandidate[], fileId?: number): ChosenFile {
   if (fileId !== undefined) {
     const named = files.find((f) => f.file_id === fileId);
-    return named !== undefined
-      ? { kind: "one", file: named }
-      : { kind: "none", why: `The link names file ${fileId}, and the page has no such file.` };
-  }
-
-  const packages = files.filter(isEhcoll).filter((f) => !RETIRED_CATEGORIES.has(f.category_id ?? -1));
-  if (packages.length === 0) {
+    if (named === undefined) {
+      return { kind: "none", why: `The link names file ${fileId}, and the page has no such file.` };
+    }
+    if (isEhcoll(named)) return { kind: "one", file: named };
+    if (isZip(named)) return { kind: "carrier", file: named };
     return {
       kind: "none",
       why:
-        files.length === 0
-          ? "The page lists no files."
-          : "The page has no .ehcoll file. It may be an ordinary mod page, or the collection is not published yet.",
+        `The link names file ${fileId} ("${named.file_name ?? named.name ?? "unnamed"}"), which is neither a ` +
+        "collection package (.ehcoll) nor a link file (.zip).",
     };
   }
-  if (packages.length === 1) return { kind: "one", file: packages[0] };
 
-  const primary = packages.filter((f) => f.is_primary === true);
-  if (primary.length === 1) return { kind: "one", file: primary[0] };
-
-  const main = packages.filter((f) => f.category_id === MAIN_CATEGORY);
-  if (main.length === 1) return { kind: "one", file: main[0] };
-  if (main.length > 1) {
-    const stamped = main.filter((f) => typeof f.uploaded_timestamp === "number");
-    if (stamped.length === main.length) {
-      const newest = [...stamped].sort((a, b) => (b.uploaded_timestamp ?? 0) - (a.uploaded_timestamp ?? 0));
-      return { kind: "one", file: newest[0] };
-    }
-    return { kind: "several", files: main };
+  const live = files.filter((f) => !RETIRED_CATEGORIES.has(categoryOf(f)));
+  const packages = live.filter(isEhcoll);
+  if (packages.length > 0) {
+    const pick = pickOne(packages);
+    return pick.kind === "one" ? { kind: "one", file: pick.file } : pick;
   }
-  return { kind: "several", files: packages };
+  const carriers = live.filter(isZip);
+  if (carriers.length > 0) {
+    const pick = pickOne(carriers);
+    return pick.kind === "one" ? { kind: "carrier", file: pick.file } : pick;
+  }
+  return {
+    kind: "none",
+    why:
+      files.length === 0
+        ? "The page lists no files."
+        : "The page has no .ehcoll file and no link file (.zip). It may be an ordinary mod page, or the collection is not published yet.",
+  };
+}
+
+function pickOne(
+  candidates: NexusFileCandidate[],
+): { kind: "one"; file: NexusFileCandidate } | { kind: "several"; files: NexusFileCandidate[] } {
+  if (candidates.length === 1) return { kind: "one", file: candidates[0] };
+  const primary = candidates.filter((f) => f.is_primary === true);
+  if (primary.length === 1) return { kind: "one", file: primary[0] };
+  const main = candidates.filter((f) => categoryOf(f) === MAIN_CATEGORY);
+  if (main.length === 1) return { kind: "one", file: main[0] };
+  return { kind: "several", files: main.length > 1 ? main : candidates };
+}
+
+/**
+ * The Vortex games whose Nexus domain is `domain`, named the way Vortex shows
+ * them. Several can share one domain (Skyrim Special Edition and Skyrim VR).
+ */
+export function vortexGamesForNexusDomain(
+  known: ReadonlyArray<{ id: string; name?: string }>,
+  domain: string,
+  toDomain: (vortexGameId: string) => string,
+): Array<{ id: string; name: string }> {
+  const want = domain.toLowerCase();
+  return known
+    .filter((g) => toDomain(g.id).toLowerCase() === want)
+    .map((g) => ({ id: g.id, name: g.name !== undefined && g.name.length > 0 ? g.name : g.id }));
 }
 
 /** The page a free account is sent to: the file's own tab, with its download buttons. */
