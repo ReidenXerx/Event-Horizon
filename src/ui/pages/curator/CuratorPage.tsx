@@ -125,7 +125,7 @@ import {
 import { livePluginList, readPluginList } from "../../../core/curator/pluginPool";
 import { buildPluginRows } from "../../../core/curator/pluginView";
 import { isBaseGameMaster } from "../../../core/manifest/pluginMasters";
-import { knownGameIds, loadRequirements, nexusDomainForVortexGame, nexusExtOf } from "./requirementsIo";
+import { knownGameIds, loadRequirements, nexusDomainForVortexGame, nexusExtOf, pluginCapabilityForGame } from "./requirementsIo";
 import { isPremium, useCuratorActions } from "./useCuratorActions";
 import { setPluginLightFlag } from "../../../core/manifest/pluginFlags";
 import { installRootFor, stagingRootFromFolder } from "../../../core/stagingPath";
@@ -484,6 +484,8 @@ function CuratorBody(): JSX.Element {
     const enabledIds = new Set(mods.filter((m) => m.enabled).map((m) => m.id));
     return livePluginList(readPluginList(api.getState()), requirements?.load.plugins, (id) => enabledIds.has(id));
   }, [api, tick, requirements, mods]);
+  // What this game's plugin system allows: light plugins or not, and its limit.
+  const pluginCapability = React.useMemo(() => (gameId === undefined ? undefined : pluginCapabilityForGame(gameId)), [gameId]);
   const pluginRows = React.useMemo(
     () =>
       gameId === undefined
@@ -493,8 +495,9 @@ function CuratorBody(): JSX.Element {
             headers: requirements?.load.headers ?? new Map(),
             mods,
             isBaseGame: (m) => isBaseGameMaster(m, gameId),
+            ...(pluginCapability === undefined ? {} : { capability: pluginCapability }),
           }),
-    [plugins, requirements, mods, gameId],
+    [plugins, requirements, mods, gameId, pluginCapability],
   );
 
   const [selected, setSelected] = React.useState<ReadonlySet<string>>(new Set());
@@ -744,6 +747,7 @@ function CuratorBody(): JSX.Element {
         <PluginsView
           rows={pluginRows}
           headersRead={requirements !== undefined}
+          {...(pluginCapability === undefined ? {} : { capability: pluginCapability })}
           onFocus={setFocusId}
           busy={!idle}
           onSetEnabled={(r, enabled): void => setPluginEnabled(r.plugin.name, enabled)}

@@ -17,7 +17,7 @@ import { util, type types } from "@nexusmods/vortex-api";
 
 import { ehLog } from "../../../core/logging/ehLog";
 import { readPluginHeader, isBaseGameMaster } from "../../../core/manifest/pluginMasters";
-import type { PluginHeader } from "../../../core/curator/pluginView";
+import { pluginCapabilityFor, type PluginCapability, type PluginHeader } from "../../../core/curator/pluginView";
 import { getVortexUserDataPath } from "../../../core/paths";
 import { installRootFor, stagingRootFromFolder } from "../../../core/stagingPath";
 import { pluginOwners, readPluginList, type PluginEntry } from "../../../core/curator/pluginPool";
@@ -64,6 +64,22 @@ export function nexusDomainForVortexGame(vortexGameId: string): string {
     pageId = undefined;
   }
   return nexusDomainOf(vortexGameId, pageId);
+}
+
+/**
+ * The game's plugin rules (light plugins, regular-slot limit), with the game
+ * extension's own `details.supportsESL` applied the way Vortex's plugin
+ * management applies it. Undefined for a game that extension does not know.
+ */
+export function pluginCapabilityForGame(gameId: string): PluginCapability | undefined {
+  let details: { supportsESL?: unknown } | undefined;
+  try {
+    const getGame = (util as unknown as { getGame?: (id: string) => { details?: { supportsESL?: unknown } } | undefined }).getGame;
+    details = typeof getGame === "function" ? getGame(gameId)?.details : undefined;
+  } catch {
+    details = undefined;
+  }
+  return pluginCapabilityFor(gameId, details);
 }
 
 /** Every game this Vortex has an extension for. */

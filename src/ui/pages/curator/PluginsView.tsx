@@ -1,21 +1,23 @@
 /**
  * The Plugins view: Vortex's plugin list, with what Vortex's tab leaves out.
  *
- * Read-only in this version. Enabling and reordering stay in Vortex's own
- * tab until the dispatch shape has been verified against the deployed
- * plugin-management extension — a wrong action there silently reorders a
- * load order, and the user cannot see that from here.
+ * Enable, disable and the light flag are offered here; reordering stays in
+ * Vortex's own tab — a wrong action there silently reorders a load order, and
+ * the user cannot see that from here. The regular-slot limit and whether the
+ * light flag exists at all are the game's (see `pluginCapabilityFor`).
  */
 
 import * as React from "react";
 
 import {
   PLUGIN_VIEWS,
+  canWriteLightFlag,
   describeMastersCell,
   describePluginKind,
   pluginRowsForView,
   pluginViewCounts,
   summarizePlugins,
+  type PluginCapability,
   type PluginRow,
   type PluginViewId,
 } from "../../../core/curator/pluginView";
@@ -110,12 +112,15 @@ export function PluginsView(props: {
   onSetEnabled?: (plugin: PluginRow, enabled: boolean) => void;
   /** Flip the ESL bit in the plugin file(s). Absent when the page cannot write. */
   onSetLight?: (plugin: PluginRow, light: boolean) => void;
+  /** The game's plugin rules; undefined when Vortex's plugin management does not know the game. */
+  capability?: PluginCapability;
   busy?: boolean;
 }): JSX.Element {
-  const { rows, headersRead, onFocus } = props;
+  const { rows, headersRead, onFocus, capability } = props;
   const [view, setView] = React.useState<PluginViewId>("all");
   const counts = React.useMemo(() => pluginViewCounts(rows), [rows]);
-  const summary = React.useMemo(() => summarizePlugins(rows, headersRead), [rows, headersRead]);
+  const summary = React.useMemo(() => summarizePlugins(rows, headersRead, capability), [rows, headersRead, capability]);
+  const canFlag = canWriteLightFlag(capability);
   const visible = React.useMemo(() => pluginRowsForView(rows, view), [rows, view]);
   const columns = React.useMemo(() => makeColumns(onFocus), [onFocus]);
   const spec = PLUGIN_VIEWS.find((v) => v.id === view);
@@ -132,7 +137,10 @@ export function PluginsView(props: {
     );
   }
 
-  const slotsTone = summary.slotsUsed >= summary.slotLimit ? "danger" : summary.slotsUsed >= summary.slotLimit - 10 ? "warning" : "neutral";
+  // A limit is only stated when the count under it can be believed.
+  const limit = summary.lightKnown ? summary.slotLimit : undefined;
+  const slotsTone =
+    limit === undefined ? "quiet" : summary.slotsUsed >= limit ? "danger" : summary.slotsUsed >= limit - 10 ? "warning" : "neutral";
 
   return (
     <div className="eh-stack eh-stack--lg">
@@ -141,11 +149,19 @@ export function PluginsView(props: {
         <StatTile label="Enabled" value={num(summary.enabled)} />
         <StatTile
           label="Regular slots"
-          value={headersRead ? `${num(summary.slotsUsed)} / ${summary.slotLimit}` : "?"}
-          tone={headersRead ? slotsTone : "quiet"}
-          title={`Enabled plugins without the light flag. The game stops loading at ${summary.slotLimit}.`}
+          value={limit !== undefined ? `${num(summary.slotsUsed)} / ${limit}` : "?"}
+          tone={slotsTone}
+          title={
+            limit !== undefined
+              ? `Enabled plugins without the light flag. The game stops loading at ${limit}.`
+              : summary.slotLimit === undefined
+                ? "Vortex's plugin management does not know this game, so its limit is unknown here."
+                : !headersRead
+                  ? "Plugin headers have not been read yet."
+                  : "This game marks light plugins with a header bit Event Horizon does not read, so the count is unknown."
+          }
         />
-        <StatTile label="Light" value={headersRead ? num(summary.light) : "?"} tone={headersRead ? "neutral" : "quiet"} />
+        <StatTile label="Light" value={summary.lightKnown ? num(summary.light) : "?"} tone={summary.lightKnown ? "neutral" : "quiet"} />
         <StatTile
           label="Missing masters"
           value={headersRead ? num(summary.withMissing) : "?"}
@@ -170,16 +186,18 @@ export function PluginsView(props: {
           usually the game or a tool holding it open.
         </Callout>
       )}
-      {headersRead && summary.slotsUsed >= summary.slotLimit - 10 && (
-        <Callout tone={summary.slotsUsed >= summary.slotLimit ? "danger" : "warning"}>
-          {num(summary.slotsUsed)} of {summary.slotLimit} regular plugin slots are used. Past the limit the game does not
-          start; the usual fix is flagging eligible plugins light, which Vortex&rsquo;s own Plugins tab can do per plugin.
+      {limit !== undefined && summary.slotsUsed >= limit - 10 && (
+        <Callout tone={summary.slotsUsed >= limit ? "danger" : "warning"}>
+          {num(summary.slotsUsed)} of {limit} regular plugin slots are used. Past the limit the game does not start;{" "}
+          {capability?.lightPlugins === true
+            ? "the usual fix is flagging eligible plugins light, which Vortex’s own Plugins tab can do per plugin."
+            : "this game has no light plugins, so the fix is fewer plugins — disable or merge some."}
         </Callout>
       )}
 
       <p className="eh-note">
-        Enable, disable and flag light here; reordering stays in Vortex&rsquo;s Plugins tab. Plugins of disabled mods
-        are listed too (state &ldquo;mod disabled&rdquo;), which Vortex&rsquo;s tab does not show.
+        Enable, disable{canFlag ? " and flag light" : ""} here; reordering stays in Vortex&rsquo;s Plugins tab. Plugins
+        of disabled mods are listed too (state &ldquo;mod disabled&rdquo;), which Vortex&rsquo;s tab does not show.
       </p>
 
       <div className="eh-row eh-row--sm" role="tablist" aria-label="Plugin views">
@@ -219,7 +237,7 @@ export function PluginsView(props: {
                       {r.plugin.enabled ? "Disable" : "Enable"}
                     </Button>
                   )}
-                  {props.onSetLight !== undefined && !r.plugin.isNative && r.isLight !== undefined && !/\.esl$/i.test(r.plugin.name) && (
+                  {props.onSetLight !== undefined && canFlag && !r.plugin.isNative && r.isLight !== undefined && !/\.esl$/i.test(r.plugin.name) && (
                     <Button
                       size="sm"
                       intent="ghost"

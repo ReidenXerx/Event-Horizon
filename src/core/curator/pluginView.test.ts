@@ -7,6 +7,7 @@ import {
   describePluginKind,
   pluginRowsForView,
   pluginViewCounts,
+  pluginCapabilityFor,
   summarizePlugins,
   type PluginHeader,
 } from "./pluginView";
@@ -78,7 +79,8 @@ describe("plugin rows", () => {
   });
 
   it("counts regular slots as enabled and not light", () => {
-    const s = summarizePlugins(rows, true);
+    // The fixture is a Skyrim SE list: its limit comes from the game's row.
+    const s = summarizePlugins(rows, true, pluginCapabilityFor("skyrimse"));
     // Skyrim.esm, Ordinator, Broken (unknown flags) take slots; Wintersun is
     // disabled; Apocalypse and Patch are light.
     expect(s.slotsUsed).toBe(3);

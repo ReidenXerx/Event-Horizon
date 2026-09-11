@@ -124,6 +124,7 @@ import {
   loadRequirements,
   nexusDomainForVortexGame,
   nexusExtOf,
+  pluginCapabilityForGame,
 } from "./requirementsIo";
 import {
   statusToSend,
@@ -138,6 +139,8 @@ import {
 } from "../../../core/stagingPath";
 import {
   PluginRow,
+  canWriteLightFlag,
+  lightFlagTargets,
 } from "../../../core/curator/pluginView";
 import {
   type WorkRow,
@@ -366,6 +369,21 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
   const setLight = guard("Flagging a plugin", async (row: PluginRow, light: boolean): Promise<void> => {
     const game = gameId;
     if (game === undefined) return;
+    // The view offers the flag only where it exists and is the bit written;
+    // this is the same check at the point of writing.
+    const capability = pluginCapabilityForGame(game);
+    if (capability === undefined || !canWriteLightFlag(capability)) {
+      ehLog("warn", "curator.plugin.set-light.refused", { plugin: row.plugin.name, game, capability });
+      setNote(
+        `${row.plugin.name}: not changed — ` +
+          (capability === undefined
+            ? `Vortex's plugin management does not know ${game}.`
+            : capability.lightPlugins
+              ? `${game} marks light plugins with a header bit Event Horizon does not write.`
+              : `${game} has no light plugins.`),
+      );
+      return;
+    }
     const ok = await confirm({
       title: `${light ? "Set" : "Clear"} the ESL flag on ${row.plugin.name}?`,
       text:
@@ -373,18 +391,18 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
           ? `This writes the light flag into the plugin file itself. It is only safe when every record the plugin adds ` +
             `fits the light range (FormIDs up to 0xFFF, one file's worth); Event Horizon cannot check that — xEdit can ` +
             `("Check for ESL support"). A plugin flagged light that does not qualify breaks in game silently.\n\n`
-          : `This clears the light flag; the plugin takes one of the ${254} regular slots again.\n\n`) +
+          : `This clears the light flag; the plugin takes one of the ${capability.regularSlots} regular slots again.\n\n`) +
         `The change is written to the staging copy and to the deployed copy, and the build records it.`,
       confirmLabel: light ? "Flag light" : "Clear flag",
     });
     if (!ok) return;
-    const paths = new Set<string>();
-    if (row.plugin.filePath !== undefined) paths.add(row.plugin.filePath);
     const owner = row.owner;
-    if (owner?.installationPath !== undefined) {
-      const dir = stagingRootFromFolder(installRootFor(api.getState(), game), owner.installationPath);
-      if (dir !== undefined) paths.add(`${dir}\\${row.plugin.name}`);
-    }
+    const dir =
+      owner?.installationPath === undefined
+        ? undefined
+        : stagingRootFromFolder(installRootFor(api.getState(), game), owner.installationPath);
+    const paths = lightFlagTargets(row.plugin.filePath, dir, row.plugin.name);
+    ehLog("info", "curator.plugin.set-light.targets", { plugin: row.plugin.name, light, paths });
     let changed = 0;
     const errors: string[] = [];
     for (const p of paths) {
