@@ -36,6 +36,8 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { ehLog } from "../logging/ehLog";
+
 /**
  * Vortex's own state path, read out of its bundle rather than guessed:
  * `settings.plugins.autoSort`, initialised `true`.
@@ -63,8 +65,105 @@ export function blocksInstall(state: unknown): boolean {
   return readsAutoSort(state) === true;
 }
 
-/** The Redux action Vortex's plugin-management extension registers for it. */
-export const ACTION_SET_AUTOSORT_ENABLED = "SET_AUTOSORT_ENABLED";
+/**
+ * The Redux action Vortex's plugin-management extension registers for it.
+ *
+ * Read out of the INSTALLED bundle,
+ * `bundledPlugins/gamebryo-plugin-management/index.cjs`:
+ *
+ *   ct=(0,g.createAction)(`GAMEBRYO_SET_AUTOSORT_ENABLED`,e=>e)
+ *   dt={reducers:{[ct]:(e,t)=>p.util.setSafe(e,[`autoSort`],t), …},
+ *       defaults:{autoSort:!0, …}}
+ *   e.registerReducer([`settings`,`plugins`],dt)
+ *
+ * and its own Plugins toolbar toggle dispatches exactly that creator
+ * (`onSetAutoSortEnabled: t=>e(ct(t))`).
+ *
+ * This was `SET_AUTOSORT_ENABLED` — a type no reducer handles. Redux accepts
+ * an unknown action without complaint and changes nothing, so "Turn it off
+ * and install" logged `install.auto-sort-disabled` and the Doctor card toasted
+ * "Automatic sorting is off" while the setting stayed ON. The unit test pinned
+ * the same wrong string, which is how a guess passed as "read from the bundle".
+ * Nothing trusts the dispatch now: {@link disableAutoSort} reads it back.
+ */
+export const ACTION_SET_AUTOSORT_ENABLED = "GAMEBRYO_SET_AUTOSORT_ENABLED";
+
+export type AutoSortDisableOutcome =
+  | { ok: true }
+  | {
+      ok: false;
+      /** One sentence for the user. */
+      reason: string;
+      /** What the setting read AFTER the attempt: still on, or unreadable. */
+      readBack: boolean | undefined;
+    };
+
+/**
+ * Turn Vortex's automatic sorting off, and only say so once the state says so.
+ *
+ * A raw dispatch into another extension's reducer is a request, not a result:
+ * the only proof it landed is `settings.plugins.autoSort` reading `false`
+ * afterwards. "Unreadable afterwards" is not proof either, so it fails too —
+ * a false "it is off" is the exact failure this replaces.
+ */
+export function disableAutoSort(
+  api: { store?: unknown; getState: () => unknown },
+  where: "install" | "doctor",
+): AutoSortDisableOutcome {
+  const readSafely = (): boolean | undefined => {
+    try {
+      return readsAutoSort(api.getState());
+    } catch {
+      return undefined;
+    }
+  };
+  const store = api.store as
+    | { dispatch?: (action: { type: string; payload: unknown }) => void }
+    | undefined;
+  let outcome: AutoSortDisableOutcome;
+  if (typeof store?.dispatch !== "function") {
+    outcome = {
+      ok: false,
+      readBack: readSafely(),
+      reason: "Vortex offered no way to change the setting from here.",
+    };
+  } else {
+    try {
+      store.dispatch({ type: ACTION_SET_AUTOSORT_ENABLED, payload: false });
+      const readBack = readSafely();
+      outcome =
+        readBack === false
+          ? { ok: true }
+          : {
+              ok: false,
+              readBack,
+              reason:
+                readBack === true
+                  ? "Vortex did not accept the change: automatic sorting is still on. " +
+                    "Turn it off with the Autosort button on Vortex's Plugins page."
+                  : "Could not confirm that automatic sorting is off — Vortex's setting " +
+                    "could not be read back. Check the Autosort button on Vortex's Plugins page.",
+            };
+    } catch (err) {
+      outcome = {
+        ok: false,
+        readBack: readSafely(),
+        reason: `Vortex refused the change: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+  }
+  if (outcome.ok) {
+    ehLog("info", "autosort.disable.ok", { where, action: ACTION_SET_AUTOSORT_ENABLED, readBack: false });
+  } else {
+    ehLog("warn", "autosort.disable.fail", {
+      where,
+      action: ACTION_SET_AUTOSORT_ENABLED,
+      readBack: outcome.readBack,
+      reason: outcome.reason,
+    });
+  }
+  return outcome;
+}
 
 /**
  * What the user is told, and what they are agreeing to.

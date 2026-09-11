@@ -16,6 +16,7 @@ import {
   ACTION_SET_AUTOSORT_ENABLED,
   blocksInstall,
   describeAutoSortBlock,
+  disableAutoSort,
   readsAutoSort,
 } from "./autoSort";
 
@@ -72,9 +73,79 @@ describe("what the user is asked", () => {
   });
 
   it("uses the action id Vortex's own bundle registers", () => {
-    // Read out of gamebryo-plugin-management, not guessed: the payload is the
-    // bare boolean, `createAction('SET_AUTOSORT_ENABLED', e => e)`.
-    expect(ACTION_SET_AUTOSORT_ENABLED).toBe("SET_AUTOSORT_ENABLED");
+    // Read out of the INSTALLED gamebryo-plugin-management/index.cjs:
+    //   ct=(0,g.createAction)(`GAMEBRYO_SET_AUTOSORT_ENABLED`,e=>e)
+    //   dt={reducers:{[ct]:(e,t)=>p.util.setSafe(e,[`autoSort`],t)}}
+    //   e.registerReducer([`settings`,`plugins`],dt)
+    // This test used to pin `SET_AUTOSORT_ENABLED`, a type nothing handles.
+    expect(ACTION_SET_AUTOSORT_ENABLED).toBe("GAMEBRYO_SET_AUTOSORT_ENABLED");
+  });
+});
+
+/**
+ * A store that behaves like Vortex's: ONLY the bundle's action type changes
+ * `settings.plugins.autoSort`; every other type is accepted and ignored, which
+ * is exactly how Redux treated the old wrong string.
+ */
+function vortexLikeStore(initial: boolean | undefined): {
+  api: { store: { dispatch: (a: { type: string; payload: unknown }) => void }; getState: () => unknown };
+  dispatched: string[];
+} {
+  let autoSort = initial;
+  const dispatched: string[] = [];
+  return {
+    dispatched,
+    api: {
+      store: {
+        dispatch: (a): void => {
+          dispatched.push(a.type);
+          if (a.type === "GAMEBRYO_SET_AUTOSORT_ENABLED") autoSort = a.payload as boolean;
+        },
+      },
+      getState: () => (autoSort === undefined ? {} : { settings: { plugins: { autoSort } } }),
+    },
+  };
+}
+
+describe("turning it off", () => {
+  it("is ok only when the setting reads back false", () => {
+    const { api, dispatched } = vortexLikeStore(true);
+    expect(disableAutoSort(api, "doctor")).toEqual({ ok: true });
+    expect(dispatched).toEqual(["GAMEBRYO_SET_AUTOSORT_ENABLED"]);
+    expect(readsAutoSort(api.getState())).toBe(false);
+  });
+
+  it("fails — never claims success — when the dispatch changed nothing", () => {
+    // The shipped failure: a dispatch Redux ignored, reported as done.
+    const api = {
+      store: { dispatch: (): void => undefined },
+      getState: () => ({ settings: { plugins: { autoSort: true } } }),
+    };
+    const outcome = disableAutoSort(api, "install");
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.readBack).toBe(true);
+    expect(outcome.reason).toMatch(/still on/);
+  });
+
+  it("fails when the setting cannot be read back — unconfirmed is not off", () => {
+    // A state with no plugins settings at all, before AND after the dispatch.
+    const api = { store: { dispatch: (): void => undefined }, getState: () => ({}) };
+    const outcome = disableAutoSort(api, "install");
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.readBack).toBeUndefined();
+  });
+
+  it("fails when there is no store, or the store throws", () => {
+    expect(disableAutoSort({ getState: () => ({}) }, "doctor").ok).toBe(false);
+    const throwing = {
+      store: { dispatch: (): void => { throw new Error("frozen"); } },
+      getState: () => ({ settings: { plugins: { autoSort: true } } }),
+    };
+    const outcome = disableAutoSort(throwing, "doctor");
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.reason).toMatch(/frozen/);
   });
 });
 
@@ -89,7 +160,8 @@ describe("the wiring", () => {
     );
     expect(src).toContain("autoSortBlocks(liveState)");
     expect(src).toContain("offerDisableAutoSort");
-    // And it dispatches the real action rather than only warning.
-    expect(src).toContain("ACTION_SET_AUTOSORT_ENABLED");
+    // And it turns the setting off through the read-back, rather than only
+    // warning or trusting a raw dispatch.
+    expect(src).toContain('disableAutoSort(api, "install")');
   });
 });

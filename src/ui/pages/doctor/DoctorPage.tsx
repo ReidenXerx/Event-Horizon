@@ -40,7 +40,7 @@ import { EnvironmentTools } from "./EnvironmentTools";
 import { LoadOrderCard } from "./LoadOrderCard";
 import { assessLoadOrder, nativeNamesFromState, previewRepin } from "../../../core/doctor/loadOrderStatus";
 import { baselineOf } from "../../../core/doctor/loadOrderWatcher";
-import { ACTION_SET_AUTOSORT_ENABLED, readsAutoSort } from "../../../core/installer/autoSort";
+import { disableAutoSort, readsAutoSort } from "../../../core/installer/autoSort";
 import type { HealthObservations } from "../../../core/doctor/health";
 
 export interface DoctorPageProps {
@@ -482,8 +482,14 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
           {...(blocked !== undefined ? { blocked } : {})}
           onReapply={(): void => heal("repin-plugin-order", "plugin-order")}
           onDisableAutoSort={(): void => {
-            api.store?.dispatch({ type: ACTION_SET_AUTOSORT_ENABLED, payload: false } as never);
-            toast({ intent: "success", message: "Automatic sorting is off. Vortex keeps the order until you sort by hand." });
+            // Read back before saying so: a success toast over a setting that
+            // stayed on is what this card used to show.
+            const outcome = disableAutoSort(api, "doctor");
+            toast(
+              outcome.ok
+                ? { intent: "success", message: "Automatic sorting is off. Vortex keeps the order until you sort by hand." }
+                : { intent: "danger", message: outcome.reason },
+            );
             setTick((n) => n + 1);
           }}
         />

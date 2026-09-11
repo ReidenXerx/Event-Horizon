@@ -729,7 +729,10 @@ class InstallSession {
      * during the run and every time the user deploys afterwards. It is on by
      * default in Vortex, so most users arrive with it enabled.
      */
-    if (autoSortBlocks(liveState)) {
+    if (
+      autoSortBlocks(liveState) &&
+      this.autoSortAnsweredFor !== this.state.bundle.plan
+    ) {
       void this.offerDisableAutoSort(api);
       return;
     }
@@ -812,6 +815,13 @@ class InstallSession {
   }
 
   private environmentClearedFor: unknown = undefined;
+  /**
+   * The plan the auto-sort question was answered for ("Leave it on", or
+   * "Install anyway" after a disable Vortex did not accept). The gate re-reads
+   * the setting, which is still ON in both cases, so without this every answer
+   * re-opened the same dialog.
+   */
+  private autoSortAnsweredFor: unknown = undefined;
   private environmentGateRunning = false;
   /** The plan whose install began right after Vortex's deployment was purged. */
   private purgedForPlan: unknown = undefined;
@@ -1116,7 +1126,7 @@ class InstallSession {
         manifest?: { plugins?: { order?: unknown[] } };
       }
     )?.manifest?.plugins?.order?.length;
-    const [{ describeAutoSortBlock, ACTION_SET_AUTOSORT_ENABLED }, { ehLog }] =
+    const [{ describeAutoSortBlock, disableAutoSort }, { ehLog }] =
       await Promise.all([
         import("../../../core/installer/autoSort"),
         import("../../../core/logging/ehLog"),
@@ -1125,6 +1135,7 @@ class InstallSession {
       typeof pluginCount === "number" ? pluginCount : 0,
     );
     ehLog("warn", "install.blocked.auto-sort", { pluginCount });
+    const plan = this.state.bundle.plan;
 
     const result = await api.showDialog?.(
       "question",
@@ -1137,33 +1148,55 @@ class InstallSession {
       // pinned — it is simply liable to be re-sorted later, which is now a
       // choice they made rather than a surprise.
       ehLog("info", "install.auto-sort.declined", {});
+      /**
+       * Recorded, or the gate asks again. `startInstall` re-reads autoSort,
+       * which is still ON after "Leave it on", so without this the answer
+       * re-opened the same dialog — forever.
+       */
+      this.autoSortAnsweredFor = plan;
       this.startInstall(api);
       return;
     }
 
-    try {
-      /**
-       * A RAW dispatch: `SET_AUTOSORT_ENABLED` is registered by Vortex's
-       * bundled `gamebryo-plugin-management` extension, not by core, so there
-       * is no typed action creator to import — the same deliberate sidestep
-       * `applyPluginOrder` and `applyUserlist` make. Its payload is the bare
-       * boolean (`createAction('SET_AUTOSORT_ENABLED', e => e)`).
-       */
-      const store = api.store as unknown as {
-        dispatch?: (action: { type: string; payload: unknown }) => void;
-      };
-      if (typeof store?.dispatch !== "function") {
-        throw new Error("no redux store available");
-      }
-      store.dispatch({ type: ACTION_SET_AUTOSORT_ENABLED, payload: false });
-      ehLog("info", "install.auto-sort-disabled", {});
-    } catch (err) {
-      // Non-fatal: the install is still worth doing, and the order is still
-      // pinned. Saying so beats stopping over a setting.
-      ehLog("warn", "install.auto-sort-disable-failed", {
-        error: String(err),
-      });
+    /**
+     * Read back, not assumed. The dispatch used to be trusted on the absence
+     * of a throw, with an action type no reducer handled — so this logged
+     * `install.auto-sort-disabled` over a setting that was still ON.
+     */
+    const outcome = disableAutoSort(api, "install");
+    if (outcome.ok) {
+      ehLog("info", "install.auto-sort-disabled", { readBack: false });
+      this.startInstall(api);
+      return;
     }
+
+    ehLog("warn", "install.auto-sort-disable-failed", {
+      reason: outcome.reason,
+      readBack: outcome.readBack,
+    });
+    // The user agreed to install WITH sorting off, and it is not off. Going on
+    // as though it were is the silent version of this failure; asking again
+    // keeps the choice theirs.
+    const again = await api.showDialog?.(
+      "error",
+      "Automatic sorting is still on",
+      {
+        text:
+          `${outcome.reason}\n\n` +
+          `The install can still go ahead: the curator's order is pinned either ` +
+          `way, but Vortex will re-sort it with LOOT during the install and every ` +
+          `time you deploy afterwards.`,
+      },
+      [{ label: "Cancel" }, { label: "Install anyway" }],
+    );
+    if (again?.action !== "Install anyway") {
+      ehLog("info", "install.auto-sort.cancelled-after-failed-disable", {});
+      return;
+    }
+    ehLog("info", "install.auto-sort.proceed-while-on", {
+      readBack: outcome.readBack,
+    });
+    this.autoSortAnsweredFor = plan;
     this.startInstall(api);
   }
 
