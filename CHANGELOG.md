@@ -8,7 +8,7 @@ Vortex ignores everything after the dash when it decides whether an extension ha
 could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
-(7 September 2026), then 0.1.151 to 0.1.154.
+(7 September 2026), then 0.1.151 to 0.1.155.
 
 ## [0.1.155] — 2026-09-11
 
