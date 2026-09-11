@@ -562,6 +562,14 @@ function CuratorBody(): JSX.Element {
     setPlanState,
   } = actions;
 
+  // Every hook sits above the early return below: React keys hook state by
+  // call order, so a hook after it would make the page throw "Rendered fewer
+  // hooks than expected" the moment the active game toggles while it is open.
+  const hiddenTicked = React.useMemo(() => {
+    const visibleIds = new Set(visibleRows.map((r) => r.mod.id));
+    return chosen.filter((m) => !visibleIds.has(m.id)).length;
+  }, [visibleRows, chosen]);
+
   // ── Render ───────────────────────────────────────────────────────────
 
   if (gameId === undefined) {
@@ -573,10 +581,6 @@ function CuratorBody(): JSX.Element {
   }
 
   const updatableChosen = chosenRows.filter((r) => r.update !== undefined);
-  const hiddenTicked = React.useMemo(() => {
-    const visibleIds = new Set(visibleRows.map((r) => r.mod.id));
-    return chosen.filter((m) => !visibleIds.has(m.id)).length;
-  }, [visibleRows, chosen]);
   const frozenChosen = chosen.filter((m) => m.frozenAtVersion !== undefined);
   const unfrozenChosen = chosen.filter((m) => m.frozenAtVersion === undefined);
   const enabledChosen = chosen.filter((m) => m.enabled);
