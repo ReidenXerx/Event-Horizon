@@ -652,10 +652,34 @@ export function describeRequirementCell(r: ModRequirementReport | undefined): st
 }
 
 /**
+ * Whether a dependant loses a requirement line when every mod in `off` is
+ * disabled: a line with no ENABLED provider left outside `off`.
+ *
+ * With `provider`, only the dependant's lines on that provider are looked at
+ * (and `requiredBy` naming it with no such line left to check is taken at
+ * its word). Without, the lines that an enabled mod in `off` was covering.
+ */
+function losesALine(
+  report: RequirementsReport,
+  byId: ReadonlyMap<string, CuratorMod>,
+  dependantId: string,
+  off: ReadonlySet<string>,
+  provider?: string,
+): boolean {
+  const onIt = (report.byMod.get(dependantId)?.requirements ?? []).filter((q) =>
+    provider === undefined ? q.satisfiedBy.some((p) => off.has(p) && byId.get(p)?.enabled === true) : q.satisfiedBy.includes(provider),
+  );
+  if (provider !== undefined && onIt.length === 0) return true;
+  return onIt.some((q) => !q.satisfiedBy.some((p) => !off.has(p) && byId.get(p)?.enabled === true));
+}
+
+/**
  * The mods that would lose a requirement if `modIds` were disabled.
  *
  * Only ENABLED dependants count: a mod already off is not made worse. A
- * dependant that is itself in `modIds` is not a warning either.
+ * dependant that is itself in `modIds` is not a warning either, and neither
+ * is one whose line another ENABLED provider still covers — two installs of
+ * one page, a page and its re-upload: disabling one of them breaks nothing.
  */
 export function dependantsOf(
   report: RequirementsReport,
@@ -670,8 +694,39 @@ export function dependantsOf(
     const dependants = (report.requiredBy.get(id) ?? [])
       .filter((d) => !modIds.has(d))
       .map((d) => byId.get(d))
-      .filter((d): d is CuratorMod => d !== undefined && d.enabled);
+      .filter((d): d is CuratorMod => d !== undefined && d.enabled && losesALine(report, byId, d.id, modIds, id));
     if (dependants.length > 0) out.push({ provider, dependants });
+  }
+  return out;
+}
+
+/**
+ * Everything "disable the dependants too" has to take down: the mods that
+ * break when `modIds` go off, then the mods that break when THOSE go off, until
+ * nothing new breaks. Never `modIds` themselves, never a mod already disabled,
+ * never one whose line another enabled provider still covers. In the order
+ * found, so the dialog lists the direct dependants first.
+ */
+export function dependantClosure(
+  report: RequirementsReport,
+  mods: readonly CuratorMod[],
+  modIds: ReadonlySet<string>,
+): CuratorMod[] {
+  const byId = new Map(mods.map((m) => [m.id, m]));
+  const off = new Set(modIds);
+  const out: CuratorMod[] = [];
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const id of [...off]) {
+      for (const d of report.requiredBy.get(id) ?? []) {
+        const m = byId.get(d);
+        if (off.has(d) || m === undefined || !m.enabled) continue;
+        if (!losesALine(report, byId, d, off)) continue;
+        off.add(d);
+        out.push(m);
+        grew = true;
+      }
+    }
   }
   return out;
 }

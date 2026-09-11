@@ -102,6 +102,7 @@ import {
   verifyUpdatedMod,
 } from "../../../core/curator/verifyAfterUpdate";
 import {
+  dependantClosure,
   dependantsOf,
   disabledProvidersFor,
   summarizeRequirements,
@@ -1084,8 +1085,16 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
   const disableWithDependants = async (targets: readonly CuratorMod[]): Promise<void> => {
     const ids = new Set(targets.map((m) => m.id));
     const broken = report === undefined ? [] : dependantsOf(report, mods, ids);
-    if (broken.length > 0) {
+    if (broken.length > 0 && report !== undefined) {
       const dependants = [...new Map(broken.flatMap((b) => b.dependants).map((d) => [d.id, d])).values()];
+      // Taking the dependants down breaks THEIR dependants in turn.
+      const everything = dependantClosure(report, mods, ids);
+      const indirect = everything.filter((m) => !dependants.some((d) => d.id === m.id));
+      ehLog("info", "curator.disable.dependants", {
+        targets: [...ids],
+        direct: dependants.map((d) => d.id),
+        indirect: indirect.map((d) => d.id),
+      });
       const answer = await askThree(
         `${num(broken.length)} of these are needed by ${num(dependants.length)} other mod(s)`,
         broken
@@ -1093,12 +1102,18 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
           .map((b) => `  • ${b.provider.name} — needed by ${b.dependants.map((d) => d.name).join(", ")}`)
           .join("\n") +
           (broken.length > 10 ? `\n  … and ${broken.length - 10} more` : "") +
-          `\n\n"Disable only these" leaves the dependants on and missing something. "Disable dependants too" takes the ${num(dependants.length)} down with them.`,
+          (indirect.length > 0
+            ? `\n\nThose are needed in turn by ${num(indirect.length)} more: ${indirect
+                .slice(0, 10)
+                .map((m) => m.name)
+                .join(", ")}${indirect.length > 10 ? ` and ${indirect.length - 10} more` : ""}.`
+            : "") +
+          `\n\n"Disable only these" leaves the dependants on and missing something. "Disable dependants too" takes the ${num(everything.length)} down with them.`,
         ["Disable only these", "Disable dependants too"],
       );
       if (answer === undefined) return;
       if (answer === "Disable dependants too") {
-        setEnabledFor([...targets, ...dependants.filter((d) => !ids.has(d.id))], false);
+        setEnabledFor([...targets, ...everything], false);
         return;
       }
     }
