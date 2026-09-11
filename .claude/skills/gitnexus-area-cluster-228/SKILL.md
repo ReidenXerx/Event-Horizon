@@ -1,9 +1,9 @@
 ---
-name: gitnexus-area-cluster-198
-description: "Skill for the Cluster_198 area of Event-Horizon. 12 symbols across 1 files."
+name: gitnexus-area-cluster-228
+description: "Skill for the Cluster_228 area of Event-Horizon. 12 symbols across 1 files."
 ---
 
-# Cluster_198
+# Cluster_228
 
 12 symbols | 1 files | Cohesion: 89%
 
@@ -11,7 +11,7 @@ description: "Skill for the Cluster_198 area of Event-Horizon. 12 symbols across
 
 - Working with code in `src/`
 - Understanding how liveFomodSelections, pickInstallerChoices work
-- Modifying cluster_198-related functionality
+- Modifying cluster_228-related functionality
 
 ## Key Files
 
@@ -23,25 +23,25 @@ description: "Skill for the Cluster_198 area of Event-Horizon. 12 symbols across
 
 Start here when exploring this area:
 
-- **`liveFomodSelections`** (Function) — `src/core/getModsListForProfile.ts:459`
-- **`pickInstallerChoices`** (Function) — `src/core/getModsListForProfile.ts:372`
+- **`liveFomodSelections`** (Function) — `src/core/getModsListForProfile.ts:464`
+- **`pickInstallerChoices`** (Function) — `src/core/getModsListForProfile.ts:377`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `liveFomodSelections` | Function | `src/core/getModsListForProfile.ts` | 459 |
-| `pickInstallerChoices` | Function | `src/core/getModsListForProfile.ts` | 372 |
-| `assignInstallOrder` | Function | `src/core/getModsListForProfile.ts` | 754 |
-| `hasAnySelectedFomodChoices` | Function | `src/core/getModsListForProfile.ts` | 511 |
-| `normalizeCollectionIds` | Function | `src/core/getModsListForProfile.ts` | 382 |
-| `normalizeFomodSelections` | Function | `src/core/getModsListForProfile.ts` | 477 |
-| `normalizeInstallTime` | Function | `src/core/getModsListForProfile.ts` | 407 |
-| `normalizeModRules` | Function | `src/core/getModsListForProfile.ts` | 575 |
-| `normalizeRuleReference` | Function | `src/core/getModsListForProfile.ts` | 525 |
-| `normalizeStringArray` | Function | `src/core/getModsListForProfile.ts` | 433 |
-| `readMods` | Function | `src/core/getModsListForProfile.ts` | 661 |
-| `rulesSortKey` | Function | `src/core/getModsListForProfile.ts` | 564 |
+| `liveFomodSelections` | Function | `src/core/getModsListForProfile.ts` | 464 |
+| `pickInstallerChoices` | Function | `src/core/getModsListForProfile.ts` | 377 |
+| `assignInstallOrder` | Function | `src/core/getModsListForProfile.ts` | 762 |
+| `hasAnySelectedFomodChoices` | Function | `src/core/getModsListForProfile.ts` | 516 |
+| `normalizeCollectionIds` | Function | `src/core/getModsListForProfile.ts` | 387 |
+| `normalizeFomodSelections` | Function | `src/core/getModsListForProfile.ts` | 482 |
+| `normalizeInstallTime` | Function | `src/core/getModsListForProfile.ts` | 412 |
+| `normalizeModRules` | Function | `src/core/getModsListForProfile.ts` | 580 |
+| `normalizeRuleReference` | Function | `src/core/getModsListForProfile.ts` | 530 |
+| `normalizeStringArray` | Function | `src/core/getModsListForProfile.ts` | 438 |
+| `readMods` | Function | `src/core/getModsListForProfile.ts` | 666 |
+| `rulesSortKey` | Function | `src/core/getModsListForProfile.ts` | 569 |
 
 ## Execution Flows
 
@@ -61,6 +61,6 @@ Start here when exploring this area:
 ## How to Explore
 
 1. `context({name: "liveFomodSelections"})` — see callers and callees
-2. `query({search_query: "cluster_198"})` — find related execution flows
+2. `query({search_query: "cluster_228"})` — find related execution flows
 3. Read key files listed above for implementation details
 4. `explain({target: "<file or symbol>"})` — persisted taint findings (source→sink data flows), when indexed with `--pdg`

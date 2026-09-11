@@ -1,4 +1,39 @@
-# Distributing collections — research, not yet built
+# Distributing collections
+
+**Status**: SETTLED 2026-09-11 — a collection is distributed as a **Nexus mod
+page** whose main file is the full `.ehcoll`. Vortex's own collection pipe
+(sections 2–6 below) is research that was never built and is not going to be:
+Event Horizon exists because that pipe loses the curator's state, so pointing
+people at it again would be the wrong door.
+
+**How a collection reaches its users:**
+
+1. The curator builds the `.ehcoll` (Curator Tools → Build).
+2. `node scripts/nexus-collection-file.mjs --file <pkg> --game <domain> --mod <id> --name "<Name>" --version x.y.z [--description-file f] [--primary]`
+   puts it on the mod page as a file. Above 100 MiB this is the API's S3
+   multipart flow (`uploadArchiveFromDisk` in `scripts/lib/nexusRelease.mjs`):
+   one presigned PUT per part, three in flight, four attempts each, ETags
+   collected into the completion XML, then finalise and wait for
+   `available`. Measured 2026-09-11: 3.4 GB in 64 s, 10.7 GB in 2 min 40 s.
+   `--file-id <id>` adds the package as a new VERSION of an existing file
+   instead of a new file (later revisions).
+3. The page's description tells people to install Event Horizon and pick the
+   file from the Files tab; external mods (LoversLab, Google Drive) are listed
+   with links, in the order Event Horizon asks for them. The mod page is set
+   to require the Event Horizon file (file-to-file requirement, min 0.1.152).
+4. The mod page is created and edited through the curator's own browser over
+   the DevTools protocol, the same way `scripts/nexus-page.mjs` writes the
+   extension's page: the API can upload files but cannot create a mod or
+   write its description.
+
+The first two pages: Fallout 4 mod 108944 (Ivy's Panties) and Skyrim SE mod
+191460 (Meridia's Panties). The old Vortex Collection pages stay up with a
+description that points at the mod pages; their forum guides carry a legacy
+note.
+
+---
+
+## Earlier research (kept for the record)
 
 **Status**: RESEARCH. Section 6's recommended hybrid was never implemented —
 `registerInstaller` appears nowhere in `src/`, so nothing claims a `.ehcoll`

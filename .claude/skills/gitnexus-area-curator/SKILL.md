@@ -1,86 +1,86 @@
 ---
 name: gitnexus-area-curator
-description: "Skill for the Curator area of Event-Horizon. 193 symbols across 41 files."
+description: "Skill for the Curator area of Event-Horizon. 458 symbols across 109 files."
 ---
 
 # Curator
 
-193 symbols | 41 files | Cohesion: 82%
+458 symbols | 109 files | Cohesion: 77%
 
 ## When to Use
 
 - Working with code in `src/`
-- Understanding how checkNexusAvailability, fetchRequirements, pickInstallFile work
+- Understanding how archivesFreedByRemoval, cleanupSubset, describeEvidence work
 - Modifying curator-related functionality
 
 ## Key Files
 
 | File | Symbols |
 |------|---------|
-| `src/ui/pages/curator/CuratorPage.tsx` | onProgress, downloadRequirement, installRequirement, onProgress, setProgress (+31) |
-| `src/core/curator/requirements.ts` | fetchRequirements, pickInstallFile, addMasterRequirements, makeModUid, parseGameList (+11) |
+| `src/ui/pages/curator/useCuratorActions.ts` | removeMod, openPageFor, start, refreshUpdates, removeMods (+33) |
+| `src/ui/pages/curator/CuratorPage.tsx` | CuratorBody, onSelect, setNote, toggleView, CuratorPage (+28) |
+| `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildWizard, BuildingPanel, DecisionsGate, DraftRestoredBanner (+19) |
+| `src/core/curator/requirements.ts` | dependantsOf, disabledProvidersFor, fetchRequirements, pickProvider, parseGameList (+17) |
+| `src/ui/pages/curator/DiskCleanupView.tsx` | DiskCleanupView, freedByRetiring, run, num, render (+13) |
+| `src/ui/pages/install/steps.tsx` | ConfirmStep, DoneStep, ExternalDownloadGuide, FomodModeModal, LoadingStep (+8) |
+| `src/core/curator/cleanupPlan.ts` | archivesFreedByRemoval, cleanupSubset, describeEvidence, formatSize, findSupersededMods (+7) |
+| `src/ui/pages/curator/PluginsView.tsx` | PluginsView, render, render, render, num (+7) |
 | `src/core/curator/profileActions.ts` | identityCandidates, findDuplicates, findEndorsable, findFrozen, summarizeProfile (+7) |
-| `src/ui/pages/curator/DiskCleanupView.tsx` | orphanPlan, retireCandidates, retirePlan, orphans, provenRetire (+6) |
-| `src/core/curator/cleanupPlan.ts` | findSupersededMods, consider, planCleanup, identityKey, orphanArchives (+3) |
-| `src/ui/pages/curator/curatorSession.ts` | cancel, dismiss, progress, say, set (+3) |
-| `src/core/curator/updateOneMod.ts` | UpdateTimeout, installedIdentityReader, asNum, updateOneAndWait, finish (+2) |
-| `src/core/curator/bulkUpdate.test.ts` | update, update, update, wait, candidate (+1) |
-| `src/core/curator/collectionDiff.ts` | settle, diffCollectionAgainstProfile, candidate, firstUnclaimed, nexusModIdOf (+1) |
-| `src/core/curator/runCleanup.ts` | dependsOnFailedRemoval, describeCleanupOutcome, gb, runCleanup, asNumber (+1) |
+| `src/ui/components/Field.tsx` | Checkbox, Chip, ChoiceCard, ChoiceControl, Field (+5) |
 
 ## Entry Points
 
 Start here when exploring this area:
 
-- **`checkNexusAvailability`** (Function) — `src/core/build/nexusAvailability.ts:241`
-- **`fetchRequirements`** (Function) — `src/core/curator/requirements.ts:126`
-- **`pickInstallFile`** (Function) — `src/core/curator/requirements.ts:576`
-- **`applyPluginLightFlags`** (Function) — `src/core/installer/applyPluginLightFlags.ts:105`
-- **`countsAsRegular`** (Function) — `src/core/installer/applyPluginLightFlags.ts:154`
+- **`archivesFreedByRemoval`** (Function) — `src/core/curator/cleanupPlan.ts:509`
+- **`cleanupSubset`** (Function) — `src/core/curator/cleanupPlan.ts:521`
+- **`describeEvidence`** (Function) — `src/core/curator/cleanupPlan.ts:274`
+- **`formatSize`** (Function) — `src/core/curator/cleanupPlan.ts:475`
+- **`describeMastersCell`** (Function) — `src/core/curator/pluginView.ts:167`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `UpdateTimeout` | Class | `src/core/curator/updateOneMod.ts` | 68 |
+| `UpdateTimeout` | Class | `src/core/curator/updateOneMod.ts` | 74 |
 | `CannotReinstall` | Class | `src/core/curator/reinstallMod.ts` | 45 |
-| `checkNexusAvailability` | Function | `src/core/build/nexusAvailability.ts` | 241 |
-| `fetchRequirements` | Function | `src/core/curator/requirements.ts` | 126 |
-| `pickInstallFile` | Function | `src/core/curator/requirements.ts` | 576 |
-| `applyPluginLightFlags` | Function | `src/core/installer/applyPluginLightFlags.ts` | 105 |
-| `countsAsRegular` | Function | `src/core/installer/applyPluginLightFlags.ts` | 154 |
-| `noteUnreadable` | Function | `src/core/installer/applyPluginLightFlags.ts` | 141 |
-| `findDriftedMods` | Function | `src/core/installer/detectStagingDrift.ts` | 112 |
-| `capturePluginFlags` | Function | `src/core/manifest/capturePluginFlags.ts` | 33 |
-| `detectExternalDependencies` | Function | `src/core/manifest/externalDependencies.ts` | 479 |
-| `readPluginFlags` | Function | `src/core/manifest/pluginFlags.ts` | 137 |
-| `readPluginFlagsDetailed` | Function | `src/core/manifest/pluginFlags.ts` | 86 |
-| `onProgress` | Function | `src/ui/pages/curator/requirementsIo.ts` | 116 |
-| `pluginOwners` | Function | `src/core/curator/pluginPool.ts` | 65 |
-| `readPluginList` | Function | `src/core/curator/pluginPool.ts` | 37 |
-| `addMasterRequirements` | Function | `src/core/curator/requirements.ts` | 378 |
-| `makeModUid` | Function | `src/core/curator/requirements.ts` | 49 |
-| `parseGameList` | Function | `src/core/curator/requirements.ts` | 72 |
-| `summarizeRequirements` | Function | `src/core/curator/requirements.ts` | 446 |
+| `archivesFreedByRemoval` | Function | `src/core/curator/cleanupPlan.ts` | 509 |
+| `cleanupSubset` | Function | `src/core/curator/cleanupPlan.ts` | 521 |
+| `describeEvidence` | Function | `src/core/curator/cleanupPlan.ts` | 274 |
+| `formatSize` | Function | `src/core/curator/cleanupPlan.ts` | 475 |
+| `describeMastersCell` | Function | `src/core/curator/pluginView.ts` | 167 |
+| `describePluginKind` | Function | `src/core/curator/pluginView.ts` | 177 |
+| `describeProfileDrift` | Function | `src/core/curator/profileDrift.ts` | 106 |
+| `isProfileUnmoved` | Function | `src/core/curator/profileDrift.ts` | 90 |
+| `describeInstallAttempt` | Function | `src/core/installer/attemptRecord.ts` | 231 |
+| `describeFomodModes` | Function | `src/core/installer/fomodReplayMode.ts` | 78 |
+| `s` | Function | `src/core/installer/fomodReplayMode.ts` | 84 |
+| `mustAskReplayMode` | Function | `src/core/installer/fomodReplayMode.ts` | 183 |
+| `countKinds` | Function | `src/core/manifest/unexplainedFiles.ts` | 175 |
+| `describeUnexplainedFile` | Function | `src/core/manifest/unexplainedFiles.ts` | 153 |
+| `formatBytes` | Function | `src/core/manifest/unexplainedFiles.ts` | 139 |
+| `listModDiffFiles` | Function | `src/core/modDiffStorage.ts` | 60 |
+| `readModDiffReport` | Function | `src/core/modDiffStorage.ts` | 95 |
+| `listPluginDiffFiles` | Function | `src/core/pluginDiffStorage.ts` | 60 |
 
 ## Execution Flows
 
 | Flow | Type | Steps |
 |------|------|-------|
-| `Act → GetEventHorizonDir` | cross_community | 10 |
-| `DisableWithDependants → GetVortexUserDataPath` | cross_community | 9 |
-| `EnableWithProviders → GetVortexUserDataPath` | cross_community | 9 |
-| `ReadRequirements → GetVortexUserDataPath` | cross_community | 9 |
-| `Reinstall → GetVortexUserDataPath` | cross_community | 9 |
-| `Act → Clamp` | cross_community | 8 |
-| `Act → Scale` | cross_community | 8 |
-| `Act → Truncate` | cross_community | 8 |
-| `CheckNexusAvailability → GetVortexUserDataPath` | cross_community | 8 |
-| `ApplyCleanup → GetVortexUserDataPath` | cross_community | 8 |
+| `LaunchGame → GetVortexUserDataPath` | cross_community | 10 |
+| `ExecutePromptUserChoice → GetEventHorizonDir` | cross_community | 10 |
+| `RunInstallImpl → GetEventHorizonRoot` | cross_community | 10 |
+| `ReadZipEntry → GetVortexUserDataPath` | cross_community | 10 |
+| `PublishedDetailsPanel → GetEventHorizonDir` | cross_community | 10 |
+| `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
+| `RunSelfChecks → GetVortexUserDataPath` | cross_community | 10 |
+| `InstallDownloads → GetEventHorizonDir` | cross_community | 10 |
+| `LoadPublishedDetails → GetEventHorizonRoot` | cross_community | 10 |
+| `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
 
 ## How to Explore
 
-1. `context({name: "checkNexusAvailability"})` — see callers and callees
+1. `context({name: "archivesFreedByRemoval"})` — see callers and callees
 2. `query({search_query: "curator"})` — find related execution flows
 3. Read key files listed above for implementation details
 4. `explain({target: "<file or symbol>"})` — persisted taint findings (source→sink data flows), when indexed with `--pdg`

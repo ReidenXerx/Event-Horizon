@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-environment
-description: "Skill for the Environment area of Event-Horizon. 110 symbols across 18 files."
+description: "Skill for the Environment area of Event-Horizon. 109 symbols across 18 files."
 ---
 
 # Environment
 
-110 symbols | 18 files | Cohesion: 77%
+109 symbols | 18 files | Cohesion: 77%
 
 ## When to Use
 
@@ -54,7 +54,6 @@ Start here when exploring this area:
 | `groupEntries` | Function | `src/core/environment/gameFolderScan.ts` | 239 |
 | `logEnvironmentReport` | Function | `src/core/environment/preflight.ts` | 282 |
 | `runEnvironmentPreflight` | Function | `src/core/environment/preflight.ts` | 174 |
-| `cleanGameFolder` | Function | `src/core/environment/cleanGameFolder.ts` | 44 |
 | `logPaths` | Function | `src/core/environment/logPaths.ts` | 13 |
 | `dismissQuarantine` | Function | `src/core/environment/quarantine.ts` | 379 |
 | `listQuarantines` | Function | `src/core/environment/quarantine.ts` | 275 |
@@ -62,6 +61,7 @@ Start here when exploring this area:
 | `quarantineRootFor` | Function | `src/core/environment/quarantine.ts` | 45 |
 | `readQuarantineRecord` | Function | `src/core/environment/quarantine.ts` | 253 |
 | `restoreQuarantine` | Function | `src/core/environment/quarantine.ts` | 302 |
+| `blockingChecks` | Function | `src/core/environment/environmentChecks.ts` | 409 |
 
 ## Execution Flows
 

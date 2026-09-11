@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-scripts
-description: "Skill for the Scripts area of Event-Horizon. 56 symbols across 8 files."
+description: "Skill for the Scripts area of Event-Horizon. 66 symbols across 12 files."
 ---
 
 # Scripts
 
-56 symbols | 8 files | Cohesion: 84%
+66 symbols | 12 files | Cohesion: 85%
 
 ## When to Use
 
@@ -22,9 +22,11 @@ description: "Skill for the Scripts area of Event-Horizon. 56 symbols across 8 f
 | `scripts/bearing-token-benchmark.mjs` | answered, classicalCost, cypher, gn, graphCost (+2) |
 | `scripts/bearing-agent.mjs` | loadStaleness, markRefreshOutcome, run, runAllowFail, currentBranch (+2) |
 | `scripts/package-extension.js` | buildZip, crc32, collect, walk |
+| `scripts/lib/nexusRelease.mjs` | worker, uploadArchive, uploadArchiveFromDisk |
+| `scripts/nexus-page.mjs` | sleep, evalJs, send |
 | `scripts/release-nexus.mjs` | fail, npm, readApiKey |
 | `scripts/lib/project-tmp.mjs` | isEnospcError, withProjectTmpEnv |
-| `scripts/bearing-test-order.mjs` | parseChangedSymbols |
+| `scripts/lib/nexusRelease.test.mjs` | fetchImpl, json |
 
 ## Entry Points
 
@@ -45,6 +47,9 @@ Start here when exploring this area:
 | `answered` | Function | `scripts/bearing-token-benchmark.mjs` | 163 |
 | `isEnospcError` | Function | `scripts/lib/project-tmp.mjs` | 95 |
 | `withProjectTmpEnv` | Function | `scripts/lib/project-tmp.mjs` | 25 |
+| `worker` | Function | `scripts/lib/nexusRelease.mjs` | 230 |
+| `uploadArchive` | Method | `scripts/lib/nexusRelease.mjs` | 156 |
+| `uploadArchiveFromDisk` | Method | `scripts/lib/nexusRelease.mjs` | 209 |
 | `blastRadius` | Function | `scripts/bearing-ci.mjs` | 110 |
 | `collectDiff` | Function | `scripts/bearing-ci.mjs` | 78 |
 | `detectChanges` | Function | `scripts/bearing-ci.mjs` | 92 |
@@ -57,19 +62,20 @@ Start here when exploring this area:
 | `structural` | Function | `scripts/bearing-ci.mjs` | 125 |
 | `checkFile` | Function | `scripts/bearing-verify.mjs` | 106 |
 | `checkManifest` | Function | `scripts/bearing-verify.mjs` | 111 |
-| `checkPackageGates` | Function | `scripts/bearing-verify.mjs` | 121 |
-| `checkRetiredHookKeys` | Function | `scripts/bearing-verify.mjs` | 270 |
-| `checkSkillsStore` | Function | `scripts/bearing-verify.mjs` | 292 |
 
 ## Execution Flows
 
 | Flow | Type | Steps |
 |------|------|-------|
+| `UploadArchive → Json` | cross_community | 4 |
+| `UploadArchiveFromDisk → Json` | cross_community | 4 |
 | `Main → Git` | intra_community | 3 |
 | `Main → Num` | intra_community | 3 |
 | `Main → Gn` | intra_community | 3 |
 | `Main → ParseChangedSymbols` | intra_community | 3 |
 | `VerifyInstall → ReadStealth` | intra_community | 3 |
+| `UploadArchive → NexusApiError` | cross_community | 3 |
+| `UploadArchiveFromDisk → NexusApiError` | cross_community | 3 |
 
 ## How to Explore
 

@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-installer
-description: "Skill for the Installer area of Event-Horizon. 311 symbols across 73 files."
+description: "Skill for the Installer area of Event-Horizon. 333 symbols across 79 files."
 ---
 
 # Installer
 
-311 symbols | 73 files | Cohesion: 75%
+333 symbols | 79 files | Cohesion: 76%
 
 ## When to Use
 
@@ -17,16 +17,16 @@ description: "Skill for the Installer area of Event-Horizon. 311 symbols across 
 
 | File | Symbols |
 |------|---------|
-| `src/core/installer/runInstall.ts` | buildAbortedResult, buildDisplayNameByModId, buildFailReceipt, buildManifestIndex, buildNexusModIdMap (+58) |
-| `src/core/installer/modInstall.ts` | safeRmTempDir, uninstallMod, delayRespectingAbort, downloadFolderFor, downloadNexusArchiveOnly (+24) |
+| `src/core/installer/runInstall.ts` | buildAbortedResult, buildDisplayNameByModId, buildFailReceipt, buildManifestIndex, buildNexusModIdMap (+60) |
+| `src/core/installer/modInstall.ts` | safeRmTempDir, delayRespectingAbort, downloadFolderFor, downloadNexusArchiveOnly, installFromBundledArchive (+23) |
 | `src/core/installLedger.ts` | InstallLedgerError, expectString, getInstallLedgerDir, getReceiptPath, isIso8601 (+10) |
 | `src/core/installer/applyUserlist.ts` | applyGroupDefinition, applyGroupRule, applyPluginEntry, applyPluginGroup, applyPluginRuleWithCollectionWins (+8) |
+| `src/core/installer/checkNexusAccount.ts` | describeSelectorAvailability, hasNexusSlice, nexusSlice, probeNexusAccount, readNexusAccount (+4) |
 | `src/core/installer/bundledPrefetch.ts` | BundledPrefetchPool, dispose, prime, pump, runExtraction (+2) |
 | `src/core/installer/applyGameIni.ts` | describeGameIniApplication, shouldApplyGameIni, applyGameIni, describeIniChanges, isSectionHeader (+2) |
 | `src/core/installer/installJournal.ts` | logJournalSummary, ownedModIds, clearJournal, appendJournalEntry, getJournalDir (+2) |
-| `src/core/installer/checkNexusAccount.ts` | hasNexusSlice, nexusSlice, readNexusAccount, readUserInfo, readViaSelectors (+2) |
-| `src/core/installer/profile.ts` | createFreshProfile, enableModInProfile, makeAbortError, pickNonCollidingName, switchToProfile (+1) |
 | `src/core/installer/timeBudgets.ts` | countMods, clamp, deployBudgetMs, profileSwitchBudgetMs, scale (+1) |
+| `src/core/installer/sourceMemory.ts` | forgetSources, getSourceMemoryDir, memoryPath, readSourceMemory, rememberSource (+1) |
 
 ## Entry Points
 
@@ -67,16 +67,16 @@ Start here when exploring this area:
 
 | Flow | Type | Steps |
 |------|------|-------|
+| `LaunchGame → GetVortexUserDataPath` | cross_community | 10 |
 | `ExecutePromptUserChoice → GetEventHorizonDir` | cross_community | 10 |
 | `RunInstallImpl → GetEventHorizonRoot` | cross_community | 10 |
+| `ReadZipEntry → GetVortexUserDataPath` | cross_community | 10 |
+| `PublishedDetailsPanel → GetEventHorizonDir` | cross_community | 10 |
 | `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
-| `Act → GetEventHorizonDir` | cross_community | 10 |
-| `LoadDashboardData → GetVortexUserDataPath` | cross_community | 10 |
-| `Take → GetVortexUserDataPath` | cross_community | 10 |
-| `ExecutePromptUserChoice → Truncate` | cross_community | 9 |
-| `Act → Clamp` | cross_community | 8 |
-| `Act → Scale` | cross_community | 8 |
-| `Act → Truncate` | cross_community | 8 |
+| `RunSelfChecks → GetVortexUserDataPath` | cross_community | 10 |
+| `InstallDownloads → GetEventHorizonDir` | cross_community | 10 |
+| `LoadPublishedDetails → GetEventHorizonRoot` | cross_community | 10 |
+| `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
 
 ## How to Explore
 

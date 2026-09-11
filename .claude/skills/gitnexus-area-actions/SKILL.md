@@ -55,7 +55,7 @@ Start here when exploring this area:
 | `pickExternalPromptUserChoice` | Function | `src/actions/installCollectionAction.ts` | 965 |
 | `pickOrphanChoice` | Function | `src/actions/installCollectionAction.ts` | 1040 |
 | `truncSha` | Function | `src/actions/installCollectionAction.ts` | 1189 |
-| `handlePickFile` | Function | `src/ui/pages/install/steps.tsx` | 1105 |
+| `handlePickFile` | Function | `src/ui/pages/install/steps.tsx` | 1125 |
 | `formatExternalDeps` | Function | `src/actions/installCollectionAction.ts` | 768 |
 | `formatInstallTarget` | Function | `src/actions/installCollectionAction.ts` | 612 |
 

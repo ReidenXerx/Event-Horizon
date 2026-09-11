@@ -196,6 +196,109 @@ export function nexusClient({ apiKey, fetchImpl = fetch, userAgent, sleep = (ms)
       }
     },
 
+    /**
+     * Upload a file of any size from disk and wait until Nexus marks it
+     * `available`. Returns the upload id. Above SINGLE_PART_LIMIT this is the
+     * S3 multipart flow: one presigned PUT per `part_size_bytes` slice, the
+     * ETag of each, a CompleteMultipartUpload XML POST, then finalise.
+     *
+     * Each part's presigned URL says which headers it signed
+     * (X-Amz-SignedHeaders); only those are sent, so a URL that signs
+     * `content-md5` gets that part's own digest and one that does not gets
+     * nothing it would reject.
+     */
+    async uploadArchiveFromDisk({ filePath, filename, onState = () => undefined, concurrency = 3, attempts = 4, timeoutMs = 30 * 60 * 1000, pollMs = 5000 }) {
+      const fs = await import("node:fs");
+      const { size } = await fs.promises.stat(filePath);
+      if (size <= SINGLE_PART_LIMIT) {
+        return this.uploadArchive({ bytes: await fs.promises.readFile(filePath), filename, onState, timeoutMs, pollMs });
+      }
+      const created = await call("POST", "/uploads/multipart", { size_bytes: size, filename });
+      const partSize = Number(created?.part_size_bytes);
+      const urls = created?.part_presigned_urls;
+      if (!created?.id || !Array.isArray(urls) || !Number.isFinite(partSize) || partSize <= 0 || !created?.complete_presigned_url) {
+        throw new Error("Nexus did not return a multipart upload (id, part size, part URLs, complete URL)");
+      }
+      const expected = Math.ceil(size / partSize);
+      if (urls.length !== expected) throw new Error(`Nexus returned ${urls.length} part URLs for ${expected} parts of ${partSize} bytes`);
+      onState(`created multipart upload ${created.id}: ${expected} parts of ${partSize} bytes`);
+
+      const fh = await fs.promises.open(filePath, "r");
+      const etags = new Array(expected);
+      let next = 0;
+      let done = 0;
+      try {
+        const worker = async () => {
+          for (;;) {
+            const i = next;
+            next += 1;
+            if (i >= expected) return;
+            const offset = i * partSize;
+            const length = Math.min(partSize, size - offset);
+            const buf = Buffer.allocUnsafe(length);
+            const { bytesRead } = await fh.read(buf, 0, length, offset);
+            if (bytesRead !== length) throw new Error(`Short read at part ${i + 1}: ${bytesRead} of ${length} bytes`);
+            const url = urls[i];
+            const signed = (new URL(url).searchParams.get("X-Amz-SignedHeaders") ?? "host").toLowerCase().split(";");
+            const headers = {};
+            if (signed.includes("content-type")) headers["content-type"] = "application/octet-stream";
+            if (signed.includes("content-disposition")) headers["content-disposition"] = `attachment; filename="${filename}"`;
+            if (signed.includes("content-md5")) headers["content-md5"] = createHash("md5").update(buf).digest("base64");
+            if (signed.includes("content-length")) headers["content-length"] = String(length);
+            let lastError;
+            for (let attempt = 1; attempt <= attempts; attempt += 1) {
+              try {
+                const res = await fetchImpl(url, { method: "PUT", headers, body: buf });
+                if (!res.ok) {
+                  const text = await res.text().catch(() => "");
+                  throw new Error(`HTTP ${res.status} ${text.slice(0, 300)}`);
+                }
+                const etag = res.headers.get("etag");
+                if (!etag) throw new Error("no ETag in the response");
+                etags[i] = etag;
+                lastError = undefined;
+                break;
+              } catch (err) {
+                lastError = err;
+                onState(`part ${i + 1}/${expected} attempt ${attempt} failed: ${err.message}`);
+                if (attempt < attempts) await sleep(2000 * attempt);
+              }
+            }
+            if (lastError !== undefined) throw new Error(`Part ${i + 1}/${expected} failed after ${attempts} attempts: ${lastError.message}`);
+            done += 1;
+            onState(`part ${i + 1}/${expected} uploaded (${done}/${expected} done)`);
+          }
+        };
+        await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, expected)) }, worker));
+      } finally {
+        await fh.close();
+      }
+      if (etags.some((e) => e === undefined)) throw new Error("A part finished without an ETag");
+      const xml =
+        "<CompleteMultipartUpload>" +
+        etags.map((e, i) => `<Part><PartNumber>${i + 1}</PartNumber><ETag>${e.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</ETag></Part>`).join("") +
+        "</CompleteMultipartUpload>";
+      const completed = await fetchImpl(created.complete_presigned_url, { method: "POST", headers: { "content-type": "application/xml" }, body: xml });
+      const completedText = await completed.text().catch(() => "");
+      // S3 answers 200 to a failed completion too, with <Error> in the body.
+      if (!completed.ok || /<Error>/i.test(completedText)) {
+        throw new Error(`Completing the multipart upload failed: HTTP ${completed.status} ${completedText.slice(0, 400)}`);
+      }
+      onState("multipart completed");
+      await call("POST", `/uploads/${encodeURIComponent(created.id)}/finalise`);
+      onState("finalised");
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        const upload = await call("GET", `/uploads/${encodeURIComponent(created.id)}`);
+        onState(`state ${upload?.state}`);
+        if (upload?.state === "available") return created.id;
+        if (Date.now() > deadline) throw new Error(`Upload ${created.id} not available after ${timeoutMs} ms (last state ${upload?.state})`);
+        await sleep(pollMs);
+      }
+    },
+
+    /** A brand-new file on a mod page (not a new version of an existing file). */
+    createModFile: (body) => call("POST", "/mod-files", body),
     createModFileVersion: (fileId, body) => call("POST", `/mod-files/${encodeURIComponent(fileId)}/versions`, body),
     addChangelog: (modId, version, changelog) => call("POST", `/mods/${encodeURIComponent(modId)}/changelogs`, { version, changelog }),
   };
