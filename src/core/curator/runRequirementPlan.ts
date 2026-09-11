@@ -16,6 +16,14 @@
  *
  * The providers already in the pool (the plan's `toEnable`) still come on
  * unless the run was stopped: enabling one of those is its whole fix.
+ *
+ * ─── WHAT IT INSTALLS, IT SWITCHES ON ─────────────────────────────────
+ * Vortex enables a fresh install itself only while its "enable mods after
+ * install" automation is on. The plan used to lean on that setting without
+ * saying so: with it off, every requirement landed disabled and the root came
+ * on over providers that were not loaded. Each installed requirement is
+ * enabled right after it lands, the result is logged, and one that cannot be
+ * enabled keeps the root off like any other gap.
  * ──────────────────────────────────────────────────────────────────────
  */
 
@@ -56,6 +64,9 @@ export function planBlockers(plan: InstallPlan, files: readonly PlannedFile[], p
 
 export type PlanStepOutcome = { ok: true; newModId: string } | { ok: false; why: string; refused: boolean };
 
+/** What switching on a just-installed requirement did. */
+export type EnableInstalledResult = "enabled" | "already-enabled" | "not-found" | "no-profile";
+
 export type PlanRunReport = {
   lines: string[];
   /** Every needed step installed and nothing was left out: the root was enabled. */
@@ -74,10 +85,12 @@ export async function runRequirementPlan(input: {
   signal: AbortSignal;
   /** Install one step and wait for it to land. Sequential: awaited before the next. */
   installStep: (step: PlannedInstall, file: NexusFileInfo) => Promise<PlanStepOutcome>;
+  /** Switch on a requirement this run just installed, by its new Vortex id. */
+  enableInstalled: (vortexModId: string) => EnableInstalledResult;
   enableMods: (mods: readonly CuratorMod[]) => void;
   onProgress: (message: string) => void;
 }): Promise<PlanRunReport> {
-  const { rootName, plan, files, picked, thenEnable, signal, installStep, enableMods, onProgress } = input;
+  const { rootName, plan, files, picked, thenEnable, signal, installStep, enableInstalled, enableMods, onProgress } = input;
   const todo = files.filter((pf) => pf.step.vortexGameId !== undefined && fileForStep(pf, picked) !== undefined);
   const skipped = files.filter((pf) => !todo.includes(pf));
   const known = planBlockers(plan, files, picked);
@@ -93,6 +106,8 @@ export async function runRequirementPlan(input: {
   const lines: string[] = [];
   const installed: string[] = [];
   const failed: string[] = [];
+  const notEnabled: string[] = [];
+  const enabledInstalled: string[] = [];
   let stoppedBefore: string | undefined;
   let n = 0;
   for (const pf of todo) {
@@ -107,7 +122,22 @@ export async function runRequirementPlan(input: {
     const result = await installStep(pf.step, file);
     if (result.ok) {
       installed.push(pf.step.name);
-      lines.push(`Installed ${pf.step.name} (${file.name ?? file.file_name ?? `file ${file.file_id}`}).`);
+      const enabled = enableInstalled(result.newModId);
+      ehLog("info", "curator.requirement.plan.enable-installed", {
+        mod: pf.step.name,
+        vortexModId: result.newModId,
+        result: enabled,
+      });
+      if (enabled === "enabled" || enabled === "already-enabled") enabledInstalled.push(result.newModId);
+      else notEnabled.push(pf.step.name);
+      lines.push(
+        `Installed ${pf.step.name} (${file.name ?? file.file_name ?? `file ${file.file_id}`})` +
+          (enabled === "enabled" || enabled === "already-enabled"
+            ? " and enabled it."
+            : enabled === "not-found"
+              ? `, but Vortex does not list it under this game, so it was not enabled.`
+              : `, but there is no active profile to enable it in.`),
+      );
     } else if (result.refused) {
       failed.push(pf.step.name);
       lines.push(
@@ -123,6 +153,7 @@ export async function runRequirementPlan(input: {
   const blockers = [
     ...(signal.aborted ? [stoppedBefore === undefined ? "the run was stopped" : `the run was stopped before ${stoppedBefore}`] : []),
     ...(failed.length > 0 ? [`${failed.length} requirement(s) did not install (${failed.join(", ")})`] : []),
+    ...(notEnabled.length > 0 ? [`${notEnabled.join(", ")} installed but could not be enabled`] : []),
     ...known,
   ];
   const worked = blockers.length === 0;
@@ -149,6 +180,7 @@ export async function runRequirementPlan(input: {
     stopped: signal.aborted,
     worked,
     blockers,
+    enabledInstalled,
     enabled: toEnable.map((m) => m.id),
   });
   return { lines, worked, blockers };

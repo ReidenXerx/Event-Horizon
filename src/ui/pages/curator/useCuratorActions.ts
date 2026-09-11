@@ -464,6 +464,21 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
       thenEnable: st.thenEnable,
       signal,
       installStep: (step, file) => installOne(step, file, signal),
+      // Explicitly, not through Vortex's "enable after install" automation,
+      // which the curator may have switched off.
+      enableInstalled: (vortexModId) => {
+        const state = api.getState();
+        const game = gameId;
+        const pool = (state as unknown as { persistent?: { mods?: Record<string, Record<string, unknown>> } })?.persistent
+          ?.mods;
+        if (game === undefined || pool?.[game]?.[vortexModId] === undefined) return "not-found";
+        const profileId = (state as unknown as { settings?: { profiles?: { activeProfileId?: string } } })?.settings
+          ?.profiles?.activeProfileId;
+        if (profileId === undefined) return "no-profile";
+        if (readEnabledModIds(state, game).has(vortexModId)) return "already-enabled";
+        api.store?.dispatch(vortexActions.setModEnabled(profileId, vortexModId, true) as never);
+        return "enabled";
+      },
       enableMods: (targets) => setEnabledFor(targets, true),
       onProgress: setProgress,
     });

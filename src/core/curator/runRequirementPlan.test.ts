@@ -7,7 +7,12 @@ import { describe, expect, it } from "vitest";
 
 import type { InstallPlan, PlannedFile, PlannedInstall } from "./installPlan";
 import type { CuratorMod } from "./profileActions";
-import { planBlockers, runRequirementPlan, type PlanStepOutcome } from "./runRequirementPlan";
+import {
+  planBlockers,
+  runRequirementPlan,
+  type EnableInstalledResult,
+  type PlanStepOutcome,
+} from "./runRequirementPlan";
 
 const step = (name: string, over: Partial<PlannedInstall> = {}): PlannedInstall => ({
   key: `skyrimspecialedition:${name}`,
@@ -36,7 +41,13 @@ const planOf = (files: readonly PlannedFile[], over: Partial<InstallPlan> = {}):
 
 async function run(
   files: PlannedFile[],
-  over: { plan?: Partial<InstallPlan>; installStep?: () => Promise<PlanStepOutcome>; signal?: AbortSignal } = {},
+  over: {
+    plan?: Partial<InstallPlan>;
+    installStep?: (step: PlannedInstall) => Promise<PlanStepOutcome>;
+    enableInstalled?: (id: string) => EnableInstalledResult;
+    signal?: AbortSignal;
+    events?: string[];
+  } = {},
 ): Promise<{ lines: string[]; worked: boolean; enabled: string[] }> {
   const enabled: string[] = [];
   const report = await runRequirementPlan({
@@ -47,11 +58,37 @@ async function run(
     thenEnable: [root],
     signal: over.signal ?? new AbortController().signal,
     installStep: over.installStep ?? (async () => ({ ok: true, newModId: "new" })),
+    enableInstalled: over.enableInstalled ?? (() => "enabled"),
     enableMods: (mods) => enabled.push(...mods.map((m) => m.id)),
     onProgress: () => undefined,
   });
   return { lines: report.lines, worked: report.worked, enabled };
 }
+
+describe("the requirements it installs", () => {
+  it("are switched on one by one, each right after it lands", async () => {
+    // Vortex enables a fresh install only while its automation setting is
+    // on. The plan leaned on that without saying so.
+    const events: string[] = [];
+    await run([withFile(step("A")), withFile(step("B"))], {
+      installStep: async (s) => {
+        events.push(`install ${s.name}`);
+        return { ok: true, newModId: `new-${s.name}` };
+      },
+      enableInstalled: (id) => {
+        events.push(`enable ${id}`);
+        return "enabled";
+      },
+    });
+    expect(events).toEqual(["install A", "enable new-A", "install B", "enable new-B"]);
+  });
+
+  it("keep the root off when one of them could not be enabled, and say which", async () => {
+    const r = await run([withFile(step("A"))], { enableInstalled: () => "not-found" });
+    expect(r.enabled).toEqual(["prov"]);
+    expect(r.lines.join("\n")).toMatch(/Root left disabled: A installed but could not be enabled/);
+  });
+});
 
 describe("the mod the plan was for", () => {
   it("comes on when every step installed and nothing was left out", async () => {
