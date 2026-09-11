@@ -7,7 +7,46 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { firstDifference, withNewTab } from "./nexus-page.mjs";
+import { firstDifference, parseArgs, withNewTab } from "./nexus-page.mjs";
+
+describe("parseArgs", () => {
+  const pkg = { description: "Summary", nexus: { gameDomain: "site", modId: 2235 } };
+
+  it("writes Event Horizon's own page from the repository's text and summary by default", () => {
+    expect(parseArgs(["--save"], pkg)).toMatchObject({
+      save: true,
+      gameDomain: "site",
+      modId: "2235",
+      descriptionFile: expect.stringMatching(/NEXUS_MOD_PAGE\.bbcode$/),
+      useOwnSummary: true,
+    });
+  });
+
+  it("never puts Event Horizon's description or summary on another page", () => {
+    expect(parseArgs(["--game", "fallout4", "--mod", "108944"], pkg)).toEqual({
+      error: expect.stringMatching(/--dump <file>.*--description-file <file>/),
+    });
+    const other = parseArgs(["--game", "fallout4", "--mod", "108944", "--description-file", "page.bbcode"], pkg);
+    expect(other).toMatchObject({ gameDomain: "fallout4", modId: "108944", descriptionFile: "page.bbcode", useOwnSummary: false });
+    expect(other.summaryFile).toBeUndefined();
+  });
+
+  it("reads a page with --dump and refuses to combine reading with saving", () => {
+    expect(parseArgs(["--game", "skyrimspecialedition", "--mod", "191460", "--dump", "m.bbcode"], pkg)).toMatchObject({
+      dumpFile: "m.bbcode",
+      descriptionFile: undefined,
+      useOwnSummary: false,
+    });
+    expect(parseArgs(["--game", "fallout4", "--mod", "108944", "--dump", "x", "--save"], pkg).error).toMatch(/cannot be combined/);
+  });
+
+  it("refuses a command line that would do something other than it says", () => {
+    expect(parseArgs(["--game", "fallout4"], pkg).error).toMatch(/go together/);
+    expect(parseArgs(["--game", "fallout4", "--mod", "--save"], pkg).error).toMatch(/--mod needs a value/);
+    expect(parseArgs(["--game", "fallout4", "--mod", "ivy"], pkg).error).toMatch(/page's number/);
+    expect(parseArgs(["--sav"], pkg).error).toMatch(/Unknown option --sav/);
+  });
+});
 
 function fakeDevtools() {
   const calls = [];
