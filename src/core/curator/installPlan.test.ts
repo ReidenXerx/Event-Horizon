@@ -204,6 +204,54 @@ describe("planRequirementClosure", () => {
     expect(plan.steps[0]!.neededBy).toEqual(["MCM Helper"]);
   });
 
+  it("carries a Requirements list Nexus cut short into the plan, from a fetched page, a provider and the root", async () => {
+    // A page that says it lists 14 requirements and returned none of them.
+    const cut = new Map<string, Partial<NexusModRequirements>>([[makeModUid(1704, 900), { nexusRequirements: { totalCount: 14, nodes: [] } }]]);
+    const plan = await planRequirementClosure({
+      rootName: "Root",
+      roots: [missing("Big list", 900)],
+      mods,
+      activeGame: "skyrimse",
+      games: GAMES,
+      toDomain: nexusDomainOf,
+      knownGameIds: ["skyrimse"],
+      fetch: async (uids) => Object.fromEntries(uids.map((u) => [u, cut.get(u)])),
+    });
+    expect(plan.truncatedLists).toEqual([{ name: "Big list", notReturned: 14 }]);
+    expect(plan.depthCapped).toBe(false);
+    // Short is short: a caller that enables the root when the plan worked must not.
+    expect(plan.truncated).toBe(true);
+    expect(plan.unfetched).toEqual([]);
+
+    // The root's own list and an enabled provider's list, from the page's report.
+    const provider = mod({ id: "prov", name: "Provider", nexusModId: 53000, enabled: false });
+    const root = mod({ id: "root", name: "Root mod", nexusModId: 1, enabled: false });
+    const fromReport = await planRequirementClosure({
+      rootName: "Root mod",
+      roots: [{ source: "nexus", status: "installed-disabled", name: "Provider", nexusModId: 53000, gameDomain: "skyrimspecialedition", satisfiedBy: ["prov"] }],
+      rootModIds: ["root"],
+      mods: [...mods, provider, root],
+      activeGame: "skyrimse",
+      games: GAMES,
+      toDomain: nexusDomainOf,
+      knownGameIds: ["skyrimse"],
+      fetch,
+      report: {
+        byMod: new Map([
+          ["root", { modId: "root", truncatedBy: 3, unfetched: false, requirements: [] }],
+          ["prov", { modId: "prov", truncatedBy: 2, unfetched: false, requirements: [] }],
+        ]),
+        requiredBy: new Map(),
+        noUid: [],
+      },
+    });
+    expect(fromReport.truncatedLists).toEqual([
+      { name: "Root mod", notReturned: 3 },
+      { name: "Provider", notReturned: 2 },
+    ]);
+    expect(fromReport.truncated).toBe(true);
+  });
+
   it("keeps a requirement for a game this Vortex cannot download for, without a Vortex id", async () => {
     const plan = await planRequirementClosure({
       rootName: "Root",
@@ -242,7 +290,7 @@ describe("resolveInstallFiles / describePlan", () => {
             : [{ file_id: 90, category_id: 1, name: "x" }],
     );
     expect(files.map((f) => f.choice.kind)).toEqual(["one", "choose", "none", "one"]);
-    const plan = { steps, toEnable: [], external: [], unfetched: [], truncated: false };
+    const plan = { steps, toEnable: [], external: [], unfetched: [], truncatedLists: [], depthCapped: false, truncated: false };
     expect(describePlan(plan, files, {})).toEqual({ installable: 1, undecided: 1, noFile: 1, notHere: 1 });
     expect(fileForStep(files[1]!, { "skyrimspecialedition:2": 21 })?.name).toBe("AE");
     expect(describePlan(plan, files, { "skyrimspecialedition:2": 21 }).installable).toBe(2);

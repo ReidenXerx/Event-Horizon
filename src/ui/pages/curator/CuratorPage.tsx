@@ -763,6 +763,12 @@ function CuratorBody(): JSX.Element {
               {num(reqSummary.unfetched)} Nexus mod(s) were not answered for; their requirements are unknown, not empty.
             </p>
           )}
+          {reqSummary !== undefined && reqSummary.truncated > 0 && (
+            <p className="eh-note">
+              {num(reqSummary.truncated)} mod page(s) list more requirements than Nexus returned (Vortex asks for ten), so
+              their Requires cell says &ldquo;incomplete&rdquo; rather than &ldquo;ok&rdquo;: open the page for the rest.
+            </p>
+          )}
           <DataTable
             rows={visibleRows}
             idOf={rowId}

@@ -58,7 +58,19 @@ export type InstallPlan = {
   external: ModRequirement[];
   /** Nexus pages whose own requirements could not be read. The plan may be short. */
   unfetched: string[];
+  /**
+   * Mods and pages whose Requirements list Nexus cut short: it said how many
+   * there are (`totalCount`) and returned fewer (Vortex asks for ten). What
+   * was not returned was not planned.
+   */
+  truncatedLists: Array<{ name: string; notReturned: number }>;
   /** The depth cap stopped the walk. */
+  depthCapped: boolean;
+  /**
+   * The plan is KNOWN to be short: the depth cap stopped the walk, or a list
+   * above was cut. Installing it does not mean the mod works; a caller that
+   * enables the root only when the plan worked must treat this as not worked.
+   */
   truncated: boolean;
 };
 
@@ -85,11 +97,34 @@ export async function planRequirementClosure(args: {
    * disabled ones included), so its chain is walked without a fetch.
    */
   report?: RequirementsReport;
+  /**
+   * The mods the plan is for, when `roots` came from their report entries:
+   * a root whose own list Nexus cut short makes the plan short too.
+   */
+  rootModIds?: readonly string[];
   maxDepth?: number;
   signal?: AbortSignal;
 }): Promise<InstallPlan> {
   const maxDepth = args.maxDepth ?? MAX_DEPTH;
-  const plan: InstallPlan = { steps: [], toEnable: [], external: [], unfetched: [], truncated: false };
+  const plan: InstallPlan = {
+    steps: [],
+    toEnable: [],
+    external: [],
+    unfetched: [],
+    truncatedLists: [],
+    depthCapped: false,
+    truncated: false,
+  };
+  const noteTruncated = (name: string, notReturned: number | undefined): void => {
+    if (notReturned === undefined || notReturned <= 0) return;
+    if (plan.truncatedLists.some((t) => t.name === name)) return;
+    plan.truncatedLists.push({ name, notReturned });
+  };
+  for (const id of args.rootModIds ?? []) {
+    const entry = args.report?.byMod.get(id);
+    const name = args.mods.find((m) => m.id === id)?.name ?? args.rootName;
+    noteTruncated(name, entry?.truncatedBy);
+  }
   const stepByKey = new Map<string, PlannedInstall>();
   /** step key → keys of the planned pages it requires (edges for the order). */
   const requires = new Map<string, Set<string>>();
@@ -109,9 +144,11 @@ export async function planRequirementClosure(args: {
         if (m !== undefined && !enableIds.has(m.id)) {
           enableIds.add(m.id);
           plan.toEnable.push(m);
-          const own = args.report?.byMod.get(m.id)?.requirements ?? [];
+          const entry = args.report?.byMod.get(m.id);
+          const own = entry?.requirements ?? [];
+          noteTruncated(m.name, entry?.truncatedBy);
           if (depth < maxDepth) absorb(own, m.name, undefined, depth + 1);
-          else if (own.length > 0) plan.truncated = true;
+          else if (own.length > 0) plan.depthCapped = true;
         }
         continue;
       }
@@ -157,7 +194,7 @@ export async function planRequirementClosure(args: {
     if (args.signal?.aborted === true) break;
     const { step } = queue.shift()!;
     if (step.depth >= maxDepth) {
-      plan.truncated = true;
+      plan.depthCapped = true;
       continue;
     }
     const num = args.games.get(step.gameDomain);
@@ -197,11 +234,13 @@ export async function planRequirementClosure(args: {
       ...(args.toDomain === undefined ? {} : { toDomain: args.toDomain }),
       ...(args.knownGameIds === undefined ? {} : { knownGameIds: args.knownGameIds }),
     });
-    const lines = report.byMod.get(synthetic.id)?.requirements ?? [];
-    absorb(lines, step.name, step.key, step.depth + 1);
+    const entry = report.byMod.get(synthetic.id);
+    noteTruncated(step.name, entry?.truncatedBy);
+    absorb(entry?.requirements ?? [], step.name, step.key, step.depth + 1);
   }
 
   plan.steps = topologicalOrder([...stepByKey.values()], requires);
+  plan.truncated = plan.depthCapped || plan.truncatedLists.length > 0;
   return plan;
 }
 

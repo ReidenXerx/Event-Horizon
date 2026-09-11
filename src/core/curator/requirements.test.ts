@@ -196,7 +196,8 @@ describe("resolveNexusRequirements", () => {
       unfetched: 2, // skse and addr were never fetched in this fixture
       truncated: 1,
     });
-    expect(describeRequirementCell(report.byMod.get("ord"))).toBe("1 missing · 1 disabled");
+    // Nexus listed five and returned four: what is known leads, and the cell says the list is cut.
+    expect(describeRequirementCell(report.byMod.get("ord"))).toBe("1 missing · 1 disabled · incomplete");
   });
 
   it("finds dependants of a mod about to be disabled, and disabled providers of one about to be enabled", () => {

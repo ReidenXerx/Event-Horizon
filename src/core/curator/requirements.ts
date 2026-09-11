@@ -554,12 +554,20 @@ export function summarizeRequirements(
   return out;
 }
 
-/** The cell's CATEGORY, for an exact-match filter: "missing" | "disabled" | "ok" | "not checked" | "". */
+/**
+ * The cell's CATEGORY, for an exact-match filter:
+ * "missing" | "disabled" | "not checked" | "incomplete" | "ok" | "".
+ *
+ * "incomplete" is a mod whose page lists more requirements than Nexus
+ * returned (Vortex asks for ten): what came back may all be met, and the
+ * rest is unknown — which is not "ok".
+ */
 export function requirementCellCategory(r: ModRequirementReport | undefined): string {
   if (r === undefined) return "";
   if (countDistinct(r, "missing") > 0) return "missing";
   if (countDistinct(r, "installed-disabled") > 0) return "disabled";
   if (r.unfetched) return "not checked";
+  if (r.truncatedBy > 0) return "incomplete";
   return r.requirements.some((q) => q.status === "satisfied") ? "ok" : "";
 }
 
@@ -573,9 +581,11 @@ export function describeRequirementCell(r: ModRequirementReport | undefined): st
   if (disabled > 0) parts.push(`${disabled} disabled`);
   if (parts.length === 0) {
     if (r.unfetched) return "not checked";
+    if (r.truncatedBy > 0) return "incomplete";
     const n = r.requirements.filter((q) => q.status === "satisfied").length;
     return n === 0 ? "" : "ok";
   }
+  if (r.truncatedBy > 0) parts.push("incomplete");
   return parts.join(" · ");
 }
 
