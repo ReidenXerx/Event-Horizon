@@ -71,6 +71,7 @@ import { readCuratorMods, readEnabledModIds } from "../../core/curator/readProfi
 import {
   addMasterRequirements,
   makeModUid,
+  nexusDomainOf,
   resolveNexusRequirements,
   uidsFor,
 } from "../../core/curator/requirements";
@@ -1228,8 +1229,9 @@ describe("render", () => {
   it("curator tools — requirements read", () => {
     const state = curatorState();
     const mods = readCuratorMods(state as never, "skyrimse", readEnabledModIds(state as never, "skyrimse"));
-    const games = new Map([["skyrimse", 1704]]);
-    const { uidByMod, noUid } = uidsFor(mods, games, "skyrimse");
+    // Vortex says "skyrimse"; Nexus's games cache says "skyrimspecialedition".
+    const games = new Map([["skyrimspecialedition", 1704]]);
+    const { uidByMod, noUid } = uidsFor(mods, games, "skyrimse", nexusDomainOf);
     const node = (modId: number, modName: string, notes?: string): Record<string, unknown> => ({
       id: `${1704}-${modId}`,
       gameId: 1704,
@@ -1265,6 +1267,8 @@ describe("render", () => {
       uidByMod,
       fetched: fetched as never,
       noUid,
+      toDomain: nexusDomainOf,
+      knownGameIds: ["skyrimse"],
     });
     const report = addMasterRequirements(nexusOnly, {
       mods,
@@ -1285,6 +1289,7 @@ describe("render", () => {
         mastersUnreadable: 0,
         plugins: readPluginList(state),
         headers: pluginHeaders(),
+        stopped: false,
       },
     });
     try {

@@ -13,18 +13,20 @@
 import * as fsp from "fs/promises";
 import * as path from "path";
 
-import type { types } from "@nexusmods/vortex-api";
+import { util, type types } from "@nexusmods/vortex-api";
 
 import { ehLog } from "../../../core/logging/ehLog";
 import { readPluginMasters, isBaseGameMaster } from "../../../core/manifest/pluginMasters";
 import { readPluginFlagsDetailed } from "../../../core/manifest/pluginFlags";
 import type { PluginHeader } from "../../../core/curator/pluginView";
 import { getVortexUserDataPath } from "../../../core/paths";
+import { installRootFor, stagingRootFromFolder } from "../../../core/stagingPath";
 import { pluginOwners, readPluginList, type PluginEntry } from "../../../core/curator/pluginPool";
 import type { CuratorMod } from "../../../core/curator/profileActions";
 import {
   addMasterRequirements,
   fetchRequirements,
+  nexusDomainOf,
   parseGameList,
   resolveNexusRequirements,
   uidsFor,
@@ -45,8 +47,78 @@ export type NexusExt = {
     fileName?: string,
     allowInstall?: boolean,
   ) => Promise<string | undefined>;
-  openModPage?: (gameId: string, modId: number, source?: string) => void;
+  /** Vortex ignores the call unless `source` is the literal "nexus". */
+  openModPage?: (gameId: string, modId: number, source: "nexus") => void;
 };
+
+/**
+ * Vortex id → Nexus domain, the way Vortex converts it: a game extension's
+ * `details.nexusPageId` first, then the short table, then the id itself.
+ */
+export function nexusDomainForVortexGame(vortexGameId: string): string {
+  let pageId: string | undefined;
+  try {
+    const getGame = (util as unknown as { getGame?: (id: string) => { details?: { nexusPageId?: unknown } } | undefined }).getGame;
+    const raw = typeof getGame === "function" ? getGame(vortexGameId)?.details?.nexusPageId : undefined;
+    pageId = typeof raw === "string" ? raw : undefined;
+  } catch {
+    pageId = undefined;
+  }
+  return nexusDomainOf(vortexGameId, pageId);
+}
+
+/** Every game this Vortex has an extension for. */
+export function knownGameIds(state: unknown): string[] {
+  const known = (state as { session?: { gameMode?: { known?: unknown } } })?.session?.gameMode?.known;
+  if (!Array.isArray(known)) return [];
+  return known.map((g) => (g as { id?: unknown })?.id).filter((id): id is string => typeof id === "string" && id !== "");
+}
+
+const PLUGIN_FILE = /\.(esp|esm|esl)$/i;
+
+/**
+ * The plugins a DISABLED mod would ship, from its staging folder.
+ *
+ * Vortex's `pluginList` is built from enabled mods only, so a master
+ * shipped by a mod the curator switched off is invisible to it — and a
+ * requirements report that then says "missing" sends the curator to Nexus
+ * for something already in the pool (NS-3). One directory listing per
+ * disabled mod, top level only, which is where a plugin has to sit.
+ */
+export async function pluginsOfDisabledMods(
+  state: types.IState,
+  gameId: string,
+  mods: readonly CuratorMod[],
+  signal?: AbortSignal,
+): Promise<PluginEntry[]> {
+  const root = installRootFor(state, gameId);
+  if (root === undefined) return [];
+  const out: PluginEntry[] = [];
+  for (const m of mods) {
+    if (signal?.aborted === true) break;
+    if (m.enabled || m.installationPath === undefined) continue;
+    const dir = stagingRootFromFolder(root, m.installationPath);
+    if (dir === undefined) continue;
+    let names: string[];
+    try {
+      names = await fsp.readdir(dir);
+    } catch {
+      continue; // staging gone or unreadable: nothing to claim
+    }
+    for (const name of names) {
+      if (!PLUGIN_FILE.test(name)) continue;
+      out.push({
+        name,
+        modId: m.id,
+        filePath: path.join(dir, name),
+        isNative: false,
+        enabled: false,
+        fromDisabledMod: true,
+      });
+    }
+  }
+  return out;
+}
 
 export function nexusExtOf(api: types.IExtensionApi): NexusExt {
   const ext = (api as unknown as { ext?: Record<string, unknown> }).ext ?? {};
@@ -81,10 +153,15 @@ export type RequirementsLoad = {
   answered: number;
   mastersRead: number;
   mastersUnreadable: number;
-  /** The plugin list as it was when the headers were read. */
+  /**
+   * The plugin list as it was when the headers were read: Vortex's own list
+   * plus the plugins of disabled mods (marked `fromDisabledMod`).
+   */
   plugins: PluginEntry[];
   /** Per plugin name: masters and flags, or why the header could not be read. */
   headers: Map<string, PluginHeader>;
+  /** The curator pressed Stop: the report is partial and must not pose as whole. */
+  stopped: boolean;
 };
 
 /**
@@ -101,7 +178,10 @@ export async function loadRequirements(args: {
   const { api, gameId, mods } = args;
   const ext = nexusExtOf(api);
   const games = await readGameNumbers();
-  const { uidByMod, noUid } = uidsFor(mods, games, gameId);
+  // Vortex ids and Nexus domains are different namespaces (skyrimse vs
+  // skyrimspecialedition); everything below the edge speaks Nexus.
+  const toDomain = nexusDomainForVortexGame;
+  const { uidByMod, noUid } = uidsFor(mods, games, gameId, toDomain);
 
   let fetched = new Map<string, Partial<NexusModRequirements>>();
   let failed = new Set<string>();
@@ -134,13 +214,20 @@ export async function loadRequirements(args: {
     fetched,
     failedUids: failed,
     noUid,
+    toDomain,
+    knownGameIds: knownGameIds(api.getState()),
   });
 
   // Plugin headers: masters are hard requirements, and the light flag is
   // what decides the regular-slot count. Read from the copies Vortex lists
   // (staging for a mod's plugin, the game folder for a native one). Base-game
   // masters are never something to install.
-  const plugins = readPluginList(api.getState());
+  const listed = readPluginList(api.getState());
+  const listedLower = new Set(listed.map((p) => p.name.toLowerCase()));
+  const fromDisabled = (await pluginsOfDisabledMods(api.getState(), gameId, mods, args.signal)).filter(
+    (p) => !listedLower.has(p.name.toLowerCase()),
+  );
+  const plugins = [...listed, ...fromDisabled];
   const masters = new Map<string, readonly string[]>();
   const headers = new Map<string, PluginHeader>();
   let mastersRead = 0;
@@ -160,7 +247,7 @@ export async function loadRequirements(args: {
         mastersRead += 1;
       }
     } else {
-      header.unreadable = read.kind === "not-found" ? "file not found" : read.why;
+      header.unreadable = read.kind === "not-found" ? `no file at ${p.filePath}` : `${read.why} (${p.filePath})`;
       if (p.modId !== undefined && !p.isNative) mastersUnreadable += 1;
     }
     if (flags.kind === "ok") header.flags = flags.flags;
@@ -195,5 +282,6 @@ export async function loadRequirements(args: {
     mastersUnreadable,
     plugins,
     headers,
+    stopped: args.signal?.aborted === true,
   };
 }

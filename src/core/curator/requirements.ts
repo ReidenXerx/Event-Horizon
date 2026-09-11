@@ -88,6 +88,32 @@ export function parseGameList(json: string): GameNumbers {
   return out;
 }
 
+/**
+ * Vortex's game id → the Nexus domain the games cache and mod pages use.
+ *
+ * They are NOT the same namespace: Vortex says `skyrimse`, Nexus says
+ * `skyrimspecialedition`. This mirrors Vortex's own `nexusGameId`: a game
+ * extension may declare `details.nexusPageId`; otherwise a short table; else
+ * the id itself. Every UID, pool key and requirement key in this module is in
+ * NEXUS domains — convert once at the edge, never mix.
+ */
+const NEXUS_DOMAIN_BY_VORTEX_ID: Record<string, string> = {
+  skyrimse: "skyrimspecialedition",
+  skyrimvr: "skyrimspecialedition",
+  falloutnv: "newvegas",
+  fallout4vr: "fallout4",
+  teso: "elderscrollsonline",
+};
+
+export function nexusDomainOf(vortexGameId: string, nexusPageId?: string | undefined): string {
+  if (typeof nexusPageId === "string" && nexusPageId !== "") return nexusPageId;
+  return NEXUS_DOMAIN_BY_VORTEX_ID[vortexGameId.toLowerCase()] ?? vortexGameId;
+}
+
+/** A converter for this module's callers: Vortex id → Nexus domain. Identity by default. */
+export type ToDomain = (vortexGameId: string) => string;
+const sameId: ToDomain = (id) => id;
+
 export function domainForNumber(games: GameNumbers, numericGameId: number): string | undefined {
   for (const [domain, id] of games) if (id === numericGameId) return domain;
   return undefined;
@@ -179,7 +205,15 @@ export type ModRequirement = {
   name: string;
   /** For a Nexus requirement: the page it points at. */
   nexusModId?: number;
+  /** Nexus domain (`skyrimspecialedition`): pages, file lists. */
   gameDomain?: string;
+  /**
+   * Vortex's id for that game (`skyrimse`), when this Vortex knows the game:
+   * `api.ext.nexusDownload` resolves its game argument with `gameById` and
+   * refuses a domain. Absent when the requirement is for a game Vortex does
+   * not manage here — then only the page can be opened.
+   */
+  vortexGameId?: string;
   url?: string;
   notes?: string;
   /** Vortex mod ids that provide it (one, usually; two when the pool holds duplicates). */
@@ -207,12 +241,12 @@ export type RequirementsReport = {
   noUid: string[];
 };
 
-/** A Nexus mod the pool holds, keyed by "domain:modId". */
-function poolIndex(mods: readonly CuratorMod[], activeGame: string): Map<string, CuratorMod[]> {
+/** A Nexus mod the pool holds, keyed by "nexusDomain:modId". */
+function poolIndex(mods: readonly CuratorMod[], activeGame: string, toDomain: ToDomain): Map<string, CuratorMod[]> {
   const idx = new Map<string, CuratorMod[]>();
   for (const m of mods) {
     if (m.nexusModId === undefined) continue;
-    const key = `${m.downloadGame ?? activeGame}:${m.nexusModId}`;
+    const key = `${toDomain(m.downloadGame ?? activeGame)}:${m.nexusModId}`;
     const list = idx.get(key) ?? [];
     list.push(m);
     idx.set(key, list);
@@ -235,13 +269,14 @@ export function uidsFor(
   mods: readonly CuratorMod[],
   games: GameNumbers,
   activeGame: string,
+  toDomain: ToDomain = sameId,
 ): { uidByMod: Map<string, string>; noUid: string[] } {
   const uidByMod = new Map<string, string>();
   const noUid: string[] = [];
   for (const m of mods) {
     if (m.nexusModId === undefined) continue;
     if (m.source !== undefined && m.source !== "nexus") continue;
-    const domain = m.downloadGame ?? activeGame;
+    const domain = toDomain(m.downloadGame ?? activeGame);
     const num = games.get(domain);
     if (num === undefined) {
       noUid.push(m.id);
@@ -267,16 +302,28 @@ function asNum(raw: unknown): number | undefined {
  */
 export function resolveNexusRequirements(args: {
   mods: readonly CuratorMod[];
+  /** Vortex's id for the active game. */
   activeGame: string;
   games: GameNumbers;
   uidByMod: ReadonlyMap<string, string>;
   fetched: ReadonlyMap<string, Partial<NexusModRequirements>>;
   failedUids?: ReadonlySet<string>;
   noUid?: readonly string[];
+  /** Vortex id → Nexus domain. Identity when the two coincide. */
+  toDomain?: ToDomain;
+  /** Every game this Vortex knows, so a requirement can name its Vortex id. */
+  knownGameIds?: readonly string[];
 }): RequirementsReport {
-  const pool = poolIndex(args.mods, args.activeGame);
+  const toDomain = args.toDomain ?? sameId;
+  const pool = poolIndex(args.mods, args.activeGame, toDomain);
   const byMod = new Map<string, ModRequirementReport>();
   const requiredBy = new Map<string, string[]>();
+  // Reverse map for the download surface: Nexus domain → Vortex game id.
+  const vortexIdByDomain = new Map<string, string>();
+  for (const id of [args.activeGame, ...(args.knownGameIds ?? [])]) {
+    const d = toDomain(id);
+    if (!vortexIdByDomain.has(d)) vortexIdByDomain.set(d, id);
+  }
 
   const addRequiredBy = (providerId: string, requirerId: string): void => {
     const list = requiredBy.get(providerId) ?? [];
@@ -287,6 +334,7 @@ export function resolveNexusRequirements(args: {
   for (const m of args.mods) {
     const uid = args.uidByMod.get(m.id);
     const raw = uid === undefined ? undefined : args.fetched.get(uid);
+    const ownKey = m.nexusModId === undefined ? undefined : `${toDomain(m.downloadGame ?? args.activeGame)}:${m.nexusModId}`;
     const report: ModRequirementReport = {
       modId: m.id,
       requirements: [],
@@ -313,7 +361,8 @@ export function resolveNexusRequirements(args: {
         }
         const reqModId = asNum(node.modId);
         const reqGameNum = asNum(node.gameId);
-        const domain = reqGameNum === undefined ? m.downloadGame ?? args.activeGame : domainForNumber(args.games, reqGameNum);
+        const domain =
+          reqGameNum === undefined ? toDomain(m.downloadGame ?? args.activeGame) : domainForNumber(args.games, reqGameNum);
         if (reqModId === undefined || domain === undefined) {
           report.requirements.push({
             source: "nexus",
@@ -326,16 +375,22 @@ export function resolveNexusRequirements(args: {
           });
           continue;
         }
-        const providers = pool.get(`${domain}:${reqModId}`);
+        const key = `${domain}:${reqModId}`;
+        // Nexus sometimes lists a page as its own requirement (a re-upload,
+        // a "see also"). A mod does not require itself.
+        if (key === ownKey) continue;
+        const providers = pool.get(key);
         const status = statusOf(providers);
         const satisfiedBy = (providers ?? []).map((p) => p.id);
         for (const p of satisfiedBy) addRequiredBy(p, m.id);
+        const vortexGameId = vortexIdByDomain.get(domain);
         report.requirements.push({
           source: "nexus",
           status,
           name: node.modName ?? providers?.[0]?.name ?? `mod ${reqModId}`,
           nexusModId: reqModId,
           gameDomain: domain,
+          ...(vortexGameId === undefined ? {} : { vortexGameId }),
           url: url ?? `https://www.nexusmods.com/${domain}/mods/${reqModId}`,
           ...(notes !== undefined ? { notes } : {}),
           satisfiedBy,
@@ -366,6 +421,8 @@ export type PluginOwner = {
   plugin: string;
   /** Vortex mod id that deploys it, when known. */
   modId?: string;
+  /** The game itself ships it (Vortex's `isNative`). */
+  native?: boolean;
 };
 
 /**
@@ -405,6 +462,11 @@ export function addMasterRequirements(
     for (const master of masters) {
       if (args.isBaseGame(master)) continue;
       const provider = ownerOfPlugin.get(master.toLowerCase());
+      // Present but not something a Vortex mod ships: the game's own file on a
+      // game with no BASE_MASTERS row, a Creation Club master, a loose file
+      // the user put in Data. It is THERE, so it is not missing, and there is
+      // no mod to enable or install for it.
+      if (provider !== undefined && (provider.native === true || provider.modId === undefined)) continue;
       const providerMod = provider?.modId === undefined ? undefined : modById.get(provider.modId);
       if (providerMod !== undefined && providerMod.id === owner.modId) continue; // its own master
       const status: RequirementStatus =
@@ -422,9 +484,9 @@ export function addMasterRequirements(
         satisfiedBy: providerMod === undefined ? [] : [providerMod.id],
       });
       if (providerMod !== undefined) {
+        // Copy, never push: the array may belong to the input report.
         const list = requiredBy.get(providerMod.id) ?? [];
-        if (!list.includes(owner.modId)) list.push(owner.modId);
-        requiredBy.set(providerMod.id, list);
+        if (!list.includes(owner.modId)) requiredBy.set(providerMod.id, [...list, owner.modId]);
       }
     }
     byMod.set(owner.modId, { ...entry, requirements });
@@ -444,6 +506,24 @@ export type RequirementsSummary = {
   truncated: number;
 };
 
+/**
+ * What a requirement line is ABOUT, for counting. A mod that lists USSEP on
+ * its page and masters its plugin on USSEP has one requirement, not two —
+ * the two lines are kept (they can disagree usefully) but counted once.
+ */
+function requirementKey(q: ModRequirement): string {
+  if (q.satisfiedBy.length > 0) return `mod:${[...q.satisfiedBy].sort().join("|")}`;
+  if (q.nexusModId !== undefined) return `nexus:${q.gameDomain ?? ""}:${q.nexusModId}`;
+  return `name:${(q.master ?? q.name).toLowerCase()}`;
+}
+
+/** Distinct requirements of one mod in a given status. */
+export function countDistinct(r: ModRequirementReport, status: RequirementStatus): number {
+  const keys = new Set<string>();
+  for (const q of r.requirements) if (q.status === status) keys.add(requirementKey(q));
+  return keys.size;
+}
+
 export function summarizeRequirements(report: RequirementsReport): RequirementsSummary {
   const out: RequirementsSummary = {
     modsWithMissing: 0,
@@ -455,27 +535,32 @@ export function summarizeRequirements(report: RequirementsReport): RequirementsS
     truncated: 0,
   };
   for (const r of report.byMod.values()) {
-    let anyMissing = false;
-    for (const q of r.requirements) {
-      if (q.status === "missing") {
-        out.missing += 1;
-        anyMissing = true;
-      } else if (q.status === "installed-disabled") out.installedDisabled += 1;
-      else if (q.status === "external") out.external += 1;
-      else if (q.status === "dlc") out.dlc += 1;
-    }
-    if (anyMissing) out.modsWithMissing += 1;
+    const missing = countDistinct(r, "missing");
+    out.missing += missing;
+    out.installedDisabled += countDistinct(r, "installed-disabled");
+    out.external += countDistinct(r, "external");
+    out.dlc += countDistinct(r, "dlc");
+    if (missing > 0) out.modsWithMissing += 1;
     if (r.unfetched) out.unfetched += 1;
     if (r.truncatedBy > 0) out.truncated += 1;
   }
   return out;
 }
 
+/** The cell's CATEGORY, for an exact-match filter: "missing" | "disabled" | "ok" | "not checked" | "". */
+export function requirementCellCategory(r: ModRequirementReport | undefined): string {
+  if (r === undefined) return "";
+  if (countDistinct(r, "missing") > 0) return "missing";
+  if (countDistinct(r, "installed-disabled") > 0) return "disabled";
+  if (r.unfetched) return "not checked";
+  return r.requirements.some((q) => q.status === "satisfied") ? "ok" : "";
+}
+
 /** One cell's worth: "3 missing · 1 disabled" — or nothing when all is well. */
 export function describeRequirementCell(r: ModRequirementReport | undefined): string {
   if (r === undefined) return "";
-  const missing = r.requirements.filter((q) => q.status === "missing").length;
-  const disabled = r.requirements.filter((q) => q.status === "installed-disabled").length;
+  const missing = countDistinct(r, "missing");
+  const disabled = countDistinct(r, "installed-disabled");
   const parts: string[] = [];
   if (missing > 0) parts.push(`${missing} missing`);
   if (disabled > 0) parts.push(`${disabled} disabled`);

@@ -26,7 +26,7 @@ const num = (n: number): string => n.toLocaleString();
 const rowId = (r: PluginRow): string => r.plugin.name;
 
 const stateOf = (r: PluginRow): string =>
-  r.plugin.enabled === true ? "enabled" : r.plugin.enabled === false ? "disabled" : "not in load order";
+  r.plugin.fromDisabledMod === true ? "mod disabled" : r.plugin.enabled ? "enabled" : "disabled";
 
 function makeColumns(onFocus: (modId: string) => void): Column<PluginRow>[] {
   return [
@@ -52,7 +52,7 @@ function makeColumns(onFocus: (modId: string) => void): Column<PluginRow>[] {
       width: 150,
       value: stateOf,
       render: (r) => (
-        <Pill intent={r.plugin.enabled === true ? "success" : r.plugin.enabled === false ? "neutral" : "warning"} plain>
+        <Pill intent={r.plugin.enabled ? "success" : "neutral"} plain>
           {stateOf(r)}
         </Pill>
       ),
@@ -85,7 +85,11 @@ function makeColumns(onFocus: (modId: string) => void): Column<PluginRow>[] {
         if (text === "") return <span className="eh-muted">—</span>;
         if (r.unreadable !== undefined) return <span className="eh-tone--warning" title={r.unreadable}>{text}</span>;
         if (r.missing.length > 0) return <span className="eh-tone--danger" title={title}>{text}</span>;
-        if (r.disabled.length > 0) return <span className="eh-tone--warning" title={title}>{text}</span>;
+        // A disabled master under an ENABLED plugin is a game that will not
+        // load, not a warning; under a disabled plugin it is merely off.
+        if (r.disabled.length > 0) {
+          return <span className={r.plugin.enabled ? "eh-tone--danger" : "eh-tone--warning"} title={title}>{text}</span>;
+        }
         return <span className="eh-tone--success" title={title}>{text}</span>;
       },
     },
@@ -162,6 +166,11 @@ export function PluginsView(props: {
           start; the usual fix is flagging eligible plugins light, which Vortex&rsquo;s own Plugins tab can do per plugin.
         </Callout>
       )}
+
+      <p className="eh-note">
+        Read-only for now: enabling, reordering and flagging stay in Vortex&rsquo;s Plugins tab. Plugins of disabled
+        mods are listed too (state &ldquo;mod disabled&rdquo;), which Vortex&rsquo;s tab does not show.
+      </p>
 
       <div className="eh-row eh-row--sm" role="tablist" aria-label="Plugin views">
         {PLUGIN_VIEWS.filter((v) => v.id === "all" || counts[v.id] > 0).map((v) => (

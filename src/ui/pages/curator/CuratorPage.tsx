@@ -29,7 +29,7 @@
 import * as fsp from "fs/promises";
 
 import * as React from "react";
-import { actions as vortexActions, selectors } from "@nexusmods/vortex-api";
+import { actions as vortexActions, selectors, util } from "@nexusmods/vortex-api";
 
 import {
   findEndorsable,
@@ -80,6 +80,7 @@ import {
   dependantsOf,
   disabledProvidersFor,
   pickInstallFile,
+  requirementCellCategory,
   summarizeRequirements,
   type ModRequirement,
   type NexusFileInfo,
@@ -97,6 +98,7 @@ import {
   Page,
   Pill,
   Radio,
+  Select,
   StatGrid,
   StatTile,
   type Column,
@@ -126,6 +128,43 @@ import {
 type EmitAndAwait = {
   emitAndAwait?: (event: string, ...args: unknown[]) => PromiseLike<unknown>;
 };
+
+/**
+ * One store subscription for the page, however often it mounts.
+ *
+ * The page reads Vortex only when `tick` changes, so a profile switch made
+ * from Vortex's own toolbar while this page is open would leave it acting on
+ * the OLD game's mods. `api.onStateChange` has no unsubscribe, so it is
+ * registered once per process and fanned out to whichever page is mounted.
+ */
+const profileListeners = new Set<() => void>();
+let profileWatched = false;
+function watchActiveProfile(api: { onStateChange?: (path: string[], cb: () => void) => void }, fn: () => void): () => void {
+  profileListeners.add(fn);
+  if (!profileWatched && typeof api.onStateChange === "function") {
+    profileWatched = true;
+    api.onStateChange(["settings", "profiles", "activeProfileId"], () => {
+      for (const l of profileListeners) l();
+    });
+  }
+  return () => {
+    profileListeners.delete(fn);
+  };
+}
+
+/** Which runs honour Stop. The others are single Vortex calls with no checkpoint. */
+const STOPPABLE = new Set<string>(["requirements", "endorse", "update", "reinstall", "cleanup"]);
+
+/** Mod types the game registers, for the kind selector. Empty when Vortex cannot say. */
+function registeredModTypes(gameId: string): string[] {
+  try {
+    const getGame = (util as unknown as { getGame?: (id: string) => { modTypes?: Array<{ typeId?: unknown }> } | undefined }).getGame;
+    const types = typeof getGame === "function" ? getGame(gameId)?.modTypes ?? [] : [];
+    return types.map((t) => t.typeId).filter((t): t is string => typeof t === "string" && t !== "").sort();
+  } catch {
+    return [];
+  }
+}
 
 const num = (n: number): string => n.toLocaleString();
 
@@ -220,7 +259,9 @@ const WORK_COLUMNS: Column<WorkRow>[] = [
     header: "Requires",
     match: "exact",
     width: 150,
-    value: (r) => r.requirementCell,
+    // The filter is a category ("missing", "disabled", "ok", "not checked");
+    // the cell shows the counts.
+    value: (r) => requirementCellCategory(r.requirements),
     render: (r) =>
       r.requirementCell === "" ? (
         <span className="eh-muted">—</span>
@@ -232,16 +273,27 @@ const WORK_COLUMNS: Column<WorkRow>[] = [
         <span className="eh-tone--warning">{r.requirementCell}</span>
       ),
   },
-  {
+];
+
+/** The Required-by column opens the mod's panel; it needs the page's focus setter. */
+function requiredByColumn(onFocus: (modId: string) => void): Column<WorkRow> {
+  return {
     key: "requiredBy",
-    header: "Required by",
+    header: "Needed by",
     numeric: true,
     align: "right",
     width: 110,
     value: (r) => r.requiredBy.length,
-    render: (r) => (r.requiredBy.length === 0 ? <span className="eh-muted">—</span> : r.requiredBy.length),
-  },
-];
+    render: (r) =>
+      r.requiredBy.length === 0 ? (
+        <span className="eh-muted">—</span>
+      ) : (
+        <LinkButton onClick={(): void => onFocus(r.mod.id)} title="Open the list of mods that need this one">
+          {r.requiredBy.length}
+        </LinkButton>
+      ),
+  };
+}
 
 // ── The page ───────────────────────────────────────────────────────────
 
@@ -347,13 +399,40 @@ function CuratorBody(): JSX.Element {
   const [typeValue, setTypeValue] = React.useState("");
   const [focusId, setFocusId] = React.useState<string | undefined>(undefined);
   const focusMod = focusId === undefined ? undefined : mods.find((m) => m.id === focusId);
+  const columns = React.useMemo(() => [...WORK_COLUMNS, requiredByColumn(setFocusId)], []);
+  const modTypes = React.useMemo(() => (gameId === undefined ? [] : registeredModTypes(gameId)), [gameId]);
+
+  // A profile switch from Vortex's toolbar: re-read, and drop what pointed at
+  // the old game's mods.
+  React.useEffect(
+    () =>
+      watchActiveProfile(api as never, () => {
+        setTick((t) => t + 1);
+        setSelected(new Set());
+        setFocusId(undefined);
+      }),
+    [api],
+  );
+
+  /** A run that throws outside its runner must not leave the session busy forever. */
+  const guard = <A extends unknown[]>(label: string, fn: (...a: A) => Promise<void>) =>
+    async (...a: A): Promise<void> => {
+      try {
+        await fn(...a);
+      } catch (err) {
+        ehLog("error", "curator.run.crash", { label, err });
+        if (session.getSnapshot().busy !== undefined) {
+          session.finish(undefined, `${label} stopped with an error: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    };
 
   const ext = api as unknown as EmitAndAwait;
   const nexus = React.useMemo(() => nexusExtOf(api), [api]);
 
   // ── Requirements ─────────────────────────────────────────────────────
 
-  const readRequirements = async (): Promise<void> => {
+  const readRequirements = guard("Reading requirements", async (): Promise<void> => {
     const game = gameId;
     if (game === undefined) return;
     const signal = session.begin("requirements", { keepReport: true });
@@ -366,6 +445,12 @@ function CuratorBody(): JSX.Element {
         signal,
         onProgress: setProgress,
       });
+      if (load.stopped) {
+        // A partial report would show "0 missing" and "headers read" for
+        // everything it never reached. Keep whatever was there before.
+        session.finish(undefined, "Stopped before the requirements were fully read; the previous report, if any, is kept.");
+        return;
+      }
       session.setRequirements({ gameId: game, fetchedAt: Date.now(), load });
       const s = summarizeRequirements(load.report);
       session.finish(
@@ -383,7 +468,7 @@ function CuratorBody(): JSX.Element {
         `Could not read requirements: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-  };
+  });
 
   // Once per game, unasked: one batched call per fifty mods, and the column
   // is blank without it. A re-read is a button.
@@ -402,41 +487,90 @@ function CuratorBody(): JSX.Element {
     { req: ModRequirement; candidates: NexusFileInfo[]; picked?: number } | undefined
   >(undefined);
 
-  const downloadRequirement = async (req: ModRequirement, file: NexusFileInfo): Promise<void> => {
-    if (req.nexusModId === undefined || req.gameDomain === undefined || nexus.download === undefined) return;
+  const downloadRequirement = guard("Installing a requirement", async (req: ModRequirement, file: NexusFileInfo): Promise<void> => {
+    const game = gameId;
+    const download = nexus.download;
+    // `nexusDownload` resolves its game with Vortex's `gameById`: it needs the
+    // VORTEX id, not the Nexus domain, and refuses a game it does not manage.
+    if (game === undefined || req.nexusModId === undefined || req.vortexGameId === undefined || download === undefined) return;
     const signal = session.begin("install-requirement", { keepReport: true });
-    if (signal === undefined) return;
+    if (signal === undefined) {
+      setNote("Something else is still running — try again when it finishes.");
+      return;
+    }
+    const nexusModId = req.nexusModId;
+    const vortexGame = req.vortexGameId;
     setProgress(`Downloading ${req.name} — ${file.name ?? file.file_name ?? `file ${file.file_id}`}`);
     ehLog("info", "curator.requirement.install.start", {
       mod: req.name,
-      nexusModId: req.nexusModId,
+      nexusModId,
       fileId: file.file_id,
-      game: req.gameDomain,
+      game: vortexGame,
     });
+    // The download promise resolves when the DOWNLOAD lands; Vortex then
+    // installs. The session stays busy until the install has landed too, or a
+    // sequential update could start on top of a live Vortex install.
+    const stop = new AbortController();
+    const onAbort = (): void => stop.abort();
+    signal.addEventListener("abort", onAbort);
+    let refused = false;
     try {
-      const dlId = await nexus.download(req.gameDomain, req.nexusModId, file.file_id, file.file_name, true);
-      ehLog("info", "curator.requirement.install.downloaded", { mod: req.name, dlId });
+      const newModId = await updateOneAndWait({
+        events: api.events as never,
+        gameId: game,
+        nexusModId,
+        toFileId: file.file_id,
+        readInstalled: installedIdentityReader(() => api.getState(), game),
+        signal: stop.signal,
+        start: () => {
+          void download(vortexGame, nexusModId, file.file_id, file.file_name, true).then(
+            (dlId) => {
+              ehLog("info", "curator.requirement.install.downloaded", { mod: req.name, dlId });
+              // Vortex swallows its own refusals (not Premium, not logged in)
+              // into a notification and resolves undefined.
+              if (dlId === undefined) {
+                refused = true;
+                stop.abort();
+              }
+            },
+            (err) => {
+              ehLog("error", "curator.requirement.install.fail", { mod: req.name, err });
+              refused = true;
+              stop.abort();
+            },
+          );
+        },
+      });
+      ehLog("info", "curator.requirement.install.done", { mod: req.name, newModId });
       session.finish(
         undefined,
-        dlId === undefined
-          ? `Vortex did not start the download for ${req.name}. Its own notification says why; the mod page is a click away.`
-          : `Downloaded ${req.name}. Vortex is installing it now — press Reload in a moment, then re-read requirements.`,
+        `Installed ${req.name}. Press Re-read requirements to refresh the report.`,
       );
     } catch (err) {
-      ehLog("error", "curator.requirement.install.fail", { mod: req.name, err });
-      session.finish(undefined, `Could not download ${req.name}: ${err instanceof Error ? err.message : String(err)}`);
+      session.finish(
+        undefined,
+        refused
+          ? `Vortex did not download ${req.name}. Its own notification says why — Nexus only lets Vortex fetch files ` +
+              `directly for Premium members; otherwise open the mod page and use "Mod manager download", which lands in Vortex.`
+          : `${req.name} did not finish installing: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      signal.removeEventListener("abort", onAbort);
     }
     setTick((t) => t + 1);
-  };
+  });
 
-  const installRequirement = async (req: ModRequirement): Promise<void> => {
+  const installRequirement = guard("Installing a requirement", async (req: ModRequirement): Promise<void> => {
     if (req.nexusModId === undefined || req.gameDomain === undefined) return;
     if (nexus.getModFiles === undefined || nexus.download === undefined) {
       setNote("This Vortex build does not expose the Nexus download surface, so the file has to be fetched from the mod page.");
       return;
     }
     const signal = session.begin("install-requirement", { keepReport: true });
-    if (signal === undefined) return;
+    if (signal === undefined) {
+      setNote("Something else is still running — try again when it finishes.");
+      return;
+    }
     setProgress(`Asking Nexus which file ${req.name} ships…`);
     let files: NexusFileInfo[] = [];
     try {
@@ -456,7 +590,7 @@ function CuratorBody(): JSX.Element {
     } else {
       setNote(`${req.name} has no current file on Nexus to download. Its page may explain.`);
     }
-  };
+  });
 
   const openPage = (req: ModRequirement): void => {
     if (req.nexusModId !== undefined && req.gameDomain !== undefined && nexus.openModPage !== undefined) {
@@ -502,9 +636,21 @@ function CuratorBody(): JSX.Element {
     setTick((t) => t + 1);
   };
 
-  const endorseAll = async (): Promise<void> => {
+  const endorseAll = guard("Endorsing", async (): Promise<void> => {
     const game = gameId;
     if (game === undefined) return;
+    if (endorseIsLong(endorsable.length)) {
+      const ok = await confirm({
+        title: `Endorse ${num(endorsable.length)} mods — ${describeEndorseDuration(endorsable.length)}?`,
+        text:
+          `Vortex gives no way to confirm an endorsement finished, so they are sent ` +
+          `${ENDORSE_PACE_MS}ms apart — sending them all at once is a rate limit, not a ` +
+          `faster result. Leave the page open while it runs; "Stop after this one" ` +
+          `stops between mods.`,
+        confirmLabel: "Endorse",
+      });
+      if (!ok) return;
+    }
     const signal = session.begin("endorse", { keepReport: true });
     if (signal === undefined) return;
     let done = 0;
@@ -528,9 +674,9 @@ function CuratorBody(): JSX.Element {
         `. Vortex reports each result in its own notifications; press Reload ` +
         `to see the counts settle.`,
     );
-  };
+  });
 
-  const updateAll = async (candidates: readonly WorkRow[]): Promise<void> => {
+  const updateAll = guard("Updating", async (candidates: readonly WorkRow[]): Promise<void> => {
     const game = gameId;
     if (game === undefined) return;
     const signal = session.begin("update");
@@ -597,15 +743,53 @@ function CuratorBody(): JSX.Element {
       }, {}),
     });
     session.finish(describeBulkUpdate(report));
-    setSelected(new Set());
+    const consumed = new Set(list.map((c) => c.mod.id));
+    setSelected((prev) => new Set([...prev].filter((id) => !consumed.has(id))));
     setTick((t) => t + 1);
-  };
+  });
 
-  const reinstall = async (targets: readonly CuratorMod[]): Promise<void> => {
+  const reinstall = guard("Reinstalling", async (requested: readonly CuratorMod[]): Promise<void> => {
     const game = gameId;
-    if (game === undefined || targets.length === 0) return;
+    if (game === undefined || requested.length === 0) return;
+    // Vortex recording an archive id is not the archive being on disk: an
+    // in-place update leaves the mod pointing at a dead download record. A
+    // reinstall UNINSTALLS first, so a mod whose archive is not actually there
+    // is refused here, before anything is removed (NS-2).
+    const state0 = api.getState();
+    const targets: CuratorMod[] = [];
+    const noArchive: CuratorMod[] = [];
+    for (const m of requested) {
+      const full = getModArchivePath(state0, m.archiveId, game);
+      if (full === undefined) {
+        noArchive.push(m);
+        continue;
+      }
+      try {
+        await fsp.stat(full);
+        targets.push(m);
+      } catch {
+        noArchive.push(m);
+      }
+    }
+    if (targets.length === 0) {
+      setNote(
+        `None of the ${num(requested.length)} ticked mod(s) has its archive on disk, so none can be reinstalled — ` +
+          `re-download them from their mod pages first. Nothing was uninstalled.`,
+      );
+      return;
+    }
+    const skippedText =
+      noArchive.length === 0
+        ? ""
+        : `\n\nSKIPPED, archive not on disk (nothing happens to these): ` +
+          noArchive
+            .slice(0, 8)
+            .map((m) => m.name)
+            .join(", ") +
+          (noArchive.length > 8 ? ` and ${noArchive.length - 8} more` : "") +
+          `.`;
     const ok = await confirm({
-      title: `Reinstall ${num(targets.length)} mod(s)?`,
+      title: `Uninstall and reinstall ${num(targets.length)} mod(s)?`,
       text:
         `Each one is UNINSTALLED and then installed again from its archive, ` +
         `one at a time. Everything Vortex would otherwise lose — the FOMOD ` +
@@ -613,7 +797,8 @@ function CuratorBody(): JSX.Element {
         `first and put back after.\n\n` +
         `If an install fails after the removal, that mod is gone from your ` +
         `setup until you install it again from Downloads. The report says ` +
-        `exactly which, if any.`,
+        `exactly which, if any.` +
+        skippedText,
       confirmLabel: "Reinstall",
     });
     if (!ok) return;
@@ -621,7 +806,6 @@ function CuratorBody(): JSX.Element {
     if (signal === undefined) return;
     const installedIds = new Map<string, string>();
     const removed = new Set<string>();
-    const state0 = api.getState();
     const enabledNow = readEnabledModIds(state0, game);
 
     const report = await runSequentially<CuratorMod>({
@@ -681,9 +865,14 @@ function CuratorBody(): JSX.Element {
                 : { kind: "unverified" as const, mod: o.item, why: o.why },
         ),
       }),
+      noArchive.length === 0
+        ? undefined
+        : `${num(noArchive.length)} mod(s) were skipped because their archive is not on disk; they were not touched.`,
     );
+    const done = new Set(targets.map((m) => m.id));
+    setSelected((prev) => new Set([...prev].filter((id) => !done.has(id))));
     setTick((t) => t + 1);
-  };
+  });
 
   const setEnabledFor = (targets: readonly CuratorMod[], to: boolean): void => {
     const profileId = (
@@ -760,7 +949,7 @@ function CuratorBody(): JSX.Element {
     setTick((t) => t + 1);
   };
 
-  const applyCleanup = async (plan: CleanupPlan): Promise<void> => {
+  const applyCleanup = guard("Cleanup", async (plan: CleanupPlan): Promise<void> => {
     const game = gameId;
     if (game === undefined) return;
     const signal = session.begin("cleanup");
@@ -796,7 +985,7 @@ function CuratorBody(): JSX.Element {
     });
     session.finish(describeCleanupOutcome(outcome));
     setTick((t) => t + 1);
-  };
+  });
 
   // ── Render ───────────────────────────────────────────────────────────
 
@@ -823,19 +1012,19 @@ function CuratorBody(): JSX.Element {
         <StatTile label="Enabled" value={num(summary.enabled)} tone={summary.enabled === 0 ? "quiet" : "neutral"} />
         <StatTile label="Updatable" value={num(summary.updatable)} tone={summary.updatable === 0 ? "quiet" : "warning"} />
         <StatTile
-          label="Missing reqs"
+          label="Needs install"
           value={reqSummary === undefined ? "?" : num(reqSummary.modsWithMissing)}
           tone={reqSummary === undefined ? "quiet" : reqSummary.modsWithMissing === 0 ? "success" : "danger"}
           title={reqSummary === undefined ? "Not read yet" : `${num(reqSummary.missing)} requirement(s) across ${num(reqSummary.modsWithMissing)} mod(s)`}
         />
         <StatTile
-          label="Reqs disabled"
+          label="Needs enabling"
           value={reqSummary === undefined ? "?" : num(reqSummary.installedDisabled)}
           tone={reqSummary === undefined ? "quiet" : reqSummary.installedDisabled === 0 ? "quiet" : "warning"}
           title="Requirements that are in the pool but not enabled"
         />
         <StatTile label="Frozen" value={num(summary.frozen)} tone={summary.frozen === 0 ? "quiet" : "info"} />
-        <StatTile label="Freeze broken" value={num(summary.frozenDrifted)} tone={summary.frozenDrifted === 0 ? "quiet" : "danger"} />
+        <StatTile label="Frozen, drifted" value={num(summary.frozenDrifted)} tone={summary.frozenDrifted === 0 ? "quiet" : "danger"} />
         <StatTile label="Unendorsed" value={num(summary.endorsable)} tone={summary.endorsable === 0 ? "quiet" : "neutral"} />
       </StatGrid>
 
@@ -873,21 +1062,12 @@ function CuratorBody(): JSX.Element {
           {`Endorse ${num(endorsable.length)} mod(s)` +
             (endorseIsLong(endorsable.length) ? ` — ${describeEndorseDuration(endorsable.length)}` : "")}
         </Button>
-        {!idle && (
+        {busy !== undefined && STOPPABLE.has(busy) && (
           <Button intent="ghost" onClick={(): void => session.cancel()}>
             Stop after this one
           </Button>
         )}
       </div>
-
-      {endorseIsLong(endorsable.length) && idle && (
-        <Callout tone="warning">
-          Endorsing {num(endorsable.length)} mods takes {describeEndorseDuration(endorsable.length)} and
-          cannot be stopped once it starts. Vortex gives no way to confirm an endorsement finished, so
-          they are spaced {ENDORSE_PACE_MS}ms apart — sending them all at once is a rate-limit, not a
-          faster result. Leave the page open while it runs.
-        </Callout>
-      )}
 
       {progress !== undefined && (
         <Callout tone="info" icon={null}>
@@ -955,7 +1135,7 @@ function CuratorBody(): JSX.Element {
           <DataTable
             rows={visibleRows}
             idOf={rowId}
-            columns={WORK_COLUMNS}
+            columns={columns}
             noun="mod"
             limit={200}
             maxHeight={520}
@@ -970,16 +1150,21 @@ function CuratorBody(): JSX.Element {
                   </Button>
                 )}
                 {r.manual?.url !== undefined && (
-                  <LinkButton variant="xs" onClick={(): void => openPage({ source: "nexus", status: "missing", name: r.mod.name, url: r.manual!.url, satisfiedBy: [] })}>
-                    mod page
-                  </LinkButton>
+                  <Button
+                    size="sm"
+                    intent="ghost"
+                    title="Nexus has a newer version but did not say which file: update from the page"
+                    onClick={(): void => openPage({ source: "nexus", status: "missing", name: r.mod.name, url: r.manual!.url, satisfiedBy: [] })}
+                  >
+                    Open page
+                  </Button>
                 )}
                 <Button
                   size="sm"
                   intent={focusId === r.mod.id ? "primary" : "ghost"}
                   onClick={(): void => setFocusId(focusId === r.mod.id ? undefined : r.mod.id)}
                 >
-                  Details
+                  Requirements
                 </Button>
               </div>
             )}
@@ -1008,6 +1193,12 @@ function CuratorBody(): JSX.Element {
         <div className="eh-actions eh-actions--sticky eh-row--split">
           <span className="eh-strong">
             {num(chosen.length)} ticked
+            {chosen.length > chosenRows.filter((r) => visibleRows.includes(r)).length && (
+              <span className="eh-muted">
+                {" "}
+                · {num(chosen.length - chosenRows.filter((r) => visibleRows.includes(r)).length)} not in this view
+              </span>
+            )}
             <LinkButton variant="xs" tone="muted" className="eh-actions__clear" onClick={(): void => setSelected(new Set())}>
               clear
             </LinkButton>
@@ -1025,7 +1216,7 @@ function CuratorBody(): JSX.Element {
             )}
             {updatableChosen.length > 0 && (
               <Button size="sm" intent="primary" disabled={!idle} busy={busy === "update"} onClick={(): void => void updateAll(updatableChosen)}>
-                Update {num(updatableChosen.length)}, one at a time
+                Update {num(updatableChosen.length)}
               </Button>
             )}
             {unfrozenChosen.length > 0 && (
@@ -1070,18 +1261,35 @@ function CuratorBody(): JSX.Element {
               Reinstall {num(chosen.length)}
             </Button>
             <Field label="Kind" inline>
-              {(id): JSX.Element => (
-                <Input
-                  id={id}
-                  mono
-                  small
-                  placeholder="e.g. dinput"
-                  value={typeValue}
-                  onChange={(e): void => setTypeValue(e.target.value)}
-                />
-              )}
+              {(id): JSX.Element =>
+                modTypes.length > 0 ? (
+                  <Select id={id} small auto value={typeValue} onChange={(e): void => setTypeValue(e.target.value)}>
+                    <option value="">default</option>
+                    {modTypes.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <Input
+                    id={id}
+                    mono
+                    small
+                    placeholder="e.g. dinput"
+                    value={typeValue}
+                    onChange={(e): void => setTypeValue(e.target.value)}
+                  />
+                )
+              }
             </Field>
-            <Button size="sm" intent="ghost" disabled={!idle} onClick={(): void => setTypeFor(chosen, typeValue)}>
+            <Button
+              size="sm"
+              intent="ghost"
+              disabled={!idle}
+              title="Where Vortex deploys the mod. A mistyped kind cannot be re-derived, so the list is what the game registers."
+              onClick={(): void => setTypeFor(chosen, typeValue)}
+            >
               Set kind
             </Button>
           </div>
@@ -1104,8 +1312,11 @@ function CuratorBody(): JSX.Element {
               onClick={(): void => {
                 if (chooseFile === undefined || chooseFile.picked === undefined) return;
                 const file = chooseFile.candidates.find((f) => f.file_id === chooseFile.picked);
-                setChooseFile(undefined);
+                // begin() is synchronous inside downloadRequirement, so by the
+                // time the modal closes the run holds the session — or has
+                // said why it could not.
                 if (file !== undefined) void downloadRequirement(chooseFile.req, file);
+                setChooseFile(undefined);
               }}
             >
               Download and install

@@ -16,23 +16,37 @@
  */
 
 export type PluginEntry = {
-  /** File name as the game sees it, original case. */
+  /**
+   * File name as the game sees it. Vortex keys `pluginList` by the
+   * LOWERCASED name; the original case survives only in `loadOrder[id].name`,
+   * so that is used when present.
+   */
   name: string;
   /** Vortex mod id that deploys it; absent for a base-game or loose plugin. */
   modId?: string;
-  /** Where Vortex found the file (staging or the game folder). */
+  /**
+   * Where Vortex found the file. For a deployed plugin this is the copy in
+   * the game's Data folder (same bytes under hardlink deployment); staging
+   * only after a purge.
+   */
   filePath?: string;
   /** The game's own plugin (Skyrim.esm …). */
   isNative: boolean;
-  /** Enabled in the active profile's load order; undefined when not listed. */
-  enabled?: boolean;
+  /**
+   * Enabled as the game will see it. Vortex's rule (its own `isPluginEnabled`):
+   * a native plugin is always enabled and is never written to `loadOrder`; any
+   * other plugin is enabled only when `loadOrder` says so — absent means off.
+   */
+  enabled: boolean;
   /** Position in the load order, when Vortex has one. */
   loadOrder?: number;
+  /** The plugin came from a DISABLED mod's staging folder, not from Vortex's list. */
+  fromDisabledMod?: boolean;
 };
 
 type VortexShape = {
   session?: { plugins?: { pluginList?: Record<string, unknown> } };
-  loadOrder?: Record<string, { enabled?: unknown; loadOrder?: unknown }>;
+  loadOrder?: Record<string, { enabled?: unknown; loadOrder?: unknown; name?: unknown }>;
 };
 
 export function readPluginList(state: unknown): PluginEntry[] {
@@ -40,17 +54,21 @@ export function readPluginList(state: unknown): PluginEntry[] {
   const list = s?.session?.plugins?.pluginList;
   if (list === undefined || typeof list !== "object") return [];
   const order = s?.loadOrder ?? {};
-  const orderByLower = new Map<string, { enabled?: unknown; loadOrder?: unknown }>();
+  const orderByLower = new Map<string, { enabled?: unknown; loadOrder?: unknown; name?: unknown }>();
   for (const [k, v] of Object.entries(order)) orderByLower.set(k.toLowerCase(), v);
 
   const out: PluginEntry[] = [];
-  for (const [name, raw] of Object.entries(list)) {
+  for (const [key, raw] of Object.entries(list)) {
     const e = raw as { modId?: unknown; filePath?: unknown; isNative?: unknown } | undefined;
-    const lo = orderByLower.get(name.toLowerCase());
-    const entry: PluginEntry = { name, isNative: e?.isNative === true };
+    const lo = orderByLower.get(key.toLowerCase());
+    const isNative = e?.isNative === true;
+    const entry: PluginEntry = {
+      name: typeof lo?.name === "string" && lo.name !== "" ? lo.name : key,
+      isNative,
+      enabled: isNative || lo?.enabled === true,
+    };
     if (typeof e?.modId === "string" && e.modId !== "") entry.modId = e.modId;
     if (typeof e?.filePath === "string" && e.filePath !== "") entry.filePath = e.filePath;
-    if (typeof lo?.enabled === "boolean") entry.enabled = lo.enabled;
     if (typeof lo?.loadOrder === "number") entry.loadOrder = lo.loadOrder;
     out.push(entry);
   }
@@ -62,7 +80,13 @@ export function readPluginList(state: unknown): PluginEntry[] {
   });
 }
 
-/** The owners map the requirements engine wants: plugin → mod. */
-export function pluginOwners(plugins: readonly PluginEntry[]): Array<{ plugin: string; modId?: string }> {
-  return plugins.map((p) => (p.modId === undefined ? { plugin: p.name } : { plugin: p.name, modId: p.modId }));
+/** The owners map the requirements engine wants: plugin → mod, and whether the game ships it. */
+export function pluginOwners(
+  plugins: readonly PluginEntry[],
+): Array<{ plugin: string; modId?: string; native?: boolean }> {
+  return plugins.map((p) => ({
+    plugin: p.name,
+    ...(p.modId === undefined ? {} : { modId: p.modId }),
+    ...(p.isNative ? { native: true } : {}),
+  }));
 }

@@ -104,6 +104,8 @@ export type CuratorMod = {
    * Vortex tracks no source, which protects nothing.
    */
   archiveId?: string;
+  /** The mod's folder name under the game's staging root. */
+  installationPath?: string;
   /**
    * OUR flag: the version the curator froze this mod at.
    *

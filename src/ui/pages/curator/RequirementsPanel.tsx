@@ -94,7 +94,7 @@ export function RequirementsPanel(props: {
               Enable {providers.length > 1 ? `${providers.length} providers` : providerNames(q)}
             </Button>
           )}
-          {q.status === "missing" && q.nexusModId !== undefined && props.canInstall && (
+          {q.status === "missing" && q.nexusModId !== undefined && q.vortexGameId !== undefined && props.canInstall && (
             <Button size="sm" intent="primary" busy={busy} onClick={(): void => props.onInstall(q)}>
               Install
             </Button>

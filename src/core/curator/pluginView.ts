@@ -65,23 +65,27 @@ export function buildPluginRows(args: {
           ? baseGame
             ? "ok"
             : "missing"
-          : provider.enabled === false
-            ? "disabled"
-            : "ok";
+          : provider.enabled
+            ? "ok"
+            : "disabled";
       return { name, state, baseGame };
     });
     const owner = plugin.modId === undefined ? undefined : modById.get(plugin.modId);
-    const isLight = header?.flags?.isLight;
+    // The .esl EXTENSION forces light + master in SSE/FO4 whatever the header
+    // says; the flag alone is what pluginFlags reads.
+    const eslExt = /\.esl$/i.test(plugin.name);
+    const isLight = eslExt ? true : header?.flags?.isLight;
+    const isMaster = eslExt ? true : header?.flags?.isMaster;
     const row: PluginRow = {
       plugin,
       masters,
       missing: masters.filter((m) => m.state === "missing").map((m) => m.name),
       disabled: masters.filter((m) => m.state === "disabled").map((m) => m.name),
-      takesSlot: plugin.enabled === true && isLight !== true,
+      takesSlot: plugin.enabled && isLight !== true,
     };
     if (owner !== undefined) row.owner = owner;
     if (isLight !== undefined) row.isLight = isLight;
-    if (header?.flags?.isMaster !== undefined) row.isMaster = header.flags.isMaster;
+    if (isMaster !== undefined) row.isMaster = isMaster;
     if (header?.unreadable !== undefined) row.unreadable = header.unreadable;
     return row;
   });
@@ -102,7 +106,7 @@ export const PLUGIN_VIEWS: ReadonlyArray<{ id: PluginViewId; label: string; desc
     label: "Regular slots",
     description: `Enabled plugins that take one of the ${REGULAR_PLUGIN_LIMIT} regular slots. Light-flagged plugins share the FE slot and are not counted.`,
   },
-  { id: "light", label: "Light", description: "Plugins with the ESL flag set in their header, whatever their extension." },
+  { id: "light", label: "Light", description: "Plugins with the ESL flag set in their header, or an .esl extension." },
   { id: "disabled", label: "Disabled", description: "Listed but not enabled in the active profile's load order." },
 ];
 
@@ -117,7 +121,7 @@ export function pluginRowsForView(rows: readonly PluginRow[], view: PluginViewId
     case "light":
       return rows.filter((r) => r.isLight === true);
     case "disabled":
-      return rows.filter((r) => r.plugin.enabled === false);
+      return rows.filter((r) => !r.plugin.enabled);
     default: {
       const exhaustive: never = view;
       void exhaustive;
@@ -149,7 +153,7 @@ export type PluginSummary = {
 export function summarizePlugins(rows: readonly PluginRow[], headersRead: boolean): PluginSummary {
   return {
     total: rows.length,
-    enabled: rows.filter((r) => r.plugin.enabled === true).length,
+    enabled: rows.filter((r) => r.plugin.enabled).length,
     slotsUsed: rows.filter((r) => r.takesSlot).length,
     slotLimit: REGULAR_PLUGIN_LIMIT,
     light: rows.filter((r) => r.isLight === true).length,

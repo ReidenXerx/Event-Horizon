@@ -3,15 +3,18 @@ import { describe, expect, it } from "vitest";
 import type { CuratorMod } from "./profileActions";
 import {
   addMasterRequirements,
+  countDistinct,
   dependantsOf,
   describeRequirementCell,
   disabledProvidersFor,
   domainForNumber,
   fetchRequirements,
   makeModUid,
+  nexusDomainOf,
   parseGameList,
   pickInstallFile,
   resolveNexusRequirements,
+  requirementCellCategory,
   splitModUid,
   summarizeRequirements,
   uidsFor,
@@ -250,6 +253,145 @@ describe("plugin masters", () => {
     expect(report.requiredBy.get("usleep")).toEqual(["patch"]);
     // Base-game masters are never a requirement to install.
     expect(report.byMod.get("usleep")!.requirements).toEqual([]);
+  });
+});
+
+describe("game namespaces", () => {
+  it("maps Vortex ids to Nexus domains the way Vortex does", () => {
+    expect(nexusDomainOf("skyrimse")).toBe("skyrimspecialedition");
+    expect(nexusDomainOf("SkyrimVR")).toBe("skyrimspecialedition");
+    expect(nexusDomainOf("falloutnv")).toBe("newvegas");
+    expect(nexusDomainOf("fallout4")).toBe("fallout4");
+    // A game extension's own page id wins over the table.
+    expect(nexusDomainOf("enderalspecialedition", "enderalspecialedition")).toBe("enderalspecialedition");
+    expect(nexusDomainOf("skyrimse", "")).toBe("skyrimspecialedition");
+  });
+
+  it("keys UIDs and the pool by the Nexus domain when Vortex's id differs (the SSE case)", () => {
+    // Vortex says "skyrimse"; the games cache only knows "skyrimspecialedition".
+    const mods = [
+      mod({ id: "ord", name: "Ordinator", nexusModId: 1137 }),
+      mod({ id: "skse", name: "SKSE64", nexusModId: 30379 }),
+      // Downloaded under Skyrim VR's id: same Nexus domain, same pool.
+      mod({ id: "vr", name: "VR thing", nexusModId: 555, downloadGame: "skyrimvr" }),
+    ];
+    const { uidByMod, noUid } = uidsFor(mods, GAMES, "skyrimse", nexusDomainOf);
+    expect(noUid).toEqual([]);
+    expect(uidByMod.get("ord")).toBe(makeModUid(1704, 1137));
+    expect(uidByMod.get("vr")).toBe(makeModUid(1704, 555));
+
+    const fetched = new Map<string, Partial<NexusModRequirements>>([
+      [
+        makeModUid(1704, 1137),
+        {
+          nexusRequirements: {
+            totalCount: 3,
+            nodes: [
+              { gameId: 1704, modId: 30379, modName: "SKSE64" },
+              { gameId: "1704", modId: 555, modName: "VR thing" },
+              // Nexus lists the page itself: not a requirement.
+              { gameId: 1704, modId: 1137, modName: "Ordinator" },
+            ],
+          },
+        },
+      ],
+    ]);
+    const report = resolveNexusRequirements({
+      mods,
+      activeGame: "skyrimse",
+      games: GAMES,
+      uidByMod,
+      fetched,
+      toDomain: nexusDomainOf,
+      knownGameIds: ["skyrimse", "skyrimvr", "fallout4"],
+    });
+    const r = report.byMod.get("ord")!;
+    expect(r.requirements.map((q) => [q.name, q.status])).toEqual([
+      ["SKSE64", "satisfied"],
+      ["VR thing", "satisfied"],
+    ]);
+    // The page keeps the Nexus domain; the download surface gets Vortex's id.
+    expect(r.requirements[0]).toMatchObject({ gameDomain: "skyrimspecialedition", vortexGameId: "skyrimse" });
+    expect(report.requiredBy.get("ord")).toBeUndefined();
+  });
+
+  it("leaves vortexGameId off a requirement for a game this Vortex does not know", () => {
+    const mods = [mod({ id: "a", name: "A", nexusModId: 1 })];
+    const { uidByMod } = uidsFor(mods, GAMES, "skyrimse", nexusDomainOf);
+    const fetched = new Map<string, Partial<NexusModRequirements>>([
+      [makeModUid(1704, 1), { nexusRequirements: { totalCount: 1, nodes: [{ gameId: 1151, modId: 7, modName: "FO4 thing" }] } }],
+    ]);
+    const report = resolveNexusRequirements({
+      mods,
+      activeGame: "skyrimse",
+      games: GAMES,
+      uidByMod,
+      fetched,
+      toDomain: nexusDomainOf,
+      knownGameIds: ["skyrimse"],
+    });
+    const q = report.byMod.get("a")!.requirements[0]!;
+    expect(q.status).toBe("missing");
+    expect(q.gameDomain).toBe("fallout4");
+    expect(q.vortexGameId).toBeUndefined();
+  });
+});
+
+describe("masters that no mod ships", () => {
+  const mods = [mod({ id: "patch", name: "Patch" }), mod({ id: "cc", name: "CC Owner" })];
+  const base = resolveNexusRequirements({ mods, activeGame: "skyrimse", games: GAMES, uidByMod: new Map(), fetched: new Map() });
+
+  it("treats a present native or loose master as satisfied, not missing", () => {
+    const report = addMasterRequirements(base, {
+      mods,
+      owners: [
+        { plugin: "Patch.esp", modId: "patch" },
+        // The game's own file on a game with no base-masters table, and a
+        // Creation Club master the user bought: listed by Vortex, no mod.
+        { plugin: "Starfield.esm", native: true },
+        { plugin: "ccBGSSSE016-Umbra.esm" },
+      ],
+      masters: new Map([["Patch.esp", ["Starfield.esm", "ccBGSSSE016-Umbra.esm", "Gone.esm"]]]),
+      isBaseGame: () => false,
+    });
+    expect(report.byMod.get("patch")!.requirements.map((q) => [q.master, q.status])).toEqual([["Gone.esm", "missing"]]);
+  });
+
+  it("never pushes into the input report's arrays", () => {
+    const seeded: typeof base = { ...base, requiredBy: new Map([["cc", ["someone"]]]) };
+    const before = seeded.requiredBy.get("cc")!;
+    addMasterRequirements(seeded, {
+      mods,
+      owners: [
+        { plugin: "Patch.esp", modId: "patch" },
+        { plugin: "Umbra.esm", modId: "cc" },
+      ],
+      masters: new Map([["Patch.esp", ["Umbra.esm"]]]),
+      isBaseGame: () => false,
+    });
+    expect(before).toEqual(["someone"]);
+  });
+});
+
+describe("counting", () => {
+  it("counts a requirement once when the page and a plugin header both name it", () => {
+    const r = {
+      modId: "ord",
+      truncatedBy: 0,
+      unfetched: false,
+      requirements: [
+        { source: "nexus" as const, status: "installed-disabled" as const, name: "USSEP", nexusModId: 266, satisfiedBy: ["ussep"] },
+        { source: "master" as const, status: "installed-disabled" as const, name: "USSEP", plugin: "Ord.esp", master: "USSEP.esp", satisfiedBy: ["ussep"] },
+        { source: "nexus" as const, status: "missing" as const, name: "Gone", nexusModId: 1, gameDomain: "skyrimspecialedition", satisfiedBy: [] },
+        { source: "master" as const, status: "missing" as const, name: "Gone.esm", plugin: "Ord.esp", master: "Gone.esm", satisfiedBy: [] },
+      ],
+    };
+    expect(countDistinct(r, "installed-disabled")).toBe(1);
+    expect(describeRequirementCell(r)).toBe("2 missing · 1 disabled");
+    expect(requirementCellCategory(r)).toBe("missing");
+    const s = summarizeRequirements({ byMod: new Map([["ord", r]]), requiredBy: new Map(), noUid: [] });
+    expect(s.installedDisabled).toBe(1);
+    expect(s.missing).toBe(2);
   });
 });
 

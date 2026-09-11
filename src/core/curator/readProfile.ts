@@ -72,6 +72,7 @@ export function readCuratorMods(
       attributes?: Record<string, unknown>;
       type?: unknown;
       archiveId?: unknown;
+      installationPath?: unknown;
     };
     const attributes = mod?.attributes ?? {};
     out.push({
@@ -103,6 +104,7 @@ export function readCuratorMods(
       ...opt("downloadGame", asString(attributes.downloadGame)),
       ...opt("frozenAtVersion", asString(attributes[FROZEN_ATTRIBUTE])),
       ...opt("archiveId", asString(mod?.archiveId)),
+      ...opt("installationPath", asString(mod?.installationPath)),
     });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));

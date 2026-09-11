@@ -73,7 +73,7 @@ export const VIEWS: readonly ViewSpec[] = [
   },
   {
     id: "dependants",
-    label: "Required by others",
+    label: "Needed by others",
     description: "Mods something else in this profile depends on. Disabling one of these breaks its dependants.",
   },
   {
