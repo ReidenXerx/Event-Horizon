@@ -27,8 +27,11 @@ const zlib = require("zlib");
 
 const repoRoot = path.resolve(__dirname, "..");
 
-/** Exactly what the deploy script installs — see scripts/deploy-to-vortex.js. */
-const ROOT_FILES = ["index.js", "info.json"];
+/**
+ * What the deploy script installs (scripts/deploy-to-vortex.js), plus the
+ * LICENSE: every copy people download carries the terms it is licensed under.
+ */
+const ROOT_FILES = ["index.js", "info.json", "LICENSE"];
 const ROOT_DIRS = ["dist", "assets"];
 
 // ── collect ────────────────────────────────────────────────────────────

@@ -11,7 +11,7 @@
   <img alt="Version" src="https://img.shields.io/badge/version-0.1.152-3aa0ff">
   <img alt="Vortex 2.x" src="https://img.shields.io/badge/Vortex-2.x-7c5cff">
   <img alt="Tests" src="https://img.shields.io/badge/tests-2%2C600%2B-2ea043">
-  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-lightgrey"></a>
+  <a href="LICENSE"><img alt="PolyForm Strict 1.0.0" src="https://img.shields.io/badge/license-PolyForm%20Strict%201.0.0-lightgrey"></a>
 </p>
 
 A [Vortex](https://www.nexusmods.com/about/vortex/) extension in two halves. **Curators** get a workbench that sees their whole profile at once, reads what every mod requires, installs what is missing, and packs the exact working setup into a hash-verified `.ehcoll`. **Players** get an installer that rebuilds that setup one mod at a time, proves every archive matches, pins the curator's load order, and tells them the moment anything drifts.
@@ -32,7 +32,7 @@ A [Vortex](https://www.nexusmods.com/about/vortex/) extension in two halves. **C
 </tr>
 <tr>
 <td><img src="docs/screenshots/load-order-drifted.png" alt="Load order card: drifted after a sort, with the restore button"><br><sub><b>Load order, watched.</b> The curator's order is pinned; your own plugins keep the places LOOT gives them. When a sort undoes it, you are told, with the fix on the notification.</sub></td>
-<td><img src="docs/screenshots/curator-plugins.png" alt="Plugins view: owning mod, masters, light flags, slot count"><br><sub><b>Plugins.</b> Which mod ships each plugin, missing versus disabled masters, the light flag, and the regular-slot count against the 254 limit.</sub></td>
+<td><img src="docs/screenshots/curator-plugins.png" alt="Plugins view: owning mod, masters, light flags, slot count"><br><sub><b>Plugins.</b> Which mod ships each plugin, missing versus disabled masters, the light flag, and the regular-slot count against the game's plugin limit.</sub></td>
 </tr>
 <tr>
 <td><img src="docs/screenshots/preview.png" alt="Install preview: the plan before anything changes"><br><sub><b>Installing a collection.</b> The verdict first, then the plan. Nothing changes until you say so.</sub></td>
@@ -125,6 +125,6 @@ TypeScript, strict, ES2019, CommonJS, no bundler, no runtime dependencies. Readi
 
 ## Credits
 
-Built by **DuduPhudu** and **Bluuuk**. [MIT](LICENSE).
+Built by **DuduPhudu** and **Bluuuk**. Source available under the [PolyForm Strict License 1.0.0](LICENSE): you may use Event Horizon, but not copy, change or redistribute its code without written permission. Versions 0.1.154 and earlier were MIT.
 
 <p align="center"><i>Vortex is a black hole. Collections, rules, FOMOD selections, conflict overrides — they all get pulled in and never come out the same on the other side. Event Horizon is the boundary that captures everything before it crosses over.</i></p>

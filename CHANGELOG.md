@@ -14,6 +14,17 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
 
 A review of 0.1.152 to 0.1.154 found real problems in what those builds added. This build fixes every one of them.
 
+### License
+- **From 0.1.155, Event Horizon is source-available under the PolyForm Strict License 1.0.0.** You may use it; copying,
+  changing or redistributing its code needs written permission. Versions 0.1.154 and earlier were released under MIT,
+  and copies of those keep it.
+
+### Starfield
+- **Light plugins use Starfield's own flag.** Event Horizon read and wrote the light flag at the bit Skyrim and Fallout 4
+  use, which on Starfield is a different flag — so a Starfield collection recorded the wrong plugins as light and the
+  installer changed that other bit on your plugins. It now uses Starfield's bit, counts medium plugins, and refuses to
+  touch flags from a Starfield package built before this fix (rebuild the package with 0.1.155).
+
 ### Load order
 - **"Turn automatic sorting off" works.** It sent Vortex an action nothing listens to and then said it had worked, both
   from the install prompt and from the Doctor card, so Vortex kept re-sorting. It now uses the action Vortex handles and
