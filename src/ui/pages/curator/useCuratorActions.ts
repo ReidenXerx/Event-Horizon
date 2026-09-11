@@ -43,6 +43,9 @@ import {
   readDownloadRecords,
 } from "../../../core/curator/existingDownload";
 import {
+  runRequirementPlan,
+} from "../../../core/curator/runRequirementPlan";
+import {
   describeBulkUpdate,
   runBulkUpdate,
 } from "../../../core/curator/bulkUpdate";
@@ -446,55 +449,20 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
       return;
     }
     setPlanState(undefined);
-    const lines: string[] = [];
-    let n = 0;
-    let failed = 0;
-    const todo = st.files.filter((pf) => pf.step.vortexGameId !== undefined && fileForStep(pf, st.picked) !== undefined);
-    ehLog("info", "curator.requirement.plan.start", { root: st.rootName, installs: todo.length, enables: st.plan.toEnable.length });
-    for (const pf of todo) {
-      if (signal.aborted) {
-        lines.push(`Stopped before ${pf.step.name}.`);
-        break;
-      }
-      n += 1;
-      setProgress(`Installing ${n} of ${todo.length} — ${pf.step.name}`);
-      const file = fileForStep(pf, st.picked)!;
-      const result = await installOne(pf.step, file, signal);
-      if (!result.ok) failed += 1;
-      if (result.ok) {
-        lines.push(`Installed ${pf.step.name} (${file.name ?? file.file_name ?? `file ${file.file_id}`}).`);
-      } else if (result.refused) {
-        lines.push(
-          `${pf.step.name}: Vortex did not download it — its own notification says why. Nexus only lets Vortex fetch files ` +
-            `directly for Premium members; otherwise open the page and use "Mod manager download", which lands in Vortex.`,
-        );
-      } else {
-        lines.push(`${pf.step.name}: did not finish installing — ${result.why}.`);
-      }
-    }
-    // The providers already in the pool come on regardless; the mod the
-    // curator wanted "made to work" comes on only when the plan actually
-    // worked — they declined "Enable anyway", and a failed download must
-    // not turn into exactly that.
-    const planWorked = failed === 0 && !signal.aborted;
-    const toEnable = [
-      ...st.plan.toEnable,
-      ...(planWorked ? st.thenEnable.filter((m) => !st.plan!.toEnable.some((p) => p.id === m.id)) : []),
-    ];
-    if (toEnable.length > 0 && !signal.aborted) {
-      setEnabledFor(toEnable, true);
-      lines.push(`Enabled ${toEnable.map((m) => m.name).join(", ")}.`);
-    }
-    if (!planWorked && st.thenEnable.length > 0) {
-      lines.push(
-        `${st.thenEnable.map((m) => m.name).join(", ")} left disabled: ${num(failed)} requirement(s) did not install` +
-          (signal.aborted ? " (stopped)" : "") +
-          `. Enable anyway from the table if that is what you want.`,
-      );
-    }
-    const skipped = st.files.filter((pf) => !todo.includes(pf));
-    if (skipped.length > 0) lines.push(`Not installed (no file chosen, no current file, or another game): ${skipped.map((pf) => pf.step.name).join(", ")}.`);
-    ehLog("info", "curator.requirement.plan.done", { root: st.rootName, lines: lines.length, stopped: signal.aborted });
+    // The loop, and the rule for when the mod the plan is for comes on, live
+    // in runRequirementPlan: a step skipped, a page unread or a chain cut
+    // keeps it off, exactly like a step that failed.
+    const { lines } = await runRequirementPlan({
+      rootName: st.rootName,
+      plan: st.plan,
+      files: st.files,
+      picked: st.picked,
+      thenEnable: st.thenEnable,
+      signal,
+      installStep: (step, file) => installOne(step, file, signal),
+      enableMods: (targets) => setEnabledFor(targets, true),
+      onProgress: setProgress,
+    });
     session.finish(lines);
     setTick((t) => t + 1);
     // The pool changed; only the new mods' pages are asked for.

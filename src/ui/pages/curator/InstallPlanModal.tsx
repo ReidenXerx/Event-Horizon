@@ -6,11 +6,17 @@
  * here — the wrong file installs cleanly and is wrong forever, so nothing
  * is picked for the curator. A step with no current file is shown and
  * skipped; its page is one click away.
+ *
+ * Whatever keeps the plan from covering the chain — a step with no file, a
+ * page for an unmanaged game, a page Nexus did not answer for, a chain cut
+ * at its depth cap — is said here, before the run: the mod the plan was
+ * opened for stays disabled while any of it stands.
  */
 
 import * as React from "react";
 
 import { describePlan, type InstallPlan, type PlannedFile } from "../../../core/curator/installPlan";
+import { planBlockers } from "../../../core/curator/runRequirementPlan";
 import type { CuratorMod } from "../../../core/curator/profileActions";
 import { Button, Callout, Modal, Pill, Section, Select } from "../../components";
 
@@ -28,9 +34,16 @@ export function InstallPlanModal(props: {
   onClose: () => void;
   /** Not a Premium account: each page is opened for a hand download, one at a time. */
   guided?: boolean;
+  /**
+   * The mods this plan was opened to switch on (Enable → "Make it work").
+   * Named in the warning when something will keep them off.
+   */
+  enablesAfter?: readonly string[];
 }): JSX.Element {
   const { plan, files, picked } = props;
   const counts = plan === undefined ? undefined : describePlan(plan, files, picked);
+  const blockers = plan === undefined ? [] : planBlockers(plan, files, picked);
+  const enablesAfter = props.enablesAfter ?? [];
   const canRun = counts !== undefined && counts.undecided === 0 && (counts.installable > 0 || (plan?.toEnable.length ?? 0) > 0);
 
   return (
@@ -168,14 +181,13 @@ export function InstallPlanModal(props: {
             </Section>
           )}
 
-          {(plan.unfetched.length > 0 || plan.truncated) && (
+          {blockers.length > 0 && (
             <Callout tone="warning">
-              {plan.unfetched.length > 0 && (
-                <>
-                  Nexus did not answer for {plan.unfetched.join(", ")}; whatever those need is not in this plan.{" "}
-                </>
-              )}
-              {plan.truncated && <>The chain was cut at its depth cap; re-read requirements after this plan runs.</>}
+              {enablesAfter.length > 0
+                ? `${enablesAfter.join(", ")} will stay disabled after this runs, because `
+                : "This plan leaves gaps: "}
+              {blockers.join("; ")}.
+              {plan.truncated && <> Re-read requirements after this plan runs.</>}
             </Callout>
           )}
         </div>
