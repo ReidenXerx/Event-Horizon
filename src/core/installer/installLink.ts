@@ -268,7 +268,7 @@ export function fileSizeOf(file: NexusFileCandidate): number | undefined {
   return undefined;
 }
 
-/** A file name safe to write under our own downloads folder. */
+/** A file name safe to write under our own downloads folder, from the link's last path segment. */
 export function safeDownloadName(url: string, fallback = "collection.ehcoll"): string {
   let last = "";
   try {
@@ -277,7 +277,96 @@ export function safeDownloadName(url: string, fallback = "collection.ehcoll"): s
   } catch {
     last = "";
   }
-  const cleaned = last.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").trim();
-  if (cleaned.length === 0 || cleaned === "." || cleaned === "..") return fallback;
-  return /\.ehcoll$/i.test(cleaned) ? cleaned : `${cleaned}.ehcoll`;
+  return sanitizeFileName(last, fallback);
+}
+
+/** Longest name written, extension included: far inside Windows' 255 per component, with room for the folder. */
+const MAX_NAME_CHARS = 120;
+/** Windows device names, reserved with any extension: "CON.ehcoll" opens the console, not a file. */
+const WINDOWS_DEVICE = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
+
+/**
+ * A name a server or a link supplied, made safe to show and to write.
+ *
+ * Control, invisible and direction-changing characters are removed, not
+ * replaced: U+202E makes "llocohe.exe" read as "exe.ehcoll" on screen, and a
+ * name that displays differently from what is on disk is the one a person
+ * trusts wrongly. Path and reserved characters become "_", trailing dots and
+ * spaces go (Windows drops them silently), the length is capped with the
+ * extension kept, and a device name is prefixed.
+ */
+export function sanitizeFileName(raw: string, fallback = "collection.ehcoll"): string {
+  let name = raw
+    .normalize("NFC")
+    .replace(/[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/g, "")
+    .replace(/[<>:"/\\|?*]/g, "_")
+    .trim()
+    .replace(/[. ]+$/, "");
+  if (name.length === 0 || /^[._ ]+$/.test(name)) return fallback;
+  if (!/\.ehcoll$/i.test(name)) name = `${name}.ehcoll`;
+  const chars = Array.from(name);
+  if (chars.length > MAX_NAME_CHARS) {
+    const stem = chars.slice(0, MAX_NAME_CHARS - ".ehcoll".length).join("").replace(/[. ]+$/, "");
+    name = `${stem}.ehcoll`;
+  }
+  if (WINDOWS_DEVICE.test(name)) name = `_${name}`;
+  return name;
+}
+
+/**
+ * The file name in a Content-Disposition header (RFC 6266), or undefined.
+ *
+ * `filename*` (RFC 8187, UTF-8) wins over `filename`. A quoted value is read
+ * as a quoted-string, so `filename="a;b.ehcoll"` is "a;b.ehcoll", not "a".
+ * The result is raw: pass it through {@link sanitizeFileName} before use.
+ */
+export function fileNameFromContentDisposition(header: string): string | undefined {
+  const params = dispositionParams(header);
+  const extended = params.get("filename*");
+  if (extended !== undefined) {
+    const m = /^([^']*)'[^']*'(.*)$/.exec(extended);
+    if (m !== null && /^utf-8$/i.test(m[1])) {
+      try {
+        return decodeURIComponent(m[2]);
+      } catch {
+        /* malformed escapes: fall back to the plain parameter */
+      }
+    }
+  }
+  const plain = params.get("filename");
+  return plain !== undefined && plain.length > 0 ? plain : undefined;
+}
+
+function dispositionParams(header: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const first = header.indexOf(";");
+  if (first < 0) return out;
+  const s = header.slice(first + 1);
+  let pos = 0;
+  while (pos < s.length) {
+    const eq = s.indexOf("=", pos);
+    if (eq < 0) break;
+    const rawName = s.slice(pos, eq);
+    const cut = rawName.lastIndexOf(";");
+    const name = (cut >= 0 ? rawName.slice(cut + 1) : rawName).trim().toLowerCase();
+    pos = eq + 1;
+    while (pos < s.length && (s[pos] === " " || s[pos] === "\t")) pos += 1;
+    let value = "";
+    if (s[pos] === '"') {
+      pos += 1;
+      while (pos < s.length && s[pos] !== '"') {
+        if (s[pos] === "\\" && pos + 1 < s.length) pos += 1;
+        value += s[pos];
+        pos += 1;
+      }
+      const semi = s.indexOf(";", pos);
+      pos = semi < 0 ? s.length : semi + 1;
+    } else {
+      const semi = s.indexOf(";", pos);
+      value = s.slice(pos, semi < 0 ? s.length : semi).trim();
+      pos = semi < 0 ? s.length : semi + 1;
+    }
+    if (name.length > 0 && !out.has(name)) out.set(name, value);
+  }
+  return out;
 }

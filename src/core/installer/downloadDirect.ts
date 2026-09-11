@@ -45,7 +45,7 @@ import * as path from "path";
 
 import { ehLog } from "../logging/ehLog";
 import { AbortError, isAbort } from "../../utils/abortError";
-import { insecureLinkReason } from "./installLink";
+import { fileNameFromContentDisposition, insecureLinkReason } from "./installLink";
 
 export type DownloadProgress = {
   /** Bytes on disk so far, including what an earlier attempt left. */
@@ -668,16 +668,7 @@ export async function probeFileName(
   res.destroy();
   const header = res.headers["content-disposition"];
   if (typeof header !== "string") return undefined;
-  const star = /filename\*=(?:UTF-8|utf-8)''([^;]+)/.exec(header);
-  if (star !== null) {
-    try {
-      return decodeURIComponent(star[1].trim());
-    } catch {
-      /* fall through to the plain form */
-    }
-  }
-  const plain = /filename="?([^";]+)"?/.exec(header);
-  return plain !== null ? plain[1].trim() : undefined;
+  return fileNameFromContentDisposition(header);
 }
 
 function openRange(

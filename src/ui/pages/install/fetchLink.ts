@@ -44,6 +44,7 @@ import {
   fileSizeOf,
   nexusFilePageUrl,
   safeDownloadName,
+  sanitizeFileName,
   type InstallLink,
 } from "../../../core/installer/installLink";
 import { ehLog } from "../../../core/logging/ehLog";
@@ -102,7 +103,7 @@ async function fetchDirect(
   // The server's own name for the file, when it gives one: a pixeldrain link
   // ends in an id, and a file named after that would hide which package it is.
   const served = await probeFileName(url, signal);
-  const fileName = safeDownloadName(served !== undefined ? `https://x/${encodeURIComponent(served)}` : url);
+  const fileName = served !== undefined ? sanitizeFileName(served) : safeDownloadName(url);
   const destPath = path.join(getEventHorizonDir("downloads"), fileName);
   events.onPhase("downloading", { fileName });
   let lastReport = 0;

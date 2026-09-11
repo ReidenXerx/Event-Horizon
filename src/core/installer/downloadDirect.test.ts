@@ -103,6 +103,14 @@ beforeAll(async () => {
       res.end(probe ? BODY.subarray(0, 1) : BODY);
       return;
     }
+    if (url === "/named-semicolon") {
+      res.writeHead(206, {
+        "content-disposition": 'attachment; filename="ivy;panties.ehcoll"',
+        "content-range": `bytes 0-0/${BODY.length}`,
+      });
+      res.end(BODY.subarray(0, 1));
+      return;
+    }
     if (url === "/missing") {
       res.writeHead(404, "Not Found");
       res.end("nope");
@@ -438,6 +446,8 @@ describe("downloadToFile", () => {
 
   it("reads the server's file name with a one-byte probe", async () => {
     expect(await probeFileName(`${base}/named`)).toBe("meridia-panties-1.0.15.ehcoll");
+    // A quoted name is a quoted-string: the semicolon is part of it.
+    expect(await probeFileName(`${base}/named-semicolon`)).toBe("ivy;panties.ehcoll");
     expect(await probeFileName(`${base}/file.ehcoll`)).toBeUndefined();
     expect(await probeFileName(`${base}/missing`)).toBeUndefined();
   });

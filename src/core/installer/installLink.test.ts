@@ -12,10 +12,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   chooseEhcollFile,
+  fileNameFromContentDisposition,
   fileSizeOf,
   nexusFilePageUrl,
   parseInstallLink,
   safeDownloadName,
+  sanitizeFileName,
   type NexusFileCandidate,
 } from "./installLink";
 
@@ -188,6 +190,28 @@ describe("the source file itself", () => {
     const control = [...bytes].filter((b) => b < 0x20 && b !== 0x0a);
     expect(control).toEqual([]);
   });
+
+  // The file-name sanitizer names invisible and bidi characters in a regex.
+  // Written raw they are invisible in review and in every editor, which is
+  // the very thing the sanitizer exists to stop; they must stay escapes.
+  it("holds no raw invisible or direction-changing characters", () => {
+    const text = fs.readFileSync(path.join(__dirname, "installLink.ts"), "utf8");
+    const raw = [...text]
+      .map((c) => c.codePointAt(0) ?? 0)
+      .filter(
+        (cp) =>
+          (cp >= 0x7f && cp <= 0x9f) ||
+          cp === 0xad ||
+          cp === 0x61c ||
+          cp === 0x180e ||
+          (cp >= 0x200b && cp <= 0x200f) ||
+          (cp >= 0x2028 && cp <= 0x202e) ||
+          (cp >= 0x2060 && cp <= 0x206f) ||
+          cp === 0xfeff,
+      )
+      .map((cp) => `U+${cp.toString(16).toUpperCase()}`);
+    expect(raw).toEqual([]);
+  });
 });
 
 describe("helpers", () => {
@@ -208,5 +232,46 @@ describe("helpers", () => {
     expect(safeDownloadName("https://h/x/pkg")).toBe("pkg.ehcoll");
     expect(safeDownloadName("https://h/x/../")).toBe("collection.ehcoll");
     expect(safeDownloadName("https://h/")).toBe("collection.ehcoll");
+  });
+});
+
+describe("file names a server supplies", () => {
+  const RLO = String.fromCharCode(0x202e);
+  const ZWSP = String.fromCharCode(0x200b);
+
+  it("removes invisible and direction-changing characters, so the name on screen is the name on disk", () => {
+    const name = sanitizeFileName(`${RLO}llocohe.exe`);
+    expect(name).toBe("llocohe.exe.ehcoll");
+    expect(sanitizeFileName(`ivy${ZWSP}.ehcoll`)).toBe("ivy.ehcoll");
+    expect(sanitizeFileName(`a${String.fromCharCode(0)}b`)).toBe("ab.ehcoll");
+  });
+
+  it("never names a Windows device", () => {
+    expect(sanitizeFileName("CON")).toBe("_CON.ehcoll");
+    expect(sanitizeFileName("nul.ehcoll")).toBe("_nul.ehcoll");
+    expect(sanitizeFileName("console.ehcoll")).toBe("console.ehcoll");
+  });
+
+  it("caps the length and keeps the extension", () => {
+    const name = sanitizeFileName(`${"x".repeat(300)}.ehcoll`);
+    expect(name.length).toBeLessThanOrEqual(120);
+    expect(name.endsWith(".ehcoll")).toBe(true);
+  });
+
+  it("drops trailing dots and spaces Windows would drop silently, and paths", () => {
+    expect(sanitizeFileName("pkg.ehcoll. ")).toBe("pkg.ehcoll");
+    expect(sanitizeFileName("../../Windows/evil.dll")).toBe(".._.._Windows_evil.dll.ehcoll");
+    expect(sanitizeFileName(" .. ")).toBe("collection.ehcoll");
+  });
+
+  it("reads Content-Disposition as quoted strings and RFC 8187 values", () => {
+    expect(fileNameFromContentDisposition('attachment; filename="a;b.ehcoll"')).toBe("a;b.ehcoll");
+    expect(fileNameFromContentDisposition('attachment; filename="a\\"b.ehcoll"')).toBe('a"b.ehcoll');
+    expect(fileNameFromContentDisposition("inline; filename=pkg.ehcoll; size=3")).toBe("pkg.ehcoll");
+    expect(fileNameFromContentDisposition("attachment; filename*=utf-8'en'pkg%20x.ehcoll")).toBe("pkg x.ehcoll");
+    expect(
+      fileNameFromContentDisposition(`attachment; filename="plain.ehcoll"; filename*=UTF-8''%E2%80%AEllocohe.exe`),
+    ).toBe(`${RLO}llocohe.exe`);
+    expect(fileNameFromContentDisposition("attachment")).toBeUndefined();
   });
 });
