@@ -5,6 +5,9 @@
  * direct link mistaken for a Nexus page would be sent to Vortex's Nexus
  * integration, which has nothing to say about it.
  */
+import * as fs from "fs";
+import * as path from "path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -125,6 +128,16 @@ describe("chooseEhcollFile", () => {
   it("explains an empty page and a page without packages differently", () => {
     expect((chooseEhcollFile([]) as { why: string }).why).toMatch(/no files/);
     expect((chooseEhcollFile([pkg({ file_name: "mod.7z" })]) as { why: string }).why).toMatch(/no \.ehcoll/);
+  });
+});
+
+describe("the source file itself", () => {
+  // A raw NUL inside a regex made git classify installLink.ts as binary:
+  // no diffs in review, CRLF kept against .gitattributes' eol=lf.
+  it("is text: no control bytes and LF line endings", () => {
+    const bytes = fs.readFileSync(path.join(__dirname, "installLink.ts"));
+    const control = [...bytes].filter((b) => b < 0x20 && b !== 0x0a);
+    expect(control).toEqual([]);
   });
 });
 

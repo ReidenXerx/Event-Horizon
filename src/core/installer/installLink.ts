@@ -208,7 +208,7 @@ export function safeDownloadName(url: string, fallback = "collection.ehcoll"): s
   } catch {
     last = "";
   }
-  const cleaned = last.replace(/[<>:"/\\|?* -]/g, "_").trim();
+  const cleaned = last.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").trim();
   if (cleaned.length === 0 || cleaned === "." || cleaned === "..") return fallback;
   return /\.ehcoll$/i.test(cleaned) ? cleaned : `${cleaned}.ehcoll`;
 }
