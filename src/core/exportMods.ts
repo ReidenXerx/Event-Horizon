@@ -2,6 +2,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 
 import type { AuditorMod } from "../core/getModsListForProfile";
+import { publicNote } from "./curator/readProfile";
 import type { CapturedDeploymentManifest } from "./deploymentManifest";
 import type { CapturedLoadOrderEntry } from "./loadOrder";
 
@@ -25,14 +26,9 @@ export async function exportModsToJsonFile(params: {
    */
   loadOrder?: CapturedLoadOrderEntry[];
 }) {
-  const {
-    mods,
-    gameId,
-    profileId,
-    outputDir,
-    deploymentManifests,
-    loadOrder,
-  } = params;
+  const { gameId, profileId, outputDir, deploymentManifests, loadOrder } =
+    params;
+  const mods = params.mods.map(withoutPrivateNote);
 
   await fs.mkdir(outputDir, { recursive: true });
 
@@ -63,4 +59,23 @@ export async function exportModsToJsonFile(params: {
   await fs.writeFile(filePath, JSON.stringify(payload, null, 2), "utf8");
 
   return filePath;
+}
+
+/**
+ * A mod as it may leave the machine: the curator's note only when it is
+ * marked for users.
+ *
+ * `curatorNote` is read from the mod as written, and a note is private unless
+ * it starts with `@users` (settled with the user; see `publicNote`). The
+ * export is a file people attach to bug reports and share, so a private note
+ * is dropped here the same way the manifest drops it. A public note is kept
+ * whole, marker included, so anything reading the snapshot back sees the same
+ * note `publicNote` would ship.
+ */
+function withoutPrivateNote(mod: AuditorMod): AuditorMod {
+  if (mod.curatorNote === undefined) return mod;
+  if (publicNote(mod.curatorNote) !== undefined) return mod;
+  const { curatorNote: _private, ...rest } = mod;
+  void _private;
+  return rest;
 }
