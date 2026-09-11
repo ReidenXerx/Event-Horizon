@@ -14,6 +14,12 @@
  *     the part ends, a 416 is "done" only when the part IS the whole file.
  *     Anything else discards the part and starts over (NS-1: two different
  *     files stitched together are not a package, however quickly they came);
+ *   - an answer that is not a file (a web page, a JSON error, a compressed
+ *     body) is refused before anything on disk is opened or deleted, and the
+ *     drive's free space is checked against the size before the first byte;
+ *   - a server that goes quiet for a minute is an interrupted download, the
+ *     resumable kind, not a wait with no end; a disk that fails a write is a
+ *     disk error, reported as one;
  *   - the finished file is hashed and the SHA-256 returned, so the page's
  *     stated hash can be checked and the install log can name what was
  *     actually installed (NS-4: integrity is its own pass);
@@ -61,6 +67,16 @@ const defaultRequest: RequestImpl = (url, options, onResponse) =>
 
 const MAX_REDIRECTS = 5;
 
+/** How long a server may send nothing before the attempt is called interrupted. */
+export const IDLE_TIMEOUT_MS = 60_000;
+
+/**
+ * Media types that are never a package. A file host that wants a captcha,
+ * a sign-in or a different link answers 200 with one of these, and saving
+ * it as the package would also have replaced a good file of the same name.
+ */
+const WEB_PAGE_TYPES = new Set(["text/html", "application/xhtml+xml", "application/json"]);
+
 /** What `<part>.json` records about the bytes in `<part>`. */
 type PartRecord = {
   /** The link the part was fetched from, as given (before redirects). */
@@ -86,6 +102,10 @@ export async function downloadToFile(args: {
   signal?: AbortSignal;
   onProgress?: (p: DownloadProgress) => void;
   request?: RequestImpl;
+  /** Default {@link IDLE_TIMEOUT_MS}. */
+  idleTimeoutMs?: number;
+  /** Free bytes on the drive holding `dir`; undefined when it cannot be told. Injected by tests. */
+  freeBytes?: (dir: string) => Promise<number | undefined>;
 }): Promise<DownloadedFile> {
   const partPath = `${args.destPath}.part`;
   // A cancelled run's file stream flushes AFTER the cancel returns; a new run
@@ -104,10 +124,12 @@ async function download(
   partPath: string,
 ): Promise<DownloadedFile> {
   const request = args.request ?? defaultRequest;
+  const idleMs = args.idleTimeoutMs ?? IDLE_TIMEOUT_MS;
   await fs.promises.mkdir(path.dirname(args.destPath), { recursive: true });
 
   const part = await readPart(partPath);
   let existing = 0;
+  let partOnDisk = part.size;
   let record = part.record;
   if (part.size > 0) {
     const refusal = resumeRefusal(part.size, part.record, args.url);
@@ -116,6 +138,7 @@ async function download(
     } else {
       ehLog("info", "link.direct.part-discarded", { file: path.basename(partPath), partSize: part.size, why: refusal });
       await discardPart(partPath);
+      partOnDisk = 0;
       record = undefined;
     }
   }
@@ -135,6 +158,7 @@ async function download(
       args.url,
       existing > 0 ? `bytes=${existing}-` : undefined,
       args.signal,
+      idleMs,
       ifRange,
     );
     const { res } = opened;
@@ -142,6 +166,7 @@ async function download(
       status: res.statusCode,
       contentRange: headerOf(res, "content-range"),
       contentLength: headerOf(res, "content-length"),
+      contentType: headerOf(res, "content-type"),
       finalHost: hostOf(opened.url),
       redirects: opened.hops.length,
       ...(opened.hops.length > 0 ? { redirectHosts: opened.hops } : {}),
@@ -158,6 +183,7 @@ async function download(
       ehLog("warn", "link.direct.restart", { why: plan.why, partSize: existing, attempt });
       await discardPart(partPath);
       existing = 0;
+      partOnDisk = 0;
       record = undefined;
       if (attempt >= 2) {
         throw new Error(
@@ -182,6 +208,21 @@ async function download(
       });
       existing = 0;
     }
+    if (plan.total !== undefined) {
+      // Appending needs the rest; starting over truncates the part first.
+      const need = plan.total - partOnDisk;
+      const dir = path.dirname(partPath);
+      const free = await (args.freeBytes ?? freeBytesOf)(dir);
+      if (free === undefined) {
+        ehLog("warn", "link.direct.disk-space-unknown", { need });
+      } else if (free < need) {
+        res.destroy();
+        throw new Error(
+          `Not enough disk space: the package needs ${formatSize(need)} more, and the drive holding ${dir} has ` +
+            `${formatSize(free)} free. Nothing was deleted; make room and paste the link again.`,
+        );
+      }
+    }
     resumed = plan.append;
     total = plan.total;
     record = plan.record;
@@ -193,54 +234,73 @@ async function download(
     // part that is shorter than what was received is the resume's starting
     // point. Ending the file stream instead flushes it, so the next attempt
     // continues from what actually reached the disk.
-    const failure = await new Promise<unknown>((resolve) => {
+    const outcome = await new Promise<{ net?: unknown; file?: unknown; idle: boolean }>((resolve) => {
       const out = fs.createWriteStream(partPath, { flags: plan.append ? "a" : "w" });
-      let failed: unknown;
+      let net: unknown;
+      let file: unknown;
+      let idle = false;
+      const timer = setTimeout(() => {
+        idle = true;
+        res.destroy();
+      }, idleMs);
       const onAbort = (): void => {
         res.destroy(new AbortError("download cancelled"));
       };
       args.signal?.addEventListener("abort", onAbort, { once: true });
       res.on("data", (chunk: Buffer) => {
+        timer.refresh();
         received += chunk.length;
         args.onProgress?.({ received, ...(total !== undefined ? { total } : {}) });
       });
       res.on("error", (err) => {
-        failed = failed ?? err;
+        net = net ?? err;
       });
       res.on("close", () => {
+        clearTimeout(timer);
         if (!res.complete) {
-          failed = failed ?? new Error("connection closed");
+          net = net ?? new Error("connection closed");
           out.end();
         }
       });
       out.on("error", (err) => {
-        failed = failed ?? err;
+        file = file ?? err;
         res.destroy();
       });
       out.on("close", () => {
+        clearTimeout(timer);
         args.signal?.removeEventListener("abort", onAbort);
-        resolve(failed);
+        resolve({ net, file, idle });
       });
       res.pipe(out);
     });
-    if (failure !== undefined) {
-      if (isAbort(failure, args.signal)) {
+    if (outcome.file !== undefined) {
+      // ENOSPC, EPERM, EISDIR: the disk's answer, as the disk gave it. Calling
+      // it a dropped connection sends someone to debug their network.
+      throw outcome.file instanceof Error ? outcome.file : new Error(String(outcome.file));
+    }
+    if (outcome.net !== undefined || outcome.idle) {
+      if (isAbort(outcome.net, args.signal)) {
         throw new AbortError("download cancelled");
+      }
+      const of = total !== undefined ? ` of ${total}` : "";
+      ehLog("warn", "link.direct.interrupted", {
+        received,
+        ...(total !== undefined ? { total } : {}),
+        why: outcome.idle ? "idle" : String((outcome.net as Error)?.message ?? outcome.net),
+      });
+      if (outcome.idle) {
+        throw new Error(`Nothing arrived for ${formatDuration(idleMs)} after ${received}${of} bytes. ${retryHint(record)}`);
       }
       // A connection that dropped mid-body is the resumable case, and the
       // message says so; the socket error underneath ("socket hang up",
       // ECONNRESET) would send someone diagnosing their network instead.
       if (total !== undefined && received < total) {
-        throw new Error(
-          `The connection closed after ${received} of ${total} bytes. Paste the link again to continue from there.`,
-        );
+        throw new Error(`The connection closed after ${received} of ${total} bytes. ${retryHint(record)}`);
       }
-      throw failure instanceof Error ? failure : new Error(String(failure));
+      throw outcome.net instanceof Error ? outcome.net : new Error(String(outcome.net));
     }
     if (total !== undefined && received !== total) {
-      throw new Error(
-        `The connection closed after ${received} of ${total} bytes. Paste the link again to continue from there.`,
-      );
+      throw new Error(`The connection closed after ${received} of ${total} bytes. ${retryHint(record)}`);
     }
     break;
   }
@@ -276,6 +336,25 @@ function planResponse(
   const etag = strongEtag(headerOf(res, "etag"));
   const lastModified = headerOf(res, "last-modified");
   const contentRange = (headerOf(res, "content-range") ?? "").trim();
+
+  if (status === 200 || status === 206) {
+    const type = (headerOf(res, "content-type") ?? "").split(";")[0].trim().toLowerCase();
+    if (WEB_PAGE_TYPES.has(type)) {
+      return {
+        kind: "fail",
+        message:
+          `The link answered with a web page (${type}), not a package. The host may want a sign-in, a captcha or ` +
+          `a different link; open it in a browser to see what it says. Nothing was downloaded or deleted.`,
+      };
+    }
+    const encoding = (headerOf(res, "content-encoding") ?? "").trim().toLowerCase();
+    if (encoding !== "" && encoding !== "identity") {
+      return {
+        kind: "fail",
+        message: `The server compressed the download (${encoding}) although it was asked not to, so the bytes would not be the package. Refused.`,
+      };
+    }
+  }
 
   if (status === 200) {
     const len = Number(headerOf(res, "content-length"));
@@ -336,7 +415,7 @@ function planResponse(
 
   return {
     kind: "fail",
-    message: `The link answered HTTP ${status}${res.statusMessage ? ` ${res.statusMessage}` : ""} (${finalUrl}).`,
+    message: `The link answered HTTP ${status}${res.statusMessage ? ` ${res.statusMessage}` : ""} (${redactUrl(finalUrl)}).`,
   };
 }
 
@@ -351,6 +430,13 @@ function resumeRefusal(size: number, record: PartRecord | undefined, url: string
     return `the part (${size} bytes) is larger than the file (${record.total})`;
   }
   return undefined;
+}
+
+/** The honest end of an interruption message: only promise a resume that will happen. */
+function retryHint(record: PartRecord | undefined): string {
+  return record !== undefined && resumeRefusal(0, record, record.url) === undefined
+    ? "Paste the link again to continue from there."
+    : "Paste the link again to retry; this server names no version for the file, so the download will start over.";
 }
 
 function recordPath(partPath: string): string {
@@ -412,6 +498,29 @@ async function lockPart(partPath: string): Promise<() => void> {
   };
 }
 
+/** Free bytes for this process on the drive holding `dir`; undefined when Node cannot say. */
+async function freeBytesOf(dir: string): Promise<number | undefined> {
+  const statfs = (fs.promises as unknown as { statfs?: (p: string) => Promise<{ bavail: number; bsize: number }> }).statfs;
+  if (typeof statfs !== "function") return undefined;
+  try {
+    const s = await statfs(dir);
+    const free = Number(s.bavail) * Number(s.bsize);
+    return Number.isFinite(free) ? free : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function formatSize(bytes: number): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${bytes} bytes`;
+}
+
+function formatDuration(ms: number): string {
+  return ms >= 1000 ? `${Math.round(ms / 1000)} s` : `${ms} ms`;
+}
+
 function strongEtag(value: string | undefined): string | undefined {
   // A weak tag (W/"...") may not be used in If-Range: it promises
   // equivalent content, not identical bytes.
@@ -433,6 +542,20 @@ function hostOf(url: string): string {
 }
 
 /**
+ * A link as it may appear in a message or a log: scheme, host and path.
+ * Signed CDN redirects carry their credentials in the query, and a link
+ * pasted with user:password@ carries them in the authority.
+ */
+export function redactUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}${u.pathname}${u.search !== "" ? "?…" : ""}`;
+  } catch {
+    return "(unreadable link)";
+  }
+}
+
+/**
  * The file name the server would give the download, from Content-Disposition,
  * read with a one-byte Range request. Undefined when the server names nothing
  * or does not answer; the caller then names the file after the link.
@@ -441,10 +564,11 @@ export async function probeFileName(
   url: string,
   signal?: AbortSignal,
   request: RequestImpl = defaultRequest,
+  idleTimeoutMs = IDLE_TIMEOUT_MS,
 ): Promise<string | undefined> {
   let opened: { res: http.IncomingMessage; url: string };
   try {
-    opened = await openRange(request, url, "bytes=0-0", signal);
+    opened = await openRange(request, url, "bytes=0-0", signal, idleTimeoutMs);
   } catch {
     return undefined;
   }
@@ -470,6 +594,7 @@ function openRange(
   url: string,
   range: string | undefined,
   signal: AbortSignal | undefined,
+  idleMs: number,
   ifRange?: string,
   hops: string[] = [],
 ): Promise<{ res: http.IncomingMessage; url: string; hops: string[] }> {
@@ -492,7 +617,11 @@ function openRange(
         return;
       }
     }
-    const headers: Record<string, string> = { "user-agent": "EventHorizon/collection-link" };
+    const headers: Record<string, string> = {
+      "user-agent": "EventHorizon/collection-link",
+      // The bytes on disk must be the file, not a gzip of it.
+      "accept-encoding": "identity",
+    };
     if (range !== undefined) headers.range = range;
     // "Send the rest only if it is still this version; otherwise the whole
     // file." Without it a changed file's tail is appended to the old head.
@@ -502,6 +631,8 @@ function openRange(
       // No keep-alive pool: a gigabyte transfer gains nothing from one, and a
       // socket the far end dropped would otherwise be handed to the retry.
       req = request(url, { headers, agent: false }, (res) => {
+        // The body has its own idle timer; this one only guards the wait for headers.
+        if (typeof req?.setTimeout === "function") req.setTimeout(0);
         const status = res.statusCode ?? 0;
         const location = res.headers.location;
         if ([301, 302, 303, 307, 308].includes(status) && typeof location === "string") {
@@ -533,7 +664,7 @@ function openRange(
             reject(new Error(`The link redirected to ${next.host || next.protocol}: ${insecure}`));
             return;
           }
-          resolve(openRange(request, next.toString(), range, signal, ifRange, [...hops, next.host]));
+          resolve(openRange(request, next.toString(), range, signal, idleMs, ifRange, [...hops, next.host]));
           return;
         }
         resolve({ res, url, hops });
@@ -541,6 +672,11 @@ function openRange(
     } catch (err) {
       reject(err);
       return;
+    }
+    if (typeof req.setTimeout === "function") {
+      req.setTimeout(idleMs, () => {
+        req.destroy(new Error(`${hostOf(url)} did not answer within ${formatDuration(idleMs)}.`));
+      });
     }
     const onAbort = (): void => {
       req.destroy(new AbortError("download cancelled"));

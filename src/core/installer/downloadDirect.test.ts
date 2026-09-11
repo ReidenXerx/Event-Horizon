@@ -66,8 +66,21 @@ function resetKnobs(): void {
 beforeAll(async () => {
   tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), "eh-dl-"));
   server = http.createServer((req, res) => {
-    const url = req.url ?? "";
+    const url = (req.url ?? "").split("?")[0];
     hits.set(url, (hits.get(url) ?? 0) + 1);
+    if (url === "/html") {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-length": "34" });
+      res.end("<html>rate limited, captcha</html>");
+      return;
+    }
+    if (url === "/hang") {
+      return; // never answers
+    }
+    if (url === "/stall") {
+      res.writeHead(200, { "content-length": String(BODY.length), etag: '"v1"' });
+      res.write(BODY.subarray(0, 1000));
+      return;
+    }
     if (url.startsWith("/redirect/")) {
       const n = Number(url.slice("/redirect/".length));
       res.writeHead(302, { location: n > 1 ? `/redirect/${n - 1}` : "/file.ehcoll" });
@@ -362,6 +375,59 @@ describe("downloadToFile", () => {
   it("names the HTTP status when the link is dead", async () => {
     const dest = path.join(tmp, "six.ehcoll");
     await expect(downloadToFile({ url: `${base}/missing`, destPath: dest })).rejects.toThrow(/HTTP 404/);
+  });
+
+  it("names the host and path of a failing link, never its signed query", async () => {
+    const dest = path.join(tmp, "signed.ehcoll");
+    const err = await downloadToFile({ url: `${base}/missing?token=secret&expires=1`, destPath: dest }).catch((e: Error) => e);
+    expect((err as Error).message).toMatch(/\/missing/);
+    expect((err as Error).message).not.toMatch(/secret/);
+  });
+
+  it("refuses a web page before opening the part or touching a finished file of the same name", async () => {
+    const dest = path.join(tmp, "page.ehcoll");
+    await fs.promises.writeFile(dest, "GOOD");
+    await expect(downloadToFile({ url: `${base}/html`, destPath: dest })).rejects.toThrow(/web page \(text\/html\)/);
+    expect(await fs.promises.readFile(dest, "utf8")).toBe("GOOD");
+    await expect(fs.promises.stat(`${dest}.part`)).rejects.toBeTruthy();
+  });
+
+  it("reports a write failure as the disk's error, not a dropped connection", async () => {
+    const dest = path.join(tmp, "eisdir.ehcoll");
+    await fs.promises.mkdir(`${dest}.part`, { recursive: true });
+    const err = (await downloadToFile({ url: `${base}/file.ehcoll`, destPath: dest }).catch((e: unknown) => e)) as NodeJS.ErrnoException;
+    expect(err.code, err.message).toMatch(/^E[A-Z]+$/);
+    expect(err.message).not.toMatch(/connection closed/);
+  });
+
+  it("checks the drive's free space against the size before writing", async () => {
+    const dest = path.join(tmp, "nospace.ehcoll");
+    await expect(
+      downloadToFile({ url: `${base}/file.ehcoll`, destPath: dest, freeBytes: async () => 1000 }),
+    ).rejects.toThrow(/Not enough disk space/);
+    await expect(fs.promises.stat(`${dest}.part`)).rejects.toBeTruthy();
+  });
+
+  it("turns a server that goes quiet into the resumable interruption, not an endless wait", async () => {
+    const dest = path.join(tmp, "stall.ehcoll");
+    const run = downloadToFile({ url: `${base}/stall`, destPath: dest, idleTimeoutMs: 200 });
+    const settled = await Promise.race([
+      run.then(
+        () => "resolved",
+        (e: Error) => e.message,
+      ),
+      new Promise<string>((r) => setTimeout(() => r("still waiting"), 3000)),
+    ]);
+    expect(settled).toMatch(/Nothing arrived for 200 ms after 1000 of 300000 bytes\. Paste the link again to continue/);
+    expect((await fs.promises.stat(`${dest}.part`)).size).toBe(1000);
+  });
+
+  it("gives up probing a server that never answers", async () => {
+    const settled = await Promise.race([
+      probeFileName(`${base}/hang`, undefined, undefined, 200).then((v) => ({ v })),
+      new Promise<string>((r) => setTimeout(() => r("still waiting"), 3000)),
+    ]);
+    expect(settled).toEqual({ v: undefined });
   });
 
   it("reads the server's file name with a one-byte probe", async () => {
