@@ -1,9 +1,9 @@
 ---
-name: gitnexus-area-cluster-265
-description: "Skill for the Cluster_265 area of Event-Horizon. 12 symbols across 1 files."
+name: gitnexus-area-cluster-275
+description: "Skill for the Cluster_275 area of Event-Horizon. 12 symbols across 1 files."
 ---
 
-# Cluster_265
+# Cluster_275
 
 12 symbols | 1 files | Cohesion: 89%
 
@@ -11,7 +11,7 @@ description: "Skill for the Cluster_265 area of Event-Horizon. 12 symbols across
 
 - Working with code in `src/`
 - Understanding how liveFomodSelections, pickInstallerChoices work
-- Modifying cluster_265-related functionality
+- Modifying cluster_275-related functionality
 
 ## Key Files
 
@@ -61,6 +61,6 @@ Start here when exploring this area:
 ## How to Explore
 
 1. `context({name: "liveFomodSelections"})` — see callers and callees
-2. `query({search_query: "cluster_265"})` — find related execution flows
+2. `query({search_query: "cluster_275"})` — find related execution flows
 3. Read key files listed above for implementation details
 4. `explain({target: "<file or symbol>"})` — persisted taint findings (source→sink data flows), when indexed with `--pdg`

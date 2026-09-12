@@ -75,8 +75,8 @@ Start here when exploring this area:
 | `ReportView → PartitionDiffs` | cross_community | 4 |
 | `BuildPage → GetDraftsRoot` | cross_community | 4 |
 | `BuildPage → Ok` | cross_community | 4 |
-| `CollectionsPage → OnNavigate` | cross_community | 3 |
 | `BuildPage → GetState` | cross_community | 3 |
+| `BuildPage → Subscribe` | cross_community | 3 |
 
 ## How to Explore
 

@@ -5,7 +5,7 @@ description: "Skill for the Installer area of Event-Horizon. 392 symbols across 
 
 # Installer
 
-392 symbols | 88 files | Cohesion: 74%
+392 symbols | 88 files | Cohesion: 75%
 
 ## When to Use
 
@@ -18,7 +18,7 @@ description: "Skill for the Installer area of Event-Horizon. 392 symbols across 
 | File | Symbols |
 |------|---------|
 | `src/core/installer/runInstall.ts` | buildAbortedResult, buildDisplayNameByModId, buildFailReceipt, buildManifestIndex, buildNexusModIdMap (+59) |
-| `src/core/installer/modInstall.ts` | safeRmTempDir, delayRespectingAbort, downloadFolderFor, downloadNexusArchiveOnly, installFromBundledArchive (+23) |
+| `src/core/installer/modInstall.ts` | delayRespectingAbort, downloadFolderFor, downloadNexusArchiveOnly, installFromBundledArchive, installFromExistingDownload (+23) |
 | `src/core/installer/downloadDirect.ts` | defaultRequest, discardPart, download, formatDuration, formatSize (+20) |
 | `src/core/installLedger.ts` | InstallLedgerError, expectString, getInstallLedgerDir, getReceiptPath, isIso8601 (+10) |
 | `src/core/installer/installLink.ts` | dispositionParams, fileNameFromContentDisposition, safeDownloadName, sanitizeFileName, checksumOf (+9) |
