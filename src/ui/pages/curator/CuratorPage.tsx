@@ -698,6 +698,17 @@ function CuratorBody(): JSX.Element {
 
       {note !== undefined && <Callout tone="info">{note}</Callout>}
 
+      {/* Where the details are: the count alone sent the curator looking. */}
+      {tableView && counts.requirements > 0 && !views.has("requirements") && (
+        <p className="eh-note">
+          {num(counts.requirements)} {includeDisabledReqs ? "" : "enabled "}mod(s) need a requirement installed or enabled.{" "}
+          <LinkButton variant="xs" onClick={(): void => toggleView("requirements")}>
+            Show them
+          </LinkButton>{" "}
+          Each row&rsquo;s Requirements button then opens every line with the one action that fits.
+        </p>
+      )}
+
       {requirements?.load.unavailable !== undefined && (
         <Callout tone="warning">{requirements.load.unavailable}</Callout>
       )}
@@ -787,11 +798,16 @@ function CuratorBody(): JSX.Element {
             rows={visibleRows}
             idOf={rowId}
             columns={columns}
+            tableId="curator.mods"
             noun="mod"
             limit={200}
             maxHeight={520}
-            actionsWidth={290}
-            minWidth={1180}
+            // Disable, Open page and Requirements side by side; at 290 the
+            // last one was cut to "Req" (curator's screenshot of 0.1.155).
+            actionsWidth={360}
+            // Raised with the actions column, so the Mod column keeps its width
+            // when the details panel narrows the table (the screenshot caught it).
+            minWidth={1250}
             selection={{ selected, onChange: setSelected }}
             empty={<p className="eh-body">Nothing in this view.</p>}
             actions={(r): JSX.Element => (

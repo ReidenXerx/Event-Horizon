@@ -937,6 +937,42 @@ input[type="checkbox"].eh-check:indeterminate::before {
   border-bottom: 1px solid var(--eh-border-default);
 }
 
+/* A column's right edge: drag to resize, arrow keys when focused,
+   double-click for the default. It sits inside the header cell, which is
+   sticky and so already the positioning box, and the cell's overflow keeps
+   it from covering the next column's header. */
+.eh-table__resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.eh-table__resizer::after {
+  content: "";
+  position: absolute;
+  top: 25%;
+  bottom: 25%;
+  right: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--eh-border-default);
+}
+
+.eh-table__resizer:hover::after,
+.eh-table__resizer:focus-visible::after,
+.eh-table__resizer--active::after {
+  top: 0;
+  bottom: 0;
+  background: var(--eh-cyan);
+}
+
+.eh-table__resizer:focus-visible { outline: none; }
+
 /* The filter row sits under the header row; both are sticky. */
 .eh-table__filters th {
   top: var(--eh-table-head-height, 33px);

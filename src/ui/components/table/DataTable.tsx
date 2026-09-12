@@ -45,6 +45,17 @@ import {
   type ViewRow,
 } from "./tableView";
 import { placeRowWindow, recordRowHeights, type RowPlacement } from "./rowWindow";
+import {
+  ACTIONS_COLUMN_KEY,
+  KEYBOARD_STEP,
+  MIN_COLUMN_WIDTH,
+  readStoredWidths,
+  resetColumn,
+  resizeColumn,
+  tableMinWidth,
+  writeStoredWidths,
+  type ColumnWidths,
+} from "./columnWidths";
 
 export type Column<T> = ColumnSpec & {
   /** The value that sorts and filters. Keep it plain — text or a number. */
@@ -74,6 +85,12 @@ export function DataTable<T>(props: {
   rows: readonly T[];
   idOf: (row: T) => string;
   columns: readonly Column<T>[];
+  /**
+   * Where this table's column widths are remembered. Every column's right
+   * edge can be dragged; with an id the widths survive a restart, and each
+   * table keeps its own. Without one they last until the page unmounts.
+   */
+  tableId?: string;
   /**
    * Unused since the table renders a window of rows over the whole list;
    * kept so callers need not change. The banner always says the real count.
@@ -114,8 +131,74 @@ export function DataTable<T>(props: {
    */
   onTarget?: (target: TargetSet) => void;
 }): JSX.Element {
-  const { rows, idOf, columns, selection, actions, actionsWidth } = props;
+  const { rows, idOf, columns, selection, actions, actionsWidth, tableId } = props;
   const noun = props.noun ?? "item";
+
+  // ── Column widths the curator dragged, per table (columnWidths.ts) ──────
+  const widthKeys = React.useMemo(() => [...columns.map((c) => c.key), ACTIONS_COLUMN_KEY], [columns]);
+  const [widths, setWidths] = React.useState<ColumnWidths>(() =>
+    tableId === undefined ? {} : readStoredWidths(tableId, widthKeys),
+  );
+  const dragRef = React.useRef<{ key: string; startX: number; startWidth: number } | undefined>(undefined);
+  const [resizing, setResizing] = React.useState<string | undefined>(undefined);
+  /** Set by the curator's own change, so a width read back from storage is not written straight back. */
+  const widthsChangedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (tableId === undefined || resizing !== undefined || !widthsChangedRef.current) return;
+    widthsChangedRef.current = false;
+    writeStoredWidths(tableId, widths);
+  }, [tableId, widths, resizing]);
+  const changeWidths = (next: (w: ColumnWidths) => ColumnWidths): void => {
+    widthsChangedRef.current = true;
+    setWidths(next);
+  };
+  const headerWidth = (handle: HTMLElement): number =>
+    handle.parentElement?.getBoundingClientRect().width ?? MIN_COLUMN_WIDTH;
+  const resizer = (key: string, label: string): JSX.Element => (
+    <span
+      className={resizing === key ? "eh-table__resizer eh-table__resizer--active" : "eh-table__resizer"}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`Resize column ${label}. Drag, or use the arrow keys; double-click for the default width`}
+      title="Drag to resize · double-click for the default width"
+      tabIndex={0}
+      onClick={(e): void => e.stopPropagation()}
+      onPointerDown={(e): void => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragRef.current = { key, startX: e.clientX, startWidth: headerWidth(e.currentTarget) };
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        setResizing(key);
+      }}
+      onPointerMove={(e): void => {
+        const drag = dragRef.current;
+        if (drag === undefined || drag.key !== key) return;
+        changeWidths((w) => resizeColumn(w, key, drag.startWidth, e.clientX - drag.startX));
+      }}
+      onPointerUp={(e): void => {
+        if (dragRef.current?.key !== key) return;
+        dragRef.current = undefined;
+        e.currentTarget.releasePointerCapture?.(e.pointerId);
+        setResizing(undefined);
+      }}
+      onPointerCancel={(): void => {
+        dragRef.current = undefined;
+        setResizing(undefined);
+      }}
+      onDoubleClick={(e): void => {
+        e.stopPropagation();
+        changeWidths((w) => resetColumn(w, key));
+      }}
+      onKeyDown={(e): void => {
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        const current = widths[key] ?? headerWidth(e.currentTarget);
+        changeWidths((w) => resizeColumn(w, key, current, e.key === "ArrowRight" ? KEYBOARD_STEP : -KEYBOARD_STEP));
+      }}
+    />
+  );
+  const widthOf = (key: string, fallback: number | string | undefined): number | string | undefined => widths[key] ?? fallback;
+  const widthsCustomised = Object.keys(widths).length > 0;
 
   const [filters, setFilters] = React.useState<Record<string, string>>({});
   const [sort, setSort] = React.useState<SortState | undefined>(undefined);
@@ -317,6 +400,17 @@ export function DataTable<T>(props: {
   const colCount =
     columns.length + (selection !== undefined ? 1 : 0) + (actions !== undefined ? 1 : 0);
   const anyFilterable = columns.some((c) => c.filterable !== false);
+  // Once a column is resized, the table scrolls sideways before a widened
+  // column squeezes the others to nothing.
+  const tableMin = widthsCustomised
+    ? tableMinWidth({
+        columns,
+        widths,
+        ...(actions === undefined ? {} : { actions: typeof actionsWidth === "number" ? { width: actionsWidth } : {} }),
+        tickColumn: selection !== undefined,
+        ...(props.minWidth === undefined ? {} : { callerMin: props.minWidth }),
+      })
+    : props.minWidth;
 
   return (
     <div>
@@ -325,6 +419,11 @@ export function DataTable<T>(props: {
         {filtersOn && (
           <LinkButton variant="xs" onClick={(): void => setFilters({})}>
             Clear filters
+          </LinkButton>
+        )}
+        {widthsCustomised && (
+          <LinkButton variant="xs" onClick={(): void => changeWidths(() => ({}))}>
+            Reset column widths
           </LinkButton>
         )}
 
@@ -356,11 +455,7 @@ export function DataTable<T>(props: {
       >
         <table
           className={selection !== undefined ? "eh-table eh-table--selectable" : "eh-table"}
-          style={
-            props.minWidth !== undefined
-              ? ({ ["--eh-table-min-width" as string]: `${props.minWidth}px` } as React.CSSProperties)
-              : undefined
-          }
+          style={tableMin !== undefined ? ({ ["--eh-table-min-width" as string]: `${tableMin}px` } as React.CSSProperties) : undefined}
         >
           <thead>
             <tr>
@@ -390,14 +485,12 @@ export function DataTable<T>(props: {
                     key={col.key}
                     scope="col"
                     className={col.align === "right" ? "eh-table__num" : undefined}
-                    style={
-                      col.width !== undefined
-                        ? ({
-                            ["--eh-col-width" as string]:
-                              typeof col.width === "number" ? `${col.width}px` : col.width,
-                          } as React.CSSProperties)
-                        : undefined
-                    }
+                    style={(() => {
+                      const w = widthOf(col.key, col.width);
+                      return w !== undefined
+                        ? ({ ["--eh-col-width" as string]: typeof w === "number" ? `${w}px` : w } as React.CSSProperties)
+                        : undefined;
+                    })()}
                     aria-sort={ariaSort}
                   >
                     {sortable ? (
@@ -415,6 +508,7 @@ export function DataTable<T>(props: {
                     ) : (
                       col.header
                     )}
+                    {resizer(col.key, col.header)}
                   </th>
                 );
               })}
@@ -422,15 +516,15 @@ export function DataTable<T>(props: {
                 <th
                   scope="col"
                   className="eh-table__actions"
-                  style={
-                    actionsWidth !== undefined
-                      ? ({
-                          ["--eh-col-width" as string]:
-                            typeof actionsWidth === "number" ? `${actionsWidth}px` : actionsWidth,
-                        } as React.CSSProperties)
-                      : undefined
-                  }
-                />
+                  style={(() => {
+                    const w = widthOf(ACTIONS_COLUMN_KEY, actionsWidth);
+                    return w !== undefined
+                      ? ({ ["--eh-col-width" as string]: typeof w === "number" ? `${w}px` : w } as React.CSSProperties)
+                      : undefined;
+                  })()}
+                >
+                  {resizer(ACTIONS_COLUMN_KEY, "actions")}
+                </th>
               )}
             </tr>
             {anyFilterable && (

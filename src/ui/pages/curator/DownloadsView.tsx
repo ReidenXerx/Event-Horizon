@@ -70,6 +70,7 @@ export function DownloadsView(props: {
         rows={downloads}
         idOf={idOf}
         columns={COLUMNS}
+        tableId="curator.downloads"
         noun="download"
         maxHeight={520}
         actionsWidth={110}

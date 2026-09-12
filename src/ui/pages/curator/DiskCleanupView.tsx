@@ -172,6 +172,7 @@ export function DiskCleanupView(props: {
                 rows={orphans}
                 idOf={archiveId}
                 columns={ARCHIVE_COLUMNS}
+                tableId="curator.cleanup.archives"
                 noun="archive"
                 limit={200}
                 maxHeight={320}
@@ -278,6 +279,7 @@ export function DiskCleanupView(props: {
                   rows={provenRetire}
                   idOf={retireId}
                   columns={RETIRE_COLUMNS}
+                  tableId="curator.cleanup.installs"
                   noun="older install"
                   limit={200}
                   maxHeight={320}
@@ -298,6 +300,7 @@ export function DiskCleanupView(props: {
                     rows={unprovenRetire}
                     idOf={retireId}
                     columns={RETIRE_COLUMNS}
+                    tableId="curator.cleanup.installs"
                     noun="unproven install"
                     limit={200}
                     maxHeight={280}

@@ -214,6 +214,7 @@ export function PluginsView(props: {
         rows={visible}
         idOf={rowId}
         columns={columns}
+        tableId="curator.plugins"
         noun="plugin"
         maxHeight={520}
         actionsWidth={110}
