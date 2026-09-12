@@ -68,15 +68,15 @@ Start here when exploring this area:
 | Flow | Type | Steps |
 |------|------|-------|
 | `BuildPage → GetVortexUserDataPath` | cross_community | 10 |
-| `HomePage → Fail` | cross_community | 6 |
-| `HomePage → Ok` | cross_community | 6 |
-| `HomePage → ProfileId` | cross_community | 6 |
-| `HomePage → BelongsToGame` | cross_community | 6 |
 | `BuildPage → NotifyStateChanged` | cross_community | 6 |
 | `BuildPage → Truncate` | cross_community | 6 |
-| `HomePage → GetActiveGameId` | cross_community | 5 |
-| `HomePage → ResolveProfileName` | cross_community | 5 |
-| `HomePage → ResolveVortexVersion` | cross_community | 5 |
+| `ReportView → FormatFieldValue` | cross_community | 5 |
+| `ReportView → TierBadge` | cross_community | 4 |
+| `ReportView → PartitionDiffs` | cross_community | 4 |
+| `BuildPage → GetDraftsRoot` | cross_community | 4 |
+| `BuildPage → Ok` | cross_community | 4 |
+| `CollectionsPage → OnNavigate` | cross_community | 3 |
+| `BuildPage → GetState` | cross_community | 3 |
 
 ## How to Explore
 

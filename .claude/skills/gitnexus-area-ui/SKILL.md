@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-ui
-description: "Skill for the Ui area of Event-Horizon. 63 symbols across 14 files."
+description: "Skill for the Ui area of Event-Horizon. 65 symbols across 14 files."
 ---
 
 # Ui
 
-63 symbols | 14 files | Cohesion: 92%
+65 symbols | 14 files | Cohesion: 91%
 
 ## When to Use
 
@@ -19,7 +19,7 @@ description: "Skill for the Ui area of Event-Horizon. 63 symbols across 14 files
 |------|---------|
 | `scripts/ui/fingerprint-screens.mjs` | CliError, accept, check, compare, contentBounds (+12) |
 | `scripts/ui/fingerprint-screens.test.mjs` | set, workspace, run, write, background (+11) |
-| `scripts/nexus-page.mjs` | connect, editPage, evalJs, send, sleep (+4) |
+| `scripts/nexus-page.mjs` | connect, editPage, evalJs, readPage, send (+6) |
 | `scripts/lib/setup-ui.mjs` | banner, info, nextSteps, ok, step (+2) |
 | `scripts/bearing-teaching/merge-package-scripts.mjs` | isStealth, main, resolveGitnexusCmd |
 | `scripts/nexus-collection-file.mjs` | log, stamp |
@@ -49,9 +49,9 @@ Start here when exploring this area:
 | `step` | Function | `scripts/lib/setup-ui.mjs` | 35 |
 | `summaryTable` | Function | `scripts/lib/setup-ui.mjs` | 58 |
 | `warn` | Function | `scripts/lib/setup-ui.mjs` | 43 |
-| `firstDifference` | Function | `scripts/nexus-page.mjs` | 72 |
-| `normalizeText` | Function | `scripts/nexus-page.mjs` | 60 |
-| `withNewTab` | Function | `scripts/nexus-page.mjs` | 39 |
+| `parseArgs` | Function | `scripts/nexus-page.mjs` | 116 |
+| `value` | Function | `scripts/nexus-page.mjs` | 117 |
+| `withNewTab` | Function | `scripts/nexus-page.mjs` | 46 |
 | `compare` | Function | `scripts/ui/fingerprint-screens.mjs` | 189 |
 | `contentBounds` | Function | `scripts/ui/fingerprint-screens.mjs` | 127 |
 | `decodePng` | Function | `scripts/ui/fingerprint-screens.mjs` | 54 |
@@ -69,14 +69,14 @@ Start here when exploring this area:
 |------|------|-------|
 | `Main → Sub` | cross_community | 5 |
 | `Main → GateCommentKey` | cross_community | 5 |
+| `Main → NormalizeText` | cross_community | 5 |
 | `Accept → RgbOffsets` | intra_community | 5 |
 | `EventHorizonMainPage → Spinner` | cross_community | 5 |
 | `Check → RgbOffsets` | intra_community | 5 |
+| `Main → Log` | intra_community | 4 |
 | `EventHorizonMainPage → ToastCard` | cross_community | 4 |
 | `EventHorizonMainPage → Modal` | cross_community | 4 |
 | `EventHorizonMainPage → BuildErrorReport` | cross_community | 4 |
-| `EventHorizonMainPage → UseApiOptional` | cross_community | 4 |
-| `Banner → Stamp` | intra_community | 3 |
 
 ## How to Explore
 

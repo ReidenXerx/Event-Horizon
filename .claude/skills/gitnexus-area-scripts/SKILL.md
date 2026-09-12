@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-scripts
-description: "Skill for the Scripts area of Event-Horizon. 65 symbols across 12 files."
+description: "Skill for the Scripts area of Event-Horizon. 70 symbols across 13 files."
 ---
 
 # Scripts
 
-65 symbols | 12 files | Cohesion: 84%
+70 symbols | 13 files | Cohesion: 83%
 
 ## When to Use
 
@@ -22,11 +22,11 @@ description: "Skill for the Scripts area of Event-Horizon. 65 symbols across 12 
 | `scripts/bearing-token-benchmark.mjs` | answered, classicalCost, cypher, gn, graphCost (+2) |
 | `scripts/bearing-agent.mjs` | loadStaleness, markRefreshOutcome, run, runAllowFail, currentBranch (+2) |
 | `scripts/nexus-collection-file.mjs` | UsageError, makeClient, parseArgs, publish, refuseExtensionPage |
+| `scripts/nexus-page.mjs` | firstDifference, lineBreaksDropped, breaks, collapse, normalizeText |
 | `scripts/package-extension.js` | buildZip, crc32, collect, walk |
 | `scripts/nexus-collection-file.test.mjs` | fakeClient, makeClient, makeClient |
 | `scripts/release-nexus.mjs` | fail, npm, readApiKey |
 | `scripts/lib/project-tmp.mjs` | isEnospcError, withProjectTmpEnv |
-| `scripts/bearing-test-order.mjs` | parseChangedSymbols |
 
 ## Entry Points
 
@@ -52,21 +52,22 @@ Start here when exploring this area:
 | `answered` | Function | `scripts/bearing-token-benchmark.mjs` | 163 |
 | `isEnospcError` | Function | `scripts/lib/project-tmp.mjs` | 95 |
 | `withProjectTmpEnv` | Function | `scripts/lib/project-tmp.mjs` | 25 |
+| `firstDifference` | Function | `scripts/nexus-page.mjs` | 79 |
+| `lineBreaksDropped` | Function | `scripts/nexus-page.mjs` | 99 |
+| `breaks` | Function | `scripts/nexus-page.mjs` | 102 |
+| `collapse` | Function | `scripts/nexus-page.mjs` | 100 |
+| `normalizeText` | Function | `scripts/nexus-page.mjs` | 67 |
 | `blastRadius` | Function | `scripts/bearing-ci.mjs` | 110 |
 | `collectDiff` | Function | `scripts/bearing-ci.mjs` | 78 |
 | `detectChanges` | Function | `scripts/bearing-ci.mjs` | 92 |
 | `num` | Function | `scripts/bearing-ci.mjs` | 95 |
 | `git` | Function | `scripts/bearing-ci.mjs` | 49 |
-| `gn` | Function | `scripts/bearing-ci.mjs` | 57 |
-| `main` | Function | `scripts/bearing-ci.mjs` | 331 |
-| `postSticky` | Function | `scripts/bearing-ci.mjs` | 299 |
-| `repoName` | Function | `scripts/bearing-ci.mjs` | 73 |
-| `structural` | Function | `scripts/bearing-ci.mjs` | 125 |
 
 ## Execution Flows
 
 | Flow | Type | Steps |
 |------|------|-------|
+| `Main → NormalizeText` | cross_community | 5 |
 | `Main → Git` | intra_community | 3 |
 | `Main → Num` | intra_community | 3 |
 | `Main → Gn` | intra_community | 3 |
