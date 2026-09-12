@@ -68,13 +68,22 @@ export function RequirementsPanel(props: {
   const line = (q: ModRequirement, i: number): JSX.Element => {
     const pill = STATUS_PILL[q.status];
     const providers = q.satisfiedBy.map((id) => byId.get(id)).filter((m): m is CuratorMod => m !== undefined);
+    // A line is a status gutter and a body. The actions go UNDER the text: beside
+    // it they took the width, and a note wrapped one word per line
+    // ("For / Achievements / Injector patch", curator's screenshot of 0.1.156).
+    const canEnablePartial = q.status === "partial" && partialProvidersToEnable(q, mods).length > 0;
+    const canInstall = q.status === "missing" && q.nexusModId !== undefined && q.vortexGameId !== undefined && props.canInstall;
+    const canOpen = (q.status === "missing" || q.status === "external" || q.status === "unknown-game") && q.url !== undefined;
+    const hasActions = q.status === "installed-disabled" || canEnablePartial || canInstall || canOpen;
     return (
-      <li key={`${q.source}:${q.name}:${i}`} className="eh-row eh-row--top">
-        <Pill intent={pill.intent} plain>
-          {pill.label}
-        </Pill>
-        <div className="eh-fill eh-stack eh-stack--xs">
-          <span className="eh-strong">
+      <li key={`${q.source}:${q.name}:${i}`} className="eh-req-line">
+        <span className="eh-req-line__status">
+          <Pill intent={pill.intent} plain>
+            {pill.label}
+          </Pill>
+        </span>
+        <div className="eh-req-line__body">
+          <span className="eh-req-line__name">
             {q.name}
             {q.source === "master" && q.plugin !== undefined && (
               <span className="eh-small">
@@ -90,21 +99,26 @@ export function RequirementsPanel(props: {
               all installed, and {q.files.total - q.files.enabled} {q.files.total - q.files.enabled === 1 ? "is" : "are"} off
             </span>
           )}
-          {(q.status === "satisfied" || q.status === "partial") && q.satisfiedBy.length > 0 && (
-            <span className="eh-small">
-              provided by{" "}
+          {(q.status === "satisfied" || q.status === "partial") && providers.length > 0 && (
+            <div className="eh-req-line__providers">
+              <span className="eh-small">provided by</span>
               {providers.map((p, j) => (
                 <React.Fragment key={p.id}>
-                  {j > 0 && ", "}
-                  <LinkButton variant="xs" onClick={(): void => props.onFocus(p.id)}>
+                  {/* A separator that wraps WITH its name: two providers read as one name without it. */}
+                  {j > 0 && (
+                    <span className="eh-muted" aria-hidden="true">
+                      ·
+                    </span>
+                  )}
+                  <LinkButton variant="xs" className="eh-req-line__provider" onClick={(): void => props.onFocus(p.id)}>
                     {p.name}
                   </LinkButton>
                 </React.Fragment>
               ))}
-            </span>
+            </div>
           )}
-        </div>
-        <div className="eh-row eh-row--sm eh-row--nowrap">
+          {hasActions && (
+        <div className="eh-row eh-row--sm eh-req-line__actions">
           {q.status === "installed-disabled" && (
             <Button size="sm" intent="primary" disabled={busy} onClick={(): void => props.onEnable(providers)}>
               Enable {providers.length > 1 ? `${providers.length} providers` : providerNames(q)}
@@ -134,6 +148,8 @@ export function RequirementsPanel(props: {
                 Open page
               </Button>
             )}
+        </div>
+          )}
         </div>
       </li>
     );
@@ -209,7 +225,7 @@ export function RequirementsPanel(props: {
               {requirements.length === 0 ? (
                 <p className="eh-body">Nothing listed on its Nexus page, and its plugins declare no masters beyond the game's own.</p>
               ) : (
-                <ul className="eh-list eh-list--plain eh-stack eh-stack--sm">
+                <ul className="eh-req-list">
                   {nexusReqs.map(line)}
                   {masterReqs.map((q, i) => line(q, nexusReqs.length + i))}
                 </ul>

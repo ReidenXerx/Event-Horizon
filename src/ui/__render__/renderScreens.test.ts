@@ -1279,6 +1279,23 @@ describe("render", () => {
     );
   });
 
+  // The same page with three mods ticked: the action bar, which only exists
+  // while something is ticked and so had never been photographed — its
+  // "Kind" label sat wedged against Remove (curator's screenshot of 0.1.156).
+  it("curator tools — rows ticked, the action bar", () => {
+    const state = curatorState();
+    const mods = readCuratorMods(state as never, "skyrimse", readEnabledModIds(state as never, "skyrimse"));
+    write(
+      "curator-tools-ticked",
+      React.createElement(ApiProvider, {
+        api: { getState: () => state, store: { dispatch: () => undefined } },
+        children: React.createElement(ToastProvider, {
+          children: React.createElement(CuratorPanel, { initialSelected: mods.slice(0, 3).map((m) => m.id) }),
+        } as never),
+      } as never),
+    );
+  });
+
   // The Disk cleanup view: orphaned archives and superseded installs, with
   // the unproven same-page group kept apart. Nothing is pre-ticked.
   it("curator tools — disk cleanup", () => {

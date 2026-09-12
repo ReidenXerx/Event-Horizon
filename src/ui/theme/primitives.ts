@@ -1085,6 +1085,33 @@ input[type="checkbox"].eh-check:indeterminate::before {
 /* The "clear" beside the ticked count in a sticky action bar. */
 .eh-actions__clear { margin-left: var(--eh-sp-2); }
 
+/* The workbench's action bar: what is ticked, then groups of actions held
+   apart by a rule. The groups wrap as whole units, so a narrow window moves
+   "Kind" to the next line instead of wedging its label against Remove. */
+.eh-actionbar {
+  justify-content: flex-start;
+  align-items: center;
+  column-gap: var(--eh-sp-4);
+  row-gap: var(--eh-sp-2);
+}
+
+.eh-actionbar__summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--eh-sp-2);
+  margin-right: auto;
+  white-space: nowrap;
+}
+
+.eh-actionbar__group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--eh-sp-2);
+  padding-left: var(--eh-sp-4);
+  border-left: 1px solid var(--eh-border-subtle);
+}
+
 /* ── Table window spacers: the rows that are not in the DOM ──────────
    A windowed table keeps the scrollbar honest with one empty row above
    and below the rendered band, sized to what they stand in for. */
@@ -1159,6 +1186,72 @@ input[type="checkbox"].eh-check:indeterminate::before {
 @media (max-width: 1100px) {
   .eh-split { grid-template-columns: minmax(0, 1fr); }
   .eh-split__aside { position: static; max-height: none; }
+}
+
+/* ── Requirement lines (the details panel) ────────────────────────────
+   A status gutter and a body. The gutter is one column for the whole list
+   (subgrid), as wide as its widest pill, so every name and note starts at
+   the same x whether the pill says "ok" or "installed, disabled". Actions go
+   under the text: beside it they took the width and a note wrapped one word
+   per line. */
+.eh-req-list {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: var(--eh-sp-3);
+  row-gap: var(--eh-sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.eh-req-line {
+  grid-column: 1 / -1;
+  display: grid;
+  /* Without subgrid each line sizes its own gutter; with it they share one. */
+  grid-template-columns: max-content minmax(0, 1fr);
+  grid-template-columns: subgrid;
+  column-gap: var(--eh-sp-3);
+  align-items: start;
+}
+
+.eh-req-line__status {
+  display: flex;
+  padding-top: 1px;
+}
+
+.eh-req-line__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--eh-sp-1);
+  min-width: 0;
+}
+
+.eh-req-line__name {
+  font-weight: 600;
+  color: var(--eh-text-primary);
+  overflow-wrap: anywhere;
+}
+
+/* "provided by" and the provider names flow as one wrapping line; a long
+   archive-style name breaks inside itself instead of pushing a comma onto
+   its own line. */
+.eh-req-line__providers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--eh-sp-2);
+  row-gap: 2px;
+  min-width: 0;
+}
+
+.eh-req-line__provider {
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.eh-req-line__actions {
+  flex-wrap: wrap;
+  margin-top: var(--eh-sp-1);
 }
 
 /* ── Key / value line (was .eh-field; a form field owns that now) ─── */

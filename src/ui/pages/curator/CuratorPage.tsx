@@ -362,7 +362,7 @@ function requiredByColumn(onFocus: (modId: string) => void): Column<WorkRow> {
 
 // ── The page ───────────────────────────────────────────────────────────
 
-function CuratorBody(): JSX.Element {
+function CuratorBody(props: { initialSelected?: readonly string[] } = {}): JSX.Element {
   const api = useApi();
   const [tick, setTick] = React.useState(0);
 
@@ -510,7 +510,7 @@ function CuratorBody(): JSX.Element {
     [plugins, requirements, mods, gameId, pluginCapability],
   );
 
-  const [selected, setSelected] = React.useState<ReadonlySet<string>>(new Set());
+  const [selected, setSelected] = React.useState<ReadonlySet<string>>(() => new Set(props.initialSelected ?? []));
   const chosen = React.useMemo(() => mods.filter((m) => selected.has(m.id)), [mods, selected]);
   const chosenRows = React.useMemo(() => rows.filter((r) => selected.has(r.mod.id)), [rows, selected]);
   const [typeValue, setTypeValue] = React.useState("");
@@ -879,20 +879,15 @@ function CuratorBody(): JSX.Element {
 
       {/* The action bar: only while something is ticked, only what applies. */}
       {chosen.length > 0 && tableView && (
-        <div className="eh-actions eh-actions--sticky eh-row--split">
-          <span className="eh-strong">
-            {num(chosen.length)} ticked
-            {hiddenTicked > 0 && (
-              <span className="eh-muted">
-                {" "}
-                · {num(hiddenTicked)} not in this view
-              </span>
-            )}
-            <LinkButton variant="xs" tone="muted" className="eh-actions__clear" onClick={(): void => setSelected(new Set())}>
+        <div className="eh-actions eh-actions--sticky eh-actionbar">
+          <div className="eh-actionbar__summary">
+            <span className="eh-strong">{num(chosen.length)} ticked</span>
+            {hiddenTicked > 0 && <span className="eh-muted">· {num(hiddenTicked)} not in this view</span>}
+            <LinkButton variant="xs" tone="muted" onClick={(): void => setSelected(new Set())}>
               clear
             </LinkButton>
-          </span>
-          <div className="eh-row eh-row--sm">
+          </div>
+          <div className="eh-actionbar__group">
             {disabledChosen.length > 0 && (
               <Button size="sm" intent="ghost" disabled={!idle} onClick={(): void => void enableWithProviders(disabledChosen)}>
                 Enable {num(disabledChosen.length)}
@@ -954,6 +949,8 @@ function CuratorBody(): JSX.Element {
             <Button size="sm" intent="ghost" disabled={!idle} busy={busy === "reinstall"} onClick={(): void => void reinstall(chosen)}>
               Reinstall {num(chosen.length)}
             </Button>
+          </div>
+          <div className="eh-actionbar__group">
             <Button
               size="sm"
               intent="danger"
@@ -964,6 +961,8 @@ function CuratorBody(): JSX.Element {
             >
               Remove {num(chosen.length)}
             </Button>
+          </div>
+          <div className="eh-actionbar__group">
             <Field label="Kind" inline>
               {(id): JSX.Element =>
                 modTypes.length > 0 ? (
@@ -1026,9 +1025,13 @@ function CuratorBody(): JSX.Element {
   );
 }
 
-/** Exported for the render harness; the route renders {@link CuratorPage}. */
-export function CuratorPanel(): JSX.Element {
-  return <CuratorBody />;
+/**
+ * Exported for the render harness; the route renders {@link CuratorPage}.
+ * `initialSelected` exists so the harness can photograph the action bar,
+ * which only appears while something is ticked.
+ */
+export function CuratorPanel(props: { initialSelected?: readonly string[] } = {}): JSX.Element {
+  return <CuratorBody {...(props.initialSelected === undefined ? {} : { initialSelected: props.initialSelected })} />;
 }
 
 export function CuratorPage(): JSX.Element {

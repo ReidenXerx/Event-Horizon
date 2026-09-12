@@ -25,6 +25,11 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
   Double-click an edge for that column's default, or "Reset column widths" for the whole table. Each table remembers its
   widths across restarts.
 - The mods table's action column is wide enough for all three buttons; "Requirements" was cut to "Req".
+- **The requirements panel reads cleanly.** Every line starts its name and note at the same place whatever its status
+  says; Install and Open page sit under the text instead of beside it, where they squeezed a note to one word per line;
+  providers are separated and a long archive name wraps inside itself.
+- **The action bar is grouped**: what is ticked, then the actions, then Remove, then Kind, each held apart, and the groups
+  wrap as whole units on a narrow window instead of wedging "Kind" against Remove.
 
 ## [0.1.155] — 2026-09-11
 
