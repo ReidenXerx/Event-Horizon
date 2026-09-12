@@ -124,11 +124,14 @@ class CuratorSession {
     this.controller = new AbortController();
     // The rest of the app has no other way to know staging is being rewritten.
     getEHRuntime().setInstallBusy(true);
+    // Only the run's own fields are reset. Rebuilding the snapshot from a
+    // literal dropped the requirements report on every run, and "Read
+    // requirements" lost its own result the moment it finished.
+    const { progress: _progress, note: _note, ...kept } = this.state;
     this.set({
+      ...kept,
       busy,
       lines: opts?.keepReport === true ? this.state.lines : [],
-      progress: undefined,
-      note: undefined,
     });
     return this.controller.signal;
   }
@@ -148,7 +151,9 @@ class CuratorSession {
   finish(lines: string[] | undefined, note?: string): void {
     this.controller = undefined;
     getEHRuntime().setInstallBusy(false);
+    const { progress: _progress, note: _note, ...kept } = this.state;
     this.set({
+      ...kept,
       busy: undefined,
       lines: lines ?? this.state.lines,
       ...(note === undefined ? {} : { note }),
