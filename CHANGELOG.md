@@ -10,6 +10,22 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.155.
 
+## [0.1.156] — 2026-09-12
+
+### Curator Tools
+- **Requirements show up after you read them.** "Read requirements" counted what was missing and then threw its own
+  result away the moment it finished, so the "Missing requirements" and "Needed by others" views never appeared, the
+  Requires column stayed empty, the Plugins view had no headers and "Make it work" had nothing to plan from. The result
+  now stays, through every later action.
+- **Where the details are is said on the page.** When mods need something installed or enabled, a line under the
+  buttons says how many, with "Show them" to open that view; each row's Requirements button opens every line with the
+  one action that fits.
+- **Column widths are yours.** Drag the right edge of any column header in every Curator Tools table — mods, plugins,
+  downloads, disk cleanup — to make it wider or narrower; with the edge focused, the arrow keys do the same.
+  Double-click an edge for that column's default, or "Reset column widths" for the whole table. Each table remembers its
+  widths across restarts.
+- The mods table's action column is wide enough for all three buttons; "Requirements" was cut to "Req".
+
 ## [0.1.155] — 2026-09-11
 
 A review of 0.1.152 to 0.1.154 found real problems in what those builds added. This build fixes every one of them.
