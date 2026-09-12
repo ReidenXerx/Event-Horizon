@@ -27,6 +27,7 @@ import type { types } from "@nexusmods/vortex-api";
 import { getActiveProfileIdFromState } from "../getModsListForProfile";
 
 import type { CuratorMod } from "./profileActions";
+import { enabledTimeOf } from "./enabledTime";
 
 /** Our attribute key. Namespaced so Vortex can never grow one that collides. */
 export const FROZEN_ATTRIBUTE = "eventHorizonFrozenAtVersion";
@@ -77,6 +78,8 @@ export function readCuratorMods(
   gameId: string,
   /** Which mod ids the active profile has enabled. */
   enabledModIds: ReadonlySet<string>,
+  /** When each was last enabled in that profile ({@link readModEnabledTimes}). */
+  enabledTimes?: ReadonlyMap<string, number>,
 ): CuratorMod[] {
   const byGame = (
     state as unknown as {
@@ -123,6 +126,7 @@ export function readCuratorMods(
       ...opt("downloadGame", asString(attributes.downloadGame)),
       ...opt("frozenAtVersion", asString(attributes[FROZEN_ATTRIBUTE])),
       ...opt("notes", asString(attributes[NOTES_ATTRIBUTE])),
+      ...opt("enabledTime", enabledTimes?.get(modId)),
       ...opt("archiveId", asString(mod?.archiveId)),
       ...opt("installationPath", asString(mod?.installationPath)),
     });
@@ -185,4 +189,25 @@ export function readEnabledModIds(
       .filter(([, entry]) => entry?.enabled === true)
       .map(([modId]) => modId),
   );
+}
+
+/**
+ * When each mod was last enabled in the active profile: Vortex's own
+ * `modState[modId].enabledTime`, stamped on every enable and kept on disable.
+ * A mod Vortex never stamped (0) is left out — unknown, not 1970.
+ */
+export function readModEnabledTimes(state: types.IState, gameId: string): Map<string, number> {
+  const profileId = getActiveProfileIdFromState(state, gameId);
+  if (profileId === undefined) return new Map();
+  const modState = (
+    state as unknown as {
+      persistent?: { profiles?: Record<string, { modState?: Record<string, { enabledTime?: unknown }> }> };
+    }
+  )?.persistent?.profiles?.[profileId]?.modState;
+  const out = new Map<string, number>();
+  for (const [modId, entry] of Object.entries(modState ?? {})) {
+    const ts = enabledTimeOf(entry?.enabledTime);
+    if (ts !== undefined) out.set(modId, ts);
+  }
+  return out;
 }

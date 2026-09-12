@@ -70,6 +70,12 @@ export type CuratorMod = {
   /** Vortex's endorsement state: "Undecided" | "Endorsed" | "Abstained". */
   endorsed?: string;
   /**
+   * When the mod was last enabled in the active profile (ms since epoch), from
+   * Vortex's own modState stamp; absent when Vortex never recorded one.
+   * Disabling does not clear it, so a disabled mod shows when it was last on.
+   */
+  enabledTime?: number;
+  /**
    * Where the archive came from: "nexus" for a Nexus download. Only a Nexus
    * mod has a page whose requirements can be asked about.
    */

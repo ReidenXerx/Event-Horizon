@@ -45,6 +45,7 @@ import {
   type ViewRow,
 } from "./tableView";
 import { placeRowWindow, recordRowHeights, type RowPlacement } from "./rowWindow";
+import { initialSort, readStoredSort, writeStoredSort } from "./tableSort";
 import {
   ACTIONS_COLUMN_KEY,
   KEYBOARD_STEP,
@@ -91,6 +92,11 @@ export function DataTable<T>(props: {
    * table keeps its own. Without one they last until the page unmounts.
    */
   tableId?: string;
+  /**
+   * The sort the table opens with the first time. With a `tableId`, the sort
+   * the curator last chose (or cleared) is remembered and wins after that.
+   */
+  defaultSort?: SortState;
   /**
    * Unused since the table renders a window of rows over the whole list;
    * kept so callers need not change. The banner always says the real count.
@@ -201,7 +207,18 @@ export function DataTable<T>(props: {
   const widthsCustomised = Object.keys(widths).length > 0;
 
   const [filters, setFilters] = React.useState<Record<string, string>>({});
-  const [sort, setSort] = React.useState<SortState | undefined>(undefined);
+  // The sort: the default the first time, then whatever the curator last chose.
+  const sortKeys = React.useMemo(() => columns.map((c) => c.key), [columns]);
+  const [sort, setSort] = React.useState<SortState | undefined>(() =>
+    initialSort(tableId === undefined ? undefined : readStoredSort(tableId, sortKeys), props.defaultSort),
+  );
+  /** Set by a header click, so the sort read back at mount is not written straight back. */
+  const sortChangedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (tableId === undefined || !sortChangedRef.current) return;
+    sortChangedRef.current = false;
+    writeStoredSort(tableId, sort);
+  }, [tableId, sort]);
   /**
    * The rendered window. Every row is in the model (sort, filter, select-all
    * see all of them); only the rows near the scroll position exist in the
@@ -497,7 +514,10 @@ export function DataTable<T>(props: {
                       <button
                         type="button"
                         className={active ? "eh-table__sort eh-table__sort--active" : "eh-table__sort"}
-                        onClick={(): void => setSort((s) => nextSort(s, col.key))}
+                        onClick={(): void => {
+                          sortChangedRef.current = true;
+                          setSort((s) => nextSort(s, col.key));
+                        }}
                         title={`Sort by ${col.header}`}
                       >
                         <span>{col.header}</span>

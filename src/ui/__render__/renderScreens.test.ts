@@ -74,7 +74,7 @@ import { buildPluginRows, pluginCapabilityFor, type PluginHeader } from "../../c
 import { readPluginList } from "../../core/curator/pluginPool";
 import { readDownloads } from "../../core/curator/runCleanup";
 import { getCuratorSession } from "../pages/curator/curatorSession";
-import { readCuratorMods, readEnabledModIds } from "../../core/curator/readProfile";
+import { readCuratorMods, readEnabledModIds, readModEnabledTimes } from "../../core/curator/readProfile";
 import {
   addMasterRequirements,
   makeModUid,
@@ -1124,7 +1124,13 @@ describe("render", () => {
             modState: Object.fromEntries(
               // Not all enabled: the State column is only worth filtering by
               // if it has both values in it.
-              Object.keys(modsById).map((k, i) => [k, { enabled: i % 11 !== 0 }]),
+              // Enabled times an hour apart from a fixed moment (a golden cannot
+              // hold Date.now), with every seventh never stamped, as a mod added
+              // by a collection install is.
+              Object.keys(modsById).map((k, i) => [
+                k,
+                { enabled: i % 11 !== 0, enabledTime: i % 7 === 0 ? 0 : Date.UTC(2026, 8, 12, 12, 0) - i * 3_600_000 },
+              ]),
             ),
           },
         },
@@ -1284,7 +1290,7 @@ describe("render", () => {
   // "Kind" label sat wedged against Remove (curator's screenshot of 0.1.156).
   it("curator tools — rows ticked, the action bar", () => {
     const state = curatorState();
-    const mods = readCuratorMods(state as never, "skyrimse", readEnabledModIds(state as never, "skyrimse"));
+    const mods = readCuratorMods(state as never, "skyrimse", readEnabledModIds(state as never, "skyrimse"), readModEnabledTimes(state as never, "skyrimse"));
     write(
       "curator-tools-ticked",
       React.createElement(ApiProvider, {
@@ -1300,7 +1306,7 @@ describe("render", () => {
   // the unproven same-page group kept apart. Nothing is pre-ticked.
   it("curator tools — disk cleanup", () => {
     const state = curatorState();
-    const mods = readCuratorMods(state as never, "skyrimse", readEnabledModIds(state as never, "skyrimse"));
+    const mods = readCuratorMods(state as never, "skyrimse", readEnabledModIds(state as never, "skyrimse"), readModEnabledTimes(state as never, "skyrimse"));
     write(
       "curator-disk-cleanup",
       React.createElement(DiskCleanupView, {
@@ -1318,7 +1324,7 @@ describe("render", () => {
   // and the regular-slot count.
   it("curator tools — plugins", () => {
     const state = curatorState();
-    const mods = readCuratorMods(state as never, "skyrimse", readEnabledModIds(state as never, "skyrimse"));
+    const mods = readCuratorMods(state as never, "skyrimse", readEnabledModIds(state as never, "skyrimse"), readModEnabledTimes(state as never, "skyrimse"));
     const rows = buildPluginRows({
       plugins: readPluginList(state),
       headers: pluginHeaders(),
@@ -1343,7 +1349,7 @@ describe("render", () => {
   // to touch, offered for install instead.
   it("curator tools — downloads not installed", () => {
     const state = curatorState();
-    const mods = readCuratorMods(state as never, "skyrimse", readEnabledModIds(state as never, "skyrimse"));
+    const mods = readCuratorMods(state as never, "skyrimse", readEnabledModIds(state as never, "skyrimse"), readModEnabledTimes(state as never, "skyrimse"));
     const downloads = readDownloads(state as never, "skyrimse");
     const notInstalled = planCleanup({ mods, downloads }).unclearOrphans.map((o) => o.entry);
     write(
@@ -1415,7 +1421,7 @@ describe("render", () => {
   // through the real resolver from a Nexus-shaped answer, not hand-typed.
   it("curator tools — requirements read", () => {
     const state = curatorState();
-    const mods = readCuratorMods(state as never, "skyrimse", readEnabledModIds(state as never, "skyrimse"));
+    const mods = readCuratorMods(state as never, "skyrimse", readEnabledModIds(state as never, "skyrimse"), readModEnabledTimes(state as never, "skyrimse"));
     // Vortex says "skyrimse"; Nexus's games cache says "skyrimspecialedition".
     const games = new Map([["skyrimspecialedition", 1704]]);
     const { uidByMod, noUid } = uidsFor(mods, games, "skyrimse", nexusDomainOf);
@@ -1507,6 +1513,21 @@ describe("render", () => {
                 onOpenPage: () => undefined,
                 onFocus: () => undefined,
                 onSaveNote: () => undefined,
+                // A line the curator dismissed: an author advertising another mod.
+                dismissed: [
+                  {
+                    source: "nexus",
+                    status: "missing",
+                    name: "The Author's Other Armour",
+                    nexusModId: 99901,
+                    gameDomain: "skyrimspecialedition",
+                    url: "https://www.nexusmods.com/skyrimspecialedition/mods/99901",
+                    notes: "Check out my other mod!",
+                    satisfiedBy: [],
+                  },
+                ],
+                onDismiss: () => undefined,
+                onRestore: () => undefined,
                 }),
               ),
             ),

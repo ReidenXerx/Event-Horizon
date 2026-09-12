@@ -21,6 +21,7 @@ import {
   type RequirementsReport,
 } from "../../../core/curator/requirements";
 import { Button, Callout, Card, LinkButton, Pill, Section, Textarea, type PillIntent } from "../../components";
+import { isDismissible } from "../../../core/curator/requirementDismissals";
 
 const STATUS_PILL: Record<ModRequirement["status"], { label: string; intent: PillIntent }> = {
   satisfied: { label: "ok", intent: "success" },
@@ -47,10 +48,17 @@ export function RequirementsPanel(props: {
   onInstallAll: () => void;
   onOpenPage: (req: ModRequirement) => void;
   onFocus: (modId: string) => void;
+  /** Lines the curator dismissed for this mod's page, hidden from the list above. */
+  dismissed?: readonly ModRequirement[];
+  /** Hide a Nexus requirement until its entry on Nexus changes. */
+  onDismiss?: (req: ModRequirement) => void;
+  /** Bring a dismissed requirement back. */
+  onRestore?: (req: ModRequirement) => void;
   /** Save the curator's note on this mod (our attribute; empty clears it). */
   onSaveNote: (mod: CuratorMod, text: string) => void;
 }): JSX.Element {
   const { mod, mods, report, entry, busy } = props;
+  const dismissed = props.dismissed ?? [];
   const [noteText, setNoteText] = React.useState(mod.notes ?? "");
   React.useEffect(() => setNoteText(mod.notes ?? ""), [mod.id, mod.notes]);
   const noteDirty = noteText !== (mod.notes ?? "");
@@ -74,7 +82,9 @@ export function RequirementsPanel(props: {
     const canEnablePartial = q.status === "partial" && partialProvidersToEnable(q, mods).length > 0;
     const canInstall = q.status === "missing" && q.nexusModId !== undefined && q.vortexGameId !== undefined && props.canInstall;
     const canOpen = (q.status === "missing" || q.status === "external" || q.status === "unknown-game") && q.url !== undefined;
-    const hasActions = q.status === "installed-disabled" || canEnablePartial || canInstall || canOpen;
+    // Only what the mod's Nexus page lists can be dismissed; a missing master is a plugin the game will not load.
+    const canDismiss = props.onDismiss !== undefined && isDismissible(q) && q.status !== "satisfied";
+    const hasActions = q.status === "installed-disabled" || canEnablePartial || canInstall || canOpen || canDismiss;
     return (
       <li key={`${q.source}:${q.name}:${i}`} className="eh-req-line">
         <span className="eh-req-line__status">
@@ -148,6 +158,16 @@ export function RequirementsPanel(props: {
                 Open page
               </Button>
             )}
+          {canDismiss && (
+            <Button
+              size="sm"
+              intent="ghost"
+              title="Hide this requirement for this mod, through updates, until its entry on Nexus changes"
+              onClick={(): void => props.onDismiss!(q)}
+            >
+              Dismiss
+            </Button>
+          )}
         </div>
           )}
         </div>
@@ -223,12 +243,45 @@ export function RequirementsPanel(props: {
               }
             >
               {requirements.length === 0 ? (
-                <p className="eh-body">Nothing listed on its Nexus page, and its plugins declare no masters beyond the game's own.</p>
+                <p className="eh-body">
+                  {dismissed.length > 0
+                    ? "Everything else its Nexus page lists is dismissed, and its plugins declare no masters beyond the game's own."
+                    : "Nothing listed on its Nexus page, and its plugins declare no masters beyond the game's own."}
+                </p>
               ) : (
                 <ul className="eh-req-list">
                   {nexusReqs.map(line)}
                   {masterReqs.map((q, i) => line(q, nexusReqs.length + i))}
                 </ul>
+              )}
+              {dismissed.length > 0 && (
+                <div className="eh-stack eh-stack--xs">
+                  <span className="eh-small eh-muted">
+                    Dismissed ({dismissed.length}): hidden through updates, back if Nexus changes them.
+                  </span>
+                  <ul className="eh-req-list">
+                    {dismissed.map((q, i) => (
+                      <li key={`dismissed:${q.name}:${i}`} className="eh-req-line">
+                        <span className="eh-req-line__status">
+                          <Pill intent="neutral" plain>
+                            dismissed
+                          </Pill>
+                        </span>
+                        <div className="eh-req-line__body">
+                          <span className="eh-req-line__name">{q.name}</span>
+                          {q.notes !== undefined && <span className="eh-small">{q.notes}</span>}
+                          {props.onRestore !== undefined && (
+                            <div className="eh-row eh-row--sm eh-req-line__actions">
+                              <Button size="sm" intent="ghost" onClick={(): void => props.onRestore!(q)}>
+                                Restore
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
               {entry.truncatedBy > 0 && (
                 <p className="eh-note">

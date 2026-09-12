@@ -30,6 +30,15 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
   providers are separated and a long archive name wraps inside itself.
 - **The action bar is grouped**: what is ticked, then the actions, then Remove, then Kind, each held apart, and the groups
   wrap as whole units on a narrow window instead of wedging "Kind" against Remove.
+- **When a mod was enabled.** The mods table has an Enabled column — when each mod was last switched on in this profile,
+  as Vortex records it — and opens sorted by it, freshest first. The Plugins view shows the same for each plugin's mod,
+  and keeps load order as its own default.
+- **Tables remember their sort.** Whatever sort you last chose in a table, including none, is how it opens next time.
+- **Dismiss a requirement.** Mod pages often list things that do not apply, or advertise the author's other mods. Any
+  requirement from a mod's Nexus page can be dismissed from its details panel: it stops counting everywhere — the
+  Requires column, the Missing requirements view, the tiles, Make it work — through updates of the mod, and comes back
+  only if that requirement changes on Nexus. Dismissed lines are listed under the rest with Restore. Missing plugin
+  masters cannot be dismissed: the game will not load a plugin without them.
 
 ## [0.1.155] — 2026-09-11
 

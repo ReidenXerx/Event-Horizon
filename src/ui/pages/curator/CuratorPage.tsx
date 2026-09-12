@@ -40,6 +40,7 @@ import {
   freezeAttribute,
   readCuratorMods,
   readEnabledModIds,
+  readModEnabledTimes,
 } from "../../../core/curator/readProfile";
 import {
   installFromExistingDownload,
@@ -76,6 +77,18 @@ import {
   updateOneAndWait,
 } from "../../../core/curator/updateOneMod";
 import { verifyUpdatedMod } from "../../../core/curator/verifyAfterUpdate";
+import { formatEnabledTime } from "../../../core/curator/enabledTime";
+import {
+  EMPTY_DISMISSALS,
+  applyDismissals,
+  dependentPageKey,
+  dismissRequirement,
+  pruneStale,
+  requirementKey,
+  restoreRequirement,
+  type DismissalStore,
+} from "../../../core/curator/requirementDismissals";
+import { readDismissals, writeDismissals } from "./dismissalsIo";
 import {
   dependantsOf,
   disabledProvidersFor,
@@ -84,6 +97,7 @@ import {
   summarizeRequirements,
   type ModRequirement,
   type NexusFileInfo,
+  type RequirementsReport,
 } from "../../../core/curator/requirements";
 import {
   Button,
@@ -318,6 +332,25 @@ const WORK_COLUMNS: Column<WorkRow>[] = [
       );
     },
   },
+  {
+    // When the mod was last enabled in this profile, from Vortex's own stamp.
+    // The table opens sorted by it, freshest first: "what did I just turn on"
+    // is the question when building a collection (settled with the curator).
+    key: "enabledTime",
+    header: "Enabled",
+    numeric: true,
+    filterable: false,
+    width: 150,
+    value: (r) => r.mod.enabledTime,
+    render: (r) =>
+      r.mod.enabledTime === undefined ? (
+        <span className="eh-muted" title="Vortex has no record of when this was enabled">
+          —
+        </span>
+      ) : (
+        formatEnabledTime(r.mod.enabledTime)
+      ),
+  },
   { key: "kind", header: "Kind", match: "exact", width: 110, value: (r) => kindOf(r.mod) },
   {
     key: "requirements",
@@ -403,7 +436,7 @@ function CuratorBody(props: { initialSelected?: readonly string[] } = {}): JSX.E
   const mods = React.useMemo<CuratorMod[]>(() => {
     if (gameId === undefined) return [];
     const state = api.getState();
-    return readCuratorMods(state, gameId, readEnabledModIds(state, gameId));
+    return readCuratorMods(state, gameId, readEnabledModIds(state, gameId), readModEnabledTimes(state, gameId));
     // `tick` is the refresh handle: every action bumps it so the view re-reads
     // Vortex rather than trusting a copy it mutated itself.
   }, [api, gameId, tick]);
@@ -418,7 +451,63 @@ function CuratorBody(props: { initialSelected?: readonly string[] } = {}): JSX.E
   // The requirements report is the session's: it outlives this component.
   const requirements =
     run.requirements !== undefined && run.requirements.gameId === gameId ? run.requirements : undefined;
-  const report = requirements?.load.report;
+
+  // Dismissed requirements (requirementDismissals.ts) come out of the report
+  // HERE, once, so the table, the chips, the tiles, Make it work and the enable
+  // prompts all read the same report and none of them needs to know.
+  const [dismissals, setDismissals] = React.useState<DismissalStore>(EMPTY_DISMISSALS);
+  React.useEffect(() => {
+    let alive = true;
+    void readDismissals().then((store) => {
+      if (alive) setDismissals(store);
+    });
+    return (): void => {
+      alive = false;
+    };
+  }, []);
+  const pageKeyOf = React.useCallback(
+    (m: CuratorMod): string | undefined => (gameId === undefined ? undefined : dependentPageKey(m, gameId, nexusDomainForVortexGame)),
+    [gameId],
+  );
+  const applied = React.useMemo(
+    () =>
+      requirements === undefined
+        ? undefined
+        : applyDismissals({ report: requirements.load.report, mods, store: dismissals, pageKeyOf }),
+    [requirements, mods, dismissals, pageKeyOf],
+  );
+  const report = applied?.report;
+  // A dismissal whose requirement changed on Nexus has already come back on the
+  // page; forget it, so it cannot silently return to hiding later.
+  React.useEffect(() => {
+    if (applied === undefined || applied.stale.length === 0) return;
+    const next = pruneStale(dismissals, applied.stale);
+    ehLog("info", "curator.requirement.dismissal-returned", { returned: applied.stale });
+    setDismissals(next);
+    void writeDismissals(next).catch((err: unknown) => ehLog("error", "curator.dismissals.write-fail", { err }));
+  }, [applied, dismissals]);
+  const saveDismissals = (next: DismissalStore, event: string, detail: Record<string, unknown>): void => {
+    ehLog("info", event, detail);
+    setDismissals(next);
+    void writeDismissals(next).catch((err: unknown) => {
+      ehLog("error", "curator.dismissals.write-fail", { err, ...detail });
+      session.say(`Could not save dismissed requirements: ${err instanceof Error ? err.message : String(err)}`);
+    });
+  };
+  const dismissFor = (m: CuratorMod, q: ModRequirement): void => {
+    const page = pageKeyOf(m);
+    if (page === undefined) return;
+    const next = dismissRequirement(dismissals, page, q);
+    if (next === dismissals) return;
+    saveDismissals(next, "curator.requirement.dismiss", { modId: m.id, page, requirement: requirementKey(q), name: q.name });
+  };
+  const restoreFor = (m: CuratorMod, q: ModRequirement): void => {
+    const page = pageKeyOf(m);
+    if (page === undefined) return;
+    const next = restoreRequirement(dismissals, page, requirementKey(q));
+    if (next === dismissals) return;
+    saveDismissals(next, "curator.requirement.restore", { modId: m.id, page, requirement: requirementKey(q), name: q.name });
+  };
   // Settled with the user: a disabled mod's missing requirement is not
   // tonight's problem. The toggle brings them in.
   const [includeDisabledReqs, setIncludeDisabledReqs] = React.useState(false);
@@ -543,7 +632,9 @@ function CuratorBody(props: { initialSelected?: readonly string[] } = {}): JSX.E
     [api],
   );
 
-  const actions = useCuratorActions({ api, session, busy, gameId, mods, report, requirements, endorsable, focusMod, setTick, setNote, setProgress, confirm, setSelected, setFocusId });
+  const withoutDismissed = (r: RequirementsReport): RequirementsReport =>
+    applyDismissals({ report: r, mods, store: dismissals, pageKeyOf }).report;
+  const actions = useCuratorActions({ api, session, busy, gameId, mods, report, requirements, withoutDismissed, endorsable, focusMod, setTick, setNote, setProgress, confirm, setSelected, setFocusId });
   const {
     askThree,
     guard,
@@ -805,9 +896,10 @@ function CuratorBody(props: { initialSelected?: readonly string[] } = {}): JSX.E
             // Disable, Open page and Requirements side by side; at 290 the
             // last one was cut to "Req" (curator's screenshot of 0.1.155).
             actionsWidth={360}
-            // Raised with the actions column, so the Mod column keeps its width
-            // when the details panel narrows the table (the screenshot caught it).
-            minWidth={1250}
+            // Raised with the actions and Enabled columns, so the Mod column keeps
+            // its width when the details panel narrows the table.
+            minWidth={1400}
+            defaultSort={{ key: "enabledTime", direction: "desc" }}
             selection={{ selected, onChange: setSelected }}
             empty={<p className="eh-body">Nothing in this view.</p>}
             actions={(r): JSX.Element => (
@@ -872,6 +964,9 @@ function CuratorBody(props: { initialSelected?: readonly string[] } = {}): JSX.E
             onOpenPage={openPage}
             onFocus={setFocusId}
             onSaveNote={saveNote}
+            dismissed={applied?.dismissedByMod.get(focusMod.id) ?? []}
+            onDismiss={(q): void => dismissFor(focusMod, q)}
+            onRestore={(q): void => restoreFor(focusMod, q)}
           />
         </aside>
       )}

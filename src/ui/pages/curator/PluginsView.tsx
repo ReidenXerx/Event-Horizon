@@ -22,6 +22,7 @@ import {
   type PluginViewId,
 } from "../../../core/curator/pluginView";
 import { Button, Callout, Chip, DataTable, EmptyState, LinkButton, Pill, StatGrid, StatTile, type Column } from "../../components";
+import { formatEnabledTime } from "../../../core/curator/enabledTime";
 
 const num = (n: number): string => n.toLocaleString();
 
@@ -79,6 +80,18 @@ function makeColumnsWith(onFocus: (modId: string) => void): Column<PluginRow>[] 
             {r.plugin.modId ?? "loose file"}
           </span>
         ),
+    },
+    {
+      // When the plugin's mod was last enabled: sort by it to see what just
+      // arrived. Load order stays this table's default sort.
+      key: "enabledTime",
+      header: "Mod enabled",
+      numeric: true,
+      filterable: false,
+      width: 150,
+      value: (r) => r.owner?.enabledTime,
+      render: (r) =>
+        r.owner?.enabledTime === undefined ? <span className="eh-muted">—</span> : formatEnabledTime(r.owner.enabledTime),
     },
     {
       key: "masters",

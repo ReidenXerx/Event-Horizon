@@ -175,8 +175,11 @@ export type CuratorActionsContext = {
   busy: ReturnType<CuratorSession["getSnapshot"]>["busy"];
   gameId: string | undefined;
   mods: readonly CuratorMod[];
+  /** The report with dismissed requirements already taken out (CuratorPage owns the dismissals). */
   report: RequirementsReport | undefined;
   requirements: RequirementsCache | undefined;
+  /** Takes dismissed requirements out of a freshly read report, so its summary counts what the page shows. */
+  withoutDismissed?: (report: RequirementsReport) => RequirementsReport;
   endorsable: readonly CuratorMod[];
   focusMod: CuratorMod | undefined;
   setTick: React.Dispatch<React.SetStateAction<number>>;
@@ -188,7 +191,7 @@ export type CuratorActionsContext = {
 };
 
 export function useCuratorActions(ctx: CuratorActionsContext) {
-  const { api, session, busy, gameId, mods, report, requirements, endorsable, focusMod, setTick, setNote, setProgress, confirm, setSelected, setFocusId } = ctx;
+  const { api, session, busy, gameId, mods, report, requirements, withoutDismissed, endorsable, focusMod, setTick, setNote, setProgress, confirm, setSelected, setFocusId } = ctx;
   /** A question with two real answers besides Cancel. Returns the chosen label, or undefined. */
   const askThree = async (title: string, text: string, labels: [string, string]): Promise<string | undefined> => {
     const showDialog = (api as unknown as { showDialog?: unknown }).showDialog;
@@ -250,7 +253,7 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
         return;
       }
       session.setRequirements({ gameId: game, fetchedAt: Date.now(), load });
-      const s = summarizeRequirements(load.report);
+      const s = summarizeRequirements(withoutDismissed === undefined ? load.report : withoutDismissed(load.report));
       session.finish(
         undefined,
         load.unavailable ??
@@ -456,7 +459,8 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
           toDomain: nexusDomainForVortexGame,
           knownGameIds: knownGameIds(api.getState()),
           fetch: nexus.getModRequirements,
-          report: cache.load.report,
+          // Dismissed lines are not part of the chain to install.
+          report: report ?? cache.load.report,
           signal,
         });
         setProgress(`Asking Nexus which file each of ${num(plan.steps.length)} page(s) ships…`);
@@ -500,7 +504,7 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
   );
 
   /** The lines a plan for a mod starts from: its own report entry. */
-  const linesOf = (m: CuratorMod): ModRequirement[] => requirements?.load.report.byMod.get(m.id)?.requirements ?? [];
+  const linesOf = (m: CuratorMod): ModRequirement[] => report?.byMod.get(m.id)?.requirements ?? [];
 
   /** Run the previewed plan: downloads in order, each waited for, then the enables. */
   const runPlan = guard("Installing requirements", async (): Promise<void> => {
