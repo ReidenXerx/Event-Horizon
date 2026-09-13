@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-proton
-description: "Skill for the Proton area of Event-Horizon. 36 symbols across 8 files."
+description: "Skill for the Proton area of Event-Horizon. 34 symbols across 8 files."
 ---
 
 # Proton
 
-36 symbols | 8 files | Cohesion: 73%
+34 symbols | 8 files | Cohesion: 73%
 
 ## When to Use
 
@@ -19,9 +19,9 @@ description: "Skill for the Proton area of Event-Horizon. 36 symbols across 8 fi
 |------|---------|
 | `src/core/proton/gamePrefix.test.ts` | probe, heroicGameConfig, heroicInstalled, linkToGame, onLinux (+3) |
 | `src/core/proton/gamePrefix.ts` | driveCOf, probeWinePrefix, distinct, scanHomes, userDirsOf (+1) |
-| `src/core/proton/host.ts` | linuxPathThroughRoot, linuxPathOf, reachLinuxPath, readWineHost, addHome (+1) |
 | `src/core/proton/launcherRecords.ts` | steamCandidates, heroicCandidates, addDir, objectOf, stringOf (+1) |
 | `src/core/proton/fsFacts.ts` | isDirectory, errorCode, exists, readJson |
+| `src/core/proton/host.ts` | linuxPathThroughRoot, linuxPathOf, reachLinuxPath, vortexLinuxPath |
 | `src/core/environment/storeFileLists.ts` | parseAppManifest, parseVdf, readObject |
 | `src/core/proton/sharedFolders.ts` | shareOf, writesShowUp |
 | `src/core/paths/modPath.ts` | segmentsOf |
@@ -57,9 +57,9 @@ Start here when exploring this area:
 | `segmentsOf` | Function | `src/core/paths/modPath.ts` | 49 |
 | `linuxPathOf` | Function | `src/core/proton/host.ts` | 31 |
 | `reachLinuxPath` | Function | `src/core/proton/host.ts` | 61 |
-| `readWineHost` | Function | `src/core/proton/host.ts` | 39 |
-| `addHome` | Function | `src/core/proton/host.ts` | 41 |
 | `vortexLinuxPath` | Function | `src/core/proton/host.ts` | 74 |
+| `probe` | Function | `src/core/proton/gamePrefix.test.ts` | 45 |
+| `driveCOf` | Function | `src/core/proton/gamePrefix.ts` | 32 |
 
 ## Execution Flows
 

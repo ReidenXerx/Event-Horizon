@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-manifest
-description: "Skill for the Manifest area of Event-Horizon. 524 symbols across 118 files."
+description: "Skill for the Manifest area of Event-Horizon. 520 symbols across 118 files."
 ---
 
 # Manifest
 
-524 symbols | 118 files | Cohesion: 73%
+520 symbols | 118 files | Cohesion: 73%
 
 ## When to Use
 
@@ -24,7 +24,7 @@ description: "Skill for the Manifest area of Event-Horizon. 524 symbols across 1
 | `src/core/manifest/buildManifest.ts` | BuildManifestError, buildLoadOrder, buildManifest, buildPackageMetadata, buildUserlist (+12) |
 | `src/ui/pages/build/engine.ts` | loadBuildContext, pickDefaultCollectionName, resolveGameVersion, BuildRefusedError, BundleResolutionError (+11) |
 | `src/core/manifest/externalHints.ts` | countBy, downloadsFromState, modsFromState, applyHint, describeUndeclared (+10) |
-| `src/core/manifest/bundleZip.ts` | writeChunk, listBundleFolder, bundleFilesFromListing, assertBundlePaths, isAborted (+8) |
+| `src/core/manifest/bundleZip.ts` | writeChunk, bundleFilesFromListing, listBundleFolder, assertBundlePaths, isAborted (+8) |
 | `src/core/manifest/runSelfChecks.ts` | findModsThatPromptTheUser, describeDivergedMods, makeReadEntry, runSelfChecks, recoverArchive (+6) |
 | `src/core/manifest/readEhcoll.ts` | crossCheckBundled, prepareStagingDir, readEhcoll, safeRmDir, ReadEhcollError (+6) |
 
@@ -44,8 +44,8 @@ Start here when exploring this area:
 |--------|------|------|------|
 | `ParseManifestError` | Class | `src/core/manifest/parseManifest.ts` | 147 |
 | `PackageEhcollError` | Class | `src/core/manifest/packageZip.ts` | 201 |
-| `BuildRefusedError` | Class | `src/ui/pages/build/engine.ts` | 1123 |
-| `BundleResolutionError` | Class | `src/ui/pages/build/engine.ts` | 590 |
+| `BuildRefusedError` | Class | `src/ui/pages/build/engine.ts` | 1124 |
+| `BundleResolutionError` | Class | `src/ui/pages/build/engine.ts` | 591 |
 | `AbortError` | Class | `src/utils/abortError.ts` | 22 |
 | `ZipReadError` | Class | `src/core/manifest/readZip.ts` | 81 |
 | `BuildManifestError` | Class | `src/core/manifest/buildManifest.ts` | 262 |
@@ -73,10 +73,10 @@ Start here when exploring this area:
 | `LoadPublishedDetails → GetEventHorizonRoot` | cross_community | 10 |
 | `PublishedDetailsPanel → GetVortexUserDataPath` | cross_community | 10 |
 | `RunLoadingPipeline → GetEventHorizonRoot` | cross_community | 10 |
-| `WriteEnvironmentSnapshot → GetVortexUserDataPath` | cross_community | 9 |
 | `RecordPostProcessingDecision → GetVortexUserDataPath` | cross_community | 9 |
 | `RunLoadingPipeline → GetVortexUserDataPath` | cross_community | 9 |
 | `ScanGameFolder → ToPosix` | cross_community | 8 |
+| `PublishedDetailsPanel → Truncate` | cross_community | 8 |
 
 ## How to Explore
 
