@@ -1,26 +1,32 @@
 /**
  * `.ehcoll` ZIP packager (Phase 2 slice 3).
  *
- * Takes an {@link EhcollManifest} produced by `buildManifest` plus a list
- * of bundled archives, stages them in a temp directory, and produces a
- * single `.ehcoll` file (ZIP-format under the hood) on disk.
+ * Takes an {@link EhcollManifest} produced by `buildManifest` plus the files of
+ * its bundled and mirrored mods, stages them in a temp directory, and produces
+ * a single `.ehcoll` file (ZIP-format under the hood) on disk.
  *
  * Spec: docs/business/PACKAGE_ZIP.md
  *
+ * ─── NOTHING INSIDE A PACKAGE IS AN ARCHIVE ───────────────────────────
+ * Nexus Mods quarantines any upload with an archive inside it: its virus scan
+ * cannot see into one, and its own help tells authors to extract them. So a
+ * bundled mod ships as its loose files under `bundled/<sha256>/` — the sha of
+ * the canonical zip those files make (bundleZip.ts), which the user's install
+ * writes back and checks — and a mirrored file ships loose as `mirror/<sha256>`.
+ * A file that is itself an archive, judged by its first bytes whatever it is
+ * called, stops the build with its mod and path named.
+ *
  * Format choice — ZIP, not 7z:
- *  - Bundled archives are *already compressed* mod archives. The outer
- *    container's compression algorithm changes total size by a fraction
- *    of a percent — not worth giving up tooling compatibility.
  *  - ZIP can be inspected by Windows Explorer / WinRAR / `unzip` without
  *    any extra software, which matters when debugging a user-side install
  *    failure ("can you send me what your manifest.json looks like?").
  *  - The .ehcoll extension is opaque to end users in either case; format
  *    is an internal-only detail.
  *
- * Streaming: 7z reads bundled archives off disk directly via its own I/O
- * pipe. Node.js never holds bundled-archive bytes in memory. We hardlink
- * archives into the staging directory when possible (instant, free) and
- * fall back to copy on cross-volume / permissions errors.
+ * Streaming: 7z reads the staged files off disk directly via its own I/O
+ * pipe. Node.js never holds a mod's bytes in memory. We hardlink files into
+ * the staging directory when possible (instant, free) and fall back to copy
+ * on cross-volume / permissions errors.
  *
  * Identity — NOT byte-equal across rebuilds. A rebuild of the same
  * collection version may produce different bytes (different mtimes,
@@ -28,7 +34,9 @@
  * canonical identity of a release is `(manifest.package.id,
  * manifest.package.version)`, both of which the schema already requires.
  * Don't add byte-determinism complexity to solve a problem that is
- * better solved at the metadata layer.
+ * better solved at the metadata layer. A bundled MOD is the exception, and an
+ * exact one: its identity is made from its files alone, so nothing this
+ * package's own zip does can move it.
  *
  * The one stability concession: `manifest.json` keys are sorted via
  * `sortDeep` so unzipping two `.ehcoll` files and `diff`ing their
@@ -44,21 +52,36 @@ import * as path from "path";
 import { AbortError, hashFileSha256 } from "../archiveHashing";
 import type { EhcollManifest } from "../../types/ehcoll";
 import { sortDeep } from "../../utils/utils";
+import { archiveFormatOfFile, type ArchiveFormat } from "./archiveInside";
+import { bundleFolderInPackage } from "./bundleLayout";
+import {
+  bundleFilesFromListing,
+  bundleFilesFromPackage,
+  listBundleFolder,
+  writeBundleZip,
+  type BundleFile,
+  type BundleListing,
+} from "./bundleZip";
+import { openZipReader } from "./readZip";
 import { resolveSevenZip, sevenZipAdd, type SevenZipApi } from "./sevenZip";
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
-export type BundledArchiveSpec = {
-  /** Absolute path to the source archive on the curator's disk. */
-  sourcePath: string;
+/** One bundled mod. Its files ship loose at `bundled/<sha256>/`. */
+export type BundleSpec = {
+  /** Absolute path of the mod's staging folder on the curator's disk. */
+  rootDir: string;
   /**
-   * Identity. Must equal exactly one external-mod's `source.sha256` in
-   * the manifest. The packager refuses to bundle anything that doesn't
-   * correspond to a `source.bundled === true` external mod entry.
+   * Identity: the sha256 of the canonical zip these files make
+   * (bundleZip.ts). Must equal exactly one external mod's `source.sha256` in
+   * the manifest, and packaging refuses the build when the files it stages
+   * make anything else.
    */
   sha256: string;
+  /** The mod, for messages. */
+  modName: string;
 };
 
 export type MirrorFileSpec = {
@@ -93,10 +116,13 @@ export type MirrorFileSpec = {
  */
 export type PackageProgress = {
   step:
+    | "checking-archives"
     | "writing-manifest"
     | "staging-mirror"
     | "staging-bundled"
+    | "verifying-bundles"
     | "compressing"
+    | "verifying-package"
     | "hashing-output";
   message: string;
   done?: number;
@@ -108,7 +134,8 @@ export type PackageEhcollInput = {
   /** Called as each packaging step begins, and as long ones advance. */
   onProgress?: (progress: PackageProgress) => void;
   manifest: EhcollManifest;
-  bundledArchives: BundledArchiveSpec[];
+  /** The bundled mods: one for each external mod the manifest marks `bundled`. */
+  bundles: BundleSpec[];
   /**
    * Curator files a mirrored mod's archive cannot produce, staged at
    * `mirror/<sha256>`.
@@ -124,7 +151,11 @@ export type PackageEhcollInput = {
   readme?: string;
   /** Optional CHANGELOG markdown. Written as `CHANGELOG.md` at the package root. */
   changelog?: string;
-  /** Absolute path of the final `.ehcoll` file. Existing file is overwritten. */
+  /**
+   * Absolute path of the final `.ehcoll` file. A file already there is replaced
+   * only by a finished, verified package; a refused or cancelled build leaves
+   * it as it was.
+   */
   outputPath: string;
   /**
    * Optional override for the temp staging directory. Defaults to
@@ -133,13 +164,6 @@ export type PackageEhcollInput = {
   stagingDir?: string;
   /** Default true. When false, the staging directory is left in place. */
   cleanupOnSuccess?: boolean;
-  /**
-   * Default false (fast path). When true, every bundled archive is
-   * re-hashed against {@link BundledArchiveSpec.sha256} before staging.
-   * Slow on big archives but catches "curator's archive cache changed
-   * since snapshot export."
-   */
-  verifyHashes?: boolean;
   /** Optional injection point for tests. Defaults to vortex-api's SevenZip. */
   sevenZip?: SevenZipApi;
   /**
@@ -147,9 +171,10 @@ export type PackageEhcollInput = {
    *   1. Throws {@link AbortError} at the next checkpoint between phases.
    *   2. Sends SIGTERM to the spawned 7z child if packaging has started, so
    *      "cancel" doesn't have to wait for 7z to finish on its own.
-   *   3. Cleans up the staging directory AND any partially-written
-   *      `outputPath` so the curator's output folder doesn't accumulate
-   *      corrupt half-zipped archives.
+   *   3. Cleans up the staging directory AND the unfinished
+   *      `<outputPath>.partial`, so the curator's output folder doesn't
+   *      accumulate half-zipped archives. A package already at `outputPath`
+   *      is left as it was.
    */
   signal?: AbortSignal;
 };
@@ -186,7 +211,7 @@ export class PackageEhcollError extends Error {
 }
 
 /**
- * Build a `.ehcoll` archive from a manifest + bundled-archive list.
+ * Build a `.ehcoll` archive from a manifest and its bundled and mirrored mods' files.
  *
  * Returns when the archive is fully written and fsynced (delegated to
  * 7z). Throws {@link PackageEhcollError} on any validation or I/O error;
@@ -218,17 +243,28 @@ export async function packageEhcoll(
 
   const stagingDir = await prepareStagingDir(input.stagingDir);
   const cleanupOnSuccess = input.cleanupOnSuccess !== false;
+  // 7-Zip writes beside the output, and what it wrote takes the output's place
+  // only once it is finished and proven. Written in place, a rebuild of the
+  // same version that was refused or cancelled deleted the package the curator
+  // already had.
+  const partialPath = `${input.outputPath}.partial`;
 
   const onProgress = input.onProgress;
   const started = Date.now();
   ehLog("info", "package.start", {
     mods: input.manifest.mods.length,
-    bundled: input.bundledArchives.length,
+    bundles: input.bundles.length,
     mirrorFiles: input.mirrorFiles?.length ?? 0,
     output: input.outputPath,
   });
 
   try {
+    // Before anything is collected: a build that is going to be refused should
+    // say so now, not after minutes of staging files.
+    checkAbort();
+    const bundles = await listBundles(input.bundles, signal);
+    await refuseArchivesInside(bundles, input.mirrorFiles ?? [], signal, onProgress);
+
     checkAbort();
     onProgress?.({ step: "writing-manifest", message: "Writing the manifest..." });
     await writeManifestJson(stagingDir, input.manifest);
@@ -252,20 +288,16 @@ export async function packageEhcoll(
       });
     }
 
+    const bundledFiles = bundles.reduce((n, b) => n + b.files.length, 0);
     ehLog("info", "package.bundled.start", {
-      archives: input.bundledArchives.length,
-      verifyHashes: input.verifyHashes === true,
+      bundles: bundles.length,
+      files: bundledFiles,
     });
     const bundledMs = Date.now();
-    await stageBundledArchives(
-      stagingDir,
-      input.bundledArchives,
-      input.verifyHashes === true,
-      signal,
-      onProgress,
-    );
+    await stageBundles(stagingDir, bundles, signal, onProgress);
     ehLog("info", "package.bundled.ok", {
-      archives: input.bundledArchives.length,
+      bundles: bundles.length,
+      files: bundledFiles,
       ms: Date.now() - bundledMs,
     });
 
@@ -277,7 +309,7 @@ export async function packageEhcoll(
     ehLog("info", "package.compress.start", {});
     const compressMs = Date.now();
     await runSevenZipAdd(
-      input.outputPath,
+      partialPath,
       stagingDir,
       input.sevenZip ?? resolveSevenZip(),
       signal,
@@ -285,7 +317,10 @@ export async function packageEhcoll(
     ehLog("info", "package.compress.ok", { ms: Date.now() - compressMs });
 
     checkAbort();
-    const stat = await fsp.stat(input.outputPath);
+    await verifyPackagedBundles(partialPath, bundles, signal, onProgress);
+
+    checkAbort();
+    const stat = await fsp.stat(partialPath);
 
     if (cleanupOnSuccess) {
       await safeRmDir(stagingDir);
@@ -313,43 +348,57 @@ export async function packageEhcoll(
     });
     ehLog("info", "package.hash.start", { bytes: stat.size });
     const hashMs = Date.now();
-    const outputSha256 = await hashFileSha256(input.outputPath, signal);
+    const outputSha256 = await hashFileSha256(partialPath, signal);
     ehLog("info", "package.hash.ok", {
       bytes: stat.size,
       ms: Date.now() - hashMs,
     });
+    checkAbort();
+    try {
+      await fsp.rename(partialPath, input.outputPath);
+    } catch (err) {
+      ehLog("error", "package.replace.fail", { output: input.outputPath, err });
+      throw new PackageEhcollError([
+        `The finished package could not take the place of "${input.outputPath}" ` +
+          `(${err instanceof Error ? err.message : String(err)}). Close whatever ` +
+          `has that file open and build again.`,
+      ]);
+    }
     ehLog("info", "package.ok", {
       ms: Date.now() - started,
       bytes: stat.size,
       sha256: outputSha256,
-      bundled: input.bundledArchives.length,
+      bundled: input.bundles.length,
     });
 
     return {
       outputPath: input.outputPath,
       outputBytes: stat.size,
       outputSha256,
-      bundledCount: input.bundledArchives.length,
+      bundledCount: input.bundles.length,
       warnings,
     };
   } catch (err) {
-    ehLog("error", "package.fail", {
+    const cancelled = isAbort(err, signal);
+    ehLog(cancelled ? "info" : "error", cancelled ? "package.cancelled" : "package.fail", {
       ms: Date.now() - started,
       output: input.outputPath,
       err,
     });
-    // Cleanup BOTH the staging dir AND any partially-written output. Without
-    // the second step, a failed/cancelled build leaves a corrupt .ehcoll on
-    // disk that the curator might mistake for a real artifact.
+    // The staging dir and the unfinished package. Not `outputPath`: whatever
+    // is there is the last package that succeeded, not something this run wrote.
     await safeRmDir(stagingDir);
-    await safeRmFile(input.outputPath);
+    await safeRmFile(partialPath);
 
     // Preserve abort/package errors verbatim so callers can distinguish
     // "user cancelled" from "real failure" without digging through wrapped
-    // messages.
-    if (err instanceof AbortError) throw err;
+    // messages. Anything thrown once Cancel was pressed is a cancel — it is
+    // there only because the work was stopped — and callers recognise an
+    // AbortError, not whatever the interrupted call threw.
+    if (cancelled) {
+      throw err instanceof AbortError ? err : new AbortError("Packaging cancelled by user");
+    }
     if (err instanceof PackageEhcollError) throw err;
-    if (isAbortLikeError(err)) throw err;
 
     throw new PackageEhcollError([
       err instanceof Error ? err.message : String(err),
@@ -369,10 +418,10 @@ function validateInput(input: PackageEhcollInput, errors: string[]): void {
   }
 
   // Build the {sha256 → bundled-external-mod} index from the manifest.
-  // External mods with bundled=true MUST have a corresponding archive in
-  // input.bundledArchives, and vice versa: every bundled archive MUST
-  // correspond to exactly one such mod. Two bundled archives can't share
-  // a sha256 (would be a duplicate identity).
+  // External mods with bundled=true MUST have a corresponding bundle in
+  // input.bundles, and vice versa: every bundle MUST correspond to exactly
+  // one such mod. Two bundles can't share a sha256 (would be a duplicate
+  // identity).
   const expectedBundled = new Map<string, string>(); // sha256 → mod compareKey
   for (const mod of input.manifest.mods) {
     // Invariant (parser-enforced): bundled === true ⇒ source.sha256 set.
@@ -381,38 +430,39 @@ function validateInput(input: PackageEhcollInput, errors: string[]): void {
     }
   }
 
-  const seen = new Map<string, string>(); // sha256 → archive sourcePath
-  for (const archive of input.bundledArchives) {
-    if (!archive.sha256 || !/^[0-9a-f]{64}$/.test(archive.sha256)) {
+  const seen = new Map<string, string>(); // sha256 → mod name
+  for (const bundle of input.bundles) {
+    if (!bundle.sha256 || !/^[0-9a-f]{64}$/.test(bundle.sha256)) {
       errors.push(
-        `Bundled archive at "${archive.sourcePath}" has an invalid sha256 ` +
-          `(must be lowercase hex, exactly 64 chars). Got: "${archive.sha256}".`,
+        `Bundled mod "${bundle.modName}" has an invalid sha256 ` +
+          `(must be lowercase hex, exactly 64 chars). Got: "${bundle.sha256}".`,
       );
       continue;
     }
 
-    const dup = seen.get(archive.sha256);
+    const dup = seen.get(bundle.sha256);
     if (dup !== undefined) {
       errors.push(
-        `Two bundled archives share sha256 "${archive.sha256}": ` +
-          `"${dup}" and "${archive.sourcePath}". Each external mod has a ` +
+        `Two bundled mods share sha256 "${bundle.sha256}": ` +
+          `"${dup}" and "${bundle.modName}". Each external mod has a ` +
           `unique identity, so this should be impossible.`,
       );
       continue;
     }
-    seen.set(archive.sha256, archive.sourcePath);
+    seen.set(bundle.sha256, bundle.modName);
 
-    if (!expectedBundled.has(archive.sha256)) {
+    if (!expectedBundled.has(bundle.sha256)) {
       errors.push(
-        `Bundled archive at "${archive.sourcePath}" (sha256 ${archive.sha256}) ` +
-          `does not correspond to any external mod with bundled=true in the ` +
-          `manifest. Drop the archive or flip the matching mod's bundled flag.`,
+        `Bundled mod "${bundle.modName}" (sha256 ${bundle.sha256}) does not ` +
+          `correspond to any external mod with bundled=true in the manifest. ` +
+          `Drop it or flip the matching mod's bundled flag.`,
       );
     }
 
-    if (!path.isAbsolute(archive.sourcePath)) {
+    if (!path.isAbsolute(bundle.rootDir)) {
       errors.push(
-        `Bundled archive sourcePath must be absolute. Got: "${archive.sourcePath}".`,
+        `Bundled mod "${bundle.modName}" must name its folder by an absolute ` +
+          `path. Got: "${bundle.rootDir}".`,
       );
     }
   }
@@ -421,8 +471,8 @@ function validateInput(input: PackageEhcollInput, errors: string[]): void {
     if (!seen.has(sha256)) {
       errors.push(
         `External mod "${modKey}" is marked bundled=true in the manifest ` +
-          `but no archive with sha256 ${sha256} was provided. Either supply ` +
-          `the archive or flip the mod to bundled=false.`,
+          `but no bundle with sha256 ${sha256} was provided. Either supply ` +
+          `its files or flip the mod to bundled=false.`,
       );
     }
   }
@@ -516,57 +566,314 @@ async function writeOptionalMarkdown(
 }
 
 /**
- * Stage every bundled archive into `stagingDir/bundled/<sha256>.<ext>`.
- *
- * Strategy: hardlink (free, instant), fall back to copy on EXDEV / EPERM.
+ * A bundled mod's files, listed once so every later step agrees on what they are.
  */
-async function stageBundledArchives(
-  stagingDir: string,
-  archives: BundledArchiveSpec[],
-  verifyHashes: boolean,
+type ListedBundle = { spec: BundleSpec; files: BundleListing[] };
+
+/** How many archives a refusal names in its message; the log names every one. */
+const ARCHIVES_NAMED = 50;
+
+async function listBundles(
+  specs: readonly BundleSpec[],
+  signal: AbortSignal | undefined,
+): Promise<ListedBundle[]> {
+  const out: ListedBundle[] = [];
+  for (const spec of specs) {
+    if (signal?.aborted) throw new AbortError("Packaging cancelled by user");
+    let files: BundleListing[];
+    try {
+      files = await listBundleFolder(spec.rootDir, signal);
+    } catch (err) {
+      if (isAbort(err, signal)) throw err;
+      ehLog("error", "package.bundle.unreadable", {
+        mod: spec.modName,
+        folder: spec.rootDir,
+        err,
+      });
+      throw new PackageEhcollError([
+        `"${spec.modName}": its staging folder "${spec.rootDir}" could not be ` +
+          `read (${err instanceof Error ? err.message : String(err)}). Rebuild ` +
+          `once it is reachable.`,
+      ]);
+    }
+    // The build refuses to measure a folder with no files, so none now means it
+    // went missing or was emptied since. Said as that, rather than as the
+    // "files changed" the identity check further on would report.
+    if (files.length === 0) {
+      ehLog("error", "package.bundle.empty", { mod: spec.modName, folder: spec.rootDir });
+      throw new PackageEhcollError([
+        `"${spec.modName}": its staging folder "${spec.rootDir}" is missing or ` +
+          `holds no files now, though this build measured files in it. Rebuild ` +
+          `once they are back, or stop bundling it.`,
+      ]);
+    }
+    out.push({ spec, files });
+  }
+  return out;
+}
+
+/**
+ * ─── NO ARCHIVE GOES INTO A PACKAGE ────────────────────────────────────
+ * Nexus quarantines an upload with an archive inside it, whatever the archive
+ * is called and however deep it sits. A mod that itself ships one — an
+ * optional pack, a document in a zip-based format — puts an archive back inside
+ * the package the moment its files ship loose.
+ *
+ * Refused rather than skipped: leaving a file out changes the mod, and that is
+ * the curator's decision to make knowing which file it is. Every offender is
+ * listed, so one rebuild can fix them all.
+ */
+async function refuseArchivesInside(
+  bundles: readonly ListedBundle[],
+  mirrorFiles: readonly MirrorFileSpec[],
   signal: AbortSignal | undefined,
   onProgress?: (progress: PackageProgress) => void,
 ): Promise<void> {
-  const bundledDir = path.join(stagingDir, "bundled");
-  await fsp.mkdir(bundledDir, { recursive: true });
-
+  const candidates: Array<{ modName: string | undefined; shown: string; fullPath: string }> = [
+    ...bundles.flatMap(({ spec, files }) =>
+      files.map((f) => ({ modName: spec.modName, shown: f.path, fullPath: f.fullPath })),
+    ),
+    ...mirrorFiles.map((f) => ({
+      modName: f.modName,
+      shown: f.sourcePath,
+      fullPath: f.sourcePath,
+    })),
+  ];
+  const found: Array<{ modName: string | undefined; shown: string; format: ArchiveFormat }> = [];
   let done = 0;
-  for (const archive of archives) {
-    if (signal?.aborted) {
-      throw new AbortError("Packaging cancelled by user");
-    }
+  for (const candidate of candidates) {
+    if (signal?.aborted) throw new AbortError("Packaging cancelled by user");
     done += 1;
     onProgress?.({
-      step: "staging-bundled",
-      message: `Collecting bundled archives (${done} / ${archives.length})...`,
+      step: "checking-archives",
+      message: `Checking for archives among the files to ship (${done} / ${candidates.length})...`,
       done,
-      total: archives.length,
+      total: candidates.length,
     });
+    let format: ArchiveFormat | undefined;
+    try {
+      format = await archiveFormatOfFile(candidate.fullPath);
+    } catch (err) {
+      ehLog("error", "package.file.unreadable", {
+        mod: candidate.modName,
+        path: candidate.fullPath,
+        err,
+      });
+      throw new PackageEhcollError([
+        `${candidate.modName !== undefined ? `"${candidate.modName}": ` : ""}` +
+          `the file "${candidate.fullPath}" was recorded at the start of this ` +
+          `build and could not be read now (${
+            err instanceof Error ? err.message : String(err)
+          }). Rebuild so the package matches your current staging folder.`,
+      ]);
+    }
+    if (format !== undefined) {
+      found.push({ modName: candidate.modName, shown: candidate.shown, format });
+    }
+  }
+  if (found.length === 0) {
+    ehLog("info", "package.archives-inside.none", { files: candidates.length });
+    return;
+  }
 
-    /**
-     * Unconditional, and `verifyHashes` no longer gates it.
-     *
-     * The flag defaulted to false and NO production caller ever set it, so
-     * `verifyArchiveHash` was dead code in every real build — while the
-     * docblock justifying the mirror re-hash cited it as established
-     * precedent: "Bundled archives have been re-hashed before staging since
-     * the beginning; mirror files were hardlinked and trusted." That was not
-     * true of a single shipped package.
-     *
-     * The window it guards is real and larger here than for mirror files: a
-     * curator can repack or replace a bundled archive during the decisions
-     * gate, and nothing on the read side hashes it either. Under NS-1 the
-     * read costs nothing worth counting.
-     */
-    await verifyArchiveHash(archive);
+  ehLog("error", "package.archives-inside", {
+    count: found.length,
+    files: found.map((f) => ({ mod: f.modName, path: f.shown, format: f.format })),
+  });
+  const one = found.length === 1;
+  const lines = found
+    .slice(0, ARCHIVES_NAMED)
+    .map((f) => `  • ${f.modName !== undefined ? `"${f.modName}": ` : ""}${f.shown} (${f.format})`);
+  if (found.length > ARCHIVES_NAMED) {
+    lines.push(`  • and ${found.length - ARCHIVES_NAMED} more — the event-horizon log lists every one.`);
+  }
+  throw new PackageEhcollError([
+    `${one ? "A file" : `${found.length} files`} this collection would ship ` +
+      `${one ? "is an archive" : "are archives"}, and Nexus Mods quarantines any ` +
+      `upload with an archive inside it. An archive of mod files belongs ` +
+      `extracted into its mod's folder; one the mod does not need — a packed ` +
+      `backup, a document in a zip-based format such as .docx — can be deleted; ` +
+      `or stop bundling or mirroring that mod. Then rebuild.\n` +
+      lines.join("\n"),
+  ]);
+}
 
-    const ext = stripDot(path.extname(archive.sourcePath));
-    const fileName = ext.length > 0
-      ? `${archive.sha256}.${ext}`
-      : archive.sha256;
-    const dst = path.join(bundledDir, fileName);
+/**
+ * Stage every bundled mod's files at `stagingDir/bundled/<sha256>/<path>`,
+ * then prove the staged files still make the bundle the manifest names.
+ *
+ * Strategy: hardlink (free, instant), fall back to copy on EXDEV / EPERM.
+ *
+ * The proof is not ceremony. The identity was measured before the decisions
+ * gate, which sits between that and here for as long as the curator likes. A
+ * file edited in that window would ship under an identity it no longer has,
+ * and every user's install would refuse the mod — so the build refuses first,
+ * once, naming it.
+ */
+async function stageBundles(
+  stagingDir: string,
+  bundles: readonly ListedBundle[],
+  signal: AbortSignal | undefined,
+  onProgress?: (progress: PackageProgress) => void,
+): Promise<void> {
+  const total = bundles.reduce((n, b) => n + b.files.length, 0);
+  let done = 0;
+  for (const { spec, files } of bundles) {
+    const root = path.join(
+      stagingDir,
+      ...bundleFolderInPackage(spec.sha256).split("/").filter((s) => s.length > 0),
+    );
+    const made = new Set<string>();
+    for (const file of files) {
+      if (signal?.aborted) throw new AbortError("Packaging cancelled by user");
+      done += 1;
+      onProgress?.({
+        step: "staging-bundled",
+        message: `Collecting bundled mods' files (${done} / ${total})...`,
+        done,
+        total,
+      });
+      const dst = path.join(root, ...file.path.split("/"));
+      const dir = path.dirname(dst);
+      if (!made.has(dir)) {
+        await fsp.mkdir(dir, { recursive: true });
+        made.add(dir);
+      }
+      try {
+        await stageOne(file.fullPath, dst);
+      } catch (err) {
+        ehLog("error", "package.bundle.stage-fail", { mod: spec.modName, path: file.path, err });
+        throw new PackageEhcollError([
+          `"${spec.modName}": "${file.path}" could not be collected into the package ` +
+            `(${err instanceof Error ? err.message : String(err)}). Rebuild once the ` +
+            `file is back.`,
+        ]);
+      }
+    }
 
-    await stageOne(archive.sourcePath, dst);
+    onProgress?.({
+      step: "verifying-bundles",
+      message: `Checking "${spec.modName}" is still the mod this build measured...`,
+    });
+    // Made even when nothing was staged: a mod emptied since it was measured is
+    // then a mismatch that says so, not a missing folder that says something else.
+    await fsp.mkdir(root, { recursive: true });
+    const staged = await listBundleFolder(root, signal);
+    const zip = await writeBundleZip(
+      await bundleFilesFromListing(staged, signal),
+      undefined,
+      signal !== undefined ? { signal } : {},
+    );
+    if (zip.sha256 !== spec.sha256) {
+      ehLog("error", "package.bundle.changed", {
+        mod: spec.modName,
+        expected: spec.sha256,
+        actual: zip.sha256,
+        listedFiles: files.length,
+        stagedFiles: zip.files,
+      });
+      throw new PackageEhcollError([
+        `"${spec.modName}": its files changed after this build measured them — ` +
+          `it was ${spec.sha256} and its files now make ${zip.sha256}. Shipping ` +
+          `it would make every user's install refuse this mod. Rebuild; if ` +
+          `nothing changed, tick "Re-read every file" first, so that no earlier ` +
+          `measurement is trusted.`,
+      ]);
+    }
+    ehLog("debug", "package.bundle.verified", {
+      mod: spec.modName,
+      sha256: spec.sha256,
+      files: zip.files,
+    });
+  }
+}
+
+/** How many missing or unexpected files a refusal names; the log names every one. */
+const DIFFERENCES_NAMED = 5;
+
+/**
+ * ─── THE PACKAGE IS CHECKED, NOT ONLY WHAT WAS HANDED TO 7-ZIP ────────
+ * Staging proves the files given to 7-Zip make each bundle. A user installs
+ * what 7-Zip WROTE, and the two can differ: 7-Zip left to its defaults stores
+ * a name that fits the machine's code page — "Cópia", "cú" — in that code page
+ * with no UTF-8 flag, which no install can read back as the same path. A file
+ * missing from what it wrote is caught here too, whatever 7-Zip's exit code
+ * said (one it could not open exits 1, which already fails the build).
+ *
+ * So every bundle is rebuilt here exactly as an install rebuilds it, out of
+ * the finished package, and must make its sha. A build that passes this is a
+ * package every user's install accepts.
+ */
+async function verifyPackagedBundles(
+  packagePath: string,
+  bundles: readonly ListedBundle[],
+  signal: AbortSignal | undefined,
+  onProgress?: (progress: PackageProgress) => void,
+): Promise<void> {
+  if (bundles.length === 0) return;
+  const reader = await openZipReader(packagePath);
+  try {
+    let done = 0;
+    for (const { spec, files: staged } of bundles) {
+      if (signal?.aborted) throw new AbortError("Packaging cancelled by user");
+      done += 1;
+      onProgress?.({
+        step: "verifying-package",
+        message: `Checking the package reproduces "${spec.modName}" (${done} / ${bundles.length})...`,
+        done,
+        total: bundles.length,
+      });
+      const folder = bundleFolderInPackage(spec.sha256);
+      let packaged: BundleFile[];
+      let actual: string;
+      try {
+        packaged = bundleFilesFromPackage(reader, folder);
+        const zip = await writeBundleZip(
+          packaged,
+          undefined,
+          signal !== undefined ? { signal } : {},
+        );
+        actual = zip.sha256;
+      } catch (err) {
+        if (isAbort(err, signal)) throw err;
+        ehLog("error", "package.bundle.unreadable-in-package", {
+          mod: spec.modName,
+          folder,
+          err,
+        });
+        throw new PackageEhcollError([
+          `"${spec.modName}" cannot be read back out of the package 7-Zip wrote ` +
+            `(${err instanceof Error ? err.message : String(err)}), so no user could ` +
+            `install it. Rebuild; if it happens again, the event-horizon log has the details.`,
+        ]);
+      }
+      if (actual !== spec.sha256) {
+        const inPackage = new Set(packaged.map((f) => f.path));
+        const listed = new Set(staged.map((f) => f.path));
+        const missing = [...listed].filter((p) => !inPackage.has(p));
+        const unexpected = [...inPackage].filter((p) => !listed.has(p));
+        ehLog("error", "package.bundle.not-reproduced", {
+          mod: spec.modName,
+          expected: spec.sha256,
+          actual,
+          missing,
+          unexpected,
+        });
+        const named = (paths: readonly string[]): string =>
+          paths.slice(0, DIFFERENCES_NAMED).join(", ") +
+          (paths.length > DIFFERENCES_NAMED ? ` and ${paths.length - DIFFERENCES_NAMED} more` : "");
+        throw new PackageEhcollError([
+          `The package 7-Zip wrote does not reproduce "${spec.modName}": its files ` +
+            `there make ${actual}, not ${spec.sha256}` +
+            (missing.length > 0 ? `; missing from the package: ${named(missing)}` : "") +
+            (unexpected.length > 0 ? `; in the package but not staged: ${named(unexpected)}` : "") +
+            `. No user could install it. Rebuild; the event-horizon log lists every difference.`,
+        ]);
+      }
+    }
+    ehLog("info", "package.bundles.reproduced", { bundles: bundles.length });
+  } finally {
+    await reader.close();
   }
 }
 
@@ -649,13 +956,14 @@ async function verifyMirrorHash(file: MirrorFileSpec): Promise<void> {
   }
 }
 
-function stripDot(ext: string): string {
-  return ext.startsWith(".") ? ext.slice(1) : ext;
-}
-
 async function stageOne(src: string, dst: string): Promise<void> {
+  // A hardlink to a symbolic link is another symbolic link. One with an
+  // absolute target points back into the mod's own folder, outside the
+  // package's, where the staged check does not follow it — so link the file
+  // it names.
+  const from = (await fsp.lstat(src)).isSymbolicLink() ? await fsp.realpath(src) : src;
   try {
-    await fsp.link(src, dst);
+    await fsp.link(from, dst);
     return;
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
@@ -667,20 +975,7 @@ async function stageOne(src: string, dst: string): Promise<void> {
     // doesn't support hardlinks): fall through to copy.
   }
 
-  await fsp.copyFile(src, dst);
-}
-
-async function verifyArchiveHash(archive: BundledArchiveSpec): Promise<void> {
-  const { hashFileSha256 } = await import("../archiveHashing");
-  const actual = await hashFileSha256(archive.sourcePath);
-  if (actual !== archive.sha256) {
-    throw new PackageEhcollError([
-      `Bundled archive sha256 mismatch at "${archive.sourcePath}". ` +
-        `Expected ${archive.sha256}, got ${actual}. ` +
-        `The archive may have been replaced since the snapshot was exported. ` +
-        `Re-export the snapshot and try again.`,
-    ]);
-  }
+  await fsp.copyFile(from, dst);
 }
 
 // ---------------------------------------------------------------------------
@@ -688,21 +983,25 @@ async function verifyArchiveHash(archive: BundledArchiveSpec): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function runSevenZipAdd(
-  outputPath: string,
+  archivePath: string,
   stagingDir: string,
   sevenZip: SevenZipApi,
   signal: AbortSignal | undefined,
 ): Promise<void> {
-  // Overwrite any existing .ehcoll at outputPath. 7z's `add` would APPEND
-  // to an existing archive, which is never what we want.
-  await fsp.rm(outputPath, { force: true });
-  await fsp.mkdir(path.dirname(outputPath), { recursive: true });
+  // Whatever a build that crashed left here: 7z's `add` would APPEND to it.
+  await fsp.rm(archivePath, { force: true });
+  await fsp.mkdir(path.dirname(archivePath), { recursive: true });
 
-  // The .ehcoll extension would default 7z to its native .7z format —
-  // force ZIP explicitly via `-tzip` so any tool can inspect the package.
-  // Compression level is left at 7z's default (5); bundled archives are
-  // already compressed so tweaking it changes total size by a fraction
-  // of a percent.
+  // Neither .partial nor .ehcoll names a format 7z knows, and it would default
+  // to its native .7z — force ZIP explicitly via `-tzip` so any tool can
+  // inspect the package.
+  //
+  // `-mcu=on` stores every non-ASCII name as UTF-8, flagged. Left to its
+  // defaults 7-Zip keeps a name that fits the machine's code page ("Cópia")
+  // in that code page, unflagged, and an install reads it back as a different
+  // path — so the bundle it belongs to could not be reproduced on any machine.
+  //
+  // Compression level is left at 7z's default (5).
   //
   // Source is an ABSOLUTE wildcard rather than `"*"` plus a working
   // directory: this node-7z spawns without a `cwd`, so there is no
@@ -715,9 +1014,9 @@ async function runSevenZipAdd(
 
   await sevenZipAdd(
     sevenZip,
-    outputPath,
+    archivePath,
     [path.join(stagingDir, "*")],
-    { raw: ["-tzip"], r: true },
+    { raw: ["-tzip", "-mcu=on"], r: true },
     signal,
   );
 
@@ -744,19 +1043,6 @@ async function safeRmFile(filePath: string): Promise<void> {
     await fsp.rm(filePath, { force: true });
   } catch {
     // Best-effort. If the file can't be removed (locked by AV?), the next
-    // build will overwrite it via 7z's own `rm -f` step.
+    // build removes it before 7-Zip starts.
   }
-}
-
-/**
- * Match plain DOMException-style abort errors from Node's stream APIs and
- * any error whose `name === "AbortError"`. We don't have a single ancestor
- * class — Node, the DOM, and our own {@link AbortError} all use the
- * convention of `.name === "AbortError"`.
- */
-function isAbortLikeError(err: unknown): boolean {
-  // The shared predicate. This was a fourth private copy of it, and the
-  // reason there are so many is that `abortError.ts` documented the
-  // convention and exported no way to apply it.
-  return isAbort(err);
 }

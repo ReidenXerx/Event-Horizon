@@ -127,6 +127,40 @@ describe("adoptLocalArchive", () => {
     expect(fs.readdirSync(downloads)).toEqual(["Same.7z"]);
   });
 
+  it("does NOT reuse a same-named, same-sized file whose bytes differ", async () => {
+    // A bundled mod's archive is written stored, so its size depends only on
+    // its files' names and sizes: a collection update that changes one INI
+    // value keeps it. Reusing on size installed the PREVIOUS version's files.
+    const previous = path.join(downloads, "Settings.zip");
+    fs.writeFileSync(previous, Buffer.alloc(64, 1));
+    const update = path.join(elsewhere, "Settings.zip");
+    fs.writeFileSync(update, Buffer.alloc(64, 2));
+    const { api } = fakeApi();
+
+    const before = await adoptLocalArchive(api, { gameId: "fallout4", archivePath: previous });
+    const after = await adoptLocalArchive(api, { gameId: "fallout4", archivePath: update });
+
+    expect(after.localPath).not.toBe(previous);
+    expect(fs.readFileSync(after.localPath)).toEqual(Buffer.alloc(64, 2));
+    // The earlier archive is left exactly as it was.
+    expect(fs.readFileSync(previous)).toEqual(Buffer.alloc(64, 1));
+    expect(after.archiveId).not.toBe(before.archiveId);
+  });
+
+  it("gives different bytes at the same path and size a different id", async () => {
+    // The id is what Vortex installs by. Built from path and size alone, a
+    // replaced file of the same size came back under the old entry.
+    const inFolder = path.join(downloads, "Same Size.zip");
+    fs.writeFileSync(inFolder, Buffer.alloc(64, 1));
+    const { api } = fakeApi();
+
+    const before = await adoptLocalArchive(api, { gameId: "fallout4", archivePath: inFolder });
+    fs.writeFileSync(inFolder, Buffer.alloc(64, 2));
+    const after = await adoptLocalArchive(api, { gameId: "fallout4", archivePath: inFolder });
+
+    expect(after.archiveId).not.toBe(before.archiveId);
+  });
+
   it("registers a path RELATIVE to the download folder", async () => {
     // Vortex resolves localPath against the download folder; an absolute path
     // produces an entry it can never find again.

@@ -43,6 +43,31 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
   only if that requirement changes on Nexus. Dismissed lines are listed under the rest with Restore. Missing plugin
   masters cannot be dismissed: the game will not load a plugin without them.
 
+### Collections
+- **A collection package no longer has an archive inside it.** Nexus Mods quarantines any upload with an archive inside
+  it, and a package carried each bundled mod as a zip. A bundled mod now ships as its own files, and Event Horizon
+  writes the archive back from them as it installs — an exact zip whose SHA-256 must match the one the collection names,
+  so a missing, extra or altered file is refused before Vortex ever sees it.
+- **A file that is itself an archive stops the build, by name.** Any file in a bundled or mirrored mod that is an archive —
+  judged by its contents, whatever it is called — is listed with its mod, and the build stops until it is extracted,
+  deleted, or that mod is no longer bundled or mirrored. Bethesda's .ba2 and .bsa files are not counted.
+- **Packages built by earlier versions must be rebuilt.** They are refused with a message to download the collection's
+  current package — to install or repair from, and in Curator Tools to import from or show as published. Older Event
+  Horizon versions refuse the new packages with a message to update.
+- **Bundling no longer runs 7-Zip over a mod's staging folder.** A build only measures the files, and remembers the
+  answer while they stay the same; the archives the old builds kept — gigabytes for a LOD mod — are deleted. Files
+  changed after the build measured them stop it, naming the mod; tick "Re-read every file" if nothing really changed.
+- **A finished package is read back before the build says it is done.** Every bundled mod is rebuilt out of the package
+  the way an install rebuilds it, so a file name 7-Zip could not store exactly, or a file it skipped, stops the build
+  instead of every user's install.
+- **A mod marked "bundle" that cannot be packed stops the build and says why** — no staging folder, an empty one, a file
+  that cannot be read. Before, some of these shipped the mod's original archive in its place.
+- **A build that fails or is cancelled keeps the package you already had.** Packaging a version whose package already
+  existed deleted it when packaging failed or was cancelled; the new package now takes its place only once it is
+  finished and checked.
+- **A mod answered "mirror" and later ticked "Bundled" builds.** The build stopped, saying that mod's files were not
+  collected; the later answer now stands.
+
 ### Linux (Wine/Proton)
 - **Vortex in one Wine prefix and the game in another is caught, with how to fix it.** Vortex writes plugins.txt and the
   INI settings into the prefix it runs in. A game started from Heroic runs in Heroic's own prefix and never saw them —

@@ -33,7 +33,7 @@ const SHA = "c".repeat(64);
 /** One Nexus mod, the shape a resume has to recognise. */
 function manifest(): EhcollManifest {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     package: {
       id: "123e4567-e89b-12d3-a456-426614174000",
       name: "p",

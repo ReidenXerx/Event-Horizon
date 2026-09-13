@@ -33,7 +33,7 @@ Toolbar button **"Build Event Horizon Collection"** registered via
 | `plugins.txt` content | `getCurrentPluginsTxtPath` + `fs.readFile` | Optional. Missing file or unsupported game ⇒ `pluginsTxtContent: undefined`, manifest emits `plugins.order: []`. |
 | `package.id` | Persisted in per-collection config file (`<configDir>/<slug>.json`) | **Slice 4b**: stable across rebuilds of the same slug. First build of a slug = fresh UUIDv4 written to the file. Renaming the collection ⇒ new slug ⇒ new file ⇒ new release lineage. See [`COLLECTION_CONFIG.md`](COLLECTION_CONFIG.md). |
 | External-mod overrides (`bundled` / `instructions`) | Per-collection config file (auto-populated stubs on first build) | **Slice 4b**: curator hand-edits `<configDir>/<slug>.json` between builds. Phase 5 React UI replaces the hand-edit step. |
-| Bundled archives | Resolved from config + state via `getModArchivePath` | **Slice 4b**: any external mod with `bundled: true` in the config gets its source archive resolved on disk and shipped inside the `.ehcoll`. Failures (mod not in profile, no SHA, archive missing) accumulate into one `BundleResolutionError`. |
+| Bundled mods | Measured from each mod's staging folder by `repackBundledExternals` | **Slice 4b**: any external mod with `bundled: true` in the config ships its staging folder's files, loose, inside the `.ehcoll` — never its source archive. Failures (mod not in profile, a Nexus mod not marked external, a staging folder that could not be measured) accumulate into one `BundleResolutionError`. |
 | README / CHANGELOG | Per-collection config file | **Slice 4b**: optional `readme` / `changelog` fields in the JSON. When non-empty, written as `README.md` / `CHANGELOG.md` at the package root. |
 | Vortex version | `state.app.appVersion ?? state.app.version ?? "unknown"` | Best-effort. `"unknown"` is a valid (per-schema) string. |
 | Game version | `state.persistent.gameSettings[gameId].version` ?? `state.settings.gameMode.discovered[gameId].version` ?? `"unknown"` | Best-effort. Phase 5 may add a real per-game version resolver. |
@@ -68,10 +68,10 @@ Toolbar button **"Build Event Horizon Collection"** registered via
 7. Compute output path: `%APPDATA%\Vortex\event-horizon\collections\<slug>-<safe-version>.ehcoll`.
    - Slug: lowercase the name, replace runs of non-alphanumerics with `-`, trim leading/trailing `-`, cap at 64 chars. Empty slug falls back to `"collection"`.
    - Safe-version: any character outside `[a-zA-Z0-9.-]` becomes `-`.
-8. **Slice 4b — resolve bundled archives:**
+8. **Slice 4b — resolve bundled mods:**
    - Walk `config.externalMods` for entries with `bundled: true`.
-   - For each: look up the matching `AuditorMod` from the snapshot, verify it's still present, verify it's NOT a Nexus mod (those are auto-downloaded), verify it has an `archiveSha256`, resolve its source archive on disk via `getModArchivePath(state, archiveId, gameId)`. Each problem is accumulated in a list; at the end, if non-empty, throw `BundleResolutionError` with every entry. The build aborts before staging anything.
-9. Call `packageEhcoll` with the resolved `bundledArchives` + `config.readme` + `config.changelog` (when non-empty).
+   - For each: look up the matching `AuditorMod` from the snapshot, verify it's still present, verify it may be bundled (a Nexus mod only once marked external), and take the bundle `repackBundledExternals` measured from its staging folder. A mod that could not be measured is refused with the reason. Each problem is accumulated in a list; at the end, if non-empty, throw `BundleResolutionError` with every entry. The build aborts before staging anything.
+9. Call `packageEhcoll` with the resolved `bundles` + `config.readme` + `config.changelog` (when non-empty).
 10. **On success:**
     - One-line `console.log` summary including bundled count, output bytes, warning count, and the `(NEW)` marker if the config file was just created.
     - Each warning from `buildManifest` and `packageEhcoll` is `console.warn`'d with the `[Vortex Event Horizon]` prefix.
@@ -100,7 +100,7 @@ Toolbar button **"Build Event Horizon Collection"** registered via
 - **Manifest build fatal** (`BuildManifestError` — e.g. mod missing `archiveSha256`, duplicate compareKey) ⇒ error notification listing every problem. Hashing notification is dismissed in `finally`.
 - **Package build fatal** (`PackageEhcollError` — e.g. SHA-256 format violation, manifest/archives mismatch) ⇒ error notification listing every problem.
 - **`plugins.txt` read fails** with anything other than `ENOENT` ⇒ error bubbles up. (We swallow `ENOENT` because some games legitimately don't have one.)
-- **Vortex/PC crash mid-build** ⇒ staging directory inside the OS temp dir is best-effort cleaned up on the next run by the OS; partial `.ehcoll` is `rm -rf`'d by `packageEhcoll`'s `finally` branch before the process dies. The per-collection config file is written atomically before any packaging starts, so a crash mid-pack doesn't corrupt it.
+- **Vortex/PC crash mid-build** ⇒ staging directory inside the OS temp dir is best-effort cleaned up on the next run by the OS; a crash mid-pack leaves `<name>.ehcoll.partial` beside the package, never a half-written `.ehcoll`, and the next build of that version removes it before 7-Zip starts. The per-collection config file is written atomically before any packaging starts, so a crash mid-pack doesn't corrupt it.
 
 ## Quirks & invariants
 

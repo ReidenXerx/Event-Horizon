@@ -68,7 +68,7 @@ import type {
   VortexDeploymentMethod,
 } from "../../types/ehcoll";
 
-const SCHEMA_VERSION: SchemaVersion = 1;
+const SCHEMA_VERSION: SchemaVersion = 2;
 
 const SUPPORTED_GAME_IDS: ReadonlySet<SupportedGameId> = new Set([
   "skyrimse",
@@ -144,7 +144,7 @@ export type ExternalModSpec = {
   url?: string;
   /** What kind of link `url` is. See ExternalModSource.downloadMode. */
   mode?: "direct" | "browse" | "manual";
-  /** Include the archive in the `.ehcoll` package at `bundled/<sha256>.<ext>`. */
+  /** Ship the mod's staging files in the `.ehcoll` package, loose, at `bundled/<sha256>/`. */
   bundled?: boolean;
 };
 

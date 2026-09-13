@@ -103,7 +103,7 @@ describe("installFromBundledArchive", () => {
     void installFromBundledArchive(api, {
       gameId: "fallout4",
       ehcollZipPath: "C:/nowhere/pkg.ehcoll",
-      bundledZipEntry: "bundled/abc.zip",
+      bundledZipEntry: "bundled/abc/",
       preExtracted: preExtracted(),
       choices: CHOICES as never,
     });
@@ -127,7 +127,7 @@ describe("installFromBundledArchive", () => {
     void installFromBundledArchive(api, {
       gameId: "fallout4",
       ehcollZipPath: "C:/nowhere/pkg.ehcoll",
-      bundledZipEntry: "bundled/abc.zip",
+      bundledZipEntry: "bundled/abc/",
       preExtracted: preExtracted(),
     });
     await new Promise((r) => setTimeout(r, 50));

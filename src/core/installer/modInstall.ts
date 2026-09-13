@@ -57,7 +57,13 @@ import {
   type VortexInstallerChoices,
 } from "./installerChoices";
 
-import { extractZipEntryToFile, listZipEntries } from "../manifest/readZip";
+import { shaOfBundleFolder } from "../manifest/bundleLayout";
+import {
+  bundleFilesFromPackage,
+  writeBundleZipToFile,
+  type BundleZipResult,
+} from "../manifest/bundleZip";
+import { openZipReader } from "../manifest/readZip";
 import { looksLikeWine } from "../proton";
 import { stallBudgetMs, type StallPhase } from "./timeBudgets";
 import { classifyAttempt, backoffMs } from "./downloadFailureShape";
@@ -679,13 +685,13 @@ export async function installFromBundledArchive(
   args: {
     gameId: string;
     ehcollZipPath: string;
-    bundledZipEntry: string; // e.g. "bundled/abc...123.zip"
+    bundledZipEntry: string; // the bundled mod's folder, e.g. "bundled/<sha256>/"
     /** Optional cancellation token; see {@link installNexusViaApi}. */
     signal?: AbortSignal;
     /**
-     * Optional pre-extracted bundle from
-     * {@link BundledPrefetchPool.take}. When supplied, skips the 7z
-     * extraction step and uses the supplied paths directly. The
+     * Optional pre-written bundle from
+     * {@link BundledPrefetchPool.take}. When supplied, skips writing the
+     * archive out of the package and uses the supplied paths directly. The
      * caller transfers tempDir ownership to this function — we keep
      * the same on-failure cleanup contract as the cold path
      * (cleanup tempDir if start-install rejects) and the same
@@ -750,6 +756,7 @@ export async function installFromBundledArchive(
       args.ehcollZipPath,
       args.bundledZipEntry,
       args.preferredName,
+      args.signal,
     ));
 
   /**
@@ -1339,78 +1346,12 @@ function waitForInstallCompletion(
 }
 
 /**
- * Extract a single bundled archive entry out of a `.ehcoll` package
- * into a uniquely-named temp directory. Returns both the extracted
- * file's absolute path and the temp directory that contains it — the
- * caller must use the temp directory (not the file's parent) when
- * cleaning up, because cherry-picked entries can have nested paths
- * (e.g. `bundled/abc.zip` lands at `<tempDir>/bundled/abc.zip` and
- * `path.dirname` would only delete `<tempDir>/bundled`, leaking the
- * outer mkdtemp dir).
- *
- * The extraction directory is deliberately fresh per-call (mkdtemp's
- * 6-char random suffix makes it unique even within the same ms) so
- * two concurrent extractions can't trample each other.
- *
- * On extraction failure or post-extract sanity-check failure the temp
- * dir is removed before the error propagates — extraction owns its own
- * cleanup until it successfully returns.
- *
- * ─── WHY THIS NO LONGER SPAWNS 7z ──────────────────────────────────────
- * Pulling an entry out of a `.ehcoll` is a ZIP read of OUR OWN FORMAT, and
- * it used to go through Vortex's bundled 7z — a Windows executable spawned
- * as a child process. Under Wine/Proton that spawn is the fragile step: an
- * alpha tester could not open a package proven byte-identical to the
- * curator's, and node-7z could not say why (`list` resolves with an empty
- * spec and discards `{code, errors}`).
- *
- * `readEhcoll` was moved off 7z first; this was the OTHER half, and leaving
- * it behind meant an install would clear the manifest and then die on the
- * first bundled mod with the identical error.
- *
- * 7z keeps the job it actually earns: the extracted file may be a `.7z` or
- * `.rar`, and unpacking THAT is Vortex's installer's work, through Vortex's
- * own 7z. We just hand it the archive.
- */
-/**
- * The bundled entry whose sha256 matches, whatever extension it carries.
- *
- * `undefined` when the package genuinely does not hold that archive — which
- * is a real failure and must stay one. Only the EXTENSION is forgiven here;
- * the sha still has to match exactly, so this cannot silently substitute a
- * different archive.
- */
-async function findBundledEntryBySha(
-  ehcollZipPath: string,
-  askedFor: string,
-): Promise<string | undefined> {
-  const m = /^bundled\/([0-9a-f]{64})(?:\.|$)/i.exec(askedFor);
-  if (m === null) return undefined;
-  const sha = m[1]!.toLowerCase();
-  try {
-    const entries = await listZipEntries(ehcollZipPath);
-    const prefix = `bundled/${sha}`;
-    const hit = entries.find((e) => {
-      const name = e.name.toLowerCase();
-      // `bundled/<sha>` exactly, or `bundled/<sha>.<anything>`. Never a
-      // longer sha that merely starts with this one.
-      return name === prefix || name.startsWith(`${prefix}.`);
-    });
-    return hit?.name;
-  } catch {
-    // A package we cannot list is a package we cannot recover from; the
-    // caller's original error is the honest one to report.
-    return undefined;
-  }
-}
-
-/**
  * Windows-safe file name for the archive we hand to Vortex.
  *
  * ─── THE FILE NAME BECOMES THE MOD NAME ────────────────────────────────
  * Vortex derives a mod's name — and therefore its staging FOLDER — from the
- * archive it installed. A bundled entry is called `bundled/<sha256>.zip`
- * because the sha is its identity inside the package, so extracting it under
+ * archive it installed. A bundled mod is named by its sha256 inside the
+ * package, because the sha is its identity there, so an archive written under
  * that name gave the user mod folders called `b3d8853c…`, and a tester
  * reasonably asked what they were.
  *
@@ -1425,18 +1366,22 @@ async function findBundledEntryBySha(
  *
  * Twenty-nine external mods, zero candidates, every single run.
  *
- * So the extracted file takes the curator's mod name. The name is only a
- * cheap CANDIDATE filter — identity is still decided by hashing the staging
- * folder — which is why borrowing it here is sound rather than a guess.
+ * So the archive takes the curator's mod name. The name is only a cheap
+ * CANDIDATE filter — identity is still decided by hashing the staging folder —
+ * which is why borrowing it here is sound rather than a guess.
  *
- * Falls back to the entry's own basename when there is no usable name, so a
- * caller that passes nothing behaves exactly as before.
+ * The archive is always the bundle's canonical zip, so the extension is always
+ * `.zip` — never taken from the mod name, which routinely ends in something
+ * like "-149724-1-1746902603.1": a Vortex disambiguator, not a file type.
+ *
+ * Falls back to `<sha256>.zip` when the name has nothing usable in it.
  */
 export function bundledArchiveFileName(
-  bundledZipEntry: string,
+  sha256: string,
   preferredName: string | undefined,
 ): string {
-  const fallback = bundledZipEntry.split("/").pop() ?? bundledZipEntry;
+  const ext = ".zip";
+  const fallback = `${sha256}${ext}`;
   if (preferredName === undefined) return fallback;
 
   // Reserved on Windows, plus control characters. These names came off the
@@ -1449,18 +1394,11 @@ export function bundledArchiveFileName(
     .replace(/[\s.]+$/, "")
     .trim();
   // A name with no letter or digit left in it identifies nothing — `___` is a
-  // legal file name and a useless one. The entry's sha at least identifies the
-  // bytes, so fall back to it rather than to noise.
+  // legal file name and a useless one. The sha at least identifies the bytes,
+  // so fall back to it rather than to noise.
   if (!/[\p{L}\p{N}]/u.test(cleaned)) return fallback;
 
-  // The extension decides which extractor Vortex reaches for, so it is taken
-  // from the entry name — never from the mod name, which routinely ends in
-  // something like "-149724-1-1746902603.1" that is a Vortex disambiguator
-  // rather than a file type.
-  const ext = archiveExtensionOf(fallback);
-  const base = cleaned.toLowerCase().endsWith(ext.toLowerCase())
-    ? cleaned
-    : `${cleaned}${ext}`;
+  const base = cleaned.toLowerCase().endsWith(ext) ? cleaned : `${cleaned}${ext}`;
 
   // Win32 MAX_PATH leaves little room once the temp dir and `bundled/` are
   // spent, and a curator mod name can be long. Truncate the stem, never the
@@ -1471,96 +1409,121 @@ export function bundledArchiveFileName(
 }
 
 /**
- * The archive extension of a bundled entry's file name, `""` when it has none.
+ * Write a bundled mod's archive out of the package, ready for Vortex.
  *
- * Mirrors the packager's own convention, multi-part extensions included — it
- * writes `.tar.gz` whole, so splitting on the last dot would name the file
- * `.gz` and hand Vortex an archive it unpacks one layer short.
+ * ─── THE PACKAGE HOLDS FILES; VORTEX INSTALLS AN ARCHIVE ──────────────
+ * Nexus quarantines an upload with an archive inside it, so a package carries
+ * a bundled mod as its loose files under `bundled/<sha256>/`. This writes the
+ * canonical zip those files make (bundleZip.ts) straight out of the package —
+ * one pass, every entry checked against its CRC as it streams — and the zip
+ * must hash to the sha the folder is named after before this returns. A lost,
+ * extra, renamed or altered file makes a different zip, and the install
+ * refuses it rather than install a mod that is not the curator's.
+ *
+ * `bundledZipEntry` is the folder, `bundled/<sha256>/`. The archive lands at
+ * `<tempDir>/bundled/<name>.zip` — see {@link bundledArchiveFileName} for why
+ * the name is the curator's. Each call gets its own mkdtemp directory, so
+ * concurrent writes cannot collide; the caller owns it once this returns, and
+ * must clean up that DIRECTORY rather than the file's parent.
+ *
+ * On any failure the temp directory is removed before the error propagates.
+ *
+ * ─── WHY THIS DOES NOT SPAWN 7z ────────────────────────────────────────
+ * Reading a `.ehcoll` is a ZIP read of OUR OWN FORMAT. It used to go through
+ * Vortex's bundled 7z — a Windows executable spawned as a child process — and
+ * under Wine/Proton that spawn was the fragile step: an alpha tester could not
+ * open a package proven byte-identical to the curator's, and node-7z could not
+ * say why. Unpacking the archive this writes is Vortex's installer's job, with
+ * Vortex's own tools; we just hand it the file.
  */
-function archiveExtensionOf(fileName: string): string {
-  const lower = fileName.toLowerCase();
-  for (const multi of [".tar.gz", ".tar.bz2", ".tar.xz"]) {
-    if (lower.endsWith(multi)) return fileName.slice(-multi.length);
-  }
-  const lastDot = fileName.lastIndexOf(".");
-  return lastDot <= 0 ? "" : fileName.slice(lastDot);
-}
-
 export async function extractBundledFromEhcoll(
   ehcollZipPath: string,
   bundledZipEntry: string,
   /**
-   * The curator's mod name, when the caller knows it. Decides the extracted
-   * file's name and therefore what Vortex calls the mod — see
+   * The curator's mod name, when the caller knows it. Decides the archive's
+   * file name and therefore what Vortex calls the mod — see
    * {@link bundledArchiveFileName}.
    */
   preferredName?: string,
+  signal?: AbortSignal,
 ): Promise<{ extractedPath: string; tempDir: string }> {
+  const sha256 = shaOfBundleFolder(bundledZipEntry);
+  if (sha256 === undefined) {
+    throw new Error(
+      `"${bundledZipEntry}" is not a bundled mod's folder (bundled/<sha256>/), so ` +
+        `there is nothing in "${ehcollZipPath}" to install it from.`,
+    );
+  }
+
   const tempDir = await fsp.mkdtemp(
     path.join(os.tmpdir(), "event-horizon-install-"),
   );
 
   try {
-    // The entry's DIRECTORY is preserved inside `tempDir`, matching what 7z's
-    // `extractFull` did — callers and cleanup both depend on that shape. Only
-    // the file NAME is ours to choose.
-    const dir = path.join(tempDir, ...bundledZipEntry.split("/").slice(0, -1));
-    const pathFor = (entry: string): string =>
-      path.join(dir, bundledArchiveFileName(entry, preferredName));
+    // The archive sits under `bundled/` inside `tempDir`, the shape callers and
+    // cleanup already depend on. Only the file NAME is ours to choose.
+    const extractedPath = path.join(
+      tempDir,
+      "bundled",
+      bundledArchiveFileName(sha256, preferredName),
+    );
+    await fsp.mkdir(path.dirname(extractedPath), { recursive: true });
 
-    let extractedPath = pathFor(bundledZipEntry);
-
+    const startedAt = Date.now();
+    const reader = await openZipReader(ehcollZipPath);
+    let written: BundleZipResult;
     try {
-      await extractZipEntryToFile(ehcollZipPath, bundledZipEntry, extractedPath);
-    } catch (err) {
-      /**
-       * ─── THE IDENTITY IS THE SHA, NOT THE FILENAME ──────────────────
-       * The entry name is `bundled/<sha256><ext>`, and the two sides derived
-       * `<ext>` from DIFFERENT strings: the packager from the archive it
-       * actually wrote (always the repacked `.zip`), the resolver from the
-       * mod's `expectedFilename`. Those agree only by luck.
-       *
-       * They stop agreeing the moment Vortex has had to disambiguate a mod
-       * name, because it appends `.1`, `.2`… — so a mod called
-       * "IDE WHITERUN-149724-1-1746902603.1" made the resolver ask for
-       * `bundled/<sha>.1` while the package held `bundled/<sha>.zip`. The
-       * install died on the first such mod with "contains no entry named",
-       * and on a large profile there is almost always one.
-       *
-       * The sha IS the identity — it is why the file is named that — so the
-       * fallback finds the entry by it. Doing this here rather than in the
-       * resolver is deliberate: it also repairs packages already built and
-       * downloaded, which for a 10 GB collection is the difference between a
-       * fix and a re-download.
-       */
-      const recovered = await findBundledEntryBySha(
-        ehcollZipPath,
-        bundledZipEntry,
-      );
-      if (recovered === undefined) {
+      const files = bundleFilesFromPackage(reader, bundledZipEntry);
+      if (files.length === 0) {
         throw new Error(
-          `Could not extract "${bundledZipEntry}" from "${ehcollZipPath}": ` +
-            `${(err as Error).message}`,
+          `"${ehcollZipPath}" holds no files for the bundled mod ` +
+            `"${preferredName ?? sha256}" (${bundledZipEntry}). The package is ` +
+            `incomplete — download it again.`,
         );
       }
-      ehLog("warn", "bundled.entry-name-mismatch", {
-        asked: bundledZipEntry,
-        found: recovered,
-      });
-      // Name the file after the entry we FOUND. The whole reason we are here
-      // is that the extension we asked for was wrong, so reusing it would
-      // write a zip called `<name>.1` and leave Vortex to guess the format.
-      extractedPath = pathFor(recovered);
-      await extractZipEntryToFile(ehcollZipPath, recovered, extractedPath);
+      written = await writeBundleZipToFile(
+        files,
+        extractedPath,
+        signal !== undefined ? { signal } : {},
+      );
+    } finally {
+      await reader.close();
     }
 
-    // Sanity-check: confirm the file actually landed.
-    await fsp.access(extractedPath);
-
+    if (written.sha256 !== sha256) {
+      ehLog("error", "bundled.identity-mismatch", {
+        entry: bundledZipEntry,
+        mod: preferredName,
+        expected: sha256,
+        actual: written.sha256,
+        files: written.files,
+        bytes: written.bytes,
+      });
+      throw new Error(
+        `The files for "${preferredName ?? sha256}" in "${ehcollZipPath}" do not ` +
+          `make the mod the collection names: expected ${sha256}, got ` +
+          `${written.sha256}. The package was changed after it was built — ` +
+          `download it again.`,
+      );
+    }
+    ehLog("debug", "bundled.written", {
+      entry: bundledZipEntry,
+      mod: preferredName,
+      files: written.files,
+      bytes: written.bytes,
+      ms: Date.now() - startedAt,
+    });
     return { extractedPath, tempDir };
   } catch (err) {
-    // Extraction never succeeded — clean up the empty/partial tempDir
-    // here so the caller doesn't have to learn about it just to drop it.
+    // A cancel is the user's decision, and must not read as a failure in the log.
+    const cancelled = isAbort(err, signal);
+    ehLog(cancelled ? "info" : "error", cancelled ? "bundled.write-cancelled" : "bundled.write-failed", {
+      entry: bundledZipEntry,
+      mod: preferredName,
+      ...(cancelled ? {} : { err }),
+    });
+    // Nothing usable came out: clean up here so the caller never has to learn
+    // about a directory just to drop it.
     await safeRmTempDir(tempDir);
     throw err;
   }

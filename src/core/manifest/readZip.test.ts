@@ -27,10 +27,13 @@ import {
 import {
   ZipReadError,
   crc32,
+  crc32File,
   extractZipEntryToFile,
   listZipEntries,
+  openZipReader,
   readZipEntry,
 } from "./readZip";
+import { buildStoredZip } from "./storedZip.testutil";
 
 let dir: string;
 beforeEach(() => {
@@ -57,6 +60,39 @@ const dotnet = (name = "c.ehcoll", mutate?: (b: Buffer) => void): string =>
 
 const sevenZip = (name = "s.ehcoll", mutate?: (b: Buffer) => void): string =>
   write(SEVENZIP_WITH_LOCAL_EXTRA, name, mutate);
+
+describe("openZipReader", () => {
+  it("errors the moment an entry yields more bytes than it declares, before passing them on", async () => {
+    // A damaged deflate stream can inflate far past its entry's size. Checked
+    // only at the end, every one of those bytes reached the consumer first —
+    // on an install, a temp drive's worth of them.
+    const bytes = buildStoredZip([{ name: "a.bin", body: Buffer.alloc(100, 7) }]);
+    // Declare 10 bytes while 100 are stored: the uncompressed size in the
+    // local header (offset 22) and in the central directory entry (offset 24).
+    bytes.writeUInt32LE(10, 22);
+    const central = bytes.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+    bytes.writeUInt32LE(10, central + 24);
+    const p = path.join(dir, "overrun.zip");
+    fs.writeFileSync(p, bytes);
+
+    const reader = await openZipReader(p);
+    try {
+      const stream = await reader.openEntry(reader.entries[0]!);
+      let received = 0;
+      const failure = await new Promise<Error | undefined>((resolve) => {
+        stream.on("data", (chunk: Buffer) => {
+          received += chunk.length;
+        });
+        stream.on("error", resolve);
+        stream.on("end", () => resolve(undefined));
+      });
+      expect(failure?.message).toMatch(/did not survive reading/);
+      expect(received).toBeLessThanOrEqual(10);
+    } finally {
+      await reader.close();
+    }
+  });
+});
 
 describe("listZipEntries", () => {
   it("finds every entry in an archive written by another tool", async () => {
@@ -293,5 +329,21 @@ describe("crc32", () => {
     const entries = await listZipEntries(sevenZip());
     const manifest = entries.find((e) => e.name === "manifest.json");
     expect(crc32(Buffer.from(MANIFEST_TEXT))).toBe(manifest?.crc32);
+  });
+
+  it("rejects a cancelled file read with an AbortError, before and during the read", async () => {
+    // Callers ask `isAbort`. An Error that only said "aborted" turned a Cancel
+    // during the package check into a failed build.
+    const file = path.join(dir, "big.bin");
+    fs.writeFileSync(file, Buffer.alloc(4 * 1024 * 1024, 7));
+
+    const before = new AbortController();
+    before.abort();
+    await expect(crc32File(file, before.signal)).rejects.toMatchObject({ name: "AbortError" });
+
+    const during = new AbortController();
+    const reading = crc32File(file, during.signal);
+    during.abort();
+    await expect(reading).rejects.toMatchObject({ name: "AbortError" });
   });
 });

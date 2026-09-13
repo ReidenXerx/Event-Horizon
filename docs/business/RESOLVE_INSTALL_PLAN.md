@@ -102,7 +102,7 @@ External mods are identified by SHA-256 alone (per §5.5 — there is no other i
 | 4 | `manifest.package.strictMissingMods === true` and none of 1–3 | `external-missing` (blocks `canProceed`) |
 | 5 | `manifest.package.strictMissingMods === false` and none of 1–3 | `external-prompt-user` (deferred to install-time picker; blocks per-mod confirmation) |
 
-`zipPath` for `external-use-bundled` is `bundled/<sha256><ext>`, where `<ext>` is taken from `source.expectedFilename` (lowercased; defaults to `.zip` if no extension; preserves `.tar.gz` / `.tar.bz2` / `.tar.xz` multi-part endings). This mirrors the convention in [`PACKAGE_ZIP.md`](PACKAGE_ZIP.md).
+`zipPath` for `external-use-bundled` is the bundled mod's folder, `bundled/<sha256>/` — `bundleFolderInPackage` in `manifest/bundleLayout.ts`, the one spelling shared with the packager and the reader. It depends on the sha alone: a package carries no archive to take an extension from, so `source.expectedFilename` plays no part. See [`PACKAGE_ZIP.md`](PACKAGE_ZIP.md).
 
 ## Conflict policy (v1, LOAD-BEARING)
 

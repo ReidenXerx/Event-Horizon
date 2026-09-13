@@ -1,6 +1,6 @@
 /**
- * Bundled archive prefetch pool — overlap 7z extraction with Vortex
- * mod installs.
+ * Bundled archive prefetch pool — overlap writing bundled mods' archives
+ * out of the package with Vortex mod installs.
  *
  * Vortex serializes mod installs internally (FOMOD UI is modal,
  * `start-install` holds the global install lock). For collections
@@ -52,7 +52,7 @@
  * driver's `finally` block.
  */
 
-import { AbortError } from "../../utils/abortError";
+import { AbortError, isAbort } from "../../utils/abortError";
 import { ehLog } from "../logging/ehLog";
 // No 7z import. Extraction from a .ehcoll is a ZIP read of our own format and
 // is done natively — see extractBundledFromEhcoll. This pool used to call
@@ -327,7 +327,11 @@ export class BundledPrefetchPool {
    */
   private pump(): void {
     if (this.disposed) return;
-    while (this.inFlight < this.concurrency && this.queue.length > 0) {
+    // Written-but-not-yet-taken bundles count against the limit as well. Each
+    // one is a full uncompressed copy of a mod in the temp folder, and a pool
+    // that started the next write whenever one FINISHED — taken or not — filled
+    // the temp drive with every bundle while the driver was busy elsewhere.
+    while (this.inFlight + this.waitingToBeTaken() < this.concurrency && this.queue.length > 0) {
       const zipEntry = this.queue.shift()!;
       const slot = this.slots.get(zipEntry);
       if (slot === undefined || slot.state !== "queued") {
@@ -342,6 +346,15 @@ export class BundledPrefetchPool {
       // so swallowing it here loses nothing.
       void this.startExtraction(zipEntry).catch(() => undefined);
     }
+  }
+
+  /** Bundles written and not yet taken by the driver. */
+  private waitingToBeTaken(): number {
+    let waiting = 0;
+    for (const slot of this.slots.values()) {
+      if (slot.state === "ready") waiting += 1;
+    }
+    return waiting;
   }
 
   /** Promote a queued slot into in-flight and run the extraction. */
@@ -375,6 +388,7 @@ export class BundledPrefetchPool {
         this.ehcollZipPath,
         zipEntry,
         this.names.get(zipEntry),
+        this.signal,
       );
       const elapsed = Date.now() - startedAt;
       this.onExtracted?.(zipEntry, elapsed);
@@ -413,11 +427,13 @@ export class BundledPrefetchPool {
       }
       return result;
     } catch (err) {
-      ehLog("error", "bundled-prefetch.extract.fail", {
+      // A cancel is the user's decision, and must not read as a failure in the log.
+      const cancelled = isAbort(err, this.signal);
+      ehLog(cancelled ? "info" : "error", cancelled ? "bundled-prefetch.extract.cancelled" : "bundled-prefetch.extract.fail", {
         zipEntry,
         tracked,
         ms: Date.now() - startedAt,
-        err,
+        ...(cancelled ? {} : { err }),
       });
       if (tracked) {
         this.inFlight = Math.max(0, this.inFlight - 1);

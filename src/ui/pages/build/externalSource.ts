@@ -5,7 +5,7 @@
  * Mirrors Vortex's own three download modes and adds the one thing Vortex
  * cannot do for a non-Nexus file — ship the bytes:
  *
- *   bundled  — the archive travels inside the `.ehcoll`. Nothing to fetch.
+ *   bundled  — the mod's files travel inside the `.ehcoll`. Nothing to fetch.
  *   direct   — the link IS the file. Opening it starts a download.
  *   browse   — the link is a mod PAGE. Find the file on it, then download.
  *   manual   — no usable link. The curator's prose is the whole instruction.
@@ -84,9 +84,9 @@ export function sourceProblem(
   const kind = sourceKindOf(entry);
 
   // Bundling does NOT need the original download. `repackBundledExternals`
-  // builds a fresh archive from the mod's STAGING folder and re-keys the mod
-  // to that archive's hash, which is the whole reason a hand-made mod with no
-  // archive can still ship. Gating this on the archive would block bundling
+  // measures the mod's STAGING folder and re-keys the mod to the bundle's
+  // hash, which is the whole reason a hand-made mod with no archive can still
+  // ship. Gating this on the archive would block bundling
   // for exactly the mods that most need it.
   if (kind === "bundled" && !opts.hasStagingFolder) {
     return (

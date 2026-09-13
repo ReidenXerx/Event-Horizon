@@ -1,5 +1,5 @@
 /**
- * Which archives get packed into the `.ehcoll`, and why the rest do not.
+ * Which bundled mods get packed into the `.ehcoll`, and why the rest do not.
  *
  * ─── WHY THIS IS ITS OWN MODULE ─────────────────────────────────────────────
  * It was two modules. `buildPackageAction.ts` and `ui/pages/build/engine.ts`
@@ -34,7 +34,11 @@
  *  - A Nexus mod may only be bundled once the curator has marked it external
  *    (NS-6 territory: the user's own API key normally fetches it, and that
  *    stops being true the moment the file is deleted from Nexus).
- *  - No hash or no archive on disk is an error, never a silent skip.
+ *  - A bundled mod ships the files this build packed from its staging folder,
+ *    and nothing else. One that was not packed is an error carrying the reason
+ *    — never a fallback to its original archive, which would be the version
+ *    from before the curator's edits AND an archive inside the package, which
+ *    Nexus quarantines.
  *
  * Per-mod failures accumulate rather than throwing, so a curator gets one
  * report covering every problem instead of fixing them one build at a time.
@@ -48,15 +52,22 @@ import {
 } from "./staleConfigEntries";
 import { isNexusSourced } from "../identity/nexusSourced";
 import { mayBundle } from "./shipsAsExternal";
-import { resolveModArchivePath } from "../archiveHashing";
 import { ehLog } from "../logging/ehLog";
 
 import type { AuditorMod } from "../getModsListForProfile";
-import type { BundledArchiveSpec } from "./packageZip";
+import type { RepackedBundle, RepackFailure } from "./bundleFromStaging";
+import type { BundleSpec } from "./packageZip";
 import type { CollectionConfig } from "./collectionConfig";
 
+/** What this build packed from staging folders, and what it could not. */
+export type PackedBundles = {
+  bundles: readonly RepackedBundle[];
+  /** modId → why that mod could not be packed. */
+  failures: ReadonlyMap<string, RepackFailure>;
+};
+
 export type BundledArchiveResolution = {
-  bundledArchives: BundledArchiveSpec[];
+  bundles: BundleSpec[];
   errors: string[];
   /** Curator-facing notes about answers that were dropped. */
   warnings: string[];
@@ -69,12 +80,14 @@ export function resolveBundledArchives(
   gameId: string,
   config: CollectionConfig,
   mods: AuditorMod[],
+  packed: PackedBundles,
 ): BundledArchiveResolution {
   const errors: string[] = [];
   const warnings: string[] = [];
   const droppedModIds: string[] = [];
-  const bundledArchives: BundledArchiveSpec[] = [];
+  const bundles: BundleSpec[] = [];
   const modById = new Map(mods.map((m) => [m.id, m]));
+  const packedByMod = new Map(packed.bundles.map((b) => [b.modId, b] as const));
   const inCollection = new Set(modById.keys());
   /**
    * Every mod id Vortex holds for this game, enabled or not (NS-3).
@@ -132,36 +145,25 @@ export function resolveBundledArchives(
       continue;
     }
 
-    if (
-      typeof mod.archiveSha256 !== "string" ||
-      mod.archiveSha256.length === 0
-    ) {
-      // Both halves kept: the engine's copy named the mod, the action's named
-      // the remedy, and a curator reading either one alone had half an answer.
-      errors.push(
-        `External mod "${mod.name}" (id="${modId}") is flagged for bundling ` +
-          `but has no archiveSha256. Re-export the snapshot or check the ` +
-          `archive is on disk; the export pipeline should have hashed it.`,
-      );
+    const bundle = packedByMod.get(modId);
+    if (bundle !== undefined) {
+      bundles.push({
+        rootDir: bundle.rootDir,
+        sha256: bundle.sha256,
+        modName: mod.name,
+      });
       continue;
     }
 
-    const sourcePath = resolveModArchivePath(state, mod, gameId);
-    if (sourcePath === undefined) {
-      errors.push(
-        `External mod "${mod.name}" (id="${modId}") is flagged for bundling ` +
-          `but its source archive cannot be located on disk ` +
-          `(archiveId="${mod.archiveId ?? "<unset>"}"). The archive may have ` +
-          `been deleted from the Vortex downloads folder.`,
-      );
-      continue;
-    }
-
-    bundledArchives.push({
-      sourcePath,
-      sha256: mod.archiveSha256,
-    });
+    const failure = packed.failures.get(modId);
+    const reason = failure?.reason ?? "its files were not packed in this build";
+    ehLog("error", "build.bundle.not-packed", { modId, name: mod.name, reason });
+    errors.push(
+      `"${mod.name}" (id="${modId}") is flagged for bundling, but ${reason}. ` +
+        `A package carries a bundled mod's own files and never its archive, ` +
+        `so nothing can ship for it: fix that and rebuild, or untick bundle.`,
+    );
   }
 
-  return { bundledArchives, errors, warnings, droppedModIds };
+  return { bundles, errors, warnings, droppedModIds };
 }

@@ -150,13 +150,13 @@ my-collection.ehcoll
 ├── README.md                    # optional, shown to user before install
 ├── CHANGELOG.md                 # optional
 ├── bundled/                     # optional — only when curator opted to bundle
-│   ├── <sha256>.7z
-│   └── <sha256>.7z
+│   ├── <sha256>/                # one folder per bundled mod: its files, loose
+│   └── <sha256>/
 └── ini-tweaks/                  # optional — original INI fragments
     └── <key>.ini
 ```
 
-The `bundled/` folder is keyed by archive SHA-256 (not filename) to deduplicate and to make integrity checks trivial.
+The `bundled/` folder is keyed by SHA-256 (not filename) to deduplicate and to make integrity checks trivial: each folder is named by the hash of the canonical zip its files make, which the installer writes back and checks. (Schema 1 stored archives here; Nexus quarantines a package with an archive inside it, so schema 2 does not.)
 
 ### 5.2 Why ZIP and not 7z
 
@@ -196,8 +196,8 @@ ways three hours later, and the curator gets blamed.
 
 We replace "hope" with a hash check. Every external mod the curator ships
 in the manifest carries the SHA-256 of the exact bytes the curator built
-against. The user-side resolver picks the file the user supplies (or pulls
-from `bundled/`), streams it through SHA-256, and refuses to install
+against. The user-side resolver picks the file the user supplies (or writes
+it back from `bundled/`), streams it through SHA-256, and refuses to install
 anything that doesn't match.
 
 ### Implications across the pipeline
@@ -206,9 +206,10 @@ anything that doesn't match.
   (already implemented in Phase 1 slice 1) is the source of truth for both
   the curator's drift detection AND the installer's identity. Same field,
   two consumers.
-- **`bundled/` folder layout**: archives are keyed by SHA-256
-  (`bundled/<sha256>.7z`), never by filename. Two mods whose archives are
-  byte-identical are stored once and resolved twice.
+- **`bundled/` folder layout**: each bundled mod's files sit in a folder keyed
+  by SHA-256 (`bundled/<sha256>/`), never by filename — the hash of the
+  canonical zip those files make. Two mods whose files are identical are
+  stored once and resolved twice.
 - **Nexus `source.sha256` is mandatory, not optional**: even though Nexus
   IDs are sufficient to *download*, the SHA-256 is what we *verify* after.
   If it ever doesn't match, we surface that as a curator-must-republish
@@ -305,7 +306,7 @@ TypeScript source of truth lives in `src/types/ehcoll.ts` (to be created). JSON 
         "expectedFilename": "MyPrivateFix-1.0.7z",
         "sha256": "def456…",
         "instructions": "Download from <internal share URL> or DM curator.",
-        "bundled": false                     // true → archive is in /bundled/<sha256>.7z
+        "bundled": false                     // true → files are in /bundled/<sha256>/
       },
       "install": { "fomodSelections": [], "installerType": "raw" },
       "state": { "enabled": true, "installOrder": 27, "deploymentPriority": 27 }
@@ -445,7 +446,7 @@ Two design simplifications now possible:
    - Archive SHA-256 of every mod's source archive in `<staging>/<modId>` or the download cache.
    - External-dep block — if the curator has any non-Nexus mods, prompt them to supply per-mod metadata (instructions URL, optional bundle-this-archive checkbox).
 3. Build `manifest.json`.
-4. ZIP into `<name>-<version>.ehcoll`. If curator opted to bundle archives, copy them into `bundled/` keyed by SHA-256.
+4. ZIP into `<name>-<version>.ehcoll`. If curator opted to bundle mods, copy each one's staging files into `bundled/<sha256>/`.
 5. Open the output folder, show "Done" notification.
 
 Output goes to `<vortex appData>/event-horizon/packages/`.
@@ -472,8 +473,8 @@ For each mod, decide where its archive will come from:
 |---|---|
 | `nexus:*` and Vortex sees the file in download cache with matching SHA-256 | reuse — no download |
 | `nexus:*` and not in cache | enqueue Nexus download via API |
-| `nexus:*` but Nexus reports file gone | check `bundled/<sha256>.7z`; if present → use it; else → record as "missing" |
-| `external:*` with `bundled: true` | use `bundled/<sha256>.7z` |
+| `nexus:*` but Nexus reports file gone | check `bundled/<sha256>/`; if present → write the archive back from it; else → record as "missing" |
+| `external:*` with `bundled: true` | write the archive back from `bundled/<sha256>/` and check it |
 | `external:*` with `bundled: false` | prompt user to pick a local archive; verify SHA-256; on mismatch, retry/abort |
 
 After resolution, we have a list of `{compareKey, archivePath}` plus a list of "missing" mods.

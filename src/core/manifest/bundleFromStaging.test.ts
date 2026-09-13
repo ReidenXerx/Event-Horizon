@@ -265,7 +265,7 @@ describe("describeExternalDrift", () => {
 });
 
 describe("repackBundledExternals", () => {
-  const sevenZip = fakeSevenZip({});
+  const workDir = (): string => path.join(staging, ".repack");
 
   it("WARNS about a large bundle without refusing to pack it", async () => {
     // The curator chose to ship this mod. Refusing would be the tool deciding
@@ -280,11 +280,11 @@ describe("repackBundledExternals", () => {
       gameId: "fallout4",
       mods: [mod({ id: "huge", name: "Huge", installationPath: "huge" })],
       config: config({ huge: { bundled: true } }),
-      sevenZip,
-      workDir: path.join(staging, ".repack"),
+      workDir: workDir(),
       isExternal: () => true,
       options: { warnBytes: 1024 },
     });
+    expect(out.bundles).toHaveLength(1);
     expect(out.warnings[0]).toMatch(/will be at least that large/);
     expect(out.warnings[0]).toMatch(/fine if you meant it/);
     expect(out.warnings[0]).not.toMatch(/NOT bundled/);
@@ -300,11 +300,11 @@ describe("repackBundledExternals", () => {
       gameId: "fallout4",
       mods: [mod({ id: "small", name: "Small", installationPath: "small" })],
       config: config({ small: { bundled: true } }),
-      sevenZip,
-      workDir: path.join(staging, ".repack"),
+      workDir: workDir(),
       isExternal: () => true,
       options: { warnBytes: 1024 * 1024 },
     });
+    expect(out.bundles).toHaveLength(1);
     expect(out.warnings.filter((w) => w.includes("at least that large"))).toEqual([]);
   });
 
@@ -314,25 +314,42 @@ describe("repackBundledExternals", () => {
       gameId: "fallout4",
       mods: [mod({ id: "plain", installationPath: "plain" })],
       config: config({}),
-      sevenZip,
-      workDir: path.join(staging, ".repack"),
+      workDir: workDir(),
       isExternal: () => true,
     });
     expect(out.bundles).toEqual([]);
     expect(out.warnings).toEqual([]);
+    expect(out.failed).toEqual([]);
   });
 
-  it("warns rather than throwing when Vortex records no staging folder", async () => {
+  it("refuses a mod Vortex records no staging folder for, by id and with the reason", async () => {
+    // A warning alone was the hole: the mod shipped nothing, nobody downstream
+    // knew it by id, and the build carried on as if it had been packed.
     const out = await repackBundledExternals({
       state: {} as never,
       gameId: "fallout4",
       mods: [mod({ id: "nopath", name: "No Path" })],
       config: config({ nopath: { bundled: true } }),
-      sevenZip,
-      workDir: path.join(staging, ".repack"),
+      workDir: workDir(),
       isExternal: () => true,
     });
     expect(out.bundles).toEqual([]);
-    expect(out.warnings[0]).toMatch(/no staging folder/);
+    expect(out.failed).toEqual([
+      { modId: "nopath", modName: "No Path", reason: expect.stringMatching(/no staging folder/) },
+    ]);
+  });
+
+  it("refuses a mod whose staging folder holds nothing to ship", async () => {
+    fs.mkdirSync(path.join(staging, "hollow"), { recursive: true });
+    const out = await repackBundledExternals({
+      state: {} as never,
+      gameId: "fallout4",
+      mods: [mod({ id: "hollow", name: "Hollow", installationPath: "hollow" })],
+      config: config({ hollow: { bundled: true } }),
+      workDir: workDir(),
+      isExternal: () => true,
+    });
+    expect(out.bundles).toEqual([]);
+    expect(out.failed[0]!.reason).toMatch(/holds no files to ship/);
   });
 });

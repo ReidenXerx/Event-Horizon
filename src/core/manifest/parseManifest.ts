@@ -79,7 +79,31 @@ import { isSafeRelativePath, unsafePathReason } from "../safeRelativePath";
 // Public API
 // ---------------------------------------------------------------------------
 
-const SCHEMA_VERSION: SchemaVersion = 1;
+const SCHEMA_VERSION: SchemaVersion = 2;
+
+/**
+ * The last schema whose packages carried bundled mods as archives inside the
+ * package. Nexus quarantines such an upload, so schema 2 carries their files
+ * loose; a schema-1 package is refused rather than half-read.
+ */
+const ARCHIVES_INSIDE_SCHEMA = 1;
+
+function describeUnsupportedVersion(version: unknown): string {
+  if (version === ARCHIVES_INSIDE_SCHEMA) {
+    return (
+      `This collection package was built by an older Event Horizon, which ` +
+      `carried bundled mods as archives inside the package, and this version ` +
+      `reads only packages built without them. Download the collection's ` +
+      `current package to install it — or, if you are its curator, rebuild it ` +
+      `with this version of Event Horizon.`
+    );
+  }
+  return (
+    `Unsupported schemaVersion ${JSON.stringify(version)}. This installer ` +
+    `understands schemaVersion ${SCHEMA_VERSION} only. Update the Event ` +
+    `Horizon extension to install newer manifests.`
+  );
+}
 
 const SUPPORTED_GAME_IDS = new Set<SupportedGameId>([
   "skyrimse",
@@ -157,14 +181,9 @@ export function parseManifest(raw: string): ParseManifestResult {
 
   // schemaVersion is the gate: if it's wrong, we don't even know what
   // the rest of the document means. Report that and stop.
-  if ((parsed as Record<string, unknown>).schemaVersion !== SCHEMA_VERSION) {
-    throw new ParseManifestError([
-      `Unsupported schemaVersion ${JSON.stringify(
-        (parsed as Record<string, unknown>).schemaVersion,
-      )}. ` +
-        `This installer understands schemaVersion ${SCHEMA_VERSION} only. ` +
-        `Update the Event Horizon extension to install newer manifests.`,
-    ]);
+  const version = (parsed as Record<string, unknown>).schemaVersion;
+  if (version !== SCHEMA_VERSION) {
+    throw new ParseManifestError([describeUnsupportedVersion(version)]);
   }
 
   const obj = parsed as Record<string, unknown>;

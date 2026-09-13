@@ -33,7 +33,7 @@ The wizard mounts in the `pick` state every time. There is no deep-linking to a 
 | Vortex Redux state (`api.getState()`) | Active game / profile / mods / version readers in the loading pipeline |
 | `<appData>/Vortex/event-horizon/installs/<package.id>.json` | Existing receipt for stale-detection and lineage |
 | Mod source archive(s) referenced by the active profile | SHA-256 hashing during the snapshot pipeline |
-| The selected `.ehcoll` ZIP | `readEhcoll` reads + parses + cross-checks bundled archives |
+| The selected `.ehcoll` ZIP | `readEhcoll` reads + parses + cross-checks bundled mods' folders |
 
 The wizard owns no Redux state and writes nothing to Redux. State lives in a `useReducer`-backed discriminated union (`WizardState`).
 

@@ -20,7 +20,7 @@ import { describe, expect, it } from "vitest";
 import { parseManifest } from "./parseManifest";
 
 const base = (): Record<string, unknown> => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   package: {
     id: "00000000-0000-4000-8000-000000000000",
     name: "t",

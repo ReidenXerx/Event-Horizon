@@ -1,5 +1,5 @@
 /**
- * Event Horizon collection package — `.ehcoll` manifest types (schema v1).
+ * Event Horizon collection package — `.ehcoll` manifest types (schema v2).
  *
  * The `.ehcoll` package is a ZIP file with a `manifest.json` at its root that
  * conforms to {@link EhcollManifest} below. The packager (Phase 2) writes it,
@@ -19,7 +19,7 @@
  *    docs/business/AUDITOR_MOD.md ("Mod identity / compareKey").
  *  - Every array field is required and non-undefined. Empty arrays are valid;
  *    missing fields are not. (Optional sub-fields use `?` explicitly.)
- *  - Schema is additive: future v1.x revisions add fields, never rename or
+ *  - Schema is additive: later revisions of a version add fields, never rename or
  *    remove. A breaking change bumps {@link SchemaVersion}.
  */
 
@@ -29,9 +29,14 @@ import type {
 
 /**
  * Manifest schema version. Bumped only on breaking changes — additive
- * field changes leave this at 1. The installer refuses unknown versions.
+ * field changes leave it alone. The installer refuses every other version.
+ *
+ *  - 1: bundled mods shipped as archives, `bundled/<sha256>.<ext>`.
+ *  - 2: bundled mods ship as their loose files, `bundled/<sha256>/<path>`,
+ *       the sha being the canonical zip those files make (bundleZip.ts),
+ *       because Nexus quarantines an upload with an archive inside it.
  */
-export type SchemaVersion = 1;
+export type SchemaVersion = 2;
 
 /**
  * Top-level shape of `manifest.json` inside an `.ehcoll` package.
@@ -290,8 +295,8 @@ export type ExternalModSource = {
    * way to identify the mod across machines and is rejected.
    *
    * INVARIANT (parser-enforced): if `bundled === true`, then `sha256`
-   * MUST be present (the bundled-archive path on disk is keyed by
-   * archive sha256, so we cannot bundle without it).
+   * MUST be present: a bundled mod's folder in the package is named by it,
+   * and the install checks the archive it writes back against it.
    *
    * When present: lowercase hex, exactly 64 characters.
    */
@@ -322,7 +327,8 @@ export type ExternalModSource = {
    */
   downloadMode?: "direct" | "browse" | "manual";
   /**
-   * `true` ⇒ archive is included in the package at `bundled/<sha256>.<ext>`.
+   * `true` ⇒ the mod's files are in the package, loose, at
+   * `bundled/<sha256>/<path>`; the install writes the archive back from them.
    * `false` ⇒ the user must supply a local copy.
    *
    * Requires {@link sha256} to be set when `true` (see invariant above).

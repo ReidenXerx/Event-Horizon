@@ -120,8 +120,22 @@ describe("bundle resolution has one home", () => {
       "skyrimse",
       { externalMods: { m1: { name: "Some Nexus Mod", bundled: true } } } as never,
       [mod] as never,
+      // Packed, even. The rule is whether it MAY ship, not whether it could.
+      {
+        bundles: [
+          {
+            modId: "m1",
+            modName: "Some Nexus Mod",
+            rootDir: "C:/staging/m1",
+            sha256: "a".repeat(64),
+            bytes: 1,
+            files: 1,
+          },
+        ],
+        failures: new Map(),
+      },
     );
-    expect(result.bundledArchives).toEqual([]);
+    expect(result.bundles).toEqual([]);
     expect(result.errors.join(" ")).toMatch(/not marked as an external dependency/);
     // And the predicate agrees, so the two cannot drift apart silently.
     expect(mayBundle(true, { bundled: true } as never)).toBe(false);

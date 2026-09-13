@@ -191,7 +191,7 @@ The dashboard does not write to disk and does not mutate Vortex state.
 ## Acknowledged gaps
 
 - **No "tail" log feed.** Useful for testers — we'd surface the last N events from the install / build pipelines. Currently this lives only in the wizard's running step.
-- **No "size on disk" total.** The footer doesn't say "Event Horizon takes up X MB on this machine"; computing that requires summing all bundled archives + receipts + configs.
+- **No "size on disk" total.** The footer doesn't say "Event Horizon takes up X MB on this machine"; computing that requires summing the bundle records + receipts + configs.
 - **No theme switcher** (Gargantua → alt palette). The token system supports it; the UI doesn't expose it.
 - **No keyboard shortcut binding for Refresh.** F5 falls through to Vortex's renderer, which usually no-ops. Adding `useEffect` with `keydown` listener is straightforward.
 - **No localization.**

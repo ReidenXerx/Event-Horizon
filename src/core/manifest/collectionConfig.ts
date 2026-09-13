@@ -82,7 +82,7 @@ export type ExternalModConfigEntry = {
    * every release.
    */
   treatAsExternal?: boolean;
-  /** When true, the source archive ships inside the `.ehcoll` at `bundled/<sha256>.<ext>`. Default false. */
+  /** When true, the mod's staging files ship inside the `.ehcoll`, loose, at `bundled/<sha256>/`. Default false. */
   bundled?: boolean;
   /**
    * The diverged files this mod's post-processing answer was given about.

@@ -274,7 +274,7 @@ ModResolution {
 
 | `decision.kind` | When emitted | Driver action |
 | --- | --- | --- |
-| `external-use-bundled` | The `.ehcoll` carries the archive in `bundled/<sha256>.<ext>`. | Extract from the .ehcoll; install. |
+| `external-use-bundled` | The `.ehcoll` carries the mod's files in `bundled/<sha256>/`. | Write the archive back from them and check its SHA-256; install. |
 | `external-use-local-download` | An archive in `availableDownloads` has a sha that matches the manifest. | Install from `localPath` directly. |
 | `external-already-installed` | An installed mod has matching `archiveSha256`. | Re-use existing mod entry. |
 | `external-bytes-diverged` | Reserved for future heuristics (currently unreachable through compareKey matching). Included in the union so the install driver's `switch` is forced to handle it. | n/a in v1 |

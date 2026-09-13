@@ -28,7 +28,7 @@ src/
 │   └── manifest/
 │       ├── buildManifest.ts              # Pure ExportedModsSnapshot → EhcollManifest converter (Phase 2)
 │       ├── parseManifest.ts              # Pure manifest.json text → EhcollManifest validator (Phase 3 slice 1)
-│       ├── packageZip.ts                 # EhcollManifest + bundled archives → .ehcoll ZIP packager (Phase 2)
+│       ├── packageZip.ts                 # EhcollManifest + bundled/mirrored mods' files → .ehcoll ZIP packager (Phase 2)
 │       ├── readEhcoll.ts                 # .ehcoll ZIP file → manifest + layout reader (Phase 3 slice 2)
 │       ├── sevenZip.ts                   # Typed shim over vortex-api's util.SevenZip (node-7z)
 │       └── collectionConfig.ts           # Per-collection state file: persisted package.id, per-mod overrides, README/CHANGELOG (Phase 2 slice 4b)
@@ -38,7 +38,7 @@ src/
 │   ├── installer/
 │   │   ├── runInstall.ts                 # Install driver orchestrator — runs an InstallPlan, fresh- or current-profile
 │   │   ├── profile.ts                    # Vortex profile create/switch/enable-mod helpers
-│   │   ├── modInstall.ts                 # Mod install primitives: nexusDownload / start-install / bundled-archive extract; hang-watchdog input signal
+│   │   ├── modInstall.ts                 # Mod install primitives: nexusDownload / start-install / bundled-archive write-back; hang-watchdog input signal
 │   │   ├── verifyModInstall.ts           # Post-install SHA-256 check → matches | differs | damaged | unknown
 │   │   ├── checkArchiveIdentity.ts       # Same four verdicts for a user-picked archive
 │   │   ├── purgeUserRules.ts             # Back up, then CLEAR the user's mod rules + LOOT userlist
@@ -142,12 +142,12 @@ Full prose contract: [`docs/business/INSTALL_ACTION.md`](business/INSTALL_ACTION
 - Full prose contract: [`docs/business/BUILD_MANIFEST.md`](business/BUILD_MANIFEST.md).
 
 `manifest/packageZip.ts`
-- `packageEhcoll(input)` — takes one `EhcollManifest` plus a list of bundled archive specs (`{ sourcePath, sha256 }`), stages everything in a temp directory, and runs 7z to produce one `.ehcoll` file. Returns `{ outputPath, outputBytes, bundledCount, warnings }`.
-- ZIP format (forced via `-tzip`), not 7z native — bundled archives are already compressed, ZIP wins on tooling compatibility for debugging.
-- Bundled archives are hardlinked into staging where possible (free, instant) with `fs.copyFile` fallback on EXDEV/EPERM. 7z reads them off disk directly; Node never holds bundled bytes in memory.
-- Validation is fail-fast and exhaustive — every detectable problem (sha256 format violations, manifest/archives mismatch, non-absolute paths, etc.) goes into one `PackageEhcollError`.
+- `packageEhcoll(input)` — takes one `EhcollManifest` plus its bundled mods (`{ rootDir, sha256, modName }`) and mirrored files, refuses any file that is itself an archive, stages everything loose in a temp directory, re-measures each bundle, and runs 7z to produce one `.ehcoll` file. Returns `{ outputPath, outputBytes, outputSha256, bundledCount, warnings }`.
+- ZIP format (forced via `-tzip`), not 7z native — ZIP wins on tooling compatibility for debugging.
+- Bundled mods' files are hardlinked into staging where possible (free, instant) with `fs.copyFile` fallback on EXDEV/EPERM. 7z reads them off disk directly; Node never holds a mod's bytes in memory. Nothing inside a package is an archive — Nexus quarantines one that is ([`business/PACKAGE_ZIP.md`](business/PACKAGE_ZIP.md)).
+- Validation is fail-fast and exhaustive — every detectable problem (sha256 format violations, manifest/bundles mismatch, non-absolute paths, etc.) goes into one `PackageEhcollError`.
 - **Identity is `(package.id, package.version)`, not byte-equal builds.** The only stable-bytes concession kept is `manifest.json` key sorting via `sortDeep`, purely for `unzip + diff` debuggability.
-- Optional `verifyHashes` re-streams every bundled archive through SHA-256 before staging — slow on big archives but catches "curator's archive cache changed since snapshot export."
+- Every staged bundle is re-measured — its files must still make the sha the manifest names — and every mirrored file re-hashed, because the decisions gate can sit between measuring and packaging for as long as the curator likes.
 - Staging directory is `rm -rf`'d in `finally`, so partial output never leaks into the temp dir.
 - Full prose contract: [`docs/business/PACKAGE_ZIP.md`](business/PACKAGE_ZIP.md).
 
@@ -162,8 +162,8 @@ Full prose contract: [`docs/business/INSTALL_ACTION.md`](business/INSTALL_ACTION
 - Full prose contract: [`docs/business/PARSE_MANIFEST.md`](business/PARSE_MANIFEST.md).
 
 `manifest/readEhcoll.ts`
-- `readEhcoll(zipPath, options?)` — I/O mirror of `packageEhcoll`. Pre-flights the file (ENOENT/EACCES/non-regular-file all become readable errors), lists the ZIP central directory with the project's **own** reader (`listZipEntries` in `readZip.ts` — not 7-Zip), extracts `manifest.json` alone to a temp dir via `extractZipEntryToFile`, hands the bytes to `parseManifest`, and cross-checks the package's `bundled/` directory against `manifest.mods` (every `bundled: true` mod must be present, no stray archives allowed, no duplicate sha256 entries).
-- Returns `{ manifest, bundledArchives, hasReadme, hasChangelog, iniTweakFiles, warnings }`. Bundled archives are listed (sha256 + zipPath + extension + size) but never extracted — the resolver owns extraction. This keeps a future "inspect package" UI fast on multi-GB collections.
+- `readEhcoll(zipPath, options?)` — I/O mirror of `packageEhcoll`. Pre-flights the file (ENOENT/EACCES/non-regular-file all become readable errors), lists the ZIP central directory with the project's **own** reader (`listZipEntries` in `readZip.ts` — not 7-Zip), extracts `manifest.json` alone to a temp dir via `extractZipEntryToFile`, hands the bytes to `parseManifest`, and cross-checks the package's `bundled/` folders against `manifest.mods` (every `bundled: true` mod's folder must be present, no stray folders, and nothing under `bundled/` that is not a file inside one).
+- Returns `{ manifest, bundledArchives, hasReadme, hasChangelog, iniTweakFiles, warnings }`. Bundled mods are listed (sha256 + folder + file count + size) but never read — the installer writes each one's archive from its files. This keeps a future "inspect package" UI fast on multi-GB collections.
 - Two short-circuit gates: file-not-readable, and `manifest.json`-not-present-at-root. Everything else accumulates into one `ReadEhcollError`. `parseManifest`'s thrown errors are repackaged so the caller has a single error type to catch.
 - Path normalization is forward-slash. Directory entries (`attr` starting with `D`, or a trailing-slash name) are filtered. Unknown root-level files are tolerated as forward-compat headroom for additive v1.x schema additions.
 - The listing result is still *shaped* as `SevenZipListEntry` even though 7-Zip no longer produces it — that is what let the reader swap underneath without touching its six consumers.
@@ -237,9 +237,9 @@ Full prose contract: [`docs/business/INSTALL_ACTION.md`](business/INSTALL_ACTION
 - Three install primitives, one per `ModDecision` flavour:
   - `installNexusViaApi({ gameId, nexusModId, nexusFileId, fileName? })` — emits `api.ext.nexusDownload` with `allowInstall: true`. Awaits the `did-install-mod` event matched against the returned `archiveId`. Used for `nexus-download` decisions.
   - `installFromExistingDownload({ gameId, archiveId })` — emits `start-install-download(archiveId)`. Used for `nexus-use-local-download` and `external-use-local-download` (a fast path that skips re-downloading a Nexus file the user already has).
-  - `installFromBundledArchive({ gameId, ehcollZipPath, bundledZipEntry })` — uses `extractBundledFromEhcoll` to pull one `bundled/<sha>.<ext>` file out of the `.ehcoll` ZIP into a `mkdtemp` scratch dir, then emits `start-install(extractedPath)`. The temp dir is removed in `finally` (`safeRmTempDir` swallows ENOENT).
+  - `installFromBundledArchive({ gameId, ehcollZipPath, bundledZipEntry })` — uses `extractBundledFromEhcoll` to write a bundled mod's archive from its loose files in `bundled/<sha>/` — the canonical zip (`bundleZip.ts`), refused unless it hashes to the sha — into a `mkdtemp` scratch dir, then emits `start-install(extractedPath)`. The temp dir is removed in `finally` (`safeRmTempDir` swallows ENOENT).
 - Each primitive returns `{ vortexModId, archiveId? }` after the install completes. The `did-install-mod` listener has a timeout — if Vortex never fires the event (download hung, antivirus interference), the driver records a `failed` result with the phase and the mod that hung. Budgets are size- and platform-aware (`timeBudgets.ts`): a Wine/Proton prefix gets more headroom than Windows, and a 2 GB extract more than a 5 MB one.
-- Bundled extraction is native (`readZip.ts`) and writes straight to disk rather than buffering the archive in Node. Memory stays constant regardless of bundled-archive size.
+- Writing a bundled archive is native (`readZip.ts` reads, `bundleZip.ts` writes) and streams straight to disk rather than buffering in Node. Memory stays constant regardless of the mod's size.
 - `isAwaitingUserInput(state)` reads `session.base.visibleDialog` / `overlayOpen` — the signal that Vortex is blocked on a human, used to pause the hang watchdog.
 
 **Plugin order and flags** — there is no `pluginsTxt.ts` any more; the driver stopped writing that file. What replaced it:
@@ -370,7 +370,7 @@ init → installCollectionAction()
         → for each ModResolution sequentially:
               installNexusViaApi          (nexus-download)
             | installFromExistingDownload (nexus-use-local-download / external-use-local-download)
-            | installFromBundledArchive   (external-use-bundled — extracts from .ehcoll)
+            | installFromBundledArchive   (external-use-bundled — writes the archive from the .ehcoll's loose files)
             → enableModInProfile
         → verifying-mods                     (SHA-256 → matches | differs | damaged | unknown)
         → applying-mod-rules + applying-userlist  (BACK UP, clear, then apply the curator's)
@@ -396,8 +396,8 @@ init → buildPackageAction()
    → reconcileExternalModsConfig       (auto-populate stub entries for new external mods)
    → saveCollectionConfig              (only when reconciliation changed something)
    → buildManifest                     (pure transform → EhcollManifest)
-   → resolveBundledArchives            (slice 4b — for each bundled:true entry, resolve archive on disk)
-   → packageEhcoll                     (stages bundled archives → 7z -tzip → .ehcoll)
+   → resolveBundledArchives            (slice 4b — each bundled:true entry → the files measured from its staging folder)
+   → packageEhcoll                     (refuses archives inside → stages loose files → 7z -tzip → .ehcoll)
    → sendNotification(Open Package / Open Folder / Open Config)
 ```
 

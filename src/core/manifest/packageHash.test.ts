@@ -50,7 +50,7 @@ const writingSevenZip = (bytes: Buffer): SevenZipApi =>
 
 const manifest = (): EhcollManifest =>
   ({
-    schemaVersion: 1,
+    schemaVersion: 2,
     package: {
       id: "11111111-2222-4333-8444-555555555555",
       name: "Test",
@@ -83,7 +83,7 @@ describe("a package states its own checksum", () => {
 
     const result = await packageEhcoll({
       manifest: manifest(),
-      bundledArchives: [],
+      bundles: [],
       outputPath,
       sevenZip: writingSevenZip(bytes),
     });
@@ -101,7 +101,7 @@ describe("a package states its own checksum", () => {
 
     const result = await packageEhcoll({
       manifest: manifest(),
-      bundledArchives: [],
+      bundles: [],
       outputPath,
       sevenZip: writingSevenZip(bytes),
     });
@@ -121,7 +121,7 @@ describe("a package states its own checksum", () => {
 
     const result = await packageEhcoll({
       manifest: manifest(),
-      bundledArchives: [],
+      bundles: [],
       outputPath,
       sevenZip: writingSevenZip(bytes),
     });

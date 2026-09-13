@@ -25,7 +25,7 @@ import { MOD_INSTALL_SPEC_FATES } from "./manifestFieldFates";
 /** A minimal manifest that parses, with one mod we can vary. */
 const manifestWith = (install: Record<string, unknown>): string =>
   JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     package: {
       id: "11111111-2222-4333-8444-555555555555",
       name: "Test Collection",

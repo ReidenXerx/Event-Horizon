@@ -2190,8 +2190,8 @@ function SourceChoice(props: {
   /**
    * Whether the mod has a staging folder to pack FROM.
    *
-   * Deliberately not "has an archive": bundling repacks the staging folder
-   * into a new archive, so a hand-made mod Vortex never downloaded bundles
+   * Deliberately not "has an archive": bundling ships the staging folder's own
+   * files, so a hand-made mod Vortex never downloaded bundles
    * perfectly well. Gating on the archive would have blocked the case this
    * feature exists for.
    */
@@ -2241,8 +2241,8 @@ function ExternalModsTable(
       {mods.map((mod) => {
         const override = overrides[mod.id] ?? {};
         // What bundling actually needs. The archive is irrelevant to it —
-        // repackBundledExternals packs the staging folder and re-keys the mod
-        // to the new archive's hash before the manifest is built.
+        // repackBundledExternals measures the staging folder and re-keys the mod
+        // to the bundle's hash before the manifest is built.
         const hasStagingFolder =
           typeof mod.installationPath === "string" &&
           mod.installationPath.length > 0;
@@ -2313,7 +2313,7 @@ function ExternalModsTable(
                 </span>
               )}
               {/* A choice that cannot work: "From website" with no page to
-                  open, or "Bundled" with no archive left to bundle. Caught
+                  open, or "Bundled" with no staging folder to ship. Caught
                   here because the user-side screen would otherwise offer a
                   button that has nothing behind it. */}
               {sourceProblem(override, { hasStagingFolder }) !== undefined && (
@@ -2925,7 +2925,7 @@ export function DonePanel(props: {
         <StatGrid min={200}>
           <StatTile label="Output size" value={formatBytes(result.outputBytes)} />
           <StatTile label="Mods" value={result.modCount} />
-          <StatTile label="Bundled archives" value={result.bundledCount} />
+          <StatTile label="Bundled mods" value={result.bundledCount} />
           <StatTile
             label="Warnings"
             value={result.warnings.length}
@@ -3167,7 +3167,7 @@ function phaseToLabel(phase: BuildProgress["phase"] | undefined): string | undef
     case "building-manifest":
       return "Building manifest...";
     case "resolving-bundled-archives":
-      return "Resolving bundled archives...";
+      return "Checking bundled mods...";
     case "packaging":
       return "Packaging .ehcoll...";
     default:

@@ -7,7 +7,18 @@ collection pipe (sections 2–6 below) is research that was never built and is
 not going to be: Event Horizon exists because that pipe loses the curator's
 state, so pointing people at it again would be the wrong door.
 
-**Why not the package on Nexus itself:** it was tried first (multipart upload
+**Update 2026-09-13 — the format no longer has an archive inside.** From
+manifest schema 2 a bundled mod ships as its own files, loose, under
+`bundled/<sha256>/`, and a build refuses any bundled or mirrored file that is
+itself an archive, judged by its first bytes. Nexus support said they would not
+act on the quarantine, so the format changed instead (see
+[`business/PACKAGE_ZIP.md`](business/PACKAGE_ZIP.md)). The curator decided the
+package goes back on Nexus: new pages carrying the `.ehcoll`, replacing the two
+quarantined ones. Not done yet — and deleting the old pages waits for the
+curator's explicit go-ahead. Until then, everything below describes schema 1
+and the pages as they stand.
+
+**Why not the package on Nexus itself (schema 1):** it was tried first (multipart upload
 works, see below) and Nexus's automated safety scan quarantined both files
 within the hour. The stated reason list includes *nested archives (a zip
 containing another zip)*, and an `.ehcoll` with bundled files is exactly that

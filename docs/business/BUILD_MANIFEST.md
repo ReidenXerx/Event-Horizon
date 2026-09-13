@@ -180,8 +180,8 @@ reasons:
 
 ## Non-goals (explicit)
 
-- **No archive byte-handling.** The builder doesn't know about `bundled/` ZIP
-  entries. The ZIP packager (slice 3) handles that, given the manifest.
+- **No byte-handling.** The builder doesn't know about the package's `bundled/`
+  folders. The packager (slice 3) handles those, given the manifest.
 - **No README/CHANGELOG generation.** Curator-supplied content goes in via
   the action handler's UI; the builder doesn't see it.
 - **No de-duplication of identical mods.** If two AuditorMod entries resolve

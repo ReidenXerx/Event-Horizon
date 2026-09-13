@@ -63,16 +63,15 @@ describe("repairDecisionFor", () => {
 
   it("sends a bundled external mod back to the package", () => {
     /**
-     * The zip path must be rebuilt by the same convention the packager
-     * writes, because nothing else in the repair knows where the archive
-     * lives. `expectedFilename` decides the extension exactly as the
-     * resolver's own bundled rung does — and when it guesses wrong, the
-     * extractor recovers by sha.
+     * The folder must be named by the same convention the packager writes,
+     * because nothing else in the repair knows where the mod's files live. It
+     * depends on the sha alone: `expectedFilename` still says "High Poly
+     * Head.7z", and a package holds no archive to take an extension from.
      */
     expect(repairDecisionFor(externalMod())).toEqual({
       kind: "external-use-bundled",
       sha256: SHA,
-      zipPath: `bundled/${SHA}.7z`,
+      zipPath: `bundled/${SHA}/`,
     });
   });
 

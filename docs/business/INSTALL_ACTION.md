@@ -251,7 +251,7 @@ runInstall({
   api,
   plan,
   ehcoll,            // ReadEhcollResult — for bundled inventory
-  ehcollZipPath,     // absolute path; needed for cherry-picking bundled archives
+  ehcollZipPath,     // absolute path; needed to write bundled mods' archives back out of it
   appDataPath,       // for receipt write
   decisions,         // from step 10
   onProgress,        // updates an activity notification per phase beat

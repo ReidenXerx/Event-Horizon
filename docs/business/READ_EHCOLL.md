@@ -52,10 +52,12 @@ deliberate choice rather than a 7-Zip constraint: it keeps this function's
 contract identical to the version it replaced, and a manifest large enough to
 matter is one worth streaming anyway.
 
-Bundled archives are deliberately **not** extracted here. We only
-confirm they're present in the central directory and that they match
-the manifest's `bundled: true` mods. The resolver decides when to
-extract them and where to.
+Bundled mods are deliberately **not** read here. A package carries each
+one as loose files in a folder, `bundled/<sha256>/` (Nexus quarantines a
+package with an archive inside it); we only confirm the folders are present
+in the central directory, match the manifest's `bundled: true` mods, and
+that nothing else sits under `bundled/`. The installer writes each mod's
+archive from its files when it installs it.
 
 ## Inputs
 
@@ -91,8 +93,9 @@ running.
 }
 ```
 
-`BundledArchiveEntry` carries the parsed sha256, the in-zip path
-(forward-slashed), the file extension (without dot), and the
+`BundledArchiveEntry` is one bundled mod: the sha256 its folder is named
+after (the identity of the canonical zip its files make), the folder's
+in-zip path (`bundled/<sha256>/`), how many files it holds, and their
 uncompressed size, read straight from the central directory.
 
 ## Behavior — pipeline
@@ -120,10 +123,16 @@ phase 3 accumulates errors.
    - `manifest.json` at root → `hasManifest = true`
    - `README.md` at root → `hasReadme = true`
    - `CHANGELOG.md` at root → `hasChangelog = true`
-   - `bundled/<basename>` → parse basename as `<64-hex>[.<ext>]`. On
-     match, push to `bundledEntries`; on miss, the file is silently
-     dropped (we tolerate stray content here; the cross-check step is
-     where we catch real problems).
+   - `bundled/<64-hex>/<path>` → counted into that bundled mod's entry
+     (one per folder, with its file count and size).
+   - a `bundled/` file whose name does not say how it is encoded (no UTF-8
+     flag, and not plain ASCII) → `unflaggedBundled`. Its path is a guess, so
+     its mod could not be written back; the cross-check refuses the package
+     before anything installs.
+   - anything else under `bundled/` → `unrecognizedBundled`. The
+     cross-check refuses the package for it: schema 2 writes nothing
+     else there, and an archive in the old `bundled/<sha256>.<ext>`
+     layout is exactly what must not be read.
    - `ini-tweaks/...` → push to `iniTweakFiles`.
    - Anything else at root → ignored. Forward-compat headroom for
      additive v1.x schema changes that ship root-level files.
@@ -148,15 +157,14 @@ phase 3 accumulates errors.
 12. Build the **expected** set: every `mod.source.kind === "external" && mod.source.bundled === true`,
     keyed by `sha256` → `compareKey`. Duplicate external SHAs survive
     (the parse layer already warns about them); the *first* mod claims
-    the archive.
-13. Build the **seen** set: every parsed bundled-directory entry, keyed
-    by `sha256` → `ParsedBundledEntry`. **Duplicate sha256 entries in
-    the ZIP are an error** (every external identity is unique; two of
-    the same SHA in `bundled/` should be impossible).
-14. Every expected SHA missing from seen → error
-    ("...marked bundled=true in the manifest but no archive with sha256 X
-    is present...").
-15. Every seen SHA missing from expected → error
+    the folder.
+13. Any `unrecognizedBundled` entry → one error naming the first five and
+    giving the count; likewise any `unflaggedBundled` entry. A folder is named by its sha, so two folders can
+    never share one — there is no duplicate check left to make.
+14. Every expected SHA without a folder → error
+    ("...marked bundled=true in the manifest but the package has no folder
+    bundled/X/ holding its files...").
+15. Every folder whose SHA is not expected → error
     ("...is present in the package but does not correspond to any external
     mod with bundled=true...").
 16. If any errors, throw `ReadEhcollError` with the full list. Otherwise
@@ -174,19 +182,21 @@ phase 3 accumulates errors.
 | central directory unreadable | Corrupt ZIP, encrypted entry, not a ZIP | Throw, single error |
 | `manifest.json` missing | Not an Event Horizon package | Throw, single error |
 | `manifest.json` not valid JSON | Hand-edit / producer bug | Throw, list from `parseManifest` |
-| `schemaVersion` ≠ 1 | Future package | Throw, single error |
+| `schemaVersion` = 1 | Built before bundled mods shipped loose | Throw, single error: download the collection's current package |
+| `schemaVersion` anything else but 2 | Future package | Throw, single error: update Event Horizon |
 | Field-level shape problems | Hand-edit / producer bug | Throw, list from `parseManifest` |
-| Bundled mod missing in `bundled/` | Producer bug, package corruption | Throw, accumulated |
-| Stray archive in `bundled/` | Hand-edit, producer bug | Throw, accumulated |
-| Two `bundled/` entries with the same sha256 | Hand-edit, never producer | Throw, accumulated |
-| Bundled basename is not `<64-hex>[.ext]` | Hand-edit | Silently ignored at classification (tolerable: it's not in the manifest's bundled set, so it can't masquerade as an expected archive) |
+| Bundled mod has no folder in `bundled/` | Producer bug, package corruption | Throw, accumulated |
+| Stray folder in `bundled/` | Hand-edit, producer bug | Throw, accumulated |
+| Anything under `bundled/` that is not a file in a `<64-hex>/` folder — an old-layout archive above all | Hand-edit, re-packing tool | Throw, accumulated |
+| A `bundled/` file name that is not ASCII and carries no UTF-8 flag | Re-packed by a tool that does not mark UTF-8 names | Throw, accumulated |
 | Unknown root-level file | Forward-compat additive change | Tolerated, no warning |
 | Extension cannot stat staging dir | Permission issue | Bubbled up as `ReadEhcollError` |
 
 ## Quirks & invariants
 
-1. **`readEhcoll` only extracts `manifest.json`.** Bundled archives are
-   listed, never extracted. The resolver (slice 3+) owns extraction;
+1. **`readEhcoll` only extracts `manifest.json`.** Bundled mods are
+   listed, never read. The installer writes each one's archive from its
+   files (`extractBundledFromEhcoll`) and checks its SHA-256 there;
    `readEhcoll` is purely "tell me what's in here." This keeps a UI
    "inspect package" action fast on a 4 GB collection.
 2. **Path normalization is forward-slash.** The ZIP spec says entry names
@@ -203,12 +213,12 @@ phase 3 accumulates errors.
    doesn't recognize. We don't refuse the package — we just ignore the
    file. This keeps users on the older extension able to install
    newer packages whenever the additive change is compatible.
-5. **Bundled entries with malformed basenames are silently dropped at
-   classification.** They can't masquerade as expected archives (the
-   sha256 won't match). If you want to *see* such files for debugging,
-   the unrecognized-basename list lives in the layout state but isn't
-   currently surfaced — wire it up if/when a debug-inspector view
-   needs it.
+5. **Nothing but bundled mods' folders is accepted under `bundled/`.** An
+   entry that is not a file inside `bundled/<64-hex>/` refuses the package,
+   and the log (`ehcoll.read.bundled.unrecognized`) lists every one. This
+   used to be tolerated. It is not now, because the one thing that rule
+   would let through — an archive in the old layout — is exactly what a
+   package must not carry.
 6. **Short-circuit gates are categorical "no document" cases.** Missing
    ZIP, unreadable ZIP, missing `manifest.json`. Everything else
    accumulates so the operator gets a full diagnosis from one read.
@@ -230,7 +240,7 @@ phase 3 accumulates errors.
 
 ## Round-trip property
 
-The Phase 3 slice 2 done-criterion. For any input `(input, archives)`
+The Phase 3 slice 2 done-criterion. For any input `(input, bundles)`
 that `packageEhcoll` accepts:
 
 ```
@@ -238,8 +248,8 @@ const { outputPath } = await packageEhcoll({ ... });
 const result = await readEhcoll(outputPath);
 
 result.manifest                           === input.manifest          (deep-equal)
-result.bundledArchives.length             === bundledArchives.length
-result.bundledArchives[*].sha256          ⊆ archives[*].sha256
+result.bundledArchives.length             === bundles.length
+result.bundledArchives[*].sha256          ⊆ bundles[*].sha256
 result.hasReadme                          === (input.readme !== undefined)
 result.hasChangelog                       === (input.changelog !== undefined)
 result.iniTweakFiles                      === []                       (v1 producers)

@@ -36,7 +36,7 @@ import {
 /** A manifest skeleton the strict parser accepts, so a test can vary one thing. */
 function manifestWith(order: unknown[], pluginsExtra: Record<string, unknown> = {}): string {
   return JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     package: {
       id: "123e4567-e89b-12d3-a456-426614174000",
       name: "p",

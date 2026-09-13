@@ -69,7 +69,7 @@ describe("a bundled mod is recognisable after Vortex renames it", () => {
 
     // What the mod will actually be called once installed.
     const installed = vortexModName(
-      bundledArchiveFileName("bundled/deadbeef.zip", name),
+      bundledArchiveFileName("a".repeat(64), name),
     );
 
     // The matcher must be looking for exactly that.

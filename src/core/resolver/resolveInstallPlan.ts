@@ -54,6 +54,7 @@
 import { gameVersionGuidance } from "./gameVersionGuidance";
 import { describeStoreMismatch } from "../manifest/storeCompatibility";
 import { looksLikeWine } from "../proton";
+import { bundleFolderInPackage } from "../manifest/bundleLayout";
 import type {
   EhcollExternalDependency,
   EhcollManifest,
@@ -621,15 +622,16 @@ function resolveExternalMod(
     }
   }
 
-  // Rung 4: archive bundled in the .ehcoll. Schema invariant
-  // guarantees `bundled === true ⇒ sha256 set`, so the assertion is
-  // safe even though TS can't infer it from the destructure.
+  // Rung 4: bundled in the .ehcoll — its files, from which the install writes
+  // the archive the sha names. Schema invariant guarantees
+  // `bundled === true ⇒ sha256 set`, so the assertion is safe even though TS
+  // can't infer it from the destructure.
   if (bundled) {
     const sha = sha256!;
     return {
       kind: "external-use-bundled",
       sha256: sha,
-      zipPath: bundledZipPath(sha, expectedFilename),
+      zipPath: bundleFolderInPackage(sha),
     };
   }
 
@@ -1098,16 +1100,10 @@ function findDownloadBySha(
 // Bundled archive path
 // ===========================================================================
 
-/**
- * Reconstructs the path to a bundled archive inside the .ehcoll ZIP.
- * Convention from {@link ../manifest/packageZip.packageEhcoll}:
- *   bundled/<sha256><ext>
- * where `<ext>` is the lowercased extension of `expectedFilename`,
- * defaulting to `.zip` if none is detectable.
- */
-function bundledZipPath(sha256: string, expectedFilename: string): string {
-  return `bundled/${sha256}${extractExtension(expectedFilename)}`;
-}
+// A bundled mod's place in the package is `bundleFolderInPackage(sha)`
+// (manifest/bundleLayout.ts) — one spelling shared with the packager and the
+// reader. The extension this used to derive from `expectedFilename` agreed
+// with the packager's only by luck, and a package holds no archives now.
 
 /**
  * ──────────────────────────────────────────────────────────────────────
@@ -1152,31 +1148,11 @@ export function repairDecisionFor(mod: EhcollMod): ModDecision | undefined {
     return {
       kind: "external-use-bundled",
       sha256: src.sha256,
-      zipPath: bundledZipPath(src.sha256, src.expectedFilename),
+      zipPath: bundleFolderInPackage(src.sha256),
     };
   }
 
   return undefined;
-}
-
-function extractExtension(filename: string): string {
-  // Special-case multi-part archive extensions the packager preserves.
-  const lower = filename.toLowerCase();
-  if (lower.endsWith(".tar.gz")) return ".tar.gz";
-  if (lower.endsWith(".tar.bz2")) return ".tar.bz2";
-  if (lower.endsWith(".tar.xz")) return ".tar.xz";
-
-  const lastDot = filename.lastIndexOf(".");
-  const lastSep = Math.max(filename.lastIndexOf("/"), filename.lastIndexOf("\\"));
-  if (lastDot <= lastSep || lastDot === -1) {
-    return ".zip";
-  }
-  const ext = filename.substring(lastDot).toLowerCase();
-  // Sanity: extensions over 8 chars are almost certainly not extensions.
-  if (ext.length > 8) {
-    return ".zip";
-  }
-  return ext;
 }
 
 // ===========================================================================

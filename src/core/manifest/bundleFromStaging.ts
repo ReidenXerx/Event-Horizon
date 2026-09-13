@@ -15,23 +15,31 @@
  * the mismatch perfectly — and has no way to fix it, because the bytes it was
  * given are the wrong ones.
  *
- * So bundling an external mod now packs the STAGING FOLDER. What ships is what
- * the curator actually has.
+ * So bundling an external mod ships the STAGING FOLDER. What ships is what the
+ * curator actually has.
  *
  * ## The identity has to move with the bytes
  *
- * A mod is identified by the sha256 of the archive that produces it. Repacking
- * produces different bytes, so the repacked archive's hash becomes the mod's
- * identity — otherwise the manifest would promise one thing and the package
- * would contain another, which is the failure this whole module exists to end.
+ * A mod is identified by the sha256 of the archive that produces it. The
+ * staging folder makes a different archive from the one the curator started
+ * from, so that archive's hash becomes the mod's identity — otherwise the
+ * manifest would promise one thing and the package would contain another,
+ * which is the failure this whole module exists to end.
  *
- * ## Determinism
+ * ## One archive, the same on every machine
  *
- * The archive is built from a sorted file list with 7z's timestamp-free zip
- * settings where available. Two builds from an unchanged staging folder should
- * produce the same bytes and therefore the same identity; a rebuild that
- * gratuitously changed every external mod's hash would make every collection
- * update look like every mod changed.
+ * That archive is the canonical bundle zip (bundleZip.ts): made from file paths
+ * and bytes alone, in a fixed order, with no timestamps. The same staging
+ * folder is the same identity on every build — a rebuild that changed nothing
+ * cannot make a mod look changed — and the user's install writes those very
+ * bytes back before Vortex sees them.
+ *
+ * ## Nothing is packed here
+ *
+ * Nexus quarantines an upload with an archive inside it, so a package carries a
+ * bundled mod's files loose. The curator's build needs only the zip's hash, so
+ * this reads the folder, keeps the number, and leaves the files where they are
+ * for packaging to collect.
  * ──────────────────────────────────────────────────────────────────────
  */
 
@@ -40,59 +48,83 @@ import * as path from "path";
 
 import { selectors, types } from "@nexusmods/vortex-api";
 
-import { hashFileSha256 } from "../archiveHashing";
+import { isAbort } from "../../utils/abortError";
 import { beginOp, ehLog } from "../logging/ehLog";
 import {
-  bundleFileName,
-  bundleSidecarPath,
-  sanitizeModId,
-  sidecarMatches,
-  staleBundlesFor,
+  bundleRecordName,
+  isLegacyBundleArchive,
+  recordMatches,
+  staleBundleRecordsFor,
   type CachedBundle,
 } from "./bundleCache";
+import {
+  BUNDLE_ZIP_FORMAT,
+  bundleFilesFromListing,
+  listBundleFolder,
+  writeBundleZip,
+} from "./bundleZip";
 import { computeStagingSetHash } from "./stagingSetHash";
 import { declaresAlternatives } from "./omissionLeads";
-import { sevenZipAdd, type SevenZipApi } from "./sevenZip";
+import type { SevenZipApi } from "./sevenZip";
 import type { AuditorMod } from "../getModsListForProfile";
 import type { CollectionConfig } from "./collectionConfig";
 import { installRootFor, stagingRootFromFolder } from "../stagingPath";
 
-/** One repacked mod: where the new archive is, and what it hashes to. */
+/** One bundled mod: the folder whose files ship, and the identity they make. */
 export type RepackedBundle = {
   modId: string;
   modName: string;
-  /** Absolute path to the archive built from staging. Temporary. */
-  sourcePath: string;
-  sha256: string;
-  bytes: number;
   /**
-   * True when this archive was reused from a previous build.
+   * The mod's staging folder. Its files ship loose in the package, under
+   * `bundled/<sha256>/`; nothing is copied or written here.
+   */
+  rootDir: string;
+  /** sha256 of the canonical bundle zip those files make — see bundleZip.ts. */
+  sha256: string;
+  /** Size of that zip: roughly what the package carries, and what an install writes back. */
+  bytes: number;
+  files: number;
+  /**
+   * True when this build reused an earlier build's measurement of exactly
+   * these files instead of reading them again.
    *
    * Reported so a curator watching a build finish in seconds can tell that
-   * nothing was skipped — the bytes were simply already packed.
+   * nothing was skipped — the files were simply already measured.
    */
   reused?: boolean;
 };
 
+/**
+ * A mod flagged for bundling that could not be packed, and why.
+ *
+ * `reason` completes the sentence "... is flagged for bundling, but <reason>."
+ * It is what the curator reads when the build refuses the mod.
+ */
+export type RepackFailure = { modId: string; modName: string; reason: string };
+
 export type RepackResult = {
-  /** `archiveSha256` replaced for every repacked mod. */
+  /** `archiveSha256` replaced for every bundled mod. */
   mods: AuditorMod[];
   bundles: RepackedBundle[];
   warnings: string[];
   /**
-   * Mods flagged for bundling whose repack FAILED.
+   * Mods flagged for bundling that could NOT be packed.
    *
    * The caller has to know these by id, because the warning it used to get
-   * said "It will not ship" and that was false. A failed repack leaves the mod
-   * out of `bundles`, and the packaging step's filter keys off `bundles` — so
+   * said "It will not ship" and that was false. A failed repack left the mod
+   * out of `bundles`, and the packaging step's filter keyed off `bundles` — so
    * the mod fell through to being resolved by its ORIGINAL `archiveSha256` and
    * the untouched Nexus archive shipped in its place, from inside the package,
    * so the user never even downloaded from Nexus.
    *
    * A curator who answered "ship my copy" for a mod with a hand-added patch
    * was told it would not ship, and shipped the version without the patch.
+   *
+   * The reason travels with the id because the build stops on these, and what
+   * the curator reads then is the error — not a warning list that a refused
+   * build never shows.
    */
-  failedRepackModIds: string[];
+  failed: RepackFailure[];
 };
 
 export type RepackOptions = {
@@ -106,97 +138,83 @@ export type RepackOptions = {
    * publish. Default 2GB.
    */
   warnBytes?: number;
+  /**
+   * Default true. False reads every bundled mod's files again instead of
+   * trusting an earlier build's measurement of them — what re-verifying
+   * everything asks for, and the way out when a file changed without its size
+   * or timestamp moving, which is the one change a record cannot notice.
+   */
+  reuseRecords?: boolean;
 };
 
 const DEFAULT_WARN_BYTES = 2 * 1024 * 1024 * 1024;
 
-async function directorySize(dir: string): Promise<number> {
-  let total = 0;
-  const walk = async (d: string): Promise<void> => {
-    let entries;
-    try {
-      entries = await fsp.readdir(d, { withFileTypes: true });
-    } catch (err) {
-      ehLog("debug", "bundle.staging-size.dir-unreadable", { err });
-      return;
-    }
-    for (const e of entries) {
-      const full = path.join(d, e.name);
-      if (e.isDirectory()) await walk(full);
-      else {
-        try {
-          total += (await fsp.stat(full)).size;
-        } catch (err) {
-          /* unreadable — not counted, not fatal */
-          ehLog("debug", "bundle.staging-size.file-unreadable", {
-            file: e.name,
-            err,
-          });
-        }
-      }
-    }
-  };
-  await walk(dir);
-  return total;
-}
-
 /**
- * Repack every external mod the curator flagged as bundled, from its staging
- * folder, and re-key it to the resulting archive.
+ * Measure every external mod the curator flagged as bundled — the canonical
+ * zip its staging folder makes — and re-key the mod to that zip's hash.
  *
- * Never throws for a per-mod problem: a mod that cannot be repacked keeps its
- * original identity and produces a warning, because failing an entire build
- * over one bundle would cost the curator far more than shipping without it.
+ * Never throws for a per-mod problem: a mod that cannot be measured keeps its
+ * original identity and comes back in `failed` with the reason, so the build
+ * can refuse it by name. Shipping without it would be a package whose manifest
+ * says the mod is inside when it is not.
  */
 export async function repackBundledExternals(args: {
   state: types.IState;
   gameId: string;
   mods: AuditorMod[];
   config: CollectionConfig;
-  sevenZip: SevenZipApi;
-  /** Directory for the temporary archives. Caller owns cleanup. */
+  /**
+   * Where earlier builds' measurements are kept. Shared by every collection
+   * and owned by Event Horizon: the archives it held before bundles shipped
+   * loose are deleted from it.
+   */
   workDir: string;
   isExternal: (mod: AuditorMod) => boolean;
   options?: RepackOptions;
 }): Promise<RepackResult> {
-  const { state, gameId, mods, config, sevenZip, workDir, isExternal } = args;
+  const { state, gameId, mods, config, workDir, isExternal } = args;
   const options = args.options ?? {};
   const warnBytes = options.warnBytes ?? DEFAULT_WARN_BYTES;
+  const reuseRecords = options.reuseRecords !== false;
 
   const wanted = mods.filter(
     (m) => isExternal(m) && config.externalMods[m.id]?.bundled === true,
   );
   if (wanted.length === 0) {
     ehLog("debug", "bundle.repack.skip", { reason: "no-mods-flagged" });
-    return { mods, bundles: [], warnings: [], failedRepackModIds: [] };
+    return { mods, bundles: [], warnings: [], failed: [] };
   }
 
-  const op = beginOp("bundle.repack", { gameId, candidates: wanted.length });
+  const op = beginOp("bundle.repack", {
+    gameId,
+    candidates: wanted.length,
+    reuseRecords,
+  });
 
   const installRoot = installRootFor(state, gameId);
   if (!installRoot) {
     op.fail(new Error("Could not resolve Vortex's staging folder"), {
       gameId,
     });
+    const reason =
+      `Vortex's staging folder for "${gameId}" could not be resolved, so ` +
+      `none of its files could be packed`;
     return {
       mods,
       bundles: [],
-      warnings: [
-        `Could not resolve Vortex's staging folder for "${gameId}", so no ` +
-          `bundled mod could be repacked. None of them ship, so rebuild ` +
-          `before releasing.`,
-      ],
-      failedRepackModIds: wanted.map((m) => m.id),
+      warnings: [],
+      failed: wanted.map((m) => ({ modId: m.id, modName: m.name, reason })),
     };
   }
 
   await fsp.mkdir(workDir, { recursive: true });
+  await sweepLegacyArchives(workDir);
 
   const bundles: RepackedBundle[] = [];
   const warnings: string[] = [];
-  const failedRepackModIds: string[] = [];
+  const failed: RepackFailure[] = [];
   const newSha = new Map<string, string>();
-  /** modId → the archive this build is using, so older ones can be swept. */
+  /** modId → the record this build used, so that mod's older ones can be swept. */
   const keptByMod = new Map<string, string>();
   let done = 0;
 
@@ -205,155 +223,141 @@ export async function repackBundledExternals(args: {
     done += 1;
     options.onProgress?.(done, wanted.length, mod.name);
     const modStartedAt = Date.now();
-
-    const stagingDirFor = stagingRootFromFolder(
-      installRoot,
-      mod.installationPath,
-    );
-    if (stagingDirFor === undefined) {
-      ehLog("warn", "bundle.repack.mod.no-staging-dir", {
+    const fail = (reason: string, err?: unknown): void => {
+      ehLog("error", "bundle.repack.mod.fail", {
         modId: mod.id,
         modName: mod.name,
+        reason,
+        ms: Date.now() - modStartedAt,
+        ...(err !== undefined ? { err } : {}),
       });
-      warnings.push(
-        `"${mod.name}" is flagged for bundling but Vortex records no staging ` +
-          `folder for it, so its current files cannot be packed.`,
-      );
+      failed.push({ modId: mod.id, modName: mod.name, reason });
+    };
+
+    const stagingDir = stagingRootFromFolder(installRoot, mod.installationPath);
+    if (stagingDir === undefined) {
+      fail("Vortex records no staging folder for it, so there are no files to pack");
       continue;
     }
-    const stagingDir = stagingDirFor;
 
     try {
-      const size = await directorySize(stagingDir);
-      if (size > warnBytes) {
+      /**
+       * The identity of the files about to be measured.
+       *
+       * `undefined` when any staged file lacks a hash, which is exactly the
+       * case where an earlier record would be a guess rather than a fact. The
+       * files are read then, and nothing is recorded.
+       */
+      const contentKey = computeStagingSetHash(mod.stagingFiles ?? []);
+      const recordPath =
+        contentKey === undefined
+          ? undefined
+          : path.join(workDir, bundleRecordName(mod.id, contentKey));
+      const hit =
+        recordPath !== undefined && reuseRecords
+          ? await readBundleRecord(recordPath)
+          : undefined;
+
+      let measured: CachedBundle;
+      if (hit !== undefined) {
+        options.onProgress?.(done, wanted.length, `${mod.name} (already measured)`);
+        measured = hit;
+      } else {
+        ehLog("debug", "bundle.repack.mod.start", {
+          modId: mod.id,
+          modName: mod.name,
+          cacheable: recordPath !== undefined,
+        });
+        const listing = await listBundleFolder(stagingDir, options.signal);
+        if (listing.length === 0) {
+          fail(`its staging folder "${stagingDir}" holds no files to ship`);
+          continue;
+        }
+        const zip = await writeBundleZip(
+          await bundleFilesFromListing(listing, options.signal),
+          undefined,
+          options.signal !== undefined ? { signal: options.signal } : {},
+        );
+        measured = {
+          format: BUNDLE_ZIP_FORMAT,
+          sha256: zip.sha256,
+          bytes: zip.bytes,
+          files: zip.files,
+        };
+        // Written only once the measurement is complete, so a record never
+        // describes a read that was interrupted.
+        if (recordPath !== undefined) await writeBundleRecord(recordPath, measured);
+      }
+
+      if (measured.bytes > warnBytes) {
         // Said, not enforced. The curator chose to ship this.
         ehLog("warn", "bundle.repack.mod.large", {
           modId: mod.id,
           modName: mod.name,
-          bytes: size,
+          bytes: measured.bytes,
         });
         warnings.push(
-          `"${mod.name}" is bundled and its staging folder is ` +
-            `${(size / 1024 ** 3).toFixed(1)} GB, so the .ehcoll will be at ` +
+          `"${mod.name}" is bundled and its files come to ` +
+            `${(measured.bytes / 1024 ** 3).toFixed(1)} GB, so the .ehcoll will be at ` +
             `least that large and the build will spend a while packing it. ` +
             `That is fine if you meant it — if you did not, untick bundle and ` +
             `give users a download link instead.`,
         );
       }
 
-      /**
-       * The identity of what is about to be packed.
-       *
-       * `undefined` when any staged file lacks a hash, which is exactly the
-       * case where reusing a previous archive would be a guess rather than a
-       * fact. The mod is repacked then, under a name nothing will match.
-       */
-      const contentKey = computeStagingSetHash(mod.stagingFiles ?? []);
-      const out =
-        contentKey === undefined
-          ? path.join(workDir, `${sanitizeModId(mod.id)}-uncacheable.zip`)
-          : path.join(workDir, bundleFileName(mod.id, contentKey));
-
-      const hit =
-        contentKey === undefined
-          ? undefined
-          : await readCachedBundle(out, options.signal);
-
-      if (hit !== undefined) {
-        options.onProgress?.(done, wanted.length, `${mod.name} (already packed)`);
-        ehLog("info", "bundle.repack.mod.ok", {
-          modId: mod.id,
-          modName: mod.name,
-          bytes: hit.bytes,
-          reused: true,
-          ms: Date.now() - modStartedAt,
-        });
-        bundles.push({
-          modId: mod.id,
-          modName: mod.name,
-          sourcePath: out,
-          sha256: hit.sha256,
-          bytes: hit.bytes,
-          reused: true,
-        });
-        newSha.set(mod.id, hit.sha256);
-        keptByMod.set(mod.id, out);
-        continue;
-      }
-
-      ehLog("debug", "bundle.repack.mod.start", {
-        modId: mod.id,
-        modName: mod.name,
-        cacheable: contentKey !== undefined,
-      });
-
-      // `<dir>/*` so 7z stores paths relative to the staging root, matching
-      // what the mod's own file list says. There is no cwd option in this
-      // node-7z; see sevenZip.ts.
-      await fsp.rm(out, { force: true });
-      await fsp.rm(bundleSidecarPath(out), { force: true });
-      await sevenZipAdd(
-        sevenZip,
-        out,
-        [path.join(stagingDir, "*")],
-        { raw: ["-tzip"], r: true },
-        options.signal,
-      );
-
-      const sha256 = await hashFileSha256(out, options.signal);
-      const bytes = (await fsp.stat(out)).size;
-      // Written only after the archive exists and has been measured, so a
-      // sidecar never describes a file that was interrupted on the way out.
-      if (contentKey !== undefined) {
-        await writeCachedBundle(out, { sha256, bytes });
-      }
       ehLog("info", "bundle.repack.mod.ok", {
         modId: mod.id,
         modName: mod.name,
-        bytes,
-        reused: false,
+        sha256: measured.sha256,
+        bytes: measured.bytes,
+        files: measured.files,
+        reused: hit !== undefined,
         ms: Date.now() - modStartedAt,
       });
-      bundles.push({ modId: mod.id, modName: mod.name, sourcePath: out, sha256, bytes });
-      newSha.set(mod.id, sha256);
-      keptByMod.set(mod.id, out);
-    } catch (err) {
-      ehLog("error", "bundle.repack.mod.fail", {
+      bundles.push({
         modId: mod.id,
         modName: mod.name,
-        ms: Date.now() - modStartedAt,
-        err,
+        rootDir: stagingDir,
+        sha256: measured.sha256,
+        bytes: measured.bytes,
+        files: measured.files,
+        ...(hit !== undefined ? { reused: true } : {}),
       });
-      failedRepackModIds.push(mod.id);
-      warnings.push(
-        `"${mod.name}" is flagged for bundling but could not be packed from ` +
-          `its staging folder: ${err instanceof Error ? err.message : String(err)}. ` +
-          `It has been left out of this package — nothing for this mod ships, ` +
-          `so rebuild before releasing.`,
+      newSha.set(mod.id, measured.sha256);
+      if (recordPath !== undefined) keptByMod.set(mod.id, recordPath);
+    } catch (err) {
+      if (isAbort(err, options.signal)) {
+        ehLog("info", "bundle.repack.cancelled", { modId: mod.id, modName: mod.name });
+        break;
+      }
+      fail(
+        `its files could not be read from its staging folder (${
+          err instanceof Error ? err.message : String(err)
+        })`,
+        err,
       );
     }
   }
 
-  // One archive per bundled mod: older versions go once the build has what
-  // it needs, never before — a sweep that ran first would delete the copy
-  // that makes a retry fast after a failure.
-  await sweepStaleBundles(workDir, keptByMod);
+  // One record per bundled mod: older ones go once the build has what it
+  // needs, never before.
+  await sweepStaleRecords(workDir, keptByMod);
 
-  const reusedCount = bundles.filter((b) => b.reused === true).length;
   op.ok({
-    repacked: bundles.length,
-    reused: reusedCount,
-    warnings: warnings.length,
+    bundled: bundles.length,
+    reused: bundles.filter((b) => b.reused === true).length,
+    failed: failed.length,
+    bytes: bundles.reduce((n, b) => n + b.bytes, 0),
   });
 
   if (newSha.size === 0) {
-    return { mods, bundles, warnings, failedRepackModIds };
+    return { mods, bundles, warnings, failed };
   }
 
   return {
-    failedRepackModIds,
-    // Identity follows the bytes: the repacked archive is what the user gets,
-    // so it is what the manifest must name.
+    failed,
+    // Identity follows the bytes: the bundle is what the user gets, so it is
+    // what the manifest must name.
     mods: mods.map((m) => {
       const sha = newSha.get(m.id);
       return sha !== undefined ? { ...m, archiveSha256: sha } : m;
@@ -364,52 +368,39 @@ export async function repackBundledExternals(args: {
 }
 
 /**
- * A previously packed archive, if it is still exactly what it claims.
+ * An earlier build's measurement of exactly these files, if it can still be used.
  *
- * Every failure here answers "no cache" rather than throwing: a missing,
- * unreadable or half-written sidecar must cost a repack, never a build.
+ * Every failure here answers "no record" rather than throwing: a missing,
+ * unreadable, half-written or outdated record must cost a re-read, never a
+ * build.
  */
-async function readCachedBundle(
-  archivePath: string,
-  signal?: AbortSignal,
-): Promise<CachedBundle | undefined> {
-  void signal;
+async function readBundleRecord(recordPath: string): Promise<CachedBundle | undefined> {
+  let parsed: unknown;
   try {
-    const stat = await fsp.stat(archivePath);
-    if (!stat.isFile() || stat.size === 0) return undefined;
-    const raw = await fsp.readFile(bundleSidecarPath(archivePath), "utf8");
-    const parsed = JSON.parse(raw) as CachedBundle;
-    return sidecarMatches(parsed, stat.size) ? parsed : undefined;
+    parsed = JSON.parse(await fsp.readFile(recordPath, "utf8"));
   } catch (err) {
-    ehLog("debug", "bundle.cache.miss", {
-      file: path.basename(archivePath),
-      err,
-    });
+    ehLog("debug", "bundle.cache.miss", { file: path.basename(recordPath), err });
     return undefined;
   }
+  if (recordMatches(parsed, BUNDLE_ZIP_FORMAT)) return parsed;
+  ehLog("debug", "bundle.cache.unusable", { file: path.basename(recordPath) });
+  return undefined;
 }
 
-async function writeCachedBundle(
-  archivePath: string,
-  cached: CachedBundle,
-): Promise<void> {
+async function writeBundleRecord(recordPath: string, record: CachedBundle): Promise<void> {
   try {
-    await fsp.writeFile(
-      bundleSidecarPath(archivePath),
-      JSON.stringify(cached),
-      "utf8",
-    );
+    await fsp.writeFile(recordPath, JSON.stringify(record), "utf8");
   } catch (err) {
-    // No sidecar means the next build repacks. Wasteful, never wrong.
+    // No record means the next build reads the files again. Slower, never wrong.
     ehLog("warn", "bundle.cache.write-failed", {
-      file: path.basename(archivePath),
+      file: path.basename(recordPath),
       err,
     });
   }
 }
 
-/** Drop every cached archive of these mods except the one just used. */
-async function sweepStaleBundles(
+/** Drop every record of these mods except the one just used. */
+async function sweepStaleRecords(
   workDir: string,
   keptByMod: ReadonlyMap<string, string>,
 ): Promise<void> {
@@ -423,7 +414,7 @@ async function sweepStaleBundles(
   }
   let removed = 0;
   for (const [modId, keep] of keptByMod) {
-    for (const stale of staleBundlesFor({ fileNames, modId, keep })) {
+    for (const stale of staleBundleRecordsFor({ fileNames, modId, keep })) {
       await fsp.rm(path.join(workDir, stale), { force: true }).catch((err) => {
         ehLog("debug", "bundle.sweep.remove-failed", { file: stale, err });
       });
@@ -433,6 +424,37 @@ async function sweepStaleBundles(
   if (removed > 0) {
     ehLog("debug", "bundle.sweep.ok", { removed, mods: keptByMod.size });
   }
+}
+
+/**
+ * Delete the archives this folder held before bundles shipped loose.
+ *
+ * Each was a 7-Zip copy of a bundled mod's staging folder — gigabytes, for a
+ * LOD mod — and nothing reads them any more. Best-effort: a file that will not
+ * go costs disk, never a build.
+ */
+async function sweepLegacyArchives(workDir: string): Promise<void> {
+  let fileNames: string[];
+  try {
+    fileNames = await fsp.readdir(workDir);
+  } catch (err) {
+    ehLog("debug", "bundle.legacy-sweep.list-failed", { err });
+    return;
+  }
+  let removed = 0;
+  let bytes = 0;
+  for (const name of fileNames.filter(isLegacyBundleArchive)) {
+    const full = path.join(workDir, name);
+    try {
+      const { size } = await fsp.stat(full);
+      await fsp.rm(full, { force: true });
+      removed += 1;
+      bytes += size;
+    } catch (err) {
+      ehLog("debug", "bundle.legacy-sweep.remove-failed", { file: name, err });
+    }
+  }
+  if (removed > 0) ehLog("info", "bundle.legacy-sweep.ok", { removed, bytes });
 }
 
 /**
@@ -618,7 +640,7 @@ export function describeExternalDrift(drift: ExternalDrift[]): string[] {
  * from the cache with an identical sha256.
  *
  * Concatenating produced two entries with the same hash, and `packageEhcoll`
- * rejects that outright: "Two bundled archives share sha256 ... this should be
+ * rejects that outright: "Two bundled mods share sha256 ... this should be
  * impossible." The build died at packaging, after every expensive phase, for
  * any curator who already had one bundled mod and answered "ship my copy" for
  * one more — the ordinary case for this feature.

@@ -1351,7 +1351,7 @@ function PublishedDetailsPanel(props: {
         <>
           <DetailRow label="Shipped">
             v{s.version} — {s.mods} mods, {s.plugins} plugins
-            {s.bundledArchives > 0 ? `, ${s.bundledArchives} bundled archives` : ""}
+            {s.bundledArchives > 0 ? `, ${s.bundledArchives} bundled mods` : ""}
           </DetailRow>
           {diff !== undefined && (
             <div className="eh-inset eh-inset--deep eh-stack eh-stack--sm">

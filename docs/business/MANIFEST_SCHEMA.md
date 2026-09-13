@@ -1,4 +1,4 @@
-# Manifest Schema (`.ehcoll` v1)
+# Manifest Schema (`.ehcoll` v2)
 
 The contract for the JSON document at the root of every Event Horizon collection package. Both sides of the pipeline — the curator-side packager (Phase 2) and the user-side resolver/installer (Phases 3–4) — read this spec; if either drifts from it, the other will reject the result.
 
@@ -21,7 +21,7 @@ Anything else (snapshots, diff reports) lives in [`DATA_FORMATS.md`](../DATA_FOR
 
 ```jsonc
 {
-  "schemaVersion": 1,                     // see "Versioning policy"
+  "schemaVersion": 2,                     // see "Versioning policy"
   "package":  { /* PackageMetadata */ },
   "game":     { /* GameMetadata */ },
   "vortex":   { /* VortexMetadata */ },
@@ -36,7 +36,7 @@ Anything else (snapshots, diff reports) lives in [`DATA_FORMATS.md`](../DATA_FOR
 
 **INVARIANT**: every field at this level is mandatory and non-null. Empty arrays/objects are valid; missing keys are not. The installer rejects a manifest that lacks any top-level field, regardless of the section's contents.
 
-**INVARIANT**: an unknown extra top-level field is **ignored**, not rejected. This is what lets us add fields in v1.x without bumping `schemaVersion`. Only renaming or removing a field is breaking.
+**INVARIANT**: an unknown extra top-level field is **ignored**, not rejected. This is what lets us add fields without bumping `schemaVersion`. Only renaming or removing a field is breaking.
 
 ---
 
@@ -138,14 +138,14 @@ EhcollMod
   "expectedFilename": "MyPrivateFix-1.0.7z",
   "sha256": "def…",  // 64 hex lowercase, MANDATORY — sole identity
   "instructions": "Download from <internal share URL> or DM curator.",
-  "bundled": false   // true ⇒ archive is in package at bundled/<sha256>.<ext>
+  "bundled": false   // true ⇒ the mod's files are in the package at bundled/<sha256>/
 }
 ```
 
 - **Identity is `sha256` alone.** No filename match, no version match, no "trust the user". See the load-bearing rule below.
 - `expectedFilename` is a hint for the user-side picker prompt.
 - `instructions` is shown when `bundled === false`. Should include a stable URL and any DM-the-curator language.
-- `bundled === true` means the archive lives at `bundled/<sha256>.<ext>` inside the package; the installer pulls from there without prompting.
+- `bundled === true` means the mod's files live, loose, at `bundled/<sha256>/` inside the package. The installer writes the archive back from them — the canonical zip (`bundleZip.ts`) whose SHA-256 is `sha256` — and installs it without prompting; files that do not make that hash are refused.
 
 #### `install` — `ModInstallSpec`
 
@@ -255,7 +255,7 @@ The exact contents of the curator's `plugins.txt`, normalized.
 { "ini": "Skyrim.ini", "section": "Display", "key": "fGamma", "value": "1.0000" }
 ```
 
-**STATUS**: schema placeholder. v1 packagers emit `iniTweaks: []` and v1 installers ignore the field. The Vortex Redux key for INI tweaks still has to be confirmed at runtime (see [`PROPOSAL_INSTALLER.md`](../PROPOSAL_INSTALLER.md) §7.4). Promoted to a real feature in Phase 5.
+**STATUS**: schema placeholder. packagers emit `iniTweaks: []` and installers ignore the field. The Vortex Redux key for INI tweaks still has to be confirmed at runtime (see [`PROPOSAL_INSTALLER.md`](../PROPOSAL_INSTALLER.md) §7.4). Promoted to a real feature in Phase 5.
 
 It's reserved in v1 anyway because:
 
@@ -300,7 +300,7 @@ This is the single most important paragraph in the spec. It is **why** Event Hor
 | `source.kind` | Identity | Verified by | On mismatch |
 |---|---|---|---|
 | `"nexus"` | `(gameDomain, modId, fileId)` | `source.sha256` after download | HARD FAIL — Nexus served different bytes |
-| `"external"` | `source.sha256` (sole identity) | `source.sha256` of user-supplied or `bundled/` archive | re-prompt up to 3× → HARD FAIL or skip |
+| `"external"` | `source.sha256` (sole identity) | `source.sha256` of the user-supplied archive, or of the archive written back from `bundled/` | re-prompt up to 3× → HARD FAIL or skip |
 
 There is no third tier. There is no name/version/filename fallback. **A mod whose archive bytes do not produce the expected SHA-256 is, by definition, a different mod**, and the installer treats it as missing.
 
@@ -308,7 +308,7 @@ Why this is the load-bearing rule:
 
 - Vortex's vanilla collections identify mods by Nexus IDs only. For mods *not* on Nexus they effectively have no identity check — they ship "external dependency: download X manually" instructions and hope. Users download wrong versions, the collection breaks subtly, the curator gets blamed. Event Horizon replaces "hope" with a hash check.
 - The `archiveSha256` field on `AuditorMod` (Phase 1 slice 1) is the source of truth here: same field, two consumers (the curator's drift detection AND the installer's identity check).
-- The `bundled/` folder is keyed by SHA-256, never by filename. Two mods whose archives are byte-identical are stored once, resolved twice.
+- The `bundled/` folder is keyed by SHA-256, never by filename: one folder per bundle, named by the hash of the canonical zip its files make. Two mods whose files are identical are stored once, resolved twice.
 
 See [`PROPOSAL_INSTALLER.md`](../PROPOSAL_INSTALLER.md) §5.5 for the full design rationale and the edge case where a curator updates an external mod's archive between releases.
 
@@ -321,14 +321,14 @@ See [`PROPOSAL_INSTALLER.md`](../PROPOSAL_INSTALLER.md) §5.5 for the full desig
 | Add a new optional sub-field | no |
 | Add a new entry to a string union | no — older installers see the new value as unknown and fall through to a default |
 | Add a new mandatory sub-field with a documented default | no — installers fill in the default; producers must always emit it |
-| Add a new top-level array/object | yes if missing-key behavior is "reject"; no if it's "ignore" — pick "ignore" by default and stay on v1 |
+| Add a new top-level array/object | yes if missing-key behavior is "reject"; no if it's "ignore" — pick "ignore" by default and stay on the current version |
 | Rename a field | yes |
 | Change a field's type or semantics | yes |
 | Remove a field | yes |
 
-**INVARIANT**: v1 installers reject unknown values of `schemaVersion`. They do not "best-effort". This is intentional — silent partial reads break reproducibility worse than a hard refusal.
+**INVARIANT**: an installer rejects every `schemaVersion` but its own. It does not "best-effort". This is intentional — silent partial reads break reproducibility worse than a hard refusal.
 
-When we do bump to v2, the v1 installer will refuse v2 manifests with a "this collection requires a newer Event Horizon" message including the minimum extension version that supports the new schema. v2 packagers may still emit v1 for backwards compat (a per-collection toggle).
+**v2 (2026-09-13).** Bundled mods ship as their loose files, `bundled/<sha256>/<path>`, instead of as archives — Nexus quarantines a package with an archive inside it — and a bundled mod's `source.sha256` is the sha256 of the canonical zip its files make (`bundleZip.ts`), which the installer writes back and checks. A v1 installer refuses a v2 manifest ("Update the Event Horizon extension to install newer manifests"). A v2 installer refuses a v1 manifest as well, saying the package was built by an older Event Horizon and to download the collection's current package — the curator's decision was the new layout only, so there is no toggle to emit or read v1.
 
 ---
 
@@ -344,7 +344,7 @@ When we do bump to v2, the v1 installer will refuse v2 manifests with a "this co
 ### Installer (Phases 3–4)
 
 - Parses with type validation. Rejects unknown `schemaVersion`, missing top-level fields, malformed SHA-256 strings.
-- Treats unknown extra fields as ignored (forward compat with v1.x).
+- Treats unknown extra fields as ignored (forward compat within a version).
 - Verifies every SHA-256 — Nexus mods after download, external mods at resolution time. Refuses to proceed on any mismatch.
 - Resolves `compareKey` references (in `rules`, `fileOverrides`) against `mods[].compareKey`. References pointing to absent mods are warnings, not errors.
 
@@ -358,7 +358,7 @@ When we do bump to v2, the v1 installer will refuse v2 manifests with a "this co
 - **INVARIANT**: empty arrays and empty strings are valid; `null` and `undefined` are not. Producers must emit empty containers, not omit the keys.
 - **INVARIANT**: `compareKey` strings are stable across re-exports of the same Vortex state. Two packager runs against an unchanged profile produce byte-equal manifest mods arrays.
 - **QUIRK**: the schema has both per-mod and top-level `fileOverrides`. They model different things (intent vs outcome) and may disagree. See "File overrides" above.
-- **QUIRK**: `iniTweaks` is in the v1 schema as a placeholder; v1 packagers emit `[]`. Real INI tweak support arrives in Phase 5.
+- **QUIRK**: `iniTweaks` is in the schema as a placeholder; packagers emit `[]`. Real INI tweak support arrives in Phase 5.
 - **QUIRK**: `installOrder` and `deploymentPriority` are usually equal but always captured separately. We model them independently because Vortex consumes them via different code paths internally.
 
 ---

@@ -755,11 +755,11 @@ export type NexusUnreachableDecision = {
 
 // ----- External arms -------------------------------------------------------
 
-/** Archive is in the .ehcoll's `bundled/<sha256>.<ext>` entry. */
+/** The mod's files are in the .ehcoll's `bundled/<sha256>/` folder; the install writes the archive back from them. */
 export type ExternalUseBundledDecision = {
   kind: "external-use-bundled";
   sha256: string;
-  /** Path inside the .ehcoll, e.g. `"bundled/abc...123.zip"`. */
+  /** The bundled mod's folder inside the .ehcoll, `bundled/<sha256>/`; the install writes the archive from its files. */
   zipPath: string;
 };
 

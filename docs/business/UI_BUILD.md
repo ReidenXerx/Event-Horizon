@@ -177,7 +177,9 @@ The page does **not** delete the previous `.ehcoll` for the same collection — 
 | Form opens but external mods table is empty | The active profile genuinely has only Nexus mods | Expected; bundled toggles only apply to non-Nexus mods. |
 | `BundleResolutionError` on Build with "Config flags Nexus mod X as bundled" | An older config has a stale `bundled: true` for a mod that's now Nexus-tagged | Untick bundled on that row in the form, click Build again. |
 | `BundleResolutionError` with "modId X is not in the active profile" | The user removed a mod between loading the form and clicking Build | Reload the page (Build → Build) so the table re-reconciles. |
-| Build hangs at "packaging" phase | 7z is misbehaving (extremely large bundled archive count) | The `packageEhcoll` driver has its own timeout/streaming logic; wait. |
+| Build seems stuck in the "packaging" phase | Very large bundled mods: every staged file is read again to prove it still makes the mod's identity, then 7z compresses the loose files | The progress line says which step and how far it is; wait. |
+| Build fails listing files that "are archives" | A bundled or mirrored mod contains a file that is itself an archive (.zip, .7z, .rar, a zip-based document…); Nexus quarantines a package with an archive inside | Extract it into its mod's folder, delete it if the mod does not need it, or stop bundling or mirroring that mod; rebuild. |
+| Build fails: "its files changed after this build measured them" | A file in a bundled mod changed while the build was running (for example during the decisions step) | Rebuild. If nothing changed, tick "Re-read every file" first. |
 | "Version doesn't look like semver" | The version field has e.g. `v1` or `1.0` | Use `1.0.0` form. |
 | The output is suspiciously small | The curator forgot to flag any external mods as bundled | Look at "Bundled count" on the done step — if 0, the package is metadata-only. Re-build with bundled rows ticked. |
 | `CollectionConfigError` thrown during `loadBuildContext` | A hand-edited config JSON is invalid | Open the config file, fix it (or delete it for a fresh start). The error modal points at the file. |

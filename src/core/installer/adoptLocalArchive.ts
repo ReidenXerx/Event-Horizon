@@ -42,6 +42,7 @@ import * as path from "path";
 import { actions, selectors } from "@nexusmods/vortex-api";
 import type { types } from "@nexusmods/vortex-api";
 
+import { hashFileSha256 } from "../archiveHashing";
 import { ehLog } from "../logging/ehLog";
 import { detectCaseSensitivity, isInside } from "../paths";
 
@@ -57,9 +58,20 @@ export type AdoptedArchive = {
 /**
  * Register `archivePath` with Vortex as a local download.
  *
- * Idempotent-ish by content: the download id is derived from the file's path
- * and size rather than randomly, so adopting the same archive twice in one
- * install produces the same id instead of two entries pointing at one file.
+ * Idempotent by content: the download id is derived from the file's path, size
+ * AND sha256 rather than randomly, so adopting the same archive twice produces
+ * the same id instead of two entries pointing at one file — and adopting
+ * different bytes never does.
+ *
+ * ─── SAME NAME, SAME SIZE, DIFFERENT MOD ───────────────────────────────
+ * A file already in the download folder under the same name used to be reused
+ * whenever its SIZE matched, and the id was built from path and size alone. A
+ * bundled mod's archive is written stored — its size depends only on its
+ * files' names and sizes — so a collection update that changed one INI value,
+ * or swapped a texture for one of the same dimensions, adopted the PREVIOUS
+ * version's archive under the previous id, and Vortex installed the old files.
+ * Reuse now needs identical bytes, and the adopted file is checked against the
+ * archive it stands for before anything installs from it.
  */
 export async function adoptLocalArchive(
   api: types.IExtensionApi,
@@ -75,6 +87,7 @@ export async function adoptLocalArchive(
 
   const stat = await fsp.stat(args.archivePath);
   const fileName = path.basename(args.archivePath);
+  const sha256 = await hashFileSha256(args.archivePath);
 
   // Already inside the download folder? Then there is nothing to copy, and
   // copying would produce a second identical archive next to the first.
@@ -104,9 +117,22 @@ export async function adoptLocalArchive(
   );
   const destination = inFolder
     ? args.archivePath
-    : await copyIn(downloadDir, args.archivePath, fileName);
+    : await copyIn(downloadDir, args.archivePath, fileName, { size: stat.size, sha256 });
 
-  const archiveId = deriveId(destination, stat.size);
+  // What Vortex will install is what we adopted: checked, not assumed. A copy
+  // cut short by a full disk, or a reused file that changed underneath, would
+  // otherwise install as the mod.
+  if (!inFolder) {
+    const adopted = await hashFileSha256(destination);
+    if (adopted !== sha256) {
+      throw new Error(
+        `"${destination}" in Vortex's download folder does not hold the archive being ` +
+          `installed (expected ${sha256}, found ${adopted}), so it was not registered.`,
+      );
+    }
+  }
+
+  const archiveId = deriveId(destination, stat.size, sha256);
 
   /**
    * Registering the download IS this function. `api.store?.dispatch` made it
@@ -148,6 +174,8 @@ export async function adoptLocalArchive(
     archiveId,
     copied: !inFolder,
     bytes: stat.size,
+    sha256,
+    file: path.basename(destination),
   });
 
   return { archiveId, localPath: destination, copied: !inFolder };
@@ -157,8 +185,9 @@ export async function adoptLocalArchive(
  * A stable id for this archive.
  *
  * Not random: the same picked file must not accumulate a new download entry on
- * every retry. Path plus size is enough to be stable within a machine, and the
- * id never leaves it.
+ * every retry. Path, size and content hash are stable within a machine for the
+ * same bytes, and the id never leaves it. The hash is what keeps two different
+ * archives that share a path and a size — see adoptLocalArchive — apart.
  *
  * ─── NOT CASE-FOLDED ────────────────────────────────────────────────────────
  * This used to digest `absolutePath.toLowerCase()`. On a case-sensitive
@@ -173,9 +202,9 @@ export async function adoptLocalArchive(
  * handed to us with the same spelling, because it comes from a file picker or
  * from Vortex's own state, not from a user typing it twice.
  */
-function deriveId(absolutePath: string, size: number): string {
+function deriveId(absolutePath: string, size: number, sha256: string): string {
   const digest = createHash("sha256")
-    .update(`${absolutePath}|${String(size)}`)
+    .update(`${absolutePath}|${String(size)}|${sha256}`)
     .digest("hex");
   // Vortex's own download ids are 36 characters (a UUID). Matching the shape
   // keeps anything that assumes that length working.
@@ -197,6 +226,7 @@ async function copyIn(
   downloadDir: string,
   source: string,
   fileName: string,
+  expected: { size: number; sha256: string },
 ): Promise<string> {
   await fsp.mkdir(downloadDir, { recursive: true });
   const ext = path.extname(fileName);
@@ -214,8 +244,9 @@ async function copyIn(
       return candidate;
     } catch (err) {
       if ((err as NodeJS.ErrnoException)?.code !== "EEXIST") throw err;
-      // Same bytes already sitting there? Then it IS our file; reuse it.
-      if (await sameSize(candidate, source)) return candidate;
+      // The same bytes already sitting there? Then it IS our file; reuse it.
+      // The same size is not the same bytes — see adoptLocalArchive.
+      if (await holdsSameBytes(candidate, expected)) return candidate;
     }
   }
   throw new Error(
@@ -223,10 +254,14 @@ async function copyIn(
   );
 }
 
-async function sameSize(a: string, b: string): Promise<boolean> {
+/** Is the file at `candidate` byte-for-byte the archive being adopted? Size first, then its hash. */
+async function holdsSameBytes(
+  candidate: string,
+  expected: { size: number; sha256: string },
+): Promise<boolean> {
   try {
-    const [sa, sb] = await Promise.all([fsp.stat(a), fsp.stat(b)]);
-    return sa.size === sb.size;
+    if ((await fsp.stat(candidate)).size !== expected.size) return false;
+    return (await hashFileSha256(candidate)) === expected.sha256;
   } catch {
     return false;
   }

@@ -25,10 +25,11 @@
  * package inspector UI) sits on top of.
  *
  * I/O is structured as: list ZIP entries, then surgically extract
- * `manifest.json` only. Bundled archives are *not* extracted here —
- * resolving them is the resolver's job (slice 3+). We confirm they're
- * present in the central directory and that they line up with the
- * manifest's `bundled: true` mods, nothing more.
+ * `manifest.json` only. Bundled mods are *not* read here — the installer
+ * writes each one's archive from its files when it needs it. We confirm
+ * each bundled mod's folder, `bundled/<sha256>/`, is present in the central
+ * directory and lines up with the manifest's `bundled: true` mods, and that
+ * nothing else sits under `bundled/`.
  *
  * ─── ERROR DISCIPLINE ──────────────────────────────────────────────────
  * Errors are accumulated and thrown together, same as the rest of the
@@ -51,6 +52,7 @@ import * as path from "path";
 
 import { ehLog } from "../logging/ehLog";
 import type { EhcollManifest } from "../../types/ehcoll";
+import { bundleEntryOf } from "./bundleLayout";
 import { parseManifest, ParseManifestError } from "./parseManifest";
 import {
   extractZipEntryToFile,
@@ -86,8 +88,8 @@ export type ReadEhcollOptions = {
 export type ReadEhcollResult = {
   manifest: EhcollManifest;
   /**
-   * One entry per archive present in the package's `bundled/`
-   * directory, after cross-check against `manifest.mods`.
+   * One entry per bundled mod's folder in the package, after cross-check
+   * against `manifest.mods`.
    */
   bundledArchives: BundledArchiveEntry[];
   /** True iff a top-level `README.md` is present in the package. */
@@ -109,24 +111,22 @@ export type ReadEhcollResult = {
   warnings: string[];
 };
 
+/**
+ * One bundled mod as a package carries it: a folder of loose files.
+ *
+ * The archive Vortex installs is not in the package — Nexus quarantines one
+ * that is — so the installer writes the canonical zip from these files and
+ * checks it against `sha256` before anything else sees it (bundleZip.ts).
+ */
 export type BundledArchiveEntry = {
-  /** Lowercase 64-char hex SHA-256 — the file basename without extension. */
+  /** Lowercase 64-char hex SHA-256 of the canonical zip — also the folder's name. */
   sha256: string;
-  /**
-   * Path of the entry inside the ZIP, normalized to forward slashes.
-   * Always starts with `bundled/`.
-   */
+  /** The folder inside the package, `bundled/<sha256>/`. */
   zipPath: string;
-  /**
-   * File extension (without leading dot), e.g. `"zip"`, `"7z"`,
-   * `"rar"`. Empty string when the archive entry had no extension.
-   */
-  extension: string;
-  /**
-   * Uncompressed size in bytes when 7z reports it. May be undefined for
-   * archive types that don't expose it via the central directory.
-   */
-  size?: number;
+  /** Files in the folder. */
+  files: number;
+  /** Their uncompressed size, in bytes. */
+  size: number;
 };
 
 export class ReadEhcollError extends Error {
@@ -184,17 +184,19 @@ export async function readEhcoll(
   ehLog("info", "ehcoll.read.layout", {
     file: zipName,
     entries: entries.length,
-    bundled: layout.bundledEntries.length,
+    bundled: layout.bundles.length,
     unrecognizedBundled: layout.unrecognizedBundled.length,
+    unflaggedBundled: layout.unflaggedBundled.length,
     iniTweakFiles: layout.iniTweakFiles.length,
     hasReadme: layout.hasReadme,
     hasChangelog: layout.hasChangelog,
     hasManifest: layout.hasManifest,
   });
   if (layout.unrecognizedBundled.length > 0) {
-    // Every entry here failed the `bundled/<sha256>[.ext]` naming contract —
-    // that is a rejected entry, and dropping it silently is exactly the case
-    // that made a bad-but-plausible package unanswerable in a bug report.
+    // Every entry here sits under `bundled/` without being a file inside a
+    // bundled mod's folder, `bundled/<sha256>/<path>`. The cross-check refuses
+    // the package for them; this lists every one, because dropping one silently
+    // is exactly what made a bad-but-plausible package unanswerable.
     ehLog("warn", "ehcoll.read.bundled.unrecognized", {
       file: zipName,
       count: layout.unrecognizedBundled.length,
@@ -264,11 +266,7 @@ export async function readEhcoll(
   const errors: string[] = [];
   const warnings = [...parseWarnings];
 
-  const bundledArchives = crossCheckBundled(
-    manifest,
-    layout.bundledEntries,
-    errors,
-  );
+  const bundledArchives = crossCheckBundled(manifest, layout, errors);
 
   if (errors.length > 0) {
     // Each string here already names the offending mod compareKey or sha256 —
@@ -358,7 +356,7 @@ async function assertReadableFile(zipPath: string): Promise<void> {
  */
 async function listZipEntries(
   zipPath: string,
-): Promise<SevenZipListEntry[]> {
+): Promise<PackageListEntry[]> {
   try {
     const entries = await readZipCentralDirectory(zipPath);
     return entries.map((entry) => ({
@@ -366,6 +364,7 @@ async function listZipEntries(
       size: entry.uncompressedSize,
       attr: entry.isDirectory ? "D" : "A",
       crc: entry.crc32,
+      nameEncodingKnown: entry.nameEncodingKnown,
     }));
   } catch (err) {
     // The reader explains itself for anything that IS a zip — truncated, an
@@ -402,34 +401,35 @@ type ClassifiedLayout = {
   hasChangelog: boolean;
   iniTweakFiles: string[];
   /**
-   * Each bundled file entry, parsed into its sha256 + extension. We
-   * already drop unparseable entries here (and accumulate them as
-   * warnings is the cross-check step's job; we just leave them out
-   * of the typed list).
+   * One entry per bundled mod's folder, `bundled/<sha256>/`, with its files
+   * counted, in the order the folders were first seen.
    */
-  bundledEntries: ParsedBundledEntry[];
+  bundles: BundledArchiveEntry[];
   /**
-   * Raw bundled file paths whose basename did not parse as
-   * `<64hex>[.ext]`. The cross-check step turns these into warnings
-   * so an operator sees what's wrong.
+   * Entries under `bundled/` that are not a file inside such a folder. No
+   * package of this schema writes one; the cross-check refuses them.
    */
   unrecognizedBundled: string[];
+  /**
+   * Files under `bundled/` whose names do not say how they are encoded — no
+   * UTF-8 flag, and not plain ASCII. Their paths are a guess, so the mods they
+   * belong to could not be written back; the cross-check refuses them before
+   * anything installs, rather than one mod at a time during the install.
+   */
+  unflaggedBundled: string[];
 };
 
-type ParsedBundledEntry = {
-  sha256: string;
-  extension: string;
-  zipPath: string;
-  size?: number;
-};
+/** A package entry as the listing reports it, and whether its name is exact. */
+type PackageListEntry = SevenZipListEntry & { nameEncodingKnown: boolean };
 
-function classifyEntries(entries: SevenZipListEntry[]): ClassifiedLayout {
+function classifyEntries(entries: PackageListEntry[]): ClassifiedLayout {
   let hasManifest = false;
   let hasReadme = false;
   let hasChangelog = false;
   const iniTweakFiles: string[] = [];
-  const bundledEntries: ParsedBundledEntry[] = [];
+  const bundles = new Map<string, BundledArchiveEntry>();
   const unrecognizedBundled: string[] = [];
+  const unflaggedBundled: string[] = [];
 
   for (const entry of entries) {
     if (isDirectoryEntry(entry)) continue;
@@ -449,12 +449,24 @@ function classifyEntries(entries: SevenZipListEntry[]): ClassifiedLayout {
       continue;
     }
     if (normalized.startsWith("bundled/")) {
-      const parsed = parseBundledFilename(normalized, entry.size);
-      if (parsed === undefined) {
-        unrecognizedBundled.push(normalized);
-      } else {
-        bundledEntries.push(parsed);
+      if (!entry.nameEncodingKnown) {
+        unflaggedBundled.push(normalized);
+        continue;
       }
+      const inBundle = bundleEntryOf(normalized);
+      if (inBundle === undefined) {
+        unrecognizedBundled.push(normalized);
+        continue;
+      }
+      const bundle = bundles.get(inBundle.sha256) ?? {
+        sha256: inBundle.sha256,
+        zipPath: inBundle.folder,
+        files: 0,
+        size: 0,
+      };
+      bundle.files += 1;
+      bundle.size += entry.size ?? 0;
+      bundles.set(inBundle.sha256, bundle);
       continue;
     }
     if (normalized.startsWith("ini-tweaks/")) {
@@ -462,9 +474,9 @@ function classifyEntries(entries: SevenZipListEntry[]): ClassifiedLayout {
       continue;
     }
     // Other unknown top-level entries are tolerated — future schema
-    // additions land at root, and we don't want a v1 reader to refuse
-    // a v1.x package that the producer pre-shipped a forward-compat
-    // file in. They surface as warnings during cross-check.
+    // additions land at root, and we don't want a reader to refuse a
+    // package that the producer pre-shipped a forward-compat file in.
+    // They surface as warnings during cross-check.
   }
 
   return {
@@ -472,8 +484,9 @@ function classifyEntries(entries: SevenZipListEntry[]): ClassifiedLayout {
     hasReadme,
     hasChangelog,
     iniTweakFiles,
-    bundledEntries,
+    bundles: [...bundles.values()],
     unrecognizedBundled,
+    unflaggedBundled,
   };
 }
 
@@ -495,40 +508,16 @@ function normalizePath(p: string): string {
   return toPosix(p);
 }
 
-/**
- * Parse `bundled/<sha256>.<ext>` (or `bundled/<sha256>` without
- * extension) into its parts. Returns `undefined` when the basename
- * doesn't match the contract — the cross-check step turns those into
- * warnings.
- */
-function parseBundledFilename(
-  zipPath: string,
-  size: number | undefined,
-): ParsedBundledEntry | undefined {
-  const basename = zipPath.slice("bundled/".length);
-  if (basename.length === 0 || basename.includes("/")) return undefined;
-
-  const dot = basename.indexOf(".");
-  const sha256 = dot === -1 ? basename : basename.slice(0, dot);
-  const extension = dot === -1 ? "" : basename.slice(dot + 1);
-
-  if (!/^[0-9a-f]{64}$/.test(sha256)) return undefined;
-
-  return {
-    sha256,
-    extension,
-    zipPath,
-    ...(size !== undefined ? { size } : {}),
-  };
-}
-
 // ---------------------------------------------------------------------------
-// Cross-check: bundled/ entries vs manifest.mods bundled mods
+// Cross-check: bundled/ folders vs manifest.mods bundled mods
 // ---------------------------------------------------------------------------
+
+/** How many stray entries a refusal names in its message; the log names every one. */
+const STRAY_ENTRIES_NAMED = 5;
 
 function crossCheckBundled(
   manifest: EhcollManifest,
-  parsedBundled: ParsedBundledEntry[],
+  layout: ClassifiedLayout,
   errors: string[],
 ): BundledArchiveEntry[] {
   // Build the expected set: every external mod with bundled=true.
@@ -541,62 +530,75 @@ function crossCheckBundled(
       if (previous !== undefined) {
         // The schema validator already warns about duplicate external
         // sha256s — we don't need to error here. The first mod claims
-        // the archive; the second is informational.
+        // the bundle; the second is informational.
         continue;
       }
       expected.set(sha, mod.compareKey);
     }
   }
 
-  // Detect duplicate archives in the ZIP (two `bundled/<same-sha>.<ext>`
-  // entries — shouldn't happen, but a hand-edit could cause it).
-  const seen = new Map<string, ParsedBundledEntry>();
-  for (const entry of parsedBundled) {
-    const previous = seen.get(entry.sha256);
-    if (previous !== undefined) {
-      errors.push(
-        `Two bundled archives share sha256 "${entry.sha256}": ` +
-          `"${previous.zipPath}" and "${entry.zipPath}". ` +
-          `Each external mod has a unique identity, so this should be impossible.`,
-      );
-      continue;
-    }
-    seen.set(entry.sha256, entry);
+  /**
+   * Anything else under `bundled/` refuses the package rather than being
+   * skipped. The layout that put archives there (`bundled/<sha256>.zip`) is
+   * schema 1, which the parser has already turned away — so under this schema
+   * such an entry is an edit, or a package rebuilt by a tool that does not
+   * know the format. Either way it is not the package the curator built.
+   */
+  const strays = layout.unrecognizedBundled;
+  if (strays.length > 0) {
+    const shown = strays.slice(0, STRAY_ENTRIES_NAMED).map((p) => `"${p}"`);
+    const more = strays.length - shown.length;
+    errors.push(
+      `The package's bundled/ folder holds ${strays.length} ` +
+        `${strays.length === 1 ? "entry that is" : "entries that are"} not a file ` +
+        `inside a bundled mod's folder (bundled/<sha256>/…): ${shown.join(", ")}` +
+        `${more > 0 ? ` and ${more} more` : ""}. A package carries bundled mods as ` +
+        `loose files only, so this one was changed after it was built. Download it again.`,
+    );
   }
+
+  const unflagged = layout.unflaggedBundled;
+  if (unflagged.length > 0) {
+    const shown = unflagged.slice(0, STRAY_ENTRIES_NAMED).map((p) => `"${p}"`);
+    const more = unflagged.length - shown.length;
+    errors.push(
+      `The package's bundled/ folder holds ${unflagged.length} ` +
+        `${unflagged.length === 1 ? "file whose name does" : "files whose names do"} not say ` +
+        `how ${unflagged.length === 1 ? "it is" : "they are"} encoded: ${shown.join(", ")}` +
+        `${more > 0 ? ` and ${more} more` : ""}. An install could not read them back as the ` +
+        `same paths, so the bundled mods they belong to cannot be installed. The package was ` +
+        `re-packed by a tool that does not mark UTF-8 names — download the original.`,
+    );
+  }
+
+  const present = new Map(layout.bundles.map((b) => [b.sha256, b] as const));
 
   // Every expected sha256 must be present.
   for (const [sha256, modKey] of expected) {
-    if (!seen.has(sha256)) {
+    if (!present.has(sha256)) {
       errors.push(
         `External mod "${modKey}" is marked bundled=true in the manifest ` +
-          `but no archive with sha256 ${sha256} is present in the package's ` +
-          `bundled/ directory. The package is incomplete.`,
+          `but the package has no folder bundled/${sha256}/ holding its files. ` +
+          `The package is incomplete.`,
       );
     }
   }
 
-  // Every present sha256 must correspond to an expected mod.
-  for (const [sha256, entry] of seen) {
+  // Every present folder must correspond to an expected mod.
+  for (const [sha256, bundle] of present) {
     if (!expected.has(sha256)) {
       errors.push(
-        `Archive "${entry.zipPath}" is present in the package but does not ` +
+        `Folder "${bundle.zipPath}" is present in the package but does not ` +
           `correspond to any external mod with bundled=true in the manifest. ` +
-          `The package contains stray bytes.`,
+          `The package contains stray files.`,
       );
     }
   }
 
-  // Convert the survivors into the public BundledArchiveEntry shape.
   // Sorted by sha256 for deterministic consumer output.
-  return Array.from(seen.values())
-    .filter((e) => expected.has(e.sha256))
-    .sort((a, b) => (a.sha256 < b.sha256 ? -1 : a.sha256 > b.sha256 ? 1 : 0))
-    .map((e) => ({
-      sha256: e.sha256,
-      zipPath: e.zipPath,
-      extension: e.extension,
-      ...(e.size !== undefined ? { size: e.size } : {}),
-    }));
+  return layout.bundles
+    .filter((b) => expected.has(b.sha256))
+    .sort((a, b) => (a.sha256 < b.sha256 ? -1 : a.sha256 > b.sha256 ? 1 : 0));
 }
 
 // ---------------------------------------------------------------------------

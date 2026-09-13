@@ -46,7 +46,7 @@ The slug is computed from the curator's collection name by `buildPackageAction`'
 | `packageId` | UUID string | yes | Any RFC 4122 UUID accepted (v1/v4/v5). Generated as v4 on first creation. **The single most important persisted bit** — uniqueness across rebuilds depends on it. |
 | `externalMods` | object map | yes (may be `{}`) | Keyed by `AuditorMod.id`. Auto-populated on first build of a slug. |
 | `externalMods[modId].name` | string | no | Read-only display hint for hand-editors. Curator-edits are preserved (not overwritten on reconciliation), but the field is **never read** when the action feeds the config into `buildManifest` — it gets stripped by `toBuildManifestExternalMods`. |
-| `externalMods[modId].bundled` | bool | no, default `false` | When `true`, the action resolves the mod's source archive on disk and ships it inside the `.ehcoll` at `bundled/<sha256>.<ext>`. |
+| `externalMods[modId].bundled` | bool | no, default `false` | When `true`, the build ships the mod's staging folder: its files, loose, inside the `.ehcoll` at `bundled/<sha256>/`, the sha being that of the canonical zip those files make — the mod's identity in the manifest. The mod's original archive is never shipped. |
 | `externalMods[modId].instructions` | string | no | Free-form text shown to the user-side installer when the mod isn't bundled (typical: a Nexus URL with a "click here, download manually, this is hidden" note). |
 | `readme` | string | no | When present and non-empty, written as `README.md` at the package root. |
 | `changelog` | string | no | When present and non-empty, written as `CHANGELOG.md` at the package root. |

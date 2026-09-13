@@ -74,7 +74,7 @@ The driver, when given a plan and a `UserConfirmedDecisions` bundle, will:
    on the `decision.kind` (and the user's choice when relevant):
    - `nexusDownload` (with `allowInstall: true`) for `nexus-download`,
    - `start-install-download` for `*-use-local-download`,
-   - bundled-archive extract + `start-install` for `external-use-bundled`,
+   - writing the bundled mod's archive back out of the package + `start-install` for `external-use-bundled`,
    - profile-enable only (no install) for `*-already-installed`,
    - `start-install` from the user's local file for
      `external-prompt-user` + `use-local-file` choice,
@@ -668,8 +668,9 @@ Five primitives + helpers:
   [modId])`. Removes the mod from disk, clears its entries in
   `state.persistent.mods`, and unselects it in every profile. Used
   by `removing-mods` for `replace-existing` and `orphan-uninstall`.
-- `extractBundledFromEhcoll` — exposed helper; uses
-  `sevenZip.extract(zipPath, tempDir, {$cherryPick: [bundledZipEntry]})`.
+- `extractBundledFromEhcoll` — exposed helper; writes the canonical zip of a
+  `bundled/<sha256>/` folder out of the package (`readZip.ts` reads,
+  `bundleZip.ts` writes) and refuses it unless it hashes to the sha.
 - `safeRmTempDir` — best-effort temp cleanup (errors swallowed; OS
   GCs `os.tmpdir()` eventually).
 
@@ -719,7 +720,7 @@ Internally:
 | `switching-profile`    | Vortex deployment lock; another switch in flight              | `failed`    | "Profile switch did not complete within 30s." |
 | `removing-mods`        | `util.removeMods` rejects (race; mod already deleted manually) | `failed`    | "Failed uninstalling X: Y." |
 | `installing-mods`      | network failure on Nexus download; FOMOD UI cancellation       | `failed`    | "Failed installing X (decision=Y): Z." |
-| `installing-mods`      | bundled archive cherry-pick fails (corrupt `.ehcoll`)          | `failed`    | "7z failed to extract..." |
+| `installing-mods`      | a bundled mod's files are missing, damaged or changed in the `.ehcoll` | `failed`    | "The files for X in Y do not make the mod the collection names..." |
 | `installing-mods`      | `did-install-mod` timeout (10 min)                             | `failed`    | "Mod install did not complete within 600s." |
 | `installing-mods`      | user-supplied local file missing / unreadable                  | `failed`    | "Failed installing X from <path>: ENOENT." |
 | `deploying`            | deployment timeout (5 min); `deploy-mods` callback error       | `failed`    | "Deployment failed: <reason>." |

@@ -4815,6 +4815,11 @@ async function executeDecision(args: {
       // Track the temp **directory**, not the file: cherry-picked
       // entries can have nested paths inside the dir.
       onTempArchive(result.tempDir);
+      // And released now. Vortex holds its own copy once the install is done,
+      // and each of these is a full uncompressed copy of a mod: kept to the end
+      // of the run, every bundled mod sat on the temp drive at once. The
+      // end-of-run sweep still retries anything a lingering handle kept.
+      void safeRmTempDir(result.tempDir);
       return {
         compareKey,
         name: resolution.name,
@@ -5219,6 +5224,9 @@ async function installManifestEntry(args: {
     ...replayArgs(manifestEntry, ctx.decisions.fomodReplayMode),
   });
   onTempArchive(result.tempDir);
+  // Released now for the same reason as the plain bundled install: Vortex has
+  // its own copy, and the end-of-run sweep retries a lingering handle.
+  void safeRmTempDir(result.tempDir);
 
   return {
     compareKey,
@@ -7022,6 +7030,7 @@ async function resolveCuratorArchive(args: {
       ctx.ehcollZipPath,
       findBundledZipEntry(ctx, manifestEntry as ExternalEhcollMod),
       installEntry.name,
+      ctx.abortSignal,
     );
     onTempArchive(extracted.tempDir);
     return extracted.extractedPath;

@@ -34,8 +34,9 @@ import * as fs from "fs";
 import * as path from "path";
 import * as zlib from "zlib";
 import { pipeline } from "stream/promises";
-import { Transform, type TransformCallback } from "stream";
+import { Transform, type Readable, type TransformCallback } from "stream";
 
+import { AbortError } from "../../utils/abortError";
 import { ehLog } from "../logging/ehLog";
 
 /** One entry from the central directory. */
@@ -68,8 +69,10 @@ export interface ZipEntry {
    * this file cannot know which, so it does not pretend to.
    *
    * `name` itself is still decoded as UTF-8 exactly as before. This reader
-   * also opens every `.ehcoll`, which 7-Zip writes with bit 11 set, and those
-   * paths are not to be disturbed by a mod-archive problem.
+   * also opens every `.ehcoll` — which packaging has 7-Zip write with bit 11
+   * set, by passing `-mcu=on`; left to its defaults 7-Zip leaves a name that
+   * fits the machine's code page unflagged — and those paths are not to be
+   * disturbed by a mod-archive problem.
    */
   nameEncodingKnown: boolean;
 }
@@ -328,6 +331,125 @@ export async function extractZipEntryToFile(
     bytes: entry.uncompressedSize,
     ms: Date.now() - startedAt,
   });
+}
+
+/**
+ * CRC-32 continued over `buf` from a running value; start from 0.
+ * `crc32Update(0, whole)` equals `crc32(whole)`, and chunks chain.
+ */
+export function crc32Update(crc: number, buf: Buffer): number {
+  let c = (crc ^ 0xffffffff) >>> 0;
+  for (let i = 0; i < buf.length; i += 1) {
+    c = CRC_TABLE[(c ^ buf[i]!) & 0xff]! ^ (c >>> 8);
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+/**
+ * One archive opened once, for reading many of its entries.
+ *
+ * A bundled mod inside a package is a folder of hundreds or thousands of
+ * entries. `extractZipEntryToFile` re-reads the whole index for each call —
+ * reasonable for one file, and a multi-megabyte index read thousands of times
+ * for a folder.
+ */
+export type ZipReader = {
+  entries: ZipEntry[];
+  /**
+   * The entry's uncompressed bytes. The stream ERRORS, rather than ends, when
+   * the length or CRC disagrees with the index, so whatever consumes it cannot
+   * take damaged bytes for the real ones.
+   */
+  openEntry(entry: ZipEntry): Promise<Readable>;
+  close(): Promise<void>;
+};
+
+export async function openZipReader(filePath: string): Promise<ZipReader> {
+  const handle = await open(filePath);
+  let entries: ZipEntry[];
+  try {
+    const { size } = await handle.stat();
+    const eocd = await readEndOfCentralDirectory(handle, size, filePath);
+    entries = await readCentralDirectory(handle, eocd, filePath);
+  } catch (err) {
+    await handle.close().catch(() => undefined);
+    throw err;
+  }
+  return {
+    entries,
+    async openEntry(entry: ZipEntry): Promise<Readable> {
+      if (entry.isDirectory) {
+        throw new ZipReadError(`"${entry.name}" in "${filePath}" is a directory, not a file.`);
+      }
+      if (entry.method !== METHOD_STORE && entry.method !== METHOD_DEFLATE) {
+        throw new ZipReadError(
+          `"${entry.name}" in "${filePath}" uses compression method ${entry.method}, which this reader does not support.`,
+        );
+      }
+      let crc = 0;
+      let written = 0;
+      const hex = (n: number): string => (n >>> 0).toString(16).padStart(8, "0");
+      const damaged = (got: string): ZipReadError => {
+        ehLog("error", "zip.entry.corrupt", {
+          file: path.basename(filePath),
+          entry: entry.name,
+          expectedBytes: entry.uncompressedSize,
+          expectedCrc: hex(entry.crc32),
+          got,
+        });
+        return new ZipReadError(
+          `"${entry.name}" in "${filePath}" did not survive reading: expected ${entry.uncompressedSize} ` +
+            `bytes with CRC ${hex(entry.crc32)}, got ${got}. The package is damaged.`,
+        );
+      };
+      const checked = new Transform({
+        transform(chunk: Buffer, _enc: BufferEncoding, done: TransformCallback): void {
+          written += chunk.length;
+          // Refused the moment it overruns, not at the end: a damaged deflate
+          // stream can inflate far past the entry's size, and every one of those
+          // bytes would reach whatever is consuming this before the check.
+          if (written > entry.uncompressedSize) {
+            done(damaged(`more than that (${written} bytes so far)`));
+            return;
+          }
+          crc = crc32Update(crc, chunk);
+          done(null, chunk);
+        },
+        flush(done: TransformCallback): void {
+          if (written !== entry.uncompressedSize || crc !== entry.crc32) {
+            done(damaged(`${written} bytes with CRC ${hex(crc)}`));
+            return;
+          }
+          done();
+        },
+      });
+      if (entry.compressedSize === 0) {
+        checked.end();
+        return checked;
+      }
+      const dataOffset = await findDataOffset(handle, entry, filePath);
+      const source = fs.createReadStream(filePath, {
+        start: dataOffset,
+        end: dataOffset + entry.compressedSize - 1,
+      });
+      source.on("error", (err) => checked.destroy(err));
+      checked.on("close", () => source.destroy());
+      if (entry.method === METHOD_STORE) {
+        source.pipe(checked);
+      } else {
+        const inflate = zlib.createInflateRaw();
+        inflate.on("error", (err) =>
+          checked.destroy(
+            new ZipReadError(`"${entry.name}" in "${filePath}" could not be decompressed: ${err.message}. The entry is damaged.`),
+          ),
+        );
+        checked.on("close", () => inflate.destroy());
+        source.pipe(inflate).pipe(checked);
+      }
+      return checked;
+    },
+    close: () => handle.close(),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -816,14 +938,17 @@ export async function crc32File(
   signal?: AbortSignal,
 ): Promise<string> {
   return await new Promise<string>((resolve, reject) => {
+    // An AbortError, never an Error that merely says "aborted": callers ask
+    // `isAbort`, and the plain one turned a Cancel during the package check
+    // into a failed build.
     if (signal?.aborted) {
-      reject(new Error("aborted"));
+      reject(new AbortError("Cancelled"));
       return;
     }
     let c = 0xffffffff;
     const stream = fs.createReadStream(filePath);
     const onAbort = (): void => {
-      stream.destroy(new Error("aborted"));
+      stream.destroy(new AbortError("Cancelled"));
     };
     signal?.addEventListener("abort", onAbort);
 
@@ -835,10 +960,13 @@ export async function crc32File(
     });
     stream.on("error", (err) => {
       signal?.removeEventListener("abort", onAbort);
-      ehLog("error", "zip.crc32-file.fail", {
-        file: path.basename(filePath),
-        err,
-      });
+      // A cancel is not a read failure; logged as one, it sends the reader after a fault.
+      if (!(err instanceof AbortError)) {
+        ehLog("error", "zip.crc32-file.fail", {
+          file: path.basename(filePath),
+          err,
+        });
+      }
       reject(err);
     });
     stream.on("close", () => {

@@ -404,7 +404,7 @@ function collectExternalStagingSetHashTargets(
        */
       for (const candidate of [
         mod.name,
-        bundledInstallName(mod.name),
+        bundledInstallName(mod.name, mod.source.sha256),
       ]) {
         const normalized = normalizeName(candidate);
         if (normalized.length > 0) {
@@ -424,12 +424,13 @@ function collectExternalStagingSetHashTargets(
  * re-deriving the rules — means the two can never drift apart silently, which
  * is the failure mode that made this matcher return zero for months.
  */
-function bundledInstallName(modName: string): string {
-  // The entry's extension is irrelevant to the STEM, and any archive
-  // extension produces the same stem, so a representative one is enough.
-  const fileName = bundledArchiveFileName("bundled/x.zip", modName);
-  const lastDot = fileName.lastIndexOf(".");
-  return lastDot <= 0 ? fileName : fileName.slice(0, lastDot);
+function bundledInstallName(modName: string, sha256: string | undefined): string {
+  // The archive is always a `.zip`, so the stem is the file name without it.
+  // The sha matters only for a name with nothing usable in it, where the file
+  // — and so the mod — is named after the bundle's sha instead. Without one
+  // this yields "", which the caller skips.
+  const fileName = bundledArchiveFileName(sha256 ?? "", modName);
+  return fileName.slice(0, fileName.length - ".zip".length);
 }
 
 /**

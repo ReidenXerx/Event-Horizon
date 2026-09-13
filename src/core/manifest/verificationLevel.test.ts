@@ -33,7 +33,7 @@ const manifestWith = (level: string | undefined): string => {
   };
   if (level !== undefined) pkg.verificationLevel = level;
   return JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     package: pkg,
     game: { id: "fallout4", version: "1.10.163.0", versionPolicy: "exact" },
     vortex: { version: "1.9.0", deploymentMethod: "hardlink", requiredExtensions: [] },

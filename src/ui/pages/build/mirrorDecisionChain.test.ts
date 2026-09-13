@@ -153,6 +153,18 @@ describe("and reaches the build that comes after it", () => {
     expect(m).toMatchObject({ postProcessed: true, mirrored: true });
   });
 
+  it("drops a mirror answer that a later bundle answer outranks", async () => {
+    // The build form's source picker sets "bundle" without clearing "mirror".
+    // The payload collector follows the bundle answer and collects nothing, so
+    // a mod still marked mirrored was refused by the packager for files it had
+    // been told not to collect.
+    await roundTrip("switched", { mirrored: true, postProcessed: true });
+    const config = await roundTrip("switched", { bundled: true });
+    const [m] = applyPostProcessedDeclarations([mod("switched")], config);
+    expect(m!.mirrored).not.toBe(true);
+    expect(m!.postProcessed).toBe(true);
+  });
+
   it("makes the payload collector pick that mod up", async () => {
     // The far end of the chain: a mod nobody marked contributes nothing, and
     // the marked one is what the package would carry.
