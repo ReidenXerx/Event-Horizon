@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-installer
-description: "Skill for the Installer area of Event-Horizon. 389 symbols across 89 files."
+description: "Skill for the Installer area of Event-Horizon. 394 symbols across 90 files."
 ---
 
 # Installer
 
-389 symbols | 89 files | Cohesion: 76%
+394 symbols | 90 files | Cohesion: 76%
 
 ## When to Use
 
@@ -20,8 +20,8 @@ description: "Skill for the Installer area of Event-Horizon. 389 symbols across 
 | `src/core/installer/runInstall.ts` | buildAbortedResult, buildDisplayNameByModId, buildFailReceipt, buildManifestIndex, buildNexusModIdMap (+59) |
 | `src/core/installer/modInstall.ts` | delayRespectingAbort, downloadFolderFor, downloadNexusArchiveOnly, installFromBundledArchive, installFromExistingDownload (+21) |
 | `src/core/installer/downloadDirect.ts` | defaultRequest, discardPart, download, formatDuration, formatSize (+20) |
+| `src/core/installLedger.ts` | InstallLedgerError, expectString, getInstallLedgerDir, getReceiptPath, isIso8601 (+10) |
 | `src/core/installer/installLink.ts` | dispositionParams, fileNameFromContentDisposition, safeDownloadName, sanitizeFileName, checksumOf (+9) |
-| `src/core/installLedger.ts` | InstallLedgerError, expectString, getReceiptPath, isIso8601, isSemverLike (+8) |
 | `src/core/installer/applyUserlist.ts` | applyGroupDefinition, applyGroupRule, applyPluginEntry, applyPluginGroup, applyPluginRuleWithCollectionWins (+8) |
 | `src/core/installer/checkNexusAccount.ts` | describeSelectorAvailability, hasNexusSlice, nexusSlice, probeNexusAccount, readNexusAccount (+4) |
 | `src/core/installer/linkCarrier.ts` | crc32, findEndOfCentralDirectory, readLinkCarrier, readSmallZip, baseName (+3) |
@@ -60,8 +60,8 @@ Start here when exploring this area:
 | `findModTypeMismatches` | Function | `src/core/installer/checkModTypes.ts` | 41 |
 | `emptyPluginOrderDrift` | Function | `src/core/installer/checkPluginOrder.ts` | 55 |
 | `readUserPluginsTxt` | Function | `src/core/installer/checkPluginOrder.ts` | 185 |
-| `describeSevenZipHealth` | Function | `src/core/installer/checkSevenZipHealth.ts` | 136 |
-| `looksLikeWine` | Function | `src/core/installer/checkSevenZipHealth.ts` | 106 |
+| `describeSevenZipHealth` | Function | `src/core/installer/checkSevenZipHealth.ts` | 108 |
+| `buildCuratorReport` | Function | `src/core/installer/curatorReport.ts` | 108 |
 
 ## Execution Flows
 

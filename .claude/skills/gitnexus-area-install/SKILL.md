@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-install
-description: "Skill for the Install area of Event-Horizon. 98 symbols across 19 files."
+description: "Skill for the Install area of Event-Horizon. 100 symbols across 21 files."
 ---
 
 # Install
 
-98 symbols | 19 files | Cohesion: 77%
+100 symbols | 21 files | Cohesion: 77%
 
 ## When to Use
 
@@ -25,8 +25,8 @@ description: "Skill for the Install area of Event-Horizon. 98 symbols across 19 
 | `src/core/installer/installLink.ts` | fileSizeOf, nexusFilePageUrl, vortexGamesForNexusDomain |
 | `src/core/curator/requirementStep.test.ts` | download, download |
 | `src/ui/pages/curator/requirementsIo.ts` | nexusExtOf, fn |
-| `src/core/installer/autoDeploy.ts` | blocksInstall, readsAutoDeploy |
 | `src/ui/pages/install/autoSortGate.test.ts` | bundle, confirmSession |
+| `src/ui/pages/install/deploymentGate.test.ts` | bundle, confirmSession |
 
 ## Entry Points
 
@@ -52,16 +52,16 @@ Start here when exploring this area:
 | `fn` | Function | `src/ui/pages/curator/requirementsIo.ts` | 179 |
 | `nexus` | Function | `src/ui/pages/curator/useCuratorActions.ts` | 225 |
 | `waitForVortexDownload` | Function | `src/ui/pages/install/fetchLink.ts` | 391 |
+| `describeHeal` | Function | `src/core/doctor/heal.ts` | 66 |
+| `getInstallSession` | Function | `src/ui/pages/install/installSession.ts` | 1349 |
 | `blocksInstall` | Function | `src/core/installer/autoDeploy.ts` | 48 |
 | `readsAutoDeploy` | Function | `src/core/installer/autoDeploy.ts` | 33 |
 | `probeDeploymentMethod` | Function | `src/core/installer/probeDeployment.ts` | 60 |
-| `getInstallSession` | Function | `src/ui/pages/install/installSession.ts` | 1350 |
 | `canProceedFromDecisions` | Function | `src/ui/pages/install/state.ts` | 523 |
 | `countUndecidedConflicts` | Function | `src/ui/pages/install/state.ts` | 550 |
 | `defaultConflictChoice` | Function | `src/ui/pages/install/state.ts` | 481 |
 | `defaultOrphanChoice` | Function | `src/ui/pages/install/state.ts` | 499 |
 | `fillDefaultConflictChoices` | Function | `src/ui/pages/install/state.ts` | 566 |
-| `fillDefaultOrphanChoices` | Function | `src/ui/pages/install/state.ts` | 582 |
 
 ## Execution Flows
 

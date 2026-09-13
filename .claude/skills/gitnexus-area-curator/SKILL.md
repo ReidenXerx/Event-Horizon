@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-curator
-description: "Skill for the Curator area of Event-Horizon. 363 symbols across 72 files."
+description: "Skill for the Curator area of Event-Horizon. 368 symbols across 74 files."
 ---
 
 # Curator
 
-363 symbols | 72 files | Cohesion: 75%
+368 symbols | 74 files | Cohesion: 75%
 
 ## When to Use
 
@@ -60,8 +60,8 @@ Start here when exploring this area:
 | `parseGameList` | Function | `src/core/curator/requirements.ts` | 72 |
 | `pickInstallFile` | Function | `src/core/curator/requirements.ts` | 984 |
 | `reusableAnswers` | Function | `src/core/curator/requirements.ts` | 198 |
+| `runHeal` | Function | `src/core/doctor/runHeal.ts` | 98 |
 | `cleanGameFolder` | Function | `src/core/environment/cleanGameFolder.ts` | 44 |
-| `onExit` | Function | `src/core/environment/launchGame.ts` | 217 |
 
 ## Execution Flows
 

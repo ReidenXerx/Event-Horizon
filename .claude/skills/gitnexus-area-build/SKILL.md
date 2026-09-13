@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-build
-description: "Skill for the Build area of Event-Horizon. 461 symbols across 101 files."
+description: "Skill for the Build area of Event-Horizon. 458 symbols across 101 files."
 ---
 
 # Build
 
-461 symbols | 101 files | Cohesion: 81%
+458 symbols | 101 files | Cohesion: 80%
 
 ## When to Use
 
@@ -25,8 +25,8 @@ description: "Skill for the Build area of Event-Horizon. 461 symbols across 101 
 | `src/ui/pages/build/buildSessionRegistry.ts` | BuildSessionRegistry, getBuildSessionRegistry, ensure, get, makeHooks (+13) |
 | `src/ui/pages/build/buildDiff.test.ts` | findPackages, findPackages, findPackages, findPackages, findPackages (+9) |
 | `src/core/draftStorage.ts` | getDraftsRoot, listDrafts, deleteDraft, getAppDataPath, getDraftPath (+6) |
-| `src/ui/pages/CollectionsPage.tsx` | CollectionsList, handleContinueInstall, refresh, FailedAttempts, InterruptedInstalls (+6) |
 | `src/ui/pages/HomePage.tsx` | CuratorPanel, Dashboard, DashboardBody, ErrorPanel, FooterRow (+6) |
+| `src/core/build/nexusAvailability.ts` | categoryOf, checkNexusAvailability, classifyFile, currentMainFile, fileIdOf (+6) |
 
 ## Entry Points
 

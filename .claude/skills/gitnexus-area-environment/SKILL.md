@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-environment
-description: "Skill for the Environment area of Event-Horizon. 149 symbols across 20 files."
+description: "Skill for the Environment area of Event-Horizon. 112 symbols across 17 files."
 ---
 
 # Environment
 
-149 symbols | 20 files | Cohesion: 76%
+112 symbols | 17 files | Cohesion: 78%
 
 ## When to Use
 
@@ -17,16 +17,16 @@ description: "Skill for the Environment area of Event-Horizon. 149 symbols acros
 
 | File | Symbols |
 |------|---------|
-| `src/core/environment/winePrefix.ts` | errorCode, exists, heroicCandidate, heroicCandidates, addDir (+19) |
 | `src/core/environment/environmentChecks.ts` | decideBinaryImports, decideGameFolder, decideGameManaged, decideIniLeftovers, decideLauncherRan (+10) |
 | `src/core/environment/gameFolderScan.ts` | groupEntries, loadVanillaList, readGogHashdbRecord, idOf, readGogRecord (+10) |
 | `src/core/environment/quarantine.ts` | countOnDisk, dismissQuarantine, exists, isSafeRelative, listQuarantines (+7) |
-| `src/core/environment/storeFileLists.ts` | Truncated, fields, varint, parseDepotManifest, parseGogFileList (+6) |
+| `src/core/environment/storeFileLists.ts` | parseAppManifest, parseVdf, readObject, Truncated, fields (+6) |
 | `src/core/environment/peImage.ts` | missingImports, parsePeImage, Malformed, parse, cstring (+4) |
 | `src/core/environment/snapshot.ts` | readText, safe, writeEnvironmentSnapshot, close, field (+4) |
 | `src/core/environment/launchGame.ts` | chooseLaunchTarget, isCancellation, isFile, launchGame, onSpawned (+3) |
-| `src/core/environment/winePrefix.test.ts` | probe, heroicGameConfig, heroicInstalled, linkToGame, onLinux (+3) |
-| `src/core/environment/preflight.ts` | isDirectory, isFile, logEnvironmentReport, runEnvironmentPreflight, declaredPrerequisitePaths (+2) |
+| `src/core/environment/binaryImports.ts` | probeImportMismatches, load, rootDllOwnership, closure, refs (+1) |
+| `src/core/environment/vortexEnvironment.ts` | readDiscovery, str, extensionGame, gameDisplayName, gameExecutable (+1) |
+| `src/core/environment/fixtures.testutil.ts` | buildDepotManifest, lenField, section, varField, varint |
 
 ## Entry Points
 
@@ -54,8 +54,8 @@ Start here when exploring this area:
 | `protectedRootOf` | Function | `src/core/environment/environmentChecks.ts` | 226 |
 | `norm` | Function | `src/core/environment/environmentChecks.ts` | 227 |
 | `groupEntries` | Function | `src/core/environment/gameFolderScan.ts` | 242 |
-| `logEnvironmentReport` | Function | `src/core/environment/preflight.ts` | 332 |
-| `runEnvironmentPreflight` | Function | `src/core/environment/preflight.ts` | 203 |
+| `logEnvironmentReport` | Function | `src/core/environment/preflight.ts` | 334 |
+| `runEnvironmentPreflight` | Function | `src/core/environment/preflight.ts` | 205 |
 | `logPaths` | Function | `src/core/environment/logPaths.ts` | 13 |
 | `dismissQuarantine` | Function | `src/core/environment/quarantine.ts` | 379 |
 | `listQuarantines` | Function | `src/core/environment/quarantine.ts` | 275 |
@@ -71,12 +71,12 @@ Start here when exploring this area:
 | `WriteEnvironmentSnapshot → GetVortexUserDataPath` | cross_community | 9 |
 | `ScanGameFolder → Truncated` | cross_community | 8 |
 | `ScanGameFolder → ToPosix` | cross_community | 8 |
-| `LoadBuildDiff → ToPosix` | cross_community | 8 |
 | `ScanGameFolder → GetVortexUserDataPath` | cross_community | 8 |
 | `OnSpawned → GetVortexUserDataPath` | cross_community | 7 |
 | `QuarantineFiles → GetVortexUserDataPath` | cross_community | 7 |
 | `RestoreQuarantine → GetVortexUserDataPath` | cross_community | 7 |
 | `ScanGameFolder → ReadObject` | cross_community | 6 |
+| `RunEnvironmentPreflight → ToPosix` | cross_community | 6 |
 
 ## How to Explore
 
