@@ -51,7 +51,6 @@ describe("warnIfSevenZipBroken", () => {
     vi.doMock("../../../core/installer/checkSevenZipHealth", () => ({
       checkSevenZipHealth: () => Promise.resolve({ kind: "ok" }),
       describeSevenZipHealth: () => undefined,
-      looksLikeWine: () => false,
     }));
     const { warnIfSevenZipBroken: fn } = await import("./engine");
     const { api, sent } = fakeApi();
@@ -69,7 +68,6 @@ describe("warnIfSevenZipBroken", () => {
         message: "Vortex's archive extractor is not working.",
         steps: ["Run scripts/setup-proton.sh", "Detail: spawn 7z.exe ENOENT"],
       }),
-      looksLikeWine: () => true,
     }));
     const { warnIfSevenZipBroken: fn } = await import("./engine");
     const { api, sent } = fakeApi();
@@ -92,7 +90,6 @@ describe("warnIfSevenZipBroken", () => {
         message: "broken",
         steps: ["STEP-ONE", "STEP-TWO"],
       }),
-      looksLikeWine: () => true,
     }));
     const { warnIfSevenZipBroken: fn } = await import("./engine");
     const { api, sent, dialogs } = fakeApi();
@@ -114,7 +111,6 @@ describe("warnIfSevenZipBroken", () => {
     vi.doMock("../../../core/installer/checkSevenZipHealth", () => ({
       checkSevenZipHealth: () => Promise.resolve({ kind: "broken", why: "x" }),
       describeSevenZipHealth: () => ({ message: "m", steps: ["s"] }),
-      looksLikeWine: () => false,
     }));
     const { warnIfSevenZipBroken: fn } = await import("./engine");
     await expect(fn({} as types.IExtensionApi)).resolves.toBeUndefined();
@@ -129,7 +125,6 @@ describe("warnIfSevenZipBroken", () => {
         throw new Error("preflight exploded");
       },
       describeSevenZipHealth: () => undefined,
-      looksLikeWine: () => false,
     }));
     const { warnIfSevenZipBroken: fn } = await import("./engine");
     const { api, sent } = fakeApi();

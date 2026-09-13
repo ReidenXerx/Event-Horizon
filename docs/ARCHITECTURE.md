@@ -129,6 +129,10 @@ Full prose contract: [`docs/business/INSTALL_ACTION.md`](business/INSTALL_ACTION
 - `comparePluginsTxtFiles({...})` — async wrapper that reads both files and calls the diff.
 - `exportPluginsDiffReport({...})` — writes the diff JSON.
 
+`proton/*` — the Proton service
+- Everything Event Horizon knows about running under Wine/Proton on Linux, and the only code that probes for it: `looksLikeWine()` (`detect.ts`); what Wine reports about the Linux side — the home, Vortex's own prefix, `Z:` path translation (`host.ts`); which prefix Heroic or Steam runs the game in, read from the launcher's own records (`launcherRecords.ts`, `gamePrefix.ts`); and whether Vortex's settings folders reach the game, proven by a write probe (`sharedFolders.ts`).
+- What a feature SAYS about Wine stays with the feature: the environment checks word the prefix verdict, the 7-Zip preflight its advice, the resolver its game-version note. `protonBoundary.test.ts` fails when a Wine probe — a `Z:\` path, Wine's `WINE*` environment variables, a launcher's prefix records — appears anywhere else.
+
 `manifest/buildManifest.ts`
 - `buildManifest(input)` — pure transform from `ExportedModsSnapshot` (+ curator-supplied package/game/vortex metadata, optional `plugins.txt` content, optional per-mod external-mod overrides) into a fully-typed `EhcollManifest`. No I/O, no state access — testable with hand-rolled fixtures.
 - Identity: emits `compareKey="nexus:<modId>:<fileId>"` for Nexus-sourced mods, `compareKey="external:<sha256>"` for everything else. Refuses to build when any mod lacks `archiveSha256` (fail-fast at packaging time, not at install time on a user's machine).

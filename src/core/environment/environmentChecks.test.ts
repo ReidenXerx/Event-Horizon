@@ -18,8 +18,8 @@ import {
   describeBlockedChecks,
   protectedRootOf,
 } from "./environmentChecks";
+import type { FolderShare, WinePrefixProbe } from "../proton";
 import type { GameFolderScan } from "./gameFolderScan";
-import type { FolderShare, WinePrefixProbe } from "./winePrefix";
 
 const G = "Fallout 4";
 

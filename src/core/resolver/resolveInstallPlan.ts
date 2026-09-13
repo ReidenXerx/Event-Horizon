@@ -53,6 +53,7 @@
 
 import { gameVersionGuidance } from "./gameVersionGuidance";
 import { describeStoreMismatch } from "../manifest/storeCompatibility";
+import { looksLikeWine } from "../proton";
 import type {
   EhcollExternalDependency,
   EhcollManifest,
@@ -241,19 +242,12 @@ export function resolveCompatibility(
  * Proton would be a red herring.
  */
 function wineVersionNote(): string {
-  try {
-    // Local require keeps the resolver free of a UI/installer import cycle;
-    // this module is otherwise pure.
-    const { looksLikeWine } = require("../installer/checkSevenZipHealth") as {
-      looksLikeWine: () => boolean;
-    };
-    return looksLikeWine()
-      ? "On Wine/Proton this is common — Vortex reads the version out of the " +
-          "game executable and that often fails in a prefix."
-      : "";
-  } catch {
-    return "";
-  }
+  // A static import now: the Proton service imports nothing from the installer
+  // or the UI, which is the cycle a local require used to dodge here.
+  return looksLikeWine()
+    ? "On Wine/Proton this is common — Vortex reads the version out of the " +
+        "game executable and that often fails in a prefix."
+    : "";
 }
 
 function checkGameVersion(

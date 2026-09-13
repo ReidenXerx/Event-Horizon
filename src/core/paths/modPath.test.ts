@@ -7,6 +7,8 @@
  * both exist in one folder. Every comparison here takes the mode as an
  * argument for that reason, and these tests pin BOTH answers.
  */
+import * as nodePath from "path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -17,6 +19,8 @@ import {
   isInside,
   isSafeRelativePath,
   pathKey,
+  rebaseUnder,
+  relativeUnder,
   samePath,
   segmentsOf,
   toPosix,
@@ -181,5 +185,25 @@ describe("isInside, for absolute paths on this machine", () => {
     expect(isInside("/home/u/dl", "/home/u/dl", "insensitive", posixOps)).toBe(
       false,
     );
+  });
+});
+
+describe("relativeUnder / rebaseUnder", () => {
+  it("moves a path from one root to the same place under another, whatever the separators", () => {
+    expect(relativeUnder("C:\\users\\steamuser", "C:/users/steamuser/Documents/My Games/Fallout4", "insensitive")).toBe(
+      "Documents/My Games/Fallout4",
+    );
+    expect(relativeUnder("C:\\a", "C:\\ab\\c", "insensitive")).toBeUndefined();
+    expect(relativeUnder("C:\\a", "C:\\a", "insensitive")).toBeUndefined();
+    expect(rebaseUnder("C:\\users\\steamuser", "D:\\g", "C:/users/steamuser/AppData/Local/Fallout4", "insensitive")).toBe(
+      nodePath.join("D:\\g", "AppData", "Local", "Fallout4"),
+    );
+    expect(rebaseUnder("C:\\users\\steamuser", "D:\\g", "E:\\elsewhere", "insensitive")).toBeUndefined();
+  });
+
+  it("folds case only when the filesystem does", () => {
+    expect(relativeUnder("C:\\users\\steamuser", "C:\\Users\\SteamUser\\x", "insensitive")).toBe("x");
+    expect(relativeUnder("/home/Deck", "/home/deck/x", "sensitive")).toBeUndefined();
+    expect(relativeUnder("/home/deck", "/home/deck/x", "sensitive")).toBe("x");
   });
 });

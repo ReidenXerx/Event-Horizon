@@ -37,6 +37,8 @@ export {
   isInside,
   isSafeRelativePath,
   pathKey,
+  rebaseUnder,
+  relativeUnder,
   samePath,
   segmentsOf,
   toPosix,

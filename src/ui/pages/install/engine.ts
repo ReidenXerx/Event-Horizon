@@ -622,8 +622,10 @@ export async function warnIfSevenZipBroken(
   api: types.IExtensionApi,
 ): Promise<{ message: string; steps: string[] } | undefined> {
   try {
-    const { checkSevenZipHealth, describeSevenZipHealth, looksLikeWine } =
-      await import("../../../core/installer/checkSevenZipHealth");
+    const { checkSevenZipHealth, describeSevenZipHealth } = await import(
+      "../../../core/installer/checkSevenZipHealth"
+    );
+    const { looksLikeWine } = await import("../../../core/proton");
     const health = await checkSevenZipHealth();
     const advice = describeSevenZipHealth(health);
     if (advice === undefined) return undefined;

@@ -29,13 +29,12 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
-import * as fs from "fs";
-
 import {
   resolveSevenZip,
   sevenZipSelfTest,
   type SevenZipApi,
 } from "../manifest/sevenZip";
+import { looksLikeWine } from "../proton";
 
 export type SevenZipHealth =
   /** 7z built an archive and read it back. Vortex can install mods. */
@@ -93,33 +92,6 @@ export async function checkSevenZipHealth(
   }
 }
 
-/**
- * Are we running inside Wine?
- *
- * `process.platform` cannot answer this: Vortex under Proton is a Windows
- * process, so it reports "win32" exactly as it would on Windows. These are
- * artefacts Wine creates and a real Windows install does not — `Z:` mapped
- * to the Linux root is the giveaway, and winemenubuilder is the backstop.
- *
- * Only used to pick which advice to give, so a wrong answer costs a less
- * specific message and nothing else.
- */
-export function looksLikeWine(): boolean {
-  const probes = [
-    "Z:\\usr",
-    "Z:\\home",
-    "Z:\\etc",
-    "C:\\windows\\system32\\winemenubuilder.exe",
-  ];
-  for (const p of probes) {
-    try {
-      if (fs.existsSync(p)) return true;
-    } catch {
-      // An unreadable path is not evidence either way.
-    }
-  }
-  return false;
-}
 
 export type SevenZipAdvice = {
   /** One line, for a notification. */

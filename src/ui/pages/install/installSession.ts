@@ -558,15 +558,16 @@ class InstallSession {
     if (choice?.action !== "Install runtimes") return;
 
     try {
-      const [{ installPrerequisites, summarisePrereqResults }, { nodePrereqDeps }, prereqs, health] =
+      const [{ installPrerequisites, summarisePrereqResults }, { nodePrereqDeps }, prereqs, health, proton] =
         await Promise.all([
           import("../../../core/runtime/installPrerequisites"),
           import("../../../core/runtime/nodePrereqDeps"),
           import("../../../core/runtime/prerequisites"),
           import("../../../core/installer/checkSevenZipHealth"),
+          import("../../../core/proton"),
         ]);
 
-      const onWine = health.looksLikeWine();
+      const onWine = proton.looksLikeWine();
       const plan = prereqs
         .planPrerequisites({ onWine, aggressive: true })
         .filter((p) => p.preselected);
@@ -1062,9 +1063,7 @@ class InstallSession {
   private async warnNoDeploymentMethod(
     api: types.IExtensionApi,
   ): Promise<void> {
-    const { looksLikeWine } = await import(
-      "../../../core/installer/checkSevenZipHealth"
-    );
+    const { looksLikeWine } = await import("../../../core/proton");
     const { describeDeploymentBlock } = await import(
       "../../../core/installer/probeDeployment"
     );

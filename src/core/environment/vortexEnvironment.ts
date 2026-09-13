@@ -10,12 +10,11 @@ import * as path from "path";
 import { util } from "@nexusmods/vortex-api";
 
 import { discoveredStore, getCurrentPluginsTxtPath } from "../comparePlugins";
-import { looksLikeWine } from "../installer/checkSevenZipHealth";
 import { ehLog } from "../logging/ehLog";
 import { iniLocationFor, launcherWritesPrefsFor, prefsIniPathFor } from "../manifest/gameIni";
+import { looksLikeWine, readWineHost } from "../proton";
 import type { EhcollExternalDependency, EhcollGameIni } from "../../types/ehcoll";
 import { declaredPrerequisitePaths, type PreflightFacts } from "./preflight";
-import { readWineHost } from "./winePrefix";
 
 export type DiscoveryView = {
   path?: string;

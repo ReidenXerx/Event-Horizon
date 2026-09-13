@@ -21,7 +21,8 @@ import * as path from "path";
 import { ehLog } from "../logging/ehLog";
 import { probeFilesFor } from "../manifest/externalDependencies";
 import { isMachineOwned, parseIni } from "../manifest/gameIni";
-import { segmentsOf } from "../paths";
+import { rebaseUnder, segmentsOf } from "../paths";
+import { probeWinePrefix, type WineHost, type WinePrefixProbe } from "../proton";
 import type { EhcollExternalDependency } from "../../types/ehcoll";
 import { probeImportMismatches, type ImportProbe } from "./binaryImports";
 import {
@@ -41,7 +42,6 @@ import {
   scanGameFolder,
   type GameFolderScan,
 } from "./gameFolderScan";
-import { probeWinePrefix, rebaseUnder, type WineHost, type WinePrefixProbe } from "./winePrefix";
 
 /** Everything the preflight needs from Vortex and the OS, read once. */
 export type PreflightFacts = {
@@ -139,7 +139,9 @@ function gameSideSettings(facts: PreflightFacts, probe: WinePrefixProbe): Settin
   const from = facts.userProfileDir;
   const to = probe.gameUserDir;
   if (from === undefined || to === undefined) return facts;
-  const move = (p: string | undefined): string | undefined => (p === undefined ? undefined : (rebaseUnder(from, to, p) ?? p));
+  // Vortex's own paths are Windows paths, so they compare case-insensitively even under Wine.
+  const move = (p: string | undefined): string | undefined =>
+    p === undefined ? undefined : (rebaseUnder(from, to, p, "insensitive") ?? p);
   const prefsPath = move(facts.prefsPath);
   const iniDir = move(facts.iniDir);
   const localGameDir = move(facts.localGameDir);

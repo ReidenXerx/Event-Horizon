@@ -58,7 +58,7 @@ import {
 } from "./installerChoices";
 
 import { extractZipEntryToFile, listZipEntries } from "../manifest/readZip";
-import { looksLikeWine } from "./checkSevenZipHealth";
+import { looksLikeWine } from "../proton";
 import { stallBudgetMs, type StallPhase } from "./timeBudgets";
 import { classifyAttempt, backoffMs } from "./downloadFailureShape";
 import { ehLog } from "../logging/ehLog";

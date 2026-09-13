@@ -61,6 +61,7 @@ import { useApi } from "../state";
 import { useEHRuntime } from "../runtime/useEHRuntime";
 import { EXTENSION_VERSION } from "../version";
 import { getVortexUserDataPath } from "../../core/paths";
+import { looksLikeWine } from "../../core/proton";
 import { PlayGameButton } from "../play/PlayGameButton";
 
 export interface CollectionsPageProps {
@@ -1180,14 +1181,10 @@ function describeHostPlatform(): string {
   if (typeof process === "undefined") return "unknown";
   const base = process.platform;
   try {
-    // Cheap synchronous probe; see looksLikeWine for why process.platform
-    // cannot answer this on its own.
-    const fs = require("fs") as typeof import("fs");
-    for (const p of ["Z:\\usr", "Z:\\home", "C:\\windows\\system32\\winemenubuilder.exe"]) {
-      if (fs.existsSync(p)) return `${base} (Wine/Proton)`;
-    }
+    // process.platform says "win32" under Proton too; the Proton service knows.
+    return looksLikeWine() ? `${base} (Wine/Proton)` : base;
   } catch {
     // Probe unavailable — report the plain platform rather than nothing.
+    return base;
   }
-  return base;
 }

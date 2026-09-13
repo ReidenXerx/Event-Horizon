@@ -28,7 +28,7 @@ import { randomBytes, randomUUID } from "crypto";
 import { actions, types } from "@nexusmods/vortex-api";
 
 import { ehLog } from "../logging/ehLog";
-import { looksLikeWine } from "./checkSevenZipHealth";
+import { looksLikeWine } from "../proton";
 import { countMods, profileSwitchBudgetMs } from "./timeBudgets";
 
 /**

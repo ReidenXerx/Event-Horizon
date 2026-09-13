@@ -223,7 +223,7 @@ import {
   safeRmTempDir,
   uninstallMod,
 } from "./modInstall";
-import { looksLikeWine } from "./checkSevenZipHealth";
+import { looksLikeWine } from "../proton";
 import {
   describeMissingDeploymentMethod,
   isDeploymentMethodMissing,

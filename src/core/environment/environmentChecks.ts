@@ -28,9 +28,9 @@
  */
 
 import { basenameOf, dirnameOf } from "../paths";
+import type { FolderShare, PrefixSource, WinePrefixProbe } from "../proton";
 import type { GameFolderScan } from "./gameFolderScan";
 import { groupEntries } from "./gameFolderScan";
-import type { FolderShare, PrefixSource, WinePrefixProbe } from "./winePrefix";
 
 export type EnvironmentCheckId =
   | "game-managed"

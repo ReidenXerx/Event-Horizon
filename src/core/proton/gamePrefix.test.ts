@@ -12,7 +12,8 @@ import * as path from "path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { linuxPathOf, probeWinePrefix, readWineHost, rebaseUnder, relativeUnder, type WineHost } from "./winePrefix";
+import { probeWinePrefix } from "./gamePrefix";
+import type { WineHost } from "./host";
 
 let tmp: string;
 /** The Linux root, "/". */
@@ -92,40 +93,6 @@ beforeEach(() => {
 });
 afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
-});
-
-describe("readWineHost", () => {
-  it("reads the Linux home, Vortex's own prefix and XDG_CONFIG_HOME from what Wine puts in the environment", () => {
-    expect(
-      readWineHost({
-        WINEHOMEDIR: "\\??\\Z:\\home\\deck",
-        WINECONFIGDIR: "\\??\\Z:\\home\\deck\\.local\\share\\Steam\\steamapps\\compatdata\\2977443913\\pfx",
-        WINE_HOST_XDG_CONFIG_HOME: "/home/deck/.config",
-      }),
-    ).toEqual({
-      unixRoot: "Z:\\",
-      homes: ["/home/deck"],
-      xdgConfigHome: "/home/deck/.config",
-      vortexPrefix: "/home/deck/.local/share/Steam/steamapps/compatdata/2977443913/pfx",
-    });
-  });
-
-  it("does not translate a drive other than Z:, and ignores a Windows HOME", () => {
-    expect(linuxPathOf("\\??\\X:\\Games")).toBeUndefined();
-    expect(linuxPathOf("Z:\\")).toBe("/");
-    expect(readWineHost({ HOME: "C:\\users\\steamuser", WINE_HOST_HOME: "/home/deck" }).homes).toEqual(["/home/deck"]);
-  });
-});
-
-describe("relativeUnder / rebaseUnder", () => {
-  it("moves a settings path from Vortex's user folder into the game's, whatever the case or separators", () => {
-    expect(relativeUnder("C:\\users\\steamuser", "C:/Users/SteamUser/Documents/My Games/Fallout4")).toBe("Documents/My Games/Fallout4");
-    expect(relativeUnder("C:\\users\\steamuser", "C:\\users\\steamuser")).toBeUndefined();
-    expect(relativeUnder("C:\\users\\steamuser", "D:\\users\\steamuser\\x")).toBeUndefined();
-    expect(rebaseUnder("C:\\users\\steamuser", path.join(tmp, "g"), "C:/users/steamuser/AppData/Local/Fallout4")).toBe(
-      path.join(tmp, "g", "AppData", "Local", "Fallout4"),
-    );
-  });
 });
 
 describe("probeWinePrefix", () => {

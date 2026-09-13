@@ -174,3 +174,24 @@ export function isInside(
   const rel = ops.relative(fold(ops.resolve(parent)), fold(ops.resolve(child)));
   return rel.length > 0 && !rel.startsWith("..") && !ops.isAbsolute(rel);
 }
+
+/**
+ * The part of `child` below `parent`, "/"-separated, or `undefined` when
+ * `child` is not strictly inside it.
+ *
+ * Segment by segment, so `C:\a` is not a parent of `C:\ab`; separators are
+ * agreed on first, so a recorded `C:/users/x` and a probed `C:\users\x` meet.
+ */
+export function relativeUnder(parent: string, child: string, mode: CaseMode): string | undefined {
+  const fold = (s: string): string => (mode === "insensitive" ? s.toLowerCase() : s);
+  const p = segmentsOf(parent);
+  const c = segmentsOf(child);
+  if (c.length <= p.length || p.some((s, i) => fold(s) !== fold(c[i]!))) return undefined;
+  return c.slice(p.length).join("/");
+}
+
+/** `p` moved from under `fromRoot` to the same place under `toRoot`; `undefined` when it is not under `fromRoot`. */
+export function rebaseUnder(fromRoot: string, toRoot: string, p: string, mode: CaseMode): string | undefined {
+  const rel = relativeUnder(fromRoot, p, mode);
+  return rel === undefined ? undefined : nodePath.join(toRoot, ...segmentsOf(rel));
+}
