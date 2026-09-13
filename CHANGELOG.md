@@ -8,9 +8,9 @@ Vortex ignores everything after the dash when it decides whether an extension ha
 could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
-(7 September 2026), then 0.1.151 to 0.1.155.
+(7 September 2026), then 0.1.151 to 0.1.156.
 
-## [0.1.156] — 2026-09-12
+## [0.1.156] — 2026-09-14
 
 ### Curator Tools
 - **Requirements show up after you read them.** "Read requirements" counted what was missing and then threw its own
