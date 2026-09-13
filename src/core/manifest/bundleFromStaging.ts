@@ -301,9 +301,16 @@ export async function measureBundledMods(args: {
           modName: mod.name,
           cacheable: recordPath !== undefined,
         });
-        const listing = await listBundleFolder(stagingDir, options.signal);
+        let archivesLeftOut = 0;
+        const listing = await listBundleFolder(stagingDir, options.signal, () => {
+          archivesLeftOut += 1;
+        });
         if (listing.length === 0) {
-          fail(`its staging folder "${stagingDir}" holds no files to ship`);
+          fail(
+            archivesLeftOut > 0
+              ? `every file in its staging folder "${stagingDir}" is an archive, and a package cannot carry one`
+              : `its staging folder "${stagingDir}" holds no files to ship`,
+          );
           continue;
         }
         const zip = await writeBundleZip(

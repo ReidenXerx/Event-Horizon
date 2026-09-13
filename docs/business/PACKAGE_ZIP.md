@@ -31,9 +31,13 @@ package with a bundled mod was quarantined. From schema 2:
   hashes to the sha.
 - A **mirrored file** ships loose as `mirror/<sha256>`, as before.
 - A file in either that **is itself an archive** — judged by its first bytes
-  (zip, 7z, rar, gzip, xz, bzip2, zstd, lz4, cab, wim, tar), whatever it is called — stops the
-  build. The error lists each one as `"mod": path (format)`. Bethesda's `.ba2`
-  and `.bsa` are not archives in this sense.
+  (zip, 7z, rar, gzip, xz, bzip2, zstd, lz4, cab, wim, tar), whatever it is called — is
+  left out, as if the curator had deleted it from staging: out of the bundle
+  (`listBundleFolder`) and out of the file list the manifest records for a
+  bundled or mirrored mod (`leaveOutArchiveFiles`, before the manifest is
+  built), so users' installs verify, identify and mirror the mod without it.
+  The log lists each one (`build.archives-left-out`). Bethesda's `.ba2` and
+  `.bsa` are not archives in this sense.
 
 ## Why ZIP, not 7z
 
@@ -129,14 +133,16 @@ before throwing — same fail-fast philosophy as `buildManifest`.
    via `fs.mkdtemp`. When `stagingDir` is supplied (test path) the directory
    is `rm -rf`'d and recreated.
 3. List every bundle's folder (`listBundleFolder`: follows links, and leaves out
-   the volatile files a runtime writes, such as `Thumbs.db` and logs). An
+   the volatile files a runtime writes, such as `Thumbs.db` and logs, and every
+  file that is itself an archive). An
    unreadable folder is fatal, naming the mod; so is one that is missing or
    holds no files, since the build measured files in it.
-4. **Refuse archives inside.** Read the first bytes of every bundled and
-   mirrored file; any archive signature is fatal, and every offender is listed
-   (the message names up to 50, the log all of them). A file that can no longer
-   be read is fatal, naming its mod. Nothing has been collected yet, so a
-   refused build costs seconds.
+4. **Check again that nothing is an archive.** Read the first bytes of every
+   bundled and mirrored file. The build has already left archive files out, so
+   a hit means a file changed after the build read its mod, or a caller skipped
+   that step: fatal, listing every one (the message names up to 50, the log all
+   of them). A file that can no longer be read is fatal, naming its mod.
+   Nothing has been collected yet, so a refused build costs seconds.
 5. Write `manifest.json`. Keys are sorted via `sortDeep`, serialized with 2-space
    indent, trailing newline. UTF-8.
 6. Write optional `README.md` / `CHANGELOG.md`. Content gets a trailing newline

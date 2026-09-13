@@ -205,6 +205,20 @@ describe("listBundleFolder", () => {
 
     await expect(listBundleFolder(root)).rejects.toThrow(/could not be read/);
   });
+
+  it("leaves out a file that is itself an archive, whatever it is called, and says which", async () => {
+    const root = path.join(tmp, "with-archives");
+    fs.mkdirSync(path.join(root, "docs"), { recursive: true });
+    fs.writeFileSync(path.join(root, "plugin.esp"), "TES4");
+    fs.writeFileSync(path.join(root, "docs", "readme.docx"), Buffer.from([0x50, 0x4b, 0x03, 0x04, 1, 2, 3]));
+    fs.writeFileSync(path.join(root, "optional.bin"), Buffer.from([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c, 0, 4]));
+
+    const leftOut: string[] = [];
+    const listed = await listBundleFolder(root, undefined, (f) => leftOut.push(`${f.path} (${f.format})`));
+
+    expect(listed.map((f) => f.path)).toEqual(["plugin.esp"]);
+    expect(leftOut.sort()).toEqual(["docs/readme.docx (zip)", "optional.bin (7z)"]);
+  });
 });
 
 describe("the package side", () => {

@@ -48,9 +48,10 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
   it, and a package carried each bundled mod as a zip. A bundled mod now ships as its own files, and Event Horizon
   writes the archive back from them as it installs — an exact zip whose SHA-256 must match the one the collection names,
   so a missing, extra or altered file is refused before Vortex ever sees it.
-- **A file that is itself an archive stops the build, by name.** Any file in a bundled or mirrored mod that is an archive —
-  judged by its contents, whatever it is called — is listed with its mod, and the build stops until it is extracted,
-  deleted, or that mod is no longer bundled or mirrored. Bethesda's .ba2 and .bsa files are not counted.
+- **A file that is itself an archive is left out of the package.** Any file in a bundled or mirrored mod that is an
+  archive — judged by its contents, whatever it is called: a leftover .7z, a .docx readme, a .jar — is left out as if
+  it had been deleted from staging, so users get the mod without it either way. Nothing needs cleaning up; the
+  event-horizon log lists every file left out. Bethesda's .ba2 and .bsa files are not counted.
 - **Packages built by earlier versions must be rebuilt.** They are refused with a message to download the collection's
   current package — to install or repair from, and in Curator Tools to import from or show as published. Older Event
   Horizon versions refuse the new packages with a message to update.

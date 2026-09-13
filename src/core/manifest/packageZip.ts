@@ -621,13 +621,12 @@ async function listBundles(
 /**
  * ─── NO ARCHIVE GOES INTO A PACKAGE ────────────────────────────────────
  * Nexus quarantines an upload with an archive inside it, whatever the archive
- * is called and however deep it sits. A mod that itself ships one — an
- * optional pack, a document in a zip-based format — puts an archive back inside
- * the package the moment its files ship loose.
- *
- * Refused rather than skipped: leaving a file out changes the mod, and that is
- * the curator's decision to make knowing which file it is. Every offender is
- * listed, so one rebuild can fix them all.
+ * is called and however deep it sits. The build leaves archive files out of
+ * the mods it ships (`listBundleFolder`, `leaveOutArchiveFiles`), so none should
+ * arrive here. Every file is read again anyway, because the guarantee is the
+ * package's: a file that became an archive after the build read its mod, or a
+ * caller that skipped that step, is refused by name rather than shipped into a
+ * quarantine.
  */
 async function refuseArchivesInside(
   bundles: readonly ListedBundle[],
@@ -696,10 +695,9 @@ async function refuseArchivesInside(
   throw new PackageEhcollError([
     `${one ? "A file" : `${found.length} files`} this collection would ship ` +
       `${one ? "is an archive" : "are archives"}, and Nexus Mods quarantines any ` +
-      `upload with an archive inside it. An archive of mod files belongs ` +
-      `extracted into its mod's folder; one the mod does not need — a packed ` +
-      `backup, a document in a zip-based format such as .docx — can be deleted; ` +
-      `or stop bundling or mirroring that mod. Then rebuild.\n` +
+      `upload with an archive inside it. The build leaves archive files out of ` +
+      `the mods it ships, so ${one ? "this one" : "these"} changed after the build ` +
+      `read ${one ? "its mod" : "their mods"}. Rebuild.\n` +
       lines.join("\n"),
   ]);
 }

@@ -36,6 +36,7 @@ import type { Readable, Writable } from "stream";
 import { AbortError } from "../../utils/abortError";
 import { toPosix } from "../paths";
 import { isVolatileFile } from "../volatileFiles";
+import { archiveFormatOfFile, type ArchiveFormat } from "./archiveInside";
 import { crc32File, crc32Update, type ZipReader } from "./readZip";
 import { walkStagingFolder, type UnreadablePath } from "./stagingFileWalker";
 
@@ -78,8 +79,17 @@ export function sortForBundle<T extends { path: string }>(files: readonly T[]): 
  * describe and the mod would never be recognised as installed. A path the walk
  * cannot read refuses the bundle, because a listing with a hole in it ships a
  * mod without that file.
+ *
+ * A file that is itself an archive is left out, judged by its first bytes: a
+ * package cannot carry one, and the manifest's file list for the mod leaves it
+ * out the same way (`leaveOutArchiveFiles`). `onLeftOut` hears each one. A file
+ * that cannot be opened for that look is kept, and fails where it is read.
  */
-export async function listBundleFolder(root: string, signal?: AbortSignal): Promise<BundleListing[]> {
+export async function listBundleFolder(
+  root: string,
+  signal?: AbortSignal,
+  onLeftOut?: (file: { path: string; format: ArchiveFormat }) => void,
+): Promise<BundleListing[]> {
   const unreadable: UnreadablePath[] = [];
   const walked = await walkStagingFolder(root, signal, (entry) => unreadable.push(entry));
   if (unreadable.length > 0) {
@@ -89,11 +99,18 @@ export async function listBundleFolder(root: string, signal?: AbortSignal): Prom
         `be read (first: "${first.path}" — ${first.why}), so the bundle would be missing files.`,
     );
   }
-  return sortForBundle(
-    walked
-      .filter((f) => !isVolatileFile(f.relativePath))
-      .map((f) => ({ path: f.relativePath, size: f.size, fullPath: f.absolutePath })),
-  );
+  const kept: BundleListing[] = [];
+  for (const f of walked) {
+    if (isVolatileFile(f.relativePath)) continue;
+    if (signal?.aborted === true) throw new AbortError("Cancelled");
+    const format = await archiveFormatOfFile(f.absolutePath).catch(() => undefined);
+    if (format !== undefined) {
+      onLeftOut?.({ path: f.relativePath, format });
+      continue;
+    }
+    kept.push({ path: f.relativePath, size: f.size, fullPath: f.absolutePath });
+  }
+  return sortForBundle(kept);
 }
 
 /** Read each listed file once for its CRC, so its zip header can be written before its bytes. */

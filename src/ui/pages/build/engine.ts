@@ -24,6 +24,7 @@ import {
   shipsAsExternal,
 } from "../../../core/manifest/shipsAsExternal";
 import { resolveBundles } from "../../../core/manifest/resolveBundles";
+import { leaveOutArchiveFiles } from "../../../core/manifest/leaveOutArchives";
 import * as fsp from "fs/promises";
 
 import {
@@ -2061,6 +2062,23 @@ export async function runBuildPipeline(
 
   // ── 3. Build the manifest ──────────────────────────────────────────────
   checkAbort();
+  /**
+   * Archive files out of the mods that ship, before the manifest records their
+   * files — see leaveOutArchiveFiles. Recorded first, the manifest would promise
+   * files no package carries, and every user's check and mirror of those mods
+   * would fail.
+   */
+  mods = (
+    await leaveOutArchiveFiles({
+      mods,
+      shippedModIds: new Set([
+        ...measuredBundles.map((b) => b.modId),
+        ...mods.filter((m) => m.mirrored === true).map((m) => m.id),
+      ]),
+      installRoot: installRootFor(state, gameId),
+      ...(signal !== undefined ? { signal } : {}),
+    })
+  ).mods;
   onProgress?.({ phase: "building-manifest" });
   const snapshot = {
     exportedAt: new Date().toISOString(),

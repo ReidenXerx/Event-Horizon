@@ -9,8 +9,9 @@
  *  - 7-Zip is told to flag every non-ASCII name as UTF-8, and a package whose
  *    names it left in the local code page, or that lacks a file, refuses the
  *    build by name;
- *  - an archive among a bundled or a mirrored mod's files refuses the build,
- *    naming the mod, the file and the format, before 7-Zip is ever asked;
+ *  - an archive among a bundled mod's files is left out of what ships, and one
+ *    among the mirrored files that still reaches packaging refuses the build,
+ *    naming each, before 7-Zip is ever asked;
  *  - files changed after the build measured them refuse the build by name, and
  *    so do a folder emptied since, a file that vanished, or one no longer
  *    readable;
@@ -205,28 +206,24 @@ describe("packaging a bundled mod", () => {
     ).rejects.toThrow(/does not reproduce "Settings"[\s\S]*missing from the package: b\.ini/);
   });
 
-  it("refuses an archive among a bundled mod's files, naming mod, file and format", async () => {
+  it("leaves an archive among a bundled mod's files out of what it ships", async () => {
+    const stagingDir = path.join(dir, "pack");
     const sevenZip = zippingSevenZip();
-    const err = await packageOne(
+    const { sha } = await packageOne(
       {
         "patch.esp": "TES4",
         // Named like anything else: the signature decides, not the extension.
         "optional/Extras.bin": Buffer.concat([SEVEN_Z_HEAD, Buffer.from("payload")]),
       },
       sevenZip,
-    ).catch((e: unknown) => e);
+      { stagingDir },
+    );
 
-    expect(err).toBeInstanceOf(PackageEhcollError);
-    const message = (err as Error).message;
-    expect(message).toMatch(/^A file this collection would ship is an archive/);
-    expect(message).toMatch(/Nexus Mods quarantines any upload with an archive inside it/);
-    expect(message).toContain(`"Settings": optional/Extras.bin (7z)`);
-    expect(message).not.toContain("patch.esp");
-    expect(sevenZip.adds).toBe(0);
-    expect(fs.existsSync(path.join(dir, "out.ehcoll"))).toBe(false);
+    expect(sevenZip.adds).toBe(1);
+    expect(tree(path.join(stagingDir, "bundled", sha))).toEqual({ "patch.esp": "TES4" });
   });
 
-  it("refuses an archive among a mirrored mod's files too, and lists every offender", async () => {
+  it("still refuses a mirrored file that is an archive when one reaches packaging, and lists every one", async () => {
     const docs = path.join(dir, "staging", "docs");
     const docx = put(docs, "Readme.docx", Buffer.concat([ZIP_HEAD, Buffer.from("word")]));
     const gz = put(docs, "notes.gz", Buffer.from([0x1f, 0x8b, 0x08, 0x00, 0x01]));
@@ -262,6 +259,7 @@ describe("packaging a bundled mod", () => {
 
     const message = (err as Error).message;
     expect(message).toMatch(/^2 files this collection would ship are archives/);
+    expect(message).toContain("The build leaves archive files out of the mods it ships");
     expect(message).toContain(`"Docs": ${docx} (zip)`);
     expect(message).toContain(`"Docs": ${gz} (gzip)`);
     expect(message).not.toContain(plain);

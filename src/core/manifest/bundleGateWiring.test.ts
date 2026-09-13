@@ -99,6 +99,18 @@ describe("bundle resolution has one home", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("leaves archive files out of shipped mods before the manifest records their files", () => {
+    // Recorded first, the manifest would list files no package carries, and every
+    // user's check and mirror of those mods would fail.
+    const offenders = sources
+      .filter(
+        ({ text }) =>
+          !/mods = \(\s*await leaveOutArchiveFiles\(\{[\s\S]*buildManifest\(\{[\s\S]*collectMirrorPayload\(/.test(text),
+      )
+      .map(({ file }) => `${file}: records shipped mods' files before leaving their archives out`);
+    expect(offenders).toEqual([]);
+  });
+
   it("routes the Nexus decision through mayBundle, in that one place", () => {
     // The rule itself, asserted where it now lives rather than in two regexes.
     const shared = readFileSync(SHARED, "utf8");

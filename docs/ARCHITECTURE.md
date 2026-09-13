@@ -395,9 +395,10 @@ init → buildPackageAction()
    → loadOrCreateCollectionConfig      (slice 4b — persistent package.id + overrides)
    → reconcileExternalModsConfig       (auto-populate stub entries for new external mods)
    → saveCollectionConfig              (only when reconciliation changed something)
+   → leaveOutArchiveFiles              (bundled and mirrored mods' archive files out of their file lists)
    → buildManifest                     (pure transform → EhcollManifest)
    → resolveBundles            (slice 4b — each bundled:true entry → the files measured from its staging folder)
-   → packageEhcoll                     (refuses archives inside → stages loose files → 7z -tzip → .ehcoll)
+   → packageEhcoll                     (checks no archive remains → stages loose files → 7z -tzip → .ehcoll)
    → sendNotification(Open Package / Open Folder / Open Config)
 ```
 
