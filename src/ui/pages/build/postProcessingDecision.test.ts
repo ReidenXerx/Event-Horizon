@@ -256,7 +256,7 @@ describe("the mirror choice", () => {
   });
 
   it("promises the user's folder ends up identical, not that they skip the download", () => {
-    const copy = describeChoice("mirror", 3);
+    const copy = describeChoice("mirror", 3, undefined, 0, "nexus");
     expect(copy.consequence).toContain("still download this mod from Nexus");
     expect(copy.consequence).toContain("identical");
   });
@@ -305,6 +305,47 @@ describe("the mirror copy matches what the build actually packs", () => {
   });
 });
 
+
+describe("the mirror card says where users get the mod", () => {
+  // It said "Users still download this mod from Nexus" for every mod. On a
+  // real build that was a mod set to Manual whose archive was the curator's
+  // own repack — the card a curator reads to judge whether users can
+  // reproduce the mod at all.
+  it("names Nexus only for a mod users download from Nexus", () => {
+    expect(describeChoice("mirror", 3, undefined, 0, "nexus").consequence).toContain(
+      "Users still download this mod from Nexus",
+    );
+  });
+
+  it("tells a mod that is not on Nexus that users fetch its archive themselves", () => {
+    const c = describeChoice("mirror", 3, undefined, 0, "external").consequence;
+    expect(c).toContain("get this mod's archive themselves, from your link or instructions");
+    expect(c).not.toMatch(/nexus/i);
+  });
+
+  it("claims neither when the source is unknown", () => {
+    const c = describeChoice("mirror", 3).consequence;
+    expect(c).toContain("from its own archive");
+    expect(c).not.toMatch(/nexus|themselves/i);
+  });
+
+  it("gets a deletion right too, whether mirrored or bundled", () => {
+    for (const choice of ["mirror", "bundle"] as const) {
+      expect(describeChoice(choice, 0, undefined, 2, "external").consequence).not.toMatch(/nexus/i);
+      expect(describeChoice(choice, 0, undefined, 2, "external").consequence).toMatch(/themselves/);
+      expect(describeChoice(choice, 0, undefined, 2, "nexus").consequence).toMatch(/nexus/i);
+    }
+  });
+
+  it("is handed each card's source by the panel", () => {
+    const src = readFileSync(join(__dirname, "BuildPage.tsx"), "utf8");
+    const body = src.slice(
+      src.indexOf("function PostProcessingDecisions"),
+      src.indexOf("function BuildingPanel"),
+    );
+    expect(body).toContain("c.source,");
+  });
+});
 
 describe("changing a verdict REPLACES it", () => {
   // The defect this pins: these patches were purely additive, which was

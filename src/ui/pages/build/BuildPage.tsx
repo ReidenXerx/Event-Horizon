@@ -2727,6 +2727,7 @@ function PostProcessingDecisions(props: {
                       c.unexplained,
                       countKinds(c.files),
                       c.removedCount,
+                      c.source,
                     );
                     // Mirroring reconciles against per-file hashes, which a
                     // `fast` build never recorded. Showing it as pickable then

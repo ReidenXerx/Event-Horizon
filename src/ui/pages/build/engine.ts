@@ -1652,6 +1652,8 @@ export async function runBuildPipeline(
       // mods: only `postProcessed` and `mirrored` reach a mod, so a bundling
       // decision was invisible here and got re-asked forever.
       decided: decidedPostProcessing(collectionConfig),
+      // Where users get each mod, so its decision card can say so.
+      downloadedFromNexus: downloadedFromNexus(mods, collectionConfig),
       ...(signal !== undefined ? { signal } : {}),
       onProgress: (done, total, modName) => {
         onProgress?.({
@@ -1782,6 +1784,9 @@ export async function runBuildPipeline(
         selfCheck.reports,
         decidedPostProcessing(collectionConfig),
         selfCheck.mirrorable,
+        // Read again from the reloaded config: an answer given on the gate
+        // can change it — bundling a Nexus mod ships it as external.
+        downloadedFromNexus(mods, collectionConfig),
       );
     }
 
@@ -2413,6 +2418,24 @@ export function validateCuratorInput(input: CuratorInput): string | undefined {
  * an action reaching into a UI page.
  */
 export const isNexusMod = isNexusSourced;
+
+/**
+ * Mods the people installing download from Nexus.
+ *
+ * The same test the build ships by: a Nexus mod the curator marked
+ * `treatAsExternal` is fetched by hand like any external mod, so it is not in
+ * here. Decision cards read it to say where users get a mod.
+ */
+export function downloadedFromNexus(
+  mods: readonly AuditorMod[],
+  config: CollectionConfig,
+): Set<string> {
+  return new Set(
+    mods
+      .filter((m) => !shipsAsExternal(isNexusMod(m), config.externalMods[m.id]))
+      .map((m) => m.id),
+  );
+}
 
 /**
  * Moved to `core/manifest/resolveBundles.ts`.

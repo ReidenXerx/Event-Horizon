@@ -1509,6 +1509,20 @@ input[type="checkbox"].eh-check:indeterminate::before {
   border-radius: var(--eh-radius-sm);
 }
 
+/* The button here says the answer as a sentence ("Reproduce my version -
+   users get exactly this"), and .eh-button is nowrap with overflow hidden.
+   Once a narrow window made the column thinner than the sentence, the centred
+   label lost its first and last letters. Here it wraps instead. */
+.eh-option .eh-button {
+  white-space: normal;
+  line-height: 1.3;
+}
+
+.eh-option .eh-button > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* ── Centred stack: a ring, a headline, a line, a button ──────────── */
 .eh-centred {
   display: flex;

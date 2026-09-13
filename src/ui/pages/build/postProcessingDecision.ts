@@ -33,12 +33,14 @@
  */
 
 import type { ExternalModConfigEntry } from "../../../core/manifest/collectionConfig";
+import type { PostProcessingCandidate } from "../../../core/manifest/runSelfChecks";
 
 export type PostProcessingChoice =
   /**
    * Reproduce this mod's staging folder on the user's machine exactly.
    *
-   * The mod still installs from its own Nexus archive; afterwards the
+   * The mod still installs from its own archive — downloaded from Nexus, or
+   * fetched by the user for a mod that is not on Nexus — and afterwards the
    * differences are reconciled from bytes carried in the package. Right for
    * almost everything, which is why it is offered first.
    */
@@ -181,6 +183,36 @@ function declareOutcome(
   );
 }
 
+/** Where the people installing get a mod's own archive. */
+export type ArchiveSource = NonNullable<PostProcessingCandidate["source"]>;
+
+/**
+ * How users get the mod before the collection corrects it — the end of
+ * "Users still …".
+ *
+ * ─── IT SAID NEXUS FOR EVERY MOD ───────────────────────────────────────
+ * The mirror card read "Users still download this mod from Nexus" whatever the
+ * mod was. On a real build it said that about a mod set to Manual whose
+ * archive was the curator's own repack, on Nexus nowhere — on the card a
+ * curator reads to judge whether users can reproduce the mod at all. A mod
+ * users do not download from Nexus is fetched by hand, from the link or
+ * instructions the curator gave it. Unknown is worded to stay true either way.
+ */
+function howUsersGetIt(source: ArchiveSource | undefined): string {
+  if (source === "nexus") return "download this mod from Nexus";
+  if (source === "external") {
+    return "have to get this mod's archive themselves, from your link or instructions";
+  }
+  return "install this mod from its own archive";
+}
+
+/** The same fact, as the step a bundled mod spares them. */
+function whatBundlingSkips(source: ArchiveSource | undefined): string {
+  if (source === "nexus") return "without installing from Nexus";
+  if (source === "external") return "without getting its archive themselves";
+  return "without installing from its archive";
+}
+
 export function describeChoice(
   choice: PostProcessingChoice,
   fileCount: number,
@@ -195,6 +227,11 @@ export function describeChoice(
    * version of 0 files" is what this said before it knew the difference.
    */
   removedCount = 0,
+  /**
+   * Where users get the mod's own archive. Omit when unknown — the copy then
+   * names neither Nexus nor a hand download.
+   */
+  source?: ArchiveSource,
 ): ChoiceCopy {
   const n = `${fileCount} file${fileCount === 1 ? "" : "s"}`;
   const m = `${removedCount} file${removedCount === 1 ? "" : "s"}`;
@@ -203,7 +240,7 @@ export function describeChoice(
     return {
       label: "Ship my deletion — users lose these files too",
       consequence:
-        `Users still download this mod from Nexus, then the collection removes ` +
+        `Users still ${howUsersGetIt(source)}, then the collection removes ` +
         `the ${m} missing from your folder — theirs ends up identical to yours. ` +
         `Right when you deleted them on purpose. Wrong if Vortex lost them ` +
         `during an install: then every user loses them as well, and the ` +
@@ -225,7 +262,7 @@ export function describeChoice(
       label: "Ship my exact folder — deletions included",
       consequence:
         `Packs your staging folder as it is, so users get it without the ` +
-        `${m} you do not have and without installing from Nexus. Makes the ` +
+        `${m} you do not have and ${whatBundlingSkips(source)}. Makes the ` +
         `download bigger by the size of the folder, and no installer runs on ` +
         `their machine.`,
     };
@@ -240,7 +277,7 @@ export function describeChoice(
       // on it. An earlier draft claimed "only the differences ride in the
       // package", which described a narrowing the build does not do.
       consequence:
-        `Users still download this mod from Nexus, then the collection puts ` +
+        `Users still ${howUsersGetIt(source)}, then the collection puts ` +
         `your version of the ${n} in place — their folder ends up identical ` +
         `to yours. Right when the archive has the file and you changed it: a ` +
         `plugin you cleaned, an ini you edited. The package carries this ` +

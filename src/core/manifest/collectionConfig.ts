@@ -101,8 +101,9 @@ export type ExternalModConfigEntry = {
    * Reproduce this mod's staging folder on the user's machine, exactly.
    *
    * The third answer to "my staging differs from my archive", and the one that
-   * costs the least: the mod still installs from its own Nexus archive, and
-   * afterwards the differences are reconciled from bytes carried in the
+   * costs the least: the mod still installs from its own archive — from Nexus,
+   * or fetched by the user when it is not on Nexus — and afterwards the
+   * differences are reconciled from bytes carried in the
    * package. `bundled` replaces the archive; this corrects what it produced.
    */
   mirrored?: boolean;

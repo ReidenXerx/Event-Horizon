@@ -792,6 +792,7 @@ describe("render", () => {
       fingerprint: "fp",
       reopened: false,
       needsAnswer: true,
+      source: "nexus",
       ...over,
     });
     write(
@@ -816,6 +817,18 @@ describe("render", () => {
                 1,
                 [{ path: "Audio Overhaul Skyrim.esp", kind: "changed", delta: -1843 }],
                 { reopened: true },
+              ),
+              // Not on Nexus: the curator's own pack, set to Manual. Its mirror
+              // card must not say users download it from Nexus.
+              candidate(
+                "cc-enclave",
+                "CC_enclave_textures",
+                765,
+                [
+                  { path: "Materials/CreationClub/BGSFO4044/Actors/PowerArmor/HellfirePAArm.BGSM", kind: "added" },
+                  { path: "ccBGSFO4044-HellfirePowerArmor.esl", kind: "added" },
+                ],
+                { source: "external" },
               ),
               // Already answered, and the files have not moved. Listed with
               // its verdict rather than hidden, so it can be reviewed and

@@ -80,6 +80,10 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
 - **Mods whose installer was answered with nothing ticked no longer warn.** The build said users would be asked to choose
   for them; that empty answer is replayed like any other, as installs already did.
 - **The Creation Club note names each file once.** A plugin spelled in two letter cases was listed, and counted, twice.
+- **A decision card says where users get the mod.** "Reproduce my version" said users still download the mod from
+  Nexus, even for a mod that is not on Nexus. For those it now says users get its archive themselves, from your link or
+  instructions.
+- **Answers on decision cards wrap.** In a narrow window their buttons cut the first and last letters off each answer.
 
 ### Linux (Wine/Proton)
 - **Vortex in one Wine prefix and the game in another is caught, with how to fix it.** Vortex writes plugins.txt and the

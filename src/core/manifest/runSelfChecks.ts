@@ -72,6 +72,12 @@ export type RunSelfChecksOptions = {
    * to reopen on.
    */
   decided?: ReadonlyMap<string, PostProcessingAnswer>;
+  /**
+   * Mod ids the people installing download from Nexus, so each decision card
+   * can say where users get the mod. Absent means unknown, and the candidates
+   * carry no `source`.
+   */
+  downloadedFromNexus?: ReadonlySet<string>;
 };
 
 /**
@@ -200,6 +206,13 @@ export type PostProcessingCandidate = {
    */
   canMirror: boolean;
   /**
+   * Where the people installing get this mod's own archive: `nexus` when they
+   * download it from Nexus, `external` when they fetch it by hand from the
+   * link or instructions the curator gave it. Absent when the caller did not
+   * say, and then no card may claim either.
+   */
+  source?: "nexus" | "external";
+  /**
    * A stable name for the diverged files being asked about.
    *
    * Recorded with the answer so the question can reopen when they change, and
@@ -302,6 +315,11 @@ export function findPostProcessingCandidates(
   decided: ReadonlyMap<string, PostProcessingAnswer>,
   /** Mod ids whose staging was captured with a hash for every file. */
   mirrorable: ReadonlySet<string> = new Set(),
+  /**
+   * Mod ids users download from Nexus. Every other candidate is `external`;
+   * omit it and candidates carry no `source`.
+   */
+  downloadedFromNexus?: ReadonlySet<string>,
 ): PostProcessingCandidate[] {
   /**
    * ─── A MOD WITH NO ARCHIVE IS A CANDIDATE TOO ──────────────────────────
@@ -371,6 +389,13 @@ export function findPostProcessingCandidates(
           archiveUnavailable: archiveUnavailable(r),
           files: r.unexplainedExamples,
           canMirror: mirrorable.has(r.modId),
+          ...(downloadedFromNexus !== undefined
+            ? {
+                source: downloadedFromNexus.has(r.modId)
+                  ? ("nexus" as const)
+                  : ("external" as const),
+              }
+            : {}),
           /**
            * What the answer will be recorded AGAINST. For an unreadable
            * archive there is nothing to hash, and leaving it absent made the
@@ -899,6 +924,7 @@ export async function runSelfChecks(
     reports,
     decided,
     mirrorable,
+    opts?.downloadedFromNexus,
   );
 
   if (recoveredByHash > 0) {
