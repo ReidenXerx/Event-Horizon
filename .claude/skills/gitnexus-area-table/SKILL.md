@@ -51,7 +51,7 @@ Start here when exploring this area:
 | `initialSort` | Function | `src/ui/components/table/tableSort.ts` | 43 |
 | `describeTableView` | Function | `src/ui/components/table/tableView.ts` | 241 |
 | `distinctValues` | Function | `src/ui/components/table/tableView.ts` | 170 |
-| `describeRowState` | Function | `src/ui/pages/curator/workbench.ts` | 272 |
+| `describeRowState` | Function | `src/ui/pages/curator/workbench.ts` | 277 |
 | `matchedIds` | Function | `src/ui/components/table/DataTable.tsx` | 302 |
 | `view` | Function | `src/ui/components/table/DataTable.tsx` | 261 |
 | `applyTableView` | Function | `src/ui/components/table/tableView.ts` | 188 |

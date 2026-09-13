@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-doctor
-description: "Skill for the Doctor area of Event-Horizon. 70 symbols across 16 files."
+description: "Skill for the Doctor area of Event-Horizon. 77 symbols across 18 files."
 ---
 
 # Doctor
 
-70 symbols | 16 files | Cohesion: 76%
+77 symbols | 18 files | Cohesion: 75%
 
 ## When to Use
 
@@ -24,9 +24,9 @@ description: "Skill for the Doctor area of Event-Horizon. 70 symbols across 16 f
 | `src/core/doctor/gather.ts` | countModRules, gatherObservations, readEnabledModIds, readInstalledModIds, readProfileIds |
 | `src/core/doctor/health.test.ts` | drifted, observations, healthy, on |
 | `src/ui/pages/doctor/LoadOrderBadge.test.ts` | on, receipt, getState, stateOn |
+| `src/core/doctor/runHeal.ts` | healImpl, resolveModMaps, runHeal |
 | `src/ui/pages/doctor/EnvironmentTools.tsx` | saveLogs, saveSnapshot, formatBytes |
 | `src/core/curator/pluginPool.ts` | livePluginList, readPluginList |
-| `src/ui/pages/doctor/LoadOrderBadge.tsx` | status, badgePill |
 
 ## Entry Points
 
@@ -56,27 +56,27 @@ Start here when exploring this area:
 | `standingOf` | Function | `src/core/doctor/loadOrderStatus.ts` | 159 |
 | `assessActiveOrder` | Function | `src/core/doctor/loadOrderWatcher.ts` | 102 |
 | `status` | Function | `src/ui/pages/doctor/LoadOrderBadge.tsx` | 105 |
+| `describeHeal` | Function | `src/core/doctor/heal.ts` | 66 |
+| `runHeal` | Function | `src/core/doctor/runHeal.ts` | 98 |
+| `nexusModIdOfCompareKey` | Function | `src/core/identity/compareKey.ts` | 96 |
+| `parseCompareKey` | Function | `src/core/identity/compareKey.ts` | 79 |
 | `evaluateHealth` | Function | `src/core/doctor/health.ts` | 318 |
 | `curatorPluginsOff` | Function | `src/core/doctor/loadOrderStatus.ts` | 362 |
-| `describeLoadOrder` | Function | `src/core/doctor/loadOrderStatus.ts` | 276 |
-| `badgePill` | Function | `src/ui/pages/doctor/LoadOrderBadge.tsx` | 61 |
-| `startLoadOrderWatcher` | Function | `src/core/doctor/loadOrderWatcher.ts` | 205 |
-| `dismiss` | Function | `src/core/doctor/loadOrderWatcher.ts` | 217 |
 
 ## Execution Flows
 
 | Flow | Type | Steps |
 |------|------|-------|
 | `StartLoadOrderWatcher → GetVortexUserDataPath` | cross_community | 7 |
+| `Heal → EHRuntime` | cross_community | 6 |
+| `Heal → Notify` | cross_community | 6 |
 | `Look → BaselineOf` | cross_community | 5 |
 | `Look → SkippedPluginOrder` | cross_community | 5 |
+| `Heal → GetSnapshot` | cross_community | 5 |
 | `Look → InstalledAtMs` | cross_community | 4 |
+| `Heal → WizardReducer` | cross_community | 4 |
 | `Look → Key` | cross_community | 3 |
 | `Look → ActiveContextFromState` | cross_community | 3 |
-| `Look → ReadReceipts` | cross_community | 3 |
-| `LoadOrderCard → CuratorPluginsOff` | cross_community | 3 |
-| `StartLoadOrderWatcher → EHRuntime` | cross_community | 3 |
-| `Look → EHRuntime` | cross_community | 3 |
 
 ## How to Explore
 
