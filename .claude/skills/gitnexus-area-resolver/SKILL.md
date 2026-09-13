@@ -1,70 +1,86 @@
 ---
 name: gitnexus-area-resolver
-description: "Skill for the Resolver area of Event-Horizon. 50 symbols across 9 files."
+description: "Skill for the Resolver area of Event-Horizon. 161 symbols across 58 files."
 ---
 
 # Resolver
 
-50 symbols | 9 files | Cohesion: 79%
+161 symbols | 58 files | Cohesion: 66%
 
 ## When to Use
 
 - Working with code in `src/`
-- Understanding how describeStoreMismatch, scriptExtenderMods, resolveCompatibility work
+- Understanding how createCompareModsAction, createComparePluginsAction, createExportModsAction work
 - Modifying resolver-related functionality
 
 ## Key Files
 
 | File | Symbols |
 |------|---------|
-| `src/core/resolver/resolveInstallPlan.ts` | checkDeploymentMethod, checkExtensions, checkGameVersion, checkVortexVersion, compareSemverLike (+24) |
+| `src/core/resolver/resolveInstallPlan.ts` | enforceInstallTargetInvariant, resolveExternalDependencies, resolveInstallPlan, resolveOrphanedMods, resolvePluginOrder (+21) |
+| `src/core/resolver/userState.ts` | buildSuggestedProfileName, buildUserSideState, judgeResumeCandidate, lookupProfile, pickInstallTarget (+14) |
+| `src/actions/installCollectionAction.ts` | createInstallCollectionAction, formatError, isPlanInstallable, profileExistsInState, resolveStaleReceipt (+2) |
+| `src/core/getModsListForProfile.ts` | getActiveGameId, getActiveProfileId, getActiveProfileIdFromState, belongsToGame, getModsForGame (+1) |
+| `src/ui/pages/install/engine.ts` | checkEnvironment, checkSystemRuntimes, profileExistsInState, runLoadingPipeline, runLoadingPipelineWithReceipt (+1) |
+| `src/core/resolver/enrichStagingSetHashes.ts` | collectExternalStagingSetHashTargets, collectStagingSetHashTargetsForTest, enrichInstalledModsWithStagingSetHashes, normalizeName |
+| `src/core/stagingPath.ts` | installRootFor, installationPathFromState, stagingRootForModId, stagingRootFromFolder |
+| `src/utils/utils.ts` | exportDiffReport, pickEhcollFile, pickJsonFile, pickTxtFile |
 | `src/core/resolver/collectAvailableDownloads.test.ts` | action, engine, pipelines, read |
 | `src/core/resolver/gameVersionGuidance.ts` | compareVersions, parse, describe, gameVersionGuidance |
-| `src/core/resolver/userState.ts` | buildLineageTagIndex, coerceNexusId, lineageTagFor, projectInstalledMods |
-| `src/core/resolver/logInstallPlan.ts` | countBy, describeInputs, logInstallPlan |
-| `src/core/manifest/storeCompatibility.ts` | describeStoreMismatch, scriptExtenderMods |
-| `src/core/resolver/resumeIdentity.test.ts` | decide, manifest |
-| `src/actions/installCollectionAction.ts` | logPlanSummary |
-| `src/core/resolver/installEpochs.ts` | planInstallEpochs |
 
 ## Entry Points
 
 Start here when exploring this area:
 
-- **`describeStoreMismatch`** (Function) — `src/core/manifest/storeCompatibility.ts:122`
-- **`scriptExtenderMods`** (Function) — `src/core/manifest/storeCompatibility.ts:98`
-- **`resolveCompatibility`** (Function) — `src/core/resolver/resolveInstallPlan.ts:183`
-- **`resolveInstallPlan`** (Function) — `src/core/resolver/resolveInstallPlan.ts:94`
-- **`repairDecisionFor`** (Function) — `src/core/resolver/resolveInstallPlan.ts:1136`
+- **`createCompareModsAction`** (Function) — `src/actions/compareModsAction.ts:21`
+- **`createComparePluginsAction`** (Function) — `src/actions/comparePluginsAction.ts:16`
+- **`createExportModsAction`** (Function) — `src/actions/exportModsAction.ts:17`
+- **`createInstallCollectionAction`** (Function) — `src/actions/installCollectionAction.ts:119`
+- **`archiveFileCacheKey`** (Function) — `src/core/archiveHashCache.ts:84`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `describeStoreMismatch` | Function | `src/core/manifest/storeCompatibility.ts` | 122 |
-| `scriptExtenderMods` | Function | `src/core/manifest/storeCompatibility.ts` | 98 |
-| `resolveCompatibility` | Function | `src/core/resolver/resolveInstallPlan.ts` | 183 |
-| `resolveInstallPlan` | Function | `src/core/resolver/resolveInstallPlan.ts` | 94 |
-| `repairDecisionFor` | Function | `src/core/resolver/resolveInstallPlan.ts` | 1136 |
-| `planInstallEpochs` | Function | `src/core/resolver/installEpochs.ts` | 85 |
-| `logInstallPlan` | Function | `src/core/resolver/logInstallPlan.ts` | 95 |
-| `compareVersions` | Function | `src/core/resolver/gameVersionGuidance.ts` | 167 |
-| `parse` | Function | `src/core/resolver/gameVersionGuidance.ts` | 168 |
-| `gameVersionGuidance` | Function | `src/core/resolver/gameVersionGuidance.ts` | 116 |
-| `checkDeploymentMethod` | Function | `src/core/resolver/resolveInstallPlan.ts` | 396 |
-| `checkExtensions` | Function | `src/core/resolver/resolveInstallPlan.ts` | 342 |
-| `checkGameVersion` | Function | `src/core/resolver/resolveInstallPlan.ts` | 252 |
-| `checkVortexVersion` | Function | `src/core/resolver/resolveInstallPlan.ts` | 380 |
-| `compareSemverLike` | Function | `src/core/resolver/resolveInstallPlan.ts` | 1194 |
-| `parseSemver` | Function | `src/core/resolver/resolveInstallPlan.ts` | 1204 |
-| `wineVersionNote` | Function | `src/core/resolver/resolveInstallPlan.ts` | 243 |
-| `enforceInstallTargetInvariant` | Function | `src/core/resolver/resolveInstallPlan.ts` | 140 |
-| `resolveExternalDependencies` | Function | `src/core/resolver/resolveInstallPlan.ts` | 713 |
-| `resolveOrphanedMods` | Function | `src/core/resolver/resolveInstallPlan.ts` | 676 |
+| `createCompareModsAction` | Function | `src/actions/compareModsAction.ts` | 21 |
+| `createComparePluginsAction` | Function | `src/actions/comparePluginsAction.ts` | 16 |
+| `createExportModsAction` | Function | `src/actions/exportModsAction.ts` | 17 |
+| `createInstallCollectionAction` | Function | `src/actions/installCollectionAction.ts` | 119 |
+| `archiveFileCacheKey` | Function | `src/core/archiveHashCache.ts` | 84 |
+| `enrichModsWithArchiveHashes` | Function | `src/core/archiveHashing.ts` | 184 |
+| `hashFileSha256` | Function | `src/core/archiveHashing.ts` | 39 |
+| `cleanup` | Function | `src/core/archiveHashing.ts` | 59 |
+| `recoverMissingArchives` | Function | `src/core/archiveRecovery.ts` | 248 |
+| `discoveredStore` | Function | `src/core/comparePlugins.ts` | 160 |
+| `exportPluginsDiffReport` | Function | `src/core/comparePlugins.ts` | 371 |
+| `liveStagingShapes` | Function | `src/core/curator/liveStagingShapes.ts` | 41 |
+| `lightFlagTargets` | Function | `src/core/curator/pluginView.ts` | 38 |
+| `key` | Function | `src/core/curator/pluginView.ts` | 41 |
+| `profileDriftSince` | Function | `src/core/curator/profileDrift.ts` | 51 |
+| `logBundleDirs` | Function | `src/core/diagnostics/logBundle.ts` | 45 |
+| `profileId` | Function | `src/core/environment/snapshot.ts` | 203 |
+| `stagingRoot` | Function | `src/core/environment/snapshot.ts` | 326 |
+| `exportModsToJsonFile` | Function | `src/core/exportMods.ts` | 8 |
+| `getActiveGameId` | Function | `src/core/getModsListForProfile.ts` | 277 |
+
+## Execution Flows
+
+| Flow | Type | Steps |
+|------|------|-------|
+| `LaunchGame → GetVortexUserDataPath` | cross_community | 10 |
+| `RunInstallImpl → GetEventHorizonRoot` | cross_community | 10 |
+| `PublishedDetailsPanel → GetEventHorizonDir` | cross_community | 10 |
+| `RunSelfChecks → GetVortexUserDataPath` | cross_community | 10 |
+| `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
+| `InstallDownloads → GetEventHorizonDir` | cross_community | 10 |
+| `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
+| `LoadPublishedDetails → GetEventHorizonRoot` | cross_community | 10 |
+| `Act → GetEventHorizonDir` | cross_community | 10 |
+| `PublishedDetailsPanel → GetVortexUserDataPath` | cross_community | 10 |
 
 ## How to Explore
 
-1. `context({name: "describeStoreMismatch"})` — see callers and callees
+1. `context({name: "createCompareModsAction"})` — see callers and callees
 2. `query({search_query: "resolver"})` — find related execution flows
 3. Read key files listed above for implementation details
 4. `explain({target: "<file or symbol>"})` — persisted taint findings (source→sink data flows), when indexed with `--pdg`

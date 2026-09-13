@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-environment
-description: "Skill for the Environment area of Event-Horizon. 112 symbols across 17 files."
+description: "Skill for the Environment area of Event-Horizon. 116 symbols across 19 files."
 ---
 
 # Environment
 
-112 symbols | 17 files | Cohesion: 78%
+116 symbols | 19 files | Cohesion: 78%
 
 ## When to Use
 
@@ -20,13 +20,13 @@ description: "Skill for the Environment area of Event-Horizon. 112 symbols acros
 | `src/core/environment/environmentChecks.ts` | decideBinaryImports, decideGameFolder, decideGameManaged, decideIniLeftovers, decideLauncherRan (+10) |
 | `src/core/environment/gameFolderScan.ts` | groupEntries, loadVanillaList, readGogHashdbRecord, idOf, readGogRecord (+10) |
 | `src/core/environment/quarantine.ts` | countOnDisk, dismissQuarantine, exists, isSafeRelative, listQuarantines (+7) |
-| `src/core/environment/storeFileLists.ts` | parseAppManifest, parseVdf, readObject, Truncated, fields (+6) |
 | `src/core/environment/peImage.ts` | missingImports, parsePeImage, Malformed, parse, cstring (+4) |
-| `src/core/environment/snapshot.ts` | readText, safe, writeEnvironmentSnapshot, close, field (+4) |
+| `src/core/environment/snapshot.ts` | hashOnce, shouldHash, checkAbort, writeFiles, readText (+4) |
+| `src/core/environment/storeFileLists.ts` | Truncated, fields, varint, parseDepotManifest, parseGogFileList (+3) |
 | `src/core/environment/launchGame.ts` | chooseLaunchTarget, isCancellation, isFile, launchGame, onSpawned (+3) |
+| `src/core/environment/vortexEnvironment.ts` | collectionIniKeys, gatherPreflightFacts, readDiscovery, str, extensionGame (+3) |
 | `src/core/environment/binaryImports.ts` | probeImportMismatches, load, rootDllOwnership, closure, refs (+1) |
-| `src/core/environment/vortexEnvironment.ts` | readDiscovery, str, extensionGame, gameDisplayName, gameExecutable (+1) |
-| `src/core/environment/fixtures.testutil.ts` | buildDepotManifest, lenField, section, varField, varint |
+| `src/core/environment/preflight.ts` | isDirectory, isFile, logEnvironmentReport, runEnvironmentPreflight, declaredPrerequisitePaths |
 
 ## Entry Points
 
@@ -56,12 +56,12 @@ Start here when exploring this area:
 | `groupEntries` | Function | `src/core/environment/gameFolderScan.ts` | 242 |
 | `logEnvironmentReport` | Function | `src/core/environment/preflight.ts` | 334 |
 | `runEnvironmentPreflight` | Function | `src/core/environment/preflight.ts` | 205 |
+| `loadVanillaList` | Function | `src/core/environment/gameFolderScan.ts` | 585 |
+| `parseDepotManifest` | Function | `src/core/environment/storeFileLists.ts` | 271 |
+| `parseGogFileList` | Function | `src/core/environment/storeFileLists.ts` | 64 |
+| `parseGogHashdb` | Function | `src/core/environment/storeFileLists.ts` | 116 |
 | `logPaths` | Function | `src/core/environment/logPaths.ts` | 13 |
 | `dismissQuarantine` | Function | `src/core/environment/quarantine.ts` | 379 |
-| `listQuarantines` | Function | `src/core/environment/quarantine.ts` | 275 |
-| `quarantineFiles` | Function | `src/core/environment/quarantine.ts` | 162 |
-| `quarantineRootFor` | Function | `src/core/environment/quarantine.ts` | 45 |
-| `readQuarantineRecord` | Function | `src/core/environment/quarantine.ts` | 253 |
 
 ## Execution Flows
 

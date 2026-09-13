@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-build
-description: "Skill for the Build area of Event-Horizon. 458 symbols across 101 files."
+description: "Skill for the Build area of Event-Horizon. 428 symbols across 94 files."
 ---
 
 # Build
 
-458 symbols | 101 files | Cohesion: 80%
+428 symbols | 94 files | Cohesion: 83%
 
 ## When to Use
 
@@ -19,10 +19,10 @@ description: "Skill for the Build area of Event-Horizon. 458 symbols across 101 
 |------|---------|
 | `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildDiffCard, BuildWizard, BuildingPanel, DecisionsGate (+45) |
 | `src/ui/pages/build/buildSession.ts` | cancelLoading, cancelRecovering, getState, subscribe, queuePosition (+30) |
-| `src/ui/pages/build/engine.ts` | BuildRefusedError, BundleResolutionError, applyPostProcessedDeclarations, buildOutputFileName, collectMirrorPayload (+24) |
 | `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, DecisionsStep, DoneStep, ExternalDownloadGuide (+21) |
-| `src/ui/pages/build/BuildDashboard.tsx` | BuildDashboard, handleDismissBuilt, handleOpenBuilt, handleOpenDraft, DashboardHeader (+20) |
+| `src/ui/pages/build/BuildDashboard.tsx` | BuildDashboard, handleDismissBuilt, handleOpenBuilt, handleOpenDraft, DashboardHeader (+19) |
 | `src/ui/pages/build/buildSessionRegistry.ts` | BuildSessionRegistry, getBuildSessionRegistry, ensure, get, makeHooks (+13) |
+| `src/ui/pages/build/engine.ts` | findUnidentifiedMods, isExternal, isExternal, isExternal, describeMembershipChange (+13) |
 | `src/ui/pages/build/buildDiff.test.ts` | findPackages, findPackages, findPackages, findPackages, findPackages (+9) |
 | `src/core/draftStorage.ts` | getDraftsRoot, listDrafts, deleteDraft, getAppDataPath, getDraftPath (+6) |
 | `src/ui/pages/HomePage.tsx` | CuratorPanel, Dashboard, DashboardBody, ErrorPanel, FooterRow (+6) |
@@ -42,8 +42,6 @@ Start here when exploring this area:
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `BuildRefusedError` | Class | `src/ui/pages/build/engine.ts` | 1116 |
-| `BundleResolutionError` | Class | `src/ui/pages/build/engine.ts` | 583 |
 | `archivesFreedByRemoval` | Function | `src/core/curator/cleanupPlan.ts` | 509 |
 | `cleanupSubset` | Function | `src/core/curator/cleanupPlan.ts` | 521 |
 | `describeEvidence` | Function | `src/core/curator/cleanupPlan.ts` | 274 |
@@ -62,6 +60,8 @@ Start here when exploring this area:
 | `countKinds` | Function | `src/core/manifest/unexplainedFiles.ts` | 175 |
 | `describeUnexplainedFile` | Function | `src/core/manifest/unexplainedFiles.ts` | 153 |
 | `formatBytes` | Function | `src/core/manifest/unexplainedFiles.ts` | 139 |
+| `listModDiffFiles` | Function | `src/core/modDiffStorage.ts` | 60 |
+| `readModDiffReport` | Function | `src/core/modDiffStorage.ts` | 95 |
 
 ## Execution Flows
 
