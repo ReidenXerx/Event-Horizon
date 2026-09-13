@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-environment
-description: "Skill for the Environment area of Event-Horizon. 109 symbols across 18 files."
+description: "Skill for the Environment area of Event-Horizon. 149 symbols across 20 files."
 ---
 
 # Environment
 
-109 symbols | 18 files | Cohesion: 77%
+149 symbols | 20 files | Cohesion: 76%
 
 ## When to Use
 
@@ -17,51 +17,51 @@ description: "Skill for the Environment area of Event-Horizon. 109 symbols acros
 
 | File | Symbols |
 |------|---------|
-| `src/core/environment/environmentChecks.ts` | decideBinaryImports, decideGameFolder, decideGameManaged, decideIniLeftovers, decideLauncherRan (+8) |
-| `src/core/environment/gameFolderScan.ts` | groupEntries, loadCreationAllowlist, readDeployedFiles, scanGameFolder, loadVanillaList (+8) |
+| `src/core/environment/winePrefix.ts` | errorCode, exists, heroicCandidate, heroicCandidates, addDir (+19) |
+| `src/core/environment/environmentChecks.ts` | decideBinaryImports, decideGameFolder, decideGameManaged, decideIniLeftovers, decideLauncherRan (+10) |
+| `src/core/environment/gameFolderScan.ts` | groupEntries, loadVanillaList, readGogHashdbRecord, idOf, readGogRecord (+10) |
 | `src/core/environment/quarantine.ts` | countOnDisk, dismissQuarantine, exists, isSafeRelative, listQuarantines (+7) |
-| `src/core/environment/storeFileLists.ts` | Truncated, fields, varint, parseDepotManifest, parseGogFileList (+5) |
+| `src/core/environment/storeFileLists.ts` | Truncated, fields, varint, parseDepotManifest, parseGogFileList (+6) |
 | `src/core/environment/peImage.ts` | missingImports, parsePeImage, Malformed, parse, cstring (+4) |
 | `src/core/environment/snapshot.ts` | readText, safe, writeEnvironmentSnapshot, close, field (+4) |
 | `src/core/environment/launchGame.ts` | chooseLaunchTarget, isCancellation, isFile, launchGame, onSpawned (+3) |
-| `src/core/environment/vortexEnvironment.ts` | readDiscovery, str, collectionIniKeys, extensionGame, gameDisplayName (+3) |
-| `src/core/environment/binaryImports.ts` | probeImportMismatches, load, rootDllOwnership, closure, refs (+1) |
-| `src/core/environment/preflight.ts` | isDirectory, isFile, logEnvironmentReport, runEnvironmentPreflight, declaredPrerequisitePaths |
+| `src/core/environment/winePrefix.test.ts` | probe, heroicGameConfig, heroicInstalled, linkToGame, onLinux (+3) |
+| `src/core/environment/preflight.ts` | isDirectory, isFile, logEnvironmentReport, runEnvironmentPreflight, declaredPrerequisitePaths (+2) |
 
 ## Entry Points
 
 Start here when exploring this area:
 
 - **`describeCleanPlan`** (Function) — `src/core/environment/cleanGameFolder.ts:144`
-- **`decideBinaryImports`** (Function) — `src/core/environment/environmentChecks.ts:251`
-- **`decideGameFolder`** (Function) — `src/core/environment/environmentChecks.ts:298`
-- **`decideGameManaged`** (Function) — `src/core/environment/environmentChecks.ts:69`
-- **`decideIniLeftovers`** (Function) — `src/core/environment/environmentChecks.ts:383`
+- **`decideBinaryImports`** (Function) — `src/core/environment/environmentChecks.ts:380`
+- **`decideGameFolder`** (Function) — `src/core/environment/environmentChecks.ts:427`
+- **`decideGameManaged`** (Function) — `src/core/environment/environmentChecks.ts:74`
+- **`decideIniLeftovers`** (Function) — `src/core/environment/environmentChecks.ts:512`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
 | `describeCleanPlan` | Function | `src/core/environment/cleanGameFolder.ts` | 144 |
-| `decideBinaryImports` | Function | `src/core/environment/environmentChecks.ts` | 251 |
-| `decideGameFolder` | Function | `src/core/environment/environmentChecks.ts` | 298 |
-| `decideGameManaged` | Function | `src/core/environment/environmentChecks.ts` | 69 |
-| `decideIniLeftovers` | Function | `src/core/environment/environmentChecks.ts` | 383 |
-| `decideLauncherRan` | Function | `src/core/environment/environmentChecks.ts` | 196 |
-| `decideProtectedLocation` | Function | `src/core/environment/environmentChecks.ts` | 136 |
-| `protectedRootOf` | Function | `src/core/environment/environmentChecks.ts` | 125 |
-| `norm` | Function | `src/core/environment/environmentChecks.ts` | 126 |
-| `groupEntries` | Function | `src/core/environment/gameFolderScan.ts` | 239 |
-| `logEnvironmentReport` | Function | `src/core/environment/preflight.ts` | 282 |
-| `runEnvironmentPreflight` | Function | `src/core/environment/preflight.ts` | 174 |
+| `decideBinaryImports` | Function | `src/core/environment/environmentChecks.ts` | 380 |
+| `decideGameFolder` | Function | `src/core/environment/environmentChecks.ts` | 427 |
+| `decideGameManaged` | Function | `src/core/environment/environmentChecks.ts` | 74 |
+| `decideIniLeftovers` | Function | `src/core/environment/environmentChecks.ts` | 512 |
+| `decideLauncherRan` | Function | `src/core/environment/environmentChecks.ts` | 309 |
+| `decideProtectedLocation` | Function | `src/core/environment/environmentChecks.ts` | 237 |
+| `decideWinePrefix` | Function | `src/core/environment/environmentChecks.ts` | 154 |
+| `folderLine` | Function | `src/core/environment/environmentChecks.ts` | 183 |
+| `protectedRootOf` | Function | `src/core/environment/environmentChecks.ts` | 226 |
+| `norm` | Function | `src/core/environment/environmentChecks.ts` | 227 |
+| `groupEntries` | Function | `src/core/environment/gameFolderScan.ts` | 242 |
+| `logEnvironmentReport` | Function | `src/core/environment/preflight.ts` | 332 |
+| `runEnvironmentPreflight` | Function | `src/core/environment/preflight.ts` | 203 |
 | `logPaths` | Function | `src/core/environment/logPaths.ts` | 13 |
 | `dismissQuarantine` | Function | `src/core/environment/quarantine.ts` | 379 |
 | `listQuarantines` | Function | `src/core/environment/quarantine.ts` | 275 |
 | `quarantineFiles` | Function | `src/core/environment/quarantine.ts` | 162 |
 | `quarantineRootFor` | Function | `src/core/environment/quarantine.ts` | 45 |
 | `readQuarantineRecord` | Function | `src/core/environment/quarantine.ts` | 253 |
-| `restoreQuarantine` | Function | `src/core/environment/quarantine.ts` | 302 |
-| `blockingChecks` | Function | `src/core/environment/environmentChecks.ts` | 409 |
 
 ## Execution Flows
 

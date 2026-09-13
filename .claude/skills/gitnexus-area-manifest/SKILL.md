@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-manifest
-description: "Skill for the Manifest area of Event-Horizon. 529 symbols across 139 files."
+description: "Skill for the Manifest area of Event-Horizon. 544 symbols across 143 files."
 ---
 
 # Manifest
 
-529 symbols | 139 files | Cohesion: 74%
+544 symbols | 143 files | Cohesion: 75%
 
 ## When to Use
 
@@ -20,7 +20,7 @@ description: "Skill for the Manifest area of Event-Horizon. 529 symbols across 1
 | `src/core/manifest/parseManifest.ts` | ParseManifestError, describe, expectArray, expectBoolean, expectEnum (+43) |
 | `src/core/manifest/packageZip.ts` | isAbortLikeError, describeBytes, packageEhcoll, checkAbort, prepareStagingDir (+14) |
 | `src/core/manifest/collectionConfig.ts` | reconcileExternalModsConfig, createDefaultConfig, getCollectionConfigPath, loadOrCreateCollectionConfig, saveCollectionConfig (+14) |
-| `src/core/manifest/buildManifest.ts` | buildExternalMod, buildModEntry, buildModInstallSpec, buildModInstallState, buildNexusMod (+12) |
+| `src/core/manifest/buildManifest.ts` | toPosixPath, buildExternalMod, buildModEntry, buildModInstallSpec, buildModInstallState (+12) |
 | `src/core/manifest/readZip.ts` | ZipReadError, extractZipEntryToFile, findDataOffset, findEntry, findZip64Extra (+11) |
 | `src/core/resolver/userState.ts` | buildSuggestedProfileName, buildUserSideState, judgeResumeCandidate, lookupProfile, pickInstallTarget (+10) |
 | `src/core/manifest/externalHints.ts` | countBy, downloadsFromState, modsFromState, asMode, collectExternalHints (+8) |
@@ -68,15 +68,15 @@ Start here when exploring this area:
 | Flow | Type | Steps |
 |------|------|-------|
 | `LaunchGame → GetVortexUserDataPath` | cross_community | 10 |
-| `ExecutePromptUserChoice → GetEventHorizonDir` | cross_community | 10 |
 | `RunInstallImpl → GetEventHorizonRoot` | cross_community | 10 |
-| `ReadZipEntry → GetVortexUserDataPath` | cross_community | 10 |
 | `PublishedDetailsPanel → GetEventHorizonDir` | cross_community | 10 |
-| `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
 | `RunSelfChecks → GetVortexUserDataPath` | cross_community | 10 |
+| `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
 | `InstallDownloads → GetEventHorizonDir` | cross_community | 10 |
-| `LoadPublishedDetails → GetEventHorizonRoot` | cross_community | 10 |
 | `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
+| `LoadPublishedDetails → GetEventHorizonRoot` | cross_community | 10 |
+| `Act → GetEventHorizonDir` | cross_community | 10 |
+| `PublishedDetailsPanel → GetVortexUserDataPath` | cross_community | 10 |
 
 ## How to Explore
 

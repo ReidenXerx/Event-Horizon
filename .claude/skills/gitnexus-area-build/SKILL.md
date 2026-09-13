@@ -5,7 +5,7 @@ description: "Skill for the Build area of Event-Horizon. 461 symbols across 101 
 
 # Build
 
-461 symbols | 101 files | Cohesion: 80%
+461 symbols | 101 files | Cohesion: 81%
 
 ## When to Use
 
@@ -69,14 +69,14 @@ Start here when exploring this area:
 |------|------|-------|
 | `PublishedDetailsPanel → GetEventHorizonDir` | cross_community | 10 |
 | `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
-| `LoadPublishedDetails → GetEventHorizonRoot` | cross_community | 10 |
 | `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
-| `CuratorBody → GetEventHorizonRoot` | cross_community | 10 |
+| `LoadPublishedDetails → GetEventHorizonRoot` | cross_community | 10 |
 | `PublishedDetailsPanel → GetVortexUserDataPath` | cross_community | 10 |
 | `BuildPage → GetVortexUserDataPath` | cross_community | 10 |
 | `BuildWizard → GetVortexUserDataPath` | cross_community | 10 |
 | `OnRecovered → GetVortexUserDataPath` | cross_community | 10 |
 | `WriteEnvironmentSnapshot → GetVortexUserDataPath` | cross_community | 9 |
+| `HandleCleanupUnbuilt → GetVortexUserDataPath` | cross_community | 9 |
 
 ## How to Explore
 

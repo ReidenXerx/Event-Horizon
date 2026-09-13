@@ -60,16 +60,13 @@ Start here when exploring this area:
 
 | Flow | Type | Steps |
 |------|------|-------|
-| `OnError → ToPosix` | cross_community | 7 |
-| `OnRejection → ToPosix` | cross_community | 7 |
 | `InstallFromLink → ToPosix` | cross_community | 7 |
-| `OnError → GuessGenericHints` | cross_community | 6 |
-| `OnError → GuessGenericTitle` | cross_community | 6 |
-| `OnError → CountProblems` | cross_community | 6 |
-| `OnRejection → GuessGenericHints` | cross_community | 6 |
-| `OnRejection → GuessGenericTitle` | cross_community | 6 |
-| `OnRejection → CountProblems` | cross_community | 6 |
 | `InstallFromLink → GuessGenericHints` | cross_community | 6 |
+| `InstallFromLink → GuessGenericTitle` | cross_community | 6 |
+| `InstallFromLink → CountProblems` | cross_community | 6 |
+| `InstallFromLink → StackOf` | cross_community | 5 |
+| `InstallFromLink → ManifestHints` | cross_community | 5 |
+| `InstallFromLink → PickStringContext` | cross_community | 4 |
 
 ## How to Explore
 

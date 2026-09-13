@@ -50,7 +50,7 @@ Start here when exploring this area:
 | `vortexGamesForNexusDomain` | Function | `src/core/installer/installLink.ts` | 293 |
 | `nexusExtOf` | Function | `src/ui/pages/curator/requirementsIo.ts` | 177 |
 | `fn` | Function | `src/ui/pages/curator/requirementsIo.ts` | 179 |
-| `nexus` | Function | `src/ui/pages/curator/useCuratorActions.ts` | 222 |
+| `nexus` | Function | `src/ui/pages/curator/useCuratorActions.ts` | 225 |
 | `waitForVortexDownload` | Function | `src/ui/pages/install/fetchLink.ts` | 391 |
 | `describeHeal` | Function | `src/core/doctor/heal.ts` | 66 |
 | `getInstallSession` | Function | `src/ui/pages/install/installSession.ts` | 1350 |
@@ -73,10 +73,10 @@ Start here when exploring this area:
 | `InstallFromLink → ToPosix` | cross_community | 7 |
 | `FetchThroughLinkFile → GetVortexUserDataPath` | cross_community | 7 |
 | `RunEnvironmentGate → GetVortexUserDataPath` | cross_community | 7 |
-| `CuratorBody → Fn` | cross_community | 6 |
+| `InstallFromLink → GuessGenericHints` | cross_community | 6 |
+| `InstallFromLink → GuessGenericTitle` | cross_community | 6 |
+| `InstallFromLink → CountProblems` | cross_community | 6 |
 | `RunEnvironmentGate → WizardReducer` | cross_community | 6 |
-| `Heal → EHRuntime` | cross_community | 6 |
-| `Heal → Notify` | cross_community | 6 |
 
 ## How to Explore
 
