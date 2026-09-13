@@ -168,7 +168,14 @@ export function describeMissingMasters(check: MasterCheck): string {
 /** The non-fatal note about content the user has to own themselves. */
 export function describeUserOwnedMasters(check: MasterCheck): string[] {
   if (check.userOwned.length === 0) return [];
-  const masters = [...new Set(check.userOwned.map((p) => p.master))];
+  // One entry per FILE. The game does not care about letter case in a plugin
+  // name, so two plugins spelling one master two ways still need one file —
+  // counted once, and named the way the first plugin spells it.
+  const byFile = new Map<string, string>();
+  for (const { master } of check.userOwned) {
+    if (!byFile.has(master.toLowerCase())) byFile.set(master.toLowerCase(), master);
+  }
+  const masters = [...byFile.values()];
   return [
     `This collection depends on ${masters.length} Creation Club file(s) that ` +
       `cannot be shipped: ${masters.slice(0, 6).join(", ")}` +

@@ -379,28 +379,6 @@ export function buildManifest(input: BuildManifestInput): BuildManifestResult {
     warnings,
   );
 
-  // The curator's FOMOD choices are recorded and replayed by nobody. On
-  // install, each archive is handed to Vortex's `start-install`, which runs
-  // the FOMOD UI and lets the USER pick — so a mod the curator configured one
-  // way arrives configured another, and the collection ships selections that
-  // reach no one.
-  //
-  // The manifest does assert the curator's staged file hashes, so the
-  // divergence is DETECTED: verification fails for that mod after install.
-  // Detecting a difference it cannot prevent is exactly the shape of failure
-  // this project exists to remove, so the curator hears about it up front,
-  // while they can still write an instruction for it.
-  // The curator's FOMOD choices are recorded and replayed by nobody. On
-  // install, each archive is handed to Vortex's `start-install`, which runs
-  // the FOMOD UI and lets the USER pick — so a mod the curator configured one
-  // way arrives configured another, and the collection ships selections that
-  // reach no one.
-  //
-  // The manifest does assert the curator's staged file hashes, so the
-  // divergence is DETECTED: verification fails for that mod after install.
-  // Detecting a difference it cannot prevent is exactly the shape of failure
-  // this project exists to remove, so the curator hears about it up front,
-  // while they can still write an instruction for it.
   // Replay EXISTS now. This warning used to say "the installer cannot replay
   // them yet — whoever installs this collection gets the FOMOD dialog and
   // picks for themselves", and it went on saying it after `choicesFor` started
@@ -412,30 +390,14 @@ export function buildManifest(input: BuildManifestInput): BuildManifestResult {
   // instructions for 115 mods that need none, and set the wrong expectation
   // for what their tester would see.
   //
-  // What is still worth saying is the residue: `choicesFor` returns undefined
-  // when no group in any step has a selected option, because sending that
-  // would claim a choice the curator never made. Those mods do fall back to
-  // asking the user, and they are the only ones a curator can act on.
-  const withChoices = mods.filter(
-    (m) => (m.install?.fomodSelections ?? []).length > 0,
-  );
-  const unreplayable = withChoices.filter(
-    (m) =>
-      !(m.install?.fomodSelections ?? []).some((step) =>
-        step.groups.some((group) => group.choices.length > 0),
-      ),
-  );
-  if (unreplayable.length > 0) {
-    const replayed = withChoices.length - unreplayable.length;
-    warnings.push(
-      `${unreplayable.length} mod(s) recorded FOMOD steps with no option ` +
-        `selected (e.g. "${unreplayable[0]!.name}"), so there is nothing to ` +
-        `replay for them — whoever installs this collection is asked to choose ` +
-        `for those. If they only work with specific options, say so in their ` +
-        `instructions. The other ${replayed} mod(s) with recorded options are ` +
-        `replayed automatically.`,
-    );
-  }
+  // ─── AND THE RESIDUE IT KEPT WAS STALE TOO ────────────────────────────
+  // It went on warning about steps answered with nothing ticked, saying those
+  // users "are asked to choose" because `choicesFor` returned undefined for
+  // them. It does not: a step recorded with every group empty is an answer,
+  // and it is sent as one (see `choicesFor`). On a real 979-mod build the
+  // warning named three such mods; each one's script allows picking nothing
+  // (SelectAny / SelectAtMostOne), and each staging folder held exactly the
+  // installer's required files. So there is no warning left to give here.
 
   // No warning about per-mod INI tweaks, and that is a CORRECTION.
   //

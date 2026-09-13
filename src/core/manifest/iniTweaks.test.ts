@@ -127,9 +127,8 @@ describe("recorded FOMOD choices", () => {
   // that none did, sending them to write instructions for 115 mods that need
   // none.
   //
-  // A step whose groups are all empty is the one genuine exception:
-  // `choicesFor` returns undefined there rather than claim a choice the
-  // curator never made, so those mods really do fall back to asking.
+  // A step answered with nothing ticked is replayed too — `choicesFor` sends
+  // the empty answer — so it needs no warning either.
   const unanswered = (id: string, count: number): AuditorMod =>
     mod({
       id,
@@ -162,27 +161,12 @@ describe("recorded FOMOD choices", () => {
     expect(fomodWarnings(warnings)).toEqual([]);
   });
 
-  it("warns only about steps with no option selected", () => {
-    const { warnings } = build([unanswered("aft", 2)]);
-    const line = fomodWarnings(warnings).join(" ");
-    expect(line).toMatch(/1 mod\(s\) recorded FOMOD steps with no option selected/);
-    expect(line).toMatch(/say so in their instructions/);
-    // And it must NOT resurrect the old claim.
-    expect(line).not.toMatch(/cannot replay/i);
-  });
-
-  it("tells the curator how many DID replay, so the warning is not alarming", () => {
-    // "3 mods need attention" reads very differently from "your FOMOD answers
-    // are lost", and only one of them is true.
-    const { warnings } = build([unanswered("a", 1), answered("b"), answered("c")]);
-    const line = fomodWarnings(warnings).join(" ");
-    expect(line).toMatch(/1 mod\(s\) recorded FOMOD steps/);
-    expect(line).toMatch(/other 2 mod\(s\).*replayed automatically/);
-  });
-
-  it("counts mods, not selections — one dialog per mod is what a user faces", () => {
-    const { warnings } = build([unanswered("a", 8), unanswered("b", 1)]);
-    expect(fomodWarnings(warnings).join(" ")).toMatch(/2 mod\(s\)/);
+  it("says nothing about steps answered with nothing ticked — those are replayed too", () => {
+    // It used to warn that users would be asked to choose for these, and they
+    // are not: `choicesFor` sends the empty answer and the install runs
+    // unattended. A curator told otherwise writes instructions nobody needs.
+    const { warnings } = build([unanswered("a", 1), unanswered("b", 8), answered("c")]);
+    expect(fomodWarnings(warnings)).toEqual([]);
   });
 
   it("stays quiet for a collection with no recorded choices", () => {

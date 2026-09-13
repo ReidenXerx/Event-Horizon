@@ -77,6 +77,9 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
 - **A mod taken off bundling in the decisions step ships under its own archive hash.** It kept its bundle's hash, which
   no Nexus download has, so no user could install it.
 - **Long builds update the screen at most ten times a second**, instead of once for every file they check.
+- **Mods whose installer was answered with nothing ticked no longer warn.** The build said users would be asked to choose
+  for them; that empty answer is replayed like any other, as installs already did.
+- **The Creation Club note names each file once.** A plugin spelled in two letter cases was listed, and counted, twice.
 
 ### Linux (Wine/Proton)
 - **Vortex in one Wine prefix and the game in another is caught, with how to fix it.** Vortex writes plugins.txt and the
