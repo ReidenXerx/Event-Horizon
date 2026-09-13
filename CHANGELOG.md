@@ -33,6 +33,9 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
 - **When a mod was enabled.** The mods table has an Enabled column — when each mod was last switched on in this profile,
   as Vortex records it — and opens sorted by it, freshest first. The Plugins view shows the same for each plugin's mod,
   and keeps load order as its own default.
+- **State says only whether a mod is on.** A mod with an update showed "update 1.1.1.0" there instead of enabled or
+  disabled, and a frozen one showed "frozen". Updates, manual updates and freezes now sit beside the version, and the
+  Updates, Manual and Frozen views still list them.
 - **Tables remember their sort.** Whatever sort you last chose in a table, including none, is how it opens next time.
 - **Dismiss a requirement.** Mod pages often list things that do not apply, or advertise the author's other mods. Any
   requirement from a mod's Nexus page can be dismissed from its details panel: it stops counting everywhere — the

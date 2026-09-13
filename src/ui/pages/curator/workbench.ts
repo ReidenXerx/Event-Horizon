@@ -269,11 +269,29 @@ export function visibleViews(counts: Record<ViewId, number>): ViewSpec[] {
   return VIEWS.filter((v) => v.id === "all" || counts[v.id] > 0);
 }
 
-/** A row's one-line status for the table. */
+/**
+ * The State column: whether the mod is enabled in this profile, and nothing
+ * else. An update or a freeze is about the version, so it sits beside the
+ * version (describeVersionNotes); shown here, "update 1.1" hid whether the mod
+ * was on at all (the curator's call).
+ */
 export function describeRowState(r: WorkRow): string {
-  if (r.frozen?.driftedTo !== undefined) return `frozen, drifted to ${r.frozen.driftedTo}`;
-  if (r.frozen !== undefined) return r.frozen.updateWithheld ? "frozen, update withheld" : "frozen";
-  if (r.update !== undefined) return `update ${r.update.to}`;
-  if (r.manual !== undefined) return `manual update ${r.manual.to}`;
   return r.mod.enabled ? "enabled" : "disabled";
+}
+
+export type VersionNote = { text: string; tone: "warning" | "info" | "danger"; title?: string };
+
+/** What the Version column says after the version: an update, a manual one, a freeze. */
+export function describeVersionNotes(r: WorkRow): VersionNote[] {
+  const notes: VersionNote[] = [];
+  if (r.update !== undefined) notes.push({ text: `→ ${r.update.to}`, tone: "warning" });
+  if (r.manual !== undefined) {
+    notes.push({ text: `→ ${r.manual.to} (manual)`, tone: "warning", title: "Newer on Nexus; update from the mod page" });
+  }
+  if (r.frozen?.driftedTo !== undefined) {
+    notes.push({ text: `frozen at ${r.frozen.at}, now ${r.frozen.driftedTo}`, tone: "danger" });
+  } else if (r.frozen !== undefined) {
+    notes.push({ text: r.frozen.updateWithheld ? "frozen, update withheld" : "frozen", tone: "info" });
+  }
+  return notes;
 }

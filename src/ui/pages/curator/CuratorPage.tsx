@@ -148,11 +148,13 @@ import {
   VIEWS,
   buildRows,
   describeRowState,
+  describeVersionNotes,
   matchesSearch,
   outsideDataTypes,
   rowsForViews,
   viewCounts,
   visibleViews,
+  type VersionNote,
   type ViewId,
   type ViewOptions,
   type WorkRow,
@@ -273,6 +275,12 @@ const kindOf = (mod: CuratorMod): string => (mod.modType === "" ? "default" : mo
 
 const rowId = (r: WorkRow): string => r.mod.id;
 
+const TONE_CLASS: Record<VersionNote["tone"], string> = {
+  warning: "eh-tone--warning",
+  info: "eh-tone--info",
+  danger: "eh-tone--danger",
+};
+
 const WORK_COLUMNS: Column<WorkRow>[] = [
   {
     key: "name",
@@ -290,20 +298,19 @@ const WORK_COLUMNS: Column<WorkRow>[] = [
   {
     key: "version",
     header: "Version",
-    width: 170,
+    width: 240,
     value: (r) => r.mod.version ?? "",
+    // Everything about the version lives here — an update, a manual one, a
+    // freeze — so State can say only whether the mod is on.
     render: (r) => (
       <span>
         {r.mod.version ?? <span className="eh-muted">unknown</span>}
-        {r.update !== undefined && (
-          <span className="eh-tone--warning"> → {r.update.to}</span>
-        )}
-        {r.manual !== undefined && (
-          <span className="eh-tone--warning" title="Newer on Nexus; update from the mod page">
+        {describeVersionNotes(r).map((n) => (
+          <span key={n.text} className={TONE_CLASS[n.tone]} title={n.title}>
             {" "}
-            → {r.manual.to} (manual)
+            {n.text}
           </span>
-        )}
+        ))}
       </span>
     ),
   },
@@ -311,26 +318,13 @@ const WORK_COLUMNS: Column<WorkRow>[] = [
     key: "state",
     header: "State",
     match: "exact",
-    width: 200,
+    width: 120,
     value: describeRowState,
-    render: (r) => {
-      const s = describeRowState(r);
-      const intent =
-        r.frozen?.driftedTo !== undefined
-          ? "danger"
-          : r.frozen !== undefined
-            ? "info"
-            : r.update !== undefined || r.manual !== undefined
-              ? "warning"
-              : r.mod.enabled
-                ? "success"
-                : "neutral";
-      return (
-        <Pill intent={intent} plain>
-          {s}
-        </Pill>
-      );
-    },
+    render: (r) => (
+      <Pill intent={r.mod.enabled ? "success" : "neutral"} plain>
+        {describeRowState(r)}
+      </Pill>
+    ),
   },
   {
     // When the mod was last enabled in this profile, from Vortex's own stamp.

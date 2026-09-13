@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import type { CuratorMod } from "../../../core/curator/profileActions";
 import type { RequirementsReport } from "../../../core/curator/requirements";
-import { buildRows, describeRowState, outsideDataTypes, rowsForView, viewCounts, visibleViews } from "./workbench";
+import {
+  buildRows,
+  describeRowState,
+  describeVersionNotes,
+  outsideDataTypes,
+  rowsForView,
+  viewCounts,
+  visibleViews,
+} from "./workbench";
 
 /** Where Vortex deploys each type for this fixture's game: dinput to the game root. */
 const OUTSIDE = { outsideDataTypes: outsideDataTypes({ "": "C:\\G\\Data", dinput: "C:\\G" })! };
@@ -100,13 +108,28 @@ describe("workbench rows", () => {
     expect(visibleViews(none).map((v) => v.id)).toEqual(["all", "not-nexus"]);
   });
 
-  it("says a row's state in one phrase, most important first", () => {
+  it("keeps State to enabled or disabled — an update or a freeze does not hide whether the mod is on", () => {
     const byId = new Map(rows.map((r) => [r.mod.id, r]));
-    expect(describeRowState(byId.get("a")!)).toBe("update 1.1");
-    expect(describeRowState(byId.get("c")!)).toBe("frozen");
+    expect(describeRowState(byId.get("a")!)).toBe("enabled");
+    expect(describeRowState(byId.get("b")!)).toBe("enabled");
+    expect(describeRowState(byId.get("c")!)).toBe("enabled");
     expect(describeRowState(byId.get("d")!)).toBe("disabled");
-    expect(describeRowState({ ...byId.get("c")!, frozen: { at: "3.0", driftedTo: "3.1", updateWithheld: false } })).toBe(
-      "frozen, drifted to 3.1",
-    );
+    expect(describeRowState({ ...byId.get("a")!, mod: { ...byId.get("a")!.mod, enabled: false } })).toBe("disabled");
+  });
+
+  it("puts updates and freezes beside the version", () => {
+    const byId = new Map(rows.map((r) => [r.mod.id, r]));
+    expect(describeVersionNotes(byId.get("a")!)).toEqual([{ text: "→ 1.1", tone: "warning" }]);
+    expect(describeVersionNotes(byId.get("b")!)).toEqual([
+      { text: "→ 2.1 (manual)", tone: "warning", title: "Newer on Nexus; update from the mod page" },
+    ]);
+    expect(describeVersionNotes(byId.get("c")!)).toEqual([{ text: "frozen", tone: "info" }]);
+    expect(describeVersionNotes({ ...byId.get("c")!, frozen: { at: "3.0", updateWithheld: true } })).toEqual([
+      { text: "frozen, update withheld", tone: "info" },
+    ]);
+    expect(describeVersionNotes({ ...byId.get("c")!, frozen: { at: "3.0", driftedTo: "3.1", updateWithheld: false } })).toEqual([
+      { text: "frozen at 3.0, now 3.1", tone: "danger" },
+    ]);
+    expect(describeVersionNotes(byId.get("d")!)).toEqual([]);
   });
 });
