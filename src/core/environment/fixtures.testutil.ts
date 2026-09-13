@@ -5,7 +5,13 @@
  * Built to the real layouts, which were validated against real files before
  * these existed: the PE parser against GOG Fallout 4 / Skyrim AE, Hunt and
  * CS2 executables; the depot-manifest parser against a real 91 GB Steam depot.
+ * The GOG hash database follows imLinguin/gog_hashdb's reader; no real one has
+ * been measured here yet.
  */
+
+import * as zlib from "zlib";
+
+import { crc32 } from "../manifest/readZip";
 
 // ── PE (Windows executable / DLL) ────────────────────────────────────────
 
@@ -162,4 +168,70 @@ export function buildDepotManifest(
     section(0x1b81b817, Buffer.alloc(0)),
     end,
   ]);
+}
+
+// ── Zip, and GOG's hash database ─────────────────────────────────────────
+
+/** A zip with UTF-8 names, each entry stored or deflated. */
+export function buildZip(entries: Array<{ name: string; data: Buffer }>, method: "store" | "deflate" = "deflate"): Buffer {
+  const parts: Buffer[] = [];
+  const central: Buffer[] = [];
+  let offset = 0;
+  for (const e of entries) {
+    const name = Buffer.from(e.name, "utf8");
+    const packed = method === "deflate" ? zlib.deflateRawSync(e.data) : e.data;
+    const crc = crc32(e.data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0x800, 6);
+    local.writeUInt16LE(method === "deflate" ? 8 : 0, 8);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(packed.length, 18);
+    local.writeUInt32LE(e.data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    parts.push(local, name, packed);
+    const record = Buffer.alloc(46);
+    record.writeUInt32LE(0x02014b50, 0);
+    record.writeUInt16LE(20, 4);
+    record.writeUInt16LE(20, 6);
+    record.writeUInt16LE(0x800, 8);
+    record.writeUInt16LE(method === "deflate" ? 8 : 0, 10);
+    record.writeUInt32LE(crc, 16);
+    record.writeUInt32LE(packed.length, 20);
+    record.writeUInt32LE(e.data.length, 24);
+    record.writeUInt16LE(name.length, 28);
+    record.writeUInt32LE(offset, 42);
+    central.push(record, name);
+    offset += local.length + name.length + packed.length;
+  }
+  const directory = Buffer.concat(central);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(entries.length, 8);
+  eocd.writeUInt16LE(entries.length, 10);
+  eocd.writeUInt32LE(directory.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+  return Buffer.concat([...parts, directory, eocd]);
+}
+
+/** The table inside a `goggame-<id>.hashdb`: header (12, 1, count), then a 1024-byte path and a 32-byte hash per file. */
+export function buildGogHashdbTable(paths: string[], options: { count?: number; hash?: string } = {}): Buffer {
+  const table = Buffer.alloc(12 + paths.length * 1056);
+  table.writeUInt32LE(12, 0);
+  table.writeUInt32LE(1, 4);
+  table.writeUInt32LE(options.count ?? paths.length, 8);
+  paths.forEach((p, i) => {
+    table.write(p, 12 + i * 1056, "utf8");
+    table.write(options.hash ?? "0123456789abcdef0123456789abcdef", 12 + i * 1056 + 1024, "latin1");
+  });
+  return table;
+}
+
+/** A whole `goggame-<id>.hashdb`: the table, zipped as its one entry. */
+export function buildGogHashdb(
+  paths: string[],
+  options: { count?: number; hash?: string; method?: "store" | "deflate" } = {},
+): Buffer {
+  return buildZip([{ name: "hashdb", data: buildGogHashdbTable(paths, options) }], options.method);
 }

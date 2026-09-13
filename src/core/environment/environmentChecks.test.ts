@@ -14,10 +14,12 @@ import {
   decideIniLeftovers,
   decideLauncherRan,
   decideProtectedLocation,
+  decideWinePrefix,
   describeBlockedChecks,
   protectedRootOf,
 } from "./environmentChecks";
 import type { GameFolderScan } from "./gameFolderScan";
+import type { FolderShare, WinePrefixProbe } from "./winePrefix";
 
 const G = "Fallout 4";
 
@@ -214,6 +216,147 @@ describe("decideLauncherRan — what wrote the file", () => {
 
   it("passes when the launcher's contents cannot be judged", () => {
     expect(decideLauncherRan({ ...base, launcherWrote: undefined }).status).toBe("ok");
+  });
+});
+
+describe("decideLauncherRan — under Wine", () => {
+  const base = {
+    gameName: G,
+    prefsPath: "C:/users/steamuser/Documents/My Games/Fallout4/Fallout4Prefs.ini",
+    exists: true,
+    launcherWrote: false,
+    hasLauncher: true,
+    store: "gog",
+    wine: true,
+  };
+
+  it("says the file was read in Vortex's prefix when the game's was not found, and names Heroic for a GOG game", () => {
+    const c = decideLauncherRan(base);
+    expect(c.status).toBe("blocked");
+    expect(c.lines.join("\n")).toMatch(/the prefix Vortex runs in/);
+    expect(c.steps[0]).toMatch(/from Heroic, or whichever launcher you play it with/);
+  });
+
+  it("names the launcher whose prefix it read, and does not point at Vortex's prefix", () => {
+    const c = decideLauncherRan({ ...base, launcher: "heroic" });
+    expect(c.steps[0]).toMatch(/once from Heroic — /);
+    expect(c.lines.join("\n")).not.toMatch(/the prefix Vortex runs in/);
+  });
+
+  it("keeps GOG Galaxy's wording off Wine", () => {
+    expect(decideLauncherRan({ ...base, wine: false }).steps[0]).toMatch(/from GOG Galaxy or its desktop shortcut/);
+  });
+});
+
+describe("decideWinePrefix", () => {
+  const HEROIC_PREFIX = "/home/deck/Games/Heroic/Prefixes/default/Fallout 4 GOTY";
+  const VORTEX_PREFIX = "/home/deck/Vortex/pfx";
+  const folder = (over: Partial<FolderShare> = {}): FolderShare => ({
+    label: "the INI files",
+    rel: "Documents/My Games/Fallout4",
+    vortexDir: "C:\\users\\steamuser\\Documents\\My Games\\Fallout4",
+    gameDir: "Z:\\home\\deck\\Games\\Heroic\\Prefixes\\default\\Fallout 4 GOTY\\pfx\\drive_c\\users\\steamuser\\Documents\\My Games\\Fallout4",
+    vortexExists: true,
+    gameExists: true,
+    vortexLinuxPath: `${VORTEX_PREFIX}/drive_c/users/steamuser/Documents/My Games/Fallout4`,
+    gameLinuxPath: `${HEROIC_PREFIX}/pfx/drive_c/users/steamuser/Documents/My Games/Fallout4`,
+    state: "separate",
+    detail: "a test file written into Vortex's copy did not appear in the game's",
+    ...over,
+  });
+  const plugins = folder({
+    label: "plugins.txt, the load order",
+    rel: "AppData/Local/Fallout4",
+    vortexLinuxPath: `${VORTEX_PREFIX}/drive_c/users/steamuser/AppData/Local/Fallout4`,
+    gameLinuxPath: `${HEROIC_PREFIX}/pfx/drive_c/users/steamuser/AppData/Local/Fallout4`,
+    gameExists: false,
+    detail: "only Vortex's prefix has it",
+  });
+  const probe = (over: Partial<WinePrefixProbe> = {}): WinePrefixProbe => ({
+    host: { unixRoot: "Z:\\", homes: ["/home/deck"], vortexPrefix: VORTEX_PREFIX },
+    looked: [],
+    candidates: [],
+    game: {
+      source: "heroic",
+      detail: "/home/deck/.config/heroic/GamesConfig/1998527297.json → winePrefix",
+      reached: "Z:\\home\\deck\\Games\\Heroic\\Prefixes\\default\\Fallout 4 GOTY",
+      linuxPath: HEROIC_PREFIX,
+      explicit: true,
+      driveC: "Z:\\home\\deck\\Games\\Heroic\\Prefixes\\default\\Fallout 4 GOTY\\pfx\\drive_c",
+    },
+    vortexUserDir: "C:\\users\\steamuser",
+    gameUserDir: "Z:\\home\\deck\\Games\\Heroic\\Prefixes\\default\\Fallout 4 GOTY\\pfx\\drive_c\\users\\steamuser",
+    gameStarted: true,
+    folders: [folder(), plugins],
+    ...over,
+  });
+
+  it("blocks the tester's case, naming both prefixes and each folder that is not shared", () => {
+    const c = decideWinePrefix({ gameName: G, probe: probe() });
+    expect(c.status).toBe("blocked");
+    expect(c.lines.slice(0, 2)).toEqual([
+      `Fallout 4 runs in the prefix Heroic keeps for it: ${HEROIC_PREFIX} (/home/deck/.config/heroic/GamesConfig/1998527297.json → winePrefix).`,
+      `Vortex runs in the prefix ${VORTEX_PREFIX}.`,
+    ]);
+    expect(c.lines.filter((l) => l.startsWith("Not shared — "))).toHaveLength(2);
+  });
+
+  it("gives link commands that keep Vortex's old folder, and create the game's when it does not exist yet", () => {
+    const [close, ini, load] = decideWinePrefix({ gameName: G, probe: probe() }).steps;
+    expect(close).toBe("Close Vortex.");
+    expect(ini).toBe(
+      "Link the INI files to the game's folder. In a terminal: " +
+        `mv '${VORTEX_PREFIX}/drive_c/users/steamuser/Documents/My Games/Fallout4' '${VORTEX_PREFIX}/drive_c/users/steamuser/Documents/My Games/Fallout4.before-link'` +
+        ` && ln -s '${HEROIC_PREFIX}/pfx/drive_c/users/steamuser/Documents/My Games/Fallout4' '${VORTEX_PREFIX}/drive_c/users/steamuser/Documents/My Games/Fallout4'`,
+    );
+    expect(load).toMatch(
+      new RegExp(`^Link plugins\\.txt, the load order to the game's folder\\. In a terminal: mkdir -p '${HEROIC_PREFIX}/pfx/drive_c/users/steamuser/AppData/Local/Fallout4' && mv `),
+    );
+  });
+
+  it("quotes an apostrophe in a path for the shell", () => {
+    const c = decideWinePrefix({ gameName: G, probe: probe({ folders: [folder({ gameLinuxPath: "/home/deck/Bob's Games/Fallout4" })] }) });
+    expect(c.steps[1]).toContain("ln -s '/home/deck/Bob'\\''s Games/Fallout4' ");
+  });
+
+  it("offers running Vortex inside the game's prefix instead of linking — Heroic's or Steam's way", () => {
+    expect(decideWinePrefix({ gameName: G, probe: probe() }).steps.join("\n")).toContain(`set its Wine prefix to ${HEROIC_PREFIX}.`);
+    const steam = probe({
+      game: { source: "steam", detail: "appmanifest", reached: "Z:\\s\\compatdata\\377160", explicit: true, appId: "377160", driveC: "Z:\\s" },
+    });
+    expect(decideWinePrefix({ gameName: G, probe: steam }).steps.join("\n")).toContain("protontricks-launch --appid 377160");
+  });
+
+  it("without Linux paths, still says which folder to replace with a link to which", () => {
+    const { vortexLinuxPath: _dropped, ...noLinux } = folder();
+    const c = decideWinePrefix({ gameName: G, probe: probe({ folders: [noLinux] }) });
+    expect(c.steps[1]).toBe(
+      "Replace C:\\users\\steamuser\\Documents\\My Games\\Fallout4 in Vortex's prefix with a link to Z:\\home\\deck\\Games\\Heroic\\Prefixes\\default\\Fallout 4 GOTY\\pfx\\drive_c\\users\\steamuser\\Documents\\My Games\\Fallout4, keeping the old folder under another name.",
+    );
+  });
+
+  it("passes when every folder is shared", () => {
+    const shared = folder({ state: "shared", detail: "a test file written into Vortex's copy appeared in the game's" });
+    const c = decideWinePrefix({ gameName: G, probe: probe({ folders: [shared, { ...shared, rel: "AppData/Local/Fallout4" }] }) });
+    expect(c.status).toBe("ok");
+    expect(c.lines.slice(2)).toEqual([
+      "Shared — the INI files: Documents/My Games/Fallout4 — a test file written into Vortex's copy appeared in the game's.",
+      "Shared — the INI files: AppData/Local/Fallout4 — a test file written into Vortex's copy appeared in the game's.",
+    ]);
+  });
+
+  it("never blocks on what it could not establish", () => {
+    const { game: _game, ...noGame } = probe();
+    const notFound = decideWinePrefix({ gameName: G, probe: { ...noGame, unresolved: "No Heroic or Steam record names a prefix for this game." } });
+    expect(notFound.status).toBe("unknown");
+    expect(notFound.lines[0]).toBe("No Heroic or Steam record names a prefix for this game.");
+    const { gameUserDir: _user, ...noUser } = probe();
+    expect(decideWinePrefix({ gameName: G, probe: noUser }).status).toBe("unknown");
+    expect(decideWinePrefix({ gameName: G, probe: probe({ gameStarted: false, folders: [] }) }).status).toBe("unknown");
+    expect(decideWinePrefix({ gameName: G, probe: probe({ folders: [folder({ state: "unprobed", detail: "EACCES" })] }) }).status).toBe(
+      "unknown",
+    );
+    expect(decideWinePrefix({ gameName: G, probe: probe({ folders: [] }) }).status).toBe("unknown");
   });
 });
 

@@ -12,9 +12,35 @@ import {
   parseAppManifest,
   parseDepotManifest,
   parseGogFileList,
+  parseGogHashdb,
   parseVdf,
 } from "./storeFileLists";
-import { buildDepotManifest } from "./fixtures.testutil";
+import { buildDepotManifest, buildGogHashdbTable } from "./fixtures.testutil";
+
+describe("parseGogHashdb", () => {
+  it("reads every record's path with / separators, and skips folder records", () => {
+    expect(parseGogHashdb(buildGogHashdbTable(["Fallout4.exe", "Data\\Fallout4.esm", "Data\\Video\\"]))).toEqual({
+      ok: true,
+      files: [
+        { path: "Fallout4.exe", required: true },
+        { path: "Data/Fallout4.esm", required: true },
+      ],
+    });
+  });
+
+  it("refuses a table whose size disagrees with its record count — a short list would call game files foreign", () => {
+    const short = parseGogHashdb(buildGogHashdbTable(["Fallout4.exe", "Data\\Fallout4.esm"], { count: 3 }));
+    expect(short.ok ? "" : short.reason).toMatch(/declares 3 records/);
+    const table = buildGogHashdbTable(["Fallout4.exe", "Data\\Fallout4.esm"]);
+    expect(parseGogHashdb(table.subarray(0, table.length - 1)).ok).toBe(false);
+    expect(parseGogHashdb(Buffer.concat([table, Buffer.alloc(1)])).ok).toBe(false);
+    expect(parseGogHashdb(Buffer.alloc(4)).ok).toBe(false);
+  });
+
+  it("refuses a record with no hash where one belongs", () => {
+    expect(parseGogHashdb(buildGogHashdbTable(["Fallout4.exe"], { hash: "not-a-hash-not-a-hash-not-a-hash" })).ok).toBe(false);
+  });
+});
 
 describe("parseGogFileList", () => {
   const text = [

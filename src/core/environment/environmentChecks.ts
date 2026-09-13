@@ -9,6 +9,9 @@
  *
  *  - game-managed        installed a collection without ever pressing
  *                        "Manage" on the game in Vortex
+ *  - wine-prefix         ran Vortex in one Wine prefix and the game from
+ *                        Heroic in another, so the game never saw what
+ *                        Vortex wrote
  *  - launcher-ran        never started the game once, so the launcher never
  *                        wrote its hardware-detected `<Game>Prefs.ini`
  *  - binary-imports      "Entry Point Not Found: SteamInternal_CreateInterface"
@@ -24,12 +27,14 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
-import { basenameOf } from "../paths";
+import { basenameOf, dirnameOf } from "../paths";
 import type { GameFolderScan } from "./gameFolderScan";
 import { groupEntries } from "./gameFolderScan";
+import type { FolderShare, PrefixSource, WinePrefixProbe } from "./winePrefix";
 
 export type EnvironmentCheckId =
   | "game-managed"
+  | "wine-prefix"
   | "protected-location"
   | "launcher-ran"
   | "binary-imports"
@@ -120,6 +125,102 @@ export function decideGameManaged(input: {
   ]);
 }
 
+// ── 1b. Under Wine: Vortex writes where the game reads ──────────────────
+
+const LAUNCHER_NAME: Record<PrefixSource, string> = { heroic: "Heroic", steam: "Steam" };
+
+/** Single-quoted for a POSIX shell. */
+const shellQuote = (p: string): string => `'${p.replace(/'/g, `'\\''`)}'`;
+
+function linkStep(f: FolderShare): string {
+  if (f.vortexLinuxPath === undefined || f.gameLinuxPath === undefined) {
+    return `Replace ${f.vortexDir} in Vortex's prefix with a link to ${f.gameDir}, keeping the old folder under another name.`;
+  }
+  const commands = [
+    ...(f.gameExists ? [] : [`mkdir -p ${shellQuote(f.gameLinuxPath)}`]),
+    f.vortexExists
+      ? `mv ${shellQuote(f.vortexLinuxPath)} ${shellQuote(`${f.vortexLinuxPath}.before-link`)}`
+      : `mkdir -p ${shellQuote(dirnameOf(f.vortexLinuxPath))}`,
+    `ln -s ${shellQuote(f.gameLinuxPath)} ${shellQuote(f.vortexLinuxPath)}`,
+  ];
+  return `Link ${f.label} to the game's folder. In a terminal: ${commands.join(" && ")}`;
+}
+
+/**
+ * Under Wine, do Vortex and the game use the same settings folders? Blocked
+ * when the game's own prefix is known and a folder Vortex writes is not shared
+ * with it (the curator's call: name both prefixes, say how to link them).
+ * Everything short of that proof is `unknown`, never a block.
+ */
+export function decideWinePrefix(input: { gameName: string; probe: WinePrefixProbe }): EnvironmentCheck {
+  const { gameName, probe } = input;
+  const vortexLine =
+    probe.host.vortexPrefix !== undefined
+      ? `Vortex runs in the prefix ${probe.host.vortexPrefix}.`
+      : `Vortex runs in its own prefix${probe.vortexUserDir !== undefined ? `, as ${probe.vortexUserDir}` : ""}.`;
+  const game = probe.game;
+  if (game === undefined) {
+    return unknownCheck("wine-prefix", `Could not tell which Wine prefix ${gameName} runs in.`, [
+      probe.unresolved ?? "No launcher record names one.",
+      vortexLine,
+      `So ${gameName}'s settings are checked in Vortex's prefix. If ${gameName} runs in a different one — from Heroic, Lutris, Bottles or Steam — the load order and INI settings Vortex writes do not reach it unless those folders are linked.`,
+    ]);
+  }
+  const gameLine = `${gameName} runs in the prefix ${LAUNCHER_NAME[game.source]} keeps for it: ${game.linuxPath ?? game.reached} (${game.detail}).`;
+  if (probe.gameUserDir === undefined) {
+    return unknownCheck("wine-prefix", `Could not tell which user folder ${gameName} uses in its Wine prefix.`, [
+      gameLine,
+      vortexLine,
+      ...(probe.unresolved !== undefined ? [probe.unresolved] : []),
+    ]);
+  }
+  if (probe.gameStarted !== true) {
+    return unknownCheck(
+      "wine-prefix",
+      `${gameName} has not been started in its Wine prefix yet, so whether Vortex shares its settings folders could not be checked.`,
+      [gameLine, vortexLine],
+    );
+  }
+  const folderLine = (f: FolderShare): string => `${f.label}: ${f.rel} — ${f.detail}`;
+  const separate = probe.folders.filter((f) => f.state === "separate");
+  if (separate.length > 0) {
+    const runInPrefix =
+      game.source === "steam" && game.appId !== undefined
+        ? `Or, instead of linking, run Vortex inside ${gameName}'s prefix — for example with protontricks-launch --appid ${game.appId} and Vortex.exe.`
+        : `Or, instead of linking, run Vortex inside ${gameName}'s prefix: add Vortex.exe to Heroic as a non-store game and set its Wine prefix to ${game.linuxPath ?? game.reached}.`;
+    return {
+      id: "wine-prefix",
+      status: "blocked",
+      title: `Vortex and ${gameName} are in different Wine prefixes, and the folders Vortex writes are not linked.`,
+      lines: [
+        gameLine,
+        vortexLine,
+        ...separate.map((f) => `Not shared — ${folderLine(f)}.`),
+        `Vortex and Event Horizon write the load order and INI settings into Vortex's prefix, so ${gameName} would start without them.`,
+      ],
+      steps: [
+        "Close Vortex.",
+        ...separate.map(linkStep),
+        runInPrefix,
+        "Start Vortex and load the collection again. A collection installed before the folders were linked needs installing again, so its INI settings and load order are written where the game reads them.",
+      ],
+    };
+  }
+  const unprobed = probe.folders.filter((f) => f.state === "unprobed");
+  if (unprobed.length > 0 || probe.folders.length === 0) {
+    return unknownCheck("wine-prefix", `Could not check whether Vortex writes into the settings folders ${gameName} reads.`, [
+      gameLine,
+      vortexLine,
+      ...unprobed.map((f) => `Not checked — ${folderLine(f)}.`),
+    ]);
+  }
+  return ok("wine-prefix", `Vortex writes into the settings folders ${gameName} reads.`, [
+    gameLine,
+    vortexLine,
+    ...probe.folders.map((f) => `Shared — ${folderLine(f)}.`),
+  ]);
+}
+
 // ── 2. Not under Program Files ───────────────────────────────────────────
 
 /** The protected root `gameDir` sits under, if any. Case-insensitive, separator-agnostic. */
@@ -177,18 +278,30 @@ export function decideProtectedLocation(input: {
 
 // ── 3. The launcher has run once ─────────────────────────────────────────
 
-function startOnceStep(gameName: string, store: string | undefined, hasLauncher: boolean | undefined): string {
+function startOnceStep(
+  gameName: string,
+  store: string | undefined,
+  hasLauncher: boolean | undefined,
+  wine: boolean,
+  launcher: PrefixSource | undefined,
+): string {
   const s = (store ?? "").toLowerCase();
   const where =
-    s === "steam"
-      ? "from Steam"
-      : s === "gog"
-        ? "from GOG Galaxy or its desktop shortcut"
-        : s === "epic"
-          ? "from the Epic Games Launcher"
-          : s === "xbox"
-            ? "from the Xbox app"
-            : "from your store";
+    launcher !== undefined
+      ? `from ${LAUNCHER_NAME[launcher]}`
+      : s === "steam"
+        ? "from Steam"
+        : wine && (s === "gog" || s === "epic")
+          ? "from Heroic, or whichever launcher you play it with"
+          : s === "gog"
+            ? "from GOG Galaxy or its desktop shortcut"
+            : s === "epic"
+              ? "from the Epic Games Launcher"
+              : s === "xbox"
+                ? "from the Xbox app"
+                : wine
+                  ? "from the launcher you play it with"
+                  : "from your store";
   return hasLauncher === false
     ? `Start ${gameName} once ${where} and wait for the main menu, then quit.`
     : `Start ${gameName} once ${where} — its own launcher, not Vortex or a script extender — and let it detect your hardware, then close it. You do not need to play.`;
@@ -206,12 +319,26 @@ export function decideLauncherRan(input: {
   launcherWrote?: boolean | undefined;
   hasLauncher?: boolean | undefined;
   store?: string | undefined;
+  /** Running under Wine/Proton. */
+  wine?: boolean | undefined;
+  /**
+   * Under Wine: the launcher whose prefix the file was read from. Absent when
+   * the game's own prefix was not found and the file was read from Vortex's.
+   */
+  launcher?: PrefixSource | undefined;
 }): EnvironmentCheck {
   if (input.prefsPath === undefined) {
     return unknownCheck("launcher-ran", `No settings-file layout is known for ${input.gameName}.`);
   }
   const file = basenameOf(input.prefsPath) || input.prefsPath;
-  const steps = [startOnceStep(input.gameName, input.store, input.hasLauncher), "Load the collection again."];
+  const wine = input.wine === true;
+  const steps = [startOnceStep(input.gameName, input.store, input.hasLauncher, wine, input.launcher), "Load the collection again."];
+  const readFromVortexPrefix =
+    wine && input.launcher === undefined
+      ? [
+          `Under Wine/Proton this is the file in the prefix Vortex runs in. If you start ${input.gameName} from a launcher with its own prefix, the file it wrote is there instead — see the Wine prefix check.`,
+        ]
+      : [];
   if (!input.exists) {
     return {
       id: "launcher-ran",
@@ -220,6 +347,7 @@ export function decideLauncherRan(input: {
       lines: [
         `${file} is missing: ${input.prefsPath}`,
         "The game writes it the first time it runs, after detecting your hardware. Without it the game starts with wrong video settings, and the collection's settings are written into a folder the game has not set up.",
+        ...readFromVortexPrefix,
       ],
       steps,
     };
@@ -232,6 +360,7 @@ export function decideLauncherRan(input: {
       lines: [
         `${file} exists but holds none of the hardware settings (screen size, display adapter) the game's launcher writes: ${input.prefsPath}`,
         "A mod tool — possibly an earlier install — created it, so the launcher's hardware detection has never run on this PC.",
+        ...readFromVortexPrefix,
       ],
       steps,
     };

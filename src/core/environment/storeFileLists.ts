@@ -15,6 +15,10 @@
  *    absence is not damage. Measured on the curator's Fallout 4 GOTY and Skyrim
  *    AE: every section's counter equals its entry count; 0 product files missing.
  *
+ *  - Without Galaxy (Heroic, an offline installer) there is no such list, but
+ *    each GOG product still ships `goggame-<id>.hashdb`: a zip holding one
+ *    table of path + hash records.
+ *
  *  - Steam keeps a depot manifest per installed depot in `depotcache`,
  *    `<depotId>_<manifestId>.manifest`, and names the installed pair in the
  *    app's `appmanifest_<appId>.acf`. The manifest is a length-prefixed
@@ -89,6 +93,48 @@ export function parseGogFileList(text: string): GogFileList {
     });
   }
   return { productIds, files, sections };
+}
+
+// ── GOG: hash database ───────────────────────────────────────────────────
+
+/** Three little-endian uint32s; the third is the record count. */
+const HASHDB_HEADER_BYTES = 12;
+/** Each record's path, UTF-8, NUL-padded. */
+const HASHDB_PATH_BYTES = 1024;
+/** The path, then 32 hex digits of the file's hash. */
+const HASHDB_RECORD_BYTES = HASHDB_PATH_BYTES + 32;
+
+/**
+ * The file list in the one entry of a `goggame-<id>.hashdb`.
+ *
+ * GOG puts a hash database for each product in the game folder however the
+ * game was installed — including by Heroic, which writes no galaxy file list.
+ * Layout from imLinguin/gog_hashdb: a 12-byte header whose third uint32 is the
+ * record count, then fixed 1056-byte records. The entry must be exactly that
+ * long: a list read from anything else would be a guess, and a short one would
+ * call the game's own files foreign.
+ */
+export function parseGogHashdb(entry: Buffer): { ok: true; files: StoreFile[] } | { ok: false; reason: string } {
+  if (entry.length < HASHDB_HEADER_BYTES) return { ok: false, reason: `${entry.length} bytes is shorter than its header` };
+  const count = entry.readUInt32LE(8);
+  const expected = HASHDB_HEADER_BYTES + count * HASHDB_RECORD_BYTES;
+  if (entry.length !== expected) {
+    return { ok: false, reason: `it declares ${count} records, which take ${expected} bytes, and holds ${entry.length}` };
+  }
+  const files: StoreFile[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const at = HASHDB_HEADER_BYTES + i * HASHDB_RECORD_BYTES;
+    const field = entry.subarray(at, at + HASHDB_PATH_BYTES);
+    const end = field.indexOf(0);
+    const name = field.toString("utf8", 0, end < 0 ? field.length : end);
+    const hash = entry.toString("latin1", at + HASHDB_PATH_BYTES, at + HASHDB_RECORD_BYTES);
+    if (!GOG_HASH_VALUE.test(hash)) return { ok: false, reason: `record ${i} has no hash where one belongs` };
+    const p = toPosix(name);
+    if (p.length === 0) return { ok: false, reason: `record ${i} has no path` };
+    if (/[\\/]$/.test(name)) continue;
+    files.push({ path: p, required: true });
+  }
+  return { ok: true, files };
 }
 
 // ── Steam: KeyValues (.acf / .vdf) ───────────────────────────────────────

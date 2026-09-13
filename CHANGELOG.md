@@ -40,6 +40,20 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
   only if that requirement changes on Nexus. Dismissed lines are listed under the rest with Restore. Missing plugin
   masters cannot be dismissed: the game will not load a plugin without them.
 
+### Linux (Wine/Proton)
+- **Vortex in one Wine prefix and the game in another is caught, with how to fix it.** Vortex writes plugins.txt and the
+  INI settings into the prefix it runs in. A game started from Heroic runs in Heroic's own prefix and never saw them —
+  while the setup check, reading Vortex's prefix, said the game had never been started. Event Horizon now finds the
+  prefix Heroic (for a GOG game) or Steam (for a Proton game) runs the game in, and checks whether Vortex's settings
+  folders are the game's by writing a test file into one and looking for it in the other, so a link counts and a copy
+  does not. Until they are, install and Play are refused with both prefixes named, a command that links each folder
+  (keeping Vortex's old one), and how to run Vortex in the game's prefix instead.
+- **The game's own settings are the ones checked.** "Has the game been started" and the INI leftovers check read the
+  game's prefix when it is found; when it is not, they say they read Vortex's.
+- **A GOG game installed by Heroic can be checked for leftovers.** Heroic writes no GOG Galaxy file list, so its folder
+  could not be verified. Event Horizon now reads the hash database GOG ships for each product (`goggame-<id>.hashdb`),
+  and only when every product in the folder has one.
+
 ## [0.1.155] — 2026-09-11
 
 A review of 0.1.152 to 0.1.154 found real problems in what those builds added. This build fixes every one of them.

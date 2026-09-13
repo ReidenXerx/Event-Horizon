@@ -146,6 +146,89 @@ describe("runEnvironmentPreflight", () => {
   });
 });
 
+describe("runEnvironmentPreflight — under Wine, with the game in Heroic's prefix", () => {
+  let root: string;
+  let vortexUser: string;
+  const PREFIX = "/home/deck/Games/Heroic/Prefixes/default/Fallout 4 GOTY";
+  const gameUser = (): string =>
+    path.join(root, "home", "deck", "Games", "Heroic", "Prefixes", "default", "Fallout 4 GOTY", "pfx", "drive_c", "users", "steamuser");
+  const SETTINGS = [
+    ["Documents", "My Games", "Fallout4"],
+    ["AppData", "Local", "Fallout4"],
+  ];
+
+  beforeEach(() => {
+    root = path.join(tmp, "root");
+    vortexUser = path.join(tmp, "vortex", "drive_c", "users", "steamuser");
+    write(path.join(game, "goggame-1998527297.info"), "{}");
+    const heroic = path.join(root, "home", "deck", ".config", "heroic");
+    write(
+      path.join(heroic, "gog_store", "installed.json"),
+      JSON.stringify({ installed: [{ appName: "1998527297", install_path: "/home/deck/Games/Heroic/Fallout 4" }] }),
+    );
+    write(path.join(heroic, "GamesConfig", "1998527297.json"), JSON.stringify({ "1998527297": { winePrefix: PREFIX } }));
+    // Vortex's prefix: a Prefs file an earlier INI apply created — no hardware settings, and an archive leftover.
+    write(path.join(vortexUser, "Documents", "My Games", "Fallout4", "Fallout4Prefs.ini"), "[Archive]\nbInvalidateOlderFiles=1\n");
+    write(path.join(vortexUser, "AppData", "Local", "Fallout4", "plugins.txt"), "");
+    // The game's prefix, where its launcher ran.
+    write(path.join(gameUser(), "Documents", "My Games", "Fallout4", "Fallout4Prefs.ini"), "[Display]\niSize W=1920\niSize H=1080\n");
+    write(path.join(gameUser(), "AppData", "Local", "Fallout4", "plugins.txt"), "");
+  });
+
+  const wineFacts = (): PreflightFacts =>
+    facts({
+      store: "gog",
+      wine: true,
+      wineHost: { unixRoot: root, homes: ["/home/deck"] },
+      userProfileDir: vortexUser,
+      prefsPath: path.join(vortexUser, "Documents", "My Games", "Fallout4", "Fallout4Prefs.ini"),
+      iniDir: path.join(vortexUser, "Documents", "My Games", "Fallout4"),
+      localGameDir: path.join(vortexUser, "AppData", "Local", "Fallout4"),
+    });
+
+  it("blocks on the split prefix alone: the launcher did run — in the game's prefix, which is where its settings are read", async () => {
+    const report = await runEnvironmentPreflight(wineFacts(), { scanFolder: false, context: "test" });
+    expect(report.checks.map((c) => [c.id, c.status])).toEqual([
+      ["game-managed", "ok"],
+      ["wine-prefix", "blocked"],
+      ["launcher-ran", "ok"],
+      ["protected-location", "ok"],
+      ["binary-imports", "ok"],
+      ["ini-leftovers", "ok"],
+    ]);
+    expect(report.checks.find((c) => c.id === "launcher-ran")?.lines[0]).toBe(
+      `Found: ${path.join(gameUser(), "Documents", "My Games", "Fallout4", "Fallout4Prefs.ini")}`,
+    );
+  });
+
+  it("passes once Vortex's folders are links to the game's", async () => {
+    for (const rel of SETTINGS) {
+      fs.rmSync(path.join(vortexUser, ...rel), { recursive: true });
+      fs.symlinkSync(path.join(gameUser(), ...rel), path.join(vortexUser, ...rel), "junction");
+    }
+    const verdicts = await statusOf(wineFacts(), false);
+    expect([verdicts["wine-prefix"], verdicts["launcher-ran"]]).toEqual(["ok", "ok"]);
+  });
+
+  it("names Heroic as the place to start the game when its own prefix holds no launcher-written settings", async () => {
+    write(path.join(gameUser(), "Documents", "My Games", "Fallout4", "Fallout4Prefs.ini"), "[Archive]\nbInvalidateOlderFiles=0\n");
+    const report = await runEnvironmentPreflight(wineFacts(), { scanFolder: false, context: "test" });
+    const launcher = report.checks.find((c) => c.id === "launcher-ran");
+    expect(launcher?.status).toBe("blocked");
+    expect(launcher?.steps[0]).toMatch(/^Start Fallout 4 once from Heroic — /);
+    expect(launcher?.lines.join("\n")).not.toMatch(/the prefix Vortex runs in/);
+  });
+
+  it("without a record of the game's prefix, reads Vortex's prefix and says so", async () => {
+    fs.rmSync(path.join(game, "goggame-1998527297.info"));
+    const report = await runEnvironmentPreflight(wineFacts(), { scanFolder: false, context: "test" });
+    expect(report.checks.find((c) => c.id === "wine-prefix")?.status).toBe("unknown");
+    const launcher = report.checks.find((c) => c.id === "launcher-ran");
+    expect(launcher?.status).toBe("blocked");
+    expect(launcher?.lines.join("\n")).toMatch(/the prefix Vortex runs in/);
+  });
+});
+
 describe("declaredPrerequisitePaths", () => {
   it("resolves each destination token to a game-root-relative key", () => {
     const paths = declaredPrerequisitePaths([

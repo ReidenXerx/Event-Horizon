@@ -4,6 +4,7 @@
  * decision stays in modules that run without Vortex.
  */
 
+import * as os from "os";
 import * as path from "path";
 
 import { util } from "@nexusmods/vortex-api";
@@ -14,6 +15,7 @@ import { ehLog } from "../logging/ehLog";
 import { iniLocationFor, launcherWritesPrefsFor, prefsIniPathFor } from "../manifest/gameIni";
 import type { EhcollExternalDependency, EhcollGameIni } from "../../types/ehcoll";
 import { declaredPrerequisitePaths, type PreflightFacts } from "./preflight";
+import { readWineHost } from "./winePrefix";
 
 export type DiscoveryView = {
   path?: string;
@@ -115,6 +117,15 @@ export function gatherPreflightFacts(args: {
   const prefsPath = haveDocuments ? prefsIniPathFor(gameId, documentsPath!, discovery.store) : undefined;
   const iniLocation = haveDocuments ? iniLocationFor(gameId, documentsPath!, discovery.store) : undefined;
   const hasLauncher = launcherWritesPrefsFor(gameId);
+  let userProfileDir: string | undefined;
+  try {
+    userProfileDir = (util as unknown as { getVortexPath?: (id: string) => string }).getVortexPath?.("home");
+  } catch {
+    userProfileDir = undefined;
+  }
+  if (userProfileDir === undefined || userProfileDir.length === 0) userProfileDir = os.homedir();
+  const wine = looksLikeWine();
+  const wineHost = wine ? readWineHost(process.env) : undefined;
   const facts: PreflightFacts = {
     gameId,
     gameName: gameDisplayName(state, gameId),
@@ -130,7 +141,9 @@ export function gatherPreflightFacts(args: {
     protectedRoots: [process.env["ProgramFiles"], process.env["ProgramFiles(x86)"], process.env["ProgramW6432"]].filter(
       (p): p is string => typeof p === "string" && p.length > 0,
     ),
-    wine: looksLikeWine(),
+    wine,
+    ...(userProfileDir.length > 0 ? { userProfileDir } : {}),
+    ...(wineHost !== undefined ? { wineHost } : {}),
   };
   ehLog("info", "environment.facts", {
     gameId,
@@ -145,6 +158,8 @@ export function gatherPreflightFacts(args: {
     declared: [...facts.declared],
     protectedRoots: facts.protectedRoots,
     wine: facts.wine,
+    userProfileDir,
+    wineHost,
   });
   return facts;
 }

@@ -31,6 +31,7 @@ import {
   decideIniLeftovers,
   decideLauncherRan,
   decideProtectedLocation,
+  decideWinePrefix,
   type EnvironmentCheck,
   type IniLeftover,
 } from "./environmentChecks";
@@ -40,6 +41,7 @@ import {
   scanGameFolder,
   type GameFolderScan,
 } from "./gameFolderScan";
+import { probeWinePrefix, rebaseUnder, type WineHost, type WinePrefixProbe } from "./winePrefix";
 
 /** Everything the preflight needs from Vortex and the OS, read once. */
 export type PreflightFacts = {
@@ -64,6 +66,10 @@ export type PreflightFacts = {
   declared: ReadonlySet<string>;
   protectedRoots: string[];
   wine: boolean;
+  /** Vortex's user folder (C:\users\<name> under Wine) — the settings paths above live inside it. */
+  userProfileDir?: string;
+  /** Under Wine: where the Linux side is, as Wine reports it. */
+  wineHost?: WineHost;
 };
 
 export type EnvironmentReport = {
@@ -75,6 +81,8 @@ export type EnvironmentReport = {
   checks: EnvironmentCheck[];
   imports?: ImportProbe;
   folder?: GameFolderScan;
+  /** Under Wine: the game's prefix, and whether Vortex writes into the folders it reads. */
+  winePrefix?: WinePrefixProbe;
 };
 
 const DESTINATION_PREFIX: Record<string, string> = {
@@ -119,6 +127,27 @@ async function isFile(p: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+type SettingsPaths = Pick<PreflightFacts, "prefsPath" | "iniDir" | "localGameDir">;
+
+/**
+ * The game's own settings paths when its prefix and user folder were found —
+ * the same places, inside the game's prefix instead of Vortex's.
+ */
+function gameSideSettings(facts: PreflightFacts, probe: WinePrefixProbe): SettingsPaths {
+  const from = facts.userProfileDir;
+  const to = probe.gameUserDir;
+  if (from === undefined || to === undefined) return facts;
+  const move = (p: string | undefined): string | undefined => (p === undefined ? undefined : (rebaseUnder(from, to, p) ?? p));
+  const prefsPath = move(facts.prefsPath);
+  const iniDir = move(facts.iniDir);
+  const localGameDir = move(facts.localGameDir);
+  return {
+    ...(prefsPath !== undefined ? { prefsPath } : {}),
+    ...(iniDir !== undefined ? { iniDir } : {}),
+    ...(localGameDir !== undefined ? { localGameDir } : {}),
+  };
 }
 
 /** Did the game's launcher write this Prefs file? `undefined` when that cannot be judged. */
@@ -200,15 +229,36 @@ export async function runEnvironmentPreflight(
       exeExists,
     }),
   );
-  const prefsExists = facts.prefsPath !== undefined && (await isFile(facts.prefsPath));
+  // Under Wine the game can run in another prefix than Vortex. Its settings are
+  // read where the GAME keeps them, and whether Vortex writes to the same place
+  // is a check of its own.
+  let settings: SettingsPaths = facts;
+  if (facts.wine && facts.wineHost !== undefined && dirExists) {
+    const probe = await probeWinePrefix({
+      gameDir: gameDir!,
+      host: facts.wineHost,
+      vortexUserDir: facts.userProfileDir,
+      folders: [
+        { label: "the INI files", vortexDir: facts.iniDir },
+        { label: "plugins.txt, the load order", vortexDir: facts.localGameDir },
+      ],
+    });
+    report.winePrefix = probe;
+    report.checks.push(decideWinePrefix({ gameName: facts.gameName, probe }));
+    settings = gameSideSettings(facts, probe);
+  }
+  const prefsPath = settings.prefsPath;
+  const prefsExists = prefsPath !== undefined && (await isFile(prefsPath));
   report.checks.push(
     decideLauncherRan({
       gameName: facts.gameName,
-      prefsPath: facts.prefsPath,
+      prefsPath,
       exists: prefsExists,
-      launcherWrote: prefsExists ? await launcherWrotePrefs(facts.prefsPath!, facts.hasLauncher) : undefined,
+      launcherWrote: prefsExists ? await launcherWrotePrefs(prefsPath!, facts.hasLauncher) : undefined,
       hasLauncher: facts.hasLauncher,
       store: facts.store,
+      wine: facts.wine,
+      launcher: report.winePrefix?.gameUserDir !== undefined ? report.winePrefix.game?.source : undefined,
     }),
   );
 
@@ -260,13 +310,13 @@ export async function runEnvironmentPreflight(
     }),
   );
 
-  const ini = await findIniLeftovers(facts, gameDir);
+  const ini = await findIniLeftovers({ ...facts, ...settings }, gameDir);
   report.checks.push(decideIniLeftovers({ gameName: facts.gameName, defaultsFile: ini.defaultsFile, leftovers: ini.leftovers }));
 
   if (options.scanFolder) {
     report.folder = await scanGameFolder({
       gameDir,
-      ...(facts.localGameDir !== undefined ? { localGameDir: facts.localGameDir } : {}),
+      ...(settings.localGameDir !== undefined ? { localGameDir: settings.localGameDir } : {}),
       declared: facts.declared,
       ...(facts.executable !== undefined ? { executable: facts.executable } : {}),
       vanilla,
@@ -290,6 +340,22 @@ export function logEnvironmentReport(report: EnvironmentReport, context: string,
       title: c.title,
       lines: c.lines,
       steps: c.steps,
+    });
+  }
+  if (report.winePrefix !== undefined) {
+    const p = report.winePrefix;
+    const allShared = p.gameStarted === true && p.folders.length > 0 && p.folders.every((f) => f.state === "shared");
+    ehLog(allShared ? "info" : "warn", "environment.wine-prefix", {
+      context,
+      host: p.host,
+      looked: p.looked,
+      candidates: p.candidates,
+      game: p.game === undefined ? undefined : { source: p.game.source, prefix: p.game.linuxPath ?? p.game.reached, driveC: p.game.driveC },
+      unresolved: p.unresolved,
+      vortexUserDir: p.vortexUserDir,
+      gameUserDir: p.gameUserDir,
+      gameStarted: p.gameStarted,
+      folders: p.folders,
     });
   }
   if (report.imports !== undefined) {

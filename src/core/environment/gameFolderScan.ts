@@ -32,7 +32,8 @@
  * `Fallout4 - Textures1.ba2` is indistinguishable from a mod, and a check that
  * offers to move the game's own archives aside is worse than no check. So the
  * list is `unknown` — and nothing is purged or moved — when:
- *   - no store record exists (offline installers, Epic, Xbox),
+ *   - no store record exists (Epic, Xbox, a GOG folder with neither Galaxy's
+ *     list nor a hash database for every product),
  *   - a record is partial (a Steam depot manifest missing, a GOG section whose
  *     entry count disagrees with its own counter, a Steam app mid-update),
  *   - the record does not list the game's own executable (it is some other
@@ -48,12 +49,14 @@ import * as path from "path";
 import { ehLog } from "../logging/ehLog";
 import { segmentsOf, toPosix } from "../paths";
 import { scriptExtenderLoaders } from "../manifest/externalDependencies";
+import { listZipEntries, readZipEntry } from "../manifest/readZip";
 import { isVolatileFile } from "../volatileFiles";
 import { rootDllOwnership } from "./binaryImports";
 import {
   parseAppManifest,
   parseDepotManifest,
   parseGogFileList,
+  parseGogHashdb,
   type SteamAppManifest,
   type StoreFile,
 } from "./storeFileLists";
@@ -518,6 +521,62 @@ async function readGogRecord(gameDir: string, tried: string[]): Promise<VanillaL
 }
 
 /**
+ * GOG's hash databases, for a GOG folder Galaxy did not install (Heroic, an
+ * offline installer). `undefined` = there are none.
+ *
+ * A GOTY edition is several products — the game and each add-on — each with
+ * its own `goggame-<id>.info` and `.hashdb`. A list from only some of them
+ * would call the rest of the game's files foreign, and those are what Install
+ * moves into quarantine, so one product without its database makes the whole
+ * record unknown.
+ */
+async function readGogHashdbRecord(gameDir: string, tried: string[]): Promise<VanillaList | undefined> {
+  tried.push(path.join(gameDir, "goggame-<id>.hashdb"));
+  let names: string[];
+  try {
+    names = await fsp.readdir(gameDir);
+  } catch {
+    return undefined;
+  }
+  const idOf = (name: string, extension: "hashdb" | "info"): string | undefined =>
+    new RegExp(`^goggame-(\\d+)\\.${extension}$`, "i").exec(name)?.[1];
+  const hashdbs = names.filter((n) => idOf(n, "hashdb") !== undefined).sort();
+  if (hashdbs.length === 0) return undefined;
+  const ids = hashdbs.map((n) => idOf(n, "hashdb")!);
+  const uncovered = names.map((n) => idOf(n, "info")).filter((id): id is string => id !== undefined && !ids.includes(id));
+  if (uncovered.length > 0) {
+    return unknown(
+      `GOG product${uncovered.length === 1 ? "" : "s"} ${uncovered.join(", ")} ${uncovered.length === 1 ? "is" : "are"} installed in ${gameDir} (goggame-<id>.info) without a goggame-<id>.hashdb, so the hash databases do not cover the whole game.`,
+    );
+  }
+  const files = new Map<string, StoreFile>();
+  for (const name of hashdbs) {
+    const full = path.join(gameDir, name);
+    let data: Buffer;
+    try {
+      const entries = (await listZipEntries(full)).filter((e) => !e.isDirectory);
+      if (entries.length !== 1) return unknown(`GOG's ${full} holds ${entries.length} entries; a hash database holds one.`);
+      data = await readZipEntry(full, entries[0]!.name);
+    } catch (err) {
+      return unknown(`GOG's ${full} could not be read: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const parsed = parseGogHashdb(data);
+    if (!parsed.ok) return unknown(`GOG's ${full} is not a hash database Event Horizon can read: ${parsed.reason}.`);
+    for (const f of parsed.files) {
+      if (!files.has(f.path.toLowerCase())) files.set(f.path.toLowerCase(), f);
+    }
+  }
+  if (files.size === 0) return unknown(`GOG's hash databases in ${gameDir} list no files.`);
+  return {
+    kind: "known",
+    source: "gog",
+    detail: `${hashdbs.map((n) => path.join(gameDir, n)).join(", ")} (products ${ids.join(", ")})`,
+    files: [...files.values()],
+    ownedRootPrefixes: ids.map((id) => `goggame-${id}.`),
+  };
+}
+
+/**
  * The store's record of this install, or why there is none.
  *
  * A Steam library layout is asked first: GOG files copied into a Steam install
@@ -535,8 +594,9 @@ export async function loadVanillaList(
   const list =
     (await readSteamRecord(gameDir, tried)) ??
     (await readGogRecord(gameDir, tried)) ??
+    (await readGogHashdbRecord(gameDir, tried)) ??
     unknown(
-      "No store install record was found (no GOG Galaxy file list, and the game is not in a Steam library with its depot manifests). " +
+      "No store install record was found (no GOG Galaxy file list or GOG hash database, and the game is not in a Steam library with its depot manifests). " +
         `Looked for: ${tried.join("; ")}`,
     );
   if (list.kind === "known" && options.executable !== undefined) {

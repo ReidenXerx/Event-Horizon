@@ -11,7 +11,7 @@ import * as path from "path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { buildDepotManifest, buildPe } from "./fixtures.testutil";
+import { buildDepotManifest, buildGogHashdb, buildPe } from "./fixtures.testutil";
 import {
   classifyGameFolder,
   groupEntries,
@@ -193,6 +193,51 @@ describe("loadVanillaList", () => {
     write(path.join(g, "goggame-galaxyFileList.ini"), "[1946160]\nfiles_counter=2\nF0=fce49f0d98c540e33c73dbe75acc4cc7\nF1=CreationKit.exe\n");
     const list = await loadVanillaList(g, { executable: "Fallout4.exe" });
     expect(list.kind === "unknown" ? list.reason : "").toMatch(/does not list the game's executable Fallout4\.exe/);
+  });
+
+  describe("GOG hash databases — Heroic and offline installers write no galaxy file list", () => {
+    it("reads every product's goggame-<id>.hashdb", async () => {
+      const g = path.join(tmp, "Fallout 4 GOTY");
+      write(path.join(g, "goggame-1998527297.info"), "{}");
+      write(path.join(g, "goggame-1998527297.hashdb"), buildGogHashdb(["Fallout4.exe", "Data\\Fallout4.esm"]));
+      write(path.join(g, "goggame-1998527298.info"), "{}");
+      write(path.join(g, "goggame-1998527298.hashdb"), buildGogHashdb(["Data\\DLCRobot.esm"], { method: "store" }));
+      const list = await loadVanillaList(g, { executable: "Fallout4.exe" });
+      expect(list.kind === "known" && list.source).toBe("gog");
+      expect(list.kind === "known" ? list.files.map((f) => f.path).sort() : []).toEqual([
+        "Data/DLCRobot.esm",
+        "Data/Fallout4.esm",
+        "Fallout4.exe",
+      ]);
+      expect(list.kind === "known" && list.ownedRootPrefixes).toEqual(["goggame-1998527297.", "goggame-1998527298."]);
+    });
+
+    it("is unknown when a product in the folder has no hash database — its files would be called foreign", async () => {
+      const g = path.join(tmp, "Fallout 4 GOTY");
+      write(path.join(g, "goggame-1998527297.info"), "{}");
+      write(path.join(g, "goggame-1998527297.hashdb"), buildGogHashdb(["Fallout4.exe"]));
+      write(path.join(g, "goggame-1998527298.info"), "{}");
+      const list = await loadVanillaList(g);
+      expect(list.kind === "unknown" ? list.reason : "").toMatch(/1998527298 is installed .* without a goggame-<id>\.hashdb/);
+    });
+
+    it("is unknown for a hash database it cannot read — never a partial list", async () => {
+      const g = path.join(tmp, "Fallout 4 GOTY");
+      write(path.join(g, "goggame-1998527297.hashdb"), buildGogHashdb(["Fallout4.exe"], { count: 2 }));
+      const truncated = await loadVanillaList(g);
+      expect(truncated.kind === "unknown" ? truncated.reason : "").toMatch(/declares 2 records/);
+      write(path.join(g, "goggame-1998527297.hashdb"), Buffer.from("not a zip"));
+      const garbage = await loadVanillaList(g);
+      expect(garbage.kind === "unknown" ? garbage.reason : "").toMatch(/could not be read/);
+    });
+
+    it("prefers Galaxy's file list when both are there", async () => {
+      const g = path.join(tmp, "Fallout 4 GOTY");
+      write(path.join(g, "goggame-galaxyFileList.ini"), "[1998527297]\nF0=fce49f0d98c540e33c73dbe75acc4cc7\nF1=Fallout4.exe\n");
+      write(path.join(g, "goggame-1998527297.hashdb"), buildGogHashdb(["Fallout4.exe", "Data\\Fallout4.esm"]));
+      const list = await loadVanillaList(g);
+      expect(list.kind === "known" ? list.detail : "").toMatch(/galaxyFileList/);
+    });
   });
 
   describe("Steam", () => {
