@@ -213,7 +213,7 @@ Each `ModDecision.kind` maps to exactly one install primitive:
 | `nexus-download`               | _none_                      | `installNexusViaApi`               | `api.ext.nexusDownload(gameId, modId, fileId, fileName, true)`. Returns archiveId; we wait for `did-install-mod`. |
 | `nexus-use-local-download`     | _none_                      | `installFromExistingDownload`      | Emits `start-install-download` with the archiveId. |
 | `nexus-already-installed`      | _none_                      | _(no install)_                     | Re-uses `existingModId`. Driver enables it in the active profile. |
-| `external-use-bundled`         | _none_                      | `installFromBundledArchive`        | Cherry-picks the bundled entry from the `.ehcoll` ZIP into a temp dir, then `start-install` with the absolute path. |
+| `external-use-bundled`         | _none_                      | `installFromBundledArchive`        | Writes the canonical zip of the mod's `bundled/<sha256>/` folder into a temp dir (refused unless it hashes to the sha), checks free space, then `start-install` with the absolute path. |
 | `external-use-local-download`  | _none_                      | `installFromExistingDownload`      | Same as Nexus local. |
 | `external-already-installed`   | _none_                      | _(no install)_                     | Same re-use path as Nexus already-installed. |
 | `nexus-version-diverged`       | `keep-existing` / `replace-existing` / `skip` | `installManifestEntry` (replace) | `keep-existing` ⇒ enable the existing mod in the active profile **and** carry-forward its lineage tag into the new receipt (see "Carry-forward semantics"). `replace-existing` ⇒ uninstall in `removing-mods`, then install the manifest's version. `skip` ⇒ record in `skippedMods` and do nothing else. |
@@ -656,11 +656,12 @@ Five primitives + helpers:
 - `installFromExistingDownload` — emits `start-install-download` with
   the archiveId, waits for `did-install-mod`. Returns
   `{vortexModId}`.
-- `installFromBundledArchive` — cherry-picks one bundled entry out of
-  the `.ehcoll` ZIP into a fresh temp dir, then races a
-  `start-install` callback against `did-install-mod`. Returns
-  `{vortexModId, extractedPath}` so the caller can clean up the temp
-  dir at end of run.
+- `installFromBundledArchive` — takes the archive `writeBundledArchive`
+  wrote, checks that Vortex's download folder and staging folder have room
+  for it (`requireFreeSpace`; the archive is stored, so its size stands in
+  for both), then races a `start-install` callback against
+  `did-install-mod`. Returns `{vortexModId, extractedPath}` so the caller
+  can clean up the temp dir.
 - `installFromLocalArchive` — `start-install` against an arbitrary
   user-supplied disk path (used for `external-prompt-user` +
   `use-local-file`). Returns `{vortexModId}`.
@@ -670,7 +671,11 @@ Five primitives + helpers:
   by `removing-mods` for `replace-existing` and `orphan-uninstall`.
 - `writeBundledArchive` — exposed helper; writes the canonical zip of a
   `bundled/<sha256>/` folder out of the package (`readZip.ts` reads,
-  `bundleZip.ts` writes) and refuses it unless it hashes to the sha.
+  `bundleZip.ts` writes) and refuses it unless it hashes to the sha. It
+  first claims room on the temp drive (`claimFreeSpace`) for the zip's
+  largest size, counted against the other bundled mods being written there
+  at the same time: a write that only fits alone waits for them, and one
+  that cannot fit at all is refused, naming the drive.
 - `safeRmTempDir` — best-effort temp cleanup (errors swallowed; OS
   GCs `os.tmpdir()` eventually).
 

@@ -44,6 +44,7 @@
  */
 
 import { isAbort } from "../../utils/abortError";
+import * as fs from "fs";
 import * as fsp from "fs/promises";
 import { ehLog } from "../logging/ehLog";
 import * as os from "os";
@@ -55,14 +56,15 @@ import { sortDeep } from "../../utils/utils";
 import { archiveFormatOfFile, type ArchiveFormat } from "./archiveInside";
 import { bundleFolderInPackage } from "./bundleLayout";
 import {
-  bundleFilesFromListing,
   bundleFilesFromPackage,
   listBundleFolder,
   writeBundleZip,
   type BundleFile,
   type BundleListing,
 } from "./bundleZip";
-import { openZipReader } from "./readZip";
+import { crc32AndSha256File, openZipReader } from "./readZip";
+import { DiskSpaceError, requireFreeSpace, type FreeBytesProbe } from "../../utils/diskSpace";
+import type { EhcollStagingFile } from "../../types/ehcoll";
 import { resolveSevenZip, sevenZipAdd, type SevenZipApi } from "./sevenZip";
 
 // ---------------------------------------------------------------------------
@@ -166,6 +168,8 @@ export type PackageEhcollInput = {
   cleanupOnSuccess?: boolean;
   /** Optional injection point for tests. Defaults to vortex-api's SevenZip. */
   sevenZip?: SevenZipApi;
+  /** Optional injection point for tests: free bytes on a directory's drive. Defaults to the real probe. */
+  freeBytes?: FreeBytesProbe;
   /**
    * Cooperative cancellation. When fired, the packager:
    *   1. Throws {@link AbortError} at the next checkpoint between phases.
@@ -276,6 +280,8 @@ export async function packageEhcoll(
     await writeOptionalMarkdown(stagingDir, "CHANGELOG.md", input.changelog);
 
     const mirrorFiles = input.mirrorFiles ?? [];
+    checkAbort();
+    await refuseShortSpace(stagingDir, input.outputPath, bundles, mirrorFiles, input.freeBytes);
     if (mirrorFiles.length > 0) {
       ehLog("info", "package.mirror.start", { files: mirrorFiles.length });
     }
@@ -294,7 +300,7 @@ export async function packageEhcoll(
       files: bundledFiles,
     });
     const bundledMs = Date.now();
-    await stageBundles(stagingDir, bundles, signal, onProgress);
+    await stageBundles(stagingDir, bundles, recordedFilesByBundle(input.manifest), signal, onProgress);
     ehLog("info", "package.bundled.ok", {
       bundles: bundles.length,
       files: bundledFiles,
@@ -713,6 +719,7 @@ async function refuseArchivesInside(
 async function stageBundles(
   stagingDir: string,
   bundles: readonly ListedBundle[],
+  recordedFiles: ReadonlyMap<string, readonly EhcollStagingFile[]>,
   signal: AbortSignal | undefined,
   onProgress?: (progress: PackageProgress) => void,
 ): Promise<void> {
@@ -759,8 +766,20 @@ async function stageBundles(
     // then a mismatch that says so, not a missing folder that says something else.
     await fsp.mkdir(root, { recursive: true });
     const staged = await listBundleFolder(root, signal);
+    // One read of each file serves both checks: the CRC its zip entry records,
+    // and the SHA-256 the manifest records for it.
+    const digests: Array<{ crc32: number; sha256: string }> = [];
+    for (const file of staged) {
+      if (signal?.aborted) throw new AbortError("Packaging cancelled by user");
+      digests.push(await crc32AndSha256File(file.fullPath, signal));
+    }
     const zip = await writeBundleZip(
-      await bundleFilesFromListing(staged, signal),
+      staged.map((file, i) => ({
+        path: file.path,
+        size: file.size,
+        crc32: digests[i]!.crc32,
+        open: () => fs.createReadStream(file.fullPath),
+      })),
       undefined,
       signal !== undefined ? { signal } : {},
     );
@@ -780,11 +799,141 @@ async function stageBundles(
           `measurement is trusted.`,
       ]);
     }
+    refuseStaleRecordedHashes(spec.modName, staged, digests, recordedFiles.get(spec.sha256));
     ehLog("debug", "package.bundle.verified", {
       mod: spec.modName,
       sha256: spec.sha256,
       files: zip.files,
     });
+  }
+}
+
+/** Each bundled mod's files as the manifest records them, keyed by the bundle's sha256. */
+function recordedFilesByBundle(manifest: EhcollManifest): Map<string, readonly EhcollStagingFile[]> {
+  const out = new Map<string, readonly EhcollStagingFile[]>();
+  for (const mod of manifest.mods) {
+    if (mod.source.kind !== "external" || mod.source.bundled !== true) continue;
+    if (mod.source.sha256 === undefined) continue;
+    out.set(mod.source.sha256, mod.state?.stagingFiles ?? []);
+  }
+  return out;
+}
+
+/**
+ * ─── THE MANIFEST'S HASHES MUST BE THE HASHES OF THE BYTES THAT SHIP ────
+ * Every user's install checks a bundled mod file by file against the SHA-256
+ * the manifest records, and the build takes those from a cache that trusts a
+ * file whose path, size and modification time have not changed. A file
+ * rewritten in place with all three intact ships its new bytes under its old
+ * hash: every user's check of the mod fails, and a repair reinstalls the same
+ * bytes, which fail again. The bundle's identity cannot catch it, since that
+ * was measured from the bytes — so the bytes are hashed here, as they are packed.
+ */
+function refuseStaleRecordedHashes(
+  modName: string,
+  staged: readonly BundleListing[],
+  digests: ReadonlyArray<{ sha256: string }>,
+  recorded: readonly EhcollStagingFile[] | undefined,
+): void {
+  const byPath = new Map((recorded ?? []).map((f) => [f.path, f.sha256] as const));
+  const stale = staged
+    .map((file, i) => ({ path: file.path, recorded: byPath.get(file.path), actual: digests[i]!.sha256 }))
+    .filter((f) => f.recorded !== undefined && f.recorded !== f.actual);
+  if (stale.length === 0) return;
+  ehLog("error", "package.bundle.stale-hashes", { mod: modName, files: stale });
+  const one = stale.length === 1;
+  throw new PackageEhcollError([
+    `"${modName}": ${one ? "a file is" : `${stale.length} files are`} recorded with a SHA-256 ` +
+      `${one ? "its" : "their"} bytes no longer have (first: "${stale[0]!.path}"), so every user's ` +
+      `check of this mod would fail and no repair could fix it. Rebuild with "Re-read every file" ` +
+      `ticked, so that no saved hash is trusted.`,
+  ]);
+}
+
+/**
+ * Headroom per entry in the package's zip: its name twice (a Windows path of
+ * 260 UTF-16 units is at most 780 bytes of UTF-8), the local and central
+ * headers, ZIP64 and timestamp extras, and a data descriptor, rounded up.
+ */
+const ZIP_ENTRY_BYTES_AT_MOST = 2048;
+
+/**
+ * The most bytes the package can take. A file costs at most its own size plus
+ * deflate's framing — a few bytes a block, well under one byte in a thousand —
+ * and each entry its headers.
+ */
+function packageBytesAtMost(fileBytes: number, entries: number): number {
+  return fileBytes + Math.ceil(fileBytes / 1000) + entries * ZIP_ENTRY_BYTES_AT_MOST;
+}
+
+/** Bytes and files already written under a folder: here, the manifest and its notes. */
+async function sizeOfTree(root: string): Promise<{ bytes: number; files: number }> {
+  let bytes = 0;
+  let files = 0;
+  for (const entry of await fsp.readdir(root, { withFileTypes: true })) {
+    const full = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      const inner = await sizeOfTree(full);
+      bytes += inner.bytes;
+      files += inner.files;
+    } else if (entry.isFile()) {
+      bytes += (await fsp.stat(full)).size;
+      files += 1;
+    }
+  }
+  return { bytes, files };
+}
+
+/**
+ * ─── ROOM FOR THE STAGED COPIES AND THE PACKAGE, CHECKED FIRST ─────────
+ * Staging hardlinks a file when it can, and copies one kept on another drive
+ * into the temp folder. 7-Zip then writes the new package beside the one it
+ * replaces, which stays until the new one is proven. Running out of room in
+ * either place surfaced minutes in, as a bare ENOSPC; this names the drive and
+ * the numbers before anything is copied. A file that cannot be looked at here
+ * is left to the step that reads it, which names it.
+ */
+async function refuseShortSpace(
+  stagingDir: string,
+  outputPath: string,
+  bundles: readonly ListedBundle[],
+  mirrorFiles: readonly MirrorFileSpec[],
+  probe: FreeBytesProbe | undefined,
+): Promise<void> {
+  const stagingDrive = (await fsp.stat(stagingDir)).dev;
+  const written = await sizeOfTree(stagingDir);
+  let copied = 0;
+  let shipped = written.bytes;
+  let entries = written.files;
+  for (const { spec, files } of bundles) {
+    const bytes = files.reduce((n, f) => n + f.size, 0);
+    shipped += bytes;
+    entries += files.length;
+    const root = await fsp.stat(spec.rootDir).catch(() => undefined);
+    if (root !== undefined && root.dev !== stagingDrive) copied += bytes;
+  }
+  const seen = new Set<string>();
+  for (const file of mirrorFiles) {
+    if (seen.has(file.sha256)) continue;
+    seen.add(file.sha256);
+    const stat = await fsp.stat(file.sourcePath).catch(() => undefined);
+    if (stat === undefined) continue;
+    shipped += stat.size;
+    entries += 1;
+    if (stat.dev !== stagingDrive) copied += stat.size;
+  }
+  try {
+    await requireFreeSpace(
+      [
+        { dir: stagingDir, bytes: copied, what: "copies of files kept on another drive" },
+        { dir: path.dirname(outputPath), bytes: packageBytesAtMost(shipped, entries), what: "the new package" },
+      ],
+      probe,
+    );
+  } catch (err) {
+    if (!(err instanceof DiskSpaceError)) throw err;
+    ehLog("error", "package.space.short", { shortfalls: err.shortfalls });
+    throw new PackageEhcollError([err.message]);
   }
 }
 

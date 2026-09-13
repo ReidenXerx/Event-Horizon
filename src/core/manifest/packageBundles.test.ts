@@ -458,3 +458,89 @@ describe("a rebuild that does not finish", () => {
     expect(err).toMatchObject({ name: "AbortError" });
   });
 });
+
+describe("before anything is staged or written", () => {
+  it("refuses a package its drive has no room for, naming the drive and the numbers", async () => {
+    const mod = path.join(dir, "staging", "settings");
+    put(mod, "a.ini", "x".repeat(4096));
+    const sha = await identityOf(mod);
+    const sevenZip = zippingSevenZip();
+
+    const err = await packageEhcoll({
+      manifest: manifestWith([bundledMod("Settings", sha)]),
+      bundles: [{ rootDir: mod, sha256: sha, modName: "Settings" }],
+      outputPath: path.join(dir, "out.ehcoll"),
+      sevenZip,
+      freeBytes: async () => 1024,
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(PackageEhcollError);
+    expect((err as Error).message).toMatch(
+      /Not enough free space on the drive holding "[^"]+": the new package \([^)]+\) needs about [\d.]+ \w+, and 1\.00 KB is free/,
+    );
+    expect(sevenZip.adds).toBe(0);
+  });
+});
+
+describe("the hashes a manifest records for a bundled mod's files", () => {
+  const sha256Of = (file: string): string =>
+    crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+
+  it("refuses a file whose recorded SHA-256 its bytes no longer have, naming it", async () => {
+    const mod = path.join(dir, "staging", "settings");
+    const a = put(mod, "a.ini", "[a]");
+    put(mod, "b.ini", "[b]");
+    const sha = await identityOf(mod);
+    const sevenZip = zippingSevenZip();
+
+    const err = await packageEhcoll({
+      manifest: manifestWith([
+        {
+          ...(bundledMod("Settings", sha) as Record<string, unknown>),
+          state: {
+            stagingFiles: [
+              { path: "a.ini", size: 3, sha256: sha256Of(a) },
+              // What the hash cache still holds for a file rewritten with the same size and time.
+              { path: "b.ini", size: 3, sha256: "0".repeat(64) },
+            ],
+          },
+        },
+      ]),
+      bundles: [{ rootDir: mod, sha256: sha, modName: "Settings" }],
+      outputPath: path.join(dir, "out.ehcoll"),
+      sevenZip,
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(PackageEhcollError);
+    expect((err as Error).message).toMatch(
+      /"Settings": a file is recorded with a SHA-256 its bytes no longer have \(first: "b\.ini"\)[\s\S]*"Re-read every file"/,
+    );
+    expect(sevenZip.adds).toBe(0);
+  });
+
+  it("packs a mod whose recorded hashes are its bytes' hashes", async () => {
+    const mod = path.join(dir, "staging", "settings");
+    const a = put(mod, "a.ini", "[a]");
+    const b = put(mod, "b.ini", "[b]");
+    const sha = await identityOf(mod);
+
+    await expect(
+      packageEhcoll({
+        manifest: manifestWith([
+          {
+            ...(bundledMod("Settings", sha) as Record<string, unknown>),
+            state: {
+              stagingFiles: [
+                { path: "a.ini", size: 3, sha256: sha256Of(a) },
+                { path: "b.ini", size: 3, sha256: sha256Of(b) },
+              ],
+            },
+          },
+        ]),
+        bundles: [{ rootDir: mod, sha256: sha, modName: "Settings" }],
+        outputPath: path.join(dir, "out.ehcoll"),
+        sevenZip: zippingSevenZip(),
+      }),
+    ).resolves.toMatchObject({ bundledCount: 1 });
+  });
+});

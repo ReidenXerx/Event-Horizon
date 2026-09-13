@@ -86,6 +86,7 @@ import {
   type MeasuredBundle,
   type BundleFailure,
   mergeMeasuredBundles,
+  restoreArchiveHashes,
 } from "../../../core/manifest/bundleFromStaging";
 import {
   describeRootFolderReview,
@@ -1441,6 +1442,12 @@ export async function runBuildPipeline(
    * there is nothing left to fall through to.
    */
   const bundleFailures = new Map<string, BundleFailure>();
+  /**
+   * Each mod's archive hash from before measuring replaced a bundled mod's with
+   * its bundle's, so a mod the decisions step takes off bundling can have its
+   * own back — see `restoreArchiveHashes`.
+   */
+  const archiveHashesBeforeMeasuring = new Map<string, string | undefined>();
   const bundleWarnings: string[] = [];
   /**
    * Per-mod staging-capture problems, aggregated rather than one warning per
@@ -1499,6 +1506,7 @@ export async function runBuildPipeline(
     ),
   );
 
+    for (const m of mods) archiveHashesBeforeMeasuring.set(m.id, m.archiveSha256);
     const measured = await measureBundledMods({
       state,
       gameId,
@@ -1692,6 +1700,8 @@ export async function runBuildPipeline(
       const dropped = new Set(modsNoLongerBundled(configBefore, collectionConfig));
       if (dropped.size > 0) {
         measuredBundles = measuredBundles.filter((b) => !dropped.has(b.modId));
+        mods = restoreArchiveHashes(mods, dropped, archiveHashesBeforeMeasuring);
+        for (const modId of dropped) bundleFailures.delete(modId);
       }
 
       const newlyBundled = modsNewlyBundled(configBefore, collectionConfig);

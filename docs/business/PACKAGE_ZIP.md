@@ -142,8 +142,14 @@ before throwing — same fail-fast philosophy as `buildManifest`.
 6. Write optional `README.md` / `CHANGELOG.md`. Content gets a trailing newline
    if the source didn't have one — purely so unzipping the package doesn't
    produce surprise "no newline at end of file" diff noise.
-7. Stage mirrored files at `mirror/<sha256>`, deduplicated, each re-hashed first:
-   a file changed since the build recorded it is fatal, naming the mod.
+7. **Check free space** (`requireFreeSpace`, `utils/diskSpace.ts`): the temp
+   drive must hold copies of the files that live on another drive (those cannot
+   be hardlinked), and the output drive the new package at its largest — every
+   file at its own size plus deflate framing, and each entry's headers. A short
+   drive is fatal, naming the drive, what needs the room and both numbers; a
+   drive whose free space cannot be read is not checked. Then stage mirrored
+   files at `mirror/<sha256>`, deduplicated, each re-hashed first: a file
+   changed since the build recorded it is fatal, naming the mod.
 8. Stage each bundle's files at `bundled/<sha256>/<path>`:
    - **Try `fs.link(src, dst)` first.** Hardlink is free and instant on the
      same volume. A symbolic link is resolved to the file it names first: a
@@ -156,6 +162,11 @@ before throwing — same fail-fast philosophy as `buildManifest`.
      decisions gate, which can stay open as long as the curator likes; a file
      edited in that window is fatal, naming the mod — with "Re-read every
      file" as the way past it when nothing really changed.
+   - Each staged file is read once for both its CRC-32 and its SHA-256, and a
+     SHA-256 that differs from the one the manifest records for that path is
+     fatal, naming the file. Those hashes come from a cache keyed on path,
+     size and modification time, so a file rewritten with all three intact
+     would otherwise ship under its old hash and fail every user's check.
 9. Delete any `<outputPath>.partial` a crashed build left. 7z's `add` is
    *additive* — it would append to a pre-existing archive, not replace it.
    Ensure `outputPath`'s parent directory exists. A package already at
@@ -184,6 +195,10 @@ before throwing — same fail-fast philosophy as `buildManifest`.
 - **Validation errors** ⇒ `PackageEhcollError` with the full list.
 - **An archive inside, a changed mirrored file, or a bundle whose staged files
   no longer make its identity** ⇒ `PackageEhcollError` naming the mod.
+- **Not enough free space** on the temp or output drive ⇒ `PackageEhcollError`
+  before anything is staged, naming the drive and the numbers.
+- **A bundled file whose SHA-256 differs from the manifest's** ⇒
+  `PackageEhcollError` naming the mod and the file.
 - **I/O errors during staging or 7z invocation** ⇒ wrapped in
   `PackageEhcollError`.
 - In every failure the staging directory **and `<outputPath>.partial`** are

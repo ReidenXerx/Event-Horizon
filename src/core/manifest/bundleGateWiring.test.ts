@@ -90,6 +90,15 @@ describe("bundle resolution has one home", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("gives a mod taken off bundling mid-build its own archive hash back", () => {
+    // Dropping its bundle alone left the mod carrying the bundle's hash as the
+    // archive to download, which no Nexus file has — see restoreArchiveHashes.
+    const offenders = sources
+      .filter(({ text }) => !/modsNoLongerBundled\([\s\S]{0,600}restoreArchiveHashes\(/.test(text))
+      .map(({ file }) => `${file}: drops a bundle without restoring the mod's archive hash`);
+    expect(offenders).toEqual([]);
+  });
+
   it("routes the Nexus decision through mayBundle, in that one place", () => {
     // The rule itself, asserted where it now lives rather than in two regexes.
     const shared = readFileSync(SHARED, "utf8");

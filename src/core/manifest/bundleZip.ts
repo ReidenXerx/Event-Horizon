@@ -186,6 +186,23 @@ function assertBundlePaths(sorted: readonly BundleFile[]): void {
 }
 
 /**
+ * The most bytes the bundle's zip can take: every header at its largest, as if
+ * every size and offset needed ZIP64. For a free-space check before writing,
+ * where a few bytes over costs nothing and one byte under fails the write.
+ */
+export function bundleZipBytesAtMost(files: readonly Pick<BundleFile, "path" | "size">[]): number {
+  // The ZIP64 end record, its locator, and the end record.
+  let bytes = 56 + 20 + 22;
+  for (const file of files) {
+    const name = Buffer.byteLength(file.path, "utf8");
+    // Local header with a two-size ZIP64 extra, the bytes, then the central
+    // record with a ZIP64 extra carrying two sizes and an offset.
+    bytes += 30 + name + 20 + file.size + 46 + name + 28;
+  }
+  return bytes;
+}
+
+/**
  * Write the bundle's zip into `sink` — or, with no sink, only hash it.
  *
  * Throws when a file's bytes do not match the size and CRC it was listed with:

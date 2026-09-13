@@ -16,6 +16,9 @@
  */
 
 import * as fs from "fs/promises";
+import * as nodePath from "path";
+
+import { AbortError } from "./abortError";
 
 /**
  * Returns free bytes available to the current user on the volume that
@@ -92,4 +95,132 @@ export function formatBytes(n: number): string {
     u++;
   }
   return `${v < 10 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : Math.round(v)} ${units[u]}`;
+}
+
+/** Free bytes on the drive holding a directory; `undefined` when that cannot be known. */
+export type FreeBytesProbe = (dir: string) => Promise<number | undefined>;
+
+/** One write that needs room: where it goes, how much it takes, and what it is, for the refusal. */
+export type DiskNeed = { dir: string; bytes: number; what: string };
+
+export type DiskShortfall = { dir: string; neededBytes: number; freeBytes: number; what: string[] };
+
+/**
+ * A write refused before it started, because the drive it goes to lacks the
+ * room. It carries `code: "ENOSPC"`, the code the same failure has when a disk
+ * fills partway through, so whatever handles one handles both.
+ */
+export class DiskSpaceError extends Error {
+  readonly code = "ENOSPC";
+  readonly shortfalls: readonly DiskShortfall[];
+  constructor(shortfalls: readonly DiskShortfall[]) {
+    super(shortfalls.map(describeShortfall).join("\n"));
+    this.name = "DiskSpaceError";
+    this.shortfalls = shortfalls;
+  }
+}
+
+function describeShortfall(s: DiskShortfall): string {
+  return (
+    `Not enough free space on the drive holding "${s.dir}": ${s.what.join(" and ")} ` +
+    `${s.what.length === 1 ? "needs" : "need"} about ${formatBytes(s.neededBytes)}, and ` +
+    `${formatBytes(s.freeBytes)} is free. Free up at least ` +
+    `${formatBytes(s.neededBytes - s.freeBytes)} there, then try again.`
+  );
+}
+
+/** The drive a directory is on, as a key two directories can be compared by. */
+async function driveOf(dir: string): Promise<string> {
+  const existing = await findExistingAncestor(dir);
+  if (existing !== undefined) {
+    try {
+      return `dev:${(await fs.stat(existing)).dev}`;
+    } catch {
+      // The path's root below is the next best answer.
+    }
+  }
+  return `root:${nodePath.parse(nodePath.resolve(dir)).root.toLowerCase()}`;
+}
+
+/**
+ * Refuse a set of writes, before any of them starts, when a drive cannot take
+ * what is headed for it. Needs on one drive add up. A drive whose free space
+ * cannot be read is let through: a probe that fails must never block anyone.
+ */
+export async function requireFreeSpace(
+  needs: readonly DiskNeed[],
+  probe: FreeBytesProbe = getFreeBytes,
+): Promise<void> {
+  const byDrive = new Map<string, { dir: string; bytes: number; what: string[] }>();
+  for (const need of needs) {
+    if (need.bytes <= 0) continue;
+    const drive = await driveOf(need.dir);
+    const entry = byDrive.get(drive) ?? { dir: need.dir, bytes: 0, what: [] };
+    entry.bytes += need.bytes;
+    entry.what.push(`${need.what} (${formatBytes(need.bytes)})`);
+    byDrive.set(drive, entry);
+  }
+  const short: DiskShortfall[] = [];
+  for (const entry of byDrive.values()) {
+    const free = await probe(entry.dir);
+    if (free === undefined || free >= entry.bytes) continue;
+    short.push({ dir: entry.dir, neededBytes: entry.bytes, freeBytes: free, what: entry.what });
+  }
+  if (short.length > 0) throw new DiskSpaceError(short);
+}
+
+/** Room claimed on a drive, held for as long as its write runs. */
+export type DiskClaim = { release: () => void };
+
+const claimsByDrive = new Map<string, Set<{ bytes: number }>>();
+let wakeOnRelease: Array<() => void> = [];
+
+/**
+ * Claim room for a write that can run alongside others on the same drive.
+ *
+ * A write that fits after counting the claims already held starts at once. One
+ * that does not waits for those writes to finish and looks again. One that
+ * does not fit with nothing else running is refused. A held claim is counted
+ * whole even while its bytes are landing, so a tight drive runs its writes one
+ * at a time rather than refusing one that would have fit on its own.
+ */
+export async function claimFreeSpace(
+  need: DiskNeed,
+  options: { probe?: FreeBytesProbe; signal?: AbortSignal } = {},
+): Promise<DiskClaim> {
+  const probe = options.probe ?? getFreeBytes;
+  const drive = await driveOf(need.dir);
+  for (;;) {
+    if (options.signal?.aborted === true) throw new AbortError("Cancelled");
+    const held = claimsByDrive.get(drive) ?? new Set<{ bytes: number }>();
+    const heldBytes = [...held].reduce((n, c) => n + c.bytes, 0);
+    const free = await probe(need.dir);
+    if (free === undefined || free - heldBytes >= need.bytes) {
+      const claim = { bytes: need.bytes };
+      held.add(claim);
+      claimsByDrive.set(drive, held);
+      let released = false;
+      return {
+        release: (): void => {
+          if (released) return;
+          released = true;
+          held.delete(claim);
+          const waiting = wakeOnRelease;
+          wakeOnRelease = [];
+          for (const wake of waiting) wake();
+        },
+      };
+    }
+    if (heldBytes === 0) {
+      throw new DiskSpaceError([
+        {
+          dir: need.dir,
+          neededBytes: need.bytes,
+          freeBytes: free,
+          what: [`${need.what} (${formatBytes(need.bytes)})`],
+        },
+      ]);
+    }
+    await new Promise<void>((wake) => wakeOnRelease.push(wake));
+  }
 }

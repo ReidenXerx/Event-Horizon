@@ -29,6 +29,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import * as crypto from "crypto";
 import * as fsp from "fs/promises";
 import * as fs from "fs";
 import * as path from "path";
@@ -975,6 +976,34 @@ export async function crc32File(
       resolve((((c ^ 0xffffffff) >>> 0) >>> 0).toString(16).padStart(8, "0"));
     });
   });
+}
+
+/**
+ * A file's CRC-32 and SHA-256 from one read: the CRC its zip entry records and
+ * the hash a manifest records, for a check that needs both of the same bytes.
+ */
+export async function crc32AndSha256File(
+  filePath: string,
+  signal?: AbortSignal,
+): Promise<{ crc32: number; sha256: string }> {
+  if (signal?.aborted === true) throw new AbortError("Cancelled");
+  const stream = fs.createReadStream(filePath);
+  const onAbort = (): void => {
+    stream.destroy(new AbortError("Cancelled"));
+  };
+  signal?.addEventListener("abort", onAbort);
+  const hash = crypto.createHash("sha256");
+  let crc = 0;
+  try {
+    for await (const chunk of stream) {
+      const buf = typeof chunk === "string" ? Buffer.from(chunk) : (chunk as Buffer);
+      crc = crc32Update(crc, buf);
+      hash.update(buf);
+    }
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+  }
+  return { crc32: crc >>> 0, sha256: hash.digest("hex") };
 }
 
 /**

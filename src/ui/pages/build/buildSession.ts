@@ -72,6 +72,7 @@
  */
 
 import { isAbort } from "../../../utils/abortError";
+import { throttleProgress } from "./progressThrottle";
 import type { types } from "@nexusmods/vortex-api";
 
 import { AbortError } from "../../../core/archiveHashing";
@@ -635,17 +636,19 @@ class BuildSession {
 
     void (async (): Promise<void> => {
       try {
+        // At most one progress update per tick reaches the screen — see progressThrottle.
+        const loadingProgress = throttleProgress((progress: BuildProgress) => {
+          // Drop late progress events from a controller that's
+          // already been replaced (e.g. user cancelled and clicked
+          // Begin again before the previous run ack'd the abort).
+          if (this.controller !== controller) return;
+          if (this.state.kind !== "loading") return;
+          this.setState({ kind: "loading", phase: progress });
+        });
         const ctx = await loadBuildContext(api, {
           signal: controller.signal,
-          onProgress: (progress) => {
-            // Drop late progress events from a controller that's
-            // already been replaced (e.g. user cancelled and clicked
-            // Begin again before the previous run ack'd the abort).
-            if (this.controller !== controller) return;
-            if (this.state.kind !== "loading") return;
-            this.setState({ kind: "loading", phase: progress });
-          },
-        });
+          onProgress: loadingProgress.push,
+        }).finally(loadingProgress.cancel);
         if (this.controller !== controller) return;
 
         // Defaults derived from the freshly-read Vortex state +
@@ -1217,6 +1220,20 @@ class BuildSession {
       curator: input.curator,
       progress: { phase: "writing-config" },
     });
+    // At most one progress update per tick reaches the screen — see progressThrottle.
+    const buildProgress = throttleProgress((progress: BuildProgress) => {
+      if (this.controller !== controller) return;
+      // While paused, progress from a background step must not
+      // silently return the UI to "building" and swallow the
+      // question the curator is looking at.
+      if (this.state.kind !== "building") return;
+      this.setState({
+        kind: "building",
+        ctx: input.ctx,
+        curator: input.curator,
+        progress,
+      });
+    });
 
     void (async (): Promise<void> => {
       try {
@@ -1233,19 +1250,7 @@ class BuildSession {
           },
           {
             signal: controller.signal,
-            onProgress: (progress) => {
-              if (this.controller !== controller) return;
-              // While paused, progress from a background step must not
-              // silently return the UI to "building" and swallow the
-              // question the curator is looking at.
-              if (this.state.kind !== "building") return;
-              this.setState({
-                kind: "building",
-                ctx: input.ctx,
-                curator: input.curator,
-                progress,
-              });
-            },
+            onProgress: buildProgress.push,
             onDecisions: async (candidates): Promise<void> => {
               if (this.controller !== controller) return;
               const progress =
@@ -1264,7 +1269,7 @@ class BuildSession {
               });
             },
           },
-        );
+        ).finally(buildProgress.cancel);
         if (this.controller !== controller) {
           // A newer build superseded this one. The package it produced is real
           // and on disk, but this session will never show it — so say so,

@@ -50,7 +50,7 @@ import { getModArchivePath } from "../archiveHashing";
 import { selectors, util } from "@nexusmods/vortex-api";
 import type { types } from "@nexusmods/vortex-api";
 
-import { adoptLocalArchive } from "./adoptLocalArchive";
+import { adoptLocalArchive, downloadFolder } from "./adoptLocalArchive";
 
 import {
   installOptions,
@@ -60,10 +60,13 @@ import {
 import { shaOfBundleFolder } from "../manifest/bundleLayout";
 import {
   bundleFilesFromPackage,
+  bundleZipBytesAtMost,
   writeBundleZipToFile,
   type BundleZipResult,
 } from "../manifest/bundleZip";
 import { openZipReader } from "../manifest/readZip";
+import { installRootFor } from "../stagingPath";
+import { claimFreeSpace, requireFreeSpace } from "../../utils/diskSpace";
 import { looksLikeWine } from "../proton";
 import { stallBudgetMs, type StallPhase } from "./timeBudgets";
 import { classifyAttempt, backoffMs } from "./downloadFailureShape";
@@ -774,6 +777,22 @@ export async function installFromBundledArchive(
       throw makeAbortErrorLocal("install from bundled archive");
     }
 
+    // Vortex copies the archive into its download folder and unpacks it into
+    // staging. Checked here, where a short drive can be refused by name, rather
+    // than failing inside Vortex. The archive stores its files uncompressed, so
+    // its size stands in for what unpacking takes too.
+    const archiveBytes = (await fsp.stat(extractedPath)).size;
+    const downloads = downloadFolder(api, args.gameId);
+    const staging = installRootFor(api.getState(), args.gameId);
+    await requireFreeSpace([
+      ...(downloads !== undefined
+        ? [{ dir: downloads, bytes: archiveBytes, what: "Vortex's copy of the archive in its download folder" }]
+        : []),
+      ...(staging !== undefined
+        ? [{ dir: staging, bytes: archiveBytes, what: "the installed mod in Vortex's staging folder" }]
+        : []),
+    ]);
+
     if (args.choices !== undefined) {
       // Same route as a hand-picked archive: register the extracted bundle as
       // a download so it can be installed through the call that carries the
@@ -1481,11 +1500,26 @@ export async function writeBundledArchive(
             `incomplete — download it again.`,
         );
       }
-      written = await writeBundleZipToFile(
-        files,
-        extractedPath,
+      // Room on the temp drive first, counted against every other bundled mod
+      // being written there right now: a refusal that names the drive and the
+      // numbers, instead of a disk that fills partway through the zip.
+      const claim = await claimFreeSpace(
+        {
+          dir: tempDir,
+          bytes: bundleZipBytesAtMost(files),
+          what: `the archive for "${preferredName ?? sha256}"`,
+        },
         signal !== undefined ? { signal } : {},
       );
+      try {
+        written = await writeBundleZipToFile(
+          files,
+          extractedPath,
+          signal !== undefined ? { signal } : {},
+        );
+      } finally {
+        claim.release();
+      }
     } finally {
       await reader.close();
     }

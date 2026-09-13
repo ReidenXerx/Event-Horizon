@@ -150,6 +150,39 @@ export type MeasureOptions = {
 const DEFAULT_WARN_BYTES = 2 * 1024 * 1024 * 1024;
 
 /**
+ * ─── A MOD TAKEN OFF BUNDLING GETS ITS OWN ARCHIVE HASH BACK ───────────
+ * Measuring gives every bundled mod its bundle's hash as `archiveSha256`:
+ * identity follows the bytes that ship. When the decisions step then took a
+ * mod off bundling, the build dropped its bundle and nothing else, so the mod
+ * went into the package still carrying the bundle's hash as the archive to
+ * download — a hash no Nexus file has, so no user's install could find it.
+ *
+ * `before` holds each mod's `archiveSha256` from before measuring; a mod that
+ * had none gets none back, and a mod it holds nothing for is left alone.
+ */
+export function restoreArchiveHashes(
+  mods: readonly AuditorMod[],
+  unbundled: ReadonlySet<string>,
+  before: ReadonlyMap<string, string | undefined>,
+): AuditorMod[] {
+  const restored: string[] = [];
+  const out = mods.map((mod) => {
+    if (!unbundled.has(mod.id) || !before.has(mod.id)) return mod;
+    const original = before.get(mod.id);
+    if (mod.archiveSha256 === original) return mod;
+    restored.push(mod.id);
+    const next: AuditorMod = { ...mod };
+    if (original === undefined) delete next.archiveSha256;
+    else next.archiveSha256 = original;
+    return next;
+  });
+  if (restored.length > 0) {
+    ehLog("info", "bundle.measure.hash-restored", { modIds: restored });
+  }
+  return out;
+}
+
+/**
  * Measure every external mod the curator flagged as bundled — the canonical
  * zip its staging folder makes — and re-key the mod to that zip's hash.
  *

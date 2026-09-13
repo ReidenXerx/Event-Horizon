@@ -67,6 +67,15 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
   finished and checked.
 - **A mod answered "mirror" and later ticked "Bundled" builds.** The build stopped, saying that mod's files were not
   collected; the later answer now stands.
+- **Running out of disk space is caught before anything is written.** A build checks there is room for the new package
+  and for any files it must copy from another drive; installing a bundled mod checks the temp drive, Vortex's download
+  folder and its staging folder. Each refusal names the drive, what needs the room, and how much to free.
+- **A bundled file whose saved hash is out of date stops the build.** File hashes come from a cache that trusts a file
+  whose size and modified time have not changed. Packaging now hashes every bundled file again and names any that no
+  longer match, instead of shipping a mod every user's check would fail. Tick "Re-read every file" and rebuild.
+- **A mod taken off bundling in the decisions step ships under its own archive hash.** It kept its bundle's hash, which
+  no Nexus download has, so no user could install it.
+- **Long builds update the screen at most ten times a second**, instead of once for every file they check.
 
 ### Linux (Wine/Proton)
 - **Vortex in one Wine prefix and the game in another is caught, with how to fix it.** Vortex writes plugins.txt and the

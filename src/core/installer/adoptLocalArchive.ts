@@ -279,7 +279,7 @@ async function holdsSameBytes(
  */
 export { isInside } from "../paths";
 
-function downloadFolder(
+export function downloadFolder(
   api: types.IExtensionApi,
   gameId: string,
 ): string | undefined {

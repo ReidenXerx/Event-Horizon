@@ -20,6 +20,7 @@ import { bundleEntryOf, bundleFolderInPackage, shaOfBundleFolder } from "./bundl
 import {
   bundleFilesFromListing,
   bundleFilesFromPackage,
+  bundleZipBytesAtMost,
   listBundleFolder,
   writeBundleZip,
   writeBundleZipToFile,
@@ -339,5 +340,13 @@ describe("writeBundleZipToFile", () => {
       /cancelled/i,
     );
     expect(fs.existsSync(out)).toBe(false);
+  });
+
+  it("never takes more bytes than a free-space check was told it could", async () => {
+    // Against the largest shape too, where every size and offset is carried as ZIP64.
+    for (const zip64From of [undefined, 32]) {
+      const written = await writeBundleZip(MOD, undefined, zip64From === undefined ? {} : { zip64From });
+      expect(written.bytes).toBeLessThanOrEqual(bundleZipBytesAtMost(MOD));
+    }
   });
 });
