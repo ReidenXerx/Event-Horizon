@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-resolver
-description: "Skill for the Resolver area of Event-Horizon. 161 symbols across 58 files."
+description: "Skill for the Resolver area of Event-Horizon. 158 symbols across 57 files."
 ---
 
 # Resolver
 
-161 symbols | 58 files | Cohesion: 66%
+158 symbols | 57 files | Cohesion: 66%
 
 ## When to Use
 
@@ -57,26 +57,26 @@ Start here when exploring this area:
 | `lightFlagTargets` | Function | `src/core/curator/pluginView.ts` | 38 |
 | `key` | Function | `src/core/curator/pluginView.ts` | 41 |
 | `profileDriftSince` | Function | `src/core/curator/profileDrift.ts` | 51 |
-| `logBundleDirs` | Function | `src/core/diagnostics/logBundle.ts` | 45 |
 | `profileId` | Function | `src/core/environment/snapshot.ts` | 203 |
 | `stagingRoot` | Function | `src/core/environment/snapshot.ts` | 326 |
 | `exportModsToJsonFile` | Function | `src/core/exportMods.ts` | 8 |
 | `getActiveGameId` | Function | `src/core/getModsListForProfile.ts` | 277 |
+| `getActiveProfileId` | Function | `src/core/getModsListForProfile.ts` | 282 |
 
 ## Execution Flows
 
 | Flow | Type | Steps |
 |------|------|-------|
 | `LaunchGame → GetVortexUserDataPath` | cross_community | 10 |
-| `RunInstallImpl → GetEventHorizonRoot` | cross_community | 10 |
-| `PublishedDetailsPanel → GetEventHorizonDir` | cross_community | 10 |
 | `RunSelfChecks → GetVortexUserDataPath` | cross_community | 10 |
 | `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
-| `InstallDownloads → GetEventHorizonDir` | cross_community | 10 |
 | `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
-| `LoadPublishedDetails → GetEventHorizonRoot` | cross_community | 10 |
-| `Act → GetEventHorizonDir` | cross_community | 10 |
 | `PublishedDetailsPanel → GetVortexUserDataPath` | cross_community | 10 |
+| `RunLoadingPipeline → GetEventHorizonRoot` | cross_community | 10 |
+| `BuildPage → GetVortexUserDataPath` | cross_community | 10 |
+| `BuildWizard → GetVortexUserDataPath` | cross_community | 10 |
+| `OnRecovered → GetVortexUserDataPath` | cross_community | 10 |
+| `UseCuratorActions → GetVortexUserDataPath` | cross_community | 10 |
 
 ## How to Explore
 

@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-environment
-description: "Skill for the Environment area of Event-Horizon. 116 symbols across 19 files."
+description: "Skill for the Environment area of Event-Horizon. 109 symbols across 17 files."
 ---
 
 # Environment
 
-116 symbols | 19 files | Cohesion: 78%
+109 symbols | 17 files | Cohesion: 79%
 
 ## When to Use
 
@@ -21,12 +21,12 @@ description: "Skill for the Environment area of Event-Horizon. 116 symbols acros
 | `src/core/environment/gameFolderScan.ts` | groupEntries, loadVanillaList, readGogHashdbRecord, idOf, readGogRecord (+10) |
 | `src/core/environment/quarantine.ts` | countOnDisk, dismissQuarantine, exists, isSafeRelative, listQuarantines (+7) |
 | `src/core/environment/peImage.ts` | missingImports, parsePeImage, Malformed, parse, cstring (+4) |
-| `src/core/environment/snapshot.ts` | hashOnce, shouldHash, checkAbort, writeFiles, readText (+4) |
+| `src/core/environment/snapshot.ts` | readText, safe, writeEnvironmentSnapshot, close, field (+4) |
 | `src/core/environment/storeFileLists.ts` | Truncated, fields, varint, parseDepotManifest, parseGogFileList (+3) |
 | `src/core/environment/launchGame.ts` | chooseLaunchTarget, isCancellation, isFile, launchGame, onSpawned (+3) |
-| `src/core/environment/vortexEnvironment.ts` | collectionIniKeys, gatherPreflightFacts, readDiscovery, str, extensionGame (+3) |
 | `src/core/environment/binaryImports.ts` | probeImportMismatches, load, rootDllOwnership, closure, refs (+1) |
-| `src/core/environment/preflight.ts` | isDirectory, isFile, logEnvironmentReport, runEnvironmentPreflight, declaredPrerequisitePaths |
+| `src/core/environment/vortexEnvironment.ts` | readDiscovery, str, extensionGame, gameDisplayName, gameExecutable (+1) |
+| `src/core/environment/fixtures.testutil.ts` | buildDepotManifest, lenField, section, varField, varint |
 
 ## Entry Points
 

@@ -1,30 +1,30 @@
 ---
 name: gitnexus-area-build
-description: "Skill for the Build area of Event-Horizon. 428 symbols across 94 files."
+description: "Skill for the Build area of Event-Horizon. 425 symbols across 95 files."
 ---
 
 # Build
 
-428 symbols | 94 files | Cohesion: 83%
+425 symbols | 95 files | Cohesion: 82%
 
 ## When to Use
 
 - Working with code in `src/`
-- Understanding how archivesFreedByRemoval, cleanupSubset, describeEvidence work
+- Understanding how describeEvidence, describeProfileDrift, isProfileUnmoved work
 - Modifying build-related functionality
 
 ## Key Files
 
 | File | Symbols |
 |------|---------|
-| `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildDiffCard, BuildWizard, BuildingPanel, DecisionsGate (+45) |
-| `src/ui/pages/build/buildSession.ts` | cancelLoading, cancelRecovering, getState, subscribe, queuePosition (+30) |
+| `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildDiffCard, BuildRulesScopeSummary, BuildWizard, BuildingPanel (+45) |
+| `src/ui/pages/build/buildSession.ts` | cancelLoading, cancelRecovering, getState, subscribe, buildProgress (+30) |
 | `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, DecisionsStep, DoneStep, ExternalDownloadGuide (+21) |
 | `src/ui/pages/build/BuildDashboard.tsx` | BuildDashboard, handleDismissBuilt, handleOpenBuilt, handleOpenDraft, DashboardHeader (+19) |
 | `src/ui/pages/build/buildSessionRegistry.ts` | BuildSessionRegistry, getBuildSessionRegistry, ensure, get, makeHooks (+13) |
 | `src/ui/pages/build/engine.ts` | findUnidentifiedMods, isExternal, isExternal, isExternal, describeMembershipChange (+13) |
 | `src/ui/pages/build/buildDiff.test.ts` | findPackages, findPackages, findPackages, findPackages, findPackages (+9) |
-| `src/core/draftStorage.ts` | getDraftsRoot, listDrafts, deleteDraft, getAppDataPath, getDraftPath (+6) |
+| `src/core/draftStorage.ts` | getDraftsRoot, listDrafts, deleteDraft, getDraftPath, isPlainObject (+6) |
 | `src/ui/pages/HomePage.tsx` | CuratorPanel, Dashboard, DashboardBody, ErrorPanel, FooterRow (+6) |
 | `src/core/build/nexusAvailability.ts` | categoryOf, checkNexusAvailability, classifyFile, currentMainFile, fileIdOf (+6) |
 
@@ -32,20 +32,17 @@ description: "Skill for the Build area of Event-Horizon. 428 symbols across 94 f
 
 Start here when exploring this area:
 
-- **`archivesFreedByRemoval`** (Function) — `src/core/curator/cleanupPlan.ts:509`
-- **`cleanupSubset`** (Function) — `src/core/curator/cleanupPlan.ts:521`
 - **`describeEvidence`** (Function) — `src/core/curator/cleanupPlan.ts:274`
-- **`formatSize`** (Function) — `src/core/curator/cleanupPlan.ts:475`
 - **`describeProfileDrift`** (Function) — `src/core/curator/profileDrift.ts:106`
+- **`isProfileUnmoved`** (Function) — `src/core/curator/profileDrift.ts:90`
+- **`doctorLightFlagBaseline`** (Function) — `src/core/doctor/health.ts:188`
+- **`overallHealth`** (Function) — `src/core/doctor/health.ts:861`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `archivesFreedByRemoval` | Function | `src/core/curator/cleanupPlan.ts` | 509 |
-| `cleanupSubset` | Function | `src/core/curator/cleanupPlan.ts` | 521 |
 | `describeEvidence` | Function | `src/core/curator/cleanupPlan.ts` | 274 |
-| `formatSize` | Function | `src/core/curator/cleanupPlan.ts` | 475 |
 | `describeProfileDrift` | Function | `src/core/curator/profileDrift.ts` | 106 |
 | `isProfileUnmoved` | Function | `src/core/curator/profileDrift.ts` | 90 |
 | `doctorLightFlagBaseline` | Function | `src/core/doctor/health.ts` | 188 |
@@ -62,6 +59,9 @@ Start here when exploring this area:
 | `formatBytes` | Function | `src/core/manifest/unexplainedFiles.ts` | 139 |
 | `listModDiffFiles` | Function | `src/core/modDiffStorage.ts` | 60 |
 | `readModDiffReport` | Function | `src/core/modDiffStorage.ts` | 95 |
+| `listPluginDiffFiles` | Function | `src/core/pluginDiffStorage.ts` | 60 |
+| `readPluginDiffReport` | Function | `src/core/pluginDiffStorage.ts` | 95 |
+| `Button` | Function | `src/ui/components/Button.tsx` | 38 |
 
 ## Execution Flows
 
@@ -80,7 +80,7 @@ Start here when exploring this area:
 
 ## How to Explore
 
-1. `context({name: "archivesFreedByRemoval"})` — see callers and callees
+1. `context({name: "describeEvidence"})` — see callers and callees
 2. `query({search_query: "build"})` — find related execution flows
 3. Read key files listed above for implementation details
 4. `explain({target: "<file or symbol>"})` — persisted taint findings (source→sink data flows), when indexed with `--pdg`

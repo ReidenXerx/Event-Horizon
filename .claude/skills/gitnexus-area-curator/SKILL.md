@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-curator
-description: "Skill for the Curator area of Event-Horizon. 372 symbols across 71 files."
+description: "Skill for the Curator area of Event-Horizon. 370 symbols across 69 files."
 ---
 
 # Curator
 
-372 symbols | 71 files | Cohesion: 74%
+370 symbols | 69 files | Cohesion: 75%
 
 ## When to Use
 
@@ -20,13 +20,13 @@ description: "Skill for the Curator area of Event-Horizon. 372 symbols across 71
 | `src/ui/pages/curator/useCuratorActions.ts` | num, useCuratorActions, askThree, disableWithDependants, enableWithProviders (+37) |
 | `src/core/curator/requirements.ts` | dependantClosure, dependantsOf, describeEnableQuestion, list, losesALine (+28) |
 | `src/ui/pages/curator/CuratorPage.tsx` | confirm, makeConfirmer, applied, dismissFor, pageKeyOf (+26) |
+| `src/ui/pages/curator/DiskCleanupView.tsx` | DiskCleanupView, freedByRetiring, run, num, render (+11) |
 | `src/core/curator/profileActions.ts` | findDuplicates, findEndorsable, findFrozen, findManualUpdates, findUpdatable (+7) |
 | `src/core/curator/requirementDismissals.ts` | applyDismissals, dependentPageKey, dismissRequirement, isDismissible, kindOf (+6) |
-| `src/ui/pages/curator/DiskCleanupView.tsx` | retireCandidates, orphanPlan, retirePlan, orphans, provenRetire (+6) |
+| `src/core/curator/cleanupPlan.ts` | archivesFreedByRemoval, cleanupSubset, formatSize, findSupersededMods, consider (+6) |
 | `src/ui/pages/curator/curatorSession.ts` | begin, cancel, dismiss, finish, progress (+5) |
 | `src/core/curator/updateOneMod.ts` | installedIdentityReader, asNum, updateOneAndWait, UpdateTimeout, arm (+5) |
 | `src/core/curator/installPlan.ts` | resolveInstallFiles, planRequirementClosure, absorb, noteTruncated, topologicalOrder (+4) |
-| `src/ui/pages/curator/workbench.ts` | buildRows, rowsForView, rowsForViews, viewCounts, outsideDataTypes (+4) |
 
 ## Entry Points
 
