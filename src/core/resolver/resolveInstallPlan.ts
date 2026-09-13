@@ -631,7 +631,7 @@ function resolveExternalMod(
     return {
       kind: "external-use-bundled",
       sha256: sha,
-      zipPath: bundleFolderInPackage(sha),
+      bundleFolder: bundleFolderInPackage(sha),
     };
   }
 
@@ -1148,7 +1148,7 @@ export function repairDecisionFor(mod: EhcollMod): ModDecision | undefined {
     return {
       kind: "external-use-bundled",
       sha256: src.sha256,
-      zipPath: bundleFolderInPackage(src.sha256),
+      bundleFolder: bundleFolderInPackage(src.sha256),
     };
   }
 

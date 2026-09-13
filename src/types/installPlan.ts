@@ -760,7 +760,7 @@ export type ExternalUseBundledDecision = {
   kind: "external-use-bundled";
   sha256: string;
   /** The bundled mod's folder inside the .ehcoll, `bundled/<sha256>/`; the install writes the archive from its files. */
-  zipPath: string;
+  bundleFolder: string;
 };
 
 /**

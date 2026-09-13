@@ -13,7 +13,7 @@ import { __testPaths } from "../../../test/stubs/vortex-api";
 import {
   describeExternalDrift,
   detectExternalDrift,
-  repackBundledExternals,
+  measureBundledMods,
   type ExternalDrift,
 } from "./bundleFromStaging";
 import { fakeSevenZip } from "./testing/fakeSevenZip";
@@ -264,7 +264,7 @@ describe("describeExternalDrift", () => {
   });
 });
 
-describe("repackBundledExternals", () => {
+describe("measureBundledMods", () => {
   const workDir = (): string => path.join(staging, ".repack");
 
   it("WARNS about a large bundle without refusing to pack it", async () => {
@@ -275,7 +275,7 @@ describe("repackBundledExternals", () => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "big.bin"), Buffer.alloc(4096));
 
-    const out = await repackBundledExternals({
+    const out = await measureBundledMods({
       state: {} as never,
       gameId: "fallout4",
       mods: [mod({ id: "huge", name: "Huge", installationPath: "huge" })],
@@ -295,7 +295,7 @@ describe("repackBundledExternals", () => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "a.txt"), "x");
 
-    const out = await repackBundledExternals({
+    const out = await measureBundledMods({
       state: {} as never,
       gameId: "fallout4",
       mods: [mod({ id: "small", name: "Small", installationPath: "small" })],
@@ -309,7 +309,7 @@ describe("repackBundledExternals", () => {
   });
 
   it("ignores mods the curator did not flag", async () => {
-    const out = await repackBundledExternals({
+    const out = await measureBundledMods({
       state: {} as never,
       gameId: "fallout4",
       mods: [mod({ id: "plain", installationPath: "plain" })],
@@ -325,7 +325,7 @@ describe("repackBundledExternals", () => {
   it("refuses a mod Vortex records no staging folder for, by id and with the reason", async () => {
     // A warning alone was the hole: the mod shipped nothing, nobody downstream
     // knew it by id, and the build carried on as if it had been packed.
-    const out = await repackBundledExternals({
+    const out = await measureBundledMods({
       state: {} as never,
       gameId: "fallout4",
       mods: [mod({ id: "nopath", name: "No Path" })],
@@ -341,7 +341,7 @@ describe("repackBundledExternals", () => {
 
   it("refuses a mod whose staging folder holds nothing to ship", async () => {
     fs.mkdirSync(path.join(staging, "hollow"), { recursive: true });
-    const out = await repackBundledExternals({
+    const out = await measureBundledMods({
       state: {} as never,
       gameId: "fallout4",
       mods: [mod({ id: "hollow", name: "Hollow", installationPath: "hollow" })],

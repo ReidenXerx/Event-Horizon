@@ -10,8 +10,8 @@
  * archive out of the .ehcoll ZIP.
  *
  * This pool runs up to `concurrency` extractions in the background
- * via {@link extractBundledFromEhcoll}. The driver consumes them
- * via `take(zipEntry)` which:
+ * via {@link writeBundledArchive}. The driver consumes them
+ * via `take(bundleFolder)` which:
  *
  *  - Returns the pre-extracted result immediately when available.
  *  - Awaits the in-flight extraction when one is mid-flight.
@@ -33,7 +33,7 @@
  *
  * ### Failure semantics
  *
- * Extraction errors are LATCHED: when the user takes a zipEntry
+ * Extraction errors are LATCHED: when the user takes a bundleFolder
  * whose background extraction failed, the failure is re-thrown.
  * We don't retry transparently because the caller's recovery path
  * (uninstall + reinstall in the verifying-mods phase) handles
@@ -55,12 +55,12 @@
 import { AbortError, isAbort } from "../../utils/abortError";
 import { ehLog } from "../logging/ehLog";
 // No 7z import. Extraction from a .ehcoll is a ZIP read of our own format and
-// is done natively — see extractBundledFromEhcoll. This pool used to call
+// is done natively — see writeBundledArchive. This pool used to call
 // resolveSevenZip() in its CONSTRUCTOR, which throws when util.SevenZip is
 // unavailable, so building the pool failed on a Proton prefix before a single
 // byte had been read.
 import {
-  extractBundledFromEhcoll,
+  writeBundledArchive,
   safeRmTempDir,
 } from "./modInstall";
 
@@ -82,7 +82,7 @@ export type BundledPrefetchPoolOptions = {
    * driver to surface "prefetched in 3.2s" diagnostics — purely
    * informational, never affects behavior. Fires on success only.
    */
-  onExtracted?: (zipEntry: string, ms: number) => void;
+  onExtracted?: (bundleFolder: string, ms: number) => void;
 };
 
 /**
@@ -96,38 +96,38 @@ export type BundledPrefetchPoolOptions = {
  * mod is reinstalled on every resume — see {@link bundledArchiveFileName}.
  */
 export type PrefetchRequest = {
-  zipEntry: string;
+  bundleFolder: string;
   preferredName?: string;
 };
 
 type Slot =
-  | { state: "queued"; zipEntry: string }
+  | { state: "queued"; bundleFolder: string }
   | {
       state: "extracting";
-      zipEntry: string;
+      bundleFolder: string;
       promise: Promise<PrefetchedBundle>;
     }
   | {
       state: "ready";
-      zipEntry: string;
+      bundleFolder: string;
       result: PrefetchedBundle;
       taken: boolean;
     }
-  | { state: "failed"; zipEntry: string; error: Error };
+  | { state: "failed"; bundleFolder: string; error: Error };
 
 export class BundledPrefetchPool {
   private readonly ehcollZipPath: string;
   private readonly concurrency: number;
   private readonly signal: AbortSignal | undefined;
-  private readonly onExtracted: ((zipEntry: string, ms: number) => void) | undefined;
+  private readonly onExtracted: ((bundleFolder: string, ms: number) => void) | undefined;
 
   /**
-   * Map from zipEntry → its current pool slot. We key by zipEntry
+   * Map from bundleFolder → its current pool slot. We key by bundleFolder
    * because that's the canonical id Vortex's bundledArchives carry
    * (sha256-keyed at the manifest level, but path-keyed at the .ehcoll
-   * cherry-pick level — see {@link extractBundledFromEhcoll}).
+   * cherry-pick level — see {@link writeBundledArchive}).
    *
-   * Multiple manifest mods CAN reference the same zipEntry (rare but
+   * Multiple manifest mods CAN reference the same bundleFolder (rare but
    * legal — the curator deduped by hash). We share a single
    * extraction in that case; the second `take()` walks the readiness
    * waiter chain like the first.
@@ -135,7 +135,7 @@ export class BundledPrefetchPool {
   private readonly slots = new Map<string, Slot>();
 
   /**
-   * zipEntry → the curator's mod name for it.
+   * bundleFolder → the curator's mod name for it.
    *
    * Separate from {@link slots} because a slot is CONSUMED by `take` while the
    * name must outlive it: a retry after a failed verification takes the same
@@ -177,17 +177,17 @@ export class BundledPrefetchPool {
   prime(entries: readonly PrefetchRequest[]): void {
     if (this.disposed) return;
     let added = 0;
-    for (const { zipEntry, preferredName } of entries) {
+    for (const { bundleFolder, preferredName } of entries) {
       // Recorded even for an entry we have already queued: two manifest mods
       // can share one bundled archive, and the first name that arrives is the
       // one both installs will carry. Not worth resolving — they are the same
       // bytes — but worth not overwriting mid-flight.
-      if (preferredName !== undefined && !this.names.has(zipEntry)) {
-        this.names.set(zipEntry, preferredName);
+      if (preferredName !== undefined && !this.names.has(bundleFolder)) {
+        this.names.set(bundleFolder, preferredName);
       }
-      if (this.slots.has(zipEntry)) continue;
-      this.slots.set(zipEntry, { state: "queued", zipEntry });
-      this.queue.push(zipEntry);
+      if (this.slots.has(bundleFolder)) continue;
+      this.slots.set(bundleFolder, { state: "queued", bundleFolder });
+      this.queue.push(bundleFolder);
       added++;
     }
     ehLog("info", "bundled-prefetch.primed", {
@@ -201,7 +201,7 @@ export class BundledPrefetchPool {
   }
 
   /**
-   * Get the extraction result for `zipEntry`. Returns immediately
+   * Get the extraction result for `bundleFolder`. Returns immediately
    * when the slot is `ready`. Awaits the in-flight extraction when
    * `extracting`. Re-throws the latched error when `failed`. Falls
    * back to a fresh inline extraction when the entry was never
@@ -213,7 +213,7 @@ export class BundledPrefetchPool {
    * double-cleanup at `dispose()` time.
    */
   async take(
-    zipEntry: string,
+    bundleFolder: string,
     /**
      * The curator's mod name, for the cold path. A primed entry already
      * carries one from {@link prime}; this only matters when the driver takes
@@ -226,21 +226,21 @@ export class BundledPrefetchPool {
       throw new AbortError();
     }
 
-    const slot = this.slots.get(zipEntry);
+    const slot = this.slots.get(bundleFolder);
     if (slot === undefined) {
       // Never primed — extract inline. This is the cold path; the
       // driver's prime() call should usually have caught it.
-      ehLog("warn", "bundled-prefetch.take.cold", { zipEntry });
-      if (preferredName !== undefined && !this.names.has(zipEntry)) {
-        this.names.set(zipEntry, preferredName);
+      ehLog("warn", "bundled-prefetch.take.cold", { bundleFolder });
+      if (preferredName !== undefined && !this.names.has(bundleFolder)) {
+        this.names.set(bundleFolder, preferredName);
       }
-      return await this.runExtraction(zipEntry, /* tracked */ false);
+      return await this.runExtraction(bundleFolder, /* tracked */ false);
     }
 
     if (slot.state === "ready") {
-      this.slots.delete(zipEntry);
+      this.slots.delete(bundleFolder);
       const taken = slot.result;
-      ehLog("debug", "bundled-prefetch.take.hit", { zipEntry });
+      ehLog("debug", "bundled-prefetch.take.hit", { bundleFolder });
       // Now that this slot is consumed, see if we can start the
       // next queued extraction (we were holding back at concurrency).
       this.pump();
@@ -248,19 +248,19 @@ export class BundledPrefetchPool {
     }
 
     if (slot.state === "extracting") {
-      ehLog("debug", "bundled-prefetch.take.await", { zipEntry });
+      ehLog("debug", "bundled-prefetch.take.await", { bundleFolder });
       try {
         const result = await slot.promise;
         // Fall through: re-read the slot (it may have transitioned
         // to "ready" or "failed" by the time we get here).
-        const after = this.slots.get(zipEntry);
+        const after = this.slots.get(bundleFolder);
         if (after?.state === "ready") {
-          this.slots.delete(zipEntry);
+          this.slots.delete(bundleFolder);
           this.pump();
           return after.result;
         }
         if (after?.state === "failed") {
-          this.slots.delete(zipEntry);
+          this.slots.delete(bundleFolder);
           throw after.error;
         }
         // Defensive: returned from extracting and the slot was
@@ -270,26 +270,26 @@ export class BundledPrefetchPool {
           return result;
         }
         // Shouldn't reach here. Treat as cold extraction.
-        return await this.runExtraction(zipEntry, /* tracked */ false);
+        return await this.runExtraction(bundleFolder, /* tracked */ false);
       } catch (err) {
-        const after = this.slots.get(zipEntry);
+        const after = this.slots.get(bundleFolder);
         if (after?.state === "failed") {
-          this.slots.delete(zipEntry);
+          this.slots.delete(bundleFolder);
         }
-        ehLog("debug", "bundled-prefetch.take.await-failed", { zipEntry });
+        ehLog("debug", "bundled-prefetch.take.await-failed", { bundleFolder });
         throw err;
       }
     }
 
     if (slot.state === "failed") {
-      this.slots.delete(zipEntry);
-      ehLog("debug", "bundled-prefetch.take.latched-failure", { zipEntry });
+      this.slots.delete(bundleFolder);
+      ehLog("debug", "bundled-prefetch.take.latched-failure", { bundleFolder });
       throw slot.error;
     }
 
     // queued: promote to in-flight inline (the pump hasn't gotten
     // to it yet).
-    return await this.startExtraction(zipEntry);
+    return await this.startExtraction(bundleFolder);
   }
 
   /**
@@ -332,8 +332,8 @@ export class BundledPrefetchPool {
     // that started the next write whenever one FINISHED — taken or not — filled
     // the temp drive with every bundle while the driver was busy elsewhere.
     while (this.inFlight + this.waitingToBeTaken() < this.concurrency && this.queue.length > 0) {
-      const zipEntry = this.queue.shift()!;
-      const slot = this.slots.get(zipEntry);
+      const bundleFolder = this.queue.shift()!;
+      const slot = this.slots.get(bundleFolder);
       if (slot === undefined || slot.state !== "queued") {
         // The slot was promoted by an inline `take()` already.
         continue;
@@ -344,7 +344,7 @@ export class BundledPrefetchPool {
       // rejection surfaces as an unhandled-rejection dialog mid-install, for a
       // mod the driver has not reached. `take()` still re-throws `slot.error`,
       // so swallowing it here loses nothing.
-      void this.startExtraction(zipEntry).catch(() => undefined);
+      void this.startExtraction(bundleFolder).catch(() => undefined);
     }
   }
 
@@ -358,15 +358,15 @@ export class BundledPrefetchPool {
   }
 
   /** Promote a queued slot into in-flight and run the extraction. */
-  private startExtraction(zipEntry: string): Promise<PrefetchedBundle> {
-    const promise = this.runExtraction(zipEntry, /* tracked */ true);
-    this.slots.set(zipEntry, { state: "extracting", zipEntry, promise });
+  private startExtraction(bundleFolder: string): Promise<PrefetchedBundle> {
+    const promise = this.runExtraction(bundleFolder, /* tracked */ true);
+    this.slots.set(bundleFolder, { state: "extracting", bundleFolder, promise });
     this.inFlight++;
     return promise;
   }
 
   /**
-   * Actually call {@link extractBundledFromEhcoll} and bookkeep the
+   * Actually call {@link writeBundledArchive} and bookkeep the
    * result into the slot map.
    *
    * `tracked` controls whether the result lands in the pool. Inline
@@ -375,25 +375,25 @@ export class BundledPrefetchPool {
    * directly.
    */
   private async runExtraction(
-    zipEntry: string,
+    bundleFolder: string,
     tracked: boolean,
   ): Promise<PrefetchedBundle> {
     const startedAt = Date.now();
-    ehLog("debug", "bundled-prefetch.extract.start", { zipEntry, tracked });
+    ehLog("debug", "bundled-prefetch.extract.start", { bundleFolder, tracked });
     try {
       if (this.signal?.aborted) {
         throw new AbortError();
       }
-      const result = await extractBundledFromEhcoll(
+      const result = await writeBundledArchive(
         this.ehcollZipPath,
-        zipEntry,
-        this.names.get(zipEntry),
+        bundleFolder,
+        this.names.get(bundleFolder),
         this.signal,
       );
       const elapsed = Date.now() - startedAt;
-      this.onExtracted?.(zipEntry, elapsed);
+      this.onExtracted?.(bundleFolder, elapsed);
       ehLog("info", "bundled-prefetch.extract.ok", {
-        zipEntry,
+        bundleFolder,
         tracked,
         ms: elapsed,
       });
@@ -411,15 +411,15 @@ export class BundledPrefetchPool {
            * then a 2,577 MB and a 4,890 MB `extract.ok` after it.
            */
           ehLog("info", "bundled-prefetch.discarded-after-dispose", {
-            zipEntry,
+            bundleFolder,
             tempDir: result.tempDir,
           });
           await safeRmTempDir(result.tempDir);
           return result;
         }
-        this.slots.set(zipEntry, {
+        this.slots.set(bundleFolder, {
           state: "ready",
-          zipEntry,
+          bundleFolder,
           result,
           taken: false,
         });
@@ -430,16 +430,16 @@ export class BundledPrefetchPool {
       // A cancel is the user's decision, and must not read as a failure in the log.
       const cancelled = isAbort(err, this.signal);
       ehLog(cancelled ? "info" : "error", cancelled ? "bundled-prefetch.extract.cancelled" : "bundled-prefetch.extract.fail", {
-        zipEntry,
+        bundleFolder,
         tracked,
         ms: Date.now() - startedAt,
         ...(cancelled ? {} : { err }),
       });
       if (tracked) {
         this.inFlight = Math.max(0, this.inFlight - 1);
-        this.slots.set(zipEntry, {
+        this.slots.set(bundleFolder, {
           state: "failed",
-          zipEntry,
+          bundleFolder,
           error: err instanceof Error ? err : new Error(String(err)),
         });
         this.pump();

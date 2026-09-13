@@ -49,7 +49,7 @@ export type RunSelfChecksOptions = {
   /**
    * Mods whose shipped archive IS their staging folder.
    *
-   * A bundled mod is repacked from staging by `repackBundledExternals` and
+   * A bundled mod is repacked from staging by `measureBundledMods` and
    * re-keyed to the new archive's hash, so its staging and its archive are the
    * same bytes by construction — divergence is not merely unlikely, it is
    * impossible. Comparing one means comparing it against a download that is

@@ -103,7 +103,7 @@ packageEhcoll({
 ```
 
 `bundles` come from the build's measurement of each bundled mod's staging
-folder (`repackBundledExternals`, then `resolveBundledArchives`, which refuses a
+folder (`measureBundledMods`, then `resolveBundles`, which refuses a
 flagged mod that could not be measured and says why).
 
 ## Validation (fatal)

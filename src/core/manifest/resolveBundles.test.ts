@@ -7,8 +7,8 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { RepackedBundle } from "./bundleFromStaging";
-import { resolveBundledArchives, type PackedBundles } from "./resolveBundledArchives";
+import type { MeasuredBundle } from "./bundleFromStaging";
+import { resolveBundles, type MeasuredBundles } from "./resolveBundles";
 
 const SHA = "a".repeat(64);
 
@@ -21,7 +21,7 @@ const handMade = (id: string, name = id): never => ({ id, name, archiveSha256: S
 const flagged = (...ids: string[]): never =>
   ({ externalMods: Object.fromEntries(ids.map((id) => [id, { name: id, bundled: true }])) }) as never;
 
-const bundle = (modId: string): RepackedBundle => ({
+const bundle = (modId: string): MeasuredBundle => ({
   modId,
   modName: modId,
   rootDir: `C:/staging/${modId}`,
@@ -30,15 +30,15 @@ const bundle = (modId: string): RepackedBundle => ({
   files: 2,
 });
 
-const packed = (over: Partial<PackedBundles> = {}): PackedBundles => ({
+const packed = (over: Partial<MeasuredBundles> = {}): MeasuredBundles => ({
   bundles: [],
   failures: new Map(),
   ...over,
 });
 
-describe("resolveBundledArchives", () => {
+describe("resolveBundles", () => {
   it("ships a packed mod as its staging folder, under the identity it was packed with", () => {
-    const out = resolveBundledArchives(
+    const out = resolveBundles(
       pool("skyrimse", ["m1"]),
       "skyrimse",
       flagged("m1"),
@@ -50,7 +50,7 @@ describe("resolveBundledArchives", () => {
   });
 
   it("refuses a mod whose packing failed, and says why", () => {
-    const out = resolveBundledArchives(
+    const out = resolveBundles(
       pool("skyrimse", ["m1"]),
       "skyrimse",
       flagged("m1"),
@@ -77,7 +77,7 @@ describe("resolveBundledArchives", () => {
   });
 
   it("refuses a flagged mod that was never packed, rather than shipping anything else for it", () => {
-    const out = resolveBundledArchives(
+    const out = resolveBundles(
       pool("skyrimse", ["m1"]),
       "skyrimse",
       flagged("m1"),
@@ -91,7 +91,7 @@ describe("resolveBundledArchives", () => {
   it("ships nothing for a packed mod the config no longer flags", () => {
     // A verdict changed away from bundling mid-build leaves a measurement
     // behind; it must not put the mod's files in the package.
-    const out = resolveBundledArchives(
+    const out = resolveBundles(
       pool("skyrimse", ["m1"]),
       "skyrimse",
       { externalMods: { m1: { bundled: false } } } as never,
@@ -102,7 +102,7 @@ describe("resolveBundledArchives", () => {
   });
 
   it("drops an answer whose mod is gone from Vortex, packed or not", () => {
-    const out = resolveBundledArchives(pool("skyrimse", []), "skyrimse", flagged("gone"), [], packed());
+    const out = resolveBundles(pool("skyrimse", []), "skyrimse", flagged("gone"), [], packed());
     expect(out.errors).toEqual([]);
     expect(out.bundles).toEqual([]);
     expect(out.droppedModIds).toEqual(["gone"]);

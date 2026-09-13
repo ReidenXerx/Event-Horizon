@@ -23,7 +23,7 @@ import {
   mayBundle,
   shipsAsExternal,
 } from "../../../core/manifest/shipsAsExternal";
-import { resolveBundledArchives } from "../../../core/manifest/resolveBundledArchives";
+import { resolveBundles } from "../../../core/manifest/resolveBundles";
 import * as fsp from "fs/promises";
 
 import {
@@ -82,10 +82,10 @@ import { listArchiveContents } from "../../../core/manifest/archiveContents";
 import {
   describeExternalDrift,
   detectExternalDrift,
-  repackBundledExternals,
-  type RepackedBundle,
-  type RepackFailure,
-  mergeRepackedBundles,
+  measureBundledMods,
+  type MeasuredBundle,
+  type BundleFailure,
+  mergeMeasuredBundles,
 } from "../../../core/manifest/bundleFromStaging";
 import {
   describeRootFolderReview,
@@ -271,7 +271,7 @@ export type BuildProgressPhase =
   | "reading-plugins-txt"
   | "writing-config"
   | "building-manifest"
-  | "resolving-bundled-archives"
+  | "resolving-bundles"
   | "packaging";
 
 export interface BuildProgress {
@@ -1429,18 +1429,18 @@ export async function runBuildPipeline(
   // collection and gets the original archive instead. So it is said out loud,
   // and bundling packs the staging folder rather than the stale archive.
   const driftOp = beginOp("build.external-drift", {});
-  let repackedBundles: RepackedBundle[] = [];
+  let measuredBundles: MeasuredBundle[] = [];
   /**
    * Mods flagged for bundling that could not be packed, and why.
    *
-   * `resolveBundledArchives` refuses each by name, with the reason. A failed
+   * `resolveBundles` refuses each by name, with the reason. A failed
    * one used to fall through and be resolved by its original `archiveSha256`
    * — shipping the untouched Nexus archive, from inside the package, for a mod
    * whose whole point was the files the curator added to it, under a warning
    * that said "It will not ship". A package never carries an archive now, so
    * there is nothing left to fall through to.
    */
-  const repackFailures = new Map<string, RepackFailure>();
+  const bundleFailures = new Map<string, BundleFailure>();
   const bundleWarnings: string[] = [];
   /**
    * Per-mod staging-capture problems, aggregated rather than one warning per
@@ -1466,7 +1466,7 @@ export async function runBuildPipeline(
           `to require it.`,
     );
   }
-  const repackDir = path.join(getVortexUserDataPath(), "event-horizon", ".repack");
+  const bundleRecordsDir = path.join(getVortexUserDataPath(), "event-horizon", ".repack");
   try {
     const sevenZip = resolveSevenZip();
     const drift = await detectExternalDrift({
@@ -1499,12 +1499,12 @@ export async function runBuildPipeline(
     ),
   );
 
-    const repacked = await repackBundledExternals({
+    const measured = await measureBundledMods({
       state,
       gameId,
       mods,
       config: collectionConfig,
-      workDir: repackDir,
+      workDir: bundleRecordsDir,
       // Includes mods the curator marked `treatAsExternal`: they are
       // identified by hash now, so they need exactly the archive checks a
       // born-external mod gets.
@@ -1516,23 +1516,23 @@ export async function runBuildPipeline(
         reuseRecords: overrides.reverifyEverything !== true,
         onProgress: (done, total, modName) =>
           onProgress?.({
-            phase: "resolving-bundled-archives",
+            phase: "resolving-bundles",
             message: `Reading "${modName}" from its staging folder (${done} / ${total})...`,
             done,
             total,
           }),
       },
     });
-    mods = repacked.mods;
-    repackedBundles = repacked.bundles;
-    for (const failure of repacked.failed) repackFailures.set(failure.modId, failure);
-    bundleWarnings.push(...repacked.warnings);
+    mods = measured.mods;
+    measuredBundles = measured.bundles;
+    for (const failure of measured.failed) bundleFailures.set(failure.modId, failure);
+    bundleWarnings.push(...measured.warnings);
 
     driftOp.ok({
       diverged: drift.length,
       divergedUnbundled: drift.filter((d) => !d.bundled).length,
-      repacked: repacked.bundles.length,
-      repackedBytes: repacked.bundles.reduce((n, b) => n + b.bytes, 0),
+      measured: measured.bundles.length,
+      measuredBytes: measured.bundles.reduce((n, b) => n + b.bytes, 0),
       detail: drift.slice(0, 20).map((d) => ({
         mod: d.modName,
         removed: d.removed.length,
@@ -1543,7 +1543,7 @@ export async function runBuildPipeline(
   } catch (err) {
     /**
      * Drift detection and undeclared-dependency reporting really are not worth
-     * failing a build over — they are diagnostics. REPACKING IS NOT: it is the
+     * failing a build over — they are diagnostics. MEASURING THE BUNDLES IS NOT: it is the
      * only thing in this block that changes the bytes that ship.
      *
      * A throw before the per-mod loop — `fsp.mkdir(workDir)` on a full volume,
@@ -1552,7 +1552,7 @@ export async function runBuildPipeline(
      * the exact untouched Nexus archive the curator ticked "bundle" to avoid.
      *
      * So the catch marks every mod the curator flagged for bundling as failed,
-     * with this error as the reason, and `resolveBundledArchives` refuses each
+     * with this error as the reason, and `resolveBundles` refuses each
      * one by name — instead of a silent wrong package.
      */
     let flagged = 0;
@@ -1561,11 +1561,11 @@ export async function runBuildPipeline(
     })`;
     for (const [modId, entry] of Object.entries(collectionConfig.externalMods)) {
       if (entry?.bundled === true) {
-        repackFailures.set(modId, { modId, modName: entry.name ?? modId, reason });
+        bundleFailures.set(modId, { modId, modName: entry.name ?? modId, reason });
         flagged += 1;
       }
     }
-    ehLog("error", "build.repack.block-failed", {
+    ehLog("error", "build.measure.block-failed", {
       flaggedForBundling: flagged,
       consequence:
         flagged > 0
@@ -1635,9 +1635,9 @@ export async function runBuildPipeline(
     // staging and there is nothing to compare. Built from what was actually
     // measured, not from the curator's intent, so a bundling that silently did
     // not happen still gets checked.
-    const repackedIds = new Set(repackedBundles.map((b) => b.modId));
+    const bundledIds = new Set(measuredBundles.map((b) => b.modId));
     const selfCheck = await runSelfChecks(state, gameId, mods, {
-      shipsOwnBytes: (m) => repackedIds.has(m.id),
+      shipsOwnBytes: (m) => bundledIds.has(m.id),
       // Every answer the curator has already given, and the diverged files
       // each was given about. Read from the config rather than the overlaid
       // mods: only `postProcessed` and `mirrored` reach a mod, so a bundling
@@ -1691,18 +1691,18 @@ export async function runBuildPipeline(
       // in the package when it is no longer meant to have them.
       const dropped = new Set(modsNoLongerBundled(configBefore, collectionConfig));
       if (dropped.size > 0) {
-        repackedBundles = repackedBundles.filter((b) => !dropped.has(b.modId));
+        measuredBundles = measuredBundles.filter((b) => !dropped.has(b.modId));
       }
 
       const newlyBundled = modsNewlyBundled(configBefore, collectionConfig);
       if (newlyBundled.length > 0) {
         try {
-          const again = await repackBundledExternals({
+          const again = await measureBundledMods({
             state,
             gameId,
             mods,
             config: collectionConfig,
-            workDir: repackDir,
+            workDir: bundleRecordsDir,
             isExternal: (m) =>
               shipsAsExternal(isNexusMod(m), collectionConfig.externalMods[m.id]),
             options: {
@@ -1710,7 +1710,7 @@ export async function runBuildPipeline(
               reuseRecords: overrides.reverifyEverything !== true,
               onProgress: (done, total, modName) =>
                 onProgress?.({
-                  phase: "resolving-bundled-archives",
+                  phase: "resolving-bundles",
                   message: `Reading "${modName}" from its staging folder (${done} / ${total})...`,
                   done,
                   total,
@@ -1720,7 +1720,7 @@ export async function runBuildPipeline(
           mods = again.mods;
           /**
            * ─── MERGE BY MOD, NEVER CONCATENATE ─────────────────────────
-           * `repackBundledExternals` packs EVERY mod the config marks
+           * `measureBundledMods` measures EVERY mod the config marks
            * bundled, not just the ones that changed — it takes the config,
            * not a list. So pass two returns an entry for each already-bundled
            * mod as well, served from the cache with the identical sha256.
@@ -1732,11 +1732,11 @@ export async function runBuildPipeline(
            * who already had one bundled mod and answered "ship my copy" for
            * one more — which is the ordinary case for this feature.
            */
-          repackedBundles = mergeRepackedBundles(repackedBundles, again.bundles);
+          measuredBundles = mergeMeasuredBundles(measuredBundles, again.bundles);
           // Pass two reads every bundled mod again, so it also settles any that
           // failed the first time.
-          for (const bundle of again.bundles) repackFailures.delete(bundle.modId);
-          for (const failure of again.failed) repackFailures.set(failure.modId, failure);
+          for (const bundle of again.bundles) bundleFailures.delete(bundle.modId);
+          for (const failure of again.failed) bundleFailures.set(failure.modId, failure);
           bundleWarnings.push(...again.warnings);
         } catch (err) {
           // The answers are saved either way and the next build honours them.
@@ -1746,13 +1746,13 @@ export async function runBuildPipeline(
             err instanceof Error ? err.message : String(err)
           }); your answer is saved`;
           for (const modId of newlyBundled) {
-            repackFailures.set(modId, {
+            bundleFailures.set(modId, {
               modId,
               modName: collectionConfig.externalMods[modId]?.name ?? modId,
               reason,
             });
           }
-          ehLog("error", "build.repack.second-pass-failed", {
+          ehLog("error", "build.measure.second-pass-failed", {
             mods: newlyBundled.length,
             err,
           });
@@ -2153,22 +2153,22 @@ export async function runBuildPipeline(
     // the bundle's hash: that is what every earlier release keyed them on, so
     // re-keying would orphan every copy already installed. See
     // buildExternalMod's compareKey note.
-    repackedModIds: new Set(repackedBundles.map((b) => b.modId)),
+    bundledModIds: new Set(measuredBundles.map((b) => b.modId)),
     externalDependencies,
     ...(gameIniCapture.files.length > 0 ? { gameIni: { files: gameIniCapture.files } } : {}),
   });
 
   // ── 4. Resolve bundled archives ────────────────────────────────────────
   checkAbort();
-  onProgress?.({ phase: "resolving-bundled-archives" });
+  onProgress?.({ phase: "resolving-bundles" });
   const {
     bundles,
     errors: bundleErrors,
     warnings: staleConfigWarnings,
     droppedModIds: staleConfigModIds,
-  } = resolveBundledArchives(state, gameId, collectionConfig, mods, {
-    bundles: repackedBundles,
-    failures: repackFailures,
+  } = resolveBundles(state, gameId, collectionConfig, mods, {
+    bundles: measuredBundles,
+    failures: bundleFailures,
   });
   if (bundleErrors.length > 0) {
     throw new BundleResolutionError(bundleErrors);
@@ -2246,13 +2246,13 @@ export async function runBuildPipeline(
       }),
   });
 
-  // ─── THE REPACK FOLDER IS A CACHE NOW, NOT A SCRATCH DIR ─────────────
+  // ─── THE .repack FOLDER IS A CACHE NOW, NOT A SCRATCH DIR ────────────
   // This used to delete the whole directory here, which is why every build
   // re-packed every bundled mod: DynDOLOD output is commonly several GB and
   // almost never changes between two versions of a collection, and the bytes
   // were thrown away seconds after being produced.
   //
-  // `repackBundledExternals` keeps one small record per bundled mod — the
+  // `measureBundledMods` keeps one small record per bundled mod — the
   // identity its staging files made, named by the hash of those files — and
   // sweeps that mod's older records itself once the build has what it needs.
   // It also deletes the multi-gigabyte archives this folder held before
@@ -2387,7 +2387,7 @@ export function validateCuratorInput(input: CuratorInput): string | undefined {
 export const isNexusMod = isNexusSourced;
 
 /**
- * Moved to `core/manifest/resolveBundledArchives.ts`.
+ * Moved to `core/manifest/resolveBundles.ts`.
  *
  * This file and the OTHER build path each held a copy with the same
  * signature and the same rules, and the action's copy carried a comment

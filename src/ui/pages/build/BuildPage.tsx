@@ -2241,7 +2241,7 @@ function ExternalModsTable(
       {mods.map((mod) => {
         const override = overrides[mod.id] ?? {};
         // What bundling actually needs. The archive is irrelevant to it —
-        // repackBundledExternals measures the staging folder and re-keys the mod
+        // measureBundledMods measures the staging folder and re-keys the mod
         // to the bundle's hash before the manifest is built.
         const hasStagingFolder =
           typeof mod.installationPath === "string" &&
@@ -2260,7 +2260,7 @@ function ExternalModsTable(
               {!hasArchive && (
                 <div>
                   {/* Neutral, not a warning: this does not stop the mod
-                      shipping. Bundling repacks the staging folder, and
+                      shipping. Bundling ships the staging folder's files, and
                       identity falls back to the staging-set hash. It was
                       styled as a problem, which is what made "no archive"
                       read as "cannot be bundled". */}
@@ -2785,7 +2785,7 @@ function BuildingPanel(props: {
   // we can rip a half-written file out from under the user.
   const cancellable =
     props.progress.phase !== "packaging" &&
-    props.progress.phase !== "resolving-bundled-archives";
+    props.progress.phase !== "resolving-bundles";
 
   return (
     <Card>
@@ -3166,7 +3166,7 @@ function phaseToLabel(phase: BuildProgress["phase"] | undefined): string | undef
       return "Saving collection config...";
     case "building-manifest":
       return "Building manifest...";
-    case "resolving-bundled-archives":
+    case "resolving-bundles":
       return "Checking bundled mods...";
     case "packaging":
       return "Packaging .ehcoll...";

@@ -834,7 +834,7 @@ function findEntry(
   if (entry === undefined) {
     /**
      * DEBUG, not error. This primitive cannot know whether the caller
-     * recovers, and the main caller does: `extractBundledFromEhcoll` looks the
+     * recovers, and the main caller does: `writeBundledArchive` looks the
      * entry up by sha and almost always finds it, because the two sides derive
      * the extension from different strings.
      *

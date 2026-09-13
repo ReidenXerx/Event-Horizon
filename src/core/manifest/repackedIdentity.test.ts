@@ -61,7 +61,7 @@ const buildWith = (args: {
     vortex: { version: "2.6.0", deploymentMethod: "hardlink" },
     externalMods: { "custom-mod": { bundled: true } },
     ...(args.repacked
-      ? { repackedModIds: new Set(["custom-mod"]) }
+      ? { bundledModIds: new Set(["custom-mod"]) }
       : {}),
   } as unknown as BuildManifestInput);
 
@@ -132,7 +132,7 @@ describe("repacked mod identity", () => {
       game: { version: "1.10.163.0", versionPolicy: "exact" },
       vortex: { version: "2.6.0", deploymentMethod: "hardlink" },
       externalMods: { "custom-mod": { bundled: true } },
-      repackedModIds: new Set(["custom-mod"]),
+      bundledModIds: new Set(["custom-mod"]),
     } as unknown as BuildManifestInput);
     expect(keyOf(before)).not.toBe(keyOf(after));
   });

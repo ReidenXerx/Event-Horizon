@@ -122,7 +122,7 @@ export type BundledArchiveEntry = {
   /** Lowercase 64-char hex SHA-256 of the canonical zip — also the folder's name. */
   sha256: string;
   /** The folder inside the package, `bundled/<sha256>/`. */
-  zipPath: string;
+  bundleFolder: string;
   /** Files in the folder. */
   files: number;
   /** Their uncompressed size, in bytes. */
@@ -460,7 +460,7 @@ function classifyEntries(entries: PackageListEntry[]): ClassifiedLayout {
       }
       const bundle = bundles.get(inBundle.sha256) ?? {
         sha256: inBundle.sha256,
-        zipPath: inBundle.folder,
+        bundleFolder: inBundle.folder,
         files: 0,
         size: 0,
       };
@@ -588,7 +588,7 @@ function crossCheckBundled(
   for (const [sha256, bundle] of present) {
     if (!expected.has(sha256)) {
       errors.push(
-        `Folder "${bundle.zipPath}" is present in the package but does not ` +
+        `Folder "${bundle.bundleFolder}" is present in the package but does not ` +
           `correspond to any external mod with bundled=true in the manifest. ` +
           `The package contains stray files.`,
       );

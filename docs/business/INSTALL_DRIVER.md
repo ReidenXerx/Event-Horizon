@@ -668,7 +668,7 @@ Five primitives + helpers:
   [modId])`. Removes the mod from disk, clears its entries in
   `state.persistent.mods`, and unselects it in every profile. Used
   by `removing-mods` for `replace-existing` and `orphan-uninstall`.
-- `extractBundledFromEhcoll` — exposed helper; writes the canonical zip of a
+- `writeBundledArchive` — exposed helper; writes the canonical zip of a
   `bundled/<sha256>/` folder out of the package (`readZip.ts` reads,
   `bundleZip.ts` writes) and refuses it unless it hashes to the sha.
 - `safeRmTempDir` — best-effort temp cleanup (errors swallowed; OS

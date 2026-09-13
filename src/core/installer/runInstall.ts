@@ -215,7 +215,7 @@ import {
 } from "./profile";
 import {
   downloadNexusArchiveOnly,
-  extractBundledFromEhcoll,
+  writeBundledArchive,
   installFromBundledArchive,
   installFromExistingDownload,
   installFromLocalArchive,
@@ -4655,7 +4655,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     }
 
     // Cleanup of bundled-extract temp dirs is fire-and-forget. Each
-    // entry is the **directory** returned by extractBundledFromEhcoll
+    // entry is the **directory** returned by writeBundledArchive
     // (one per successful bundled install). Failures here don't
     // reach the user — the OS temp GC reclaims leftovers eventually.
     for (const tempDir of tempArchivesToCleanup) {
@@ -4690,11 +4690,11 @@ function collectBundledZipEntriesForPrefetch(
   for (const res of plan.modResolutions) {
     const dec = res.decision;
     if (dec.kind !== "external-use-bundled") continue;
-    if (seen.has(dec.zipPath)) continue;
-    seen.add(dec.zipPath);
+    if (seen.has(dec.bundleFolder)) continue;
+    seen.add(dec.bundleFolder);
     // The resolution's name is the curator's mod name, which is what the
     // extracted archive — and so the user's staging folder — gets called.
-    out.push({ zipEntry: dec.zipPath, preferredName: res.name });
+    out.push({ bundleFolder: dec.bundleFolder, preferredName: res.name });
   }
   return out;
 }
@@ -4800,12 +4800,12 @@ async function executeDecision(args: {
 
     case "external-use-bundled": {
       const preExtracted = bundledPool
-        ? await bundledPool.take(decision.zipPath, resolution.name)
+        ? await bundledPool.take(decision.bundleFolder, resolution.name)
         : undefined;
       const result = await installFromBundledArchive(ctx.api, {
         gameId: manifest.game.id,
         ehcollZipPath: ctx.ehcollZipPath,
-        bundledZipEntry: decision.zipPath,
+        bundleFolder: decision.bundleFolder,
         signal: ctx.abortSignal,
         preExtracted,
         preferredName: resolution.name,
@@ -5207,14 +5207,14 @@ async function installManifestEntry(args: {
     );
   }
 
-  const bundledEntry = findBundledZipEntry(ctx, ex);
+  const bundledEntry = findBundleFolder(ctx, ex);
   const preExtracted = bundledPool
     ? await bundledPool.take(bundledEntry, resolution.name)
     : undefined;
   const result = await installFromBundledArchive(ctx.api, {
     gameId,
     ehcollZipPath: ctx.ehcollZipPath,
-    bundledZipEntry: bundledEntry,
+    bundleFolder: bundledEntry,
     signal: ctx.abortSignal,
     preExtracted,
     preferredName: resolution.name,
@@ -5237,7 +5237,7 @@ async function installManifestEntry(args: {
   };
 }
 
-function findBundledZipEntry(ctx: DriverContext, mod: ExternalEhcollMod): string {
+function findBundleFolder(ctx: DriverContext, mod: ExternalEhcollMod): string {
   // Invariant (parser-enforced): bundled === true ⇒ source.sha256 set.
   // Callers gate on `mod.source.bundled` before reaching us, so the
   // `!` is a static guarantee, not a hope.
@@ -5249,7 +5249,7 @@ function findBundledZipEntry(ctx: DriverContext, mod: ExternalEhcollMod): string
         `Re-build the package or report a manifest/bundled mismatch.`,
     );
   }
-  return match.zipPath;
+  return match.bundleFolder;
 }
 
 // ===========================================================================
@@ -7026,9 +7026,9 @@ async function resolveCuratorArchive(args: {
     manifestEntry.source.bundled === true &&
     expectedSha !== undefined
   ) {
-    const extracted = await extractBundledFromEhcoll(
+    const extracted = await writeBundledArchive(
       ctx.ehcollZipPath,
-      findBundledZipEntry(ctx, manifestEntry as ExternalEhcollMod),
+      findBundleFolder(ctx, manifestEntry as ExternalEhcollMod),
       installEntry.name,
       ctx.abortSignal,
     );

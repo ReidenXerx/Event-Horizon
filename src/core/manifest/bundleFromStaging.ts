@@ -71,7 +71,7 @@ import type { CollectionConfig } from "./collectionConfig";
 import { installRootFor, stagingRootFromFolder } from "../stagingPath";
 
 /** One bundled mod: the folder whose files ship, and the identity they make. */
-export type RepackedBundle = {
+export type MeasuredBundle = {
   modId: string;
   modName: string;
   /**
@@ -100,18 +100,18 @@ export type RepackedBundle = {
  * `reason` completes the sentence "... is flagged for bundling, but <reason>."
  * It is what the curator reads when the build refuses the mod.
  */
-export type RepackFailure = { modId: string; modName: string; reason: string };
+export type BundleFailure = { modId: string; modName: string; reason: string };
 
-export type RepackResult = {
+export type MeasureResult = {
   /** `archiveSha256` replaced for every bundled mod. */
   mods: AuditorMod[];
-  bundles: RepackedBundle[];
+  bundles: MeasuredBundle[];
   warnings: string[];
   /**
    * Mods flagged for bundling that could NOT be packed.
    *
    * The caller has to know these by id, because the warning it used to get
-   * said "It will not ship" and that was false. A failed repack left the mod
+   * said "It will not ship" and that was false. A failed bundle left the mod
    * out of `bundles`, and the packaging step's filter keyed off `bundles` — so
    * the mod fell through to being resolved by its ORIGINAL `archiveSha256` and
    * the untouched Nexus archive shipped in its place, from inside the package,
@@ -124,10 +124,10 @@ export type RepackResult = {
    * the curator reads then is the error — not a warning list that a refused
    * build never shows.
    */
-  failed: RepackFailure[];
+  failed: BundleFailure[];
 };
 
-export type RepackOptions = {
+export type MeasureOptions = {
   signal?: AbortSignal;
   onProgress?: (done: number, total: number, modName: string) => void;
   /**
@@ -158,7 +158,7 @@ const DEFAULT_WARN_BYTES = 2 * 1024 * 1024 * 1024;
  * can refuse it by name. Shipping without it would be a package whose manifest
  * says the mod is inside when it is not.
  */
-export async function repackBundledExternals(args: {
+export async function measureBundledMods(args: {
   state: types.IState;
   gameId: string;
   mods: AuditorMod[];
@@ -170,8 +170,8 @@ export async function repackBundledExternals(args: {
    */
   workDir: string;
   isExternal: (mod: AuditorMod) => boolean;
-  options?: RepackOptions;
-}): Promise<RepackResult> {
+  options?: MeasureOptions;
+}): Promise<MeasureResult> {
   const { state, gameId, mods, config, workDir, isExternal } = args;
   const options = args.options ?? {};
   const warnBytes = options.warnBytes ?? DEFAULT_WARN_BYTES;
@@ -181,11 +181,11 @@ export async function repackBundledExternals(args: {
     (m) => isExternal(m) && config.externalMods[m.id]?.bundled === true,
   );
   if (wanted.length === 0) {
-    ehLog("debug", "bundle.repack.skip", { reason: "no-mods-flagged" });
+    ehLog("debug", "bundle.measure.skip", { reason: "no-mods-flagged" });
     return { mods, bundles: [], warnings: [], failed: [] };
   }
 
-  const op = beginOp("bundle.repack", {
+  const op = beginOp("bundle.measure", {
     gameId,
     candidates: wanted.length,
     reuseRecords,
@@ -210,9 +210,9 @@ export async function repackBundledExternals(args: {
   await fsp.mkdir(workDir, { recursive: true });
   await sweepLegacyArchives(workDir);
 
-  const bundles: RepackedBundle[] = [];
+  const bundles: MeasuredBundle[] = [];
   const warnings: string[] = [];
-  const failed: RepackFailure[] = [];
+  const failed: BundleFailure[] = [];
   const newSha = new Map<string, string>();
   /** modId → the record this build used, so that mod's older ones can be swept. */
   const keptByMod = new Map<string, string>();
@@ -224,7 +224,7 @@ export async function repackBundledExternals(args: {
     options.onProgress?.(done, wanted.length, mod.name);
     const modStartedAt = Date.now();
     const fail = (reason: string, err?: unknown): void => {
-      ehLog("error", "bundle.repack.mod.fail", {
+      ehLog("error", "bundle.measure.mod.fail", {
         modId: mod.id,
         modName: mod.name,
         reason,
@@ -263,7 +263,7 @@ export async function repackBundledExternals(args: {
         options.onProgress?.(done, wanted.length, `${mod.name} (already measured)`);
         measured = hit;
       } else {
-        ehLog("debug", "bundle.repack.mod.start", {
+        ehLog("debug", "bundle.measure.mod.start", {
           modId: mod.id,
           modName: mod.name,
           cacheable: recordPath !== undefined,
@@ -291,7 +291,7 @@ export async function repackBundledExternals(args: {
 
       if (measured.bytes > warnBytes) {
         // Said, not enforced. The curator chose to ship this.
-        ehLog("warn", "bundle.repack.mod.large", {
+        ehLog("warn", "bundle.measure.mod.large", {
           modId: mod.id,
           modName: mod.name,
           bytes: measured.bytes,
@@ -305,7 +305,7 @@ export async function repackBundledExternals(args: {
         );
       }
 
-      ehLog("info", "bundle.repack.mod.ok", {
+      ehLog("info", "bundle.measure.mod.ok", {
         modId: mod.id,
         modName: mod.name,
         sha256: measured.sha256,
@@ -327,7 +327,7 @@ export async function repackBundledExternals(args: {
       if (recordPath !== undefined) keptByMod.set(mod.id, recordPath);
     } catch (err) {
       if (isAbort(err, options.signal)) {
-        ehLog("info", "bundle.repack.cancelled", { modId: mod.id, modName: mod.name });
+        ehLog("info", "bundle.measure.cancelled", { modId: mod.id, modName: mod.name });
         break;
       }
       fail(
@@ -632,9 +632,9 @@ export function describeExternalDrift(drift: ExternalDrift[]): string[] {
 
 /**
  * ──────────────────────────────────────────────────────────────────────
- * Fold a second repack pass into the first, one entry per mod.
+ * Fold a second measuring pass into the first, one entry per mod.
  *
- * `repackBundledExternals` packs every mod the CONFIG marks bundled — it takes
+ * `measureBundledMods` measures every mod the CONFIG marks bundled — it takes
  * the config, not a list of ids — so a second pass run after the curator
  * answers mid-build returns an entry for each already-bundled mod too, served
  * from the cache with an identical sha256.
@@ -648,10 +648,10 @@ export function describeExternalDrift(drift: ExternalDrift[]): string[] {
  * The second pass wins: it read the config the curator's answers just wrote.
  * ──────────────────────────────────────────────────────────────────────
  */
-export function mergeRepackedBundles(
-  first: readonly RepackedBundle[],
-  second: readonly RepackedBundle[],
-): RepackedBundle[] {
+export function mergeMeasuredBundles(
+  first: readonly MeasuredBundle[],
+  second: readonly MeasuredBundle[],
+): MeasuredBundle[] {
   const byModId = new Map(first.map((b) => [b.modId, b] as const));
   for (const bundle of second) byModId.set(bundle.modId, bundle);
   return [...byModId.values()];

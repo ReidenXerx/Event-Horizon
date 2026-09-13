@@ -71,7 +71,7 @@ describe("repairDecisionFor", () => {
     expect(repairDecisionFor(externalMod())).toEqual({
       kind: "external-use-bundled",
       sha256: SHA,
-      zipPath: `bundled/${SHA}/`,
+      bundleFolder: `bundled/${SHA}/`,
     });
   });
 

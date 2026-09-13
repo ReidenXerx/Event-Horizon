@@ -237,7 +237,7 @@ Full prose contract: [`docs/business/INSTALL_ACTION.md`](business/INSTALL_ACTION
 - Three install primitives, one per `ModDecision` flavour:
   - `installNexusViaApi({ gameId, nexusModId, nexusFileId, fileName? })` — emits `api.ext.nexusDownload` with `allowInstall: true`. Awaits the `did-install-mod` event matched against the returned `archiveId`. Used for `nexus-download` decisions.
   - `installFromExistingDownload({ gameId, archiveId })` — emits `start-install-download(archiveId)`. Used for `nexus-use-local-download` and `external-use-local-download` (a fast path that skips re-downloading a Nexus file the user already has).
-  - `installFromBundledArchive({ gameId, ehcollZipPath, bundledZipEntry })` — uses `extractBundledFromEhcoll` to write a bundled mod's archive from its loose files in `bundled/<sha>/` — the canonical zip (`bundleZip.ts`), refused unless it hashes to the sha — into a `mkdtemp` scratch dir, then emits `start-install(extractedPath)`. The temp dir is removed in `finally` (`safeRmTempDir` swallows ENOENT).
+  - `installFromBundledArchive({ gameId, ehcollZipPath, bundleFolder })` — uses `writeBundledArchive` to write a bundled mod's archive from its loose files in `bundled/<sha>/` — the canonical zip (`bundleZip.ts`), refused unless it hashes to the sha — into a `mkdtemp` scratch dir, then emits `start-install(extractedPath)`. The temp dir is removed in `finally` (`safeRmTempDir` swallows ENOENT).
 - Each primitive returns `{ vortexModId, archiveId? }` after the install completes. The `did-install-mod` listener has a timeout — if Vortex never fires the event (download hung, antivirus interference), the driver records a `failed` result with the phase and the mod that hung. Budgets are size- and platform-aware (`timeBudgets.ts`): a Wine/Proton prefix gets more headroom than Windows, and a 2 GB extract more than a 5 MB one.
 - Writing a bundled archive is native (`readZip.ts` reads, `bundleZip.ts` writes) and streams straight to disk rather than buffering in Node. Memory stays constant regardless of the mod's size.
 - `isAwaitingUserInput(state)` reads `session.base.visibleDialog` / `overlayOpen` — the signal that Vortex is blocked on a human, used to pause the hang watchdog.
@@ -396,7 +396,7 @@ init → buildPackageAction()
    → reconcileExternalModsConfig       (auto-populate stub entries for new external mods)
    → saveCollectionConfig              (only when reconciliation changed something)
    → buildManifest                     (pure transform → EhcollManifest)
-   → resolveBundledArchives            (slice 4b — each bundled:true entry → the files measured from its staging folder)
+   → resolveBundles            (slice 4b — each bundled:true entry → the files measured from its staging folder)
    → packageEhcoll                     (refuses archives inside → stages loose files → 7z -tzip → .ehcoll)
    → sendNotification(Open Package / Open Folder / Open Config)
 ```

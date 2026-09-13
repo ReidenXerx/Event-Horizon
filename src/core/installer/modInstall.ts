@@ -671,7 +671,7 @@ export async function uninstallMod(
  *
  * Failure modes that own cleanup here (rather than the driver):
  *  - 7z extraction fails before we can hand the file to Vortex →
- *    {@link extractBundledFromEhcoll} cleans up its own tempDir.
+ *    {@link writeBundledArchive} cleans up its own tempDir.
  *  - `start-install` rejects (synchronous callback path) before
  *    Vortex copies the archive into its downloads folder → we
  *    cleanup tempDir here. The driver's cleanup list never sees it.
@@ -685,7 +685,7 @@ export async function installFromBundledArchive(
   args: {
     gameId: string;
     ehcollZipPath: string;
-    bundledZipEntry: string; // the bundled mod's folder, e.g. "bundled/<sha256>/"
+    bundleFolder: string; // the bundled mod's folder, e.g. "bundled/<sha256>/"
     /** Optional cancellation token; see {@link installNexusViaApi}. */
     signal?: AbortSignal;
     /**
@@ -752,9 +752,9 @@ export async function installFromBundledArchive(
    */
   const { extractedPath, tempDir } =
     args.preExtracted ??
-    (await extractBundledFromEhcoll(
+    (await writeBundledArchive(
       args.ehcollZipPath,
-      args.bundledZipEntry,
+      args.bundleFolder,
       args.preferredName,
       args.signal,
     ));
@@ -1420,7 +1420,7 @@ export function bundledArchiveFileName(
  * extra, renamed or altered file makes a different zip, and the install
  * refuses it rather than install a mod that is not the curator's.
  *
- * `bundledZipEntry` is the folder, `bundled/<sha256>/`. The archive lands at
+ * `bundleFolder` is the folder, `bundled/<sha256>/`. The archive lands at
  * `<tempDir>/bundled/<name>.zip` — see {@link bundledArchiveFileName} for why
  * the name is the curator's. Each call gets its own mkdtemp directory, so
  * concurrent writes cannot collide; the caller owns it once this returns, and
@@ -1436,9 +1436,9 @@ export function bundledArchiveFileName(
  * say why. Unpacking the archive this writes is Vortex's installer's job, with
  * Vortex's own tools; we just hand it the file.
  */
-export async function extractBundledFromEhcoll(
+export async function writeBundledArchive(
   ehcollZipPath: string,
-  bundledZipEntry: string,
+  bundleFolder: string,
   /**
    * The curator's mod name, when the caller knows it. Decides the archive's
    * file name and therefore what Vortex calls the mod — see
@@ -1447,10 +1447,10 @@ export async function extractBundledFromEhcoll(
   preferredName?: string,
   signal?: AbortSignal,
 ): Promise<{ extractedPath: string; tempDir: string }> {
-  const sha256 = shaOfBundleFolder(bundledZipEntry);
+  const sha256 = shaOfBundleFolder(bundleFolder);
   if (sha256 === undefined) {
     throw new Error(
-      `"${bundledZipEntry}" is not a bundled mod's folder (bundled/<sha256>/), so ` +
+      `"${bundleFolder}" is not a bundled mod's folder (bundled/<sha256>/), so ` +
         `there is nothing in "${ehcollZipPath}" to install it from.`,
     );
   }
@@ -1473,11 +1473,11 @@ export async function extractBundledFromEhcoll(
     const reader = await openZipReader(ehcollZipPath);
     let written: BundleZipResult;
     try {
-      const files = bundleFilesFromPackage(reader, bundledZipEntry);
+      const files = bundleFilesFromPackage(reader, bundleFolder);
       if (files.length === 0) {
         throw new Error(
           `"${ehcollZipPath}" holds no files for the bundled mod ` +
-            `"${preferredName ?? sha256}" (${bundledZipEntry}). The package is ` +
+            `"${preferredName ?? sha256}" (${bundleFolder}). The package is ` +
             `incomplete — download it again.`,
         );
       }
@@ -1492,7 +1492,7 @@ export async function extractBundledFromEhcoll(
 
     if (written.sha256 !== sha256) {
       ehLog("error", "bundled.identity-mismatch", {
-        entry: bundledZipEntry,
+        entry: bundleFolder,
         mod: preferredName,
         expected: sha256,
         actual: written.sha256,
@@ -1507,7 +1507,7 @@ export async function extractBundledFromEhcoll(
       );
     }
     ehLog("debug", "bundled.written", {
-      entry: bundledZipEntry,
+      entry: bundleFolder,
       mod: preferredName,
       files: written.files,
       bytes: written.bytes,
@@ -1518,7 +1518,7 @@ export async function extractBundledFromEhcoll(
     // A cancel is the user's decision, and must not read as a failure in the log.
     const cancelled = isAbort(err, signal);
     ehLog(cancelled ? "info" : "error", cancelled ? "bundled.write-cancelled" : "bundled.write-failed", {
-      entry: bundledZipEntry,
+      entry: bundleFolder,
       mod: preferredName,
       ...(cancelled ? {} : { err }),
     });
@@ -1531,7 +1531,7 @@ export async function extractBundledFromEhcoll(
 
 /**
  * Best-effort cleanup of a temp directory created by
- * {@link extractBundledFromEhcoll}. Pass the **directory** returned
+ * {@link writeBundledArchive}. Pass the **directory** returned
  * by extraction (not the extracted file's path) — cherry-picked
  * entries can have nested paths inside the temp dir, so deriving the
  * dir from `path.dirname(extractedPath)` would leak the outer

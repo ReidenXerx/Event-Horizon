@@ -196,7 +196,7 @@ phase 3 accumulates errors.
 
 1. **`readEhcoll` only extracts `manifest.json`.** Bundled mods are
    listed, never read. The installer writes each one's archive from its
-   files (`extractBundledFromEhcoll`) and checks its SHA-256 there;
+   files (`writeBundledArchive`) and checks its SHA-256 there;
    `readEhcoll` is purely "tell me what's in here." This keeps a UI
    "inspect package" action fast on a 4 GB collection.
 2. **Path normalization is forward-slash.** The ZIP spec says entry names

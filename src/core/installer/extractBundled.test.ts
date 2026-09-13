@@ -1,5 +1,5 @@
 /**
- * extractBundledFromEhcoll is on the CRITICAL path — the whole install driver
+ * writeBundledArchive is on the CRITICAL path — the whole install driver
  * and the prefetch pool sit on it — and it is where a bundled mod stops being
  * loose files in a package and becomes the archive Vortex installs.
  *
@@ -24,7 +24,7 @@ import {
 } from "../manifest/bundlePackage.testutil";
 import { listZipEntries } from "../manifest/readZip";
 import { buildStoredZip } from "../manifest/storedZip.testutil";
-import { extractBundledFromEhcoll, safeRmTempDir } from "./modInstall";
+import { writeBundledArchive, safeRmTempDir } from "./modInstall";
 
 let dir: string;
 beforeEach(() => {
@@ -67,10 +67,10 @@ async function inPrivateTemp(run: (tmp: string) => Promise<void>): Promise<void>
   }
 }
 
-describe("extractBundledFromEhcoll", () => {
+describe("writeBundledArchive", () => {
   it("writes the archive its folder is named after, under the mod's name", async () => {
     const { sha256, folder, entries } = await bundleEntries(MOD);
-    const { extractedPath, tempDir } = await extractBundledFromEhcoll(
+    const { extractedPath, tempDir } = await writeBundledArchive(
       writePackage(dir, "p.ehcoll", entries),
       folder,
       "Armor Retexture SE-12345",
@@ -89,7 +89,7 @@ describe("extractBundledFromEhcoll", () => {
   it("writes the same archive whether the package stored or deflated the files", async () => {
     const { sha256, folder, entries } = await bundleEntries(MOD);
     for (const method of ["store", "deflate"] as const) {
-      const { extractedPath, tempDir } = await extractBundledFromEhcoll(
+      const { extractedPath, tempDir } = await writeBundledArchive(
         writePackage(dir, `${method}.ehcoll`, entries, method),
         folder,
       );
@@ -105,7 +105,7 @@ describe("extractBundledFromEhcoll", () => {
     const mine = await bundleEntries(MOD);
     const other = await bundleEntries({ "Other.esp": "another mod entirely" });
     const pkg = writePackage(dir, "two.ehcoll", [...mine.entries, ...other.entries]);
-    const { extractedPath, tempDir } = await extractBundledFromEhcoll(pkg, other.folder);
+    const { extractedPath, tempDir } = await writeBundledArchive(pkg, other.folder);
     try {
       expect(sha256Of(extractedPath)).toBe(other.sha256);
     } finally {
@@ -118,8 +118,8 @@ describe("extractBundledFromEhcoll", () => {
     const { folder, entries } = await bundleEntries(MOD);
     const pkg = writePackage(dir, "p.ehcoll", entries);
     const [a, b] = await Promise.all([
-      extractBundledFromEhcoll(pkg, folder, "Same Name"),
-      extractBundledFromEhcoll(pkg, folder, "Same Name"),
+      writeBundledArchive(pkg, folder, "Same Name"),
+      writeBundledArchive(pkg, folder, "Same Name"),
     ]);
     try {
       expect(a.tempDir).not.toBe(b.tempDir);
@@ -140,7 +140,7 @@ describe("extractBundledFromEhcoll", () => {
       { name: `${folder}Extra.esp`, data: Buffer.from("not in the build") },
     ]);
     await inPrivateTemp(async (tmp) => {
-      await expect(extractBundledFromEhcoll(pkg, folder, "Armor")).rejects.toThrow(
+      await expect(writeBundledArchive(pkg, folder, "Armor")).rejects.toThrow(
         /do not make the mod the collection names/,
       );
       expect(fs.readdirSync(tmp)).toEqual([]);
@@ -157,7 +157,7 @@ describe("extractBundledFromEhcoll", () => {
     const pkg = path.join(dir, "damaged.ehcoll");
     fs.writeFileSync(pkg, bytes);
     await inPrivateTemp(async (tmp) => {
-      await expect(extractBundledFromEhcoll(pkg, folder)).rejects.toThrow(
+      await expect(writeBundledArchive(pkg, folder)).rejects.toThrow(
         /did not survive reading|is not the file that was listed/,
       );
       expect(fs.readdirSync(tmp)).toEqual([]);
@@ -170,7 +170,7 @@ describe("extractBundledFromEhcoll", () => {
     const absent = `bundled/${"f".repeat(64)}/`;
     expect(absent).not.toBe(folder);
     await inPrivateTemp(async (tmp) => {
-      await expect(extractBundledFromEhcoll(pkg, absent, "Gone")).rejects.toThrow(
+      await expect(writeBundledArchive(pkg, absent, "Gone")).rejects.toThrow(
         /holds no files for the bundled mod "Gone"/,
       );
       expect(fs.readdirSync(tmp)).toEqual([]);
@@ -186,7 +186,7 @@ describe("extractBundledFromEhcoll", () => {
       pkg,
       buildStoredZip([{ name: `${folder}Текстуры/броня.dds`, body: "cyrillic path" }]),
     );
-    await expect(extractBundledFromEhcoll(pkg, folder)).rejects.toThrow(
+    await expect(writeBundledArchive(pkg, folder)).rejects.toThrow(
       /does not say how its name is encoded/,
     );
   });
@@ -194,7 +194,7 @@ describe("extractBundledFromEhcoll", () => {
   it("refuses anything but a bundled mod's folder", async () => {
     const { sha256, entries } = await bundleEntries(MOD);
     const pkg = writePackage(dir, "p.ehcoll", entries);
-    await expect(extractBundledFromEhcoll(pkg, `bundled/${sha256}.zip`)).rejects.toThrow(
+    await expect(writeBundledArchive(pkg, `bundled/${sha256}.zip`)).rejects.toThrow(
       /is not a bundled mod's folder/,
     );
   });
@@ -204,7 +204,7 @@ describe("extractBundledFromEhcoll", () => {
     // check something irrelevant — exactly what happened to a tester.
     const { folder, entries } = await bundleEntries(MOD);
     const pkg = writePackage(dir, "short.ehcoll", entries.slice(1));
-    const message = await extractBundledFromEhcoll(pkg, folder).then(
+    const message = await writeBundledArchive(pkg, folder).then(
       () => "<no error>",
       (err: Error) => err.message,
     );

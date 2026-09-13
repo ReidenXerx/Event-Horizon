@@ -83,7 +83,7 @@ export function sourceProblem(
 ): string | undefined {
   const kind = sourceKindOf(entry);
 
-  // Bundling does NOT need the original download. `repackBundledExternals`
+  // Bundling does NOT need the original download. `measureBundledMods`
   // measures the mod's STAGING folder and re-keys the mod to the bundle's
   // hash, which is the whole reason a hand-made mod with no archive can still
   // ship. Gating this on the archive would block bundling

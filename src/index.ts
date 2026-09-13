@@ -134,7 +134,7 @@ function init(context: types.IExtensionContext): boolean {
    *  - The missing-master gate guarded the page only, so this action shipped
    *    packages a user could not install (fixed by extracting `gateOnMasters`).
    *  - The bundled-archive resolver was two copies that had diverged (fixed by
-   *    extracting `resolveBundledArchives`).
+   *    extracting `resolveBundles`).
    *
    * Four test files exist purely to police that divergence, and 83f10e0
    * already concluded the approach cannot hold: "a regex over source text can

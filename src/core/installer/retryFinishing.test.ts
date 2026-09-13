@@ -88,7 +88,7 @@ describe("what the retry pass does with the mods it recovers", () => {
      * Not a second copy of the mirror body. `planMirror`'s delete arm is the
      * only code here that removes a user's files (NS-2), and a divergent
      * second implementation of it is exactly the shape this repo has paid for
-     * twice — `resolveBundledArchives` and `gateOnMasters` were both extracted
+     * twice — `resolveBundles` and `gateOnMasters` were both extracted
      * after two copies drifted apart.
      */
     expect(source).toContain("const mirrorOneMod = async (");

@@ -74,7 +74,7 @@ describe("sourceProblem", () => {
   });
 
   it("catches bundled with no staging folder to pack", () => {
-    // NOT gated on the archive: repackBundledExternals packs the STAGING
+    // NOT gated on the archive: measureBundledMods packs the STAGING
     // folder and re-keys the mod to the new archive hash, which is the whole
     // reason a hand-made mod Vortex never downloaded can still be bundled.
     const said = sourceProblem({ bundled: true }, { hasStagingFolder: false });

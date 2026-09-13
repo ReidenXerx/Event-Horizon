@@ -98,11 +98,11 @@ External mods are identified by SHA-256 alone (per §5.5 — there is no other i
 |---|---|---|
 | 1 | An installed mod with `archiveSha256 === source.sha256` | `external-already-installed` |
 | 2 | A download with `sha256 === source.sha256` | `external-use-local-download` |
-| 3 | `source.bundled === true` | `external-use-bundled` (resolver computes `zipPath`) |
+| 3 | `source.bundled === true` | `external-use-bundled` (resolver computes `bundleFolder`) |
 | 4 | `manifest.package.strictMissingMods === true` and none of 1–3 | `external-missing` (blocks `canProceed`) |
 | 5 | `manifest.package.strictMissingMods === false` and none of 1–3 | `external-prompt-user` (deferred to install-time picker; blocks per-mod confirmation) |
 
-`zipPath` for `external-use-bundled` is the bundled mod's folder, `bundled/<sha256>/` — `bundleFolderInPackage` in `manifest/bundleLayout.ts`, the one spelling shared with the packager and the reader. It depends on the sha alone: a package carries no archive to take an extension from, so `source.expectedFilename` plays no part. See [`PACKAGE_ZIP.md`](PACKAGE_ZIP.md).
+`bundleFolder` for `external-use-bundled` is the bundled mod's folder, `bundled/<sha256>/` — `bundleFolderInPackage` in `manifest/bundleLayout.ts`, the one spelling shared with the packager and the reader. It depends on the sha alone: a package carries no archive to take an extension from, so `source.expectedFilename` plays no part. See [`PACKAGE_ZIP.md`](PACKAGE_ZIP.md).
 
 ## Conflict policy (v1, LOAD-BEARING)
 
@@ -235,4 +235,4 @@ If the resolver silently produced a plan from mismatched inputs, the resulting b
 8. **`compatibility.warnings` is purely informational.** The resolver never gates anything on a warning. The UI surfaces them as soft hints.
 9. **A SHA-unknown installed mod is invisible to byte-exact match and to byte-drift detection.** It only participates in `nexus-version-diverged` (different fileId) — never claims drift on missing data.
 10. **`external-bytes-diverged` is unreachable in v1** (per its type doc). The resolver never emits it. Future heuristics (matching by `archiveName + version` etc.) may light this branch up; the install driver's `switch` is forced to handle it from day one.
-11. **Bundled extension preservation.** `.tar.gz`, `.tar.bz2`, `.tar.xz` are kept as multi-part extensions when computing `zipPath`. Anything else falls back to single-extension or `.zip`.
+11. **Bundled folder, no extension.** `bundleFolder` is `bundled/<sha256>/` from `bundleFolderInPackage`; a package carries no archive, so no extension is kept or guessed.

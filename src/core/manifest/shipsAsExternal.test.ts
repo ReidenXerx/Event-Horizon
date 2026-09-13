@@ -37,7 +37,7 @@ describe("shipsAsExternal", () => {
 });
 
 describe("mayBundle", () => {
-  // The gate that actually failed, twice over: engine.resolveBundledArchives
+  // The gate that actually failed, twice over: engine.resolveBundles
   // and buildPackageAction each had their own copy, and neither had heard of
   // the flag. The build died reporting "Only external (non-Nexus) mods can be
   // bundled" about mods the curator had just declared external.

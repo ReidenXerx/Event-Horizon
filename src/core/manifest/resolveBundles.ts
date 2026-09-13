@@ -3,10 +3,10 @@
  *
  * ─── WHY THIS IS ITS OWN MODULE ─────────────────────────────────────────────
  * It was two modules. `buildPackageAction.ts` and `ui/pages/build/engine.ts`
- * each held a private `resolveBundledArchives` with the same signature and the
+ * each held a private `resolveBundles` with the same signature and the
  * same rules, and the action's copy carried this comment:
  *
- *     // See engine.resolveBundledArchives — the same rule, and it must stay
+ *     // See engine.resolveBundles — the same rule, and it must stay
  *     // the same rule. This copy is why marking a mod external fixed the
  *     // manifest and not the build.
  *
@@ -55,18 +55,18 @@ import { mayBundle } from "./shipsAsExternal";
 import { ehLog } from "../logging/ehLog";
 
 import type { AuditorMod } from "../getModsListForProfile";
-import type { RepackedBundle, RepackFailure } from "./bundleFromStaging";
+import type { MeasuredBundle, BundleFailure } from "./bundleFromStaging";
 import type { BundleSpec } from "./packageZip";
 import type { CollectionConfig } from "./collectionConfig";
 
 /** What this build packed from staging folders, and what it could not. */
-export type PackedBundles = {
-  bundles: readonly RepackedBundle[];
+export type MeasuredBundles = {
+  bundles: readonly MeasuredBundle[];
   /** modId → why that mod could not be packed. */
-  failures: ReadonlyMap<string, RepackFailure>;
+  failures: ReadonlyMap<string, BundleFailure>;
 };
 
-export type BundledArchiveResolution = {
+export type BundleResolution = {
   bundles: BundleSpec[];
   errors: string[];
   /** Curator-facing notes about answers that were dropped. */
@@ -75,13 +75,13 @@ export type BundledArchiveResolution = {
   droppedModIds: string[];
 };
 
-export function resolveBundledArchives(
+export function resolveBundles(
   state: types.IState,
   gameId: string,
   config: CollectionConfig,
   mods: AuditorMod[],
-  packed: PackedBundles,
-): BundledArchiveResolution {
+  packed: MeasuredBundles,
+): BundleResolution {
   const errors: string[] = [];
   const warnings: string[] = [];
   const droppedModIds: string[] = [];

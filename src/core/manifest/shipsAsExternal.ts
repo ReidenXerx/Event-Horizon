@@ -7,7 +7,7 @@
  * manifest, and whether its archive may be bundled:
  *
  *   1. `buildManifest.buildModEntry`        — nexus identity vs hash identity
- *   2. `engine.resolveBundledArchives`      — may this archive be bundled?
+ *   2. `engine.resolveBundles`      — may this archive be bundled?
  *   3. `buildPackageAction` (the same gate) — again, in the action path
  *
  * Teaching only the first about `treatAsExternal` produced exactly the failure

@@ -29,7 +29,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { bundleEntries, writePackage } from "../manifest/bundlePackage.testutil";
 import {
   bundledArchiveFileName,
-  extractBundledFromEhcoll,
+  writeBundledArchive,
   safeRmTempDir,
 } from "./modInstall";
 
@@ -103,7 +103,7 @@ describe("bundledArchiveFileName", () => {
 describe("the archive lands under the mod's name", () => {
   it("writes <mod name>.zip inside bundled/, which cleanup depends on", async () => {
     const { folder, entries } = await bundleEntries({ "Vampire.esp": "TES4 vampire bytes" });
-    const { extractedPath, tempDir } = await extractBundledFromEhcoll(
+    const { extractedPath, tempDir } = await writeBundledArchive(
       writePackage(dir, "p.ehcoll", entries),
       folder,
       "Vampire Armors and Weapons Retexture SE-96855",

@@ -111,7 +111,7 @@ Before transitioning to `building`, the page runs `validateCuratorInput(curator)
 | `author.trim().length === 0` | "Author cannot be empty." |
 | `version` doesn't match `^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$` | "Version 'X' doesn't look like semver. Try e.g. '1.0.0' or '0.2.1-beta.1'." |
 
-Per-mod overrides are **not** validated here — the engine's `resolveBundledArchives` does the bundling sanity checks (Nexus mods can't be bundled, bundled mods need an `archiveSha256`, etc.) and surfaces them as a `BundleResolutionError` thrown later.
+Per-mod overrides are **not** validated here — the engine's `resolveBundles` does the bundling sanity checks (Nexus mods can't be bundled, bundled mods need an `archiveSha256`, etc.) and surfaces them as a `BundleResolutionError` thrown later.
 
 ### 5. The building state (`runBuildPipeline`)
 
@@ -127,7 +127,7 @@ When the user clicks Build:
 | `capturing-load-order` | `captureLoadOrder(state, gameId)` — see `ORDERING.md` |
 | `reading-plugins-txt` | Best-effort read of the game's `plugins.txt` (passed verbatim into `buildManifest`) |
 | `building-manifest` | `buildManifest({ snapshot, package, game, vortex, pluginsTxtContent, externalMods, externalDependencies })` — see `BUILD_MANIFEST.md` |
-| `resolving-bundled-archives` | Walks `config.externalMods` looking for `bundled === true` rows, locates each archive on disk, throws `BundleResolutionError` on any mismatch (mod missing, mod is Nexus, no archiveSha256, file disappeared) |
+| `resolving-bundles` | Walks `config.externalMods` looking for `bundled === true` rows, locates each archive on disk, throws `BundleResolutionError` on any mismatch (mod missing, mod is Nexus, no archiveSha256, file disappeared) |
 | `packaging` | `packageEhcoll({ manifest, bundledArchives, readme, changelog, outputPath })` — see `PACKAGE_ZIP.md` |
 
 3. On success, the page receives `{ outputPath, outputBytes, bundledCount, modCount, warnings }` and transitions to `done`. A success toast also fires: "Built X v1.0.0 — N mods, S bytes."
@@ -216,7 +216,7 @@ The page does **not** delete the previous `.ehcoll` for the same collection — 
 | File | What it owns |
 |---|---|
 | `src/ui/pages/build/BuildPage.tsx` | The wizard shell, state machine, loading / form / building / done / error panels, header with `StepDots`, `openShellPath`, `formatBytes` |
-| `src/ui/pages/build/engine.ts` | `loadBuildContext`, `runBuildPipeline`, `validateCuratorInput`, `BundleResolutionError`, internal helpers (`isNexusMod`, `resolveBundledArchives`, `readPluginsTxtIfPresent`, `slugify`, `buildOutputFileName`, etc.) |
+| `src/ui/pages/build/engine.ts` | `loadBuildContext`, `runBuildPipeline`, `validateCuratorInput`, `BundleResolutionError`, internal helpers (`isNexusMod`, `resolveBundles`, `readPluginsTxtIfPresent`, `slugify`, `buildOutputFileName`, etc.) |
 | `src/core/getModsListForProfile.ts` | `getActiveGameId`, `getActiveProfileIdFromState`, `getModsForProfile` |
 | `src/core/archiveHashing.ts` | `enrichModsWithArchiveHashes`, `getModArchivePath` — see `ARCHIVE_HASHING.md` |
 | `src/core/deploymentManifest.ts` | `captureDeploymentManifests` — see `FILE_OVERRIDES_CAPTURE.md` |

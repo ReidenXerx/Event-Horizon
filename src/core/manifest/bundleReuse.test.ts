@@ -20,9 +20,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { __testPaths } from "../../../test/stubs/vortex-api";
 import {
-  mergeRepackedBundles,
-  repackBundledExternals,
-  type RepackedBundle,
+  mergeMeasuredBundles,
+  measureBundledMods,
+  type MeasuredBundle,
 } from "./bundleFromStaging";
 import { bundleFilesFromListing, listBundleFolder, writeBundleZip } from "./bundleZip";
 import { computeStagingSetHash } from "./stagingSetHash";
@@ -73,8 +73,8 @@ const lods = (sha: string | undefined): AuditorMod =>
     stagingFiles: [{ path: "tamriel.bto", size: 9, ...(sha !== undefined ? { sha256: sha } : {}) }],
   } as never);
 
-const run = (m: AuditorMod, reuseRecords?: boolean): ReturnType<typeof repackBundledExternals> =>
-  repackBundledExternals({
+const run = (m: AuditorMod, reuseRecords?: boolean): ReturnType<typeof measureBundledMods> =>
+  measureBundledMods({
     state: {} as never,
     gameId: "skyrimse",
     mods: [m],
@@ -196,12 +196,12 @@ describe("measuring a bundled mod", () => {
 });
 
 describe("folding a second repack pass into the first", () => {
-  // The build-killer two audit lenses found independently. `repackBundledExternals`
+  // The build-killer two audit lenses found independently. `measureBundledMods`
   // measures every mod the CONFIG marks bundled, so a mid-build second pass returns
   // the already-bundled mods too — reused, with the SAME sha256. Concatenating them
   // made `packageEhcoll` reject the build: "Two bundled mods share sha256 ... this
   // should be impossible."
-  const b = (modId: string, sha: string): RepackedBundle => ({
+  const b = (modId: string, sha: string): MeasuredBundle => ({
     modId,
     modName: modId,
     rootDir: `C:/staging/${modId}`,
@@ -211,7 +211,7 @@ describe("folding a second repack pass into the first", () => {
   });
 
   it("keeps ONE entry per mod when the second pass re-emits the first", () => {
-    const merged = mergeRepackedBundles(
+    const merged = mergeMeasuredBundles(
       [b("lods", "a".repeat(64)), b("grass", "b".repeat(64))],
       [b("lods", "a".repeat(64)), b("grass", "b".repeat(64)), b("new", "c".repeat(64))],
     );
@@ -221,12 +221,12 @@ describe("folding a second repack pass into the first", () => {
   });
 
   it("lets the second pass win, because it read the answers", () => {
-    const merged = mergeRepackedBundles([b("m", "a".repeat(64))], [b("m", "d".repeat(64))]);
+    const merged = mergeMeasuredBundles([b("m", "a".repeat(64))], [b("m", "d".repeat(64))]);
     expect(merged).toEqual([b("m", "d".repeat(64))]);
   });
 
   it("is a no-op when the second pass found nothing", () => {
     const first = [b("m", "a".repeat(64))];
-    expect(mergeRepackedBundles(first, [])).toEqual(first);
+    expect(mergeMeasuredBundles(first, [])).toEqual(first);
   });
 });

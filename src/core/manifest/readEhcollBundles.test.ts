@@ -19,7 +19,7 @@ import * as path from "path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { extractBundledFromEhcoll, safeRmTempDir } from "../installer/modInstall";
+import { writeBundledArchive, safeRmTempDir } from "../installer/modInstall";
 import { buildManifest, type BuildManifestInput } from "./buildManifest";
 import {
   bundleEntries,
@@ -83,7 +83,7 @@ function manifestEntry(bundleSha: string, over: Record<string, unknown> = {}): P
     game: { version: "1.10.163.0", versionPolicy: "exact" },
     vortex: { version: "2.6.0", deploymentMethod: "hardlink" },
     externalMods: { settings: { bundled: true } },
-    repackedModIds: new Set(["settings"]),
+    bundledModIds: new Set(["settings"]),
   } as unknown as BuildManifestInput);
   return { name: "manifest.json", data: Buffer.from(JSON.stringify({ ...manifest, ...over })) };
 }
@@ -96,14 +96,14 @@ describe("reading a package's bundled mods", () => {
     const read = await readEhcoll(pkg);
 
     expect(read.bundledArchives).toEqual([
-      { sha256: bundle.sha256, zipPath: bundle.folder, files: 2, size: expect.any(Number) },
+      { sha256: bundle.sha256, bundleFolder: bundle.folder, files: 2, size: expect.any(Number) },
     ]);
     const mod = read.manifest.mods[0]!;
     expect(mod.source).toMatchObject({ kind: "external", bundled: true, sha256: bundle.sha256 });
 
-    const { extractedPath, tempDir } = await extractBundledFromEhcoll(
+    const { extractedPath, tempDir } = await writeBundledArchive(
       pkg,
-      read.bundledArchives[0]!.zipPath,
+      read.bundledArchives[0]!.bundleFolder,
       mod.name,
     );
     try {

@@ -3,7 +3,7 @@
  *
  * ─── WHAT THIS TEST USED TO BE ──────────────────────────────────────────────
  * A regex over the two build files asserting that each of their private
- * `resolveBundledArchives` loops asked `mayBundle` rather than a bare
+ * `resolveBundles` loops asked `mayBundle` rather than a bare
  * `isNexusMod`. It was written because both copies had stopped asking: the
  * `treatAsExternal` flag was taught to the identity branch, both bundling
  * gates kept their own Nexus rejection, and the build failed with "Only
@@ -17,7 +17,7 @@
  * shipped unchecked packages, because a regex over source text can only police
  * the rules somebody remembered to enumerate — and nobody enumerated that one.
  *
- * The loop now lives in `core/manifest/resolveBundledArchives.ts` and both
+ * The loop now lives in `core/manifest/resolveBundles.ts` and both
  * doors call it, so `mayBundle` has exactly one caller and cannot be bypassed
  * by one path. What is worth guarding is no longer the rule inside the loop —
  * the unit tests own that — but the thing that made the rule breakable: a
@@ -33,7 +33,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { mayBundle } from "./shipsAsExternal";
-import { resolveBundledArchives } from "./resolveBundledArchives";
+import { resolveBundles } from "./resolveBundles";
 
 const ROOT = join(__dirname, "..", "..");
 
@@ -52,7 +52,7 @@ const ROOT = join(__dirname, "..", "..");
  */
 const BUILD_PATHS = [join(ROOT, "ui", "pages", "build", "engine.ts")];
 
-const SHARED = join(ROOT, "core", "manifest", "resolveBundledArchives.ts");
+const SHARED = join(ROOT, "core", "manifest", "resolveBundles.ts");
 
 describe("bundle resolution has one home", () => {
   const sources = BUILD_PATHS.map((f) => ({
@@ -65,7 +65,7 @@ describe("bundle resolution has one home", () => {
     // empty offender list would then look exactly like success.
     for (const s of sources) {
       expect(s.text.length).toBeGreaterThan(0);
-      expect(s.text).toContain("resolveBundledArchives");
+      expect(s.text).toContain("resolveBundles");
     }
     expect(readFileSync(SHARED, "utf8")).toContain("entry.bundled !== true");
   });
@@ -85,8 +85,8 @@ describe("bundle resolution has one home", () => {
 
   it("has every build path calling the shared one", () => {
     const offenders = sources
-      .filter(({ text }) => !text.includes("resolveBundledArchives("))
-      .map(({ file }) => `${file}: does not call resolveBundledArchives`);
+      .filter(({ text }) => !text.includes("resolveBundles("))
+      .map(({ file }) => `${file}: does not call resolveBundles`);
     expect(offenders).toEqual([]);
   });
 
@@ -115,7 +115,7 @@ describe("bundle resolution has one home", () => {
       nexusModId: 5,
       nexusFileId: 9,
     };
-    const result = resolveBundledArchives(
+    const result = resolveBundles(
       { persistent: { mods: { skyrimse: { m1: {} } } } } as never,
       "skyrimse",
       { externalMods: { m1: { name: "Some Nexus Mod", bundled: true } } } as never,

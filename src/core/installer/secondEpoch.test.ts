@@ -236,7 +236,7 @@ describe("how the driver runs the two epochs", () => {
      * A private re-derivation in the driver is how the dry run and the real
      * install would come to disagree — and a dry run that disagrees with the
      * install is worse than none. This repo has paid for a duplicated rule
-     * twice already (`gateOnMasters`, `resolveBundledArchives`).
+     * twice already (`gateOnMasters`, `resolveBundles`).
      */
     expect(src).toContain("planInstallEpochs(plan.manifest)");
     expect(src).not.toContain("!isBaseGameMaster(");

@@ -137,7 +137,7 @@ Strip `name` hints; return the `Record<string, { instructions?, bundled? }>` sha
 ## Code references
 
 - `src/core/manifest/collectionConfig.ts` — full module (types, load/save, reconciler, validator).
-- `src/actions/buildPackageAction.ts` — `loadOrCreateCollectionConfig` + `reconcileExternalModsConfig` + `resolveBundledArchives` integration in the slice 4b extension to the build flow.
+- `src/actions/buildPackageAction.ts` — `loadOrCreateCollectionConfig` + `reconcileExternalModsConfig` + `resolveBundles` integration in the slice 4b extension to the build flow.
 - `src/core/manifest/buildManifest.ts` — `BuildManifestInput.externalMods` is the consumer of `toBuildManifestExternalMods`'s output.
 - `src/core/manifest/packageZip.ts` — `PackageEhcollInput.{readme,changelog,bundledArchives}` are the consumers of the rest.
 

@@ -431,7 +431,7 @@ function lookupProfile(
  * below it. A second copy of "does this profile exist" is how the two would
  * drift into disagreeing about whether a switch is safe, and this repo has
  * paid for a duplicated rule twice already (`gateOnMasters`,
- * `resolveBundledArchives`).
+ * `resolveBundles`).
  */
 function profileForGame(
   state: types.IState,

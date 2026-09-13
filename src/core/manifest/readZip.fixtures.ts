@@ -100,7 +100,7 @@ export const SEVENZIP_STORED_CRC_OFFSET = 2312;
  * as a built package names them. It also carries a DIRECTORY entry, which a
  * reader must skip rather than try to extract.
  *
- * This exists because extractBundledFromEhcoll had no tests: removing its
+ * This exists because writeBundledArchive had no tests: removing its
  * extraction entirely, and pointing it at the wrong entry, both left the suite
  * green.
  */

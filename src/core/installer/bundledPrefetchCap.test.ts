@@ -10,19 +10,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./modInstall", () => ({
-  extractBundledFromEhcoll: vi.fn(),
+  writeBundledArchive: vi.fn(),
   safeRmTempDir: vi.fn(async () => undefined),
 }));
 
 import { BundledPrefetchPool } from "./bundledPrefetch";
-import { extractBundledFromEhcoll } from "./modInstall";
+import { writeBundledArchive } from "./modInstall";
 
 type Written = { extractedPath: string; tempDir: string };
 
 /** Every write the pool starts, held open until the test finishes it. */
 function controlledWrites(): Array<{ entry: string; finish: () => void }> {
   const started: Array<{ entry: string; finish: () => void }> = [];
-  vi.mocked(extractBundledFromEhcoll).mockImplementation(
+  vi.mocked(writeBundledArchive).mockImplementation(
     (_pkg: string, entry: string) =>
       new Promise<Written>((resolve) => {
         started.push({ entry, finish: () => resolve({ extractedPath: `${entry}/mod.zip`, tempDir: entry }) });
@@ -34,14 +34,14 @@ function controlledWrites(): Array<{ entry: string; finish: () => void }> {
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 afterEach(() => {
-  vi.mocked(extractBundledFromEhcoll).mockReset();
+  vi.mocked(writeBundledArchive).mockReset();
 });
 
 describe("BundledPrefetchPool", () => {
   it("does not start another write while a finished one waits to be taken", async () => {
     const started = controlledWrites();
     const pool = new BundledPrefetchPool({ ehcollZipPath: "C:/p.ehcoll", concurrency: 1 });
-    pool.prime([{ zipEntry: "a" }, { zipEntry: "b" }, { zipEntry: "c" }]);
+    pool.prime([{ bundleFolder: "a" }, { bundleFolder: "b" }, { bundleFolder: "c" }]);
     expect(started.map((w) => w.entry)).toEqual(["a"]);
 
     started[0]!.finish();
@@ -61,7 +61,7 @@ describe("BundledPrefetchPool", () => {
     // getting the mod it is installing now.
     const started = controlledWrites();
     const pool = new BundledPrefetchPool({ ehcollZipPath: "C:/p.ehcoll", concurrency: 1 });
-    pool.prime([{ zipEntry: "a" }, { zipEntry: "b" }]);
+    pool.prime([{ bundleFolder: "a" }, { bundleFolder: "b" }]);
     started[0]!.finish();
     await settle();
 
