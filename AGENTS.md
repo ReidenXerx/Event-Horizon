@@ -55,6 +55,16 @@ This repo is GitNexus-indexed as `Event-Horizon`: 7391 symbols, 17846 edges, 401
 
 For the full reference (Cypher recipes, disambiguation discipline, per-task workflows), see `.cursor/rules/gitnexus.mdc`.
 
+## Browser automation on this machine
+
+The owner of this machine allows agents to drive their **main Brave profile**, with their real logged-in sessions, for work on websites such as Nexus mod pages (decided 2026-09-14). On this machine that replaces the dedicated-profile advice in the header of `scripts/nexus-page.mjs`.
+
+- **Start it through Windows, not Git Bash.** Close every Brave window first, because a Brave that is already running ignores the flag. Then in PowerShell: `Start-Process "$env:LOCALAPPDATA\BraveSoftware\Brave-Browser\Application\brave.exe" -ArgumentList '--remote-debugging-port=9222'`. Started from Git Bash, Brave crashed with a segmentation fault (exit 139). It is ready when `http://127.0.0.1:9222/json/version` answers; Brave on Chromium 153 opens the port on its default profile (checked 2026-09-14).
+- **Never read, export or print cookies, saved passwords, autofill data or any other stored credential**, and never type a credential. Use the login that is already there; if a site shows you logged out, stop and ask the owner to log in.
+- **Work in a tab of your own.** Open it with `PUT /json/new` and close it when done (`withNewTab` in `scripts/nexus-page.mjs` does both). Never navigate or close the owner's tabs.
+- **Outward-facing clicks stay with the owner** unless they said otherwise for that action: publishing a page, deleting one, anything that sends something to other people.
+- **While the port is open, any program on this PC can act as the owner on every site they are logged into.** Say when you open it, and tell the owner when you are done so they can close Brave, which closes the port.
+
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
