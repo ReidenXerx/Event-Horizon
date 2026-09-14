@@ -110,6 +110,12 @@ export type AuditorMod = {
    */
   mirrored?: boolean;
   /**
+   * Staged files of a mirrored mod that its own archive provides byte for
+   * byte, so the package does not carry them. Set by the build's payload step
+   * and copied into the manifest; see `mirrorPayload.ts`.
+   */
+  mirrorFromArchive?: string[];
+  /**
    * The build proved that installing this mod WITHOUT selecting anything
    * reproduces the curator's staging folder.
    *

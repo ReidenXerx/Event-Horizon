@@ -270,18 +270,19 @@ export function describeChoice(
   if (choice === "mirror") {
     return {
       label: "Reproduce my version — users get exactly this",
-      // Says the cost out loud. The package carries this mod's files so it
-      // can do the replacing, which makes mirroring HEAVIER than bundling,
-      // not lighter — the thing it buys is that the mod stays a real Nexus
-      // mod: the author keeps the download, and updates and rules still work
-      // on it. An earlier draft claimed "only the differences ride in the
-      // package", which described a narrowing the build does not do.
+      // Says what rides in the package, and has to stay true for both kinds
+      // of mod. Since 0.1.157 a mirrored mod carries only the files its
+      // archive does not install byte for byte (mirrorPayload.ts); the rest
+      // come from the user's own download, which is the point — the author
+      // keeps it. A mod whose installer's result cannot be predicted on
+      // another machine still carries every file.
       consequence:
         `Users still ${howUsersGetIt(source)}, then the collection puts ` +
         `your version of the ${n} in place — their folder ends up identical ` +
         `to yours. Right when the archive has the file and you changed it: a ` +
-        `plugin you cleaned, an ini you edited. The package carries this ` +
-        `mod's files to do that, so the download is bigger.` +
+        `plugin you cleaned, an ini you edited. The package carries only the ` +
+        `files that differ from the archive, or all of this mod's files when ` +
+        `its installer's result cannot be predicted.` +
         (removedCount > 0
           ? ` It also removes the ${m} missing from your folder — right if you ` +
             `deleted them, wrong if Vortex lost them.`

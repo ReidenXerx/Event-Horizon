@@ -151,6 +151,20 @@ export type SelfCheckReport = {
    * post-processing question never asks about.
    */
   promptsUser?: boolean;
+  /**
+   * Installing this mod's archive on another machine places its files where
+   * the curator's install placed them.
+   *
+   * True for an archive with no FOMOD script, which every machine installs the
+   * same way, and for a script replayed with confidence from the curator's
+   * recorded answers that asks the game nothing. Absent for every other shape:
+   * an installer users answer (`promptsUser`), one that depends on active
+   * plugins (`readsPluginState`), one that could not be read or replayed.
+   *
+   * What a mirrored mod leans on when its package leaves a file to the
+   * archive — see mirrorPayload.ts. Absent means it carries every file.
+   */
+  reproducibleInstall?: boolean;
 };
 
 export type SelfCheckInput = {
@@ -346,7 +360,14 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
   const configEntry = findModuleConfigEntry(listing);
   if (configEntry === undefined) {
     notes.push("No FOMOD script in archive; expected file set unknown.");
-    return { ...withLeads, depth: "containment", notes, ...unexplainedFacts(containment, listing) };
+    return {
+      ...withLeads,
+      depth: "containment",
+      notes,
+      // Nothing to answer: every machine installs this archive the same way.
+      reproducibleInstall: true,
+      ...unexplainedFacts(containment, listing),
+    };
   }
   if (input.recordedChoices.length === 0) {
     // Vortex records nothing when an install had no branching. The script's
@@ -538,6 +559,9 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
     missing,
     ...unexplainedFacts(containment, listing),
     expectedCount: expected.files.length,
+    // The same answers pick the same files anywhere — unless the script also
+    // asks the game which plugins are active.
+    ...(readsPluginState.length === 0 ? { reproducibleInstall: true } : {}),
   });
 }
 

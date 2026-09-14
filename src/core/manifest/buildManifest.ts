@@ -730,6 +730,11 @@ function buildModInstallState(
     // lines saying nothing.
     ...(mod.postProcessed === true ? { postProcessed: true } : {}),
     ...(mod.mirrored === true ? { mirrored: true } : {}),
+    // Only for a mirrored mod: a claim about the payload means nothing for a
+    // mod that has none.
+    ...(mod.mirrored === true && (mod.mirrorFromArchive?.length ?? 0) > 0
+      ? { mirrorFromArchive: mod.mirrorFromArchive }
+      : {}),
   };
 }
 

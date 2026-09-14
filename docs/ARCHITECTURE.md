@@ -148,6 +148,7 @@ Full prose contract: [`docs/business/INSTALL_ACTION.md`](business/INSTALL_ACTION
 - Validation is fail-fast and exhaustive — every detectable problem (sha256 format violations, manifest/bundles mismatch, non-absolute paths, etc.) goes into one `PackageEhcollError`.
 - **Identity is `(package.id, package.version)`, not byte-equal builds.** The only stable-bytes concession kept is `manifest.json` key sorting via `sortDeep`, purely for `unzip + diff` debuggability.
 - Every staged bundle is re-measured — its files must still make the sha the manifest names — and every mirrored file re-hashed, because the decisions gate can sit between measuring and packaging for as long as the curator likes.
+- A mirrored mod's staged files must each be carried at `mirror/<sha256>` or named in its `state.mirrorFromArchive` — the files the build proved its archive installs byte for byte (`manifest/mirrorPayload.ts`).
 - Staging directory is `rm -rf`'d in `finally`, so partial output never leaks into the temp dir.
 - Full prose contract: [`docs/business/PACKAGE_ZIP.md`](business/PACKAGE_ZIP.md).
 
@@ -396,6 +397,7 @@ init → buildPackageAction()
    → reconcileExternalModsConfig       (auto-populate stub entries for new external mods)
    → saveCollectionConfig              (only when reconciliation changed something)
    → leaveOutArchiveFiles              (bundled and mirrored mods' archive files out of their file lists)
+   → proveMirroredFilesFromArchives    (files each mirrored mod's archive provides, named instead of packed)
    → buildManifest                     (pure transform → EhcollManifest)
    → resolveBundles            (slice 4b — each bundled:true entry → the files measured from its staging folder)
    → packageEhcoll                     (checks no archive remains → stages loose files → 7z -tzip → .ehcoll)

@@ -111,6 +111,19 @@ describe("bundle resolution has one home", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("proves what mirrored mods' archives provide between leaving archives out and building the manifest", () => {
+    // Earlier, a claim could name a file the manifest never lists; later, the
+    // manifest would not carry the claim, and the packager would refuse every
+    // file it names as not collected.
+    const offenders = sources
+      .filter(
+        ({ text }) =>
+          !/leaveOutArchiveFiles\(\{[\s\S]*proveMirroredFilesFromArchives\(\{[\s\S]*buildManifest\(\{/.test(text),
+      )
+      .map(({ file }) => `${file}: proves mirrored files outside that window`);
+    expect(offenders).toEqual([]);
+  });
+
   it("routes the Nexus decision through mayBundle, in that one place", () => {
     // The rule itself, asserted where it now lives rather than in two regexes.
     const shared = readFileSync(SHARED, "utf8");

@@ -322,6 +322,81 @@ describe("no-archive reporting", () => {
   });
 });
 
+describe("whether another machine's install places files the same way", () => {
+  // What a mirrored mod's package leans on when it leaves a file to the
+  // archive (mirrorPayload.ts). Wrongly true, and a package omits a file the
+  // user's install may put somewhere else.
+  it("is true for an archive with no installer script", async () => {
+    const r = await selfCheckMod({
+      sevenZip: sevenZip([{ name: "Data/x.esp", size: 10, crc: "0000000a" }]),
+      modId: "m1", modName: "plain",
+      archivePath: "a.7z",
+      staged: [{ path: "Data/x.esp", size: 10, crc: "0000000a" }],
+      recordedChoices: [],
+      readEntry: async () => undefined,
+    });
+    expect(r.reproducibleInstall).toBe(true);
+  });
+
+  it("is true for a script replayed from the curator's answers", async () => {
+    const r = await selfCheckMod({
+      sevenZip: sevenZip(ARCHIVE_ENTRIES),
+      modId: "m1", modName: "UAP",
+      archivePath: "a.7z",
+      staged: [
+        { path: "AAF/AM-actionData.xml", size: 430, crc: "11111111" },
+        { path: "AAF/AM-otherData.xml", size: 431, crc: "22222222" },
+      ],
+      recordedChoices: CHOICES,
+      readEntry: readScript,
+    });
+    expect(r.depth).toBe("replayed");
+    expect(r.reproducibleInstall).toBe(true);
+  });
+
+  it("is not, for a script that asks the game which plugins are active", async () => {
+    const r = await selfCheckMod({
+      sevenZip: sevenZip(ARCHIVE_ENTRIES),
+      modId: "m1", modName: "UAP",
+      archivePath: "a.7z",
+      staged: [
+        { path: "AAF/AM-actionData.xml", size: 430, crc: "11111111" },
+        { path: "AAF/AM-otherData.xml", size: 431, crc: "22222222" },
+      ],
+      recordedChoices: CHOICES,
+      readEntry: readAskingScript,
+    });
+    expect(r.readsPluginState).toEqual(["aaf.esm"]);
+    expect(r.reproducibleInstall).toBeUndefined();
+  });
+
+  it("is not, for an installer users answer themselves", async () => {
+    const r = await selfCheckMod({
+      sevenZip: sevenZip(ARCHIVE_ENTRIES),
+      modId: "m1", modName: "x",
+      archivePath: "a.7z",
+      staged: [{ path: "AAF/AM-actionData.xml", size: 430, crc: "11111111" }],
+      recordedChoices: [],
+      readEntry: readScript,
+    });
+    expect(r.promptsUser).toBe(true);
+    expect(r.reproducibleInstall).toBeUndefined();
+  });
+
+  it("is not, when the replay's confidence is low", async () => {
+    const r = await selfCheckMod({
+      sevenZip: sevenZip(ARCHIVE_ENTRIES),
+      modId: "m1", modName: "x",
+      archivePath: "a.7z",
+      staged: [{ path: "AAF/AM-actionData.xml", size: 430, crc: "11111111" }],
+      recordedChoices: [{ name: "Ghost Step", groups: [] }],
+      readEntry: readScript,
+    });
+    expect(r.notes.join(" ")).toMatch(/confidence low/i);
+    expect(r.reproducibleInstall).toBeUndefined();
+  });
+});
+
 describe("summarizeSelfChecks", () => {
   it("counts depths and missing files across mods", () => {
     const lead = {

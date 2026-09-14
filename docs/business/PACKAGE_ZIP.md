@@ -29,7 +29,14 @@ package with a bundled mod was quarantined. From schema 2:
   entries), so the same files make the same identity on every machine. The
   installer writes that zip back from the loose files and refuses it unless it
   hashes to the sha.
-- A **mirrored file** ships loose as `mirror/<sha256>`, as before.
+- A **mirrored file** ships loose as `mirror/<sha256>`, as before — but only one
+  the mod's own archive does not provide. From 0.1.157 a build compares each
+  mirrored mod's files with its archive's header (size and CRC-32, at the same
+  path) and names the files the archive installs byte for byte in
+  `state.mirrorFromArchive` instead of packing them; a user's mirror takes such
+  a file from the mod's own archive, hash-checked, when their install did not
+  produce it. A mod whose installer's result cannot be predicted still ships
+  every file (`manifest/mirrorPayload.ts`).
 - A file in either that **is itself an archive** — judged by its first bytes
   (zip, 7z, rar, gzip, xz, bzip2, zstd, lz4, cab, wim, tar), whatever it is called — is
   left out, as if the curator had deleted it from staging: out of the bundle

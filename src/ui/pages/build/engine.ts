@@ -80,6 +80,15 @@ import {
 import { findModsWithNoArchivePath } from "../../../core/archiveRecovery";
 import { resolveSevenZip } from "../../../core/manifest/sevenZip";
 import { listArchiveContents } from "../../../core/manifest/archiveContents";
+import { listArchiveNativeFirst } from "../../../core/manifest/listArchive";
+import {
+  proveMirroredFilesFromArchives,
+  summarizeProvisions,
+  unpredictableInstall,
+} from "../../../core/manifest/mirrorPayload";
+import { crc32File } from "../../../core/manifest/readZip";
+import type { SelfCheckReport } from "../../../core/manifest/selfCheckMod";
+import { filesNeedingPayload } from "../../../core/installer/mirrorStaging";
 import {
   describeExternalDrift,
   detectExternalDrift,
@@ -143,7 +152,7 @@ import {
   undeclaredDependencies,
 } from "../../../core/manifest/externalHints";
 import type { ExternalHint } from "../../../core/manifest/externalHints";
-import { getCollectionsConfigDir, getCollectionsDir, getVortexUserDataPath } from "../../../core/paths";
+import { getCollectionsConfigDir, getCollectionsDir, getVortexUserDataPath, pathKey } from "../../../core/paths";
 import { beginOp, ehLog } from "../../../core/logging/ehLog";
 import type {
   SupportedGameId,
@@ -471,12 +480,17 @@ function declarationsFor(
 }
 
 /**
- * Absolute source paths for every staged file of every mirrored mod.
+ * Absolute source paths for the files of every mirrored mod that its own
+ * archive does not provide.
  *
- * Content-addressed on the way out, so the same cleaned plugin shared by two
- * mods is carried once. A file with no recorded hash is skipped rather than
- * shipped: the install side verifies each blob against its own name before
- * writing it, and a blob that cannot be verified could never be used.
+ * A file the payload step proved the archive installs byte for byte is named
+ * in `mirrorFromArchive` and left out: users get it from their own download,
+ * and carrying it re-hosted the author's file for nothing — see
+ * mirrorPayload.ts. Content-addressed on the way out, so the same cleaned
+ * plugin shared by two mods is carried once. A file with no recorded hash is
+ * skipped rather than shipped: the install side verifies each blob against its
+ * own name before writing it, and a blob that cannot be verified could never
+ * be used.
  */
 export function collectMirrorPayload(
   state: types.IState,
@@ -516,7 +530,17 @@ export function collectMirrorPayload(
     }
     const root = stagingRootFromFolder(installRoot, mod.installationPath);
     if (root === undefined) continue;
-    for (const file of mod.stagingFiles ?? []) {
+    // Keyed exactly as `stagingFiles` spells the paths: the claim was copied
+    // from that list, so folding case here could only match a file it never
+    // named.
+    const fromArchive = new Set(
+      (mod.mirrorFromArchive ?? []).map((p) => pathKey(p, "sensitive")),
+    );
+    for (const file of filesNeedingPayload(
+      mod.stagingFiles ?? [],
+      fromArchive,
+      "sensitive",
+    )) {
       if (file.sha256 === undefined || seen.has(file.sha256)) continue;
       seen.add(file.sha256);
       out.push({
@@ -1639,6 +1663,13 @@ export async function runBuildPipeline(
   const selfCheckOp = beginOp("build.self-check", { mods: mods.length });
   let selfCheckWarnings: string[] = [];
   let postProcessingCandidates: PostProcessingCandidate[] = [];
+  /**
+   * Kept past the self-check for the payload step, which decides what each
+   * mirrored mod's package has to carry. Left empty when the check threw or
+   * could not run, and empty means every mirrored file ships.
+   */
+  let selfCheckReports: readonly SelfCheckReport[] = [];
+  let selfCheckArchives: ReadonlyMap<string, string> = new Map();
   try {
     // Bundled mods ship the staging folder itself, so what ships IS their
     // staging and there is nothing to compare. Built from what was actually
@@ -1667,6 +1698,8 @@ export async function runBuildPipeline(
     });
     selfCheckWarnings = selfCheck.warnings;
     postProcessingCandidates = selfCheck.postProcessingCandidates;
+    selfCheckReports = selfCheck.reports;
+    selfCheckArchives = selfCheck.archiveByModId;
 
     /**
      * ─── ASK BEFORE PACKING ────────────────────────────────────────────
@@ -2084,6 +2117,51 @@ export async function runBuildPipeline(
       ...(signal !== undefined ? { signal } : {}),
     })
   ).mods;
+
+  /**
+   * What each mirrored mod's archive already provides, recorded on the mod so
+   * the manifest names those files and the payload leaves them out — see
+   * mirrorPayload.ts. After archive files are left out, so a claim covers
+   * exactly the files the manifest lists; before the manifest, which records
+   * the claim.
+   */
+  const mirroredCount = mods.filter((m) => m.mirrored === true).length;
+  if (mirroredCount > 0) {
+    onProgress?.({
+      phase: "building-manifest",
+      message: "Comparing mirrored mods with their archives...",
+    });
+    const reportByModId = new Map(
+      selfCheckReports.map((r) => [r.modId, r] as const),
+    );
+    const provisionRoot = installRootFor(state, gameId);
+    const provisionOp = beginOp("build.mirror.archive-provides", {
+      mods: mirroredCount,
+    });
+    const provisions = await proveMirroredFilesFromArchives({
+      mods,
+      unpredictable: (m) => unpredictableInstall(reportByModId.get(m.id)),
+      archiveFor: (m) => selfCheckArchives.get(m.id),
+      stagingRootOf: (m) => stagingRootFromFolder(provisionRoot, m.installationPath),
+      listArchive: async (archivePath) => {
+        const attempt = await listArchiveNativeFirst({
+          archivePath,
+          ...(signal !== undefined ? { signal } : {}),
+        });
+        return attempt.kind === "listed" ? attempt.listing : undefined;
+      },
+      crcFile: (absolutePath) => crc32File(absolutePath, signal),
+      ...(signal !== undefined ? { signal } : {}),
+    });
+    checkAbort();
+    mods = mods.map((m) => {
+      const p = provisions.get(m.id);
+      return p?.kind === "proven" && p.provided.length > 0
+        ? { ...m, mirrorFromArchive: p.provided }
+        : m;
+    });
+    provisionOp.ok(summarizeProvisions(mods, provisions));
+  }
   onProgress?.({ phase: "building-manifest" });
   const snapshot = {
     exportedAt: new Date().toISOString(),
@@ -2239,21 +2317,24 @@ export async function runBuildPipeline(
   const outputFileName = buildOutputFileName(curator.name, curator.version);
   const outputPath = path.join(outputDir, outputFileName);
   onProgress?.({ phase: "packaging" });
-  // The bytes a mirrored mod's archive cannot be trusted to reproduce.
+  // The bytes a mirrored mod's archive does not provide.
   //
-  // Every staged file, not just the ones the self-check called unexplained.
-  // That check matches on SIZE alone here — the build passes staged refs with
-  // no crc — so "explained" is a coincidence away from being wrong, and a
-  // payload chosen on it would leave the user's mirror unable to finish for a
-  // file we decided not to carry. Shipping the whole folder's files is bigger
-  // and cannot be wrong, and only mods the curator explicitly asked to mirror
-  // pay for it. Narrowing this needs real content matching, not a smaller
-  // guess — see the note in mirrorStaging.ts.
+  // Not every staged file: one the payload step above proved the archive
+  // installs byte for byte at its path — size and CRC-32 against the archive's
+  // own header, read from the curator's file — is named in the manifest
+  // instead, and a user's mirror takes it from their own download when their
+  // install did not produce it. The self-check's size-only matching is not
+  // that proof and is not used for it. A mod whose install cannot be predicted
+  // carries every file, as every mirrored mod did before.
   const mirrorFiles = collectMirrorPayload(state, gameId, mods, collectionConfig);
-  if (mirrorFiles.length > 0) {
+  if (mods.some((m) => m.mirrored === true)) {
     beginOp("build.mirror-payload", {
       files: mirrorFiles.length,
       mods: mods.filter((m) => m.mirrored === true).length,
+      leftToArchives: mods.reduce(
+        (n, m) => n + (m.mirrorFromArchive?.length ?? 0),
+        0,
+      ),
     }).ok({});
   }
 

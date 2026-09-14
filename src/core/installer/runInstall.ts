@@ -3132,14 +3132,51 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           current,
           caseMode: await detectCaseSensitivity(stagingRoot),
         });
+        /**
+         * Files this package leaves to the mod's own archive. Normally the
+         * install above produced every one of them and the plan asks for
+         * none; when it did not, the archive it installed from is where they
+         * are.
+         */
+        const leftToArchive = mod.state.mirrorFromArchive ?? [];
         const outcome = await applyMirrorPlan({
           stagingRoot,
           ehcollPath: ctx.ehcollZipPath,
           plan: mirrorPlan,
+          ...(leftToArchive.length > 0
+            ? {
+                fromArchive: {
+                  paths: new Set(leftToArchive),
+                  archivePath: archivePathForMod(
+                    ctx.api,
+                    plan.manifest.game.id,
+                    installedMods[installedIndex]!,
+                  ),
+                },
+              }
+            : {}),
           ...(ctx.abortSignal !== undefined
             ? { signal: ctx.abortSignal }
             : {}),
         });
+        if (outcome.fromArchive !== undefined) {
+          ehLog(
+            outcome.fromArchive.restored < outcome.fromArchive.wanted
+              ? "warn"
+              : "info",
+            "install.mirror.from-archive",
+            {
+              mod: mod.name,
+              wanted: outcome.fromArchive.wanted,
+              restored: outcome.fromArchive.restored,
+              leftToArchive: leftToArchive.length,
+              why:
+                "the install did not produce these files as the curator " +
+                "recorded them, and the package leaves them to the mod's own " +
+                "archive",
+            },
+          );
+        }
         const line = describeMirrorOutcome(mod.name, outcome);
         if (line !== undefined) mirrorLines.push(line);
         if (outcome.failures.length > 0) mirrorFailures.push(mod.name);

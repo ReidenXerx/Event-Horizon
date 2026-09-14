@@ -190,4 +190,28 @@ describe("and reaches the build that comes after it", () => {
 
     expect(payload.map((p) => p.sha256)).toEqual(["a".repeat(64)]);
   });
+
+  it("leaves out the files the mod's own archive provides", () => {
+    // The payload step names them in `mirrorFromArchive`. Carrying them anyway
+    // re-hosted the author's unchanged files, executables included, and got a
+    // real package quarantined.
+    const mods = [
+      mod("apocalypse", {
+        mirrored: true,
+        installationPath: "apocalypse",
+        stagingFiles: [
+          { path: "Data/a.esp", size: 10, sha256: "a".repeat(64) },
+          { path: "Tools/Author.exe", size: 10, sha256: "b".repeat(64) },
+        ],
+        mirrorFromArchive: ["Tools/Author.exe"],
+      }),
+    ];
+    const state = {
+      settings: { mods: { installPath: { skyrimse: dir } } },
+    } as unknown as types.IState;
+
+    expect(collectMirrorPayload(state, "skyrimse", mods).map((p) => p.sha256)).toEqual([
+      "a".repeat(64),
+    ]);
+  });
 });

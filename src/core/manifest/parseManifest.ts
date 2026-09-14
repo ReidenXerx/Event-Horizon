@@ -902,6 +902,15 @@ function validateInstallState(
           `${path}.stagingFiles`,
           errors,
         );
+  const mirrorFromArchive =
+    obj.mirrorFromArchive === undefined
+      ? undefined
+      : validateMirrorFromArchive(
+          obj.mirrorFromArchive,
+          stagingFiles,
+          `${path}.mirrorFromArchive`,
+          errors,
+        );
 
   if (
     enabled === undefined ||
@@ -920,7 +929,46 @@ function validateInstallState(
     ...(mirrored !== undefined ? { mirrored } : {}),
     ...(enabledINITweaks !== undefined ? { enabledINITweaks } : {}),
     ...(stagingFiles !== undefined ? { stagingFiles } : {}),
+    ...(mirrorFromArchive !== undefined ? { mirrorFromArchive } : {}),
   };
+}
+
+/**
+ * Validate `mirrorFromArchive`: files this mod's `stagingFiles` lists.
+ *
+ * Each one decides where the mirror reads a file from, so it is held to the
+ * staging list's own rule — a relative path inside the mod's folder — and to
+ * one more: it must BE one of the listed files. A name the list does not have
+ * is not a file the mirror could ever be asked for, and a package carrying one
+ * was not written by a build.
+ */
+function validateMirrorFromArchive(
+  raw: unknown,
+  stagingFiles: EhcollStagingFile[] | undefined,
+  path: string,
+  errors: string[],
+): string[] | undefined {
+  const paths = expectStringArray(raw, path, errors);
+  if (paths === undefined) return undefined;
+  const listed = new Set((stagingFiles ?? []).map((f) => f.path));
+  const out: string[] = [];
+  paths.forEach((p, i) => {
+    if (!isSafeRelativePath(p)) {
+      errors.push(
+        `${path}[${i}] must be a relative path inside the mod's staging ` +
+          `folder — "${p}" was rejected because ${unsafePathReason(p)}.`,
+      );
+      return;
+    }
+    if (!listed.has(p)) {
+      errors.push(
+        `${path}[${i}] names "${p}", which is not among this mod's stagingFiles.`,
+      );
+      return;
+    }
+    out.push(p);
+  });
+  return out;
 }
 
 /**

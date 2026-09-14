@@ -66,6 +66,31 @@ const withMod = (state: Record<string, unknown>): string => {
 
 const BASE_STATE = { enabled: true, installOrder: 0, deploymentPriority: 0 };
 
+describe("the files a mirrored mod leaves to its own archive", () => {
+  const STAGED = [{ path: "Tools/Author.exe", size: 3, sha256: "b".repeat(64) }];
+  const mirroredWith = (mirrorFromArchive: unknown): string =>
+    withMod({ ...BASE_STATE, mirrored: true, stagingFiles: STAGED, mirrorFromArchive });
+
+  it("survive a real parse", () => {
+    const { manifest } = parseManifest(mirroredWith(["Tools/Author.exe"]));
+    expect(manifest.mods[0]!.state.mirrorFromArchive).toEqual(["Tools/Author.exe"]);
+  });
+
+  it("REJECTS a file the mod's staging list does not have", () => {
+    // The mirror could never be asked for it: this package was not written by
+    // a build.
+    expect(() => parseManifest(mirroredWith(["Tools/Other.exe"]))).toThrow(
+      /not among this mod's stagingFiles/,
+    );
+  });
+
+  it("REJECTS one that escapes the mod's folder", () => {
+    expect(() => parseManifest(mirroredWith(["../../evil.exe"]))).toThrow(
+      /relative path inside the mod/,
+    );
+  });
+});
+
 describe("a staging path from a stranger's package", () => {
   it("REJECTS one that escapes the mod's folder", () => {
     /**

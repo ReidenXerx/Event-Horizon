@@ -496,7 +496,9 @@ function validateInput(input: PackageEhcollInput, errors: string[]): void {
    * nothing. The feature is off, silently, on both sides.
    *
    * So: a mirrored mod must have a hash for every staged file, and each of
-   * those hashes must be in the package.
+   * those hashes must be in the package — unless the manifest leaves that file
+   * to the mod's own archive (`mirrorFromArchive`), which must then name one of
+   * the mod's staged files.
    */
   const mirrorShas = new Set(input.mirrorFiles?.map((f) => f.sha256) ?? []);
   for (const mod of input.manifest.mods) {
@@ -521,12 +523,26 @@ function validateInput(input: PackageEhcollInput, errors: string[]): void {
       );
       continue;
     }
-    const absent = staged.filter((f) => !mirrorShas.has(f.sha256!)).length;
+    const fromArchive = new Set(mod.state.mirrorFromArchive ?? []);
+    const stagedPaths = new Set(staged.map((f) => f.path));
+    const stray = [...fromArchive].filter((p) => !stagedPaths.has(p));
+    if (stray.length > 0) {
+      errors.push(
+        `"${mod.name}" leaves ${stray.length} file(s) to its own archive that ` +
+          `are not among its staged files, "${stray[0]}" first. The manifest ` +
+          `and the payload disagree; rebuild.`,
+      );
+      continue;
+    }
+    const absent = staged.filter(
+      (f) => !fromArchive.has(f.path) && !mirrorShas.has(f.sha256!),
+    ).length;
     if (absent > 0) {
       errors.push(
         `"${mod.name}" is marked mirrored=true but ${absent} of its ` +
-          `${staged.length} file(s) were not collected into the package. ` +
-          `Users would receive an incomplete copy of this mod.`,
+          `${staged.length} file(s) were not collected into the package, and ` +
+          `the manifest does not leave them to its archive either. Users ` +
+          `would receive an incomplete copy of this mod.`,
       );
     }
   }

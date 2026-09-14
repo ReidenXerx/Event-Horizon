@@ -291,17 +291,21 @@ describe("the panel offers mirroring first, and only when it works", () => {
 });
 
 describe("the mirror copy matches what the build actually packs", () => {
-  it("does not claim only the differences are carried", () => {
-    // `collectMirrorPayload` ships every staged file of a mirrored mod,
-    // because the self-check matches on size alone here and a narrower
-    // payload could leave the user unable to finish. The copy said the
-    // opposite for one render.
-    const c = describeChoice("mirror", 12).consequence;
-    expect(c).not.toMatch(/only the differences|rather than the whole mod/i);
+  it("says the package carries only the files that differ from the archive", () => {
+    // `collectMirrorPayload` leaves out every file the payload step proved the
+    // mod's archive installs byte for byte (mirrorPayload.ts). Until 0.1.157
+    // it carried every staged file, and the copy said so.
+    expect(describeChoice("mirror", 12).consequence).toMatch(
+      /carries only the files that differ from the archive/,
+    );
   });
 
-  it("admits the download gets bigger, like bundling does", () => {
-    expect(describeChoice("mirror", 12).consequence).toMatch(/bigger/i);
+  it("stays true for a mod that still carries every file", () => {
+    // An installer whose result cannot be predicted leaves nothing to the
+    // archive, and a card promising a small package would be wrong for it.
+    expect(describeChoice("mirror", 12).consequence).toMatch(
+      /all of this mod's files when its installer's result cannot be predicted/,
+    );
   });
 });
 

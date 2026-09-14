@@ -513,6 +513,20 @@ export type ModInstallState = {
    * than guessing.
    */
   mirrored?: boolean;
+  /**
+   * Files of this mirrored mod the package does NOT carry, because the mod's
+   * own archive installs these exact bytes at these paths — spelled as in
+   * `stagingFiles`, and only ever naming its entries.
+   *
+   * The mirror takes such a file from that archive when the user's install
+   * did not produce it, and checks it against its recorded sha256 like every
+   * other write. Every other file of the mod rides at `mirror/<sha256>`.
+   *
+   * Absent on packages built before 0.1.157, which carry every file. Older
+   * Event Horizon versions ignore it and look for these files in the package,
+   * where they are not.
+   */
+  mirrorFromArchive?: string[];
   /** INI tweak filenames the curator enabled on this mod. */
   enabledINITweaks?: string[];
   /**

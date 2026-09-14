@@ -14,7 +14,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -25,6 +25,8 @@ import {
   replaceFile,
 } from "./applyMirrors";
 import { planMirror } from "./mirrorStaging";
+import { crc32 } from "../manifest/readZip";
+import type { SevenZipApi, SevenZipListEntry } from "../manifest/sevenZip";
 import { makeZip } from "../../../test/makeZip";
 
 const sha = (b: Buffer): string => createHash("sha256").update(b).digest("hex");
@@ -185,6 +187,195 @@ describe("a blob that is not what it claims", () => {
 
     expect(outcome.restored).toBe(0);
     expect(outcome.failures).toHaveLength(1);
+  });
+});
+
+describe("a file the package leaves to the mod's own archive", () => {
+  // The package does not carry these: the build proved the mod's archive
+  // installs each byte for byte. The mirror still has to heal one the install
+  // did not produce, which it used to do from the package.
+  const modZip = (): string => join(dir, "mod.zip");
+  const hex = (b: Buffer): string => (crc32(b) >>> 0).toString(16).padStart(8, "0");
+
+  it("is taken from the archive when the install did not produce it", async () => {
+    await writeFile(ehcoll, makeZip([{ name: "unrelated", data: STOCK }]));
+    await writeFile(modZip(), makeZip([{ name: "My Mod/Data/x.esp", data: STOCK }]));
+
+    const outcome = await applyMirrorPlan({
+      stagingRoot: staging,
+      ehcollPath: ehcoll,
+      plan: planMirror({
+        target: [{ path: "Data/x.esp", size: STOCK.length, sha256: sha(STOCK) }],
+        current: [],
+      }),
+      fromArchive: { paths: new Set(["Data/x.esp"]), archivePath: modZip() },
+    });
+
+    expect(outcome).toMatchObject({
+      restored: 1,
+      failures: [],
+      fromArchive: { wanted: 1, restored: 1 },
+    });
+    expect(await readFile(join(staging, "Data", "x.esp"))).toEqual(STOCK);
+  });
+
+  it("writes nothing, and deletes nothing, when the archive's file there is not the recorded one", async () => {
+    const OTHER_BYTES = Buffer.from("whatever the archive producer");
+    expect(OTHER_BYTES.length).toBe(STOCK.length);
+    await writeFile(ehcoll, makeZip([{ name: "unrelated", data: STOCK }]));
+    await writeFile(modZip(), makeZip([{ name: "Data/x.esp", data: OTHER_BYTES }]));
+    await writeFile(join(staging, "extra.esp"), CLEANED);
+
+    const outcome = await applyMirrorPlan({
+      stagingRoot: staging,
+      ehcollPath: ehcoll,
+      plan: planMirror({
+        target: [{ path: "Data/x.esp", size: STOCK.length, sha256: sha(STOCK) }],
+        current: [{ path: "extra.esp", size: CLEANED.length, sha256: sha(CLEANED) }],
+      }),
+      fromArchive: { paths: new Set(["Data/x.esp"]), archivePath: modZip() },
+    });
+
+    expect(outcome.restored).toBe(0);
+    expect(outcome.failures).toEqual([
+      {
+        path: "Data/x.esp",
+        why: expect.stringContaining("none holds the bytes the curator recorded"),
+      },
+    ]);
+    expect(outcome.removalsSkipped).toBe(1);
+    expect(existsSync(join(staging, "Data", "x.esp"))).toBe(false);
+    expect(existsSync(join(staging, "extra.esp"))).toBe(true);
+  });
+
+  it("says so when the archive has no file of that size at that path", async () => {
+    await writeFile(ehcoll, makeZip([{ name: "unrelated", data: STOCK }]));
+    await writeFile(modZip(), makeZip([{ name: "Data/other.esp", data: STOCK }]));
+
+    const outcome = await applyMirrorPlan({
+      stagingRoot: staging,
+      ehcollPath: ehcoll,
+      plan: planMirror({
+        target: [{ path: "Data/x.esp", size: STOCK.length, sha256: sha(STOCK) }],
+        current: [],
+      }),
+      fromArchive: { paths: new Set(["Data/x.esp"]), archivePath: modZip() },
+    });
+
+    expect(outcome.failures).toEqual([
+      {
+        path: "Data/x.esp",
+        why: expect.stringContaining("has no file of this size at this path"),
+      },
+    ]);
+  });
+
+  it("names the archive as missing when Vortex has no record of it", async () => {
+    await writeFile(ehcoll, makeZip([{ name: "unrelated", data: STOCK }]));
+
+    const outcome = await applyMirrorPlan({
+      stagingRoot: staging,
+      ehcollPath: ehcoll,
+      plan: planMirror({
+        target: [{ path: "Data/x.esp", size: STOCK.length, sha256: sha(STOCK) }],
+        current: [],
+      }),
+      fromArchive: { paths: new Set(["Data/x.esp"]), archivePath: undefined },
+    });
+
+    expect(outcome.failures).toEqual([
+      { path: "Data/x.esp", why: expect.stringContaining("no record of that archive") },
+    ]);
+  });
+
+  it("still reads the package for every file it does not leave to the archive", async () => {
+    await writeFile(ehcoll, makeZip([{ name: mirrorEntryFor(sha(CLEANED)), data: CLEANED }]));
+    await writeFile(modZip(), makeZip([{ name: "Data/x.esp", data: STOCK }]));
+
+    const outcome = await applyMirrorPlan({
+      stagingRoot: staging,
+      ehcollPath: ehcoll,
+      plan: planMirror({
+        target: [
+          { path: "Data/x.esp", size: STOCK.length, sha256: sha(STOCK) },
+          { path: "Data/cleaned.esp", size: CLEANED.length, sha256: sha(CLEANED) },
+        ],
+        current: [],
+      }),
+      fromArchive: { paths: new Set(["Data/x.esp"]), archivePath: modZip() },
+    });
+
+    expect(outcome).toMatchObject({
+      restored: 2,
+      failures: [],
+      fromArchive: { wanted: 1, restored: 1 },
+    });
+    expect(await readFile(join(staging, "Data", "cleaned.esp"))).toEqual(CLEANED);
+    expect(await readFile(join(staging, "Data", "x.esp"))).toEqual(STOCK);
+  });
+
+  it("extracts with 7-Zip, in one run, from an archive that is not a ZIP", async () => {
+    await writeFile(ehcoll, makeZip([{ name: "unrelated", data: STOCK }]));
+    const archivePath = join(dir, "mod.7z");
+    await writeFile(archivePath, Buffer.from("not a zip at all"));
+    const SECOND = Buffer.from("a second file from the archive");
+    const inArchive: Record<string, Buffer> = {
+      "Wrap/Data/x.esp": STOCK,
+      "Wrap/Data/y.esp": SECOND,
+    };
+    const extractions: string[][] = [];
+    const sevenZip: SevenZipApi = {
+      list: async (archive, _options, progress) => {
+        for (const [name, data] of Object.entries(inArchive)) {
+          progress?.([{ name, size: data.length, crc: hex(data) } as SevenZipListEntry]);
+        }
+        return { path: archive, type: "7z", physicalSize: "1" };
+      },
+      extractFull: async (_archive, dest, options) => {
+        const names = options?.raw ?? [];
+        extractions.push([...names]);
+        for (const name of names) {
+          const data = inArchive[name];
+          if (data === undefined) continue;
+          const target = join(dest, ...name.split("/"));
+          await mkdir(dirname(target), { recursive: true });
+          await writeFile(target, data);
+        }
+        return { code: 0, errors: [] };
+      },
+      add: async () => ({ code: 0, errors: [] }),
+    };
+
+    const outcome = await applyMirrorPlan({
+      stagingRoot: staging,
+      ehcollPath: ehcoll,
+      plan: planMirror({
+        target: [
+          { path: "Data/x.esp", size: STOCK.length, sha256: sha(STOCK) },
+          { path: "Data/y.esp", size: SECOND.length, sha256: sha(SECOND) },
+        ],
+        current: [],
+      }),
+      fromArchive: {
+        paths: new Set(["Data/x.esp", "Data/y.esp"]),
+        archivePath,
+        sevenZip,
+      },
+    });
+
+    expect(outcome).toMatchObject({ restored: 2, failures: [] });
+    expect(extractions).toEqual([["Wrap/Data/x.esp", "Wrap/Data/y.esp"]]);
+    expect(await readFile(join(staging, "Data", "y.esp"))).toEqual(SECOND);
+  });
+
+  it("tells the user how many files came from the mod's own archive", () => {
+    const line = describeMirrorOutcome("Apocalypse", {
+      restored: 3,
+      removed: 0,
+      failures: [],
+      fromArchive: { wanted: 2, restored: 2 },
+    });
+    expect(line).toContain("3 file(s) written (2 from the mod's own archive)");
   });
 });
 

@@ -155,6 +155,93 @@ async function packageOne(
 const SEVEN_Z_HEAD = Buffer.from([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c, 0x00, 0x04]);
 const ZIP_HEAD = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 
+describe("packaging a mirrored mod that leaves files to its own archive", () => {
+  const mirroredDocs = (files: Record<string, string>, fromArchive: string[]) => {
+    const root = path.join(dir, "staging", "docs");
+    const specs = Object.entries(files).map(([rel, body]) => {
+      const sourcePath = put(root, rel, body);
+      return {
+        rel,
+        sourcePath,
+        size: fs.statSync(sourcePath).size,
+        sha256: crypto.createHash("sha256").update(body).digest("hex"),
+      };
+    });
+    const manifest = manifestWith([
+      {
+        compareKey: "external:docs",
+        name: "Docs",
+        source: { kind: "external", bundled: false, expectedFilename: "docs.zip" },
+        state: {
+          mirrored: true,
+          stagingFiles: specs.map((s) => ({ path: s.rel, size: s.size, sha256: s.sha256 })),
+          ...(fromArchive.length > 0 ? { mirrorFromArchive: fromArchive } : {}),
+        },
+      },
+    ]);
+    const carried = (rel: string) =>
+      specs
+        .filter((s) => s.rel === rel)
+        .map((s) => ({ sourcePath: s.sourcePath, sha256: s.sha256, modName: "Docs" }));
+    return { specs, manifest, carried };
+  };
+
+  it("carries only the files the manifest does not leave to the archive", async () => {
+    const { manifest, carried } = mirroredDocs(
+      { "Tools/Author.exe": "the author's tool", "a.ini": "the curator's ini" },
+      ["Tools/Author.exe"],
+    );
+    const stagingDir = path.join(dir, "pack");
+
+    await packageEhcoll({
+      manifest,
+      bundles: [],
+      mirrorFiles: carried("a.ini"),
+      outputPath: path.join(dir, "out.ehcoll"),
+      sevenZip: zippingSevenZip(),
+      stagingDir,
+      cleanupOnSuccess: false,
+    });
+
+    expect(fs.readdirSync(path.join(stagingDir, "mirror"))).toEqual([carried("a.ini")[0]!.sha256]);
+  });
+
+  it("refuses a file that is neither carried nor left to the archive", async () => {
+    const { manifest, carried } = mirroredDocs(
+      { "Tools/Author.exe": "the author's tool", "a.ini": "the curator's ini" },
+      [],
+    );
+
+    const err = await packageEhcoll({
+      manifest,
+      bundles: [],
+      mirrorFiles: carried("a.ini"),
+      outputPath: path.join(dir, "out.ehcoll"),
+      sevenZip: zippingSevenZip(),
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(PackageEhcollError);
+    expect((err as Error).message).toContain("1 of its 2 file(s) were not collected into the package");
+  });
+
+  it("refuses a manifest that leaves to the archive a file the mod does not have", async () => {
+    const { manifest, carried } = mirroredDocs({ "a.ini": "the curator's ini" }, ["Tools/Gone.exe"]);
+
+    const err = await packageEhcoll({
+      manifest,
+      bundles: [],
+      mirrorFiles: carried("a.ini"),
+      outputPath: path.join(dir, "out.ehcoll"),
+      sevenZip: zippingSevenZip(),
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(PackageEhcollError);
+    expect((err as Error).message).toContain(
+      `leaves 1 file(s) to its own archive that are not among its staged files, "Tools/Gone.exe" first`,
+    );
+  });
+});
+
 describe("packaging a bundled mod", () => {
   it("ships its files loose under bundled/<sha256>/, and the package reproduces the identity the manifest names", async () => {
     const stagingDir = path.join(dir, "pack");

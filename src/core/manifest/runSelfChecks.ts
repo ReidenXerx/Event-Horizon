@@ -614,6 +614,15 @@ export type SelfCheckRunResult = {
    * mod the build cannot honour it for.
    */
   mirrorable: ReadonlySet<string>;
+  /**
+   * The archive each mod was compared against, by mod id — one found by hash
+   * after its download record went stale included.
+   *
+   * Kept for the payload step, so the archive that decides what a mirrored
+   * mod's package leaves out is the one this check read, not a second lookup
+   * that could land somewhere else.
+   */
+  archiveByModId: ReadonlyMap<string, string>;
 };
 
 /**
@@ -669,6 +678,7 @@ export async function runSelfChecks(
       warnings: [],
       postProcessingCandidates: [],
       mirrorable: new Set<string>(),
+      archiveByModId: new Map<string, string>(),
     };
   }
   const readEntry = makeReadEntry(sevenZip);
@@ -740,6 +750,7 @@ export async function runSelfChecks(
    * unexaminable, which is the honest answer rather than a guessed one.
    */
   let recoveredByHash = 0;
+  const archiveByModId = new Map<string, string>();
   const downloadDir = selectors.downloadPathForGame(state, gameId) as
     | string
     | undefined;
@@ -777,6 +788,7 @@ export async function runSelfChecks(
      */
     const archivePath =
       resolveModArchivePath(state, mod, gameId) ?? (await recoverArchive(mod));
+    if (archivePath !== undefined) archiveByModId.set(mod.id, archivePath);
 
     try {
       reports.push(
@@ -1053,7 +1065,14 @@ export async function runSelfChecks(
       : {}),
   });
 
-  return { reports, summary, warnings, postProcessingCandidates, mirrorable };
+  return {
+    reports,
+    summary,
+    warnings,
+    postProcessingCandidates,
+    mirrorable,
+    archiveByModId,
+  };
 }
 
 /**
