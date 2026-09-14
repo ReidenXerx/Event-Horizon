@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-resolver
-description: "Skill for the Resolver area of Event-Horizon. 155 symbols across 56 files."
+description: "Skill for the Resolver area of Event-Horizon. 156 symbols across 56 files."
 ---
 
 # Resolver
 
-155 symbols | 56 files | Cohesion: 66%
+156 symbols | 56 files | Cohesion: 65%
 
 ## When to Use
 
@@ -61,7 +61,7 @@ Start here when exploring this area:
 | `profileId` | Function | `src/core/environment/snapshot.ts` | 203 |
 | `stagingRoot` | Function | `src/core/environment/snapshot.ts` | 326 |
 | `exportModsToJsonFile` | Function | `src/core/exportMods.ts` | 8 |
-| `getActiveGameId` | Function | `src/core/getModsListForProfile.ts` | 277 |
+| `getActiveGameId` | Function | `src/core/getModsListForProfile.ts` | 283 |
 
 ## Execution Flows
 

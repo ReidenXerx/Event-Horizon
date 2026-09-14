@@ -44,7 +44,7 @@ Start here when exploring this area:
 | `makeFakeVortex` | Function | `test/e2e/fakeVortex.ts` | 53 |
 | `complete` | Function | `test/e2e/fakeVortex.ts` | 132 |
 | `nexusDownload` | Function | `test/e2e/fakeVortex.ts` | 287 |
-| `formatError` | Function | `src/core/installer/runInstall.ts` | 6084 |
+| `formatError` | Function | `src/core/installer/runInstall.ts` | 6121 |
 | `install` | Function | `test/e2e/installDriver.e2e.test.ts` | 89 |
 | `userState` | Function | `test/e2e/installDriver.e2e.test.ts` | 67 |
 | `install` | Function | `test/e2e/verification.e2e.test.ts` | 117 |

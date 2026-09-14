@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-installer
-description: "Skill for the Installer area of Event-Horizon. 408 symbols across 95 files."
+description: "Skill for the Installer area of Event-Horizon. 444 symbols across 105 files."
 ---
 
 # Installer
 
-408 symbols | 95 files | Cohesion: 75%
+444 symbols | 105 files | Cohesion: 74%
 
 ## When to Use
 
@@ -18,15 +18,15 @@ description: "Skill for the Installer area of Event-Horizon. 408 symbols across 
 | File | Symbols |
 |------|---------|
 | `src/core/installer/runInstall.ts` | buildAbortedResult, buildDisplayNameByModId, buildFailReceipt, buildManifestIndex, buildNexusModIdMap (+59) |
+| `src/core/installer/downloadDirect.ts` | onAbort, onAbort, onAbort, defaultRequest, discardPart (+20) |
 | `src/core/installer/modInstall.ts` | delayRespectingAbort, downloadFolderFor, downloadNexusArchiveOnly, installFromBundledArchive, installFromExistingDownload (+19) |
-| `src/core/installer/downloadDirect.ts` | defaultRequest, discardPart, download, formatDuration, formatSize (+17) |
 | `src/core/installLedger.ts` | InstallLedgerError, expectString, getInstallLedgerDir, getReceiptPath, isIso8601 (+10) |
 | `src/core/installer/installLink.ts` | dispositionParams, fileNameFromContentDisposition, safeDownloadName, sanitizeFileName, checksumOf (+9) |
 | `src/core/installer/applyUserlist.ts` | applyGroupDefinition, applyGroupRule, applyPluginEntry, applyPluginGroup, applyPluginRuleWithCollectionWins (+8) |
+| `src/core/installer/applyMirrors.ts` | applyMirrorPlan, mirrorEntryFor, placeFile, replaceFile, restoreOne (+7) |
 | `src/core/installer/checkNexusAccount.ts` | describeSelectorAvailability, hasNexusSlice, nexusSlice, probeNexusAccount, readNexusAccount (+4) |
 | `src/core/installer/bundledPrefetch.ts` | BundledPrefetchPool, dispose, prime, pump, runExtraction (+3) |
 | `src/core/installer/linkCarrier.ts` | crc32, findEndOfCentralDirectory, readLinkCarrier, readSmallZip, baseName (+3) |
-| `src/core/installer/applyGameIni.ts` | describeGameIniApplication, shouldApplyGameIni, applyGameIni, describeIniChanges, isSectionHeader (+2) |
 
 ## Entry Points
 
@@ -45,6 +45,7 @@ Start here when exploring this area:
 | `BundledPrefetchPool` | Class | `src/core/installer/bundledPrefetch.ts` | 117 |
 | `InstallStreaks` | Class | `src/core/installer/installStreaks.ts` | 59 |
 | `InstallLedgerError` | Class | `src/core/installLedger.ts` | 72 |
+| `AbortError` | Class | `src/utils/abortError.ts` | 22 |
 | `DiskSpaceError` | Class | `src/utils/diskSpace.ts` | 112 |
 | `ChecksumMismatchError` | Class | `src/core/installer/downloadDirect.ts` | 70 |
 | `describeGameIniApplication` | Function | `src/core/installer/applyGameIni.ts` | 340 |
@@ -61,7 +62,6 @@ Start here when exploring this area:
 | `emptyPluginOrderDrift` | Function | `src/core/installer/checkPluginOrder.ts` | 55 |
 | `readUserPluginsTxt` | Function | `src/core/installer/checkPluginOrder.ts` | 185 |
 | `describeSevenZipHealth` | Function | `src/core/installer/checkSevenZipHealth.ts` | 108 |
-| `buildCuratorReport` | Function | `src/core/installer/curatorReport.ts` | 108 |
 
 ## Execution Flows
 

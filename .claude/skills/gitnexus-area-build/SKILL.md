@@ -24,7 +24,7 @@ description: "Skill for the Build area of Event-Horizon. 428 symbols across 95 f
 | `src/ui/pages/build/engine.ts` | downloadedFromNexus, findUnidentifiedMods, isExternal, isExternal, isExternal (+14) |
 | `src/ui/pages/build/buildSessionRegistry.ts` | BuildSessionRegistry, getBuildSessionRegistry, ensure, get, makeHooks (+13) |
 | `src/ui/pages/build/buildDiff.test.ts` | findPackages, findPackages, findPackages, findPackages, findPackages (+9) |
-| `src/core/draftStorage.ts` | getDraftsRoot, listDrafts, getAppDataPath, saveDraft, deleteDraft (+6) |
+| `src/core/draftStorage.ts` | getDraftsRoot, listDrafts, deleteDraft, getDraftPath, isPlainObject (+6) |
 | `src/ui/pages/HomePage.tsx` | CuratorPanel, Dashboard, DashboardBody, ErrorPanel, FooterRow (+6) |
 | `src/core/build/nexusAvailability.ts` | categoryOf, checkNexusAvailability, classifyFile, currentMainFile, fileIdOf (+6) |
 
