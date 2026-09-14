@@ -2,7 +2,8 @@
 //
 // A package goes up named .zip, with no mod manager download: Nexus quarantines a file named .ehcoll within minutes
 // while the same bytes named .zip pass (two byte-identical copies on a hidden page, 2026-09-14), and a package must
-// never be installed by Vortex as a mod. Any other file (the optional .7z outputs) keeps its name and the download.
+// never be installed by Vortex as a mod. A package is a .ehcoll, or a .zip with manifest.json at its root (the
+// extension's own rule); any other file, a .zip of LOD or BodySlide output included, keeps its name and the download.
 //
 // The curator's collections are distributed as mods, not as Vortex collections:
 // the mod page holds the full package and tells people to install it with
@@ -114,12 +115,62 @@ export function refuseExtensionPage({ game }, extension) {
 }
 
 /**
- * The name a file goes up under, and whether Nexus may offer it as a mod manager download. A package (.ehcoll, or
- * one already named .zip) goes up as .zip without that download; the header says why. Anything else is unchanged.
+ * The name a file goes up under, whether it is a package, and whether Nexus may offer it as a mod manager download.
+ * A package (.ehcoll, or a .zip holding manifest.json at its root) goes up as .zip without that download; the header
+ * says why. Anything else is unchanged.
  */
 export function uploadNaming(filePath) {
   const local = path.basename(filePath);
-  return { filename: local.replace(/\.ehcoll$/i, ".zip"), modManagerDownload: !/\.(ehcoll|zip)$/i.test(local) };
+  const isPackage = /\.ehcoll$/i.test(local) || (/\.zip$/i.test(local) && zipHasRootManifest(filePath));
+  return { filename: local.replace(/\.ehcoll$/i, ".zip"), isPackage, modManagerDownload: !isPackage };
+}
+
+/**
+ * Whether the zip at `filePath` has manifest.json at its root. Reads only the end of the file: the
+ * end-of-central-directory record, its ZIP64 form when the archive needs one (over 4 GB or 65,535 entries), and the
+ * central directory. A file that is not a zip has no manifest.
+ */
+export function zipHasRootManifest(filePath) {
+  const fd = fs.openSync(filePath, "r");
+  try {
+    const size = fs.fstatSync(fd).size;
+    const tailLength = Math.min(size, 22 + 0xffff + 20);
+    const tail = Buffer.alloc(tailLength);
+    fs.readSync(fd, tail, 0, tailLength, size - tailLength);
+    let eocd = -1;
+    for (let i = tailLength - 22; i >= 0; i -= 1) {
+      if (tail.readUInt32LE(i) === 0x06054b50) {
+        eocd = i;
+        break;
+      }
+    }
+    if (eocd < 0) return false;
+    let count = tail.readUInt16LE(eocd + 10);
+    let cdSize = tail.readUInt32LE(eocd + 12);
+    let cdOffset = tail.readUInt32LE(eocd + 16);
+    if (count === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) {
+      const locator = eocd - 20;
+      if (locator < 0 || tail.readUInt32LE(locator) !== 0x07064b50) return false;
+      const record = Buffer.alloc(56);
+      fs.readSync(fd, record, 0, 56, Number(tail.readBigUInt64LE(locator + 8)));
+      if (record.readUInt32LE(0) !== 0x06064b50) return false;
+      count = Number(record.readBigUInt64LE(32));
+      cdSize = Number(record.readBigUInt64LE(40));
+      cdOffset = Number(record.readBigUInt64LE(48));
+    }
+    if (cdOffset + cdSize > size) return false;
+    const cd = Buffer.alloc(cdSize);
+    fs.readSync(fd, cd, 0, cdSize, cdOffset);
+    for (let n = 0, p = 0; n < count && p + 46 <= cd.length; n += 1) {
+      if (cd.readUInt32LE(p) !== 0x02014b50) return false;
+      const nameLength = cd.readUInt16LE(p + 28);
+      if (cd.toString("utf8", p + 46, p + 46 + nameLength) === "manifest.json") return true;
+      p += 46 + nameLength + cd.readUInt16LE(p + 30) + cd.readUInt16LE(p + 32);
+    }
+    return false;
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 /**
@@ -129,7 +180,7 @@ export function uploadNaming(filePath) {
 export async function publish({ argv, extension, makeClient, log }) {
   const opts = parseArgs(argv);
   refuseExtensionPage(opts, extension);
-  const { filename, modManagerDownload } = uploadNaming(opts.filePath);
+  const { filename, isPackage, modManagerDownload } = uploadNaming(opts.filePath);
   assertHeaderSafeFilename(filename);
   const stat = fs.statSync(opts.filePath);
   if (!stat.isFile()) throw new UsageError(`${opts.filePath} is not a file`);
@@ -160,7 +211,7 @@ export async function publish({ argv, extension, makeClient, log }) {
   const digests = await hashFile(opts.filePath);
   log(`md5 ${digests.md5}`);
   log(`sha256 ${digests.sha256}`);
-  const description = descriptionText ?? `Event Horizon package. SHA-256 ${digests.sha256}`;
+  const description = descriptionText ?? `${isPackage ? "Event Horizon package. " : ""}SHA-256 ${digests.sha256}`;
 
   const uploadId = await client.uploadArchiveFromDisk({ filePath: opts.filePath, filename, onState: log, concurrency: opts.concurrency, digests });
   log(`upload ${uploadId} is available`);
