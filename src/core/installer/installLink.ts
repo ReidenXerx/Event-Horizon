@@ -98,7 +98,7 @@ export function parseInstallLink(input: string): InstallLink {
   } catch {
     return {
       kind: "invalid",
-      why: "That is not a link. Paste the address of a Nexus mod page, or a direct link to a .ehcoll file.",
+      why: "That is not a link. Paste the address of a Nexus mod page, or a direct link to a collection package.",
     };
   }
 
@@ -192,14 +192,16 @@ export type NexusFileCandidate = {
 };
 
 export type ChosenFile =
-  /** The collection package itself. */
+  /** A `.ehcoll`: the collection package itself. */
   | { kind: "one"; file: NexusFileCandidate }
   /**
-   * No package on the page, and this small zip is what it offers instead: a
-   * landing page whose file carries the package's link and SHA-256 (read by
-   * `core/installer/linkCarrier.ts`).
+   * A `.zip`: the package under the name Nexus lets it through as (Nexus
+   * quarantines files named `.ehcoll`), or an older landing page's link file
+   * carrying the package's link and SHA-256 (read by
+   * `core/installer/linkCarrier.ts`). Only what is inside can say which, so
+   * the caller downloads it and looks.
    */
-  | { kind: "carrier"; file: NexusFileCandidate }
+  | { kind: "zip"; file: NexusFileCandidate }
   | { kind: "several"; files: NexusFileCandidate[] }
   | { kind: "none"; why: string };
 
@@ -220,25 +222,31 @@ function categoryOf(file: NexusFileCandidate): string {
     .replace(/^_+|_+$/g, "");
 }
 
-function isEhcoll(file: NexusFileCandidate): boolean {
-  return /\.ehcoll$/i.test(file.file_name ?? "");
+/**
+ * Whether a file name is a collection package's: `.ehcoll`, or `.zip`, the
+ * name a package gets through Nexus under (Nexus quarantines files named
+ * `.ehcoll`, and the same bytes named `.zip` pass). The name only says which
+ * files to offer; what is inside decides.
+ */
+export function isPackageFileName(name: string): boolean {
+  return /\.(ehcoll|zip)$/i.test(name);
 }
 
-function isZip(file: NexusFileCandidate): boolean {
-  return /\.zip$/i.test(file.file_name ?? "");
+function isEhcoll(file: NexusFileCandidate): boolean {
+  return /\.ehcoll$/i.test(file.file_name ?? "");
 }
 
 /**
  * Which file on the page is the collection.
  *
  * A named `fileId` is the link author's choice: a `.ehcoll` is the package,
- * a `.zip` is a link file, and anything else is refused by name rather than
- * downloaded and failed on later. Otherwise retired files are dropped and the
- * `.ehcoll` files considered: the page's primary file, then a single Main
- * file. Two or more still equal are a question for the person, never a pick
- * by upload date (NS-8's spirit: an ambiguous package is a question, not a
- * coin toss). A page with no package but a link file is a landing page, and
- * the same rules choose among its zips.
+ * a `.zip` is the package or a link file (what is inside decides, once it is
+ * downloaded), and anything else is refused by name rather than downloaded
+ * and failed on later. Otherwise retired files are dropped and the `.ehcoll`
+ * and `.zip` files considered together: the page's primary file, then a
+ * single Main file. Two or more still equal are a question for the person,
+ * never a pick by upload date or by extension (NS-8's spirit: an ambiguous
+ * package is a question, not a coin toss).
  */
 export function chooseEhcollFile(files: NexusFileCandidate[], fileId?: number): ChosenFile {
   if (fileId !== undefined) {
@@ -246,34 +254,32 @@ export function chooseEhcollFile(files: NexusFileCandidate[], fileId?: number): 
     if (named === undefined) {
       return { kind: "none", why: `The link names file ${fileId}, and the page has no such file.` };
     }
-    if (isEhcoll(named)) return { kind: "one", file: named };
-    if (isZip(named)) return { kind: "carrier", file: named };
+    if (isPackageFileName(named.file_name ?? "")) return chosenByName(named);
     return {
       kind: "none",
       why:
-        `The link names file ${fileId} ("${named.file_name ?? named.name ?? "unnamed"}"), which is neither a ` +
-        "collection package (.ehcoll) nor a link file (.zip).",
+        `The link names file ${fileId} ("${named.file_name ?? named.name ?? "unnamed"}"), which is not a .ehcoll ` +
+        "or .zip file, so it is neither a collection package nor a link file.",
     };
   }
 
   const live = files.filter((f) => !RETIRED_CATEGORIES.has(categoryOf(f)));
-  const packages = live.filter(isEhcoll);
-  if (packages.length > 0) {
-    const pick = pickOne(packages);
-    return pick.kind === "one" ? { kind: "one", file: pick.file } : pick;
-  }
-  const carriers = live.filter(isZip);
-  if (carriers.length > 0) {
-    const pick = pickOne(carriers);
-    return pick.kind === "one" ? { kind: "carrier", file: pick.file } : pick;
+  const candidates = live.filter((f) => isPackageFileName(f.file_name ?? ""));
+  if (candidates.length > 0) {
+    const pick = pickOne(candidates);
+    return pick.kind === "one" ? chosenByName(pick.file) : pick;
   }
   return {
     kind: "none",
     why:
       files.length === 0
         ? "The page lists no files."
-        : "The page has no .ehcoll file and no link file (.zip). It may be an ordinary mod page, or the collection is not published yet.",
+        : "The page has no collection package (.ehcoll or .zip). It may be an ordinary mod page, or the collection is not published yet.",
   };
+}
+
+function chosenByName(file: NexusFileCandidate): ChosenFile {
+  return isEhcoll(file) ? { kind: "one", file } : { kind: "zip", file };
 }
 
 function pickOne(
@@ -343,8 +349,9 @@ const WINDOWS_DEVICE = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
  * replaced: U+202E makes "llocohe.exe" read as "exe.ehcoll" on screen, and a
  * name that displays differently from what is on disk is the one a person
  * trusts wrongly. Path and reserved characters become "_", trailing dots and
- * spaces go (Windows drops them silently), the length is capped with the
- * extension kept, and a device name is prefixed.
+ * spaces go (Windows drops them silently), a name that is not a package's
+ * (see {@link isPackageFileName}) gets `.ehcoll`, the length is capped with
+ * the extension kept, and a device name is prefixed.
  */
 export function sanitizeFileName(raw: string, fallback = "collection.ehcoll"): string {
   let name = raw
@@ -354,11 +361,12 @@ export function sanitizeFileName(raw: string, fallback = "collection.ehcoll"): s
     .trim()
     .replace(/[. ]+$/, "");
   if (name.length === 0 || /^[._ ]+$/.test(name)) return fallback;
-  if (!/\.ehcoll$/i.test(name)) name = `${name}.ehcoll`;
+  if (!isPackageFileName(name)) name = `${name}.ehcoll`;
   const chars = Array.from(name);
   if (chars.length > MAX_NAME_CHARS) {
-    const stem = chars.slice(0, MAX_NAME_CHARS - ".ehcoll".length).join("").replace(/[. ]+$/, "");
-    name = `${stem}.ehcoll`;
+    const extension = name.slice(name.lastIndexOf("."));
+    const stem = chars.slice(0, MAX_NAME_CHARS - extension.length).join("").replace(/[. ]+$/, "");
+    name = `${stem}${extension}`;
   }
   if (WINDOWS_DEVICE.test(name)) name = `_${name}`;
   return name;

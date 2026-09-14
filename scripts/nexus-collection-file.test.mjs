@@ -37,11 +37,14 @@ function fakeClient({ files = [] } = {}) {
       return "u-9";
     },
     createModFileVersion: async (fileId, body) => {
-      calls.push(`createModFileVersion ${fileId} upload=${body.upload_id} primary=${body.primary_mod_manager_download}`);
+      calls.push(
+        `createModFileVersion ${fileId} upload=${body.upload_id} primary=${body.primary_mod_manager_download} ` +
+          `mm=${body.allow_mod_manager_download} updates=${body.update_mod_version}`,
+      );
       return { id: "v-1" };
     },
     createModFile: async (body) => {
-      calls.push(`createModFile mod=${body.mod_id}`);
+      calls.push(`createModFile mod=${body.mod_id} primary=${body.primary_mod_manager_download} mm=${body.allow_mod_manager_download}`);
       return { id: "f-1" };
     },
   };
@@ -123,9 +126,35 @@ describe("publish", () => {
     expect(calls).toEqual([
       "getMod fallout4 108944",
       "getModFiles 9001",
-      `upload Ivys-Panties-1.0.19.ehcoll concurrency=2 md5=${createHash("md5").update("package bytes").digest("hex")}`,
-      "createModFileVersion 7906317 upload=u-9 primary=false",
+      `upload Ivys-Panties-1.0.19.zip concurrency=2 md5=${createHash("md5").update("package bytes").digest("hex")}`,
+      "createModFileVersion 7906317 upload=u-9 primary=false mm=false updates=false",
     ]);
     expect(lines).toContain('target: a new version of "Ivy\'s Panties" (file 7906317)');
+  });
+
+  it("puts a package up as .zip without a mod manager download, even as the page's primary file", async () => {
+    // Nexus quarantined every .ehcoll within minutes; the same bytes named .zip passed.
+    const { client, calls } = fakeClient({ files: [{ id: "7906317", name: "Ivy's Panties" }] });
+    const lines = [];
+    await publish({ argv: [...base, "--file-id", "7906317", "--primary"], extension: EXTENSION, makeClient: () => client, log: (m) => lines.push(m) });
+    expect(calls.find((c) => c.startsWith("upload "))).toMatch(/^upload Ivys-Panties-1\.0\.19\.zip /);
+    expect(calls).toContain("createModFileVersion 7906317 upload=u-9 primary=false mm=false updates=true");
+    expect(lines).toContain("goes up as Ivys-Panties-1.0.19.zip: Nexus quarantines files named .ehcoll, and a package is a zip");
+  });
+
+  it("keeps a package already named .zip without a mod manager download, and any other file as it is", async () => {
+    const zipped = path.join(tmpRoot, "ivy-panties-1.0.26.zip");
+    fs.writeFileSync(zipped, "package bytes");
+    const zipRun = fakeClient();
+    await publish({ argv: ["--file", zipped, ...base.slice(2), "--primary"], extension: EXTENSION, makeClient: () => zipRun.client, log });
+    expect(zipRun.calls.find((c) => c.startsWith("upload "))).toMatch(/^upload ivy-panties-1\.0\.26\.zip /);
+    expect(zipRun.calls).toContain("createModFile mod=9001 primary=false mm=false");
+
+    const seven = path.join(tmpRoot, "facegen_v1.0.7z");
+    fs.writeFileSync(seven, "7z bytes");
+    const sevenRun = fakeClient();
+    await publish({ argv: ["--file", seven, ...base.slice(2), "--category", "optional", "--primary"], extension: EXTENSION, makeClient: () => sevenRun.client, log });
+    expect(sevenRun.calls.find((c) => c.startsWith("upload "))).toMatch(/^upload facegen_v1\.0\.7z /);
+    expect(sevenRun.calls).toContain("createModFile mod=9001 primary=true mm=true");
   });
 });

@@ -22,10 +22,11 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import * as zlib from "zlib";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { readEhcoll, ReadEhcollError } from "./readEhcoll";
+import { hasPackageManifest, readEhcoll, ReadEhcollError } from "./readEhcoll";
 import { DOTNET_ZIP, SEVENZIP_WITH_LOCAL_EXTRA } from "./readZip.fixtures";
 
 let dir: string;
@@ -93,6 +94,89 @@ describe("readEhcoll reads the archive itself", () => {
       }
     });
     expect(await capture(p)).toMatch(/does not contain manifest\.json/);
+  });
+});
+
+/** A stored zip of the given files: UTF-8 names, real CRCs. */
+function storedZip(files: Array<{ name: string; data: string }>): Buffer {
+  const parts: Buffer[] = [];
+  const central: Buffer[] = [];
+  let offset = 0;
+  for (const f of files) {
+    const data = Buffer.from(f.data, "utf8");
+    const name = Buffer.from(f.name, "utf8");
+    const crc = zlib.crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0x800, 6);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    parts.push(local, name, data);
+    const header = Buffer.alloc(46);
+    header.writeUInt32LE(0x02014b50, 0);
+    header.writeUInt16LE(20, 4);
+    header.writeUInt16LE(20, 6);
+    header.writeUInt16LE(0x800, 8);
+    header.writeUInt32LE(crc, 16);
+    header.writeUInt32LE(data.length, 20);
+    header.writeUInt32LE(data.length, 24);
+    header.writeUInt16LE(name.length, 28);
+    header.writeUInt32LE(offset, 42);
+    central.push(header, name);
+    offset += 30 + name.length + data.length;
+  }
+  const cd = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(files.length, 8);
+  end.writeUInt16LE(files.length, 10);
+  end.writeUInt32LE(cd.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...parts, cd, end]);
+}
+
+describe("a zip that is not a package", () => {
+  // Packages are picked as .zip now (Nexus quarantines files named .ehcoll),
+  // so a collection page's link file can reach the reader, and "not a valid
+  // package" would leave its owner with nothing to do.
+  it("names a collection page's link file, and what to do with it", async () => {
+    const p = path.join(dir, "ivy-panties-link.zip");
+    fs.writeFileSync(p, storedZip([
+      { name: "event-horizon-link.json", data: '{"format":"event-horizon-link","version":1}' },
+      { name: "readme.txt", data: "Paste the link into Event Horizon." },
+    ]));
+    const msg = await capture(p);
+    expect(msg).toMatch(/is a collection's link file, not its package/);
+    expect(msg).toMatch(/Paste the link written inside it/);
+  });
+
+  it("keeps saying no manifest for any other zip", async () => {
+    const p = path.join(dir, "some-mod.zip");
+    fs.writeFileSync(p, storedZip([{ name: "Data/some.esp", data: "TES4" }]));
+    const msg = await capture(p);
+    expect(msg).toMatch(/does not contain manifest\.json/);
+    expect(msg).not.toMatch(/link file/);
+  });
+});
+
+describe("hasPackageManifest", () => {
+  it("is true for a zip with manifest.json at its root whatever its name, and false for one without", async () => {
+    expect(await hasPackageManifest(write(SEVENZIP_WITH_LOCAL_EXTRA, "ivy-panties-1.0.26.zip"))).toBe(true);
+    const nested = path.join(dir, "nested.zip");
+    fs.writeFileSync(nested, storedZip([{ name: "wrap/manifest.json", data: "{}" }]));
+    expect(await hasPackageManifest(nested)).toBe(false);
+    const link = path.join(dir, "link.zip");
+    fs.writeFileSync(link, storedZip([{ name: "event-horizon-link.json", data: "{}" }]));
+    expect(await hasPackageManifest(link)).toBe(false);
+  });
+
+  it("throws the package reader's error for a file that is not a zip", async () => {
+    const p = path.join(dir, "page.zip");
+    fs.writeFileSync(p, Buffer.from("<!DOCTYPE html><html><body>404", "utf8"));
+    await expect(hasPackageManifest(p)).rejects.toBeInstanceOf(ReadEhcollError);
   });
 });
 

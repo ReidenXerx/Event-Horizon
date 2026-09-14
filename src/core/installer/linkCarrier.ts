@@ -2,11 +2,13 @@
  * ──────────────────────────────────────────────────────────────────────
  * The link file on a collection's landing page.
  *
- * Nexus quarantines an Event Horizon package (a zip of zips), so the mod
- * page is a landing page and its own file is a small zip that carries the
- * package's download link and SHA-256. Pasting that page's address has to
- * end in the package, so this reads the zip and says which link and which
- * checksum it carries — or exactly why it cannot tell.
+ * Nexus quarantined Event Horizon packages, so a collection's mod page was a
+ * landing page whose own file is a small zip that carries the package's
+ * download link and SHA-256. Pages now carry the package itself as a .zip,
+ * and a zip without the package's manifest.json is read here as a link file.
+ * Pasting such a page's address has to end in the package, so this reads the
+ * zip and says which link and which checksum it carries — or exactly why it
+ * cannot tell.
  *
  * The format, in order of preference:
  *
@@ -60,7 +62,10 @@ export async function readLinkCarrier(zipPath: string): Promise<CarrierLink> {
   const name = path.basename(zipPath);
   const size = (await fs.promises.stat(zipPath)).size;
   if (size > MAX_ZIP_BYTES) {
-    throw new Error(`The page's file "${name}" is ${size} bytes, too large to be a link file; it is not a collection package either (.ehcoll).`);
+    throw new Error(
+      `The page's file "${name}" is ${size} bytes, too large to be a link file, and it has no manifest.json at its root, ` +
+        "so it is not a collection package either.",
+    );
   }
   let parsed: CarrierLink | { why: string };
   try {

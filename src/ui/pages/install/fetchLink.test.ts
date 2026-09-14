@@ -231,6 +231,34 @@ describe("fetchLink, Nexus route", () => {
     ).rejects.toMatchObject({ name: "ChecksumMismatchError" });
   });
 
+  it("takes a .zip holding manifest.json as the package itself, held to the link's checksum", async () => {
+    // Nexus quarantines files named .ehcoll, so a page carries its package as
+    // .zip, and a .zip is no longer always a link file.
+    const packageZip = linkZip("manifest.json", '{"schemaVersion":2}');
+    const packageSha = createHash("sha256").update(packageZip).digest("hex");
+    const vortex = fakeVortex({
+      activeGameId: "fallout4",
+      files: [
+        { file_id: 21, file_name: "ivy-panties-1.0.26.zip", category_name: "MAIN" },
+        { file_id: 22, file_name: "facegen_v1.0.7z", category_name: "OPTIONAL" },
+      ],
+      onDownload: () => packageZip,
+    });
+    const outcome = await fetchLink(
+      vortex.api,
+      parsed(`https://www.nexusmods.com/fallout4/mods/109025#sha256=${packageSha}`),
+      new AbortController().signal,
+      events,
+    );
+    expect(vortex.downloadsAsked).toEqual([21]);
+    expect(outcome).toMatchObject({
+      kind: "file",
+      zipPath: path.join(vortexDownloads, "ivy-panties-1.0.26.zip"),
+      receipt: { fileName: "ivy-panties-1.0.26.zip", sha256: packageSha, verified: "match", source: "nexus" },
+    });
+    expect(hoisted.logged.some((l) => l.event === "install.link.carrier-read")).toBe(false);
+  });
+
   it("names the game to switch to, as Vortex names it", async () => {
     const vortex = fakeVortex({ activeGameId: "fallout4", files: [] });
     await expect(

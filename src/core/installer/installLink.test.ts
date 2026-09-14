@@ -14,6 +14,7 @@ import {
   chooseEhcollFile,
   fileNameFromContentDisposition,
   fileSizeOf,
+  isPackageFileName,
   nexusFilePageUrl,
   parseInstallLink,
   safeDownloadName,
@@ -138,14 +139,14 @@ describe("chooseEhcollFile", () => {
     ...over,
   });
 
-  it("takes a named package, treats a named zip as the link file, and refuses anything else by name", () => {
+  it("takes a named package, leaves a named zip to its contents, and refuses anything else by name", () => {
     const files = [
       pkg({ file_id: 1 }),
-      pkg({ file_id: 2, file_name: "ivy-link.zip" }),
+      pkg({ file_id: 2, file_name: "ivy-panties-1.0.26.zip" }),
       pkg({ file_id: 3, file_name: "readme.txt" }),
     ];
     expect(chooseEhcollFile(files, 1)).toEqual({ kind: "one", file: files[0] });
-    expect(chooseEhcollFile(files, 2)).toEqual({ kind: "carrier", file: files[1] });
+    expect(chooseEhcollFile(files, 2)).toEqual({ kind: "zip", file: files[1] });
     const r = chooseEhcollFile(files, 3);
     expect(r.kind).toBe("none");
     expect((r as { why: string }).why).toMatch(/readme\.txt/);
@@ -194,22 +195,35 @@ describe("chooseEhcollFile", () => {
     expect(r.kind).toBe("several");
   });
 
-  it("on a landing page with no package, chooses the link file", () => {
+  it("chooses a page's only live zip, for what is inside to decide", () => {
     const files = [
-      pkg({ file_id: 7, file_name: "ivy-panties-link.zip" }),
-      pkg({ file_id: 8, file_name: "ivy-panties-link-old.zip", category_name: "OLD_VERSION" }),
+      pkg({ file_id: 7, file_name: "ivy-panties-1.0.26.zip" }),
+      pkg({ file_id: 8, file_name: "ivy-panties-1.0.25.ehcoll", category_name: "OLD_VERSION" }),
+      pkg({ file_id: 9, file_name: "facegen_v1.0.7z", category_name: "OPTIONAL" }),
     ];
-    expect(chooseEhcollFile(files)).toEqual({ kind: "carrier", file: files[0] });
+    expect(chooseEhcollFile(files)).toEqual({ kind: "zip", file: files[0] });
   });
 
-  it("a package on the page wins over a link file", () => {
-    const files = [pkg({ file_id: 7, file_name: "link.zip" }), pkg({ file_id: 8 })];
-    expect(chooseEhcollFile(files)).toEqual({ kind: "one", file: files[1] });
+  it("weighs a .ehcoll and a .zip alike: the primary file wins, and equals are a question", () => {
+    const primaryZip = [pkg({ file_id: 7, file_name: "ivy-panties-1.0.26.zip", is_primary: true }), pkg({ file_id: 8 })];
+    expect(chooseEhcollFile(primaryZip)).toEqual({ kind: "zip", file: primaryZip[0] });
+    const primaryEhcoll = [pkg({ file_id: 7, file_name: "link.zip" }), pkg({ file_id: 8, is_primary: true })];
+    expect(chooseEhcollFile(primaryEhcoll)).toEqual({ kind: "one", file: primaryEhcoll[1] });
+    const equals = [pkg({ file_id: 7, file_name: "link.zip" }), pkg({ file_id: 8 })];
+    expect(chooseEhcollFile(equals)).toEqual({ kind: "several", files: equals });
   });
 
   it("explains an empty page and a page without packages differently", () => {
     expect((chooseEhcollFile([]) as { why: string }).why).toMatch(/no files/);
-    expect((chooseEhcollFile([pkg({ file_name: "mod.7z" })]) as { why: string }).why).toMatch(/no \.ehcoll/);
+    expect((chooseEhcollFile([pkg({ file_name: "mod.7z" })]) as { why: string }).why).toMatch(/no collection package/);
+  });
+
+  it("knows a package's file names by their extension, in any case", () => {
+    expect(isPackageFileName("ivy-panties-1.0.26.ehcoll")).toBe(true);
+    expect(isPackageFileName("C:\\Downloads\\IVY-PANTIES-1.0.26.ZIP")).toBe(true);
+    expect(isPackageFileName("facegen_v1.0.7z")).toBe(false);
+    expect(isPackageFileName("ivy.zip.exe")).toBe(false);
+    expect(isPackageFileName("ivy.ehcoll.partial")).toBe(false);
   });
 });
 
@@ -278,6 +292,7 @@ describe("helpers", () => {
   it("names a direct download after the link, kept inside our folder", () => {
     expect(safeDownloadName("https://h/x/ivy%20panties.ehcoll")).toBe("ivy panties.ehcoll");
     expect(safeDownloadName("https://h/x/pkg")).toBe("pkg.ehcoll");
+    expect(safeDownloadName("https://h/x/ivy-panties-1.0.26.zip")).toBe("ivy-panties-1.0.26.zip");
     expect(safeDownloadName("https://h/x/../")).toBe("collection.ehcoll");
     expect(safeDownloadName("https://h/")).toBe("collection.ehcoll");
   });
@@ -304,6 +319,9 @@ describe("file names a server supplies", () => {
     const name = sanitizeFileName(`${"x".repeat(300)}.ehcoll`);
     expect(name.length).toBeLessThanOrEqual(120);
     expect(name.endsWith(".ehcoll")).toBe(true);
+    const zipped = sanitizeFileName(`${"x".repeat(300)}.ZIP`);
+    expect(zipped.length).toBe(120);
+    expect(zipped.endsWith("x.ZIP")).toBe(true);
   });
 
   it("drops trailing dots and spaces Windows would drop silently, and paths", () => {

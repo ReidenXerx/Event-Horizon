@@ -52,13 +52,13 @@ export const S = {
     importExistingBusy: "Importing...",
     distribution: {
       hint:
-        "Upload this .ehcoll as a regular Nexus mod attachment under your collection's mod page so players can drag it into Event Horizon.",
+        "Upload this package to your collection's Nexus mod page named .zip instead of .ehcoll (Nexus quarantines .ehcoll files), with mod manager download off, so players can drag it into Event Horizon.",
     },
   },
 
   install: {
     title: "Install a collection",
-    pickHero: "Drop a .ehcoll file or click to browse",
+    pickHero: "Drop a collection package or click to browse",
     pickSafetyHint:
       "Event Horizon never modifies your current profile until you click Install on the final review screen.",
     confirmTitle: "Last chance to review",

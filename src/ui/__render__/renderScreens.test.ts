@@ -474,7 +474,7 @@ describe("render", () => {
             action === "reapply-rules" ||
             action === "reapply-userlist" ||
             action === "reinstall-mods"
-              ? "Needs the .ehcoll"
+              ? "Needs the package"
               : undefined,
         } as never),
       ),

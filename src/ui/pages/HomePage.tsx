@@ -259,7 +259,7 @@ function QuickActionsRow(props: {
             <Pill intent="info" withDot>
               Player
             </Pill>
-            <span>Pick an .ehcoll →</span>
+            <span>Pick a package →</span>
           </>
         }
       >

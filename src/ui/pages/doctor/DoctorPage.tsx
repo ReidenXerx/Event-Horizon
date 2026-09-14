@@ -298,9 +298,9 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
 
   const missingPackage =
     pkg === undefined && pkgSearched
-      ? "The .ehcoll for this collection was not found in your collections " +
-        "folder. Repairs that re-run a step of the install need it — pick it " +
-        "to enable them."
+      ? "The package for this collection (.ehcoll or .zip) was not found in " +
+        "your collections folder. Repairs that re-run a step of the install " +
+        "need it — pick it to enable them."
       : undefined;
 
   // ── deep scan ────────────────────────────────────────────────────────
@@ -479,7 +479,7 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
           tone="warning"
           actions={
             <Button intent="ghost" size="sm" onClick={pickPackage}>
-              Pick the .ehcoll…
+              Pick the package…
             </Button>
           }
         >
@@ -537,7 +537,7 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
           {...(pkg === undefined
             ? {
                 unavailableHeal: (action: HealAction): string | undefined =>
-                  healNeedsManifest(action) ? "Needs the .ehcoll" : undefined,
+                  healNeedsManifest(action) ? "Needs the package" : undefined,
               }
             : {})}
         />

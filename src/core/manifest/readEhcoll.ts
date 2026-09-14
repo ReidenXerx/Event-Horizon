@@ -50,6 +50,7 @@ import { toPosix } from "../paths";
 import * as os from "os";
 import * as path from "path";
 
+import { LINK_FILE_NAME } from "../installer/linkCarrier";
 import { ehLog } from "../logging/ehLog";
 import type { EhcollManifest } from "../../types/ehcoll";
 import { bundleEntryOf } from "./bundleLayout";
@@ -205,10 +206,16 @@ export async function readEhcoll(
   }
 
   if (!layout.hasManifest) {
-    ehLog("error", "ehcoll.read.manifest-missing", { file: zipName });
+    // Packages are picked as .zip now, so a collection page's link file is the
+    // likeliest wrong zip: say what it is and what to do with it.
+    const linkFile = entries.some((e) => normalizePath(e.name).split("/").pop()?.toLowerCase() === LINK_FILE_NAME);
+    ehLog("error", "ehcoll.read.manifest-missing", { file: zipName, linkFile });
     throw new ReadEhcollError([
-      `Archive "${zipPath}" does not contain manifest.json at its root. ` +
-        `This is not a valid Event Horizon collection package.`,
+      linkFile
+        ? `"${zipName}" is a collection's link file, not its package: it holds ${LINK_FILE_NAME} and no manifest.json. ` +
+          `Paste the link written inside it into "Or paste the collection's link" on the Install page.`
+        : `Archive "${zipPath}" does not contain manifest.json at its root. ` +
+          `This is not a valid Event Horizon collection package.`,
     ]);
   }
 
@@ -335,6 +342,17 @@ async function assertReadableFile(zipPath: string): Promise<void> {
 // ---------------------------------------------------------------------------
 // Central directory enumeration — read directly, no subprocess
 // ---------------------------------------------------------------------------
+
+/**
+ * Whether the zip at `zipPath` has a package's manifest.json at its root: the
+ * one thing that makes a zip an Event Horizon package, whatever its name.
+ * Nexus pages carry packages as .zip, beside the link files of older landing
+ * pages, and only this tells the two apart. Throws {@link ReadEhcollError}
+ * for a file that cannot be listed as a zip.
+ */
+export async function hasPackageManifest(zipPath: string): Promise<boolean> {
+  return classifyEntries(await listZipEntries(zipPath)).hasManifest;
+}
 
 /**
  * Every entry in the package, read by parsing the ZIP ourselves.

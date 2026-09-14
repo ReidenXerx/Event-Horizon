@@ -213,10 +213,10 @@ export function buildErrorReport(err: FormattedError): string {
 function classify(err: unknown): FormattedError {
   if (err instanceof ReadEhcollError) {
     return classifyMultiError(err, {
-      title: "Could not read .ehcoll package",
+      title: "Could not read the collection package",
       message: "Vortex couldn't open or parse the collection file.",
       hints: [
-        "Make sure the file ends in .ehcoll and isn't a renamed .zip from elsewhere.",
+        "Make sure it is the collection's package: the .ehcoll, or the .zip from the collection's Nexus page.",
         "Try downloading the package again — partial downloads can cause this.",
         "If you built the package yourself, rebuild it and check that it produced manifest.json.",
       ],

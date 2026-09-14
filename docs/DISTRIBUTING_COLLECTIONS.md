@@ -18,6 +18,16 @@ quarantined ones. Not done yet — and deleting the old pages waits for the
 curator's explicit go-ahead. Until then, everything below describes schema 1
 and the pages as they stand.
 
+**Update 2026-09-14 — packages go up as `.zip`.** Schema-2 packages, with no
+archive and no executable inside, were still quarantined on the new page
+fallout4/109025. A hidden test page then held two byte-identical copies of one
+package: the copy named `.ehcoll` was quarantined within about ten minutes, the
+copy named `.zip` was still clean after 91 minutes. Nexus's automated check
+keys on the extension, so a package goes up under the name of what it is, a
+zip, with mod manager download turned off (Vortex must never install a package
+as a mod). Event Horizon 0.1.160 takes a `.zip` package wherever it takes a
+`.ehcoll`, and `scripts/nexus-collection-file.mjs` uploads that way.
+
 **Why not the package on Nexus itself (schema 1):** it was tried first (multipart upload
 works, see below) and Nexus's automated safety scan quarantined both files
 within the hour. The stated reason list includes *nested archives (a zip

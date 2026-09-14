@@ -3134,17 +3134,19 @@ function BuildRulesScopeSummary(props: {
 /**
  * Tiny hint card that bridges "build finished" → "now what?". Until
  * we ship a one-click publish flow (see docs/RESEARCH_PUBLISHING.md),
- * curators distribute their `.ehcoll` by uploading it as a regular
- * Nexus mod attachment. Saying it explicitly here saves "where do I
- * upload this?" support requests.
+ * curators distribute their package by uploading it, named `.zip`, as a
+ * regular Nexus mod attachment. Saying it explicitly here saves "where do I
+ * upload this?" support requests, and a package quarantined for its name.
  */
 function DistributionHint(): JSX.Element {
   return (
     <Callout tone="info" title="Next: share it.">
-      Upload this <code>.ehcoll</code> as a regular Nexus mod
-      attachment under your collection&apos;s mod page — testers install it via
-      Event Horizon&apos;s install tab. A one-click publish flow is
-      tracked in <code>docs/RESEARCH_PUBLISHING.md</code>.
+      Upload this package to your collection&apos;s Nexus mod page named{" "}
+      <code>.zip</code> instead of <code>.ehcoll</code>, with mod manager download
+      turned off: Nexus quarantines files named <code>.ehcoll</code>, and Vortex
+      must never install a package as a mod. Players install the{" "}
+      <code>.zip</code> from Event Horizon&apos;s install tab. A one-click
+      publish flow is tracked in <code>docs/RESEARCH_PUBLISHING.md</code>.
     </Callout>
   );
 }

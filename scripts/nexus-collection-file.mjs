@@ -1,5 +1,9 @@
 // Put an Event Horizon package (.ehcoll) on a Nexus MOD page as a file.
 //
+// A package goes up named .zip, with no mod manager download: Nexus quarantines a file named .ehcoll within minutes
+// while the same bytes named .zip pass (two byte-identical copies on a hidden page, 2026-09-14), and a package must
+// never be installed by Vortex as a mod. Any other file (the optional .7z outputs) keeps its name and the download.
+//
 // The curator's collections are distributed as mods, not as Vortex collections:
 // the mod page holds the full package and tells people to install it with
 // Event Horizon. Packages run to several GB, so this is the multipart flow of
@@ -110,19 +114,30 @@ export function refuseExtensionPage({ game }, extension) {
 }
 
 /**
+ * The name a file goes up under, and whether Nexus may offer it as a mod manager download. A package (.ehcoll, or
+ * one already named .zip) goes up as .zip without that download; the header says why. Anything else is unchanged.
+ */
+export function uploadNaming(filePath) {
+  const local = path.basename(filePath);
+  return { filename: local.replace(/\.ehcoll$/i, ".zip"), modManagerDownload: !/\.(ehcoll|zip)$/i.test(local) };
+}
+
+/**
  * The whole command, with the client injected. Every local and remote check
  * runs before the upload; the client is only created once the arguments hold.
  */
 export async function publish({ argv, extension, makeClient, log }) {
   const opts = parseArgs(argv);
   refuseExtensionPage(opts, extension);
-  const filename = path.basename(opts.filePath);
+  const { filename, modManagerDownload } = uploadNaming(opts.filePath);
   assertHeaderSafeFilename(filename);
   const stat = fs.statSync(opts.filePath);
   if (!stat.isFile()) throw new UsageError(`${opts.filePath} is not a file`);
   const descriptionText =
     opts.descriptionFile !== undefined ? fs.readFileSync(opts.descriptionFile, "utf8").replace(/\r\n/g, "\n").trim() : undefined;
-  log(`${filename}: ${stat.size} bytes (${(stat.size / 1024 ** 3).toFixed(2)} GiB), ${stat.size > SINGLE_PART_LIMIT ? "multipart" : "single-part"} upload`);
+  log(`${path.basename(opts.filePath)}: ${stat.size} bytes (${(stat.size / 1024 ** 3).toFixed(2)} GiB), ${stat.size > SINGLE_PART_LIMIT ? "multipart" : "single-part"} upload`);
+  if (filename !== path.basename(opts.filePath)) log(`goes up as ${filename}: Nexus quarantines files named .ehcoll, and a package is a zip`);
+  if (!modManagerDownload) log("no mod manager download: Vortex must never install a package as a mod");
 
   const client = makeClient();
   const mod = await client.getMod(opts.game, opts.modScopedId);
@@ -156,8 +171,8 @@ export async function publish({ argv, extension, makeClient, log }) {
     version: opts.version,
     description,
     file_category: opts.category,
-    primary_mod_manager_download: opts.primary,
-    allow_mod_manager_download: true,
+    primary_mod_manager_download: opts.primary && modManagerDownload,
+    allow_mod_manager_download: modManagerDownload,
     show_requirements_pop_up: false,
     update_mod_version: opts.primary,
   };

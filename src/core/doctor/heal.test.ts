@@ -185,6 +185,17 @@ describe("matchEhcollFile", () => {
   it("finds nothing in an empty directory rather than throwing", () => {
     expect(matchEhcollFile([], "Ivy 2", "1.0.9")).toBeUndefined();
   });
+
+  it("finds the package under the .zip name a Nexus page serves, and prefers the packager's own name", () => {
+    // Nexus quarantines files named .ehcoll, so the package a user took from
+    // a collection's page is a .zip with the same bytes.
+    const zipped = real.replace(/\.ehcoll$/, ".zip");
+    expect(matchEhcollFile(["other-1.0.0.zip", zipped], "Ivy 2", "1.0.9")).toBe(zipped);
+    expect(matchEhcollFile([zipped, real], "Ivy 2", "1.0.9")).toBe(real);
+    expect(matchEhcollFile([zipped, "other-1.0.9.ehcoll"], "Ivy 2", "1.0.9")).toBe(zipped);
+    expect(matchEhcollFile(["renamed-collection-1.0.9.zip"], "Ivy 2", "1.0.9")).toBe("renamed-collection-1.0.9.zip");
+    expect(matchEhcollFile(["a-1.0.9.zip", "b-1.0.9.ehcoll"], "Ivy 2", "1.0.9")).toBeUndefined();
+  });
 });
 
 describe("restoring ESL flags", () => {

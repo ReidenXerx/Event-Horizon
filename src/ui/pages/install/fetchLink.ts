@@ -13,10 +13,11 @@
  *                     be a 10 GB mod. Without Premium, Nexus issues no
  *                     link, so the file page is opened in the browser and
  *                     the caller is told to let the user pick the file.
- *                     A LANDING page (no package, a small link zip instead,
- *                     because Nexus quarantines packages) is followed: the
- *                     zip is fetched the same way, read, and its link taken
- *                     as a direct link with its checksum.
+ *                     A `.zip` on the page is the package (Nexus quarantines
+ *                     files named `.ehcoll`, so pages carry it as `.zip`) or
+ *                     an older LANDING page's link file; once downloaded,
+ *                     what is inside decides, and a link file is read and
+ *                     its link taken as a direct link with its checksum.
  *   Direct link     → fetched by Event Horizon itself, resumably, into
  *                     its own downloads folder.
  *
@@ -57,10 +58,11 @@ import {
 } from "../../../core/installer/installLink";
 import { readLinkCarrier } from "../../../core/installer/linkCarrier";
 import { ehLog } from "../../../core/logging/ehLog";
+import { hasPackageManifest } from "../../../core/manifest/readEhcoll";
 import { getEventHorizonDir } from "../../../core/paths";
 import { openExternalUrl } from "../../../core/revealPath";
 import { AbortError } from "../../../utils/abortError";
-import { nexusDomainForVortexGame, nexusExtOf, type NexusExt } from "../curator/requirementsIo";
+import { nexusDomainForVortexGame, nexusExtOf } from "../curator/requirementsIo";
 import type { LinkPhase } from "./state";
 
 export type FetchLinkEvents = {
@@ -183,11 +185,8 @@ async function fetchFromNexus(
         "is meant. Open its Files tab and paste the link of the one you want — each file's link carries its file_id.",
     );
   }
-  if (chosen.kind === "carrier") {
-    return fetchThroughLinkFile(api, ext, link, gameId, chosen.file, signal, events);
-  }
   const file = chosen.file;
-  const fileName = file.file_name ?? `${file.name ?? `mod-${link.modId}`}.ehcoll`;
+  const fileName = file.file_name ?? `${file.name ?? `mod-${link.modId}`}${chosen.kind === "zip" ? ".zip" : ".ehcoll"}`;
   const size = fileSizeOf(file);
   const pageUrl = nexusFilePageUrl(link.domain, link.modId, file.file_id);
 
@@ -203,6 +202,12 @@ async function fetchFromNexus(
       const zipPath = await vortexDownloadPath(api, gameId, downloadId, fileName, signal, (received, total) =>
         events.onPhase("waiting-for-vortex", { fileName, received, ...(total !== undefined ? { total } : {}) }),
       );
+      // A .zip is the package or an older landing page's link file, and only
+      // what is inside says which. One that cannot be listed as a zip goes on
+      // as the package: the package reader names what the file really is.
+      if (chosen.kind === "zip" && !(await hasPackageManifest(zipPath).catch(() => true))) {
+        return followLinkFile(link, file, downloadId, zipPath, signal, events);
+      }
       const receipt = await verifyVortexDownload(zipPath, fileName, link.sha256, signal);
       ehLog("info", "install.link.nexus-downloaded", {
         downloadId,
@@ -234,74 +239,42 @@ async function fetchFromNexus(
 }
 
 /**
- * A landing page: its file is a small zip that says where the package is
- * and what its SHA-256 is. Fetched through Vortex like any page file, read,
- * and followed as a direct link held to that checksum.
+ * An older landing page's link file, already downloaded: a small zip that
+ * says where the package is and what its SHA-256 is. Read, and followed as a
+ * direct link held to that checksum.
  */
-async function fetchThroughLinkFile(
-  api: types.IExtensionApi,
-  ext: NexusExt,
+async function followLinkFile(
   link: Extract<InstallLink, { kind: "nexus" }>,
-  gameId: string,
   file: NexusFileCandidate,
+  downloadId: string,
+  zipPath: string,
   signal: AbortSignal,
   events: FetchLinkEvents,
 ): Promise<FetchLinkOutcome> {
-  const fileName = file.file_name ?? `mod-${link.modId}-link.zip`;
-  const pageUrl = nexusFilePageUrl(link.domain, link.modId, file.file_id);
-  const account = readNexusAccount(api);
-  const canTry = (account.kind === "premium" || account.kind === "unknown") && ext.download !== undefined;
-  ehLog("info", "install.link.landing-page", { modId: link.modId, fileId: file.file_id, fileName, account: account.kind });
-
-  if (canTry && ext.download !== undefined) {
-    events.onPhase("waiting-for-vortex", { fileName });
-    const downloadId = await ext.download(gameId, link.modId, file.file_id, fileName, false);
-    throwIfAborted(signal);
-    if (typeof downloadId === "string" && downloadId.length > 0) {
-      const zipPath = await vortexDownloadPath(api, gameId, downloadId, fileName, signal, (received, total) =>
-        events.onPhase("waiting-for-vortex", { fileName, received, ...(total !== undefined ? { total } : {}) }),
-      );
-      const carrier = await readLinkCarrier(zipPath);
-      if (link.sha256 !== undefined && link.sha256 !== carrier.sha256) {
-        throw new Error(
-          `The link you pasted carries SHA-256 ${link.sha256}, and the page's link file says ${carrier.sha256}. They cannot ` +
-            "both describe the package, so nothing was downloaded. Copy the link from the collection's page again.",
-        );
-      }
-      const direct = parseInstallLink(carrier.url);
-      if (direct.kind !== "direct") {
-        // parseLinkCarrier only returns direct links; this guards the contract.
-        throw new Error(`The page's link file points at ${redactUrl(carrier.url)}, which is not a direct download.`);
-      }
-      ehLog("info", "install.link.carrier-read", {
-        downloadId,
-        modId: link.modId,
-        fileId: file.file_id,
-        carrierFile: path.basename(zipPath),
-        from: carrier.source,
-        link: redactUrl(direct.url),
-        sha256: carrier.sha256,
-        ...(carrier.size !== undefined ? { size: carrier.size } : {}),
-      });
-      return fetchDirect(direct.url, carrier.sha256, signal, events);
-    }
-    if (account.kind === "premium") {
-      throw new Error(
-        "Vortex did not start the download of the page's link file. Its own notification says why (a sign-in that " +
-          "lapsed, or Nexus not answering); fix that and paste the link again.",
-      );
-    }
+  ehLog("info", "install.link.landing-page", { modId: link.modId, fileId: file.file_id, fileName: path.basename(zipPath) });
+  const carrier = await readLinkCarrier(zipPath);
+  if (link.sha256 !== undefined && link.sha256 !== carrier.sha256) {
+    throw new Error(
+      `The link you pasted carries SHA-256 ${link.sha256}, and the page's link file says ${carrier.sha256}. They cannot ` +
+        "both describe the package, so nothing was downloaded. Copy the link from the collection's page again.",
+    );
   }
-
-  const opened = await openExternalUrl(pageUrl);
-  ehLog("info", "install.link.landing-page-manual", { modId: link.modId, fileId: file.file_id, account: account.kind, opened: opened.kind });
-  throw new Error(
-    `This collection's page is a landing page: its file "${fileName}" is a small zip holding the package's download ` +
-      "link and SHA-256, and Nexus hands direct downloads to Premium accounts only" +
-      (account.kind === "logged-out" ? " (and Vortex is not signed in to Nexus)" : "") +
-      `. ${opened.kind === "failed" ? `Open ${pageUrl}` : "The file's page was opened in your browser"}: download the zip, ` +
-      "open it, and paste the link written inside it here. The page's description gives the same link.",
-  );
+  const direct = parseInstallLink(carrier.url);
+  if (direct.kind !== "direct") {
+    // parseLinkCarrier only returns direct links; this guards the contract.
+    throw new Error(`The page's link file points at ${redactUrl(carrier.url)}, which is not a direct download.`);
+  }
+  ehLog("info", "install.link.carrier-read", {
+    downloadId,
+    modId: link.modId,
+    fileId: file.file_id,
+    carrierFile: path.basename(zipPath),
+    from: carrier.source,
+    link: redactUrl(direct.url),
+    sha256: carrier.sha256,
+    ...(carrier.size !== undefined ? { size: carrier.size } : {}),
+  });
+  return fetchDirect(direct.url, carrier.sha256, signal, events);
 }
 
 /** Who Vortex says the collection is for, by name, and who it is managing now. */
@@ -433,7 +406,7 @@ export async function waitForVortexDownload(
         ehLog("warn", "install.link.vortex-download-stopped", { downloadId, why: "paused", received: dl.received });
         throw new Error(
           `The download of ${what} is paused in Vortex's Downloads tab, so Event Horizon stopped waiting for it. Resume it ` +
-            'there; when it has finished, pick the file with "Choose .ehcoll file" (Vortex\'s download folder), or paste the link again.',
+            'there; when it has finished, pick the file with "Choose package file" (Vortex\'s download folder), or paste the link again.',
         );
       }
       const received = typeof dl.received === "number" ? dl.received : 0;

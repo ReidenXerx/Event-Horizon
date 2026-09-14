@@ -48,6 +48,7 @@ import { useToast } from "../../components";
 import { useKeyboardShortcut } from "../../hooks/useKeyboardShortcut";
 import { formatBytes } from "../../../utils/diskSpace";
 import { openExternalUrl, revealInFileManager } from "../../../core/revealPath";
+import { isPackageFileName } from "../../../core/installer/installLink";
 import { writeToClipboard } from "../../clipboard";
 import { describeDownload } from "./downloadGuidance";
 import {
@@ -176,7 +177,7 @@ function StepFrame(props: {
 
 export interface PickStepProps {
   onPick: (zipPath: string) => void;
-  /** A pasted link: a Nexus mod page, or a direct link to a .ehcoll. */
+  /** A pasted link: a Nexus mod page, or a direct link to a package file. */
   onLink?: (input: string) => void;
 }
 
@@ -243,7 +244,7 @@ export function PickStep(props: PickStepProps): JSX.Element {
       if (files.length > 1) {
         showToast({
           intent: "warning",
-          message: "Drop only one .ehcoll file at a time.",
+          message: "Drop only one package file at a time.",
         });
         return;
       }
@@ -260,10 +261,10 @@ export function PickStep(props: PickStepProps): JSX.Element {
         });
         return;
       }
-      if (!filePath.toLowerCase().endsWith(".ehcoll")) {
+      if (!isPackageFileName(filePath)) {
         showToast({
           intent: "warning",
-          message: "That's not a .ehcoll file. Drop an Event Horizon collection.",
+          message: "That's not a collection package. Drop the .ehcoll or .zip file the collection came as.",
         });
         return;
       }
@@ -277,7 +278,7 @@ export function PickStep(props: PickStepProps): JSX.Element {
       current="pick"
       showStepper={false}
       title="Install a collection"
-      subtitle="Pick a .ehcoll archive and Event Horizon walks you through every mod, conflict, and decision before touching your profile."
+      subtitle="Pick the collection's package (.ehcoll, or .zip as Nexus serves it) and Event Horizon walks you through every mod, conflict, and decision before touching your profile."
     >
       <div
         onDragEnter={handleDragEnter}
@@ -288,7 +289,7 @@ export function PickStep(props: PickStepProps): JSX.Element {
       >
         <EventHorizonMark size={120} />
         <div>
-          <h3 className="eh-dropzone__title">Drop a .ehcoll file or click to browse</h3>
+          <h3 className="eh-dropzone__title">Drop a collection package or click to browse</h3>
           <p className="eh-dropzone__hint">
             Event Horizon never modifies your current profile until you click Install on the final review screen.
           </p>
@@ -300,14 +301,14 @@ export function PickStep(props: PickStepProps): JSX.Element {
             void handlePick();
           }}
         >
-          Choose .ehcoll file...
+          Choose package file...
         </Button>
       </div>
       {props.onLink !== undefined && (
         <Card className="eh-stack eh-stack--sm">
           <Field
             label="Or paste the collection's link"
-            hint="The Nexus page the curator sent you to, or a direct link to a .ehcoll file. Nexus downloads go through Vortex (Premium); a direct link is fetched here and can be resumed."
+            hint="The Nexus page the curator sent you to, or a direct link to a package file. Nexus downloads go through Vortex (Premium); a direct link is fetched here and can be resumed."
           >
             <Input
               type="url"
@@ -453,7 +454,7 @@ export function LinkManualStep(props: {
 // ===========================================================================
 
 const LOADING_PHASE_LABELS: Record<LoadingPhase, string> = {
-  "reading-package": "Reading the .ehcoll archive",
+  "reading-package": "Reading the collection package",
   "reading-receipt": "Looking up previous installs",
   "checking-game": "Checking the active game profile",
   "hashing-mods": "Hashing your installed mods",

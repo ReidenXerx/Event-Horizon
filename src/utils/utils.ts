@@ -80,7 +80,8 @@ export async function pickJsonFile(
 }
 
 /**
- * Ask the user for a `.ehcoll` package.
+ * Ask the user for a collection package: a `.ehcoll`, or the `.zip` a Nexus
+ * page serves it as (Nexus quarantines files named `.ehcoll`).
  *
  * Goes through Vortex's own `api.selectFile`, NOT Electron's dialog.
  *
@@ -100,8 +101,8 @@ export async function pickEhcollFile(
   api: types.IExtensionApi,
 ): Promise<string | undefined> {
   const filePath = await api.selectFile({
-    title: "Select Event Horizon collection (.ehcoll)",
-    filters: [{ name: "Event Horizon collections", extensions: ["ehcoll"] }],
+    title: "Select an Event Horizon collection package (.ehcoll or .zip)",
+    filters: [{ name: "Event Horizon collection packages", extensions: ["ehcoll", "zip"] }],
   });
   return filePath?.length ? filePath : undefined;
 }

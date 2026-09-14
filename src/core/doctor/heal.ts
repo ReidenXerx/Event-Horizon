@@ -192,13 +192,15 @@ export function rebuildPluginOrder(
 }
 
 /**
- * Which `.ehcoll` in a directory belongs to this receipt.
+ * Which package in a directory belongs to this receipt.
  *
  * Filenames are `<slug>-<version>.ehcoll`, and the slug is derived from the
- * package name, so this is a match rather than a lookup. Version is matched
- * EXACTLY: healing from a different version of the collection would apply
- * rules and answers the user never installed, which is a worse outcome than
- * asking them to point at the file.
+ * package name, so this is a match rather than a lookup. The same package
+ * taken from a Nexus page is a `.zip` (Nexus quarantines files named
+ * `.ehcoll`), so that name counts too; the packager's own name wins when both
+ * are there. Version is matched EXACTLY: healing from a different version of
+ * the collection would apply rules and answers the user never installed,
+ * which is a worse outcome than asking them to point at the file.
  */
 export function matchEhcollFile(
   filenames: readonly string[],
@@ -208,17 +210,19 @@ export function matchEhcollFile(
   // Built by the SAME function the packager writes with, not a copy of its
   // rules — a second implementation would agree today and drift later,
   // surfacing as a Doctor that cannot find a package sitting in front of it.
-  const wanted = buildOutputFileName(packageName, packageVersion).toLowerCase();
-  const exact = filenames.find((f) => f.toLowerCase() === wanted);
-  if (exact !== undefined) return exact;
+  const built = buildOutputFileName(packageName, packageVersion).toLowerCase();
+  for (const wanted of [built, built.replace(/\.ehcoll$/, ".zip")]) {
+    const exact = filenames.find((f) => f.toLowerCase() === wanted);
+    if (exact !== undefined) return exact;
+  }
 
   // Fall back to "any file whose name carries this exact version", which
   // survives a slug rule that has drifted since the package was built. Only
   // when it is unambiguous — two candidates means we do not know, and
   // guessing which collection to heal from is not a risk worth taking.
-  const suffix = `-${packageVersion}.ehcoll`.toLowerCase();
+  const suffixes = [`-${packageVersion}.ehcoll`, `-${packageVersion}.zip`].map((s) => s.toLowerCase());
   const candidates = filenames.filter((f) =>
-    f.toLowerCase().endsWith(suffix),
+    suffixes.some((suffix) => f.toLowerCase().endsWith(suffix)),
   );
   return candidates.length === 1 ? candidates[0] : undefined;
 }
