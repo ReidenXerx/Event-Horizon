@@ -8,7 +8,16 @@ Vortex ignores everything after the dash when it decides whether an extension ha
 could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
-(7 September 2026), then 0.1.151 to 0.1.158.
+(7 September 2026), then 0.1.151 to 0.1.159.
+
+## [0.1.159] — 2026-09-14
+
+### Collections
+- **An installer kept inside a folder of its archive is checked like any other.** When a mod's archive kept its FOMOD
+  installer inside a folder (`My Mod v2/fomod/…`), a build looked for the installer's files at the top of the archive,
+  found none of them and gave up on the mod: no check for files missing from your folder, no proof that you ticked
+  nothing, so users kept getting that installer's questions, and a mirrored mod carried every one of its files. The
+  build now reads those paths from the folder the installer sits in. On a real collection that was at least 13 mods.
 
 ## [0.1.158] — 2026-09-14
 
