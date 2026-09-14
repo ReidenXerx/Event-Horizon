@@ -8,7 +8,23 @@ Vortex ignores everything after the dash when it decides whether an extension ha
 could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
-(7 September 2026), then 0.1.151 to 0.1.156.
+(7 September 2026), then 0.1.151 to 0.1.157.
+
+## [0.1.157] — 2026-09-14
+
+### Collections
+- **A mirrored mod's package carries only what its own archive cannot provide.** It carried every file of the mod, the
+  author's untouched ones included — BodySlide's .exe files and OCBPC's .dll rode along unchanged, and Nexus Mods
+  quarantined the package for carrying executables. A build now compares each mirrored mod's files with its archive and
+  leaves out every file the archive installs byte for byte at the same place; the package carries the rest. A mod whose
+  installer asks users questions, depends on which plugins are active, or could not be checked still carries every
+  file. The event-horizon log says, for each mirrored mod, how many files were left to its archive, or why none were.
+- **Installing takes such a file from the mod's own archive when it is missing.** Normally the install has already put
+  it in place. When it has not — Vortex lost it, or an installer was answered differently — Event Horizon takes it from
+  the archive the mod was installed from and checks its SHA-256 before writing it, as it does with the package's own
+  files. Event Horizon 0.1.156 and older look for these files in the package instead, so a collection built with
+  0.1.157 should require 0.1.157.
+- The card for mirroring a mod says what the package carries.
 
 ## [0.1.156] — 2026-09-14
 
