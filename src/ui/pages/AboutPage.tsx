@@ -15,7 +15,7 @@ import { EXTENSION_VERSION } from "../version";
 
 const REPO_URL = "https://github.com/ReidenXerx/Event-Horizon";
 const ISSUE_URL = `${REPO_URL}/issues/new`;
-const LICENSE_URL = `${REPO_URL}/blob/main/LICENSE`;
+const LICENSE_URL = `${REPO_URL}/blob/HEAD/LICENSE`;
 const VORTEX_URL = "https://www.nexusmods.com/about/vortex/";
 const NEXUS_URL = "https://www.nexusmods.com/";
 
@@ -35,7 +35,7 @@ export function AboutPage(): JSX.Element {
                   <p>
                     A drop-in collection installer for Vortex that captures every
                     piece of curator state — FOMOD selections, mod rules, plugin
-                    load order, INI tweaks, file overrides — and reproduces it
+                    load order, INI tweaks — and reproduces it
                     faithfully on the player&apos;s machine. Standalone format,
                     no interference with vanilla Vortex collections.
                   </p>
@@ -45,7 +45,7 @@ export function AboutPage(): JSX.Element {
                     v{EXTENSION_VERSION}
                   </Pill>
                   <Pill intent="success" withDot>
-                    MIT licensed
+                    PolyForm Strict
                   </Pill>
                   <Pill intent="warning">Pre-release</Pill>
                 </div>
@@ -87,7 +87,7 @@ export function AboutPage(): JSX.Element {
               <LinkRow
                 href={REPO_URL}
                 label="Source code"
-                sub="GitHub repository · contributions welcome"
+                sub="GitHub repository · source available"
               />
               <LinkRow
                 href={ISSUE_URL}
@@ -96,8 +96,8 @@ export function AboutPage(): JSX.Element {
               />
               <LinkRow
                 href={LICENSE_URL}
-                label="MIT License"
-                sub="© 2026 DuduPhudu and Bluuuk — see LICENSE for full text"
+                label="PolyForm Strict License 1.0.0"
+                sub="© 2026 DuduPhudu and Bluuuk — you may use Event Horizon, but not copy, change or redistribute its code without written permission. 0.1.154 and earlier were MIT."
               />
             </div>
           </Card>
