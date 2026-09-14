@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-build
-description: "Skill for the Build area of Event-Horizon. 425 symbols across 95 files."
+description: "Skill for the Build area of Event-Horizon. 428 symbols across 95 files."
 ---
 
 # Build
 
-425 symbols | 95 files | Cohesion: 82%
+428 symbols | 95 files | Cohesion: 82%
 
 ## When to Use
 
@@ -21,10 +21,10 @@ description: "Skill for the Build area of Event-Horizon. 425 symbols across 95 f
 | `src/ui/pages/build/buildSession.ts` | cancelLoading, cancelRecovering, getState, subscribe, buildProgress (+30) |
 | `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, DecisionsStep, DoneStep, ExternalDownloadGuide (+21) |
 | `src/ui/pages/build/BuildDashboard.tsx` | BuildDashboard, handleDismissBuilt, handleOpenBuilt, handleOpenDraft, DashboardHeader (+19) |
+| `src/ui/pages/build/engine.ts` | downloadedFromNexus, findUnidentifiedMods, isExternal, isExternal, isExternal (+14) |
 | `src/ui/pages/build/buildSessionRegistry.ts` | BuildSessionRegistry, getBuildSessionRegistry, ensure, get, makeHooks (+13) |
-| `src/ui/pages/build/engine.ts` | findUnidentifiedMods, isExternal, isExternal, isExternal, describeMembershipChange (+13) |
 | `src/ui/pages/build/buildDiff.test.ts` | findPackages, findPackages, findPackages, findPackages, findPackages (+9) |
-| `src/core/draftStorage.ts` | getDraftsRoot, listDrafts, deleteDraft, getDraftPath, isPlainObject (+6) |
+| `src/core/draftStorage.ts` | getDraftsRoot, listDrafts, getAppDataPath, saveDraft, deleteDraft (+6) |
 | `src/ui/pages/HomePage.tsx` | CuratorPanel, Dashboard, DashboardBody, ErrorPanel, FooterRow (+6) |
 | `src/core/build/nexusAvailability.ts` | categoryOf, checkNexusAvailability, classifyFile, currentMainFile, fileIdOf (+6) |
 

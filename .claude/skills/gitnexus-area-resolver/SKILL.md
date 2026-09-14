@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-resolver
-description: "Skill for the Resolver area of Event-Horizon. 161 symbols across 58 files."
+description: "Skill for the Resolver area of Event-Horizon. 155 symbols across 56 files."
 ---
 
 # Resolver
 
-161 symbols | 58 files | Cohesion: 66%
+155 symbols | 56 files | Cohesion: 66%
 
 ## When to Use
 
@@ -17,7 +17,7 @@ description: "Skill for the Resolver area of Event-Horizon. 161 symbols across 5
 
 | File | Symbols |
 |------|---------|
-| `src/core/resolver/resolveInstallPlan.ts` | enforceInstallTargetInvariant, resolveExternalDependencies, resolveInstallPlan, resolveOrphanedMods, resolvePluginOrder (+21) |
+| `src/core/resolver/resolveInstallPlan.ts` | checkDeploymentMethod, checkExtensions, checkGameVersion, checkVortexVersion, compareSemverLike (+21) |
 | `src/core/resolver/userState.ts` | buildSuggestedProfileName, buildUserSideState, judgeResumeCandidate, lookupProfile, pickInstallTarget (+14) |
 | `src/actions/installCollectionAction.ts` | createInstallCollectionAction, formatError, isPlanInstallable, profileExistsInState, resolveStaleReceipt (+2) |
 | `src/core/getModsListForProfile.ts` | getActiveGameId, getActiveProfileId, getActiveProfileIdFromState, belongsToGame, getModsForGame (+1) |

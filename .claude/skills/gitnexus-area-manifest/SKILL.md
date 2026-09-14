@@ -49,7 +49,7 @@ Start here when exploring this area:
 | `AbortError` | Class | `src/utils/abortError.ts` | 22 |
 | `ZipReadError` | Class | `src/core/manifest/readZip.ts` | 81 |
 | `BuildManifestError` | Class | `src/core/manifest/buildManifest.ts` | 262 |
-| `CollectionConfigError` | Class | `src/core/manifest/collectionConfig.ts` | 290 |
+| `CollectionConfigError` | Class | `src/core/manifest/collectionConfig.ts` | 291 |
 | `ReadEhcollError` | Class | `src/core/manifest/readEhcoll.ts` | 131 |
 | `parseManifest` | Function | `src/core/manifest/parseManifest.ts` | 169 |
 | `put` | Function | `src/core/diagnostics/zipWriter.ts` | 67 |
