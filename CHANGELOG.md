@@ -8,7 +8,18 @@ Vortex ignores everything after the dash when it decides whether an extension ha
 could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
-(7 September 2026), then 0.1.151 to 0.1.159.
+(7 September 2026), then 0.1.151 to 0.1.160.
+
+## [0.1.160] — 2026-09-14
+
+### Collections
+- **A collection package can be a .zip.** Nexus Mods quarantines files named `.ehcoll`: two copies of the same
+  package went up on a hidden test page, and only the one named `.ehcoll` was quarantined. Collection pages now carry
+  their package as a `.zip`, which is what it is, and Event Horizon takes a `.zip` package everywhere it takes a
+  `.ehcoll`: the install page (drop it or pick it), a pasted Nexus page or direct link, and the Collection Doctor. On a
+  Nexus page, what is inside a `.zip` decides whether it is the package or an older page's link file. Builds still
+  write `.ehcoll`; upload it renamed to `.zip`, with mod manager download turned off, so Vortex never installs a
+  package as a mod.
 
 ## [0.1.159] — 2026-09-14
 
