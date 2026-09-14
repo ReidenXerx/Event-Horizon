@@ -32,7 +32,7 @@ import { listArchiveContents } from "./archiveContents";
 import { findOmissionLeads } from "./omissionLeads";
 import { type CaseMode, pathKey } from "../paths";
 import type { OmissionLead } from "./omissionLeads";
-import { expandFomodPlan } from "./expandFomodPlan";
+import { expandFomodPlan, fomodRootOf } from "./expandFomodPlan";
 import type { RecordedStep } from "./fomodReplay";
 import { replayFomod } from "./fomodReplay";
 import { parseModuleConfig } from "./parseModuleConfig";
@@ -520,7 +520,7 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
         ...unexplainedFacts(containment, listing),
       });
     }
-    expected = expandFomodPlan(replay.sources, listing);
+    expected = expandFomodPlan(replay.sources, listing, fomodRootOf(configEntry));
     if (expected.unmatchedSpecs.length > 0) {
       notes.push(
         `${expected.unmatchedSpecs.length} FOMOD spec(s) matched nothing in the archive; ` +
@@ -688,7 +688,11 @@ async function verifyEmptySelection(input: {
           "anything about what was picked.",
       );
     }
-    const expected = expandFomodPlan(replay.sources, input.listing);
+    const expected = expandFomodPlan(
+      replay.sources,
+      input.listing,
+      fomodRootOf(input.configEntry),
+    );
     if (expected.unmatchedSpecs.length > 0) {
       return no(
         `${expected.unmatchedSpecs.length} FOMOD spec(s) matched nothing in ` +

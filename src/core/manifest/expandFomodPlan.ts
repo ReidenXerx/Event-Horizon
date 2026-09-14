@@ -93,9 +93,38 @@ function join(destination: string | undefined, relative: string): string {
  * Later specs of equal priority win, matching document-order-wins. Strictly
  * higher priority always wins regardless of order.
  */
+/**
+ * The folder a FOMOD's paths are relative to: the one holding `fomod/`.
+ *
+ * ─── A WRAPPER FOLDER IS THE INSTALLER'S ROOT ─────────────────────────
+ * An installer's `<file source>` and `<folder source>` name paths relative to
+ * the folder that contains `fomod/ModuleConfig.xml`, not to the archive. Most
+ * archives put `fomod/` at the top, where the two are the same place, which is
+ * why matching from the archive root worked long enough to look right.
+ *
+ * Measured on the Ivy's Panties build (2026-09-14): INVB_OverlayFramework
+ * v2.483 keeps everything under `INVB_OverlayFramework v2.483/`, its script at
+ * `INVB_OverlayFramework v2.483/fomod/ModuleConfig.xml`. The curator's answers
+ * replayed with high confidence and not one spec matched, so the self-check
+ * gave up on the mod: no missing-file check, no proof that nothing was ticked,
+ * and a mirrored copy carrying all 19 files. At least 13 mods of that build
+ * ended the same way.
+ */
+export function fomodRootOf(moduleConfigPath: string): string {
+  const segments = clean(moduleConfigPath.split("\\").join("/")).split("/");
+  // `ModuleConfig.xml`, and the folder holding it, are not part of the root.
+  return segments.slice(0, Math.max(0, segments.length - 2)).join("/");
+}
+
 export function expandFomodPlan(
   specs: FomodFileSpec[],
   listing: ArchiveListing,
+  /**
+   * The folder the script's paths are relative to: {@link fomodRootOf} of the
+   * ModuleConfig.xml entry. Entries outside it cannot be named by the script
+   * and are not considered. Empty means the archive root.
+   */
+  root = "",
 ): ExpandResult {
   // Pre-normalise once; a large archive is thousands of entries and every spec
   // would otherwise re-lower-case all of them.
@@ -104,11 +133,23 @@ export function expandFomodPlan(
   // archive's real `path`, because the expected path is compared against a real
   // staging folder and shown to a human — lower-casing the output would make a
   // correct prediction look wrong and read as gibberish.
-  const entries = listing.entries.map((entry) => ({
-    entry,
-    norm: norm(entry.path),
-    real: entry.path.split("\\").join("/"),
-  }));
+  //
+  // Paths are made relative to `root` by whole segments, on both the matching
+  // and the real spelling, so a case difference in the root cannot shift where
+  // the real path is cut.
+  const rootSegments = clean(norm(root)).split("/").filter((segment) => segment !== "");
+  const entries = listing.entries.flatMap((entry) => {
+    const full = norm(entry.path).split("/");
+    if (rootSegments.some((segment, i) => full[i] !== segment)) return [];
+    const real = entry.path.split("\\").join("/").split("/");
+    return [
+      {
+        entry,
+        norm: full.slice(rootSegments.length).join("/"),
+        real: real.slice(rootSegments.length).join("/"),
+      },
+    ];
+  });
 
   const winners = new Map<string, ExpectedFile>();
   const unmatchedSpecs: FomodFileSpec[] = [];

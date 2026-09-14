@@ -414,3 +414,41 @@ describe("summarizeSelfChecks", () => {
     });
   });
 });
+
+describe("an installer inside a wrapper folder", () => {
+  // The archive keeps everything under one folder: the script at
+  // "Wrap/fomod/ModuleConfig.xml" and every path it names relative to "Wrap".
+  // Matched from the archive root, each spec missed and the mod dropped to
+  // containment, with no missing-file check and no reproducible install.
+  const WRAPPED: SevenZipListEntry[] = ARCHIVE_ENTRIES.map((e) => ({ ...e, name: "Wrap/" + e.name }));
+
+  it("is replayed, and a file the curator lacks is found", async () => {
+    const r = await selfCheckMod({
+      sevenZip: sevenZip(WRAPPED),
+      modId: "m1", modName: "UAP",
+      archivePath: "a.7z",
+      staged: [{ path: "AAF/AM-actionData.xml", size: 430, crc: "11111111" }],
+      recordedChoices: CHOICES,
+      readEntry: readScript,
+    });
+    expect(r.depth).toBe("replayed");
+    expect(r.missing).toEqual(["AAF/AM-otherData.xml"]);
+  });
+
+  it("counts as an install another machine reproduces", async () => {
+    const r = await selfCheckMod({
+      sevenZip: sevenZip(WRAPPED),
+      modId: "m1", modName: "UAP",
+      archivePath: "a.7z",
+      staged: [
+        { path: "AAF/AM-actionData.xml", size: 430, crc: "11111111" },
+        { path: "AAF/AM-otherData.xml", size: 431, crc: "22222222" },
+      ],
+      recordedChoices: CHOICES,
+      readEntry: readScript,
+    });
+    expect(r.depth).toBe("replayed");
+    expect(r.missing).toEqual([]);
+    expect(r.reproducibleInstall).toBe(true);
+  });
+});

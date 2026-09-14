@@ -344,3 +344,22 @@ describe("case sensitivity is probed, not assumed", () => {
     expect(r.emptySelectionVerified).toBe(true);
   });
 });
+
+describe("a no-choice installer inside a wrapper folder", () => {
+  // Its paths are relative to the folder holding fomod/. Matched from the archive
+  // root they matched nothing, so this proof could never succeed, and every user
+  // got the questions of an installer the curator had left unticked.
+  it("PROVES nothing was picked, as for a script at the top", async () => {
+    const r = await selfCheckMod({
+      sevenZip: sevenZip(ENTRIES.map((e) => ({ ...e, name: "Wrap/" + e.name }))),
+      modId: "m1",
+      modName: "A FOMOD With Options",
+      archivePath: "a.7z",
+      staged: [{ path: "base.esp", size: 100, crc: "11111111" }],
+      recordedChoices: [],
+      readEntry: readScript,
+    });
+    expect(r.promptsUser).toBe(true);
+    expect(r.emptySelectionVerified).toBe(true);
+  });
+});

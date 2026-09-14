@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ArchiveListing } from "./archiveContents";
-import { expandFomodPlan } from "./expandFomodPlan";
+import { expandFomodPlan, fomodRootOf } from "./expandFomodPlan";
 import type { FomodFileSpec } from "./fomodReplay";
 
 function listing(paths: string[]): ArchiveListing {
@@ -150,5 +150,60 @@ describe("expandFomodPlan", () => {
     const r = expandFomodPlan([folder("s")], listing(["s/a.dds"]));
     expect(r.files[0].entry.crc).toBeDefined();
     expect(r.files[0].entry.size).toBeDefined();
+  });
+});
+
+describe("paths relative to the folder that holds fomod/", () => {
+  // INVB_OverlayFramework v2.483 keeps everything under a wrapper folder, and its
+  // specs name "INVB_OverlayFramework - Main.ba2", not the wrapped path. Matched
+  // from the archive root, not one spec matched and the self-check gave up.
+  const wrapped = listing([
+    "INVB v2/fomod/ModuleConfig.xml",
+    "INVB v2/Main.ba2",
+    "INVB v2/MCM Options/0. General/MCM/config.json",
+    "Unrelated/Main.ba2",
+  ]);
+
+  it("finds the root of a script at the top or inside folders", () => {
+    expect(fomodRootOf("fomod/ModuleConfig.xml")).toBe("");
+    expect(fomodRootOf("INVB v2/fomod/ModuleConfig.xml")).toBe("INVB v2");
+    expect(fomodRootOf("A/B/FOMOD/ModuleConfig.xml")).toBe("A/B");
+    expect(fomodRootOf("A\\fomod\\ModuleConfig.xml")).toBe("A");
+  });
+
+  it("expands specs against that root", () => {
+    const r = expandFomodPlan(
+      [file("Main.ba2"), folder("MCM Options\\0. General\\MCM", "MCM")],
+      wrapped,
+      fomodRootOf("INVB v2/fomod/ModuleConfig.xml"),
+    );
+    expect(r.unmatchedSpecs).toEqual([]);
+    expect(r.files.map((f) => f.path).sort()).toEqual(["MCM/config.json", "Main.ba2"]);
+  });
+
+  it("keeps the archive entry each file comes from", () => {
+    const r = expandFomodPlan([file("Main.ba2")], wrapped, "INVB v2");
+    expect(r.files.map((f) => f.entry.path)).toEqual(["INVB v2/Main.ba2"]);
+  });
+
+  it("matches the root whatever its case", () => {
+    const r = expandFomodPlan([file("Main.ba2")], wrapped, "invb V2");
+    expect(r.files.map((f) => f.path)).toEqual(["Main.ba2"]);
+  });
+
+  it("does not reach outside the root for a file the root lacks", () => {
+    const r = expandFomodPlan(
+      [file("Other.esp")],
+      listing(["Wrap/fomod/ModuleConfig.xml", "Other/Other.esp"]),
+      "Wrap",
+    );
+    expect(r.files).toEqual([]);
+    expect(r.unmatchedSpecs).toHaveLength(1);
+  });
+
+  it("matches nothing from the archive root when the script sits in a folder", () => {
+    // What every such mod got before the root was passed.
+    const r = expandFomodPlan([file("Main.ba2")], wrapped);
+    expect(r.unmatchedSpecs).toHaveLength(1);
   });
 });
