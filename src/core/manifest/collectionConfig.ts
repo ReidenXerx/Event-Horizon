@@ -53,6 +53,7 @@ import * as fsp from "fs/promises";
 import * as path from "path";
 import { applyHint } from "./externalHints";
 import type { DownloadMode, ExternalHint } from "./externalHints";
+import type { PackageFormat } from "./packageFileName";
 import { beginOp, ehLog } from "../logging/ehLog";
 
 // ---------------------------------------------------------------------------
@@ -193,6 +194,11 @@ export type CollectionConfig = {
    * cannot. Optional so every config written before this existed still loads.
    */
   externalDependencies?: Record<string, ExternalDependencyConfigEntry>;
+  /**
+   * The package format the last successful build wrote. Build asks every time;
+   * this only decides which answer the question offers first.
+   */
+  lastPackageFormat?: PackageFormat;
   /** Optional README markdown body. Written as `README.md` in the package. */
   readme?: string;
   /** Optional CHANGELOG markdown body. Written as `CHANGELOG.md`. */
@@ -835,6 +841,16 @@ function parseAndValidate(raw: string, configPath: string): CollectionConfig {
   }
   if (typeof obj.gameId === "string") {
     config.gameId = obj.gameId;
+  }
+  // A hint, not a setting: an unknown value is dropped rather than refusing the
+  // whole config over which button the format question offers first.
+  if (obj.lastPackageFormat === "ehcoll" || obj.lastPackageFormat === "zip") {
+    config.lastPackageFormat = obj.lastPackageFormat;
+  } else if (obj.lastPackageFormat !== undefined) {
+    ehLog("warn", "collection-config.validate.package-format-dropped", {
+      file: path.basename(configPath),
+      value: obj.lastPackageFormat,
+    });
   }
   return config;
 }

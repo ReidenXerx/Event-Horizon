@@ -10,7 +10,7 @@
  *   - %APPDATA%/Vortex/event-horizon/installs/*.json   (player receipts)
  *   - %APPDATA%/Vortex/event-horizon/collections/.config/*.json
  *                                                      (curator configs)
- *   - %APPDATA%/Vortex/event-horizon/collections/*.ehcoll
+ *   - %APPDATA%/Vortex/event-horizon/collections/*.ehcoll, *.zip
  *                                                      (built packages)
  *
  * Errors per file are accumulated, not thrown — one bad receipt
@@ -32,6 +32,7 @@ import {
   resolveVortexVersion,
 } from "../../../core/resolver/userState";
 import type { CollectionConfig } from "../../../core/manifest/collectionConfig";
+import { packageFormatOf } from "../../../core/manifest/packageFileName";
 import type { InstallReceipt } from "../../../types/installLedger";
 import type { SupportedGameId } from "../../../types/ehcoll";
 import { getCollectionsConfigDir, getCollectionsDir, getVortexUserDataPath } from "../../../core/paths";
@@ -262,12 +263,17 @@ async function loadBuiltPackages(
   const out: BuiltPackageSummary[] = [];
   await Promise.all(
     entries
-      .filter((e) => e.toLowerCase().endsWith(".ehcoll"))
+      .filter((e) => packageFormatOf(e) !== undefined)
       .map(async (entry) => {
         const fullPath = path.join(dir, entry);
         try {
           const stat = await fsp.stat(fullPath);
           if (!stat.isFile()) return;
+          // A .zip counts only when manifest.json sits at its root.
+          if (packageFormatOf(entry) === "zip") {
+            const { hasPackageManifest } = await import("../../../core/manifest/readEhcoll");
+            if (!(await hasPackageManifest(fullPath).catch(() => false))) return;
+          }
           out.push({
             packagePath: fullPath,
             fileName: entry,

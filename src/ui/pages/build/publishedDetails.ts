@@ -22,7 +22,8 @@
 import * as fsp from "fs/promises";
 import * as path from "path";
 
-import { readEhcoll } from "../../../core/manifest/readEhcoll";
+import { hasPackageManifest, readEhcoll } from "../../../core/manifest/readEhcoll";
+import { packageFormatOf } from "../../../core/manifest/packageFileName";
 import {
   summarizeBuiltMods,
   type BuiltModSummary,
@@ -79,7 +80,7 @@ export type PublishedDetails = {
 };
 
 /**
- * Every `.ehcoll` this slug has produced, newest first.
+ * Every package this slug has produced, `.ehcoll` or `.zip`, newest first.
  *
  * Filenames are `<slug>-<version>.ehcoll`, and versions may contain dashes, so
  * a name alone is ambiguous: `ivy-2-1.0.3.ehcoll` is either slug `ivy` at
@@ -110,7 +111,8 @@ export async function findBuiltPackages(
   const out: BuiltPackage[] = [];
   for (const name of names) {
     const lower = name.toLowerCase();
-    if (!lower.startsWith(`${mine}-`) || !lower.endsWith(".ehcoll")) continue;
+    const format = packageFormatOf(lower);
+    if (!lower.startsWith(`${mine}-`) || format === undefined) continue;
     // A longer collection name also claims this file, and it is the better
     // claim: the extra characters are part of a real slug, not of a version.
     if (rivals.some((r) => lower.startsWith(`${r}-`))) continue;
@@ -118,6 +120,9 @@ export async function findBuiltPackages(
     // claim: the extra characters are part of a real slug, not of a version.
 
     const fullPath = path.join(outputDir, name);
+    // A .zip is a build only when manifest.json sits at its root; another zip
+    // that happens to share the name is not one.
+    if (format === "zip" && !(await hasPackageManifest(fullPath).catch(() => false))) continue;
     try {
       const st = await fsp.stat(fullPath);
       out.push({ fileName: name, fullPath, bytes: st.size, builtAt: st.mtime });

@@ -15,7 +15,7 @@ import * as os from "os";
 import * as path from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { listPublishedCollections } from "./collectionConfig";
+import { listPublishedCollections, loadOrCreateCollectionConfig } from "./collectionConfig";
 
 let dir: string;
 
@@ -39,6 +39,21 @@ async function writeConfig(slug: string, extra: Record<string, unknown>): Promis
     "utf8",
   );
 }
+
+describe("lastPackageFormat", () => {
+  it("comes back as it was saved, so the format question offers it first", async () => {
+    await writeConfig("ivy", { lastPackageFormat: "zip" });
+    const { config } = await loadOrCreateCollectionConfig({ configDir: dir, slug: "ivy" });
+    expect(config.lastPackageFormat).toBe("zip");
+  });
+
+  it("drops an unknown value instead of refusing the whole config", async () => {
+    await writeConfig("ivy", { lastPackageFormat: "7z", lastBuiltVersion: "1.0.0" });
+    const { config } = await loadOrCreateCollectionConfig({ configDir: dir, slug: "ivy" });
+    expect(config.lastPackageFormat).toBeUndefined();
+    expect(config.lastBuiltVersion).toBe("1.0.0");
+  });
+});
 
 describe("listPublishedCollections", () => {
   it("does NOT report a config that has never been built", async () => {

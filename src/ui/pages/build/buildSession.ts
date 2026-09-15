@@ -104,6 +104,7 @@ import {
 } from "../../../core/draftStorage";
 import type { ExternalModConfigEntry } from "../../../core/manifest/collectionConfig";
 import type { VerificationLevel } from "../../../types/ehcoll";
+import type { PackageFormat } from "../../../core/manifest/packageFileName";
 import { ehLog } from "../../../core/logging/ehLog";
 import {
   loadBuildContext,
@@ -359,6 +360,8 @@ export interface BuildAttemptInput {
   overrides: Record<string, ExternalModConfigEntry>;
   readme: string;
   changelog: string;
+  /** `.ehcoll` or `.zip`, as answered when Build was pressed. Absent means `.ehcoll`. */
+  packageFormat?: PackageFormat;
   /**
    * Curator's chosen integrity verification depth. Defaults to
    * `"fast"` if omitted (form persistence layer migrates older
@@ -1245,6 +1248,9 @@ class BuildSession {
             externalMods: input.overrides,
             readme: input.readme,
             changelog: input.changelog,
+            ...(input.packageFormat !== undefined
+              ? { packageFormat: input.packageFormat }
+              : {}),
             verificationLevel: "thorough",
         reverifyEverything: input.reverifyEverything ?? false,
           },

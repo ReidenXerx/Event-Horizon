@@ -52,6 +52,7 @@ import {
   DecisionsGate,
   DonePanel,
   FormPanel,
+  PackageFormatModal,
 } from "../pages/build/BuildPage";
 import { summarizeAvailability } from "../../core/build/nexusAvailability";
 import { DraftCard, PublishedCard, RecentlyBuiltCard } from "../pages/build/BuildDashboard";
@@ -734,6 +735,18 @@ describe("render", () => {
           onDecidePostProcessing: async () => undefined,
         } as never),
       } as never),
+    );
+  });
+
+  it("build format question - .zip or .ehcoll, the last pick first", () => {
+    write(
+      "build-format-question",
+      React.createElement(PackageFormatModal, {
+        open: true,
+        lastUsed: "ehcoll",
+        onCancel: () => undefined,
+        onPick: () => undefined,
+      }),
     );
   });
 

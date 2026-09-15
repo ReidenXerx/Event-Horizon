@@ -35,6 +35,7 @@ import {
   HashingCard,
   Input,
   LinkButton,
+  Modal,
   Page,
   Pill,
   ProgressRing,
@@ -119,6 +120,7 @@ import { ConcurrentOpBanner } from "../../runtime/ConcurrentOpBanner";
 import { nativeNotify } from "../../runtime/nativeNotify";
 import { getActiveGameId } from "../../../core/getModsListForProfile";
 import { writeToClipboard } from "../../clipboard";
+import { packageFormatOf, type PackageFormat } from "../../../core/manifest/packageFileName";
 
 export interface BuildPageProps {
   onNavigate: (route: EventHorizonRoute) => void;
@@ -220,6 +222,10 @@ function BuildWizard(props: BuildWizardProps): JSX.Element {
   const [state, setLocalState] = React.useState<BuildSessionState>(() =>
     session.getState(),
   );
+
+  // The format question is open. Local rather than on the session: nothing has
+  // been asked of the pipeline yet, and a remount simply asks again.
+  const [askFormat, setAskFormat] = React.useState(false);
   React.useEffect(() => {
     // On (re)mount, immediately sync — the session may have moved on
     // while we were on another tab.
@@ -275,7 +281,7 @@ function BuildWizard(props: BuildWizardProps): JSX.Element {
       showToast({
         intent: "info",
         title: "Build cancelled",
-        message: "No .ehcoll was written.",
+        message: "No package was written.",
       });
       return;
     }
@@ -659,6 +665,13 @@ function BuildWizard(props: BuildWizardProps): JSX.Element {
       session.setValidationError(validationError);
       return;
     }
+    // Everything checkable is checked first, so the question is only asked
+    // about a build that is going to start.
+    setAskFormat(true);
+  };
+
+  const startBuild = (packageFormat: PackageFormat): void => {
+    setAskFormat(false);
     session.build(api, {
       ctx: formState.ctx,
       curator: formState.curator,
@@ -667,6 +680,7 @@ function BuildWizard(props: BuildWizardProps): JSX.Element {
       changelog: formState.changelog,
       verificationLevel: formState.verificationLevel,
       reverifyEverything: formState.reverifyEverything,
+      packageFormat,
     });
   };
 
@@ -723,6 +737,14 @@ function BuildWizard(props: BuildWizardProps): JSX.Element {
         {...(state.availability !== undefined
           ? { availability: state.availability }
           : {})}
+      />
+      <PackageFormatModal
+        open={askFormat}
+        {...(formState.ctx.collectionConfig.lastPackageFormat !== undefined
+          ? { lastUsed: formState.ctx.collectionConfig.lastPackageFormat }
+          : {})}
+        onCancel={(): void => setAskFormat(false)}
+        onPick={startBuild}
       />
     </div>
   );
@@ -1011,7 +1033,7 @@ function IdlePanel(props: {
           Event Horizon will read your active profile, hash every mod
           archive (so the manifest pins exact files), and then open
           the curator form so you can polish the metadata, README,
-          and CHANGELOG before packaging the .ehcoll.
+          and CHANGELOG before packaging it as a .zip or .ehcoll.
         </p>
         <ul
           className="eh-list"
@@ -1052,7 +1074,7 @@ function Header(props: { stepIndex: number; stepLabel: string }): JSX.Element {
       <div className="eh-page__heading">
         <h1 className="eh-page__title">Build a collection</h1>
         <p className="eh-page__subtitle">
-          Capture your active profile as an Event Horizon .ehcoll package.
+          Capture your active profile as an Event Horizon package.
         </p>
       </div>
       <div className="eh-page__actions">
@@ -1653,7 +1675,7 @@ export function FormPanel(props: FormPanelProps): JSX.Element {
           <Field
             className="eh-fill"
             label="Draft label (dashboard only)"
-            hint="Optional. Helps you tell drafts apart on the dashboard. Not shipped in the .ehcoll."
+            hint="Optional. Helps you tell drafts apart on the dashboard. Not shipped in the package."
           >
             <Input
               type="text"
@@ -1797,7 +1819,7 @@ export function FormPanel(props: FormPanelProps): JSX.Element {
           aria-label="README"
           rows={6}
           value={readme}
-          placeholder="Markdown shipped inside the .ehcoll. Shown on the install screen."
+          placeholder="Markdown shipped inside the package. Shown on the install screen."
           onChange={(e) => onChange({ readme: e.target.value })}
         />
       </Card>
@@ -1843,7 +1865,7 @@ export function FormPanel(props: FormPanelProps): JSX.Element {
               : undefined
           }
         >
-          Build .ehcoll
+          Build package
         </Button>
       </div>
     </div>
@@ -2064,7 +2086,7 @@ function ImportPreviousButton(props: ImportPreviousButtonProps): JSX.Element {
       });
     } catch (err) {
       reportError(err, {
-        title: "Couldn't import .ehcoll metadata",
+        title: "Couldn't import the package metadata",
         context: { step: "build-import-existing" },
       });
     } finally {
@@ -2080,9 +2102,9 @@ function ImportPreviousButton(props: ImportPreviousButtonProps): JSX.Element {
       onClick={(): void => {
         void handleClick();
       }}
-      title="Pick a previously-built .ehcoll and copy its name/version/author/description into this form."
+      title="Pick a previously built package (.ehcoll or .zip) and copy its name/version/author/description into this form."
     >
-      {busy ? "Importing..." : "Import from previous .ehcoll"}
+      {busy ? "Importing..." : "Import from a previous package"}
     </Button>
   );
 }
@@ -2951,7 +2973,7 @@ export function DonePanel(props: {
             Copy
           </Button>
         </div>
-        <DistributionHint />
+        <DistributionHint format={packageFormatOf(result.outputPath) ?? "ehcoll"} />
         {/*
           Above the warnings, not inside them. Everything in that list can be
           read and ignored; this is the only finding on the page that ships a
@@ -3138,16 +3160,87 @@ function BuildRulesScopeSummary(props: {
  * regular Nexus mod attachment. Saying it explicitly here saves "where do I
  * upload this?" support requests, and a package quarantined for its name.
  */
-function DistributionHint(): JSX.Element {
+function DistributionHint(props: { format: PackageFormat }): JSX.Element {
+  if (props.format === "zip") {
+    return (
+      <Callout tone="info" title="Next: share it.">
+        Upload this <code>.zip</code> to your collection&apos;s Nexus mod page as
+        it is, with mod manager download turned off: Vortex must never install a
+        package as a mod. Players install it from Event Horizon&apos;s install
+        tab.
+      </Callout>
+    );
+  }
   return (
     <Callout tone="info" title="Next: share it.">
-      Upload this package to your collection&apos;s Nexus mod page named{" "}
-      <code>.zip</code> instead of <code>.ehcoll</code>, with mod manager download
-      turned off: Nexus quarantines files named <code>.ehcoll</code>, and Vortex
-      must never install a package as a mod. Players install the{" "}
-      <code>.zip</code> from Event Horizon&apos;s install tab. A one-click
-      publish flow is tracked in <code>docs/RESEARCH_PUBLISHING.md</code>.
+      Uploading to Nexus? Name this package <code>.zip</code> instead of{" "}
+      <code>.ehcoll</code>, or build it as <code>.zip</code> next time, with mod
+      manager download turned off: Nexus quarantines files named{" "}
+      <code>.ehcoll</code>, and Vortex must never install a package as a mod.
+      Players install it from Event Horizon&apos;s install tab.
     </Callout>
+  );
+}
+
+/**
+ * Build asks what to write, every time (owner request 2026-09-15). The bytes
+ * are identical and Event Horizon opens both; only the name differs, and the
+ * name decides where the file can go. Nexus quarantines `.ehcoll`, so a package
+ * headed for a mod page is built as `.zip` instead of renamed by hand.
+ *
+ * Both answers are buttons, so answering costs one click and closing the dialog
+ * is not an answer. The format this collection's last build used is the primary
+ * button; a first build offers `.zip` first, because a Nexus mod page is where
+ * collections are published.
+ *
+ * Exported for the render harness.
+ */
+export function PackageFormatModal(props: {
+  open: boolean;
+  lastUsed?: PackageFormat;
+  onCancel: () => void;
+  onPick: (format: PackageFormat) => void;
+}): JSX.Element | null {
+  const first: PackageFormat = props.lastUsed ?? "zip";
+  const other: PackageFormat = first === "zip" ? "ehcoll" : "zip";
+  return (
+    <Modal
+      open={props.open}
+      onClose={props.onCancel}
+      title="Build as .zip or .ehcoll?"
+      subtitle="The same package either way. Only the file name differs."
+      size="md"
+      footer={
+        <>
+          <Button intent="ghost" onClick={props.onCancel}>
+            Cancel
+          </Button>
+          <Button intent="ghost" onClick={(): void => props.onPick(other)}>
+            Build .{other}
+          </Button>
+          <Button intent="primary" onClick={(): void => props.onPick(first)}>
+            Build .{first}
+          </Button>
+        </>
+      }
+    >
+      <div className="eh-stack eh-stack--sm">
+        <ul className="eh-list eh-list--spaced">
+          <li>
+            <strong>.zip</strong>: upload it to your collection&apos;s Nexus mod
+            page as it is. Nexus quarantines files named <code>.ehcoll</code>.
+          </li>
+          <li>
+            <strong>.ehcoll</strong>: for sharing anywhere else, or keeping.
+          </li>
+        </ul>
+        {props.lastUsed !== undefined && (
+          <p className="eh-note">
+            The last build of this collection was a <code>.{props.lastUsed}</code>.
+          </p>
+        )}
+      </div>
+    </Modal>
   );
 }
 
@@ -3172,7 +3265,7 @@ function phaseToLabel(phase: BuildProgress["phase"] | undefined): string | undef
     case "resolving-bundles":
       return "Checking bundled mods...";
     case "packaging":
-      return "Packaging .ehcoll...";
+      return "Packaging the collection...";
     default:
       return undefined;
   }

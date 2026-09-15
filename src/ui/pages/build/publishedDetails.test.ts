@@ -15,6 +15,7 @@ import {
   modsWithInstructions,
 } from "./publishedDetails";
 import type { CollectionConfig } from "../../../core/manifest/collectionConfig";
+import { buildStoredZip } from "../../../core/manifest/storedZip.testutil";
 
 const config = (externalMods: CollectionConfig["externalMods"]): CollectionConfig =>
   ({ schemaVersion: 1, packageId: "p", externalMods }) as CollectionConfig;
@@ -71,6 +72,29 @@ describe("findBuiltPackages", () => {
     write("notes.txt");
     write("ivy-backup.zip");
     expect(await findBuiltPackages(dir, "ivy")).toHaveLength(1);
+  });
+
+  it("finds a .zip build alongside .ehcoll ones, newest first", async () => {
+    write("ivy-1.0.0.ehcoll");
+    fs.writeFileSync(
+      path.join(dir, "ivy-1.0.1.zip"),
+      buildStoredZip([{ name: "manifest.json", body: "{}" }]),
+    );
+    fs.utimesSync(path.join(dir, "ivy-1.0.1.zip"), new Date(), new Date(Date.now() + 5000));
+    const names = (await findBuiltPackages(dir, "ivy")).map((p) => p.fileName);
+    expect(names).toEqual(["ivy-1.0.1.zip", "ivy-1.0.0.ehcoll"]);
+  });
+
+  it("does not take a .zip without manifest.json at its root for a build", async () => {
+    fs.writeFileSync(
+      path.join(dir, "ivy-1.0.2.zip"),
+      buildStoredZip([{ name: "Data/ivy.esp", body: "TES4" }]),
+    );
+    fs.writeFileSync(
+      path.join(dir, "ivy-1.0.3.zip"),
+      buildStoredZip([{ name: "nested/manifest.json", body: "{}" }]),
+    );
+    expect(await findBuiltPackages(dir, "ivy")).toEqual([]);
   });
 
   it("returns nothing rather than throwing when the folder is gone", async () => {

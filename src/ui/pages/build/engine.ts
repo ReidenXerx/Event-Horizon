@@ -55,6 +55,7 @@ import {
   getCurrentPluginsTxtPath,
 } from "../../../core/comparePlugins";
 import { buildManifest } from "../../../core/manifest/buildManifest";
+import { buildOutputFileName, type PackageFormat } from "../../../core/manifest/packageFileName";
 import { captureStagingFiles } from "../../../core/manifest/captureStagingFiles";
 import { runSelfChecks,
   findModsThatPromptTheUser,
@@ -586,6 +587,12 @@ export interface BuildOverrides {
   externalMods: Record<string, ExternalModConfigEntry>;
   readme: string;
   changelog: string;
+  /**
+   * What the package file is named: `.ehcoll`, or `.zip` for a Nexus mod page
+   * (Nexus quarantines `.ehcoll`). The bytes are the same either way. Asked on
+   * every Build; absent means `.ehcoll`, as every build before the question.
+   */
+  packageFormat?: PackageFormat;
   /**
    * @deprecated Ignored. Every build verifies at `"thorough"`.
    *
@@ -2314,7 +2321,8 @@ export async function runBuildPipeline(
 
   // ── 5. Package the .ehcoll ─────────────────────────────────────────────
   checkAbort();
-  const outputFileName = buildOutputFileName(curator.name, curator.version);
+  const packageFormat: PackageFormat = overrides.packageFormat ?? "ehcoll";
+  const outputFileName = buildOutputFileName(curator.name, curator.version, packageFormat);
   const outputPath = path.join(outputDir, outputFileName);
   onProgress?.({ phase: "packaging" });
   // The bytes a mirrored mod's archive does not provide.
@@ -2394,6 +2402,8 @@ export async function runBuildPipeline(
       lastBuiltAt: new Date().toISOString(),
       lastBuiltName: curator.name,
       lastBuiltAuthor: curator.author,
+      // Which answer the format question offers first next time.
+      lastPackageFormat: packageFormat,
       // What this build actually shipped, so the dashboard can tell a real
       // update from a rebuild of the same thing.
       lastBuiltProfileFingerprint: profileFingerprint(mods),
@@ -2793,11 +2803,6 @@ function resolveDeploymentMethod(
   }
 }
 
-function buildOutputFileName(name: string, version: string): string {
-  const slug = slugify(name);
-  const safeVersion = version.replace(/[^a-zA-Z0-9.-]/g, "-");
-  return `${slug}-${safeVersion}.ehcoll`;
-}
 
 /**
  * Name to slug. Exported because the slug IS the collection's identity — the

@@ -42,13 +42,13 @@ export const S = {
 
   build: {
     title: "Build a collection",
-    cta: "Build .ehcoll",
+    cta: "Build package",
     empty: {
       title: "Your active profile has no mods.",
       message:
         "A collection needs at least one mod. Enable some mods in Vortex first, then come back here.",
     },
-    importExisting: "Import from previous .ehcoll",
+    importExisting: "Import from a previous package",
     importExistingBusy: "Importing...",
     distribution: {
       hint:
