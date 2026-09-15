@@ -47,7 +47,7 @@ Start here when exploring this area:
 | `HomePage` | Function | `src/ui/pages/HomePage.tsx` | 54 |
 | `ModDiffsPage` | Function | `src/ui/pages/ModDiffsPage.tsx` | 67 |
 | `PluginDiffsPage` | Function | `src/ui/pages/PluginDiffsPage.tsx` | 53 |
-| `BuildPage` | Function | `src/ui/pages/build/BuildPage.tsx` | 139 |
+| `BuildPage` | Function | `src/ui/pages/build/BuildPage.tsx` | 141 |
 | `InstallPage` | Function | `src/ui/pages/install/InstallPage.tsx` | 53 |
 | `DiffSectionBlock` | Function | `src/ui/components/DiffSectionBlock.tsx` | 33 |
 | `AppShell` | Function | `src/ui/EventHorizonMainPage.tsx` | 88 |

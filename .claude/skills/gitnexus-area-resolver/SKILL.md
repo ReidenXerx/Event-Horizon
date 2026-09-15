@@ -69,14 +69,14 @@ Start here when exploring this area:
 |------|------|-------|
 | `LaunchGame → GetVortexUserDataPath` | cross_community | 10 |
 | `RunInstallImpl → GetEventHorizonRoot` | cross_community | 10 |
-| `PublishedDetailsPanel → GetEventHorizonDir` | cross_community | 10 |
+| `LoadPublishedDetails → GetEventHorizonDir` | cross_community | 10 |
 | `RunSelfChecks → GetVortexUserDataPath` | cross_community | 10 |
 | `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
 | `InstallDownloads → GetEventHorizonDir` | cross_community | 10 |
 | `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
-| `LoadPublishedDetails → GetEventHorizonRoot` | cross_community | 10 |
+| `RunLoadingPipeline → GetEventHorizonRoot` | cross_community | 10 |
 | `Act → GetEventHorizonDir` | cross_community | 10 |
-| `PublishedDetailsPanel → GetVortexUserDataPath` | cross_community | 10 |
+| `BuildPage → GetVortexUserDataPath` | cross_community | 10 |
 
 ## How to Explore
 

@@ -66,7 +66,6 @@ Start here when exploring this area:
 
 | Flow | Type | Steps |
 |------|------|-------|
-| `ScanGameFolder → ToPosix` | cross_community | 8 |
 | `LoadBuildDiff → ToPosix` | cross_community | 8 |
 | `RunEnvironmentPreflight → ToPosix` | cross_community | 6 |
 | `RunEnvironmentPreflight → ErrorCode` | cross_community | 5 |

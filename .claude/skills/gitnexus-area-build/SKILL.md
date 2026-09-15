@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-build
-description: "Skill for the Build area of Event-Horizon. 427 symbols across 95 files."
+description: "Skill for the Build area of Event-Horizon. 430 symbols across 96 files."
 ---
 
 # Build
 
-427 symbols | 95 files | Cohesion: 82%
+430 symbols | 96 files | Cohesion: 83%
 
 ## When to Use
 
@@ -17,11 +17,11 @@ description: "Skill for the Build area of Event-Horizon. 427 symbols across 95 f
 
 | File | Symbols |
 |------|---------|
-| `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildDiffCard, BuildRulesScopeSummary, BuildWizard, BuildingPanel (+45) |
+| `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildDiffCard, BuildRulesScopeSummary, BuildWizard, BuildingPanel (+47) |
 | `src/ui/pages/build/buildSession.ts` | cancelLoading, cancelRecovering, getState, subscribe, buildProgress (+30) |
 | `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, DecisionsStep, DoneStep, ExternalDownloadGuide (+20) |
 | `src/ui/pages/build/BuildDashboard.tsx` | BuildDashboard, handleDismissBuilt, handleOpenBuilt, handleOpenDraft, DashboardHeader (+19) |
-| `src/ui/pages/build/engine.ts` | downloadedFromNexus, findUnidentifiedMods, isExternal, isExternal, isExternal (+14) |
+| `src/ui/pages/build/engine.ts` | validateCuratorInput, downloadedFromNexus, findUnidentifiedMods, isExternal, isExternal (+14) |
 | `src/ui/pages/build/buildSessionRegistry.ts` | BuildSessionRegistry, getBuildSessionRegistry, ensure, get, makeHooks (+13) |
 | `src/ui/pages/build/buildDiff.test.ts` | findPackages, findPackages, findPackages, findPackages, findPackages (+9) |
 | `src/core/draftStorage.ts` | getDraftsRoot, listDrafts, deleteDraft, getDraftPath, isPlainObject (+6) |
@@ -67,16 +67,16 @@ Start here when exploring this area:
 
 | Flow | Type | Steps |
 |------|------|-------|
-| `PublishedDetailsPanel → GetEventHorizonDir` | cross_community | 10 |
+| `PublishedDetailsPanel → ResolveLogFile` | cross_community | 10 |
+| `PublishedDetailsPanel → Truncate` | cross_community | 10 |
+| `LoadPublishedDetails → GetEventHorizonDir` | cross_community | 10 |
 | `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
+| `LoadPublishedDetails → ResolveLogFile` | cross_community | 10 |
 | `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
-| `LoadPublishedDetails → GetEventHorizonRoot` | cross_community | 10 |
-| `PublishedDetailsPanel → GetVortexUserDataPath` | cross_community | 10 |
 | `BuildPage → GetVortexUserDataPath` | cross_community | 10 |
 | `BuildWizard → GetVortexUserDataPath` | cross_community | 10 |
 | `OnRecovered → GetVortexUserDataPath` | cross_community | 10 |
 | `WriteEnvironmentSnapshot → GetVortexUserDataPath` | cross_community | 9 |
-| `HandleCleanupUnbuilt → GetVortexUserDataPath` | cross_community | 9 |
 
 ## How to Explore
 

@@ -69,14 +69,14 @@ Start here when exploring this area:
 |------|------|-------|
 | `LaunchGame → GetVortexUserDataPath` | cross_community | 10 |
 | `WriteEnvironmentSnapshot → GetVortexUserDataPath` | cross_community | 9 |
-| `ScanGameFolder → Truncated` | cross_community | 8 |
-| `ScanGameFolder → ToPosix` | cross_community | 8 |
-| `ScanGameFolder → GetVortexUserDataPath` | cross_community | 8 |
 | `QuarantineFiles → GetVortexUserDataPath` | cross_community | 7 |
 | `RestoreQuarantine → GetVortexUserDataPath` | cross_community | 7 |
-| `ScanGameFolder → ReadObject` | cross_community | 6 |
 | `RunEnvironmentPreflight → ToPosix` | cross_community | 6 |
 | `LaunchGame → Truncate` | cross_community | 6 |
+| `LaunchGame → MyGamesFolderCandidates` | cross_community | 5 |
+| `RunEnvironmentPreflight → ErrorCode` | cross_community | 5 |
+| `ProbeWinePrefix → ReadObject` | cross_community | 5 |
+| `WriteEnvironmentSnapshot → MyGamesFolderCandidates` | cross_community | 5 |
 
 ## How to Explore
 

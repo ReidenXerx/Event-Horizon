@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-installer
-description: "Skill for the Installer area of Event-Horizon. 430 symbols across 103 files."
+description: "Skill for the Installer area of Event-Horizon. 431 symbols across 104 files."
 ---
 
 # Installer
 
-430 symbols | 103 files | Cohesion: 74%
+431 symbols | 104 files | Cohesion: 74%
 
 ## When to Use
 

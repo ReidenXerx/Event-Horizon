@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-curator
-description: "Skill for the Curator area of Event-Horizon. 387 symbols across 74 files."
+description: "Skill for the Curator area of Event-Horizon. 390 symbols across 75 files."
 ---
 
 # Curator
 
-387 symbols | 74 files | Cohesion: 74%
+390 symbols | 75 files | Cohesion: 74%
 
 ## When to Use
 
@@ -20,10 +20,10 @@ description: "Skill for the Curator area of Event-Horizon. 387 symbols across 74
 | `src/ui/pages/curator/useCuratorActions.ts` | isPremium, useCuratorActions, guard, installDownloads, installOne (+39) |
 | `src/core/curator/requirements.ts` | fetchRequirements, parseGameList, reusableAnswers, byFile, compareSegment (+28) |
 | `src/ui/pages/curator/CuratorPage.tsx` | confirm, makeConfirmer, applied, dismissFor, pageKeyOf (+26) |
-| `src/ui/pages/curator/DiskCleanupView.tsx` | orphanPlan, retireCandidates, retirePlan, DiskCleanupView, freedByRetiring (+11) |
+| `src/ui/pages/curator/DiskCleanupView.tsx` | DiskCleanupView, freedByRetiring, run, num, render (+11) |
 | `src/core/curator/profileActions.ts` | findDuplicates, findEndorsable, findFrozen, findManualUpdates, findUpdatable (+7) |
 | `src/core/curator/requirementDismissals.ts` | applyDismissals, dependentPageKey, dismissRequirement, isDismissible, kindOf (+6) |
-| `src/core/curator/cleanupPlan.ts` | findSupersededMods, consider, planCleanup, identityKey, archivesFreedByRemoval (+6) |
+| `src/core/curator/cleanupPlan.ts` | archivesFreedByRemoval, cleanupSubset, formatSize, findSupersededMods, consider (+6) |
 | `src/core/curator/updateOneMod.ts` | UpdateTimeout, installedIdentityReader, asNum, updateOneAndWait, arm (+5) |
 | `src/ui/pages/curator/curatorSession.ts` | begin, cancel, dismiss, finish, progress (+5) |
 | `src/ui/pages/curator/workbench.ts` | buildRows, rowsForView, rowsForViews, viewCounts, outsideDataTypes (+4) |
@@ -69,14 +69,14 @@ Start here when exploring this area:
 |------|------|-------|
 | `LaunchGame → GetVortexUserDataPath` | cross_community | 10 |
 | `RunInstallImpl → GetEventHorizonRoot` | cross_community | 10 |
-| `PublishedDetailsPanel → GetEventHorizonDir` | cross_community | 10 |
+| `PublishedDetailsPanel → ResolveLogFile` | cross_community | 10 |
+| `PublishedDetailsPanel → Truncate` | cross_community | 10 |
+| `LoadPublishedDetails → GetEventHorizonDir` | cross_community | 10 |
 | `RunSelfChecks → GetVortexUserDataPath` | cross_community | 10 |
 | `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
+| `LoadPublishedDetails → ResolveLogFile` | cross_community | 10 |
 | `InstallDownloads → GetEventHorizonDir` | cross_community | 10 |
 | `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
-| `LoadPublishedDetails → GetEventHorizonRoot` | cross_community | 10 |
-| `Act → GetEventHorizonDir` | cross_community | 10 |
-| `PublishedDetailsPanel → GetVortexUserDataPath` | cross_community | 10 |
 
 ## How to Explore
 
