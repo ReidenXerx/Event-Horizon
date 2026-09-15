@@ -6,7 +6,7 @@
 - [`INSTALL_PLAN_SCHEMA.md`](INSTALL_PLAN_SCHEMA.md) — defines the `UserSideState` shape consumed by the resolver.
 - [`INSTALL_LEDGER.md`](INSTALL_LEDGER.md) — receipts the builder reads to attach lineage tags.
 - [`RESOLVE_INSTALL_PLAN.md`](RESOLVE_INSTALL_PLAN.md) — what the resolver does with the state once it's built.
-- [`INSTALL_ACTION.md`](INSTALL_ACTION.md) — the action that actually calls this builder.
+- [`INSTALL_ACTION.md`](INSTALL_ACTION.md) — the removed toolbar action that called this builder (history); the install page's loading pipeline calls it now.
 
 ## Purpose
 
@@ -75,7 +75,7 @@ The build action (`buildPackageAction.ts`) currently keeps its own copies of `re
 
 ### Trigger
 
-Called by the install action (`installCollectionAction.ts`) once it has:
+Called by the install page's loading pipeline (`src/ui/pages/install/engine.ts`; formerly also by the removed toolbar action) once it has:
 - a `.ehcoll` parsed via `readEhcoll`,
 - an `InstallReceipt | undefined` from `readReceipt`,
 - a freshly-hashed `AuditorMod[]` from `getModsForProfile` + `enrichModsWithArchiveHashes`.

@@ -18,7 +18,7 @@ Anything that goes wrong inside the Event Horizon React tree:
 | An unhandled promise rejection fires `window.onunhandledrejection` | `ErrorProvider`'s global listener |
 | Code wants a non-blocking notification (success / info) | `useToast()` (separate from error reporting, but documented here for completeness) |
 
-The legacy toolbar actions (`installCollectionAction.ts`, `buildPackageAction.ts`) still report via Vortex's notification system; only the React page goes through this layer.
+The legacy toolbar actions (`installCollectionAction.ts`, `buildPackageAction.ts`) reported via Vortex's notification system; both have been removed (the install one on 2026-09-15), so installs and builds report through this layer.
 
 ## Preconditions
 

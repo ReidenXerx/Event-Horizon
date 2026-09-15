@@ -15,9 +15,7 @@ src/
 ├── actions/
 │   ├── exportModsAction.ts               # Action handler: snapshot mods → JSON
 │   ├── compareModsAction.ts              # Action handler: diff current vs reference JSON
-│   ├── comparePluginsAction.ts           # Action handler: diff plugins.txt vs reference
-│   ├── buildPackageAction.ts             # Action handler: snapshot pipeline → buildManifest → packageEhcoll → .ehcoll (Phase 2 slice 4a + 4b)
-│   └── installCollectionAction.ts        # Action handler: file pick → readEhcoll → readReceipt → buildUserSideState → resolveInstallPlan → preview → runInstall
+│   └── comparePluginsAction.ts           # Action handler: diff plugins.txt vs reference
 ├── core/
 │   ├── getModsListForProfile.ts          # Selectors + AuditorMod normalization (FOMOD, rules, fileOverrides, installOrder)
 │   ├── archiveHashing.ts                 # Streaming SHA-256 + archive-path resolver + bulk enricher
@@ -85,7 +83,7 @@ This means the actions are **purely orchestration** — no business logic.
 
 `buildPackageAction.ts` is a slightly fatter orchestrator: it gates on supported gameIds, runs a curator-metadata dialog (with re-prompt on validation failure, silent exit on Cancel), reuses the entire snapshot pipeline (`getModsForProfile` + `enrichModsWithArchiveHashes` + `captureDeploymentManifests` + `captureLoadOrder` + `getCurrentPluginsTxtPath`), wires everything into `buildManifest` + `packageEhcoll`, and writes one `.ehcoll` to `%APPDATA%\Vortex\event-horizon\collections\<slug>-<version>.ehcoll`. **Slice 4a is intentionally minimal** — every external mod uses defaults, `package.id` is freshly generated each build, and there is no README/CHANGELOG input. Slices 4b/4c add the per-mod table, README/CHANGELOG textareas, and `package.id` persistence. Full prose contract: [`docs/business/BUILD_PACKAGE.md`](business/BUILD_PACKAGE.md).
 
-`installCollectionAction.ts` is the user-side counterpart, and it is the **legacy dialog path** — the React install wizard is the supported UX; this one is kept as a scriptable fallback. The orchestration is: (1) `pickEhcollFile` → `.ehcoll` path, (2) `readEhcoll` for the typed manifest, (3) early game-id gate (no active game / unsupported game / manifest game mismatch all bail before hashing), (4) `readReceipt(appDataPath, manifest.package.id)` for cross-release lineage, (5) snapshot pipeline (`getModsForProfile` + `enrichModsWithArchiveHashes` with the activity notification/finally pattern), (6) `scanAvailableDownloads`, (7) `buildUserSideState`, (8) `pickInstallTarget` (the load-bearing receipt-vs-no-receipt rule lives there), (9) `resolveInstallPlan`, (10) a `showDialog` rendering verdict + install target + summary counts + compatibility report + per-decision-kind buckets, (11) on confirm, `runInstall(...)` with progress as a single activity notification and a final result dialog.
+`installCollectionAction.ts` was the user-side counterpart, the **legacy dialog path**. It was removed on 2026-09-15 because it had none of the install wizard's pre-install checks or the Hands off warning; what follows describes it as it was. The orchestration is: (1) `pickEhcollFile` → `.ehcoll` path, (2) `readEhcoll` for the typed manifest, (3) early game-id gate (no active game / unsupported game / manifest game mismatch all bail before hashing), (4) `readReceipt(appDataPath, manifest.package.id)` for cross-release lineage, (5) snapshot pipeline (`getModsForProfile` + `enrichModsWithArchiveHashes` with the activity notification/finally pattern), (6) `scanAvailableDownloads`, (7) `buildUserSideState`, (8) `pickInstallTarget` (the load-bearing receipt-vs-no-receipt rule lives there), (9) `resolveInstallPlan`, (10) a `showDialog` rendering verdict + install target + summary counts + compatibility report + per-decision-kind buckets, (11) on confirm, `runInstall(...)` with progress as a single activity notification and a final result dialog.
 
 > Step 6 is not decoration. `availableDownloads` used to be scanned in the engine pipeline only, and passed as `undefined` here — so a resume driven through this path could never find a download the user already had. One scanner in `core/resolver/scanAvailableDownloads.ts` is imported by both call sites; do not copy it.
 
@@ -350,7 +348,7 @@ init → comparePluginsAction()
    → sendNotification
 ```
 
-**Install Event Horizon Collection**
+**Install Event Horizon Collection** (the toolbar action removed on 2026-09-15, as it was)
 ```
 init → installCollectionAction()
    → pickEhcollFile

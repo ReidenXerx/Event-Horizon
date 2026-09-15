@@ -1,21 +1,17 @@
 /**
- * Install wizard engine — pure async helpers that mirror the
- * call sequence in `installCollectionAction.ts`, but rewritten to
- * report progress via callbacks instead of `showDialog`.
+ * Install wizard engine — pure async helpers for the install page's loading
+ * and install sequence, reporting progress via callbacks instead of
+ * `showDialog`.
  *
  * Each helper here is a leaf — it calls into `core/` and returns a
  * value (or throws). The `InstallPage` orchestrates them by chaining
  * the helpers together and dispatching wizard reducer actions in
  * between.
  *
- * Why duplicate the call sequence rather than refactor the action?
- *   - The action's flow is dialog-coupled in subtle ways (e.g. the
- *     stale-receipt prompt loop). Pulling that out of the action
- *     means the legacy toolbar entry point breaks until the same
- *     refactor touches it.
- *   - The action stays as a known-good fallback while we exercise
- *     the new UI in E2E. Once the UI is the canonical path, the
- *     action can be deleted or trimmed to a thin shim.
+ * The sequence was first written for the toolbar action
+ * (`installCollectionAction.ts`) and duplicated here rather than shared,
+ * because that flow was coupled to its dialogs. The action was removed on
+ * 2026-09-15, so this is now the only copy.
  */
 
 import { resumeCandidates } from "../../../core/installer/resumeSources";
@@ -210,7 +206,7 @@ export async function runLoadingPipeline(args: {
   const appDataPath = getVortexUserDataPath();
   const receipt = await readReceipt(appDataPath, manifest.package.id);
 
-  // Stale-receipt detection (mirror H2 in installCollectionAction).
+  // Stale-receipt detection (H2 in the retired toolbar action's flow).
   if (receipt !== undefined) {
     if (!profileExistsInState(state, receipt.vortexProfileId)) {
       return { kind: "stale-receipt", ehcoll, receipt, appDataPath };

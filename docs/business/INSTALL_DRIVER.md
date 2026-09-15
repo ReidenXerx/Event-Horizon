@@ -738,7 +738,7 @@ switch back to it later or delete it from Vortex's UI.
 
 ## Action-handler integration
 
-The action (`src/actions/installCollectionAction.ts`) wraps the driver:
+The toolbar action (`src/actions/installCollectionAction.ts`, removed on 2026-09-15) wrapped the driver as follows; today the install session (`src/ui/pages/install/installSession.ts`) is its only caller:
 
 1. After `resolveInstallPlan` returns, the action runs
    `isPlanInstallable(plan)` — checks `canProceed` and the absence of
@@ -882,7 +882,7 @@ Genuinely still open:
 - [INSTALL_PLAN_SCHEMA.md](INSTALL_PLAN_SCHEMA.md) — the input contract.
 - [RESOLVE_INSTALL_PLAN.md](RESOLVE_INSTALL_PLAN.md) — how the plan is built.
 - [USER_STATE.md](USER_STATE.md) — `UserSideState` builder + `pickInstallTarget`.
-- [INSTALL_ACTION.md](INSTALL_ACTION.md) — toolbar action that wraps the driver.
+- [INSTALL_ACTION.md](INSTALL_ACTION.md) — the removed toolbar action that wrapped the driver (history).
 - [INSTALL_LEDGER.md](INSTALL_LEDGER.md) — receipt schema + lifecycle.
 - [../PROPOSAL_INSTALLER.md](../PROPOSAL_INSTALLER.md) — overall design doc.
 - [../ARCHITECTURE.md](../ARCHITECTURE.md) — file-by-file index.

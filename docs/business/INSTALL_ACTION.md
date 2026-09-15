@@ -1,6 +1,8 @@
 # Install Event Horizon Collection — Action
 
-**Source of truth:** `src/actions/installCollectionAction.ts` (Phase 3 slices 5 + 6a + 6b).
+> **Removed on 2026-09-15.** `src/actions/installCollectionAction.ts` and its toolbar entry are gone: the action skipped every pre-install check the Install page runs and the Hands off warning. Collections install from the Install page ([`UI_INSTALL_WIZARD.md`](UI_INSTALL_WIZARD.md)). This document is kept as history.
+
+**Source of truth (until its removal):** `src/actions/installCollectionAction.ts` (Phase 3 slices 5 + 6a + 6b).
 
 **Related specs:**
 - [`USER_STATE.md`](USER_STATE.md) — what the builder produces.

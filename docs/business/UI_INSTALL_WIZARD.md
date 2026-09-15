@@ -2,7 +2,7 @@
 
 The React replacement for the install toolbar action's `showDialog` chain. A multi-step wizard that takes the user from "I have a `.ehcoll` file" through to "the collection is installed" without the modal-stacking that plagued the legacy flow.
 
-> **Status:** shipped — the `install` route renders the wizard. The legacy toolbar entry (`Event Horizon: Install (legacy dialog)`) remains as a known-good fallback while testers exercise the UI.
+> **Status:** shipped — the `install` route renders the wizard. The legacy toolbar entry (`Event Horizon: Install (legacy dialog)`) was removed on 2026-09-15: it skipped every pre-install check and the Hands off warning, so installs start here only.
 
 ---
 
@@ -13,7 +13,7 @@ The React replacement for the install toolbar action's `showDialog` chain. A mul
 | User clicks the **Install** tab in the EH nav | `EventHorizonMainPage` switches the route to `install`, mounts `<InstallPage>`. |
 | User clicks the **Install** CTA on the dashboard | Same as above — dashboard calls `props.onNavigate("install")`. |
 | User clicks the **Install another** button on the wizard's done step | Same as the dashboard CTA — keeps the user inside the wizard. |
-| User runs the legacy toolbar action | Falls through to `installCollectionAction.ts`, **not** this wizard. |
+| User runs the legacy toolbar action | Removed on 2026-09-15; there is no toolbar install any more. |
 
 The wizard mounts in the `pick` state every time. There is no deep-linking to a specific step; resuming a half-finished install is not modeled — testers either complete or "Start over".
 
@@ -73,7 +73,7 @@ Single screen with:
 
 ### 3. The loading pipeline (`runLoadingPipeline`)
 
-A single async helper that mirrors the call sequence in `installCollectionAction.ts` but reports phase events to the reducer:
+A single async helper that mirrors the call sequence of the retired toolbar action (`installCollectionAction.ts`, removed 2026-09-15) but reports phase events to the reducer:
 
 | Phase | Work | Reducer event |
 |---|---|---|
@@ -349,4 +349,4 @@ The wizard does not modify Vortex state directly — every mutation goes through
 | `notifications` on driver progress | InstallingStep with live activity feed |
 | `showDialog("success" / "error", ...)` | DoneStep |
 
-The action's `installCollectionAction` function remains in the codebase as `Event Horizon: Install (legacy dialog)` for testers who want the old flow as a sanity check. Both code paths call the same `runInstall` driver.
+The action's `installCollectionAction` function, registered as `Event Horizon: Install (legacy dialog)`, was removed on 2026-09-15: it had grown none of the wizard's pre-install checks or the Hands off warning. `runInstall` now has one caller, the install session. The table above is kept as history.

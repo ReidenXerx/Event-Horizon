@@ -195,7 +195,7 @@ When a user clicks a CTA card or nav tab, the only effect is `setRoute(...)`, wh
 | **5.2** | `CollectionsPage` (receipt list + details) | Manual inspection of ledger files |
 | **5.3** | `BuildPage` (curator wizard) | The dialog chain in `buildPackageAction.ts` |
 
-The `installCollectionAction` and `buildPackageAction` dialog chains still exist and are
-still registered on `global-icons`, deliberately, as scriptable fallbacks — see the
-"legacy dialog" entries in the README. The pages are the recommended path.
+The `installCollectionAction` and `buildPackageAction` dialog chains were removed (the build one
+first, the install one on 2026-09-15): each had to be kept in step with its page by hand, and
+both fell behind. The pages are the only path.
 | **5.4** | Polish — toasts, error boundary, empty-state illustrations, full a11y audit | — |
