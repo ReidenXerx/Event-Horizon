@@ -5549,8 +5549,20 @@ export function preflight(
   }
 
   // Every supplied choice must be valid for the decision it covers.
-  const { invalid: invalidChoices, obsolete: obsoleteChoices } =
-    collectInvalidConflictChoices(plan.modResolutions, decisions);
+  const {
+    invalid: invalidChoices,
+    obsolete: obsoleteChoices,
+    stray: strayChoices,
+  } = collectInvalidConflictChoices(plan.modResolutions, decisions);
+  if (strayChoices.length > 0) {
+    ehLog("info", "preflight.choices.stray", {
+      count: strayChoices.length,
+      examples: strayChoices.slice(0, 8),
+      why:
+        "answers remembered for mods this version of the collection no longer " +
+        "has (updated or removed), so nothing reads them and they are ignored",
+    });
+  }
   if (obsoleteChoices.length > 0) {
     // Not a problem — evidence that a previous run's answers took effect.
     ehLog("info", "preflight.choices.obsolete", {
@@ -5664,9 +5676,10 @@ function needsConflictChoice(decision: ModDecision): boolean {
 function collectInvalidConflictChoices(
   resolutions: ModResolution[],
   decisions: UserConfirmedDecisions,
-): { invalid: string[]; obsolete: string[] } {
+): { invalid: string[]; obsolete: string[]; stray: string[] } {
   const invalid: string[] = [];
   const obsolete: string[] = [];
+  const stray: string[] = [];
   for (const r of resolutions) {
     const choice = decisions.conflictChoices?.[r.compareKey];
     if (!choice) continue;
@@ -5678,16 +5691,16 @@ function collectInvalidConflictChoices(
     const reason = validateConflictChoice(r.decision, choice);
     if (reason) invalid.push(`${r.name} [${r.decision.kind}]: ${reason}`);
   }
-  // Surface stray keys not referenced by any mod. Still an error: the plan
-  // holds every manifest mod, so a key matching none of them is a real bug
-  // rather than a decision that moved on.
+  // Keys that match no mod in the plan. Remembered answers are kept per
+  // collection across versions, keyed by each mod's compareKey, so a mod that
+  // a newer version updated (new file, new key) or dropped leaves an answer
+  // that nothing reads. It cannot change what installs, and refusing on it
+  // blocked a whole 978-mod install of Ivy 1.0.28 (2026-09-15).
   const validKeys = new Set(resolutions.map((r) => r.compareKey));
   for (const key of Object.keys(decisions.conflictChoices ?? {})) {
-    if (!validKeys.has(key)) {
-      invalid.push(`stray conflictChoice key "${key}" matches no mod in the plan`);
-    }
+    if (!validKeys.has(key)) stray.push(key);
   }
-  return { invalid, obsolete };
+  return { invalid, obsolete, stray };
 }
 
 function validateConflictChoice(

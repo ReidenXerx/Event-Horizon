@@ -435,7 +435,17 @@ class InstallSession {
         ),
       );
       if (this.state.kind !== "decisions") return;
+      // Only for mods this plan still asks a file for. The memory is kept per
+      // collection across versions, keyed by each mod's compareKey, so a mod a
+      // newer version updated or dropped leaves an answer for a key this plan
+      // does not have; pre-filling it put a stray answer into the install.
+      const asksForFile = new Set(
+        bundle.plan.modResolutions
+          .filter((r) => r.decision.kind === "external-prompt-user")
+          .map((r) => r.compareKey),
+      );
       for (const [compareKey, source] of Object.entries(remembered)) {
+        if (!asksForFile.has(compareKey)) continue;
         // Never overwrite something the user has already touched on this
         // screen — they may have started answering before this resolved.
         if (this.state.conflictChoices[compareKey] !== undefined) continue;

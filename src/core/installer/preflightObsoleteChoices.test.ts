@@ -108,9 +108,11 @@ describe("answers that a previous run already satisfied", () => {
     expect(refusal).toBeUndefined();
   });
 
-  it("still refuses an answer for a mod that is not in the plan at all", () => {
-    // A key matching NO mod is a real bug, not a decision that moved on: the
-    // plan always contains every manifest mod.
+  it("ignores an answer remembered for a mod this version no longer has", () => {
+    // Ivy 1.0.28 (2026-09-15): answers are remembered per collection across
+    // versions, keyed by compareKey. Mods the new version updated or dropped
+    // left three keys matching nothing, and the whole install was refused.
+    // Nothing reads such an answer, so it cannot change what installs.
     const refusal = collectPreflightRefusal({
       resolutions: [
         {
@@ -120,10 +122,10 @@ describe("answers that a previous run already satisfied", () => {
         },
       ],
       conflictChoices: {
-        "external:not-in-the-plan": { kind: "skip" },
+        "external:not-in-the-plan": { kind: "use-local-file", localPath: "C:/old.7z" },
       },
     });
-    expect(refusal).toMatch(/stray conflictChoice key/);
+    expect(refusal).toBeUndefined();
   });
 
   it("ignores an orphan answer whose mod is no longer an orphan", () => {
