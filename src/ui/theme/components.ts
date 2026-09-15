@@ -1486,6 +1486,29 @@ export const COMPONENTS_CSS = `
   flex: 1 1 0;
   min-width: 0;
 }
+/* The "do not interfere" warning before a collection install. */
+.eh-prime {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--eh-border-default);
+  border-radius: var(--eh-radius-md);
+  background: var(--eh-bg-base);
+}
+.eh-prime__art {
+  display: block;
+  width: 100%;
+  max-height: 340px;
+  object-fit: cover;
+}
+.eh-prime__quote {
+  padding: var(--eh-sp-3);
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--eh-accent);
+}
 .eh-input.eh-color-input {
   width: 48px;
   height: 32px;

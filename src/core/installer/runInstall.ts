@@ -1478,11 +1478,12 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             }),
           bundledPool,
         });
-        // Clear the prompts Vortex raises per multi-plugin mod. Swept here
-        // rather than once at the end: the point is that the user is not
-        // watching a wall of "Enable all" buttons grow for an hour, each of
-        // which is the WRONG answer during a collection install — we set
-        // plugin enablement from the manifest at the end.
+        // Clear the prompts that are wrong to answer mid-install: "Enable all"
+        // per multi-plugin mod, "Deployment necessary", dependency warnings
+        // (see quietNotifications.ts). Swept here rather than once at the end:
+        // the point is that the user is not watching a wall of them grow for
+        // an hour, each of which is the WRONG answer during a collection
+        // install — we set plugins, rules and deployment ourselves.
         dismissNoisyNotifications(ctx.api);
 
         ehLog("info", "install.mod.done", {

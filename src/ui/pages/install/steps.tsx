@@ -51,6 +51,7 @@ import { openExternalUrl, revealInFileManager } from "../../../core/revealPath";
 import { isPackageFileName } from "../../../core/installer/installLink";
 import { writeToClipboard } from "../../clipboard";
 import { ChangelogEntryView } from "../../components/ChangelogView";
+import { LIBERTY_PRIME_ART } from "../../components/libertyPrimeArt";
 import {
   CollectionAbout,
   CollectionBanner,
@@ -1541,6 +1542,8 @@ export interface ConfirmStepProps {
    * copy nobody ever looks at.
    */
   __openModalForRender?: boolean;
+  /** Render-harness only: start with the "do not interfere" warning open. */
+  __openInterfereWarningForRender?: boolean;
 }
 
 /** Below this many free bytes on the install drive we surface a
@@ -1666,6 +1669,69 @@ function FomodModeModal(props: {
   );
 }
 
+/**
+ * The last screen before an install: leave Vortex alone until Event Horizon
+ * is done.
+ *
+ * Vortex keeps raising prompts while a collection installs, and players answer
+ * them: a deploy before the rules exist, conflicts resolved by hand, the
+ * dependencies Vortex suggests. Each changes the result in a way nothing
+ * afterwards can see. Shown before every install (owner's decision,
+ * 2026-09-15): installs are rare, and skipping the warning costs the person
+ * who skipped it.
+ */
+function DoNotInterfereModal(props: {
+  open: boolean;
+  onCancel: () => void;
+  onStart: () => void;
+}): JSX.Element {
+  return (
+    <Modal
+      open={props.open}
+      onClose={props.onCancel}
+      size="lg"
+      closeOnBackdropClick={false}
+      title="Hands off until Event Horizon is done"
+      footer={
+        <>
+          <Button intent="ghost" onClick={props.onCancel}>
+            Cancel
+          </Button>
+          <Button intent="primary" onClick={props.onStart}>
+            Understood, start the install
+          </Button>
+        </>
+      }
+    >
+      <div className="eh-stack">
+        <figure className="eh-prime">
+          {LIBERTY_PRIME_ART !== undefined && (
+            <img className="eh-prime__art" src={LIBERTY_PRIME_ART} alt="Liberty Prime" />
+          )}
+          <figcaption className="eh-prime__quote">“Do not interfere.”</figcaption>
+        </figure>
+        <p className="eh-body">
+          While the collection installs, Vortex keeps talking: notifications, red
+          conflict icons on the Mods page, questions about plugins, deployment and
+          dependencies. Event Horizon takes care of all of it, and sets the rules,
+          plugins and load order itself at the end.
+        </p>
+        <p className="eh-body">
+          <strong className="eh-strong">Until Event Horizon says it is finished:</strong>
+        </p>
+        <ul className="eh-list">
+          <li>Do not deploy, sort, enable or disable mods, or resolve conflicts in Vortex.</li>
+          <li>Do not install, remove or update other mods, and do not close Vortex.</li>
+          <li>
+            Answer only what Event Horizon asks you, including mod installer windows
+            if you chose to see them.
+          </li>
+        </ul>
+      </div>
+    </Modal>
+  );
+}
+
 export function ConfirmStep(props: ConfirmStepProps): JSX.Element {
   const { state, onInstall, onBack } = props;
   const { bundle, decisions } = state;
@@ -1700,6 +1766,11 @@ export function ConfirmStep(props: ConfirmStepProps): JSX.Element {
     props.onSetFomodMode !== undefined;
   const [askingMode, setAskingMode] = React.useState(
     props.__openModalForRender === true,
+  );
+  // The warning is the last thing before the install starts, after the
+  // installer question when there is one.
+  const [warningOpen, setWarningOpen] = React.useState(
+    props.__openInterfereWarningForRender === true,
   );
 
   // Esc = back to decisions. Enter is deliberately NOT bound here.
@@ -1842,7 +1913,9 @@ export function ConfirmStep(props: ConfirmStepProps): JSX.Element {
         </Button>
         <Button
           intent="primary"
-          onClick={asksAboutInstallers ? () => setAskingMode(true) : onInstall}
+          onClick={
+            asksAboutInstallers ? () => setAskingMode(true) : () => setWarningOpen(true)
+          }
         >
           Install {installCount} mod{installCount === 1 ? "" : "s"}
         </Button>
@@ -1861,10 +1934,19 @@ export function ConfirmStep(props: ConfirmStepProps): JSX.Element {
             // onInstall runs the state already carries the choice.
             props.onSetFomodMode?.(mode);
             setAskingMode(false);
-            onInstall();
+            setWarningOpen(true);
           }}
         />
       )}
+
+      <DoNotInterfereModal
+        open={warningOpen}
+        onCancel={() => setWarningOpen(false)}
+        onStart={() => {
+          setWarningOpen(false);
+          onInstall();
+        }}
+      />
     </StepFrame>
   );
 }

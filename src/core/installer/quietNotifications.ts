@@ -33,25 +33,39 @@
  * user, which is precisely what we do.
  *
  * ─── AND IT STAYS NARROW ───────────────────────────────────────────────
- * One id prefix, and only while the driver runs. Not a notification filter,
- * not a suppression setting, nothing that outlives the install, and nothing
- * that touches an error or a warning. Vortex's own comment concedes the
- * string-match may catch a notification from a mod outside the collection;
- * that is true here too, and it costs a dismissed informational prompt about
- * a mod whose plugins the user can still set by hand.
+ * Three ids, and only while the driver runs. Not a notification filter, not a
+ * suppression setting, nothing that outlives the install, and nothing that
+ * touches an error. Vortex's own comment concedes the string-match may catch a
+ * notification from a mod outside the collection; that is true here too, and
+ * it costs a dismissed prompt Vortex raises again once the install is over.
+ *
+ * The two added on 2026-09-15 came from players on the Ivy page who answered
+ * Vortex mid-install and broke their own install. Each carries the same
+ * argument as the first:
+ *   - "Deployment necessary" offers Deploy. The driver deploys itself, after
+ *     the collection's rules are in place; a deploy clicked earlier links the
+ *     wrong winners of every contested file. Vortex hides this prompt during
+ *     its own collection installs for the same reason.
+ *   - "Multiple dependency warnings" offers to install what mods' metadata
+ *     says they need. The collection already carries what the curator
+ *     installed; anything added here is a mod the curator did not have.
  * ──────────────────────────────────────────────────────────────────────
  */
 
 import type { types } from "@nexusmods/vortex-api";
 
 /**
- * Notification ids cleared while the driver runs.
+ * Notification ids (prefixes) cleared while the driver runs.
  *
- * Deliberately one entry. Every addition needs the same argument the first
- * one has: that answering it during a driven install produces a WRONG result,
- * not merely an interruption.
+ * Deliberately short. Every entry needs the same argument the first one has:
+ * that answering it during a driven install produces a WRONG result, not
+ * merely an interruption. The arguments are in the header above.
  */
-export const DRIVEN_INSTALL_NOISE = ["multiple-plugins-"] as const;
+export const DRIVEN_INSTALL_NOISE = [
+  "multiple-plugins-",
+  "deployment-necessary",
+  "bulk-warnings-",
+] as const;
 
 /** Is this notification one we clear during an install? */
 export function isNoisyDuringInstall(id: unknown): boolean {

@@ -1887,6 +1887,25 @@ describe("render", () => {
     );
   });
 
+  it("confirm-do-not-interfere — the warning right before the install starts", () => {
+    write(
+      "confirm-do-not-interfere",
+      React.createElement(ConfirmStep, {
+        state: {
+          kind: "confirm",
+          bundle,
+          decisions: { fomodReplayMode: "silent" } as never,
+          conflictChoices: {},
+          orphanChoices: {},
+        },
+        onInstall: () => undefined,
+        onBack: () => undefined,
+        onSetFomodMode: () => undefined,
+        __openInterfereWarningForRender: true,
+      } as never),
+    );
+  });
+
   it("installing — mid-run", () => {
     write(
       "installing",
