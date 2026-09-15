@@ -60,6 +60,10 @@ describe("extractPresentation", () => {
     expect(fs.readFileSync(headerFile)).toEqual(HEADER);
     expect(shown!.gallery[0]!.caption).toBe("Diamond City");
     expect(shown!.images["presentation/shot.png"]).toBe(shown!.gallery[0]!.url);
+    // The names a curator writes in the About page without knowing the storage.
+    expect(shown!.images["screenshot-1"]).toBe(shown!.gallery[0]!.url);
+    expect(shown!.images.header).toBe(shown!.header!.url);
+    expect(shown!.images["screenshot-2"]).toBeUndefined();
   });
 
   it("does not extract an image that is already there with the right bytes", async () => {

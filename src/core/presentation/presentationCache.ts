@@ -74,6 +74,13 @@ function toShown(p: PackagePresentation, dir: string): ShownPresentation {
   const header = p.header !== undefined ? shown(p.header) : undefined;
   const tile = p.tile !== undefined ? shown(p.tile) : undefined;
   const gallery = p.gallery.map(shown);
+  // Names a curator can write in the About page without knowing how images are
+  // stored: ![caption](screenshot-2), ![](header), ![](card).
+  if (header !== undefined) images.header = header.url;
+  if (tile !== undefined) images.card = tile.url;
+  gallery.forEach((g, i) => {
+    images[`screenshot-${i + 1}`] = g.url;
+  });
   return {
     ...(header !== undefined ? { header } : {}),
     ...(tile !== undefined ? { tile } : {}),

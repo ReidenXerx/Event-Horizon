@@ -122,6 +122,21 @@ import { getActiveGameId } from "../../../core/getModsListForProfile";
 import { writeToClipboard } from "../../clipboard";
 import { packageFormatOf, type PackageFormat } from "../../../core/manifest/packageFileName";
 import { ChangelogEntryView } from "../../components/ChangelogView";
+import { pathToFileURL } from "url";
+import { CollectionBanner, hasBanner } from "../../components/CollectionShowcase";
+import { MarkdownView } from "../../components/Markdown";
+import {
+  MAX_GALLERY_IMAGES,
+  MAX_LINKS,
+  isSafeLink,
+  type PresentationConfig,
+  type PresentationTheme,
+} from "../../../core/presentation/presentation";
+import {
+  presentationAssetsDir,
+  type PresentationImageRole,
+} from "../../../core/presentation/presentationAssets";
+import type { ShownImage, ShownPresentation } from "../../../core/presentation/presentationCache";
 
 export interface BuildPageProps {
   onNavigate: (route: EventHorizonRoute) => void;
@@ -1544,6 +1559,14 @@ export function FormPanel(props: FormPanelProps): JSX.Element {
     });
   };
 
+  // The presentation describes the COLLECTION, like the prerequisites, so it is
+  // written to the collection config as it changes rather than kept in a draft.
+  const onPresentationChange = (next: PresentationConfig): void => {
+    const nextConfig = { ...ctx.collectionConfig, presentation: next };
+    onChange({ ctx: { ...ctx, collectionConfig: nextConfig } });
+    persistNow(overrides, nextConfig);
+  };
+
   // Write out whatever is still pending when this page unmounts — navigating
   // away is exactly when an 800ms debounce would otherwise lose the last edit.
   React.useEffect(
@@ -1778,6 +1801,16 @@ export function FormPanel(props: FormPanelProps): JSX.Element {
         </div>
       </Card>
 
+      <PresentationEditor
+        configPath={ctx.configPath}
+        packageId={ctx.collectionConfig.packageId}
+        presentation={ctx.collectionConfig.presentation ?? {}}
+        name={curator.name}
+        version={curator.version}
+        author={curator.author}
+        onChange={onPresentationChange}
+      />
+
       <Card title={`External mods (${ctx.externalMods.length})`}>
         {externalRows.length === 0 ? (
           <p className="eh-body">
@@ -1870,6 +1903,389 @@ export function FormPanel(props: FormPanelProps): JSX.Element {
         </Button>
       </div>
     </div>
+  );
+}
+
+// ===========================================================================
+// How the collection looks
+// ===========================================================================
+
+/** A change to some presentation settings; `undefined` clears one. */
+type PresentationPatch = { [K in keyof PresentationConfig]?: PresentationConfig[K] | undefined };
+
+const IMAGE_EXTENSIONS_PICKED = ["png", "jpg", "jpeg", "webp", "gif"];
+
+/** Wires the editor to Vortex's file picker and to the images beside the config. */
+function PresentationEditor(props: {
+  configPath: string;
+  packageId: string;
+  presentation: PresentationConfig;
+  name: string;
+  version: string;
+  author: string;
+  onChange: (next: PresentationConfig) => void;
+}): JSX.Element {
+  const api = useApi();
+  const showToast = useToast();
+  // Guarded, not assumed: a context from an older draft may lack either, and
+  // the editor must render even then; picking an image is what needs them.
+  const configDir = typeof props.configPath === "string" ? path.dirname(props.configPath) : "";
+  const assetsDir = presentationAssetsDir(configDir, props.packageId ?? "");
+
+  const pickImage = async (role: PresentationImageRole): Promise<string | undefined> => {
+    const picked = await api.selectFile({
+      title:
+        role === "gallery"
+          ? "Add a screenshot"
+          : role === "header"
+            ? "Choose a header image"
+            : "Choose a card image",
+      filters: [{ name: "Images", extensions: IMAGE_EXTENSIONS_PICKED }],
+    });
+    if (typeof picked !== "string" || picked === "") return undefined;
+    try {
+      const { importPresentationImage } = await import(
+        "../../../core/presentation/presentationAssets"
+      );
+      const { file } = await importPresentationImage({
+        configDir,
+        packageId: props.packageId,
+        sourcePath: picked,
+        role,
+      });
+      return file;
+    } catch (err) {
+      showToast({
+        intent: "warning",
+        title: "Couldn't use that image",
+        message: err instanceof Error ? err.message : String(err),
+        ttl: 8000,
+      });
+      return undefined;
+    }
+  };
+
+  return (
+    <PresentationCard
+      presentation={props.presentation}
+      name={props.name}
+      version={props.version}
+      author={props.author}
+      onChange={props.onChange}
+      pickImage={pickImage}
+      urlFor={(file): string => pathToFileURL(path.join(assetsDir, file)).href}
+    />
+  );
+}
+
+function moved<T>(list: readonly T[], from: number, to: number): T[] {
+  const next = [...list];
+  const [item] = next.splice(from, 1);
+  if (item !== undefined) next.splice(to, 0, item);
+  return next;
+}
+
+/**
+ * What people see when they install this collection in Event Horizon, edited
+ * with a live preview of the banner they will get.
+ *
+ * Exported for the render harness, which passes `urlFor` so its generated
+ * images load; in Vortex the images are the copies beside the config.
+ */
+export function PresentationCard(props: {
+  presentation: PresentationConfig;
+  name: string;
+  version: string;
+  author: string;
+  onChange: (next: PresentationConfig) => void;
+  /** Ask for an image and copy it beside the config; resolves to its stored file name. */
+  pickImage: (role: PresentationImageRole) => Promise<string | undefined>;
+  /** Where a stored image can be loaded from. */
+  urlFor: (file: string) => string;
+}): JSX.Element {
+  const { presentation: p, pickImage, urlFor } = props;
+  const [busy, setBusy] = React.useState<PresentationImageRole | undefined>(undefined);
+  const gallery = p.gallery ?? [];
+  const links = p.links ?? [];
+
+  const patch = (change: PresentationPatch): void => {
+    const next: Record<string, unknown> = { ...p, ...change };
+    // Only what was chosen stays in the config: a cleared field is removed.
+    for (const key of Object.keys(next)) {
+      const value = next[key];
+      if (value === undefined || (Array.isArray(value) && value.length === 0)) delete next[key];
+    }
+    props.onChange(next as PresentationConfig);
+  };
+
+  const pick = (role: PresentationImageRole): void => {
+    setBusy(role);
+    void pickImage(role)
+      .then((file) => {
+        if (file === undefined) return;
+        if (role === "gallery") patch({ gallery: [...gallery, { file }].slice(0, MAX_GALLERY_IMAGES) });
+        else if (role === "header") patch({ header: file });
+        else patch({ tile: file });
+      })
+      .finally(() => setBusy(undefined));
+  };
+
+  const setTheme = (key: keyof PresentationTheme, value: string | undefined): void => {
+    const theme: PresentationTheme = { ...(p.theme ?? {}) };
+    if (value === undefined) delete theme[key];
+    else theme[key] = value;
+    patch({ theme: theme.accent === undefined && theme.background === undefined ? undefined : theme });
+  };
+
+  // The preview is built the way the install screen builds it, from the same
+  // settings, so what the curator sees here is what people installing will see.
+  const images: Record<string, string> = {};
+  const shownImage = (file: string, caption?: string): ShownImage => {
+    const url = urlFor(file);
+    images[`presentation/${file}`] = url;
+    return { url, ...(caption !== undefined && caption.trim() !== "" ? { caption } : {}) };
+  };
+  const header = p.header !== undefined ? shownImage(p.header) : undefined;
+  const tile = p.tile !== undefined ? shownImage(p.tile) : undefined;
+  const shownGallery = gallery.map((g) => shownImage(g.file, g.caption));
+  if (header !== undefined) images.header = header.url;
+  if (tile !== undefined) images.card = tile.url;
+  shownGallery.forEach((g, i) => {
+    images[`screenshot-${i + 1}`] = g.url;
+  });
+  const preview: ShownPresentation = {
+    ...(header !== undefined ? { header } : {}),
+    ...(tile !== undefined ? { tile } : {}),
+    gallery: shownGallery,
+    ...(p.theme !== undefined ? { theme: p.theme } : {}),
+    ...(p.about !== undefined ? { about: p.about } : {}),
+    links: links.filter((l) => l.label.trim() !== "" && isSafeLink(l.url)),
+    images,
+  };
+
+  return (
+    <Card title="How your collection looks">
+      <div className="eh-stack eh-stack--lg">
+        <p className="eh-body">
+          What people see when they install this collection in Event Horizon: a
+          banner with a header and card image, screenshots, colours, links and an
+          About page. Images are copied beside the collection config, so moving the
+          originals later is fine.
+        </p>
+        {hasBanner(preview) && (
+          <CollectionBanner
+            name={props.name.trim() !== "" ? props.name : "Untitled collection"}
+            version={props.version.trim() !== "" ? props.version : "1.0.0"}
+            author={props.author}
+            presentation={preview}
+          />
+        )}
+
+        <div className="eh-form-row">
+          <Field label="Header image" hint="Wide, around 3:1. Shown across the top of the banner.">
+            <div className="eh-row">
+              {p.header !== undefined && (
+                <img className="eh-presentation__thumb" src={urlFor(p.header)} alt="" />
+              )}
+              <Button intent="ghost" size="sm" busy={busy === "header"} onClick={(): void => pick("header")}>
+                {p.header === undefined ? "Choose image…" : "Replace…"}
+              </Button>
+              {p.header !== undefined && (
+                <Button intent="ghost" size="sm" onClick={(): void => patch({ header: undefined })}>
+                  Remove
+                </Button>
+              )}
+            </div>
+          </Field>
+          <Field label="Card image" hint="Portrait, 4:5. Shown on the banner and on the Collections page.">
+            <div className="eh-row">
+              {p.tile !== undefined && <img className="eh-card__media" src={urlFor(p.tile)} alt="" />}
+              <Button intent="ghost" size="sm" busy={busy === "tile"} onClick={(): void => pick("tile")}>
+                {p.tile === undefined ? "Choose image…" : "Replace…"}
+              </Button>
+              {p.tile !== undefined && (
+                <Button intent="ghost" size="sm" onClick={(): void => patch({ tile: undefined })}>
+                  Remove
+                </Button>
+              )}
+            </div>
+          </Field>
+        </div>
+
+        <Field
+          label={`Screenshots (${gallery.length} of ${MAX_GALLERY_IMAGES})`}
+          hint="Shown as thumbnails that open large. Captions are optional."
+        >
+          <div className="eh-stack eh-stack--sm">
+            {gallery.length > 0 && (
+              <div className="eh-gallery">
+                {gallery.map((g, i) => (
+                  <div key={`${g.file}-${i}`} className="eh-gallery__item">
+                    <img className="eh-gallery__still" src={urlFor(g.file)} alt="" />
+                    <Input
+                      type="text"
+                      small
+                      value={g.caption ?? ""}
+                      placeholder="Caption"
+                      aria-label={`Caption for screenshot ${i + 1}`}
+                      onChange={(e): void =>
+                        patch({
+                          gallery: gallery.map((item, j) =>
+                            j !== i
+                              ? item
+                              : e.target.value === ""
+                                ? { file: item.file }
+                                : { file: item.file, caption: e.target.value },
+                          ),
+                        })
+                      }
+                    />
+                    <div className="eh-row">
+                      <Button
+                        intent="ghost"
+                        size="sm"
+                        title="Move earlier"
+                        disabled={i === 0}
+                        onClick={(): void => patch({ gallery: moved(gallery, i, i - 1) })}
+                      >
+                        ←
+                      </Button>
+                      <Button
+                        intent="ghost"
+                        size="sm"
+                        title="Move later"
+                        disabled={i === gallery.length - 1}
+                        onClick={(): void => patch({ gallery: moved(gallery, i, i + 1) })}
+                      >
+                        →
+                      </Button>
+                      <Button
+                        intent="ghost"
+                        size="sm"
+                        onClick={(): void => patch({ gallery: gallery.filter((_, j) => j !== i) })}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div>
+              <Button
+                intent="ghost"
+                size="sm"
+                busy={busy === "gallery"}
+                disabled={gallery.length >= MAX_GALLERY_IMAGES}
+                onClick={(): void => pick("gallery")}
+              >
+                Add a screenshot…
+              </Button>
+            </div>
+          </div>
+        </Field>
+
+        <div className="eh-form-row">
+          {(
+            [
+              ["accent", "Accent colour", "Borders, highlights and links on the banner and About page.", "#4cc9f0"],
+              ["background", "Background tint", "A wash of colour behind the banner.", "#1f1a3d"],
+            ] as const
+          ).map(([key, label, hint, fallback]) => (
+            <Field key={key} label={label} hint={hint}>
+              <div className="eh-row">
+                <Input
+                  type="color"
+                  className="eh-color-input"
+                  aria-label={label}
+                  value={p.theme?.[key] ?? fallback}
+                  onChange={(e): void => setTheme(key, e.target.value)}
+                />
+                <span className="eh-mono eh-secondary">{p.theme?.[key] ?? "Event Horizon default"}</span>
+                {p.theme?.[key] !== undefined && (
+                  <Button intent="ghost" size="sm" onClick={(): void => setTheme(key, undefined)}>
+                    Reset
+                  </Button>
+                )}
+              </div>
+            </Field>
+          ))}
+        </div>
+
+        <Field
+          label="About page"
+          hint="Markdown: # headings, **bold**, *italic*, lists, [links](https://...) and screenshots as ![caption](screenshot-1). No HTML."
+        >
+          <Textarea
+            rows={8}
+            value={p.about ?? ""}
+            placeholder="What this collection is, who it is for, and what to expect."
+            onChange={(e): void => patch({ about: e.target.value === "" ? undefined : e.target.value })}
+          />
+        </Field>
+        {p.about !== undefined && p.about.trim() !== "" && (
+          <div className="eh-inset">
+            <MarkdownView source={p.about} images={images} />
+          </div>
+        )}
+
+        <Field
+          label={`Links (${links.length} of ${MAX_LINKS})`}
+          hint="Buttons on the banner, such as your Nexus page or Discord. Web addresses only."
+        >
+          <div className="eh-stack eh-stack--sm">
+            {links.map((link, i) => (
+              <div key={i} className="eh-row eh-row--nowrap">
+                <Input
+                  type="text"
+                  small
+                  className="eh-presentation__link-label"
+                  value={link.label}
+                  placeholder="Label"
+                  aria-label={`Label for link ${i + 1}`}
+                  onChange={(e): void =>
+                    patch({ links: links.map((l, j) => (j === i ? { ...l, label: e.target.value } : l)) })
+                  }
+                />
+                <Input
+                  type="text"
+                  small
+                  className="eh-presentation__link-url"
+                  value={link.url}
+                  placeholder="https://"
+                  aria-label={`Address for link ${i + 1}`}
+                  onChange={(e): void =>
+                    patch({ links: links.map((l, j) => (j === i ? { ...l, url: e.target.value } : l)) })
+                  }
+                />
+                {link.url.trim() !== "" && !isSafeLink(link.url) && (
+                  <Pill intent="warning" plain>
+                    not a web address
+                  </Pill>
+                )}
+                <Button
+                  intent="ghost"
+                  size="sm"
+                  onClick={(): void => patch({ links: links.filter((_, j) => j !== i) })}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+            <div>
+              <Button
+                intent="ghost"
+                size="sm"
+                disabled={links.length >= MAX_LINKS}
+                onClick={(): void => patch({ links: [...links, { label: "", url: "" }] })}
+              >
+                Add a link
+              </Button>
+            </div>
+          </div>
+        </Field>
+      </div>
+    </Card>
   );
 }
 

@@ -1454,4 +1454,42 @@ export const COMPONENTS_CSS = `
   border: 1px solid var(--eh-accent);
   border-radius: var(--eh-radius-sm);
 }
+.eh-gallery__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--eh-sp-2);
+  min-width: 0;
+}
+.eh-gallery__still {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border: 1px solid var(--eh-border-default);
+  border-radius: var(--eh-radius-md);
+}
+.eh-presentation__thumb {
+  display: block;
+  width: 144px;
+  aspect-ratio: 3 / 1;
+  flex-shrink: 0;
+  object-fit: cover;
+  border: 1px solid var(--eh-border-default);
+  border-radius: var(--eh-radius-sm);
+}
+/* .eh-input is width:100%, which in a row lets the first box take the line. */
+.eh-input.eh-presentation__link-label {
+  flex: 0 0 220px;
+  width: 220px;
+}
+.eh-input.eh-presentation__link-url {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.eh-input.eh-color-input {
+  width: 48px;
+  height: 32px;
+  padding: 2px;
+  cursor: pointer;
+}
 `;

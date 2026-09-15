@@ -54,6 +54,7 @@ import {
   DonePanel,
   FormPanel,
   PackageFormatModal,
+  PresentationCard,
 } from "../pages/build/BuildPage";
 import { summarizeAvailability } from "../../core/build/nexusAvailability";
 import { DraftCard, PublishedCard, RecentlyBuiltCard } from "../pages/build/BuildDashboard";
@@ -2189,6 +2190,34 @@ describe("render", () => {
         onRecoverArchives: () => undefined,
         onCheckAvailability: () => undefined,
       } as never),
+    );
+  });
+
+  it("build presentation — the curator designing what people installing will see", () => {
+    write(
+      "build-presentation",
+      React.createElement(PresentationCard, {
+        presentation: {
+          header: "showcase-header.png",
+          tile: "showcase-tile.png",
+          gallery: [
+            { file: "showcase-shot-1.png", caption: "Diamond City at dusk" },
+            { file: "showcase-shot-2.png" },
+          ],
+          theme: { accent: "#ff6b3d" },
+          about: "## A wasteland worth coming back to\n\n978 mods and **previs pre-baked**.\n\n![Diamond City](screenshot-1)",
+          links: [
+            { label: "Nexus page", url: "https://www.nexusmods.com/fallout4/mods/109025" },
+            { label: "Discord", url: "discord.gg/example" },
+          ],
+        },
+        name: "Ivy's Panties",
+        version: "2.1.0",
+        author: "DuduPhudu",
+        onChange: () => undefined,
+        pickImage: () => Promise.resolve(undefined),
+        urlFor: (file: string) => file,
+      }),
     );
   });
 });
