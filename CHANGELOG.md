@@ -8,7 +8,30 @@ Vortex ignores everything after the dash when it decides whether an extension ha
 could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
-(7 September 2026), then 0.1.151 to 0.1.161.
+(7 September 2026), then 0.1.151 to 0.1.162.
+
+## [0.1.162] — 2026-09-16
+
+### Installing collections
+- **Hands off until Event Horizon is done.** Players on a collection page answered Vortex while their install ran
+  (resolved conflicts by hand, deployed, accepted suggestions) and broke their own install. Once the pre-install
+  checks have passed, Event Horizon now shows one warning before every install, guarded by Liberty Prime: what Vortex
+  will show while mods install, what not to touch until Event Horizon says it is finished, and that a mod installer
+  window that opens should be answered. "Understood" starts the install.
+- **Fewer Vortex prompts during an install.** Event Horizon already cleared Vortex's "contains multiple plugins"
+  prompts while it installs. It now also clears "Deployment necessary": a deploy clicked mid-install links the wrong
+  files. If an install ends before Event Horizon's own deploy, it tells you to deploy.
+- **No more External Changes dialog mid-install.** Mirroring rewrites files of mods Vortex had already deployed,
+  and Vortex asked about each of them, where "Revert" undid the mirror. Event Horizon now purges Vortex's deployment
+  right before the first mirror that changes files, and deploys everything again afterwards. Installs that mirror
+  mods take a few minutes longer; you will see Vortex purging and relinking near the end, which is expected.
+- **Mods that install on the second try are finished like the rest.** Some installers only work once the collection
+  is deployed, so Event Horizon retries them at the end. Those mods were deployed before their mirror, mod type, INI
+  tweaks and rules were applied, so they ran without them. They are now deployed after.
+
+### Removed
+- **The toolbar action "Event Horizon: Install (legacy dialog)".** It installed a collection without any of the
+  checks the Install page runs. Install collections from the Install page.
 
 ## [0.1.161] — 2026-09-15
 
