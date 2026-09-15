@@ -8,7 +8,16 @@ Vortex ignores everything after the dash when it decides whether an extension ha
 could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
-(7 September 2026), then 0.1.151 to 0.1.162.
+(7 September 2026), then 0.1.151 to 0.1.163.
+
+## [0.1.163] — 2026-09-16
+
+### Installing collections
+- **Updating a collection is no longer refused over an older version's answers.** Event Horizon remembers which
+  local file you picked for each mod you downloaded yourself, so you are not asked again. When a newer version of the
+  collection updated or dropped one of those mods, the old answer was still filled in, and the install was refused
+  before anything installed ("stray conflictChoice key … matches no mod in the plan"). A remembered file is now used
+  only for a mod the collection still asks for, and an answer for a mod the collection no longer has is ignored.
 
 ## [0.1.162] — 2026-09-16
 
