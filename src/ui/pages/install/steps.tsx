@@ -1708,7 +1708,15 @@ function DoNotInterfereModal(props: {
           {LIBERTY_PRIME_ART !== undefined && (
             <img className="eh-prime__art" src={LIBERTY_PRIME_ART} alt="Liberty Prime" />
           )}
-          <figcaption className="eh-prime__quote">“Do not interfere.”</figcaption>
+          <figcaption
+            className={
+              LIBERTY_PRIME_ART !== undefined
+                ? "eh-prime__quote eh-prime__quote--over"
+                : "eh-prime__quote"
+            }
+          >
+            “Do not interfere.”
+          </figcaption>
         </figure>
         <p className="eh-body">
           While the collection installs, Vortex keeps talking: notifications, red
