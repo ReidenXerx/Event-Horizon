@@ -8,7 +8,24 @@ Vortex ignores everything after the dash when it decides whether an extension ha
 could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
-(7 September 2026), then 0.1.151 to 0.1.160.
+(7 September 2026), then 0.1.151 to 0.1.161.
+
+## [0.1.161] — 2026-09-15
+
+### Collections
+- **A collection shows how its curator designed it.** The build form has a new card, "How your collection looks": a
+  header and a card image, screenshots with captions, an accent and a background colour, links, and an About page in
+  markdown, with a live preview of the banner. People installing the collection see that banner, the screenshots and
+  the About page on the install preview, and the card image in the collection's colour on the Collections page. A
+  package carries only images and text, never code, and a design Event Horizon cannot read never stops an install.
+  Older versions of Event Horizon install these packages and just do not show the design.
+- **Event Horizon writes the collection changelog.** Every build compares itself with the collection's previous
+  version: mods added, removed and updated, mods whose files or installer options changed, mods delivered
+  differently, plugins, the load order, rules, INI settings, prerequisites and requirements. Your own notes go on
+  top. People updating see everything since the version they have. The finished build offers a copy for the Nexus
+  changelog and a markdown copy, the full history is kept, and the package carries it as CHANGELOG.md.
+- **Build asks whether to write a .zip or an .ehcoll.** Nexus Mods takes a package as a .zip. The question starts on
+  the last answer you gave for that collection.
 
 ## [0.1.160] — 2026-09-14
 
