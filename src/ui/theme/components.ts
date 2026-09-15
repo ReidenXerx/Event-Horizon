@@ -1488,20 +1488,18 @@ export const COMPONENTS_CSS = `
 }
 /* The "do not interfere" warning before a collection install. */
 .eh-prime {
-  position: relative;
   margin: 0;
   overflow: hidden;
   border: 1px solid var(--eh-border-default);
   border-radius: var(--eh-radius-md);
   background: var(--eh-bg-base);
 }
-/* Short enough that the list of what not to touch stays above the buttons. */
+/* Cropped to a wide band beforehand (docs/art/liberty-prime.webp), so the art
+   keeps its own proportions and the list stays above the buttons. */
 .eh-prime__art {
   display: block;
   width: 100%;
-  height: 230px;
-  object-fit: cover;
-  object-position: 50% 35%;
+  height: auto;
 }
 .eh-prime__quote {
   padding: var(--eh-sp-3);
@@ -1512,15 +1510,7 @@ export const COMPONENTS_CSS = `
   text-align: center;
   color: var(--eh-accent);
 }
-.eh-prime__quote--over {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding-top: var(--eh-sp-4);
-  background: linear-gradient(to bottom, transparent, rgba(8, 5, 12, 0.85));
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
-}
+
 .eh-input.eh-color-input {
   width: 48px;
   height: 32px;

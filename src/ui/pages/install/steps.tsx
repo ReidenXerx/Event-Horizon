@@ -1705,18 +1705,17 @@ function DoNotInterfereModal(props: {
     >
       <div className="eh-stack">
         <figure className="eh-prime">
-          {LIBERTY_PRIME_ART !== undefined && (
-            <img className="eh-prime__art" src={LIBERTY_PRIME_ART} alt="Liberty Prime" />
+          {/* The painted art carries its own "DO NOT INTERFERE" speech bubble,
+              so the quote is printed only when there is no picture. */}
+          {LIBERTY_PRIME_ART !== undefined ? (
+            <img
+              className="eh-prime__art"
+              src={LIBERTY_PRIME_ART}
+              alt="Liberty Prime, saying: do not interfere"
+            />
+          ) : (
+            <figcaption className="eh-prime__quote">“Do not interfere.”</figcaption>
           )}
-          <figcaption
-            className={
-              LIBERTY_PRIME_ART !== undefined
-                ? "eh-prime__quote eh-prime__quote--over"
-                : "eh-prime__quote"
-            }
-          >
-            “Do not interfere.”
-          </figcaption>
         </figure>
         <p className="eh-body">
           While the collection installs, Vortex keeps talking: notifications, red
