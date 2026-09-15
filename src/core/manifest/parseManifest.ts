@@ -35,6 +35,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { readChangelogEntries } from "../changelog/changelog";
 import type {
   EhcollExternalDependency,
   EhcollIniTweak,
@@ -230,9 +231,33 @@ export function parseManifest(raw: string): ParseManifestResult {
     warnings,
   );
 
+  // The changelog is read leniently and only after every error check, so it can
+  // add a warning but never refuse a package: a changelog is for reading, and
+  // one written by another Event Horizon version must not stop an install.
+  let changelog: ReturnType<typeof readChangelogEntries>;
+  try {
+    changelog = readChangelogEntries(
+      isObject(obj.package) ? (obj.package as Record<string, unknown>).changelog : undefined,
+    );
+  } catch (err) {
+    changelog = undefined;
+    warnings.push(
+      `package.changelog could not be read and was left out: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+  if (changelog !== undefined && changelog.dropped > 0) {
+    warnings.push(
+      `package.changelog: ${changelog.dropped} unreadable entr${
+        changelog.dropped === 1 ? "y was" : "ies were"
+      } left out.`,
+    );
+  }
+
   const manifest: EhcollManifest = {
     schemaVersion: SCHEMA_VERSION,
-    package: pkg!,
+    package: changelog !== undefined ? { ...pkg!, changelog: changelog.entries } : pkg!,
     game: game!,
     vortex: vortex!,
     mods: mods!,

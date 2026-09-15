@@ -121,6 +121,7 @@ import { nativeNotify } from "../../runtime/nativeNotify";
 import { getActiveGameId } from "../../../core/getModsListForProfile";
 import { writeToClipboard } from "../../clipboard";
 import { packageFormatOf, type PackageFormat } from "../../../core/manifest/packageFileName";
+import { ChangelogEntryView } from "../../components/ChangelogView";
 
 export interface BuildPageProps {
   onNavigate: (route: EventHorizonRoute) => void;
@@ -1824,12 +1825,12 @@ export function FormPanel(props: FormPanelProps): JSX.Element {
         />
       </Card>
 
-      <Card title="CHANGELOG (optional)">
+      <Card title="What's new in this version (optional)">
         <Textarea
-          aria-label="CHANGELOG"
+          aria-label="What's new in this version"
           rows={6}
           value={changelog}
-          placeholder="Markdown describing what's new in this version."
+          placeholder="Your own words for this version. Event Horizon lists everything that changed since the last build under them, in the package and on the Done card."
           onChange={(e) => onChange({ changelog: e.target.value })}
         />
       </Card>
@@ -2974,6 +2975,7 @@ export function DonePanel(props: {
           </Button>
         </div>
         <DistributionHint format={packageFormatOf(result.outputPath) ?? "ehcoll"} />
+        {result.changelog !== undefined && <BuildChangelog changelog={result.changelog} />}
         {/*
           Above the warnings, not inside them. Everything in that list can be
           read and ignored; this is the only finding on the page that ships a
@@ -3160,6 +3162,43 @@ function BuildRulesScopeSummary(props: {
  * regular Nexus mod attachment. Saying it explicitly here saves "where do I
  * upload this?" support requests, and a package quarantined for its name.
  */
+/**
+ * This version's changelog on the Done card: what Event Horizon wrote into the
+ * package, with copies for where a curator publishes it. The BBCode is cut to
+ * fit a mod page; the package keeps the full lists.
+ */
+function BuildChangelog(props: {
+  changelog: NonNullable<BuildPipelineResult["changelog"]>;
+}): JSX.Element {
+  const showToast = useToast();
+  const { changelog } = props;
+  const copy = (text: string, what: string): void => {
+    void writeToClipboard(text).then((ok) => {
+      showToast({
+        intent: ok ? "success" : "warning",
+        title: ok ? `${what} copied` : `Couldn't copy the ${what}`,
+        message: ok ? "Paste it into your mod page." : "Clipboard isn't available right now.",
+        ttl: 3500,
+      });
+    });
+  };
+  return (
+    <Section title={`Changelog for v${changelog.entry.version}`} size="sm">
+      <div className="eh-stack eh-stack--sm">
+        <ChangelogEntryView entry={changelog.entry} hideHeading previewLines={8} />
+        <div className="eh-row">
+          <Button intent="ghost" size="sm" onClick={(): void => copy(changelog.bbcode, "BBCode")}>
+            Copy for Nexus (BBCode)
+          </Button>
+          <Button intent="ghost" size="sm" onClick={(): void => copy(changelog.markdown, "markdown")}>
+            Copy as markdown
+          </Button>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
 function DistributionHint(props: { format: PackageFormat }): JSX.Element {
   if (props.format === "zip") {
     return (

@@ -26,6 +26,7 @@
 import type {
   FomodSelectionStep,
 } from "../core/getModsListForProfile";
+import type { ChangelogEntry } from "../core/changelog/changelog";
 
 /**
  * Manifest schema version. Bumped only on breaking changes — additive
@@ -140,6 +141,15 @@ export type PackageMetadata = {
    * `"none"`. New manifests always set this explicitly.
    */
   verificationLevel?: VerificationLevel;
+  /**
+   * The collection's changelog, newest version first, written by Event Horizon
+   * from what changed between builds, with the curator's own notes on top.
+   *
+   * Optional: packages built before it existed have none. Read leniently, so
+   * malformed entries are dropped with a warning and never refuse the package:
+   * a changelog is for reading and must not stop an install.
+   */
+  changelog?: ChangelogEntry[];
 };
 
 export type VerificationLevel = "none" | "fast" | "thorough";

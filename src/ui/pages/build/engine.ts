@@ -56,6 +56,9 @@ import {
 } from "../../../core/comparePlugins";
 import { buildManifest } from "../../../core/manifest/buildManifest";
 import { buildOutputFileName, type PackageFormat } from "../../../core/manifest/packageFileName";
+import { prepareChangelog, type PreparedChangelog } from "./buildChangelog";
+import { saveChangelogHistory } from "../../../core/changelog/changelogHistory";
+import type { ChangelogEntry } from "../../../core/changelog/changelog";
 import { captureStagingFiles } from "../../../core/manifest/captureStagingFiles";
 import { runSelfChecks,
   findModsThatPromptTheUser,
@@ -353,6 +356,18 @@ export interface BuildPipelineResult {
    * agreeing with a paragraph.
    */
   postProcessingCandidates: PostProcessingCandidate[];
+  /**
+   * This version's changelog as written into the package, with the copies the
+   * Done card offers. Absent only when one could not be prepared, which is a
+   * warning and never a failed build.
+   */
+  changelog?: {
+    entry: ChangelogEntry;
+    /** This version as markdown. */
+    markdown: string;
+    /** This version as BBCode for a Nexus mod page. */
+    bbcode: string;
+  };
 }
 
 /**
@@ -2276,6 +2291,40 @@ export async function runBuildPipeline(
     ...(gameIniCapture.files.length > 0 ? { gameIni: { files: gameIniCapture.files } } : {}),
   });
 
+  // ── 3b. The changelog ──
+  // Written from what changed since the previous version (owner request
+  // 2026-09-15); what the curator typed for CHANGELOG becomes this version's
+  // notes. Prepared now so it ships in this package, and recorded beside the
+  // config only once the package exists. A changelog that cannot be prepared is
+  // a warning, never a failed build.
+  checkAbort();
+  let preparedChangelog: PreparedChangelog | undefined;
+  const changelogWarnings: string[] = [];
+  try {
+    preparedChangelog = await prepareChangelog({
+      configDir,
+      slug,
+      outputDir,
+      manifest,
+      notes: overrides.changelog,
+    });
+    if (preparedChangelog.note !== undefined) changelogWarnings.push(preparedChangelog.note);
+  } catch (err) {
+    ehLog("warn", "build.changelog.prepare-failed", { err });
+    changelogWarnings.push(
+      `The changelog could not be written for this build: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+  const shippedManifest =
+    preparedChangelog === undefined
+      ? manifest
+      : {
+          ...manifest,
+          package: { ...manifest.package, changelog: preparedChangelog.history.entries },
+        };
+
   // ── 4. Resolve bundled archives ────────────────────────────────────────
   checkAbort();
   onProgress?.({ phase: "resolving-bundles" });
@@ -2347,11 +2396,15 @@ export async function runBuildPipeline(
   }
 
   const result: PackageEhcollResult = await packageEhcoll({
-    manifest,
+    manifest: shippedManifest,
     bundles,
     mirrorFiles,
     readme: overrides.readme.length > 0 ? overrides.readme : undefined,
-    changelog: overrides.changelog.length > 0 ? overrides.changelog : undefined,
+    // Every version, rendered. Before Event Horizon wrote the changelog this
+    // was the curator's text verbatim; that text is this version's notes now.
+    changelog:
+      preparedChangelog?.markdown ??
+      (overrides.changelog.length > 0 ? overrides.changelog : undefined),
     outputPath,
     signal,
     // The longest phase in the build used to sit behind one unchanging
@@ -2395,9 +2448,25 @@ export async function runBuildPipeline(
   //
   // Best-effort: a failure here doesn't fail the build (the package
   // exists, the curator is happy). We log + continue.
+  if (preparedChangelog !== undefined) {
+    // Best-effort like the stamp below: the package already carries the whole
+    // history, and the next build reads it from there if this file is lost.
+    try {
+      await saveChangelogHistory(configDir, slug, preparedChangelog.history);
+    } catch (err) {
+      ehLog("warn", "build.changelog.history-save-failed", {
+        consequence: "the next build reads the history from this package instead",
+        err,
+      });
+    }
+  }
   try {
+    // The notes belong to the version just shipped, which now holds them; the
+    // next version starts from an empty box.
+    const stamped = { ...collectionConfig };
+    delete stamped.changelog;
     collectionConfig = {
-      ...collectionConfig,
+      ...stamped,
       lastBuiltVersion: curator.version,
       lastBuiltAt: new Date().toISOString(),
       lastBuiltName: curator.name,
@@ -2445,6 +2514,7 @@ export async function runBuildPipeline(
     stagingFiles: stagingFileCount,
     warnings: [
       ...context.scopeWarnings,
+      ...changelogWarnings,
       ...bundleWarnings,
       ...summariseCaptureWarnings(captureWarnings),
       ...manifestWarnings,
@@ -2465,6 +2535,7 @@ export async function runBuildPipeline(
     modCount: manifest.mods.length,
     warnings: [
       ...context.scopeWarnings,
+      ...changelogWarnings,
       ...bundleWarnings,
       ...summariseCaptureWarnings(captureWarnings),
       ...manifestWarnings,
@@ -2481,6 +2552,15 @@ export async function runBuildPipeline(
     userlistGroupCount: manifest.userlist.groups.length,
     verificationLevel,
     stagingFileCount,
+    ...(preparedChangelog !== undefined
+      ? {
+          changelog: {
+            entry: preparedChangelog.entry,
+            markdown: preparedChangelog.entryMarkdown,
+            bbcode: preparedChangelog.bbcode,
+          },
+        }
+      : {}),
   };
 }
 

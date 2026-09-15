@@ -50,6 +50,8 @@ import { formatBytes } from "../../../utils/diskSpace";
 import { openExternalUrl, revealInFileManager } from "../../../core/revealPath";
 import { isPackageFileName } from "../../../core/installer/installLink";
 import { writeToClipboard } from "../../clipboard";
+import { ChangelogEntryView } from "../../components/ChangelogView";
+import { entriesSince, type ChangelogEntry } from "../../../core/changelog/changelog";
 import { describeDownload } from "./downloadGuidance";
 import {
   describeElapsed,
@@ -654,6 +656,47 @@ export interface PreviewStepProps {
   onCancel: () => void;
 }
 
+/**
+ * The collection's changelog, for the person about to install it.
+ *
+ * Updating from an installed version shows every version since it, newest
+ * first, so someone who skipped three releases reads all three. A first install
+ * shows only the newest version: the history before it describes changes to a
+ * collection this person never had.
+ */
+function WhatsNew(props: {
+  entries: readonly ChangelogEntry[];
+  installedVersion?: string;
+}): JSX.Element | null {
+  const { entries, installedVersion } = props;
+  const newest = entries[0];
+  if (newest === undefined) return null;
+  const since = installedVersion !== undefined ? entriesSince(entries, installedVersion) : [];
+  const shown = since.length > 0 ? since : [newest];
+  const title =
+    since.length > 0
+      ? `What's new since v${installedVersion ?? ""}`
+      : `What's new in v${newest.version}`;
+  return (
+    <Section
+      title={title}
+      {...(shown.length > 1 ? { count: shown.length, countIntent: "neutral" as const } : {})}
+      description="Written by Event Horizon from what changed between builds, with the curator's notes on top."
+    >
+      <div className="eh-stack eh-stack--lg">
+        {shown.map((entry) => (
+          <ChangelogEntryView
+            key={entry.version}
+            entry={entry}
+            collapsed={shown.length > 1}
+            previewLines={10}
+          />
+        ))}
+      </div>
+    </Section>
+  );
+}
+
 export function PreviewStep(props: PreviewStepProps): JSX.Element {
   const { bundle, onContinue, onCancel } = props;
   const { plan } = bundle;
@@ -766,6 +809,13 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
           <StatTile size="lg" label="Will install silently" value={summary.willInstallSilently} />
         </StatGrid>
       </Section>
+
+      <WhatsNew
+        entries={plan.manifest.package.changelog ?? []}
+        {...(bundle.receipt !== undefined
+          ? { installedVersion: bundle.receipt.packageVersion }
+          : {})}
+      />
 
       {plan.manifest.mods.some((m) => m.attributes?.curatorNote !== undefined) && (
         <Section

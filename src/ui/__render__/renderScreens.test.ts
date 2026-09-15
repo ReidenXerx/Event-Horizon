@@ -171,6 +171,50 @@ const shell = (node: React.ReactElement): React.ReactElement =>
 /** What the providers render on their own: a screen must add to this. */
 const HOST_ONLY = renderToStaticMarkup(shell(React.createElement(React.Fragment)));
 
+/**
+ * A real-shaped changelog entry: an update with notes, several groups, one long
+ * enough to be cut, and a check that could not be completed.
+ */
+const SAMPLE_ENTRY = {
+  version: "1.0.27",
+  date: "2026-09-15T12:00:00.000Z",
+  notes: "Lighting pass and a fix for the Institute crash.\n\nRebuild your LOD after updating.",
+  changes: {
+    mods: {
+      added: [{ name: "Lux", version: "6.5" }, { name: "Vivid Weathers", version: "1.3" }],
+      removed: [{ name: "Old ENB Tweaks", version: "0.9" }],
+      updated: [{ name: "Ordinator - Perks of Skyrim", from: "9.31", to: "9.32" }],
+      enabled: [],
+      disabled: ["Wildcat - Combat of Skyrim"],
+      reconfigured: [{ name: "Lux", reason: "installer-options" }],
+      delivery: [{ name: "AAF", from: "download", to: "mirrored" }],
+      iniTweaks: [],
+    },
+    plugins: {
+      added: ["Lux.esp"],
+      removed: [],
+      enabled: [],
+      disabled: [],
+      madeLight: ["VividWeathers.esp"],
+      madeFull: [],
+      moved: Array.from({ length: 23 }, (_, i) => `Patch${i + 1}.esp`),
+    },
+    loadOrderMoved: [],
+    rules: { added: [{ mod: "Lux", type: "after", other: "Vivid Weathers" }], removed: [] },
+    iniTweaks: { added: [], removed: [] },
+    gameIni: {
+      added: [],
+      removed: [],
+      changed: [
+        { file: "Fallout4.ini", section: "Display", key: "iShadowMapResolution", value: "4096", from: "2048" },
+      ],
+    },
+    prerequisites: { added: [], removed: [], updated: [{ name: "F4SE", from: "0.6.21", to: "0.7.2" }] },
+    requirements: { extensionsAdded: [], extensionsRemoved: [] },
+    unknown: { installerOptions: 0, stagedFiles: 2, matchedByName: 0 },
+  },
+};
+
 const write = (name: string, node: React.ReactElement): void => {
   const html = renderToStaticMarkup(shell(node));
   // Rendering is the check. The providers always emit the toast host, so an
@@ -723,6 +767,7 @@ describe("render", () => {
           ],
         },
       ],
+      changelog: { entry: SAMPLE_ENTRY, markdown: "", bbcode: "" },
     } as never;
 
     write(
@@ -1570,6 +1615,44 @@ describe("render", () => {
       "preview",
       React.createElement(PreviewStep, {
         bundle,
+        onContinue: () => undefined,
+        onCancel: () => undefined,
+      } as never),
+    );
+  });
+
+  it("preview — what is new since the version the user has", () => {
+    const base = bundle as unknown as { plan: { manifest: { package: Record<string, unknown> } } };
+    const updating = {
+      ...(bundle as unknown as Record<string, unknown>),
+      receipt: { packageVersion: "1.0.25" },
+      plan: {
+        ...base.plan,
+        manifest: {
+          ...base.plan.manifest,
+          package: {
+            ...base.plan.manifest.package,
+            changelog: [
+              SAMPLE_ENTRY,
+              {
+                version: "1.0.26",
+                date: "2026-09-14T09:00:00.000Z",
+                notes: "Hotfix for the Diamond City crash.",
+                changes: {
+                  ...SAMPLE_ENTRY.changes,
+                  plugins: { ...SAMPLE_ENTRY.changes.plugins, moved: [] },
+                },
+              },
+              { version: "1.0.25", date: "2026-09-13T09:00:00.000Z", firstRelease: { mods: 978, plugins: 819 } },
+            ],
+          },
+        },
+      },
+    } as never;
+    write(
+      "preview-whats-new",
+      React.createElement(PreviewStep, {
+        bundle: updating,
         onContinue: () => undefined,
         onCancel: () => undefined,
       } as never),
