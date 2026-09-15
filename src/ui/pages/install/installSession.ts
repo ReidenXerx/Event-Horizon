@@ -200,6 +200,9 @@ class InstallSession {
             ...(outcome.environment !== undefined
               ? { environment: outcome.environment }
               : {}),
+            ...(outcome.presentation !== undefined
+              ? { presentation: outcome.presentation }
+              : {}),
           },
         });
       } catch (err) {
@@ -380,6 +383,9 @@ class InstallSession {
               : {}),
             ...(outcome.environment !== undefined
               ? { environment: outcome.environment }
+              : {}),
+            ...(outcome.presentation !== undefined
+              ? { presentation: outcome.presentation }
               : {}),
           },
         });

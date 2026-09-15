@@ -46,6 +46,7 @@ import {
 import { AboutPage } from "../pages/AboutPage";
 import { ApiProvider } from "../state/ApiContext";
 import { ToastProvider } from "../components/Toast";
+import { gradientPng } from "./fixtureImages";
 import {
   AvailabilityPanel,
   BuildDiffView,
@@ -60,6 +61,7 @@ import { DashboardBody, Hero } from "../pages/HomePage";
 import {
   FailedAttempts,
   InterruptedInstalls,
+  ReceiptCard,
 } from "../pages/CollectionsPage";
 import { DoctorPanel } from "../pages/doctor/DoctorPanel";
 import { CuratorPanel } from "../pages/curator/CuratorPage";
@@ -213,6 +215,42 @@ const SAMPLE_ENTRY = {
     requirements: { extensionsAdded: [], extensionsRemoved: [] },
     unknown: { installerOptions: 0, stagedFiles: 2, matchedByName: 0 },
   },
+};
+
+/**
+ * A collection its curator designed, for the screens that show one. The images
+ * are generated and written beside the rendered pages, so the screenshots load
+ * them by name.
+ */
+const SHOWCASE_IMAGES: Record<string, Buffer> = {
+  "showcase-header.png": gradientPng(1200, 360, [44, 26, 94], [255, 107, 61]),
+  "showcase-tile.png": gradientPng(240, 300, [240, 56, 107], [95, 44, 165]),
+  "showcase-shot-1.png": gradientPng(480, 300, [12, 60, 90], [76, 201, 240]),
+  "showcase-shot-2.png": gradientPng(480, 300, [90, 20, 40], [255, 177, 92]),
+  "showcase-shot-3.png": gradientPng(480, 300, [20, 70, 40], [140, 220, 120]),
+};
+if (WRITE) {
+  fs.mkdirSync(OUT, { recursive: true });
+  for (const [name, bytes] of Object.entries(SHOWCASE_IMAGES)) {
+    fs.writeFileSync(path.join(OUT, name), bytes);
+  }
+}
+const SHOWCASE = {
+  header: { url: "showcase-header.png" },
+  tile: { url: "showcase-tile.png" },
+  gallery: [
+    { url: "showcase-shot-1.png", caption: "Diamond City at dusk" },
+    { url: "showcase-shot-2.png", caption: "The Institute" },
+    { url: "showcase-shot-3.png" },
+  ],
+  theme: { accent: "#ff6b3d", background: "#2c1a5e" },
+  about:
+    "## A wasteland worth coming back to\n\n978 mods, **previs pre-baked**, and a load order that holds together.\n\n- Survival that bites\n- *Point Lookout* and an expanded Far Harbor\n\n![Diamond City](presentation/showcase-shot-1.png)\n\nQuestions? Ask on the [Nexus page](https://www.nexusmods.com/fallout4/mods/109025).",
+  links: [
+    { label: "Nexus page", url: "https://www.nexusmods.com/fallout4/mods/109025" },
+    { label: "Discord", url: "https://discord.gg/example" },
+  ],
+  images: { "presentation/showcase-shot-1.png": "showcase-shot-1.png" },
 };
 
 const write = (name: string, node: React.ReactElement): void => {
@@ -1656,6 +1694,55 @@ describe("render", () => {
         onContinue: () => undefined,
         onCancel: () => undefined,
       } as never),
+    );
+  });
+
+  it("preview — a collection its curator designed", () => {
+    write(
+      "preview-showcase",
+      React.createElement(PreviewStep, {
+        bundle: { ...(bundle as unknown as Record<string, unknown>), presentation: SHOWCASE },
+        onContinue: () => undefined,
+        onCancel: () => undefined,
+      } as never),
+    );
+  });
+
+  it("collections — installed collections with and without a design", () => {
+    const receipt = {
+      packageId: "ivy",
+      packageVersion: "1.0.26",
+      packageName: "Ivy's Panties",
+      gameId: "fallout4",
+      installedAt: "2026-09-14T10:00:00.000Z",
+      vortexProfileId: "p1",
+      vortexProfileName: "Ivy's Panties",
+      installTargetMode: "fresh-profile",
+      mods: Array.from({ length: 978 }, () => ({})),
+    };
+    write(
+      "collections-cards",
+      React.createElement(
+        "div",
+        { className: "eh-stack" },
+        React.createElement(ReceiptCard, {
+          receipt,
+          isActive: true,
+          onOpen: () => undefined,
+          presentation: SHOWCASE,
+        } as never),
+        React.createElement(ReceiptCard, {
+          receipt: {
+            ...receipt,
+            packageId: "meridia",
+            packageName: "Meridia's Panties",
+            gameId: "skyrimse",
+            mods: Array.from({ length: 1754 }, () => ({})),
+          },
+          isActive: false,
+          onOpen: () => undefined,
+        } as never),
+      ),
     );
   });
 

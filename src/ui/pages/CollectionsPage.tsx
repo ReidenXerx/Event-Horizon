@@ -63,6 +63,13 @@ import { EXTENSION_VERSION } from "../version";
 import { getVortexUserDataPath } from "../../core/paths";
 import { looksLikeWine } from "../../core/proton";
 import { PlayGameButton } from "../play/PlayGameButton";
+import { CollectionBanner, hasBanner } from "../components/CollectionShowcase";
+import {
+  loadCachedPresentation,
+  type ShownPresentation,
+} from "../../core/presentation/presentationCache";
+import { themeVariables } from "../../core/presentation/presentation";
+import { getEventHorizonDir } from "../../core/paths/appDataPaths";
 
 export interface CollectionsPageProps {
   onNavigate: (route: EventHorizonRoute) => void;
@@ -229,6 +236,30 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
   const [refreshTick, setRefreshTick] = React.useState(0);
   const [query, setQuery] = React.useState("");
   const [sortKey, setSortKey] = React.useState<SortKey>("recent");
+  // How each installed collection presents itself, as its install preview
+  // extracted it. Loaded after the list; a collection without one looks plain.
+  const [presentations, setPresentations] = React.useState<
+    ReadonlyMap<string, ShownPresentation>
+  >(new Map());
+  const loadedReceipts = state.kind === "loaded" ? state.receipts : undefined;
+  React.useEffect(() => {
+    if (loadedReceipts === undefined || loadedReceipts.length === 0) return undefined;
+    let alive = true;
+    void (async (): Promise<void> => {
+      const cacheRoot = getEventHorizonDir("presentation");
+      const found = new Map<string, ShownPresentation>();
+      for (const r of loadedReceipts) {
+        const shown = await loadCachedPresentation(cacheRoot, r.packageId, r.packageVersion).catch(
+          () => undefined,
+        );
+        if (shown !== undefined) found.set(r.packageId, shown);
+      }
+      if (alive) setPresentations(found);
+    })();
+    return (): void => {
+      alive = false;
+    };
+  }, [loadedReceipts]);
 
   const refresh = React.useCallback((): void => {
     setRefreshTick((t) => t + 1);
@@ -540,6 +571,7 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
                 receipt={receipt}
                 isActive={receipt.vortexProfileId === activeProfileId}
                 onOpen={(): void => setSelected(receipt)}
+                presentation={presentations.get(receipt.packageId)}
               />
             ))}
           </div>
@@ -547,6 +579,7 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
       </Section>
 
       <ReceiptDetailModal
+        presentation={selected !== undefined ? presentations.get(selected.packageId) : undefined}
         receipt={selected}
         onContinueInstall={(receipt): void => {
           void handleContinueInstall(receipt);
@@ -569,15 +602,25 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
 // Card
 // ===========================================================================
 
-function ReceiptCard(props: {
+/** Exported for the render harness. */
+export function ReceiptCard(props: {
   receipt: InstallReceipt;
   isActive: boolean;
   onOpen: () => void;
+  /** How the collection presents itself, when this machine has it. */
+  presentation?: ShownPresentation | undefined;
 }): JSX.Element {
-  const { receipt, isActive, onOpen } = props;
+  const { receipt, isActive, onOpen, presentation } = props;
+  const tile = presentation?.tile;
   return (
     <Card
       onClick={onOpen}
+      {...(presentation?.theme?.accent !== undefined
+        ? {
+            className: "eh-card--themed",
+            style: themeVariables(presentation.theme) as React.CSSProperties,
+          }
+        : {})}
       title={receipt.packageName}
       footer={
         <span className="eh-muted">
@@ -585,7 +628,9 @@ function ReceiptCard(props: {
         </span>
       }
     >
-      <div className="eh-stack eh-stack--sm eh-body">
+      <div className="eh-row eh-row--nowrap">
+      {tile !== undefined && <img className="eh-card__media" src={tile.url} alt="" />}
+      <div className="eh-stack eh-stack--sm eh-body eh-fill">
         <div className="eh-row">
           <Pill intent="info">v{receipt.packageVersion}</Pill>
           <Pill intent="neutral">{receipt.gameId}</Pill>
@@ -636,6 +681,7 @@ function ReceiptCard(props: {
           )}
         </div>
       </div>
+      </div>
     </Card>
   );
 }
@@ -650,8 +696,10 @@ function ReceiptDetailModal(props: {
   onUninstalled: () => void;
   /** Hand this package back to the installer and go there. */
   onContinueInstall: (receipt: InstallReceipt) => void;
+  /** How the collection presents itself, when this machine has it. */
+  presentation?: ShownPresentation | undefined;
 }): JSX.Element {
-  const { receipt, onClose, onUninstalled } = props;
+  const { receipt, onClose, onUninstalled, presentation } = props;
   const api = useApi();
   const reportError = useErrorReporter();
   const showToast = useToast();
@@ -955,6 +1003,13 @@ function ReceiptDetailModal(props: {
         <div
           className="eh-stack eh-stack--lg"
         >
+          {hasBanner(presentation) && (
+            <CollectionBanner
+              name={receipt.packageName}
+              version={receipt.packageVersion}
+              presentation={presentation}
+            />
+          )}
           <StatGrid min={180}>
             <StatTile
               label="Profile"

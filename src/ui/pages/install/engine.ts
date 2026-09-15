@@ -63,6 +63,11 @@ import type { SupportedGameId } from "../../../types/ehcoll";
 import type { InstallReceipt } from "../../../types/installLedger";
 import type { InstallPlan } from "../../../types/installPlan";
 import { getVortexUserDataPath } from "../../../core/paths";
+import { getEventHorizonDir } from "../../../core/paths/appDataPaths";
+import {
+  extractPresentation,
+  type ShownPresentation,
+} from "../../../core/presentation/presentationCache";
 import { ehLog } from "../../../core/logging/ehLog";
 import type { RuntimeFinding } from "../../../core/runtime/detectRuntimes";
 import type { EnvironmentReport } from "../../../core/environment/preflight";
@@ -126,6 +131,8 @@ export type LoadOutcome =
       runtimeFindings?: RuntimeFinding[];
       /** Whether this PC can run the collection at all. See PreviewBundle.environment. */
       environment?: EnvironmentReport;
+      /** How the collection presents itself, extracted and checked. See PreviewBundle.presentation. */
+      presentation?: ShownPresentation;
     };
 
 /**
@@ -154,6 +161,7 @@ export async function runLoadingPipeline(args: {
   events.onPhase("reading-package");
   const ehcoll = await readEhcoll(zipPath);
   const { manifest } = ehcoll;
+  const presentation = await showPresentation(zipPath, manifest);
 
   // ── 2. early game-id gate ────────────────────────────────────────
   checkAbort();
@@ -333,6 +341,7 @@ export async function runLoadingPipeline(args: {
     receipt,
     plan,
     appDataPath,
+    ...(presentation !== undefined ? { presentation } : {}),
     ...(runtimeFindings.length > 0 ? { runtimeFindings } : {}),
     ...(environment !== undefined ? { environment } : {}),
     ...(extractorFatal !== undefined
@@ -349,6 +358,36 @@ export async function runLoadingPipeline(args: {
         }
       : {}),
   };
+}
+
+/**
+ * The collection's presentation, extracted into Event Horizon's cache and
+ * checked against the manifest. Whatever goes wrong is logged and the preview
+ * shows no presentation: how a collection looks never decides whether it
+ * installs.
+ */
+async function showPresentation(
+  zipPath: string,
+  manifest: ReadEhcollResult["manifest"],
+): Promise<ShownPresentation | undefined> {
+  const presentation = manifest.package.presentation;
+  if (presentation === undefined) return undefined;
+  try {
+    const { shown, warnings } = await extractPresentation({
+      zipPath,
+      packageId: manifest.package.id,
+      version: manifest.package.version,
+      presentation,
+      cacheRoot: getEventHorizonDir("presentation"),
+    });
+    if (warnings.length > 0) {
+      ehLog("warn", "install.presentation.partial", { count: warnings.length, warnings });
+    }
+    return shown;
+  } catch (err) {
+    ehLog("warn", "install.presentation.failed", { err });
+    return undefined;
+  }
 }
 
 /**
@@ -404,9 +443,11 @@ export async function runLoadingPipelineWithReceipt(args: {
   /** Same advisory findings as the first pass — see PreviewBundle. */
   runtimeFindings?: RuntimeFinding[];
   environment?: EnvironmentReport;
+  presentation?: ShownPresentation;
 }> {
   const { api, ehcoll, receipt, appDataPath, events, signal } = args;
   const { manifest } = ehcoll;
+  const presentation = await showPresentation(args.zipPath, manifest);
   // Re-checked here rather than carried from the first pass: this is the
   // stale-receipt re-run, and skipping it would leave one route into the
   // confirm step with no extractor verdict at all — an ungated back door.
@@ -554,6 +595,7 @@ export async function runLoadingPipelineWithReceipt(args: {
     receipt,
     plan,
     appDataPath,
+    ...(presentation !== undefined ? { presentation } : {}),
     ...(runtimeFindings.length > 0 ? { runtimeFindings } : {}),
     ...(environment !== undefined ? { environment } : {}),
     ...(extractorFatal !== undefined

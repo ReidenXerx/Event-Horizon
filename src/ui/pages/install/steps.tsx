@@ -51,6 +51,12 @@ import { openExternalUrl, revealInFileManager } from "../../../core/revealPath";
 import { isPackageFileName } from "../../../core/installer/installLink";
 import { writeToClipboard } from "../../clipboard";
 import { ChangelogEntryView } from "../../components/ChangelogView";
+import {
+  CollectionAbout,
+  CollectionBanner,
+  CollectionGallery,
+  hasBanner,
+} from "../../components/CollectionShowcase";
 import { entriesSince, type ChangelogEntry } from "../../../core/changelog/changelog";
 import { describeDownload } from "./downloadGuidance";
 import {
@@ -779,6 +785,14 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
           are read. "Verdict" as a card title said nothing the headline does
           not say better. */}
       <div className="eh-stack eh-stack--xl">
+      {hasBanner(bundle.presentation) && (
+        <CollectionBanner
+          name={plan.manifest.package.name}
+          version={plan.manifest.package.version}
+          author={plan.manifest.package.author}
+          presentation={bundle.presentation}
+        />
+      )}
       <Callout tone={verdict.tone} role="status" title={verdict.headline}>
         <div className="eh-stack eh-stack--sm">
           {verdict.lines.length > 0 ? (
@@ -816,6 +830,25 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
           ? { installedVersion: bundle.receipt.packageVersion }
           : {})}
       />
+
+      {bundle.presentation !== undefined && bundle.presentation.gallery.length > 0 && (
+        <Section
+          title="Screenshots"
+          count={bundle.presentation.gallery.length}
+          countIntent="neutral"
+        >
+          <CollectionGallery
+            images={bundle.presentation.gallery}
+            presentation={bundle.presentation}
+          />
+        </Section>
+      )}
+
+      {bundle.presentation !== undefined && bundle.presentation.about !== undefined && (
+        <Section title="About this collection">
+          <CollectionAbout presentation={bundle.presentation} />
+        </Section>
+      )}
 
       {plan.manifest.mods.some((m) => m.attributes?.curatorNote !== undefined) && (
         <Section

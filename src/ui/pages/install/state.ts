@@ -25,6 +25,7 @@
 import type { EnvironmentReport } from "../../../core/environment/preflight";
 import type { types } from "@nexusmods/vortex-api";
 import type { ReadEhcollResult } from "../../../core/manifest/readEhcoll";
+import type { ShownPresentation } from "../../../core/presentation/presentationCache";
 import type { RuntimeFinding } from "../../../core/runtime/detectRuntimes";
 import type { InstallReceipt } from "../../../types/installLedger";
 import type {
@@ -96,6 +97,12 @@ export interface PreviewBundle {
    * between the preview and the click.
    */
   environment?: EnvironmentReport;
+  /**
+   * How the collection presents itself (header, card, gallery, theme, About),
+   * already extracted to Event Horizon's cache and checked against the
+   * manifest. Absent when the collection has none or it could not be shown.
+   */
+  presentation?: ShownPresentation;
 }
 
 /** What "fetching a link" is doing right now. */
