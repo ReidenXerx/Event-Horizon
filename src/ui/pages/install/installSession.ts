@@ -695,8 +695,15 @@ class InstallSession {
    * We also survive a remount: the component that comes back in just observes
    * the live progress.
    */
+  /** "Cancel" on the warning: back to the confirm screen, nothing started. */
+  cancelStart(): void {
+    if (this.state.kind !== "confirm" || this.state.readyToStart !== true) return;
+    this.dispatch({ type: "cancel-start" });
+  }
+
   startInstall(api: types.IExtensionApi): void {
     if (this.state.kind !== "confirm") return;
+    if (this.state.readyToStart === true) return;
     if (this.installInFlight) return;
 
     // THE GATE. Vortex's extractor is dead, so every mod that still has to be
@@ -793,6 +800,17 @@ class InstallSession {
       return;
     }
 
+    // Every check passed. The "Hands off" warning comes now, right before the
+    // install, so a refusal can never follow it (owner, 2026-09-15); its
+    // "Understood" calls beginInstall.
+    this.dispatch({ type: "ready-to-start" });
+  }
+
+  /** The player's "Understood" on the warning: start the install. */
+  beginInstall(api: types.IExtensionApi): void {
+    if (this.state.kind !== "confirm" || this.state.readyToStart !== true) return;
+    if (this.installInFlight) return;
+
     this.installInFlight = true;
     const controller = new AbortController();
     this.installController = controller;
@@ -810,6 +828,9 @@ class InstallSession {
           appDataPath: startState.bundle.appDataPath,
           decisions: startState.decisions,
           abortSignal: controller.signal,
+          onDeploymentPurged: (): void => {
+            this.purgedForPlan = startState.bundle.plan;
+          },
           onProgress: (progress): void => {
             // Late progress events from a session that's already
             // moved on (e.g. user clicked "Start over" mid-install,
@@ -856,13 +877,31 @@ class InstallSession {
    * vanilla game and reports a broken collection.
    */
   private warnIfLeftUndeployed(api: types.IExtensionApi, plan: unknown, outcome: string): void {
-    if (outcome === "success" || this.purgedForPlan !== plan) return;
-    logFailure("warn", "install.ended-undeployed", { outcome });
+    if (outcome === "success") return;
+    const purged = this.purgedForPlan === plan;
+    // Vortex's own "Deployment necessary" prompt is cleared during the run and
+    // comes back only when its flag changes, so an unfinished run that left
+    // changes undeployed has to say so itself.
+    let pending = false;
+    try {
+      const gameId = (plan as { manifest?: { game?: { id?: unknown } } })?.manifest?.game?.id;
+      const needToDeploy = (
+        api.getState() as {
+          persistent?: { deployment?: { needToDeploy?: Record<string, unknown> } };
+        }
+      )?.persistent?.deployment?.needToDeploy;
+      pending = typeof gameId === "string" && needToDeploy?.[gameId] === true;
+    } catch {
+      pending = false;
+    }
+    if (!purged && !pending) return;
+    logFailure("warn", "install.ended-undeployed", { outcome, purged, pending });
     api.sendNotification?.({
       id: "event-horizon-undeployed",
       type: "warning",
-      message:
-        "Event Horizon purged Vortex's deployment before this install, and the install did not finish. Deploy in Vortex (or install again) to put your mods back into the game.",
+      message: purged
+        ? "Event Horizon purged Vortex's deployment for this install, and the install did not finish. Deploy in Vortex (or install again) to put your mods back into the game."
+        : "The install did not finish, and Vortex has changes that are not deployed yet. Deploy in Vortex (or install again) before you play.",
     });
   }
 

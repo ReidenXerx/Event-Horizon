@@ -208,11 +208,10 @@ describe("the install pipelines actually pass it to the resolver", () => {
   };
   const engine = (): Promise<string> =>
     read("ui", "pages", "install", "engine.ts");
-  const action = (): Promise<string> =>
-    read("actions", "installCollectionAction.ts");
+  // The toolbar install action was the second pipeline until it was removed
+  // on 2026-09-15; the page's engine is the only one left to inspect.
   const pipelines = async (): Promise<Array<[string, string]>> => [
     ["engine.ts", await engine()],
-    ["installCollectionAction.ts", await action()],
   ];
 
   it("no pipeline hardcodes it to undefined any more", async () => {

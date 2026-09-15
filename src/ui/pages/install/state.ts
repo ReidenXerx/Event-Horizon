@@ -182,6 +182,11 @@ export type WizardState =
       kind: "confirm";
       bundle: PreviewBundle;
       decisions: UserConfirmedDecisions;
+      /**
+       * Every pre-install check passed and the "Hands off" warning is up; the
+       * player's "Understood" starts the install. Absent otherwise.
+       */
+      readyToStart?: true;
     }
   | {
       kind: "installing";
@@ -260,6 +265,8 @@ export type WizardAction =
     }
   | { type: "set-fomod-mode"; mode: FomodReplayMode }
   | { type: "back-from-confirm" }
+  | { type: "ready-to-start" }
+  | { type: "cancel-start" }
   | { type: "start-install" }
   | { type: "install-progress"; progress: DriverProgress }
   | { type: "install-result"; result: InstallResult }
@@ -412,6 +419,14 @@ export function wizardReducer(
         fomodReplayMode:
           state.decisions.fomodReplayMode ?? DEFAULT_FOMOD_REPLAY_MODE,
       };
+    }
+    case "ready-to-start": {
+      if (state.kind !== "confirm") return state;
+      return { ...state, readyToStart: true };
+    }
+    case "cancel-start": {
+      if (state.kind !== "confirm") return state;
+      return { kind: "confirm", bundle: state.bundle, decisions: state.decisions };
     }
     case "start-install": {
       if (state.kind !== "confirm") return state;

@@ -160,8 +160,9 @@ if (registered.mainPages.length !== 1) { console.error("WARN: expected exactly 1
 // Four since the legacy BUILD dialog was deleted. It was the second door into
 // the build, and every gate added since had to be ported into it by hand;
 // twice nobody did, and by the time it went it was missing five of them.
-// The legacy INSTALL fallback stays — one gate, not a growing set.
-if (registered.actions.length !== 4) { console.error("WARN: expected 4 actions"); bad++; }
+// Three since the legacy INSTALL dialog followed (2026-09-15): it skipped every
+// check the Install page runs and the "Hands off" warning.
+if (registered.actions.length !== 3) { console.error("WARN: expected 3 actions"); bad++; }
 const dupes = new Map();
 for (const a of registered.actions) {
   const key = a.group + "#" + a.pos;

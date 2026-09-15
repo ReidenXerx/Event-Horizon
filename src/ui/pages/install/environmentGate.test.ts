@@ -87,7 +87,12 @@ const fakeApi = (answer: string | undefined = undefined) => {
   };
 };
 
-const kindOf = (s: unknown): string => (s as { state: { kind: string } }).state.kind;
+const kindOf = (s: unknown): string => {
+  const st = (s as { state: { kind: string; readyToStart?: boolean } }).state;
+  // A passing gate stops at the "Hands off" warning; the install itself starts
+  // on its "Understood" (startWarning.test.ts).
+  return st.kind === "confirm" && st.readyToStart === true ? "ready" : st.kind;
+};
 /**
  * Wait for the gate to FINISH, not for a fixed time. A 20 ms sleep passed alone
  * and failed under the full suite, where the gate's dynamic imports take longer.
@@ -138,7 +143,7 @@ describe("startInstall — environment gate", () => {
     await settle(s);
     expect(env.cleanCalls).toBe(1);
     expect(env.purgeCalls).toBe(1);
-    expect(kindOf(s)).toBe("installing");
+    expect(kindOf(s)).toBe("ready");
   });
 
   it("refuses — and purges nothing — when Vortex switched to another game before the click", async () => {
@@ -169,7 +174,7 @@ describe("startInstall — environment gate", () => {
     const s = confirmSession();
     s.startInstall(fakeApi().api);
     await settle(s);
-    expect(kindOf(s)).toBe("installing");
+    expect(kindOf(s)).toBe("ready");
   });
 
   it("stays put when the user declines the clean-up", async () => {
@@ -203,6 +208,6 @@ describe("startInstall — environment gate", () => {
     const accepted = confirmSession();
     accepted.startInstall(fakeApi("Install anyway").api);
     await settle(accepted);
-    expect(kindOf(accepted)).toBe("installing");
+    expect(kindOf(accepted)).toBe("ready");
   });
 });

@@ -1887,7 +1887,7 @@ describe("render", () => {
     );
   });
 
-  it("confirm-do-not-interfere — the warning right before the install starts", () => {
+  it("confirm-do-not-interfere — the warning once the pre-install checks pass", () => {
     write(
       "confirm-do-not-interfere",
       React.createElement(ConfirmStep, {
@@ -1897,11 +1897,14 @@ describe("render", () => {
           decisions: { fomodReplayMode: "silent" } as never,
           conflictChoices: {},
           orphanChoices: {},
+          // What the session sets once every check has passed.
+          readyToStart: true,
         },
         onInstall: () => undefined,
+        onBeginInstall: () => undefined,
+        onCancelStart: () => undefined,
         onBack: () => undefined,
         onSetFomodMode: () => undefined,
-        __openInterfereWarningForRender: true,
       } as never),
     );
   });

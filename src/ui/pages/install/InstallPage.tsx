@@ -282,6 +282,8 @@ function InstallWizard(props: InstallPageProps): JSX.Element {
         <ConfirmStep
           state={state}
           onInstall={(): void => session.startInstall(api)}
+          onBeginInstall={(): void => session.beginInstall(api)}
+          onCancelStart={(): void => session.cancelStart()}
           onBack={(): void => session.backFromConfirm()}
           onSetFomodMode={(mode): void => session.setFomodReplayMode(mode)}
         />

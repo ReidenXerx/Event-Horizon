@@ -214,6 +214,11 @@ export function makeFakeVortex(args: {
       const cb = rest[1];
       if (typeof cb === "function") {
         setTimeout(() => {
+          // Vortex emits did-purge (the purged profile's id) inside the purge,
+          // before the callback, and only when it really purged.
+          const profiles = (state.settings as { profiles: { activeProfileId?: string } })
+            .profiles;
+          realEmit("did-purge", profiles.activeProfileId);
           (cb as (e: null) => void)(null);
         }, 0);
       }

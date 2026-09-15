@@ -4,7 +4,6 @@ import { util, type types } from "@nexusmods/vortex-api";
 import createExportModsAction from "./actions/exportModsAction";
 import createCompareModsAction from "./actions/compareModsAction";
 import { createComparePluginsAction } from "./actions/comparePluginsAction";
-import createInstallCollectionAction from "./actions/installCollectionAction";
 import { EventHorizonMainPage } from "./ui";
 import { ehLog, getLogFilePath } from "./core/logging/ehLog";
 import {
@@ -59,7 +58,6 @@ function init(context: types.IExtensionContext): boolean {
   const exportModsAction = createExportModsAction(context);
   const compareModsAction = createCompareModsAction(context);
   const comparePluginsAction = createComparePluginsAction(context);
-  const installCollectionAction = createInstallCollectionAction(context);
 
   // Install our custom sidebar glyph BEFORE registering the main page —
   // the icon registry must contain the symbol id by the time Vortex
@@ -149,23 +147,12 @@ function init(context: types.IExtensionContext): boolean {
    * Its own header called it transitional scaffolding. One door now, so the
    * seventh divergence cannot be written.
    *
-   * The INSTALL fallback below stays: it has one gate, not a growing set, and
-   * it is genuinely useful for scripted testing.
+   * The INSTALL dialog followed on 2026-09-15 for the same reason: it had
+   * grown none of the page's gates (the auto-deploy and auto-sort offers, the
+   * deployment check, the game-folder clean-up, the installer question, the
+   * "Hands off" warning), so every install from the toolbar skipped all of
+   * them. Installs happen on the Install page only.
    */
-
-  // Toolbar fallback — kept so power users can hit the install flow outside
-  // the Event Horizon main page (handy for CI / scripted testing). The
-  // mainPage is the recommended UX.
-  context.registerAction(
-    "global-icons",
-    103,
-    "show",
-    {},
-    "Event Horizon: Install (legacy dialog)",
-    () => {
-      void installCollectionAction();
-    },
-  );
 
   // Vortex's events are untyped and `start-install` is absent from the
   // published typings, so the only way to learn what the installer accepts is

@@ -70,6 +70,13 @@ const fakeApi = (): { api: never; dialogs: unknown[][] } => {
   };
 };
 
+const kindOf = (s: unknown): string => {
+  const st = (s as { state: { kind: string; readyToStart?: boolean } }).state;
+  // A passing gate stops at the "Hands off" warning; the install itself starts
+  // on its "Understood" (startWarning.test.ts).
+  return st.kind === "confirm" && st.readyToStart === true ? "ready" : st.kind;
+};
+
 describe("startInstall — fatal extractor gate", () => {
   it("refuses to start, and says how many mods would have failed", () => {
     const { api, dialogs } = fakeApi();
@@ -82,9 +89,7 @@ describe("startInstall — fatal extractor gate", () => {
     expect(String(dialogs[0]?.[1])).toMatch(/cannot unpack/i);
     expect(String(JSON.stringify(dialogs[0]))).toMatch(/673/);
     // Still in confirm: the install never started.
-    expect((s as unknown as { state: { kind: string } }).state.kind).toBe(
-      "confirm",
-    );
+    expect(kindOf(s)).toBe("confirm");
   });
 
   it("does NOT block when nothing needs unpacking", () => {
@@ -95,9 +100,7 @@ describe("startInstall — fatal extractor gate", () => {
     s.startInstall(api);
     expect(dialogs).toHaveLength(0);
     // Positive assertion, not just the absence of a dialog: it really started.
-    expect((s as unknown as { state: { kind: string } }).state.kind).toBe(
-      "installing",
-    );
+    expect(kindOf(s)).toBe("ready");
   });
 
   it("does not block when the extractor is healthy", () => {
@@ -105,8 +108,6 @@ describe("startInstall — fatal extractor gate", () => {
     const s = confirmSession(bundle(undefined));
     s.startInstall(api);
     expect(dialogs).toHaveLength(0);
-    expect((s as unknown as { state: { kind: string } }).state.kind).toBe(
-      "installing",
-    );
+    expect(kindOf(s)).toBe("ready");
   });
 });

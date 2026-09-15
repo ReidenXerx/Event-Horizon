@@ -43,7 +43,19 @@ describe("the purge before mirroring", () => {
     expect(main).toBeLessThan(source.indexOf("// ── 7. deploy"));
   });
 
-  it("is not asked for by the retry pass, which never redeploys", () => {
+  it("is not asked for by the retry pass, whose mods were never deployed", () => {
+    // retryFinishing.test.ts pins that pass's deploy after its mirror.
     expect(source).toContain("await mirrorOneMod(mod, { purgeFirst: false });");
+  });
+
+  it("counts the purge only when Vortex says it ran, and only then tells the session", () => {
+    // Vortex returns without an error when it skips a purge (a tool running,
+    // its lock busy); did-purge is emitted only for a purge that happened.
+    const listen = source.indexOf('ctx.api.events.on("did-purge", onDidPurge);');
+    const skipped = source.indexOf('"install.mirror.purge-skipped"', listen);
+    const told = source.indexOf("ctx.onDeploymentPurged?.();", listen);
+    expect(listen).toBeGreaterThan(-1);
+    expect(skipped).toBeGreaterThan(listen);
+    expect(told).toBeGreaterThan(skipped);
   });
 });

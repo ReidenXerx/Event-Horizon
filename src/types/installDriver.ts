@@ -161,6 +161,12 @@ export type DriverContext = {
    * deployed on their disk.
    */
   onModInstalled?: (vortexModId: string) => void;
+  /**
+   * Called when the run has purged Vortex's deployment (before the mirror
+   * writes), so the game has nothing linked until the run deploys again. The
+   * session uses it to warn when a run ends before that deploy.
+   */
+  onDeploymentPurged?: () => void;
   /** Vortex API. The driver dispatches actions and emits events through it. */
   api: import("@nexusmods/vortex-api").types.IExtensionApi;
   /** The fully-resolved plan from `resolveInstallPlan`. */

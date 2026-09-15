@@ -54,7 +54,12 @@ function confirmSession(): ReturnType<typeof getInstallSession> {
   return s;
 }
 
-const kindOf = (s: unknown): string => (s as { state: { kind: string } }).state.kind;
+const kindOf = (s: unknown): string => {
+  const st = (s as { state: { kind: string; readyToStart?: boolean } }).state;
+  // A passing gate stops at the "Hands off" warning; the install itself starts
+  // on its "Understood" (startWarning.test.ts).
+  return st.kind === "confirm" && st.readyToStart === true ? "ready" : st.kind;
+};
 
 /** A Vortex whose store honours only the bundle's real action type — or none. */
 function vortex(opts: { honours: boolean; answers: string[] }): {
@@ -100,7 +105,7 @@ describe("startInstall — auto-sort prompt", () => {
     s.startInstall(v.api);
     await settle();
     expect(v.dispatched).toEqual(["GAMEBRYO_SET_AUTOSORT_ENABLED"]);
-    expect(kindOf(s)).toBe("installing");
+    expect(kindOf(s)).toBe("ready");
     expect(v.titles).toEqual(["Turn off automatic plugin sorting?"]);
   });
 
@@ -119,7 +124,7 @@ describe("startInstall — auto-sort prompt", () => {
     const s = confirmSession();
     s.startInstall(v.api);
     await settle();
-    expect(kindOf(s)).toBe("installing");
+    expect(kindOf(s)).toBe("ready");
     expect(v.titles).toHaveLength(2);
   });
 
@@ -129,6 +134,6 @@ describe("startInstall — auto-sort prompt", () => {
     s.startInstall(v.api);
     await settle();
     expect(v.titles).toEqual(["Turn off automatic plugin sorting?"]);
-    expect(kindOf(s)).toBe("installing");
+    expect(kindOf(s)).toBe("ready");
   });
 });

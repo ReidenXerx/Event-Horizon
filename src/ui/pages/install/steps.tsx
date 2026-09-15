@@ -1542,8 +1542,10 @@ export interface ConfirmStepProps {
    * copy nobody ever looks at.
    */
   __openModalForRender?: boolean;
-  /** Render-harness only: start with the "do not interfere" warning open. */
-  __openInterfereWarningForRender?: boolean;
+  /** The warning's "Understood": starts the install. */
+  onBeginInstall?: () => void;
+  /** The warning's "Cancel": back to this screen, nothing started. */
+  onCancelStart?: () => void;
 }
 
 /** Below this many free bytes on the install drive we surface a
@@ -1670,15 +1672,14 @@ function FomodModeModal(props: {
 }
 
 /**
- * The last screen before an install: leave Vortex alone until Event Horizon
- * is done.
+ * The last thing before an install: leave Vortex alone until Event Horizon is
+ * done.
  *
  * Vortex keeps raising prompts while a collection installs, and players answer
- * them: a deploy before the rules exist, conflicts resolved by hand, the
- * dependencies Vortex suggests. Each changes the result in a way nothing
- * afterwards can see. Shown before every install (owner's decision,
- * 2026-09-15): installs are rare, and skipping the warning costs the person
- * who skipped it.
+ * them: a deploy mid-install, conflicts resolved by hand, the dependencies
+ * Vortex suggests. Each changes the result in a way nothing afterwards can
+ * see. Shown before every install, once the pre-install checks have passed, so
+ * no refusal ever follows it (owner's decisions, 2026-09-15).
  */
 function DoNotInterfereModal(props: {
   open: boolean;
@@ -1720,8 +1721,8 @@ function DoNotInterfereModal(props: {
         <p className="eh-body">
           While the collection installs, Vortex keeps talking: notifications, red
           conflict icons on the Mods page, questions about plugins, deployment and
-          dependencies. Event Horizon takes care of all of it, and sets the rules,
-          plugins and load order itself at the end.
+          dependencies. Event Horizon clears the prompts that would change the
+          result, and sets the rules, plugins and load order itself at the end.
         </p>
         <p className="eh-body">
           <strong className="eh-strong">Until Event Horizon says it is finished:</strong>
@@ -1730,12 +1731,8 @@ function DoNotInterfereModal(props: {
           <li>Do not deploy, sort, enable or disable mods, or resolve conflicts in Vortex.</li>
           <li>Do not install, remove or update other mods, and do not close Vortex.</li>
           <li>
-            If Vortex opens “External Changes” anyway, press Confirm without changing
-            anything in it.
-          </li>
-          <li>
-            Answer only what Event Horizon asks you, including mod installer windows
-            if you chose to see them.
+            If Vortex opens a mod installer window, answer it: Event Horizon waits for
+            you.
           </li>
         </ul>
       </div>
@@ -1778,11 +1775,8 @@ export function ConfirmStep(props: ConfirmStepProps): JSX.Element {
   const [askingMode, setAskingMode] = React.useState(
     props.__openModalForRender === true,
   );
-  // The warning is the last thing before the install starts, after the
-  // installer question when there is one.
-  const [warningOpen, setWarningOpen] = React.useState(
-    props.__openInterfereWarningForRender === true,
-  );
+  // The session raises this once every pre-install check has passed.
+  const warningOpen = state.readyToStart === true;
 
   // Esc = back to decisions. Enter is deliberately NOT bound here.
   //
@@ -1790,7 +1784,10 @@ export function ConfirmStep(props: ConfirmStepProps): JSX.Element {
   // install would make the last, irreversible action reachable by the same
   // reflex that got the user through the reversible ones. The screen says
   // "Last chance to review"; committing should take a click.
-  useKeyboardShortcut("Escape", onBack);
+  //
+  // Off while a modal is open: this listener is registered first and stops the
+  // key, so the modal never saw Escape and the player was sent back a step.
+  useKeyboardShortcut("Escape", onBack, { enabled: !askingMode && !warningOpen });
 
   // Best-effort disk-space probe. We swallow probe errors and just
   // show nothing if the API is unavailable — never block install on
@@ -1924,9 +1921,7 @@ export function ConfirmStep(props: ConfirmStepProps): JSX.Element {
         </Button>
         <Button
           intent="primary"
-          onClick={
-            asksAboutInstallers ? () => setAskingMode(true) : () => setWarningOpen(true)
-          }
+          onClick={asksAboutInstallers ? () => setAskingMode(true) : onInstall}
         >
           Install {installCount} mod{installCount === 1 ? "" : "s"}
         </Button>
@@ -1945,18 +1940,15 @@ export function ConfirmStep(props: ConfirmStepProps): JSX.Element {
             // onInstall runs the state already carries the choice.
             props.onSetFomodMode?.(mode);
             setAskingMode(false);
-            setWarningOpen(true);
+            onInstall();
           }}
         />
       )}
 
       <DoNotInterfereModal
         open={warningOpen}
-        onCancel={() => setWarningOpen(false)}
-        onStart={() => {
-          setWarningOpen(false);
-          onInstall();
-        }}
+        onCancel={() => props.onCancelStart?.()}
+        onStart={() => props.onBeginInstall?.()}
       />
     </StepFrame>
   );

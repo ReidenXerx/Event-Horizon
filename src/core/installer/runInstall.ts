@@ -1480,8 +1480,8 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           bundledPool,
         });
         // Clear the prompts that are wrong to answer mid-install: "Enable all"
-        // per multi-plugin mod, "Deployment necessary", dependency warnings
-        // (see quietNotifications.ts). Swept here rather than once at the end:
+        // per multi-plugin mod and "Deployment necessary" (see
+        // quietNotifications.ts). Swept here rather than once at the end:
         // the point is that the user is not watching a wall of them grow for
         // an hour, each of which is the WRONG answer during a collection
         // install — we set plugins, rules and deployment ourselves.
@@ -3062,7 +3062,20 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     const purgeBeforeMirrorWrites = async (): Promise<void> => {
       if (purgedForMirror) return;
       purgedForMirror = true;
+      // A function, not an inline read: Stop can land during the awaits below,
+      // and an inline check here would narrow every later read to "not stopped".
+      const stopped = (): boolean => ctx.abortSignal?.aborted === true;
+      if (stopped()) return;
       const started = Date.now();
+      // Vortex emits did-purge only for a purge that really ran. It returns
+      // quietly, with no error, when a tool is running, the game is not
+      // discovered or another deployment holds its lock, and such a purge used
+      // to be logged as done.
+      let purged = false;
+      const onDidPurge = (profileId: unknown): void => {
+        if (profileId === activeProfileId) purged = true;
+      };
+      ctx.api.events.on("did-purge", onDidPurge);
       try {
         const active = getActiveGameId(ctx.api.getState());
         if (active !== plan.manifest.game.id) {
@@ -3070,33 +3083,64 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             `Vortex's active game is ${active ?? "none"}, not ${plan.manifest.game.id}`,
           );
         }
-        // The deploy's budget, since a purge unlinks what a deploy linked. If
-        // Vortex outlasts it, mirroring goes on and the deploy below has its
-        // own budget; the worst case is the dialog again, never a hung install.
+        // Vortex purges the ACTIVE profile. If the player switched away, that
+        // is a profile this install does not own (NS-2).
+        const activeProfile = (
+          ctx.api.getState() as { settings?: { profiles?: { activeProfileId?: string } } }
+        ).settings?.profiles?.activeProfileId;
+        if (activeProfile !== activeProfileId) {
+          throw new Error(
+            `Vortex's active profile is ${activeProfile ?? "none"}, not the one this install fills`,
+          );
+        }
+        // The deploy's budget, since a purge unlinks what a deploy linked. The
+        // wait also ends on Stop. Vortex runs purge and deploy under one lock,
+        // so a purge that outlives the wait can never overlap the deploy.
         const budgetMs = deployBudgetMs(countMods(ctx.api.getState()), {
           wine: looksLikeWine(),
         });
         await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(
-            () =>
-              reject(
-                new Error(
-                  `the purge did not finish within ${Math.round(budgetMs / 1000)}s`,
-                ),
-              ),
-            budgetMs,
-          );
+          const finish = (): void => {
+            clearTimeout(timer);
+            ctx.abortSignal?.removeEventListener("abort", onAbort);
+          };
+          const onAbort = (): void => {
+            finish();
+            resolve();
+          };
+          const timer = setTimeout(() => {
+            finish();
+            reject(
+              new Error(`the purge did not finish within ${Math.round(budgetMs / 1000)}s`),
+            );
+          }, budgetMs);
+          ctx.abortSignal?.addEventListener("abort", onAbort, { once: true });
           purgeGameDeployment(ctx.api).then(
             () => {
-              clearTimeout(timer);
+              finish();
               resolve();
             },
             (err: unknown) => {
-              clearTimeout(timer);
+              finish();
               reject(err);
             },
           );
         });
+        if (!purged) {
+          ehLog("warn", "install.mirror.purge-skipped", {
+            ms: Date.now() - started,
+            stopped: stopped(),
+            consequence:
+              "Vortex did not purge, so it may ask about external changes at the deploy",
+          });
+          return;
+        }
+        // Nothing is linked until the deploy below; the session warns if the
+        // run ends before it.
+        ctx.onDeploymentPurged?.();
+        // The purge makes Vortex raise "Deployment necessary" again, and a
+        // Deploy clicked now would link half-mirrored mods.
+        dismissNoisyNotifications(ctx.api);
         ehLog("info", "install.mirror.purged-first", { ms: Date.now() - started });
       } catch (err) {
         ehLog("warn", "install.mirror.purge-failed", {
@@ -3104,6 +3148,8 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           consequence:
             "Vortex may ask about external changes at the deploy; its default answers keep the mirror",
         });
+      } finally {
+        ctx.api.events.removeListener("did-purge", onDidPurge);
       }
     };
 
@@ -3208,6 +3254,8 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           (mirrorPlan.restore.length > 0 || mirrorPlan.remove.length > 0)
         ) {
           await purgeBeforeMirrorWrites();
+          // Stop pressed while Vortex purged: write nothing more.
+          if (ctx.abortSignal?.aborted === true) return;
         }
         /**
          * Files this package leaves to the mod's own archive. Normally the
@@ -3334,8 +3382,10 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
      *
      * The last pre-deploy check before this was `applying-userlist`, roughly
      * three hundred lines and two write phases earlier. Here it is safe and
-     * correct to unwind: nothing is deployed yet, so returning `aborted`
-     * abandons nothing (NS-2).
+     * correct to unwind: nothing past the mirror has been linked, so returning
+     * `aborted` abandons nothing (NS-2). The mirror may have purged Vortex's
+     * deployment first; the session is told, and warns that the game has
+     * nothing linked until the player deploys.
      */
     aborted = checkAbort("mirroring");
     if (aborted) return aborted;
@@ -4244,14 +4294,6 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         );
 
         try {
-          /**
-           * Deploy FIRST. The modType restore and the mirror both act on
-           * staging, but the plugin order below reads what Vortex actually has
-           * — and a plugin these mods ship does not exist for it until the
-           * deploy has linked it in.
-           */
-          await deployAndWait(api, activeProfileId);
-
           // ── modType: the one whose absence is invisible ────────────────
           const retryModTypes = applyModTypeChanges(
             ctx.api,
@@ -4324,11 +4366,21 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           for (const mod of recoveredManifestMods) {
             if (mod.state.mirrored !== true) continue;
             if (ctx.abortSignal?.aborted === true) break;
-            // No purge here: nothing below redeploys, and a purge would leave
-            // the game with no mods linked at all.
+            // No purge: these mods were installed after the last deploy, so
+            // nothing of theirs is linked yet for Vortex to compare against.
             await mirrorOneMod(mod, { purgeFirst: false });
             retryMirrored += 1;
           }
+
+          /**
+           * Deploy AFTER the work above, never before it. modType, INI tweaks,
+           * rules and the mirror all decide what the deploy links; deployed
+           * first, the recovered mods reached the game un-mirrored, with the
+           * wrong type and their rules not in effect, and the player's next
+           * deploy opened Vortex's External Changes dialog. The plugin order
+           * below reads what Vortex has linked, so it comes after the deploy.
+           */
+          await deployAndWait(api, activeProfileId);
 
           ehLog("info", "install.retry.finished-mods", {
             recovered: retriedOk,

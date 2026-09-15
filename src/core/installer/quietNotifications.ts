@@ -33,22 +33,21 @@
  * user, which is precisely what we do.
  *
  * ─── AND IT STAYS NARROW ───────────────────────────────────────────────
- * Three ids, and only while the driver runs. Not a notification filter, not a
+ * Two ids, and only while the driver runs. Not a notification filter, not a
  * suppression setting, nothing that outlives the install, and nothing that
- * touches an error. Vortex's own comment concedes the string-match may catch a
- * notification from a mod outside the collection; that is true here too, and
- * it costs a dismissed prompt Vortex raises again once the install is over.
+ * touches an error or a warning. Vortex's own comment concedes the
+ * string-match may catch a notification from a mod outside the collection;
+ * that is true here too.
  *
- * The two added on 2026-09-15 came from players on the Ivy page who answered
- * Vortex mid-install and broke their own install. Each carries the same
- * argument as the first:
- *   - "Deployment necessary" offers Deploy. The driver deploys itself, after
- *     the collection's rules are in place; a deploy clicked earlier links the
- *     wrong winners of every contested file. Vortex hides this prompt during
- *     its own collection installs for the same reason.
- *   - "Multiple dependency warnings" offers to install what mods' metadata
- *     says they need. The collection already carries what the curator
- *     installed; anything added here is a mod the curator did not have.
+ * "Deployment necessary" was added on 2026-09-15, after players on the Ivy
+ * page answered Vortex mid-install. It offers Deploy, and a deploy the player
+ * clicks mid-install is a wrong result: after the driver's purge before the
+ * mirror it links half-mirrored mods and brings back Vortex's External Changes
+ * dialog, where "Revert" undoes the mirror; earlier, it changes what the
+ * installers still to come see. Vortex holds the same prompt back during its
+ * own collection installs. The cost: Vortex raises it again only when its
+ * "needs deploy" flag changes, so a run that ends before its own deploy has
+ * to say so itself, and the install session does.
  * ──────────────────────────────────────────────────────────────────────
  */
 
@@ -61,11 +60,7 @@ import type { types } from "@nexusmods/vortex-api";
  * that answering it during a driven install produces a WRONG result, not
  * merely an interruption. The arguments are in the header above.
  */
-export const DRIVEN_INSTALL_NOISE = [
-  "multiple-plugins-",
-  "deployment-necessary",
-  "bulk-warnings-",
-] as const;
+export const DRIVEN_INSTALL_NOISE = ["multiple-plugins-", "deployment-necessary"] as const;
 
 /** Is this notification one we clear during an install? */
 export function isNoisyDuringInstall(id: unknown): boolean {

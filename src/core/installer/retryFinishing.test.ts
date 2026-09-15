@@ -83,6 +83,27 @@ describe("what the retry pass does with the mods it recovers", () => {
     expect(scope).toContain("manifestMods: recoveredManifestMods");
   });
 
+  it("deploys the recovered mods only after their finishing work", () => {
+    /**
+     * Deployed first, they reached the game un-mirrored, with the wrong
+     * modType and their rules not in effect, and nothing deployed them again:
+     * the player's next deploy then opened Vortex's External Changes dialog.
+     * The plugin re-pin reads what Vortex has linked, so it stays after.
+     */
+    const deploy = after("await deployAndWait(api, activeProfileId);");
+    expect(deploy).toBeGreaterThan(-1);
+    for (const work of [
+      "applyModTypeChanges(",
+      "applyIniTweaks({",
+      "applyModRules({",
+      "await mirrorOneMod(mod, { purgeFirst: false });",
+    ]) {
+      expect(after(work), work).toBeGreaterThan(-1);
+      expect(after(work), work).toBeLessThan(deploy);
+    }
+    expect(after("repinCuratorOrder(")).toBeGreaterThan(deploy);
+  });
+
   it("mirrors a recovered mod through the SAME function the main loop uses", () => {
     /**
      * Not a second copy of the mirror body. `planMirror`'s delete arm is the

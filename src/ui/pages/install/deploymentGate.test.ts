@@ -78,8 +78,12 @@ const fakeApi = (): { api: never; dialogs: unknown[][] } => {
   };
 };
 
-const kindOf = (s: unknown): string =>
-  (s as { state: { kind: string } }).state.kind;
+const kindOf = (s: unknown): string => {
+  const st = (s as { state: { kind: string; readyToStart?: boolean } }).state;
+  // A passing gate stops at the "Hands off" warning; the install itself starts
+  // on its "Understood" (startWarning.test.ts).
+  return st.kind === "confirm" && st.readyToStart === true ? "ready" : st.kind;
+};
 
 describe("startInstall — deployment gate", () => {
   it("refuses to start when Vortex has no deployment method", async () => {
@@ -93,7 +97,7 @@ describe("startInstall — deployment gate", () => {
     expect(kindOf(s)).toBe("confirm");
     // The dialog is opened from an async path; the load-bearing assertion is
     // that the install did NOT start.
-    expect(kindOf(s)).not.toBe("installing");
+    expect(kindOf(s)).not.toBe("ready");
     void dialogs;
   });
 
@@ -102,7 +106,7 @@ describe("startInstall — deployment gate", () => {
     const { api } = fakeApi();
     const s = confirmSession();
     s.startInstall(api);
-    expect(kindOf(s)).toBe("installing");
+    expect(kindOf(s)).toBe("ready");
   });
 
   it("starts when the check could not run — unknown is never a block", () => {
@@ -112,7 +116,7 @@ describe("startInstall — deployment gate", () => {
     const { api } = fakeApi();
     const s = confirmSession();
     s.startInstall(api);
-    expect(kindOf(s)).toBe("installing");
+    expect(kindOf(s)).toBe("ready");
   });
 });
 
@@ -146,7 +150,7 @@ describe("startInstall — auto-deploy gate", () => {
       getState: () => ({ settings: { automation: { deploy: false } } }),
     } as never;
     s.startInstall(withoutAutoDeploy);
-    expect(kindOf(s)).toBe("installing");
+    expect(kindOf(s)).toBe("ready");
   });
 
   it("starts when the setting cannot be read", () => {
@@ -156,6 +160,6 @@ describe("startInstall — auto-deploy gate", () => {
     const { api } = fakeApi();
     const s = confirmSession();
     s.startInstall(api);
-    expect(kindOf(s)).toBe("installing");
+    expect(kindOf(s)).toBe("ready");
   });
 });

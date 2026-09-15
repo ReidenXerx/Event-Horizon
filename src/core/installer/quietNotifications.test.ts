@@ -29,10 +29,9 @@ describe("isNoisyDuringInstall", () => {
     expect(isNoisyDuringInstall("multiple-plugins-SCOURGE")).toBe(true);
   });
 
-  it("matches the deploy prompt and the dependency warnings", () => {
-    // Ids as Vortex 1.x sends them (read from its app.asar).
+  it("matches the deploy prompt", () => {
+    // The id as Vortex 1.x sends it (read from its app.asar).
     expect(isNoisyDuringInstall("deployment-necessary")).toBe(true);
-    expect(isNoisyDuringInstall("bulk-warnings-7Kq2")).toBe(true);
   });
 
   it("leaves everything else alone", () => {
@@ -51,6 +50,9 @@ describe("isNoisyDuringInstall", () => {
       "deployment-method-unavailable",
       "mods-deployed",
       "dependency-installation-canceled",
+      // A summary with nothing to answer, so hiding it cannot prevent a wrong
+      // result. It was on the list once, on a wrong reading of what it offers.
+      "bulk-warnings-7Kq2",
     ]) {
       expect(isNoisyDuringInstall(id)).toBe(false);
     }
@@ -70,7 +72,7 @@ describe("isNoisyDuringInstall", () => {
 
   it("carries exactly these prefixes, and every addition needs an argument", () => {
     // Guards against this quietly becoming a general notification filter.
-    expect(DRIVEN_INSTALL_NOISE).toEqual(["multiple-plugins-", "deployment-necessary", "bulk-warnings-"]);
+    expect(DRIVEN_INSTALL_NOISE).toEqual(["multiple-plugins-", "deployment-necessary"]);
   });
 });
 
