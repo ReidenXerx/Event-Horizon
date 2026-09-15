@@ -93,11 +93,11 @@ describe("what the retry pass does with the mods it recovers", () => {
      */
     expect(source).toContain("const mirrorOneMod = async (");
     // Called by the main 6c loop...
-    const firstCall = source.indexOf("await mirrorOneMod(mod);");
+    const firstCall = source.indexOf("await mirrorOneMod(mod, { purgeFirst: true });");
     expect(firstCall).toBeGreaterThan(-1);
     expect(firstCall).toBeLessThan(retryStart);
     // ...and again, below the retry, for the recovered ones.
-    expect(source.indexOf("await mirrorOneMod(mod);", retryStart)).toBeGreaterThan(
+    expect(source.indexOf("await mirrorOneMod(mod, { purgeFirst: false });", retryStart)).toBeGreaterThan(
       retryStart,
     );
   });

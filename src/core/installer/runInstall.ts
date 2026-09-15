@@ -178,7 +178,8 @@ import {
   repinCuratorOrder,
 } from "./repinPluginOrder";
 import { compareSelections } from "../curator/fomodSelectionDiff";
-import { liveFomodSelections } from "../getModsListForProfile";
+import { getActiveGameId, liveFomodSelections } from "../getModsListForProfile";
+import { purgeGameDeployment } from "../environment/vortexEnvironment";
 import type { PluginOrderEntry } from "./checkPluginOrder";
 import { InstallStreaks } from "./installStreaks";
 import { getGameDirectory } from "../manifest/externalDependencies";
@@ -3038,8 +3039,77 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
      * `mirrorLines`, `mirrorSkipped`, `mirrorFailures`, `noteVerifiedOk` — is
      * the driver's own state, which is why this is a closure and not a module.
      */
+    /**
+     * ─── PURGE BEFORE THE FIRST MIRROR THAT CHANGES FILES ───────────────
+     * Before every deploy Vortex compares its last deployment with the disk,
+     * and a staged file that changed since is an "external change" it asks
+     * the user about, unless its own installer made the change (it records the
+     * folders it installs into, and an extension cannot add to that record).
+     * The mirror changes staged files of mods that are already deployed, by
+     * the deploy at the epoch boundary or by the previous version on an
+     * update, so the final deploy opened Vortex's "External Changes" dialog in
+     * front of players, where "Revert" undoes the mirror.
+     *
+     * Purging first leaves Vortex no deployment to compare with. It has to run
+     * BEFORE the first write: Vortex's purge performs the same check, so a
+     * purge after a write asks the same question. So: only in the main mirror
+     * phase, whose deploy follows right after it; only when a mirror actually
+     * changes files; once. A purge that fails is logged and the mirror goes
+     * on, because the dialog is a nuisance whose defaults keep the mirror, and
+     * a skipped mirror is a wrong install.
+     */
+    let purgedForMirror = false;
+    const purgeBeforeMirrorWrites = async (): Promise<void> => {
+      if (purgedForMirror) return;
+      purgedForMirror = true;
+      const started = Date.now();
+      try {
+        const active = getActiveGameId(ctx.api.getState());
+        if (active !== plan.manifest.game.id) {
+          throw new Error(
+            `Vortex's active game is ${active ?? "none"}, not ${plan.manifest.game.id}`,
+          );
+        }
+        // The deploy's budget, since a purge unlinks what a deploy linked. If
+        // Vortex outlasts it, mirroring goes on and the deploy below has its
+        // own budget; the worst case is the dialog again, never a hung install.
+        const budgetMs = deployBudgetMs(countMods(ctx.api.getState()), {
+          wine: looksLikeWine(),
+        });
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  `the purge did not finish within ${Math.round(budgetMs / 1000)}s`,
+                ),
+              ),
+            budgetMs,
+          );
+          purgeGameDeployment(ctx.api).then(
+            () => {
+              clearTimeout(timer);
+              resolve();
+            },
+            (err: unknown) => {
+              clearTimeout(timer);
+              reject(err);
+            },
+          );
+        });
+        ehLog("info", "install.mirror.purged-first", { ms: Date.now() - started });
+      } catch (err) {
+        ehLog("warn", "install.mirror.purge-failed", {
+          error: formatError(err),
+          consequence:
+            "Vortex may ask about external changes at the deploy; its default answers keep the mirror",
+        });
+      }
+    };
+
     const mirrorOneMod = async (
       mod: (typeof plan.manifest.mods)[number],
+      options: { purgeFirst: boolean },
     ): Promise<void> => {
       const installedIndex = installedMods.findIndex(
         (m) => m.compareKey === mod.compareKey,
@@ -3133,6 +3203,12 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           current,
           caseMode: await detectCaseSensitivity(stagingRoot),
         });
+        if (
+          options.purgeFirst &&
+          (mirrorPlan.restore.length > 0 || mirrorPlan.remove.length > 0)
+        ) {
+          await purgeBeforeMirrorWrites();
+        }
         /**
          * Files this package leaves to the mod's own archive. Normally the
          * install above produced every one of them and the plan asks for
@@ -3223,7 +3299,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     for (const mod of plan.manifest.mods) {
       if (mod.state.mirrored !== true) continue;
       if (ctx.abortSignal?.aborted === true) break;
-      await mirrorOneMod(mod);
+      await mirrorOneMod(mod, { purgeFirst: true });
     }
     /**
      * Unconditional when anything was meant to be mirrored. The old line fired
@@ -4248,7 +4324,9 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           for (const mod of recoveredManifestMods) {
             if (mod.state.mirrored !== true) continue;
             if (ctx.abortSignal?.aborted === true) break;
-            await mirrorOneMod(mod);
+            // No purge here: nothing below redeploys, and a purge would leave
+            // the game with no mods linked at all.
+            await mirrorOneMod(mod, { purgeFirst: false });
             retryMirrored += 1;
           }
 

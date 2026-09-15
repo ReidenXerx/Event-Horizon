@@ -1731,6 +1731,10 @@ function DoNotInterfereModal(props: {
           <li>Do not deploy, sort, enable or disable mods, or resolve conflicts in Vortex.</li>
           <li>Do not install, remove or update other mods, and do not close Vortex.</li>
           <li>
+            If Vortex opens “External Changes” anyway, press Confirm without changing
+            anything in it.
+          </li>
+          <li>
             Answer only what Event Horizon asks you, including mod installer windows
             if you chose to see them.
           </li>

@@ -206,6 +206,17 @@ export function makeFakeVortex(args: {
           );
         }, 0);
       }
+    } else if (event === "purge-mods") {
+      // (allowFallback, callback), as Vortex registers it in app.asar:
+      //   events.on("purge-mods", (allowFallback, callback) => purgeMods(api)
+      //     .catch(...).then(() => callback(null)).catch(err => callback(err)))
+      // The real handler always calls back; a silent double stalls the driver.
+      const cb = rest[1];
+      if (typeof cb === "function") {
+        setTimeout(() => {
+          (cb as (e: null) => void)(null);
+        }, 0);
+      }
     } else if (event === "deploy-mods") {
       /**
        * ─── THE REAL SIGNATURE, NOT OURS ──────────────────────────────────

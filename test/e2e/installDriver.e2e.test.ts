@@ -579,6 +579,13 @@ describe("mirroring, through the real driver", () => {
     expect(read("Data/MyPatch.ini")).toBe(CURATOR["Data/MyPatch.ini"]);
     // In the archive but not the curator's folder — removed.
     expect(fs.existsSync(path.join(dir, "Data", "Leftover.txt"))).toBe(false);
+
+    // Purged before the mirror changed the mod, and deployed after: Vortex is
+    // left no earlier deployment to call these changes "external" against,
+    // which is the dialog players were shown mid-install.
+    const seq = fake.emits.map((e) => e.event);
+    expect(seq.filter((e) => e === "purge-mods")).toHaveLength(1);
+    expect(seq.indexOf("purge-mods")).toBeLessThan(seq.lastIndexOf("deploy-mods"));
   });
 
   it("is NOT uninstalled and reinstalled on its way to being mirrored", async () => {
