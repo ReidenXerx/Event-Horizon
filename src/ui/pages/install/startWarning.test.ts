@@ -122,11 +122,72 @@ describe("the warning after the pre-install checks", () => {
     const s = confirmSession();
     const v = vortex();
     s.startInstall(v.api);
-    s.cancelStart();
+    s.cancelStart(v.api);
     expect(stateOf(s).kind).toBe("confirm");
     expect(stateOf(s).readyToStart).toBeUndefined();
     s.beginInstall(v.api);
     expect(driver.calls).toBe(0);
+  });
+});
+
+describe("leaving the warning after the game folder was prepared", () => {
+  it("Cancel says the deployment was purged when the check purged it", () => {
+    const s = confirmSession();
+    const v = vortex();
+    s.startInstall(v.api);
+    // What the game-folder check records when it purged for this plan.
+    (s as unknown as { purgedForPlan: unknown }).purgedForPlan = (
+      s as unknown as { state: { bundle: { plan: unknown } } }
+    ).state.bundle.plan;
+    s.cancelStart(v.api);
+    const warning = v.notifications.find((n) => n.id === "event-horizon-undeployed");
+    expect(warning?.message).toMatch(/did not start/);
+    expect(warning?.message).toMatch(/Moved-aside files/);
+  });
+
+  it("Cancel stays quiet when nothing was purged", () => {
+    const s = confirmSession();
+    const v = vortex();
+    s.startInstall(v.api);
+    s.cancelStart(v.api);
+    expect(v.notifications.find((n) => n.id === "event-horizon-undeployed")).toBeUndefined();
+  });
+
+  it("Understood goes back through the checks when Vortex switched game under the warning", () => {
+    const s = confirmSession();
+    const v = vortex();
+    s.startInstall(v.api);
+    const switched = {
+      ...(v.api as unknown as Record<string, unknown>),
+      // Vortex's shape: the active game is the active profile's game.
+      getState: () => ({
+        settings: {
+          profiles: { activeProfileId: "skyrim-profile" },
+          automation: { deploy: false },
+          plugins: { autoSort: false },
+        },
+        persistent: { profiles: { "skyrim-profile": { gameId: "skyrimse" } } },
+      }),
+    } as never;
+    s.beginInstall(switched);
+    expect(driver.calls).toBe(0);
+    expect(stateOf(s).readyToStart).toBeUndefined();
+  });
+});
+
+describe("a run that deployed again before it ended", () => {
+  it("does not say the game was left purged", async () => {
+    driver.outcome = async (ctx) => {
+      ctx.onDeploymentPurged?.();
+      (ctx as { onDeploymentRestored?: () => void }).onDeploymentRestored?.();
+      return { kind: "failed" };
+    };
+    const s = confirmSession();
+    const v = vortex(false);
+    s.startInstall(v.api);
+    s.beginInstall(v.api);
+    await settle();
+    expect(v.notifications.find((n) => n.id === "event-horizon-undeployed")).toBeUndefined();
   });
 });
 

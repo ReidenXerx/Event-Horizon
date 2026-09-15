@@ -98,6 +98,8 @@ async function install(
    * one here.
    */
   decisions: unknown = {},
+  /** Extra driver context, such as the session's deployment callbacks. */
+  extraCtx: Record<string, unknown> = {},
 ) {
   const phases: string[] = [];
   // A first install. `current-profile` is a different mode with its own
@@ -120,6 +122,7 @@ async function install(
     ehcollZipPath: `${world!.root}/pkg.ehcoll`,
     appDataPath: world!.appDataPath,
     decisions,
+    ...extraCtx,
   } as never);
 
   const stalled = new Promise<never>((_r, reject) =>
@@ -587,6 +590,36 @@ describe("mirroring, through the real driver", () => {
     expect(seq.filter((e) => e === "purge-mods")).toHaveLength(1);
     expect(seq.indexOf("purge-mods")).toBeLessThan(seq.lastIndexOf("deploy-mods"));
   });
+
+  for (const [behaviour, purgedCalls] of [
+    ["ok", 1],
+    ["silent", 0],
+    ["other-profile", 0],
+  ] as const) {
+    it(`tells the session the deployment is gone only when Vortex really purged (${behaviour})`, async () => {
+      const manifest = await mirroredWorld();
+      const fake = makeFakeVortex({
+        gameId: "fallout4",
+        stagingRoot: world!.stagingRoot,
+        installProduces: () => FROM_ARCHIVE,
+        purgeBehaviour: behaviour,
+      });
+      const calls = { purged: 0, restored: 0 };
+      await install(manifest, fake, undefined, {}, {
+        onDeploymentPurged: () => {
+          calls.purged += 1;
+        },
+        onDeploymentRestored: () => {
+          calls.restored += 1;
+        },
+      });
+      // A purge Vortex skipped, or one for somebody else's profile, must not be
+      // reported as this install's.
+      expect(calls.purged).toBe(purgedCalls);
+      // The run's own deploy links the collection again either way.
+      expect(calls.restored).toBe(1);
+    });
+  }
 
   it("is NOT uninstalled and reinstalled on its way to being mirrored", async () => {
     /**

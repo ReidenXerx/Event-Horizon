@@ -167,6 +167,8 @@ export type DriverContext = {
    * session uses it to warn when a run ends before that deploy.
    */
   onDeploymentPurged?: () => void;
+  /** Called when the run's own deploy has linked the collection again. */
+  onDeploymentRestored?: () => void;
   /** Vortex API. The driver dispatches actions and emits events through it. */
   api: import("@nexusmods/vortex-api").types.IExtensionApi;
   /** The fully-resolved plan from `resolveInstallPlan`. */

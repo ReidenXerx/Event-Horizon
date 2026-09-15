@@ -48,14 +48,9 @@ describe("the purge before mirroring", () => {
     expect(source).toContain("await mirrorOneMod(mod, { purgeFirst: false });");
   });
 
-  it("counts the purge only when Vortex says it ran, and only then tells the session", () => {
-    // Vortex returns without an error when it skips a purge (a tool running,
-    // its lock busy); did-purge is emitted only for a purge that happened.
-    const listen = source.indexOf('ctx.api.events.on("did-purge", onDidPurge);');
-    const skipped = source.indexOf('"install.mirror.purge-skipped"', listen);
-    const told = source.indexOf("ctx.onDeploymentPurged?.();", listen);
-    expect(listen).toBeGreaterThan(-1);
-    expect(skipped).toBeGreaterThan(listen);
-    expect(told).toBeGreaterThan(skipped);
-  });
+  // Whether the purge counts only when Vortex emits did-purge for the install's
+  // profile is proved by behaviour, not source text: installDriver.e2e.test.ts
+  // runs the driver against a Vortex that purges, skips silently, or reports
+  // another profile. (A source-order version of it passed with the check
+  // removed.)
 });

@@ -125,20 +125,23 @@ describe("startInstall — auto-deploy gate", () => {
   // One of those can land before the collection's conflict rules are applied,
   // linking the wrong winner for every shared file — with every hash still
   // matching afterwards.
-  it("refuses to start while auto-deploy is on", () => {
+  it("refuses to start while auto-deploy is on", async () => {
     probeResult = { kind: "ok", methodId: "hardlink_activator" };
-    const { api } = fakeApi();
+    const { api, dialogs } = fakeApi();
     const s = confirmSession();
-    (s as unknown as { state: { bundle: PreviewBundle } }).state.bundle = {
-      ...bundle(),
-    } as PreviewBundle;
     // Vortex reports auto-deploy ON.
     const withAutoDeploy = {
       ...(api as unknown as object),
       getState: () => ({ settings: { automation: { deploy: true } } }),
     } as never;
     s.startInstall(withAutoDeploy);
+    // The offer opens its dialog asynchronously.
+    for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
     expect(kindOf(s)).toBe("confirm");
+    // Held by THIS gate: its question was asked. Swapping in a fresh bundle, as
+    // this case once did, sent it to the game-folder check instead, and the
+    // case passed with auto-deploy off.
+    expect(dialogs).toHaveLength(1);
   });
 
   it("starts when auto-deploy is off", () => {

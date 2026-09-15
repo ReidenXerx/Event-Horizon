@@ -93,6 +93,12 @@ export function makeFakeVortex(args: {
    * ten-minute sort timeout.
    */
   sortBehaviour?: "ok" | { error: string } | "never";
+  /**
+   * How Vortex's purge answers: purge and emit did-purge for the active
+   * profile (default); call back without purging, as Vortex does when a tool
+   * is running or its lock is busy ("silent"); or report another profile.
+   */
+  purgeBehaviour?: "ok" | "silent" | "other-profile";
 }): FakeVortex {
   const events = new EventEmitter();
   const emits: RecordedEmit[] = [];
@@ -218,7 +224,11 @@ export function makeFakeVortex(args: {
           // before the callback, and only when it really purged.
           const profiles = (state.settings as { profiles: { activeProfileId?: string } })
             .profiles;
-          realEmit("did-purge", profiles.activeProfileId);
+          if (args.purgeBehaviour === "other-profile") {
+            realEmit("did-purge", "someone-elses-profile");
+          } else if (args.purgeBehaviour !== "silent") {
+            realEmit("did-purge", profiles.activeProfileId);
+          }
           (cb as (e: null) => void)(null);
         }, 0);
       }

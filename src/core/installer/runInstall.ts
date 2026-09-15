@@ -3127,9 +3127,17 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           );
         });
         if (!purged) {
+          if (stopped()) {
+            // Stop ended the wait, not Vortex's purge: once asked, it runs to
+            // the end. Treat the deployment as gone, so the session warns.
+            ctx.onDeploymentPurged?.();
+            ehLog("warn", "install.mirror.purge-abandoned-on-stop", {
+              ms: Date.now() - started,
+            });
+            return;
+          }
           ehLog("warn", "install.mirror.purge-skipped", {
             ms: Date.now() - started,
-            stopped: stopped(),
             consequence:
               "Vortex did not purge, so it may ask about external changes at the deploy",
           });
@@ -3395,6 +3403,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
 
     try {
       await deployAndWait(api, activeProfileId);
+      ctx.onDeploymentRestored?.();
     } catch (err) {
       return {
         kind: "failed",
@@ -4365,7 +4374,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           let retryMirrored = 0;
           for (const mod of recoveredManifestMods) {
             if (mod.state.mirrored !== true) continue;
-            if (ctx.abortSignal?.aborted === true) break;
+            if (stopBeforeWriting("mirroring the retried mods")) break;
             // No purge: these mods were installed after the last deploy, so
             // nothing of theirs is linked yet for Vortex to compare against.
             await mirrorOneMod(mod, { purgeFirst: false });
@@ -4379,8 +4388,12 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
            * wrong type and their rules not in effect, and the player's next
            * deploy opened Vortex's External Changes dialog. The plugin order
            * below reads what Vortex has linked, so it comes after the deploy.
+           * After a Stop nothing more is written, as everywhere past the main
+           * deploy, and the skipped steps are named in the result.
            */
-          await deployAndWait(api, activeProfileId);
+          if (!stopBeforeWriting("deploying the retried mods")) {
+            await deployAndWait(api, activeProfileId);
+          }
 
           ehLog("info", "install.retry.finished-mods", {
             recovered: retriedOk,

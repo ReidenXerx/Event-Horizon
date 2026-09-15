@@ -696,9 +696,31 @@ class InstallSession {
    * the live progress.
    */
   /** "Cancel" on the warning: back to the confirm screen, nothing started. */
-  cancelStart(): void {
+  cancelStart(api: types.IExtensionApi): void {
     if (this.state.kind !== "confirm" || this.state.readyToStart !== true) return;
+    const plan = this.state.bundle.plan;
     this.dispatch({ type: "cancel-start" });
+    // The game-folder check runs before the warning, so by now it may have
+    // purged Vortex's deployment and moved files aside for an install that is
+    // not starting.
+    this.warnIfPreparedButNotStarted(api, plan);
+  }
+
+  /**
+   * The game-folder check purged Vortex's deployment (and may have moved files
+   * aside) for this plan, and the install is not going to start from here.
+   * Vortex's own prompt after a purge only says a deployment is necessary;
+   * this says why, and where any moved files went.
+   */
+  private warnIfPreparedButNotStarted(api: types.IExtensionApi, plan: unknown): void {
+    if (this.purgedForPlan !== plan) return;
+    logFailure("warn", "install.prepared-not-started", {});
+    api.sendNotification?.({
+      id: "event-horizon-undeployed",
+      type: "warning",
+      message:
+        "Event Horizon purged Vortex's deployment to prepare this install, and the install did not start. Deploy in Vortex to put your mods back into the game. Any files moved aside are listed in Collection Doctor, under Moved-aside files.",
+    });
   }
 
   startInstall(api: types.IExtensionApi): void {
@@ -811,6 +833,38 @@ class InstallSession {
     if (this.state.kind !== "confirm" || this.state.readyToStart !== true) return;
     if (this.installInFlight) return;
 
+    // The warning can stay open while the player changes Vortex. A different
+    // active game goes back through the checks, which refuse it with their own
+    // words, rather than an hour of installs that fail at the deploy.
+    // Read inline, the way Vortex's own activeGameId selector does (the game of
+    // the active PROFILE): this method is synchronous, and the helper is
+    // imported lazily elsewhere in this file.
+    let activeGame: string | undefined;
+    try {
+      const vortexState = api.getState() as {
+        settings?: { profiles?: { activeProfileId?: unknown } };
+        persistent?: { profiles?: Record<string, { gameId?: unknown } | undefined> };
+      };
+      const profileId = vortexState?.settings?.profiles?.activeProfileId;
+      const id =
+        typeof profileId === "string"
+          ? vortexState?.persistent?.profiles?.[profileId]?.gameId
+          : undefined;
+      activeGame = typeof id === "string" && id.length > 0 ? id : undefined;
+    } catch {
+      activeGame = undefined;
+    }
+    const planGame = (this.state.bundle.plan as { manifest?: { game?: { id?: unknown } } })
+      ?.manifest?.game?.id;
+    if (typeof planGame === "string" && activeGame !== undefined && activeGame !== planGame) {
+      logFailure("warn", "install.game-changed-under-warning", { planGame, activeGame });
+      this.dispatch({ type: "cancel-start" });
+      this.environmentClearedFor = undefined;
+      this.startInstall(api);
+      return;
+    }
+    api.dismissNotification?.("event-horizon-undeployed");
+
     this.installInFlight = true;
     const controller = new AbortController();
     this.installController = controller;
@@ -830,6 +884,11 @@ class InstallSession {
           abortSignal: controller.signal,
           onDeploymentPurged: (): void => {
             this.purgedForPlan = startState.bundle.plan;
+          },
+          // The run's deploy linked everything again: a run that fails after
+          // it must not say the game was left purged.
+          onDeploymentRestored: (): void => {
+            if (this.purgedForPlan === startState.bundle.plan) this.purgedForPlan = undefined;
           },
           onProgress: (progress): void => {
             // Late progress events from a session that's already
@@ -912,7 +971,12 @@ class InstallSession {
     const manifest = plan.manifest;
     const gameId = manifest.game.id;
     const proceed = (): void => {
-      if (this.state.kind !== "confirm" || this.state.bundle.plan !== plan) return;
+      if (this.state.kind !== "confirm" || this.state.bundle.plan !== plan) {
+        // The player left while the check ran (Back, another package) after it
+        // may have purged: say so instead of dropping it silently.
+        this.warnIfPreparedButNotStarted(api, plan);
+        return;
+      }
       this.environmentClearedFor = plan;
       this.startInstall(api);
     };
