@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-build
-description: "Skill for the Build area of Event-Horizon. 455 symbols across 102 files."
+description: "Skill for the Build area of Event-Horizon. 457 symbols across 100 files."
 ---
 
 # Build
 
-455 symbols | 102 files | Cohesion: 84%
+457 symbols | 100 files | Cohesion: 84%
 
 ## When to Use
 
@@ -17,14 +17,14 @@ description: "Skill for the Build area of Event-Horizon. 455 symbols across 102 
 
 | File | Symbols |
 |------|---------|
-| `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildChangelog, BuildDiffCard, BuildRulesScopeSummary, BuildWizard (+49) |
+| `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildChangelog, BuildDiffCard, BuildWizard, BuildingPanel (+57) |
 | `src/ui/pages/build/buildSession.ts` | cancelLoading, cancelRecovering, getState, subscribe, buildProgress (+30) |
-| `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, DecisionsStep, DoneStep, ExternalDownloadGuide (+21) |
 | `src/ui/pages/build/BuildDashboard.tsx` | BuildDashboard, handleDismissBuilt, handleOpenBuilt, handleOpenDraft, DashboardHeader (+19) |
+| `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, DecisionsStep, DoNotInterfereModal, DoneStep (+19) |
 | `src/ui/pages/build/engine.ts` | validateCuratorInput, downloadedFromNexus, findUnidentifiedMods, isExternal, isExternal (+14) |
 | `src/ui/pages/build/buildSessionRegistry.ts` | BuildSessionRegistry, getBuildSessionRegistry, ensure, get, makeHooks (+13) |
 | `src/ui/pages/build/buildDiff.test.ts` | findPackages, findPackages, findPackages, findPackages, findPackages (+9) |
-| `src/core/draftStorage.ts` | getDraftsRoot, listDrafts, getAppDataPath, loadDraft, deleteDraft (+6) |
+| `src/core/draftStorage.ts` | getDraftsRoot, listDrafts, deleteDraft, getDraftPath, isPlainObject (+6) |
 | `src/ui/pages/HomePage.tsx` | CuratorPanel, Dashboard, DashboardBody, ErrorPanel, FooterRow (+6) |
 | `src/core/build/nexusAvailability.ts` | categoryOf, checkNexusAvailability, classifyFile, currentMainFile, fileIdOf (+6) |
 
@@ -32,8 +32,8 @@ description: "Skill for the Build area of Event-Horizon. 455 symbols across 102 
 
 Start here when exploring this area:
 
-- **`compareVersionStrings`** (Function) — `src/core/changelog/changelog.ts:807`
-- **`entriesSince`** (Function) — `src/core/changelog/changelog.ts:843`
+- **`compareVersionStrings`** (Function) — `src/core/changelog/changelog.ts:826`
+- **`entriesSince`** (Function) — `src/core/changelog/changelog.ts:862`
 - **`describeEvidence`** (Function) — `src/core/curator/cleanupPlan.ts:274`
 - **`describeProfileDrift`** (Function) — `src/core/curator/profileDrift.ts:106`
 - **`isProfileUnmoved`** (Function) — `src/core/curator/profileDrift.ts:90`
@@ -42,8 +42,8 @@ Start here when exploring this area:
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `compareVersionStrings` | Function | `src/core/changelog/changelog.ts` | 807 |
-| `entriesSince` | Function | `src/core/changelog/changelog.ts` | 843 |
+| `compareVersionStrings` | Function | `src/core/changelog/changelog.ts` | 826 |
+| `entriesSince` | Function | `src/core/changelog/changelog.ts` | 862 |
 | `describeEvidence` | Function | `src/core/curator/cleanupPlan.ts` | 274 |
 | `describeProfileDrift` | Function | `src/core/curator/profileDrift.ts` | 106 |
 | `isProfileUnmoved` | Function | `src/core/curator/profileDrift.ts` | 90 |

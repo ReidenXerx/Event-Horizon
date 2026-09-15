@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-curator
-description: "Skill for the Curator area of Event-Horizon. 378 symbols across 72 files."
+description: "Skill for the Curator area of Event-Horizon. 381 symbols across 74 files."
 ---
 
 # Curator
 
-378 symbols | 72 files | Cohesion: 74%
+381 symbols | 74 files | Cohesion: 74%
 
 ## When to Use
 
@@ -17,7 +17,7 @@ description: "Skill for the Curator area of Event-Horizon. 378 symbols across 72
 
 | File | Symbols |
 |------|---------|
-| `src/ui/pages/curator/useCuratorActions.ts` | num, useCuratorActions, askThree, disableWithDependants, enableWithProviders (+37) |
+| `src/ui/pages/curator/useCuratorActions.ts` | num, useCuratorActions, askThree, disableWithDependants, enableWithProviders (+38) |
 | `src/core/curator/requirements.ts` | dependantClosure, dependantsOf, describeEnableQuestion, list, losesALine (+28) |
 | `src/ui/pages/curator/CuratorPage.tsx` | confirm, makeConfirmer, applied, dismissFor, pageKeyOf (+26) |
 | `src/ui/pages/curator/DiskCleanupView.tsx` | DiskCleanupView, freedByRetiring, run, num, render (+11) |

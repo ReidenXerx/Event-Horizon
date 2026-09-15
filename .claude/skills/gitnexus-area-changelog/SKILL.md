@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-changelog
-description: "Skill for the Changelog area of Event-Horizon. 47 symbols across 4 files."
+description: "Skill for the Changelog area of Event-Horizon. 49 symbols across 4 files."
 ---
 
 # Changelog
 
-47 symbols | 4 files | Cohesion: 84%
+49 symbols | 4 files | Cohesion: 85%
 
 ## When to Use
 
@@ -17,7 +17,7 @@ description: "Skill for the Changelog area of Event-Horizon. 47 symbols across 4
 
 | File | Symbols |
 |------|---------|
-| `src/core/changelog/changelog.ts` | changeSections, add, day, describeUnknowns, plural (+34) |
+| `src/core/changelog/changelog.ts` | changeSections, add, day, describeUnknowns, plural (+36) |
 | `src/core/changelog/changelogHistory.ts` | changelogHistoryPath, loadChangelogHistory, saveChangelogHistory, snapshotOrUndefined |
 | `src/core/changelog/changelog.test.ts` | v, mod, snapshot |
 | `src/ui/components/ChangelogView.tsx` | ChangelogEntryView |
@@ -26,36 +26,36 @@ description: "Skill for the Changelog area of Event-Horizon. 47 symbols across 4
 
 Start here when exploring this area:
 
-- **`changeSections`** (Function) — `src/core/changelog/changelog.ts:612`
-- **`add`** (Function) — `src/core/changelog/changelog.ts:614`
-- **`describeUnknowns`** (Function) — `src/core/changelog/changelog.ts:735`
-- **`renderChangelogBbcode`** (Function) — `src/core/changelog/changelog.ts:778`
-- **`renderChangelogMarkdown`** (Function) — `src/core/changelog/changelog.ts:752`
+- **`changeSections`** (Function) — `src/core/changelog/changelog.ts:631`
+- **`add`** (Function) — `src/core/changelog/changelog.ts:633`
+- **`describeUnknowns`** (Function) — `src/core/changelog/changelog.ts:754`
+- **`renderChangelogBbcode`** (Function) — `src/core/changelog/changelog.ts:797`
+- **`renderChangelogMarkdown`** (Function) — `src/core/changelog/changelog.ts:771`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `changeSections` | Function | `src/core/changelog/changelog.ts` | 612 |
-| `add` | Function | `src/core/changelog/changelog.ts` | 614 |
-| `describeUnknowns` | Function | `src/core/changelog/changelog.ts` | 735 |
-| `renderChangelogBbcode` | Function | `src/core/changelog/changelog.ts` | 778 |
-| `renderChangelogMarkdown` | Function | `src/core/changelog/changelog.ts` | 752 |
-| `summarizeEntry` | Function | `src/core/changelog/changelog.ts` | 685 |
-| `count` | Function | `src/core/changelog/changelog.ts` | 706 |
+| `changeSections` | Function | `src/core/changelog/changelog.ts` | 631 |
+| `add` | Function | `src/core/changelog/changelog.ts` | 633 |
+| `describeUnknowns` | Function | `src/core/changelog/changelog.ts` | 754 |
+| `renderChangelogBbcode` | Function | `src/core/changelog/changelog.ts` | 797 |
+| `renderChangelogMarkdown` | Function | `src/core/changelog/changelog.ts` | 771 |
+| `summarizeEntry` | Function | `src/core/changelog/changelog.ts` | 704 |
+| `count` | Function | `src/core/changelog/changelog.ts` | 725 |
 | `ChangelogEntryView` | Function | `src/ui/components/ChangelogView.tsx` | 34 |
 | `diffSnapshots` | Function | `src/core/changelog/changelog.ts` | 296 |
-| `gameLabel` | Function | `src/core/changelog/changelog.ts` | 350 |
+| `gameLabel` | Function | `src/core/changelog/changelog.ts` | 360 |
+| `inNextKeys` | Function | `src/core/changelog/changelog.ts` | 313 |
+| `renamed` | Function | `src/core/changelog/changelog.ts` | 312 |
 | `movedInOrder` | Function | `src/core/changelog/changelog.ts` | 258 |
-| `recordBuild` | Function | `src/core/changelog/changelog.ts` | 552 |
-| `readChangelogEntries` | Function | `src/core/changelog/changelog.ts` | 876 |
+| `recordBuild` | Function | `src/core/changelog/changelog.ts` | 571 |
+| `readChangelogEntries` | Function | `src/core/changelog/changelog.ts` | 895 |
 | `changelogHistoryPath` | Function | `src/core/changelog/changelogHistory.ts` | 24 |
 | `loadChangelogHistory` | Function | `src/core/changelog/changelogHistory.ts` | 48 |
 | `saveChangelogHistory` | Function | `src/core/changelog/changelogHistory.ts` | 86 |
-| `describeRule` | Function | `src/core/changelog/changelog.ts` | 312 |
-| `day` | Function | `src/core/changelog/changelog.ts` | 749 |
-| `plural` | Function | `src/core/changelog/changelog.ts` | 606 |
-| `diffMods` | Function | `src/core/changelog/changelog.ts` | 379 |
+| `describeRule` | Function | `src/core/changelog/changelog.ts` | 322 |
+| `day` | Function | `src/core/changelog/changelog.ts` | 768 |
 
 ## Execution Flows
 

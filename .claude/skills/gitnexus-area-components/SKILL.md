@@ -5,7 +5,7 @@ description: "Skill for the Components area of Event-Horizon. 34 symbols across 
 
 # Components
 
-34 symbols | 7 files | Cohesion: 88%
+34 symbols | 7 files | Cohesion: 86%
 
 ## When to Use
 
@@ -64,16 +64,16 @@ Start here when exploring this area:
 
 | Flow | Type | Steps |
 |------|------|-------|
+| `PresentationCard → Opn` | cross_community | 5 |
+| `PresentationCard → Opn` | cross_community | 5 |
 | `EventHorizonMainPage → ToastCard` | cross_community | 4 |
+| `PresentationCard → OpenExternal` | cross_community | 4 |
+| `PresentationCard → LoadShell` | cross_community | 4 |
 | `LinkManualStep → Opn` | cross_community | 4 |
 | `LinkManualStep → Opn` | cross_community | 4 |
 | `LinkManualStep → Opn` | cross_community | 4 |
 | `LinkManualStep → Opn` | cross_community | 4 |
 | `EventHorizonMainPage → CreateToastTimers` | cross_community | 3 |
-| `Show → NodeToText` | intra_community | 3 |
-| `HandleShowInFolder → Describe` | cross_community | 3 |
-| `LinkManualStep → OpenExternal` | cross_community | 3 |
-| `LinkManualStep → Describe` | cross_community | 3 |
 
 ## How to Explore
 

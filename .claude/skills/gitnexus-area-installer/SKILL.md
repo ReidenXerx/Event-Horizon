@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-installer
-description: "Skill for the Installer area of Event-Horizon. 440 symbols across 105 files."
+description: "Skill for the Installer area of Event-Horizon. 437 symbols across 107 files."
 ---
 
 # Installer
 
-440 symbols | 105 files | Cohesion: 74%
+437 symbols | 107 files | Cohesion: 74%
 
 ## When to Use
 
@@ -61,7 +61,7 @@ Start here when exploring this area:
 | `findModTypeMismatches` | Function | `src/core/installer/checkModTypes.ts` | 41 |
 | `emptyPluginOrderDrift` | Function | `src/core/installer/checkPluginOrder.ts` | 55 |
 | `readUserPluginsTxt` | Function | `src/core/installer/checkPluginOrder.ts` | 185 |
-| `describeSevenZipHealth` | Function | `src/core/installer/checkSevenZipHealth.ts` | 108 |
+| `buildCuratorReport` | Function | `src/core/installer/curatorReport.ts` | 108 |
 
 ## Execution Flows
 

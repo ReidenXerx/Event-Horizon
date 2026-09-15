@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-install
-description: "Skill for the Install area of Event-Horizon. 97 symbols across 20 files."
+description: "Skill for the Install area of Event-Horizon. 105 symbols across 23 files."
 ---
 
 # Install
 
-97 symbols | 20 files | Cohesion: 77%
+105 symbols | 23 files | Cohesion: 74%
 
 ## When to Use
 
@@ -18,7 +18,7 @@ description: "Skill for the Install area of Event-Horizon. 97 symbols across 20 
 | File | Symbols |
 |------|---------|
 | `src/ui/pages/install/installSession.ts` | onPhase, onHashProgress, onPhase, onHashProgress, onPhase (+27) |
-| `src/ui/pages/install/steps.tsx` | BucketList, CuratorReportsNotice, DamagedArchiveNotice, ExternalArchiveNotice, FailureBody (+20) |
+| `src/ui/pages/install/steps.tsx` | BucketList, CuratorReportsNotice, DamagedArchiveNotice, ExternalArchiveNotice, FailureBody (+23) |
 | `src/ui/pages/install/state.ts` | wizardReducer, canProceedFromDecisions, countUndecidedConflicts, defaultConflictChoice, defaultOrphanChoice (+3) |
 | `src/ui/pages/install/fetchLink.ts` | fetchFromNexus, gameMismatchMessage, readKnownGames, throwIfAborted, vortexDownloadPath (+1) |
 | `src/ui/pages/install/installProgress.ts` | describeElapsed, describeQuiet, estimateRemainingMs, formatDuration, trackPhase |
@@ -33,7 +33,7 @@ description: "Skill for the Install area of Event-Horizon. 97 symbols across 20 
 Start here when exploring this area:
 
 - **`Notice`** (Function) — `src/ui/components/Notice.tsx:21`
-- **`reconcileMods`** (Function) — `src/ui/pages/install/steps.tsx:2812`
+- **`reconcileMods`** (Function) — `src/ui/pages/install/steps.tsx:2905`
 - **`wizardReducer`** (Function) — `src/ui/pages/install/state.ts:289`
 - **`fileSizeOf`** (Function) — `src/core/installer/installLink.ts:321`
 - **`nexusFilePageUrl`** (Function) — `src/core/installer/installLink.ts:311`
@@ -43,7 +43,7 @@ Start here when exploring this area:
 | Symbol | Type | File | Line |
 |--------|------|------|------|
 | `Notice` | Function | `src/ui/components/Notice.tsx` | 21 |
-| `reconcileMods` | Function | `src/ui/pages/install/steps.tsx` | 2812 |
+| `reconcileMods` | Function | `src/ui/pages/install/steps.tsx` | 2905 |
 | `wizardReducer` | Function | `src/ui/pages/install/state.ts` | 289 |
 | `fileSizeOf` | Function | `src/core/installer/installLink.ts` | 321 |
 | `nexusFilePageUrl` | Function | `src/core/installer/installLink.ts` | 311 |
@@ -57,11 +57,11 @@ Start here when exploring this area:
 | `blocksInstall` | Function | `src/core/installer/autoDeploy.ts` | 48 |
 | `readsAutoDeploy` | Function | `src/core/installer/autoDeploy.ts` | 33 |
 | `probeDeploymentMethod` | Function | `src/core/installer/probeDeployment.ts` | 60 |
+| `StatGrid` | Function | `src/ui/components/StatTile.tsx` | 60 |
+| `StatTile` | Function | `src/ui/components/StatTile.tsx` | 35 |
+| `AboutPage` | Function | `src/ui/pages/AboutPage.tsx` | 21 |
 | `canProceedFromDecisions` | Function | `src/ui/pages/install/state.ts` | 530 |
 | `countUndecidedConflicts` | Function | `src/ui/pages/install/state.ts` | 557 |
-| `defaultConflictChoice` | Function | `src/ui/pages/install/state.ts` | 488 |
-| `defaultOrphanChoice` | Function | `src/ui/pages/install/state.ts` | 506 |
-| `fillDefaultConflictChoices` | Function | `src/ui/pages/install/state.ts` | 573 |
 
 ## Execution Flows
 
