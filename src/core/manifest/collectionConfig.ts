@@ -54,6 +54,7 @@ import * as path from "path";
 import { applyHint } from "./externalHints";
 import type { DownloadMode, ExternalHint } from "./externalHints";
 import type { PackageFormat } from "./packageFileName";
+import { readPresentationConfig, type PresentationConfig } from "../presentation/presentation";
 import { beginOp, ehLog } from "../logging/ehLog";
 
 // ---------------------------------------------------------------------------
@@ -199,6 +200,13 @@ export type CollectionConfig = {
    * this only decides which answer the question offers first.
    */
   lastPackageFormat?: PackageFormat;
+  /**
+   * How the collection presents itself: header, card, gallery, theme, About
+   * and links. It describes the COLLECTION rather than one build, so it lives
+   * here like the prerequisites, and its images sit beside this file in
+   * `.presentation/<packageId>/`.
+   */
+  presentation?: PresentationConfig;
   /** Optional README markdown body. Written as `README.md` in the package. */
   readme?: string;
   /** Optional CHANGELOG markdown body. Written as `CHANGELOG.md`. */
@@ -852,6 +860,9 @@ function parseAndValidate(raw: string, configPath: string): CollectionConfig {
       value: obj.lastPackageFormat,
     });
   }
+  // Read the same forgiving way: an unusable part is dropped, never the config.
+  const presentation = readPresentationConfig(obj.presentation);
+  if (presentation !== undefined) config.presentation = presentation;
   return config;
 }
 

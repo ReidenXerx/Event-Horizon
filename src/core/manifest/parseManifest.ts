@@ -36,6 +36,7 @@
  */
 
 import { readChangelogEntries } from "../changelog/changelog";
+import { readPresentation } from "../presentation/presentation";
 import type {
   EhcollExternalDependency,
   EhcollIniTweak,
@@ -255,9 +256,33 @@ export function parseManifest(raw: string): ParseManifestResult {
     );
   }
 
+  // The presentation the same way: an unusable part is left out and said.
+  let presentation: ReturnType<typeof readPresentation>;
+  try {
+    presentation = readPresentation(
+      isObject(obj.package) ? (obj.package as Record<string, unknown>).presentation : undefined,
+    );
+  } catch (err) {
+    presentation = undefined;
+    warnings.push(
+      `package.presentation could not be read and was left out: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+  for (const problem of presentation?.problems ?? []) {
+    warnings.push(`package.presentation: ${problem}; left out.`);
+  }
+
   const manifest: EhcollManifest = {
     schemaVersion: SCHEMA_VERSION,
-    package: changelog !== undefined ? { ...pkg!, changelog: changelog.entries } : pkg!,
+    package: {
+      ...pkg!,
+      ...(changelog !== undefined ? { changelog: changelog.entries } : {}),
+      ...(presentation?.presentation !== undefined
+        ? { presentation: presentation.presentation }
+        : {}),
+    },
     game: game!,
     vortex: vortex!,
     mods: mods!,

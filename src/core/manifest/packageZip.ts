@@ -65,6 +65,7 @@ import {
 import { crc32AndSha256File, openZipReader } from "./readZip";
 import { DiskSpaceError, requireFreeSpace, type FreeBytesProbe } from "../../utils/diskSpace";
 import type { EhcollStagingFile } from "../../types/ehcoll";
+import { isPresentationEntry, presentationImages } from "../presentation/presentation";
 import { resolveSevenZip, sevenZipAdd, type SevenZipApi } from "./sevenZip";
 
 // ---------------------------------------------------------------------------
@@ -153,6 +154,12 @@ export type PackageEhcollInput = {
   readme?: string;
   /** Optional CHANGELOG markdown. Written as `CHANGELOG.md` at the package root. */
   changelog?: string;
+  /**
+   * The collection's presentation images, staged at `presentation/<name>`.
+   * Exactly the images `manifest.package.presentation` names: one missing here
+   * would be a picture that never shows, one extra would be bytes nobody reads.
+   */
+  presentationFiles?: Array<{ entry: string; sourcePath: string }>;
   /**
    * Absolute path of the final `.ehcoll` file. A file already there is replaced
    * only by a finished, verified package; a refused or cancelled build leaves
@@ -278,6 +285,8 @@ export async function packageEhcoll(
 
     checkAbort();
     await writeOptionalMarkdown(stagingDir, "CHANGELOG.md", input.changelog);
+    checkAbort();
+    await stagePresentationFiles(stagingDir, input.presentationFiles ?? []);
 
     const mirrorFiles = input.mirrorFiles ?? [];
     checkAbort();
@@ -421,6 +430,40 @@ function validateInput(input: PackageEhcollInput, errors: string[]): void {
     errors.push(
       `outputPath must be an absolute path. Got: ${JSON.stringify(input.outputPath)}.`,
     );
+  }
+
+  // The presentation images, checked both ways like bundles and mirrors.
+  const provided = new Set<string>();
+  for (const file of input.presentationFiles ?? []) {
+    if (!isPresentationEntry(file.entry)) {
+      errors.push(
+        `Presentation file "${file.entry}" is not a plain image name inside presentation/.`,
+      );
+    } else if (!path.isAbsolute(file.sourcePath)) {
+      errors.push(
+        `Presentation file "${file.entry}" must name its source by an absolute path.`,
+      );
+    }
+    provided.add(file.entry);
+  }
+  const named = new Set(
+    input.manifest.package.presentation === undefined
+      ? []
+      : presentationImages(input.manifest.package.presentation).map((i) => i.file),
+  );
+  for (const file of named) {
+    if (!provided.has(file)) {
+      errors.push(
+        `The manifest's presentation names "${file}", but no such file was provided to the package.`,
+      );
+    }
+  }
+  for (const entry of provided) {
+    if (!named.has(entry)) {
+      errors.push(
+        `Presentation file "${entry}" was provided but the manifest's presentation does not name it.`,
+      );
+    }
   }
 
   // Build the {sha256 → bundled-external-mod} index from the manifest.
@@ -585,6 +628,18 @@ async function writeOptionalMarkdown(
   // bytes whether or not the curator's source had one.
   const normalized = content.endsWith("\n") ? content : content + "\n";
   await fsp.writeFile(path.join(stagingDir, name), normalized, "utf8");
+}
+
+/** Copy the collection's images to `presentation/` in the staging folder. */
+async function stagePresentationFiles(
+  stagingDir: string,
+  files: ReadonlyArray<{ entry: string; sourcePath: string }>,
+): Promise<void> {
+  for (const file of files) {
+    const dest = path.join(stagingDir, ...file.entry.split("/"));
+    await fsp.mkdir(path.dirname(dest), { recursive: true });
+    await fsp.copyFile(file.sourcePath, dest);
+  }
 }
 
 /**

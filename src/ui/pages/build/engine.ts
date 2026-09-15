@@ -59,6 +59,10 @@ import { buildOutputFileName, type PackageFormat } from "../../../core/manifest/
 import { prepareChangelog, type PreparedChangelog } from "./buildChangelog";
 import { saveChangelogHistory } from "../../../core/changelog/changelogHistory";
 import type { ChangelogEntry } from "../../../core/changelog/changelog";
+import {
+  resolvePresentationForBuild,
+  type BuildPresentation,
+} from "../../../core/presentation/presentationAssets";
 import { captureStagingFiles } from "../../../core/manifest/captureStagingFiles";
 import { runSelfChecks,
   findModsThatPromptTheUser,
@@ -2317,13 +2321,41 @@ export async function runBuildPipeline(
       }`,
     );
   }
-  const shippedManifest =
-    preparedChangelog === undefined
-      ? manifest
-      : {
-          ...manifest,
-          package: { ...manifest.package, changelog: preparedChangelog.history.entries },
-        };
+  // ── 3c. How the collection presents itself ──
+  // The images the curator picked, measured and hashed now so the manifest
+  // names exactly the bytes the package carries. Anything unusable is left out
+  // with a warning; a plainer package is better than a failed build.
+  checkAbort();
+  let builtPresentation: BuildPresentation = { files: [], warnings: [] };
+  try {
+    builtPresentation = await resolvePresentationForBuild({
+      configDir,
+      packageId: collectionConfig.packageId,
+      config: collectionConfig.presentation,
+    });
+  } catch (err) {
+    ehLog("warn", "build.presentation.resolve-failed", { err });
+    builtPresentation = {
+      files: [],
+      warnings: [
+        `The collection's presentation could not be packaged: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      ],
+    };
+  }
+  const shippedManifest = {
+    ...manifest,
+    package: {
+      ...manifest.package,
+      ...(preparedChangelog !== undefined
+        ? { changelog: preparedChangelog.history.entries }
+        : {}),
+      ...(builtPresentation.presentation !== undefined
+        ? { presentation: builtPresentation.presentation }
+        : {}),
+    },
+  };
 
   // ── 4. Resolve bundled archives ────────────────────────────────────────
   checkAbort();
@@ -2399,6 +2431,7 @@ export async function runBuildPipeline(
     manifest: shippedManifest,
     bundles,
     mirrorFiles,
+    presentationFiles: builtPresentation.files,
     readme: overrides.readme.length > 0 ? overrides.readme : undefined,
     // Every version, rendered. Before Event Horizon wrote the changelog this
     // was the curator's text verbatim; that text is this version's notes now.
@@ -2515,6 +2548,7 @@ export async function runBuildPipeline(
     warnings: [
       ...context.scopeWarnings,
       ...changelogWarnings,
+      ...builtPresentation.warnings,
       ...bundleWarnings,
       ...summariseCaptureWarnings(captureWarnings),
       ...manifestWarnings,
@@ -2536,6 +2570,7 @@ export async function runBuildPipeline(
     warnings: [
       ...context.scopeWarnings,
       ...changelogWarnings,
+      ...builtPresentation.warnings,
       ...bundleWarnings,
       ...summariseCaptureWarnings(captureWarnings),
       ...manifestWarnings,

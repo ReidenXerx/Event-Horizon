@@ -27,6 +27,7 @@ import type {
   FomodSelectionStep,
 } from "../core/getModsListForProfile";
 import type { ChangelogEntry } from "../core/changelog/changelog";
+import type { PackagePresentation } from "../core/presentation/presentation";
 
 /**
  * Manifest schema version. Bumped only on breaking changes — additive
@@ -150,6 +151,15 @@ export type PackageMetadata = {
    * a changelog is for reading and must not stop an install.
    */
   changelog?: ChangelogEntry[];
+  /**
+   * How the collection presents itself in Event Horizon: header and card
+   * images, a gallery, theme colours, an About page and links. The images ride
+   * in the package under `presentation/`.
+   *
+   * Optional, and read leniently: an unusable part is left out with a warning
+   * and never refuses the package.
+   */
+  presentation?: PackagePresentation;
 };
 
 export type VerificationLevel = "none" | "fast" | "thorough";

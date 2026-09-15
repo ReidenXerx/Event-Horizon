@@ -54,6 +54,7 @@ import { LINK_FILE_NAME } from "../installer/linkCarrier";
 import { ehLog } from "../logging/ehLog";
 import type { EhcollManifest } from "../../types/ehcoll";
 import { bundleEntryOf } from "./bundleLayout";
+import { withImagesPresent } from "../presentation/presentation";
 import { parseManifest, ParseManifestError } from "./parseManifest";
 import {
   extractZipEntryToFile,
@@ -275,6 +276,25 @@ export async function readEhcoll(
 
   const bundledArchives = crossCheckBundled(manifest, layout, errors);
 
+  // A presentation image the manifest names but the package does not carry is
+  // left out with a warning: the collection still installs, just plainer.
+  if (manifest.package.presentation !== undefined) {
+    const kept = withImagesPresent(
+      manifest.package.presentation,
+      new Set(layout.presentationEntries),
+    );
+    if (kept.missing.length > 0) {
+      warnings.push(
+        `The collection's presentation names ${kept.missing.length} image(s) the ` +
+          `package does not carry (${kept.missing.join(", ")}); they are not shown.`,
+      );
+    }
+    const pkg = { ...manifest.package };
+    delete pkg.presentation;
+    if (kept.presentation !== undefined) pkg.presentation = kept.presentation;
+    manifest = { ...manifest, package: pkg };
+  }
+
   if (errors.length > 0) {
     // Each string here already names the offending mod compareKey or sha256 —
     // this is the "package is incomplete / has stray bytes" diagnosis, and it
@@ -418,6 +438,8 @@ type ClassifiedLayout = {
   hasReadme: boolean;
   hasChangelog: boolean;
   iniTweakFiles: string[];
+  /** Entries under `presentation/`: the collection's images. */
+  presentationEntries: string[];
   /**
    * One entry per bundled mod's folder, `bundled/<sha256>/`, with its files
    * counted, in the order the folders were first seen.
@@ -445,6 +467,7 @@ function classifyEntries(entries: PackageListEntry[]): ClassifiedLayout {
   let hasReadme = false;
   let hasChangelog = false;
   const iniTweakFiles: string[] = [];
+  const presentationEntries: string[] = [];
   const bundles = new Map<string, BundledArchiveEntry>();
   const unrecognizedBundled: string[] = [];
   const unflaggedBundled: string[] = [];
@@ -491,6 +514,10 @@ function classifyEntries(entries: PackageListEntry[]): ClassifiedLayout {
       iniTweakFiles.push(normalized);
       continue;
     }
+    if (normalized.startsWith("presentation/")) {
+      presentationEntries.push(normalized);
+      continue;
+    }
     // Other unknown top-level entries are tolerated — future schema
     // additions land at root, and we don't want a reader to refuse a
     // package that the producer pre-shipped a forward-compat file in.
@@ -502,6 +529,7 @@ function classifyEntries(entries: PackageListEntry[]): ClassifiedLayout {
     hasReadme,
     hasChangelog,
     iniTweakFiles,
+    presentationEntries,
     bundles: [...bundles.values()],
     unrecognizedBundled,
     unflaggedBundled,
