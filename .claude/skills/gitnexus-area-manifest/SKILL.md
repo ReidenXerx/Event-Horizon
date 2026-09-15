@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-manifest
-description: "Skill for the Manifest area of Event-Horizon. 520 symbols across 115 files."
+description: "Skill for the Manifest area of Event-Horizon. 518 symbols across 113 files."
 ---
 
 # Manifest
 
-520 symbols | 115 files | Cohesion: 73%
+518 symbols | 113 files | Cohesion: 73%
 
 ## When to Use
 
@@ -21,18 +21,18 @@ description: "Skill for the Manifest area of Event-Horizon. 520 symbols across 1
 | `src/core/manifest/readZip.ts` | ZipReadError, extractZipEntryToFile, findDataOffset, findEntry, findZip64Extra (+20) |
 | `src/core/manifest/packageZip.ts` | PackageEhcollError, describeBytes, listBundles, packageBytesAtMost, packageEhcoll (+19) |
 | `src/core/manifest/collectionConfig.ts` | reconcileExternalModsConfig, modsNewlyBundled, modsNoLongerBundled, toBuildManifestExternalMods, createDefaultConfig (+19) |
-| `src/ui/pages/build/engine.ts` | loadBuildContext, pickDefaultCollectionName, resolveGameVersion, BuildRefusedError, BundleResolutionError (+13) |
+| `src/ui/pages/build/engine.ts` | loadBuildContext, pickDefaultCollectionName, resolveGameVersion, BuildRefusedError, BundleResolutionError (+12) |
 | `src/core/manifest/buildManifest.ts` | BuildManifestError, buildLoadOrder, buildManifest, buildPackageMetadata, buildUserlist (+12) |
 | `src/core/manifest/externalHints.ts` | countBy, downloadsFromState, modsFromState, applyHint, describeUndeclared (+10) |
 | `src/core/manifest/bundleZip.ts` | writeChunk, listBundleFolder, assertBundlePaths, isAborted, sortForBundle (+8) |
 | `src/core/manifest/readEhcoll.ts` | ReadEhcollError, assertReadableFile, classifyEntries, crossCheckBundled, extractManifest (+7) |
-| `src/core/manifest/runSelfChecks.ts` | findModsThatPromptTheUser, makeReadEntry, describeDivergedMods, runSelfChecks, recoverArchive (+6) |
+| `src/core/manifest/runSelfChecks.ts` | findModsThatPromptTheUser, describeDivergedMods, makeReadEntry, runSelfChecks, recoverArchive (+6) |
 
 ## Entry Points
 
 Start here when exploring this area:
 
-- **`parseManifest`** (Function) — `src/core/manifest/parseManifest.ts:169`
+- **`parseManifest`** (Function) — `src/core/manifest/parseManifest.ts:171`
 - **`put`** (Function) — `src/core/diagnostics/zipWriter.ts:67`
 - **`buildGogHashdbTable`** (Function) — `src/core/environment/fixtures.testutil.ts:218`
 - **`buildPe`** (Function) — `src/core/environment/fixtures.testutil.ts:24`
@@ -42,15 +42,15 @@ Start here when exploring this area:
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `ParseManifestError` | Class | `src/core/manifest/parseManifest.ts` | 147 |
-| `PackageEhcollError` | Class | `src/core/manifest/packageZip.ts` | 201 |
-| `BuildRefusedError` | Class | `src/ui/pages/build/engine.ts` | 1155 |
-| `BundleResolutionError` | Class | `src/ui/pages/build/engine.ts` | 622 |
+| `ParseManifestError` | Class | `src/core/manifest/parseManifest.ts` | 149 |
+| `PackageEhcollError` | Class | `src/core/manifest/packageZip.ts` | 208 |
+| `BuildRefusedError` | Class | `src/ui/pages/build/engine.ts` | 1174 |
+| `BundleResolutionError` | Class | `src/ui/pages/build/engine.ts` | 641 |
 | `ZipReadError` | Class | `src/core/manifest/readZip.ts` | 81 |
 | `BuildManifestError` | Class | `src/core/manifest/buildManifest.ts` | 262 |
-| `ReadEhcollError` | Class | `src/core/manifest/readEhcoll.ts` | 132 |
-| `CollectionConfigError` | Class | `src/core/manifest/collectionConfig.ts` | 297 |
-| `parseManifest` | Function | `src/core/manifest/parseManifest.ts` | 169 |
+| `ReadEhcollError` | Class | `src/core/manifest/readEhcoll.ts` | 133 |
+| `CollectionConfigError` | Class | `src/core/manifest/collectionConfig.ts` | 305 |
+| `parseManifest` | Function | `src/core/manifest/parseManifest.ts` | 171 |
 | `put` | Function | `src/core/diagnostics/zipWriter.ts` | 67 |
 | `buildGogHashdbTable` | Function | `src/core/environment/fixtures.testutil.ts` | 218 |
 | `buildPe` | Function | `src/core/environment/fixtures.testutil.ts` | 24 |
@@ -74,9 +74,9 @@ Start here when exploring this area:
 | `RunSelfChecks → GetVortexUserDataPath` | cross_community | 10 |
 | `LoadPublishedDetails → ResolveLogFile` | cross_community | 10 |
 | `RunLoadingPipeline → GetEventHorizonRoot` | cross_community | 10 |
+| `PrepareChangelog → ToPosix` | cross_community | 9 |
 | `WriteEnvironmentSnapshot → GetVortexUserDataPath` | cross_community | 9 |
 | `RecordPostProcessingDecision → GetVortexUserDataPath` | cross_community | 9 |
-| `RunLoadingPipeline → GetVortexUserDataPath` | cross_community | 9 |
 
 ## How to Explore
 

@@ -1,67 +1,67 @@
 ---
 name: gitnexus-area-curator
-description: "Skill for the Curator area of Event-Horizon. 390 symbols across 75 files."
+description: "Skill for the Curator area of Event-Horizon. 378 symbols across 72 files."
 ---
 
 # Curator
 
-390 symbols | 75 files | Cohesion: 74%
+378 symbols | 72 files | Cohesion: 74%
 
 ## When to Use
 
 - Working with code in `src/`
-- Understanding how freezeAttribute, installRequirementStep, endIfIdle work
+- Understanding how describeRemoveConfirm, resolveInstallFiles, pluginOwners work
 - Modifying curator-related functionality
 
 ## Key Files
 
 | File | Symbols |
 |------|---------|
-| `src/ui/pages/curator/useCuratorActions.ts` | isPremium, useCuratorActions, guard, installDownloads, installOne (+39) |
-| `src/core/curator/requirements.ts` | fetchRequirements, parseGameList, reusableAnswers, byFile, compareSegment (+28) |
+| `src/ui/pages/curator/useCuratorActions.ts` | num, useCuratorActions, askThree, disableWithDependants, enableWithProviders (+37) |
+| `src/core/curator/requirements.ts` | dependantClosure, dependantsOf, describeEnableQuestion, list, losesALine (+28) |
 | `src/ui/pages/curator/CuratorPage.tsx` | confirm, makeConfirmer, applied, dismissFor, pageKeyOf (+26) |
 | `src/ui/pages/curator/DiskCleanupView.tsx` | DiskCleanupView, freedByRetiring, run, num, render (+11) |
 | `src/core/curator/profileActions.ts` | findDuplicates, findEndorsable, findFrozen, findManualUpdates, findUpdatable (+7) |
 | `src/core/curator/requirementDismissals.ts` | applyDismissals, dependentPageKey, dismissRequirement, isDismissible, kindOf (+6) |
 | `src/core/curator/cleanupPlan.ts` | archivesFreedByRemoval, cleanupSubset, formatSize, findSupersededMods, consider (+6) |
-| `src/core/curator/updateOneMod.ts` | UpdateTimeout, installedIdentityReader, asNum, updateOneAndWait, arm (+5) |
 | `src/ui/pages/curator/curatorSession.ts` | begin, cancel, dismiss, finish, progress (+5) |
-| `src/ui/pages/curator/workbench.ts` | buildRows, rowsForView, rowsForViews, viewCounts, outsideDataTypes (+4) |
+| `src/core/curator/updateOneMod.ts` | installedIdentityReader, asNum, updateOneAndWait, UpdateTimeout, arm (+5) |
+| `src/core/curator/installPlan.ts` | resolveInstallFiles, planRequirementClosure, absorb, noteTruncated, topologicalOrder (+4) |
 
 ## Entry Points
 
 Start here when exploring this area:
 
+- **`describeRemoveConfirm`** (Function) — `src/core/curator/archiveOnDisk.ts:38`
+- **`resolveInstallFiles`** (Function) — `src/core/curator/installPlan.ts:340`
+- **`pluginOwners`** (Function) — `src/core/curator/pluginPool.ts:111`
 - **`freezeAttribute`** (Function) — `src/core/curator/readProfile.ts:151`
-- **`installRequirementStep`** (Function) — `src/core/curator/requirementStep.ts:100`
 - **`endIfIdle`** (Function) — `src/core/curator/requirementStep.ts:119`
-- **`onStop`** (Function) — `src/core/curator/requirementStep.ts:132`
-- **`somethingRunning`** (Function) — `src/core/curator/requirementStep.ts:115`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `UpdateTimeout` | Class | `src/core/curator/updateOneMod.ts` | 96 |
 | `CannotReinstall` | Class | `src/core/curator/reinstallMod.ts` | 45 |
+| `UpdateTimeout` | Class | `src/core/curator/updateOneMod.ts` | 96 |
+| `describeRemoveConfirm` | Function | `src/core/curator/archiveOnDisk.ts` | 38 |
+| `resolveInstallFiles` | Function | `src/core/curator/installPlan.ts` | 340 |
+| `pluginOwners` | Function | `src/core/curator/pluginPool.ts` | 111 |
 | `freezeAttribute` | Function | `src/core/curator/readProfile.ts` | 151 |
-| `installRequirementStep` | Function | `src/core/curator/requirementStep.ts` | 100 |
 | `endIfIdle` | Function | `src/core/curator/requirementStep.ts` | 119 |
 | `onStop` | Function | `src/core/curator/requirementStep.ts` | 132 |
 | `somethingRunning` | Function | `src/core/curator/requirementStep.ts` | 115 |
 | `fallBack` | Function | `src/core/curator/requirementStep.ts` | 186 |
 | `start` | Function | `src/core/curator/requirementStep.ts` | 168 |
-| `installedIdentityReader` | Function | `src/core/curator/updateOneMod.ts` | 227 |
-| `asNum` | Function | `src/core/curator/updateOneMod.ts` | 241 |
-| `updateOneAndWait` | Function | `src/core/curator/updateOneMod.ts` | 106 |
-| `arm` | Function | `src/core/curator/updateOneMod.ts` | 171 |
-| `widen` | Function | `src/core/curator/updateOneMod.ts` | 192 |
+| `dependantClosure` | Function | `src/core/curator/requirements.ts` | 733 |
+| `dependantsOf` | Function | `src/core/curator/requirements.ts` | 707 |
+| `describeEnableQuestion` | Function | `src/core/curator/requirements.ts` | 909 |
+| `list` | Function | `src/core/curator/requirements.ts` | 913 |
+| `parseGameList` | Function | `src/core/curator/requirements.ts` | 72 |
+| `pickInstallFile` | Function | `src/core/curator/requirements.ts` | 984 |
+| `reusableAnswers` | Function | `src/core/curator/requirements.ts` | 198 |
 | `runHeal` | Function | `src/core/doctor/runHeal.ts` | 98 |
 | `cleanGameFolder` | Function | `src/core/environment/cleanGameFolder.ts` | 44 |
-| `onExit` | Function | `src/core/environment/launchGame.ts` | 217 |
-| `nexusModIdOfCompareKey` | Function | `src/core/identity/compareKey.ts` | 96 |
-| `parseCompareKey` | Function | `src/core/identity/compareKey.ts` | 79 |
-| `probeNexusAccount` | Function | `src/core/installer/checkNexusAccount.ts` | 243 |
 
 ## Execution Flows
 
@@ -80,7 +80,7 @@ Start here when exploring this area:
 
 ## How to Explore
 
-1. `context({name: "freezeAttribute"})` — see callers and callees
+1. `context({name: "describeRemoveConfirm"})` — see callers and callees
 2. `query({search_query: "curator"})` — find related execution flows
 3. Read key files listed above for implementation details
 4. `explain({target: "<file or symbol>"})` — persisted taint findings (source→sink data flows), when indexed with `--pdg`

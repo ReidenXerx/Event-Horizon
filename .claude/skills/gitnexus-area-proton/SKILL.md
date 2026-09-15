@@ -66,6 +66,7 @@ Start here when exploring this area:
 
 | Flow | Type | Steps |
 |------|------|-------|
+| `PrepareChangelog → ToPosix` | cross_community | 9 |
 | `LoadBuildDiff → ToPosix` | cross_community | 8 |
 | `RunEnvironmentPreflight → ToPosix` | cross_community | 6 |
 | `RunEnvironmentPreflight → ErrorCode` | cross_community | 5 |

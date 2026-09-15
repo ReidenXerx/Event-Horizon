@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-changelog
-description: "Skill for the Changelog area of Event-Horizon. 30 symbols across 2 files."
+description: "Skill for the Changelog area of Event-Horizon. 47 symbols across 4 files."
 ---
 
 # Changelog
 
-30 symbols | 2 files | Cohesion: 94%
+47 symbols | 4 files | Cohesion: 84%
 
 ## When to Use
 
@@ -17,8 +17,10 @@ description: "Skill for the Changelog area of Event-Horizon. 30 symbols across 2
 
 | File | Symbols |
 |------|---------|
-| `src/core/changelog/changelog.ts` | changeSections, add, day, describeUnknowns, plural (+22) |
+| `src/core/changelog/changelog.ts` | changeSections, add, day, describeUnknowns, plural (+34) |
+| `src/core/changelog/changelogHistory.ts` | changelogHistoryPath, loadChangelogHistory, saveChangelogHistory, snapshotOrUndefined |
 | `src/core/changelog/changelog.test.ts` | v, mod, snapshot |
+| `src/ui/components/ChangelogView.tsx` | ChangelogEntryView |
 
 ## Entry Points
 
@@ -26,9 +28,9 @@ Start here when exploring this area:
 
 - **`changeSections`** (Function) — `src/core/changelog/changelog.ts:612`
 - **`add`** (Function) — `src/core/changelog/changelog.ts:614`
-- **`describeUnknowns`** (Function) — `src/core/changelog/changelog.ts:719`
-- **`renderChangelogBbcode`** (Function) — `src/core/changelog/changelog.ts:762`
-- **`renderChangelogMarkdown`** (Function) — `src/core/changelog/changelog.ts:736`
+- **`describeUnknowns`** (Function) — `src/core/changelog/changelog.ts:735`
+- **`renderChangelogBbcode`** (Function) — `src/core/changelog/changelog.ts:778`
+- **`renderChangelogMarkdown`** (Function) — `src/core/changelog/changelog.ts:752`
 
 ## Key Symbols
 
@@ -36,24 +38,24 @@ Start here when exploring this area:
 |--------|------|------|------|
 | `changeSections` | Function | `src/core/changelog/changelog.ts` | 612 |
 | `add` | Function | `src/core/changelog/changelog.ts` | 614 |
-| `describeUnknowns` | Function | `src/core/changelog/changelog.ts` | 719 |
-| `renderChangelogBbcode` | Function | `src/core/changelog/changelog.ts` | 762 |
-| `renderChangelogMarkdown` | Function | `src/core/changelog/changelog.ts` | 736 |
+| `describeUnknowns` | Function | `src/core/changelog/changelog.ts` | 735 |
+| `renderChangelogBbcode` | Function | `src/core/changelog/changelog.ts` | 778 |
+| `renderChangelogMarkdown` | Function | `src/core/changelog/changelog.ts` | 752 |
 | `summarizeEntry` | Function | `src/core/changelog/changelog.ts` | 685 |
-| `count` | Function | `src/core/changelog/changelog.ts` | 694 |
+| `count` | Function | `src/core/changelog/changelog.ts` | 706 |
+| `ChangelogEntryView` | Function | `src/ui/components/ChangelogView.tsx` | 34 |
 | `diffSnapshots` | Function | `src/core/changelog/changelog.ts` | 296 |
 | `gameLabel` | Function | `src/core/changelog/changelog.ts` | 350 |
 | `movedInOrder` | Function | `src/core/changelog/changelog.ts` | 258 |
 | `recordBuild` | Function | `src/core/changelog/changelog.ts` | 552 |
+| `readChangelogEntries` | Function | `src/core/changelog/changelog.ts` | 876 |
+| `changelogHistoryPath` | Function | `src/core/changelog/changelogHistory.ts` | 24 |
+| `loadChangelogHistory` | Function | `src/core/changelog/changelogHistory.ts` | 48 |
+| `saveChangelogHistory` | Function | `src/core/changelog/changelogHistory.ts` | 86 |
 | `describeRule` | Function | `src/core/changelog/changelog.ts` | 312 |
-| `day` | Function | `src/core/changelog/changelog.ts` | 733 |
+| `day` | Function | `src/core/changelog/changelog.ts` | 749 |
 | `plural` | Function | `src/core/changelog/changelog.ts` | 606 |
 | `diffMods` | Function | `src/core/changelog/changelog.ts` | 379 |
-| `compareState` | Function | `src/core/changelog/changelog.ts` | 397 |
-| `take` | Function | `src/core/changelog/changelog.ts` | 390 |
-| `update` | Function | `src/core/changelog/changelog.ts` | 437 |
-| `was` | Function | `src/core/changelog/changelog.ts` | 469 |
-| `line` | Function | `src/core/changelog/changelog.ts` | 239 |
 
 ## Execution Flows
 
@@ -61,14 +63,14 @@ Start here when exploring this area:
 |------|------|-------|
 | `DiffSnapshots → CanonicalSelections` | cross_community | 5 |
 | `DiffSnapshots → SelectionEvidence` | cross_community | 5 |
+| `BuildChangelog → Add` | cross_community | 5 |
+| `PrepareChangelog → PageOf` | cross_community | 5 |
+| `PrepareChangelog → Push` | cross_community | 5 |
 | `DiffSnapshots → CompareState` | cross_community | 4 |
 | `DiffSnapshots → CompareShapes` | cross_community | 4 |
+| `BuildChangelog → Plural` | cross_community | 4 |
+| `PrepareChangelog → EmptyChanges` | cross_community | 4 |
 | `DiffSnapshots → Take` | cross_community | 3 |
-| `DiffSnapshots → PageOf` | cross_community | 3 |
-| `DiffSnapshots → Push` | cross_community | 3 |
-| `DiffSnapshots → Key` | intra_community | 3 |
-| `DiffSnapshots → MovedInOrder` | intra_community | 3 |
-| `SummarizeEntry → Add` | intra_community | 3 |
 
 ## How to Explore
 

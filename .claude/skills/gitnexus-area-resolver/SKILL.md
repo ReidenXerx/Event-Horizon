@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-resolver
-description: "Skill for the Resolver area of Event-Horizon. 162 symbols across 58 files."
+description: "Skill for the Resolver area of Event-Horizon. 157 symbols across 56 files."
 ---
 
 # Resolver
 
-162 symbols | 58 files | Cohesion: 66%
+157 symbols | 56 files | Cohesion: 65%
 
 ## When to Use
 
@@ -17,11 +17,11 @@ description: "Skill for the Resolver area of Event-Horizon. 162 symbols across 5
 
 | File | Symbols |
 |------|---------|
-| `src/core/resolver/resolveInstallPlan.ts` | enforceInstallTargetInvariant, resolveExternalDependencies, resolveInstallPlan, resolveOrphanedMods, resolvePluginOrder (+21) |
+| `src/core/resolver/resolveInstallPlan.ts` | checkDeploymentMethod, checkExtensions, checkGameVersion, checkVortexVersion, compareSemverLike (+21) |
 | `src/core/resolver/userState.ts` | buildSuggestedProfileName, buildUserSideState, judgeResumeCandidate, lookupProfile, pickInstallTarget (+14) |
 | `src/actions/installCollectionAction.ts` | createInstallCollectionAction, formatError, isPlanInstallable, profileExistsInState, resolveStaleReceipt (+2) |
+| `src/ui/pages/install/engine.ts` | checkEnvironment, checkSystemRuntimes, profileExistsInState, runLoadingPipeline, runLoadingPipelineWithReceipt (+2) |
 | `src/core/getModsListForProfile.ts` | getActiveGameId, getActiveProfileId, getActiveProfileIdFromState, belongsToGame, getModsForGame (+1) |
-| `src/ui/pages/install/engine.ts` | checkEnvironment, checkSystemRuntimes, profileExistsInState, runLoadingPipeline, runLoadingPipelineWithReceipt (+1) |
 | `src/core/resolver/enrichStagingSetHashes.ts` | collectExternalStagingSetHashTargets, collectStagingSetHashTargetsForTest, enrichInstalledModsWithStagingSetHashes, normalizeName |
 | `src/core/stagingPath.ts` | installRootFor, installationPathFromState, stagingRootForModId, stagingRootFromFolder |
 | `src/utils/utils.ts` | exportDiffReport, pickEhcollFile, pickJsonFile, pickTxtFile |

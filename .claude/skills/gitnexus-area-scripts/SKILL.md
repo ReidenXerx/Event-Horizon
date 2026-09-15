@@ -67,7 +67,7 @@ Start here when exploring this area:
 
 | Flow | Type | Steps |
 |------|------|-------|
-| `Main → NormalizeText` | cross_community | 5 |
+| `EditPage → NormalizeText` | cross_community | 4 |
 | `Main → Git` | intra_community | 3 |
 | `Main → Num` | intra_community | 3 |
 | `Main → Gn` | intra_community | 3 |

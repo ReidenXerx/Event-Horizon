@@ -69,14 +69,14 @@ Start here when exploring this area:
 |------|------|-------|
 | `Main → Sub` | cross_community | 5 |
 | `Main → GateCommentKey` | cross_community | 5 |
-| `Main → NormalizeText` | cross_community | 5 |
-| `Accept → RgbOffsets` | intra_community | 5 |
-| `EventHorizonMainPage → Spinner` | cross_community | 5 |
 | `Check → RgbOffsets` | intra_community | 5 |
-| `Main → Log` | intra_community | 4 |
+| `EventHorizonMainPage → Spinner` | cross_community | 5 |
+| `EditPage → NormalizeText` | cross_community | 4 |
 | `EventHorizonMainPage → ToastCard` | cross_community | 4 |
 | `EventHorizonMainPage → Modal` | cross_community | 4 |
 | `EventHorizonMainPage → BuildErrorReport` | cross_community | 4 |
+| `EventHorizonMainPage → UseApiOptional` | cross_community | 4 |
+| `Banner → Stamp` | intra_community | 3 |
 
 ## How to Explore
 

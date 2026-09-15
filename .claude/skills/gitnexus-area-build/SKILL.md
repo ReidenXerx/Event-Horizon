@@ -1,30 +1,30 @@
 ---
 name: gitnexus-area-build
-description: "Skill for the Build area of Event-Horizon. 430 symbols across 96 files."
+description: "Skill for the Build area of Event-Horizon. 455 symbols across 102 files."
 ---
 
 # Build
 
-430 symbols | 96 files | Cohesion: 83%
+455 symbols | 102 files | Cohesion: 84%
 
 ## When to Use
 
 - Working with code in `src/`
-- Understanding how describeEvidence, describeProfileDrift, isProfileUnmoved work
+- Understanding how compareVersionStrings, entriesSince, describeEvidence work
 - Modifying build-related functionality
 
 ## Key Files
 
 | File | Symbols |
 |------|---------|
-| `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildDiffCard, BuildRulesScopeSummary, BuildWizard, BuildingPanel (+47) |
+| `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildChangelog, BuildDiffCard, BuildRulesScopeSummary, BuildWizard (+49) |
 | `src/ui/pages/build/buildSession.ts` | cancelLoading, cancelRecovering, getState, subscribe, buildProgress (+30) |
-| `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, DecisionsStep, DoneStep, ExternalDownloadGuide (+20) |
+| `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, DecisionsStep, DoneStep, ExternalDownloadGuide (+21) |
 | `src/ui/pages/build/BuildDashboard.tsx` | BuildDashboard, handleDismissBuilt, handleOpenBuilt, handleOpenDraft, DashboardHeader (+19) |
 | `src/ui/pages/build/engine.ts` | validateCuratorInput, downloadedFromNexus, findUnidentifiedMods, isExternal, isExternal (+14) |
 | `src/ui/pages/build/buildSessionRegistry.ts` | BuildSessionRegistry, getBuildSessionRegistry, ensure, get, makeHooks (+13) |
 | `src/ui/pages/build/buildDiff.test.ts` | findPackages, findPackages, findPackages, findPackages, findPackages (+9) |
-| `src/core/draftStorage.ts` | getDraftsRoot, listDrafts, deleteDraft, getDraftPath, isPlainObject (+6) |
+| `src/core/draftStorage.ts` | getDraftsRoot, listDrafts, getAppDataPath, loadDraft, deleteDraft (+6) |
 | `src/ui/pages/HomePage.tsx` | CuratorPanel, Dashboard, DashboardBody, ErrorPanel, FooterRow (+6) |
 | `src/core/build/nexusAvailability.ts` | categoryOf, checkNexusAvailability, classifyFile, currentMainFile, fileIdOf (+6) |
 
@@ -32,16 +32,18 @@ description: "Skill for the Build area of Event-Horizon. 430 symbols across 96 f
 
 Start here when exploring this area:
 
+- **`compareVersionStrings`** (Function) — `src/core/changelog/changelog.ts:807`
+- **`entriesSince`** (Function) — `src/core/changelog/changelog.ts:843`
 - **`describeEvidence`** (Function) — `src/core/curator/cleanupPlan.ts:274`
 - **`describeProfileDrift`** (Function) — `src/core/curator/profileDrift.ts:106`
 - **`isProfileUnmoved`** (Function) — `src/core/curator/profileDrift.ts:90`
-- **`doctorLightFlagBaseline`** (Function) — `src/core/doctor/health.ts:188`
-- **`overallHealth`** (Function) — `src/core/doctor/health.ts:861`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
+| `compareVersionStrings` | Function | `src/core/changelog/changelog.ts` | 807 |
+| `entriesSince` | Function | `src/core/changelog/changelog.ts` | 843 |
 | `describeEvidence` | Function | `src/core/curator/cleanupPlan.ts` | 274 |
 | `describeProfileDrift` | Function | `src/core/curator/profileDrift.ts` | 106 |
 | `isProfileUnmoved` | Function | `src/core/curator/profileDrift.ts` | 90 |
@@ -60,8 +62,6 @@ Start here when exploring this area:
 | `listModDiffFiles` | Function | `src/core/modDiffStorage.ts` | 60 |
 | `readModDiffReport` | Function | `src/core/modDiffStorage.ts` | 95 |
 | `listPluginDiffFiles` | Function | `src/core/pluginDiffStorage.ts` | 60 |
-| `readPluginDiffReport` | Function | `src/core/pluginDiffStorage.ts` | 95 |
-| `Button` | Function | `src/ui/components/Button.tsx` | 38 |
 
 ## Execution Flows
 
@@ -76,11 +76,11 @@ Start here when exploring this area:
 | `BuildPage → GetVortexUserDataPath` | cross_community | 10 |
 | `BuildWizard → GetVortexUserDataPath` | cross_community | 10 |
 | `OnRecovered → GetVortexUserDataPath` | cross_community | 10 |
-| `WriteEnvironmentSnapshot → GetVortexUserDataPath` | cross_community | 9 |
+| `PrepareChangelog → ToPosix` | cross_community | 9 |
 
 ## How to Explore
 
-1. `context({name: "describeEvidence"})` — see callers and callees
+1. `context({name: "compareVersionStrings"})` — see callers and callees
 2. `query({search_query: "build"})` — find related execution flows
 3. Read key files listed above for implementation details
 4. `explain({target: "<file or symbol>"})` — persisted taint findings (source→sink data flows), when indexed with `--pdg`
