@@ -299,14 +299,24 @@ export function diffSnapshots(
   next: ChangelogSnapshot,
 ): ChangelogChanges {
   const changes = emptyChanges();
-  diffMods(prev, next, changes);
+  const paired = diffMods(prev, next, changes);
   diffPlugins(prev, next, changes);
 
   const nameOf = new Map<string, string>();
   for (const m of prev.mods) nameOf.set(m.compareKey, m.name);
   for (const m of next.mods) nameOf.set(m.compareKey, m.name);
 
-  changes.loadOrderMoved = movedInOrder(prev.loadOrder, next.loadOrder).map(
+  // A mod keeps its rules and its place when its key changes: an update is a
+  // new Nexus file id, and a mod of the curator's own is keyed by its files.
+  // Compare in the new build's keys, or every rule on such a mod reads as
+  // removed and added again.
+  const renamed = (key: string): string => paired.get(key) ?? key;
+  const inNextKeys = (rule: string): string => {
+    const [source = "", type = "", reference = ""] = rule.split("|");
+    return `${renamed(source)}|${type}|${renamed(reference)}`;
+  };
+
+  changes.loadOrderMoved = movedInOrder(prev.loadOrder.map(renamed), next.loadOrder).map(
     (k) => nameOf.get(k) ?? k,
   );
 
@@ -314,10 +324,10 @@ export function diffSnapshots(
     const [source = "", type = "", reference = ""] = rule.split("|");
     return { mod: modName(nameOf, source), type, other: modName(nameOf, reference) };
   };
-  const prevRules = new Set(prev.rules);
+  const prevRules = new Set(prev.rules.map(inNextKeys));
   const nextRules = new Set(next.rules);
   changes.rules.added = next.rules.filter((r) => !prevRules.has(r)).map(describeRule);
-  changes.rules.removed = prev.rules.filter((r) => !nextRules.has(r)).map(describeRule);
+  changes.rules.removed = prev.rules.filter((r) => !nextRules.has(inNextKeys(r))).map(describeRule);
 
   const prevTweaks = new Set(prev.iniTweaks);
   const nextTweaks = new Set(next.iniTweaks);
@@ -377,8 +387,14 @@ function modName(nameOf: ReadonlyMap<string, string>, key: string): string {
   return key;
 }
 
-function diffMods(prev: ChangelogSnapshot, next: ChangelogSnapshot, changes: ChangelogChanges): void {
+/** Compares the mods; returns each paired mod's key before, mapped to its key now. */
+function diffMods(
+  prev: ChangelogSnapshot,
+  next: ChangelogSnapshot,
+  changes: ChangelogChanges,
+): Map<string, string> {
   const claimed = new Set<string>();
+  const paired = new Map<string, string>();
   const prevByKey = new Map<string, SnapshotMod>();
   const prevByPage = new Map<string, SnapshotMod[]>();
   const prevByName = new Map<string, SnapshotMod[]>();
@@ -414,6 +430,7 @@ function diffMods(prev: ChangelogSnapshot, next: ChangelogSnapshot, changes: Cha
   /** The same mod and the same file: compare what is inside it. */
   const settle = (was: SnapshotMod, now: SnapshotMod, byName: boolean): void => {
     claimed.add(was.compareKey);
+    paired.set(was.compareKey, now.compareKey);
     if (byName) changes.unknown.matchedByName += 1;
     compareState(was, now);
     const options = compareSelections(
@@ -437,6 +454,7 @@ function diffMods(prev: ChangelogSnapshot, next: ChangelogSnapshot, changes: Cha
 
   const update = (was: SnapshotMod, now: SnapshotMod): void => {
     claimed.add(was.compareKey);
+    paired.set(was.compareKey, now.compareKey);
     changes.mods.updated.push({
       name: now.name,
       from: was.version ?? "unknown",
@@ -482,6 +500,7 @@ function diffMods(prev: ChangelogSnapshot, next: ChangelogSnapshot, changes: Cha
   for (const was of prev.mods) {
     if (!claimed.has(was.compareKey)) changes.mods.removed.push(line(was));
   }
+  return paired;
 }
 
 function diffPlugins(prev: ChangelogSnapshot, next: ChangelogSnapshot, changes: ChangelogChanges): void {

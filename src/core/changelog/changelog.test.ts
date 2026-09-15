@@ -186,6 +186,38 @@ describe("diffSnapshots — the rest of the package", () => {
     expect(c.requirements.game).toEqual({ from: "1.10.163.0 (exact)", to: "1.10.984.0 (exact)" });
     expect(c.requirements.extensionsAdded).toEqual(["loot"]);
   });
+
+  it("keeps a rule unchanged when its mods were updated or their files changed", () => {
+    // Ivy 1.0.27: an updated Nexus mod has a new file id and a mod of the
+    // curator's own is keyed by its files, so both keys change between builds.
+    const prev = snapshot({
+      mods: [
+        mod({ compareKey: "external:staging:aaa", name: "Settings" }),
+        mod({ compareKey: "nexus:5:50", name: "Faster File Copy", version: "1.3.1" }),
+        mod({ compareKey: "nexus:6:60", name: "LooksMenu" }),
+      ],
+      loadOrder: ["nexus:6:60", "nexus:5:50", "external:staging:aaa"],
+      rules: ["external:staging:aaa|after|nexus:5:50", "external:staging:aaa|after|nexus:6:60"],
+    });
+    const next = snapshot({
+      mods: [
+        mod({ compareKey: "external:staging:bbb", name: "Settings" }),
+        mod({ compareKey: "nexus:5:51", name: "Faster File Copy", version: "1.3.2" }),
+        mod({ compareKey: "nexus:6:60", name: "LooksMenu" }),
+      ],
+      loadOrder: ["external:staging:bbb", "nexus:6:60", "nexus:5:51"],
+      rules: [
+        "external:staging:bbb|after|nexus:5:51",
+        "external:staging:bbb|after|nexus:6:60",
+        "nexus:6:60|before|nexus:5:51",
+      ],
+    });
+    const c = diffSnapshots(prev, next);
+    expect(c.rules.removed).toEqual([]);
+    expect(c.rules.added).toEqual([{ mod: "LooksMenu", type: "before", other: "Faster File Copy" }]);
+    // The mod whose key changed still counts as moving in the load order.
+    expect(c.loadOrderMoved).toEqual(["Settings"]);
+  });
 });
 
 describe("snapshotManifest", () => {
