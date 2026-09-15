@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-manifest
-description: "Skill for the Manifest area of Event-Horizon. 516 symbols across 112 files."
+description: "Skill for the Manifest area of Event-Horizon. 521 symbols across 115 files."
 ---
 
 # Manifest
 
-516 symbols | 112 files | Cohesion: 73%
+521 symbols | 115 files | Cohesion: 73%
 
 ## When to Use
 
@@ -21,12 +21,12 @@ description: "Skill for the Manifest area of Event-Horizon. 516 symbols across 1
 | `src/core/manifest/readZip.ts` | ZipReadError, extractZipEntryToFile, findDataOffset, findEntry, findZip64Extra (+20) |
 | `src/core/manifest/packageZip.ts` | PackageEhcollError, describeBytes, listBundles, packageBytesAtMost, packageEhcoll (+19) |
 | `src/core/manifest/collectionConfig.ts` | modsNewlyBundled, modsNoLongerBundled, toBuildManifestExternalMods, reconcileExternalModsConfig, createDefaultConfig (+19) |
-| `src/ui/pages/build/engine.ts` | BuildRefusedError, BundleResolutionError, buildOutputFileName, resolveDeploymentMethod, resolveVortexVersion (+13) |
+| `src/ui/pages/build/engine.ts` | BuildRefusedError, BundleResolutionError, buildOutputFileName, resolveDeploymentMethod, resolveVortexVersion (+14) |
 | `src/core/manifest/buildManifest.ts` | BuildManifestError, buildLoadOrder, buildManifest, buildPackageMetadata, buildUserlist (+12) |
 | `src/core/manifest/externalHints.ts` | applyHint, describeUndeclared, countBy, downloadsFromState, modsFromState (+10) |
 | `src/core/manifest/bundleZip.ts` | writeChunk, listBundleFolder, assertBundlePaths, isAborted, sortForBundle (+8) |
-| `src/core/manifest/runSelfChecks.ts` | findModsThatPromptTheUser, describeDivergedMods, makeReadEntry, runSelfChecks, recoverArchive (+6) |
-| `src/core/manifest/readEhcoll.ts` | crossCheckBundled, prepareStagingDir, readEhcoll, safeRmDir, ReadEhcollError (+6) |
+| `src/core/manifest/readEhcoll.ts` | ReadEhcollError, assertReadableFile, classifyEntries, crossCheckBundled, extractManifest (+7) |
+| `src/core/manifest/runSelfChecks.ts` | findModsThatPromptTheUser, makeReadEntry, describeDivergedMods, runSelfChecks, recoverArchive (+6) |
 
 ## Entry Points
 
@@ -48,8 +48,8 @@ Start here when exploring this area:
 | `BundleResolutionError` | Class | `src/ui/pages/build/engine.ts` | 615 |
 | `ZipReadError` | Class | `src/core/manifest/readZip.ts` | 81 |
 | `BuildManifestError` | Class | `src/core/manifest/buildManifest.ts` | 262 |
+| `ReadEhcollError` | Class | `src/core/manifest/readEhcoll.ts` | 132 |
 | `CollectionConfigError` | Class | `src/core/manifest/collectionConfig.ts` | 291 |
-| `ReadEhcollError` | Class | `src/core/manifest/readEhcoll.ts` | 131 |
 | `parseManifest` | Function | `src/core/manifest/parseManifest.ts` | 169 |
 | `put` | Function | `src/core/diagnostics/zipWriter.ts` | 67 |
 | `buildGogHashdbTable` | Function | `src/core/environment/fixtures.testutil.ts` | 218 |

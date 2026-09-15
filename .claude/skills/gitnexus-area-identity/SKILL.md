@@ -48,8 +48,8 @@ Start here when exploring this area:
 | `nexusCompareKey` | Function | `src/core/identity/compareKey.ts` | 42 |
 | `findHashedIdentityCollisions` | Function | `src/core/manifest/collectionScope.ts` | 192 |
 | `matchSnapshots` | Function | `src/core/identity/modIdentity.ts` | 249 |
-| `compareSnapshots` | Function | `src/utils/utils.ts` | 378 |
-| `getModCompareKey` | Function | `src/utils/utils.ts` | 288 |
+| `compareSnapshots` | Function | `src/utils/utils.ts` | 379 |
+| `getModCompareKey` | Function | `src/utils/utils.ts` | 289 |
 | `archiveShaKey` | Function | `src/core/identity/modIdentity.ts` | 214 |
 | `nameVersionKey` | Function | `src/core/identity/modIdentity.ts` | 230 |
 | `nexusFileKey` | Function | `src/core/identity/modIdentity.ts` | 207 |

@@ -28,7 +28,7 @@ description: "Skill for the Actions area of Event-Horizon. 38 symbols across 6 f
 
 Start here when exploring this area:
 
-- **`pickModArchiveFile`** (Function) — `src/utils/utils.ts:113`
+- **`pickModArchiveFile`** (Function) — `src/utils/utils.ts:114`
 - **`action`** (Function) — `src/actions/compareModsAction.ts:104`
 - **`action`** (Function) — `src/actions/comparePluginsAction.ts:71`
 - **`action`** (Function) — `src/actions/exportModsAction.ts:124`
@@ -38,7 +38,7 @@ Start here when exploring this area:
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `pickModArchiveFile` | Function | `src/utils/utils.ts` | 113 |
+| `pickModArchiveFile` | Function | `src/utils/utils.ts` | 114 |
 | `action` | Function | `src/actions/compareModsAction.ts` | 104 |
 | `action` | Function | `src/actions/comparePluginsAction.ts` | 71 |
 | `action` | Function | `src/actions/exportModsAction.ts` | 124 |
@@ -55,7 +55,7 @@ Start here when exploring this area:
 | `pickExternalPromptUserChoice` | Function | `src/actions/installCollectionAction.ts` | 965 |
 | `pickOrphanChoice` | Function | `src/actions/installCollectionAction.ts` | 1040 |
 | `truncSha` | Function | `src/actions/installCollectionAction.ts` | 1189 |
-| `handlePickFile` | Function | `src/ui/pages/install/steps.tsx` | 1275 |
+| `handlePickFile` | Function | `src/ui/pages/install/steps.tsx` | 1276 |
 | `formatExternalDeps` | Function | `src/actions/installCollectionAction.ts` | 768 |
 | `formatInstallTarget` | Function | `src/actions/installCollectionAction.ts` | 612 |
 

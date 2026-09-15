@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-runtime
-description: "Skill for the Runtime area of Event-Horizon. 21 symbols across 9 files."
+description: "Skill for the Runtime area of Event-Horizon. 23 symbols across 10 files."
 ---
 
 # Runtime
 
-21 symbols | 9 files | Cohesion: 86%
+23 symbols | 10 files | Cohesion: 88%
 
 ## When to Use
 
@@ -20,6 +20,7 @@ description: "Skill for the Runtime area of Event-Horizon. 21 symbols across 9 f
 | `src/core/runtime/detectRuntimes.ts` | detectRuntimes, probeDirectX9, probeDotNet48, probeDotNetDesktop8, probeVcRedist (+1) |
 | `src/core/runtime/nodePrereqDeps.ts` | run, download, finish, armStall, go |
 | `src/core/curator/bulkUpdate.test.ts` | verify, ok |
+| `src/core/curator/requirementStep.test.ts` | download, download |
 | `src/core/runtime/installPrerequisites.ts` | installPrerequisites, summarisePrereqResults |
 | `src/core/runtime/prerequisites.ts` | classifyExitCode, verdictIsGood |
 | `src/core/curator/bulkUpdate.ts` | verify |
@@ -48,9 +49,11 @@ Start here when exploring this area:
 | `verdictIsGood` | Function | `src/core/runtime/prerequisites.ts` | 186 |
 | `detectRuntimes` | Function | `src/core/runtime/detectRuntimes.ts` | 214 |
 | `describeRuntimeFindings` | Function | `src/core/runtime/detectRuntimes.ts` | 265 |
-| `runtimeLines` | Function | `src/ui/pages/install/steps.tsx` | 690 |
+| `runtimeLines` | Function | `src/ui/pages/install/steps.tsx` | 691 |
 | `verify` | Function | `src/core/curator/bulkUpdate.test.ts` | 72 |
 | `ok` | Function | `src/core/curator/bulkUpdate.test.ts` | 28 |
+| `download` | Function | `src/core/curator/requirementStep.test.ts` | 142 |
+| `download` | Function | `src/core/curator/requirementStep.test.ts` | 71 |
 | `run` | Function | `src/core/runtime/installPrerequisites.test.ts` | 192 |
 | `run` | Function | `src/core/runtime/nodePrereqDeps.ts` | 165 |
 | `only` | Function | `src/core/runtime/detectRuntimes.test.ts` | 41 |
@@ -59,8 +62,6 @@ Start here when exploring this area:
 | `probeDotNetDesktop8` | Function | `src/core/runtime/detectRuntimes.ts` | 158 |
 | `probeVcRedist` | Function | `src/core/runtime/detectRuntimes.ts` | 87 |
 | `download` | Function | `src/core/runtime/nodePrereqDeps.ts` | 45 |
-| `finish` | Function | `src/core/runtime/nodePrereqDeps.ts` | 53 |
-| `armStall` | Function | `src/core/runtime/nodePrereqDeps.ts` | 89 |
 
 ## How to Explore
 

@@ -1,16 +1,16 @@
 ---
 name: gitnexus-area-scripts
-description: "Skill for the Scripts area of Event-Horizon. 70 symbols across 13 files."
+description: "Skill for the Scripts area of Event-Horizon. 72 symbols across 13 files."
 ---
 
 # Scripts
 
-70 symbols | 13 files | Cohesion: 83%
+72 symbols | 13 files | Cohesion: 84%
 
 ## When to Use
 
 - Working with code in `scripts/`
-- Understanding how parseChangedSymbols, verifyInstall, nexusClient work
+- Understanding how parseChangedSymbols, nexusClient, parseArgs work
 - Modifying scripts-related functionality
 
 ## Key Files
@@ -19,9 +19,9 @@ description: "Skill for the Scripts area of Event-Horizon. 70 symbols across 13 
 |------|---------|
 | `scripts/bearing-verify.mjs` | checkFile, checkManifest, checkPackageGates, checkRetiredHookKeys, checkSkillsStore (+12) |
 | `scripts/bearing-ci.mjs` | blastRadius, collectDiff, detectChanges, num, git (+9) |
+| `scripts/nexus-collection-file.mjs` | UsageError, makeClient, parseArgs, publish, refuseExtensionPage (+2) |
 | `scripts/bearing-token-benchmark.mjs` | answered, classicalCost, cypher, gn, graphCost (+2) |
 | `scripts/bearing-agent.mjs` | loadStaleness, markRefreshOutcome, run, runAllowFail, currentBranch (+2) |
-| `scripts/nexus-collection-file.mjs` | UsageError, makeClient, parseArgs, publish, refuseExtensionPage |
 | `scripts/nexus-page.mjs` | firstDifference, lineBreaksDropped, breaks, collapse, normalizeText |
 | `scripts/package-extension.js` | buildZip, crc32, collect, walk |
 | `scripts/nexus-collection-file.test.mjs` | fakeClient, makeClient, makeClient |
@@ -33,22 +33,24 @@ description: "Skill for the Scripts area of Event-Horizon. 70 symbols across 13 
 Start here when exploring this area:
 
 - **`parseChangedSymbols`** (Function) — `scripts/bearing-test-order.mjs:81`
-- **`verifyInstall`** (Function) — `scripts/bearing-verify.mjs:367`
 - **`nexusClient`** (Function) — `scripts/lib/nexusRelease.mjs:223`
-- **`parseArgs`** (Function) — `scripts/nexus-collection-file.mjs:45`
-- **`publish`** (Function) — `scripts/nexus-collection-file.mjs:115`
+- **`parseArgs`** (Function) — `scripts/nexus-collection-file.mjs:50`
+- **`publish`** (Function) — `scripts/nexus-collection-file.mjs:179`
+- **`refuseExtensionPage`** (Function) — `scripts/nexus-collection-file.mjs:107`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `UsageError` | Class | `scripts/nexus-collection-file.mjs` | 43 |
+| `UsageError` | Class | `scripts/nexus-collection-file.mjs` | 48 |
 | `parseChangedSymbols` | Function | `scripts/bearing-test-order.mjs` | 81 |
-| `verifyInstall` | Function | `scripts/bearing-verify.mjs` | 367 |
 | `nexusClient` | Function | `scripts/lib/nexusRelease.mjs` | 223 |
-| `parseArgs` | Function | `scripts/nexus-collection-file.mjs` | 45 |
-| `publish` | Function | `scripts/nexus-collection-file.mjs` | 115 |
-| `refuseExtensionPage` | Function | `scripts/nexus-collection-file.mjs` | 102 |
+| `parseArgs` | Function | `scripts/nexus-collection-file.mjs` | 50 |
+| `publish` | Function | `scripts/nexus-collection-file.mjs` | 179 |
+| `refuseExtensionPage` | Function | `scripts/nexus-collection-file.mjs` | 107 |
+| `uploadNaming` | Function | `scripts/nexus-collection-file.mjs` | 121 |
+| `zipHasRootManifest` | Function | `scripts/nexus-collection-file.mjs` | 132 |
+| `verifyInstall` | Function | `scripts/bearing-verify.mjs` | 367 |
 | `answered` | Function | `scripts/bearing-token-benchmark.mjs` | 163 |
 | `isEnospcError` | Function | `scripts/lib/project-tmp.mjs` | 95 |
 | `withProjectTmpEnv` | Function | `scripts/lib/project-tmp.mjs` | 25 |
@@ -60,8 +62,6 @@ Start here when exploring this area:
 | `blastRadius` | Function | `scripts/bearing-ci.mjs` | 110 |
 | `collectDiff` | Function | `scripts/bearing-ci.mjs` | 78 |
 | `detectChanges` | Function | `scripts/bearing-ci.mjs` | 92 |
-| `num` | Function | `scripts/bearing-ci.mjs` | 95 |
-| `git` | Function | `scripts/bearing-ci.mjs` | 49 |
 
 ## Execution Flows
 
