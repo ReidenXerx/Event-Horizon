@@ -1,14 +1,21 @@
 /**
- * Which Nexus collections the upload offers, and which one starts selected.
+ * Which Nexus collections the upload offers, which one starts selected, and
+ * what the collection is called on Nexus.
  *
  * A wrong default is expensive in both directions: an unwanted new collection
  * on the curator's profile, or a draft on another collection's page. So the
- * only defaults are the collection the last upload went to, and a collection
- * that is unambiguously this one by name.
+ * only default is the collection the last upload went to.
  */
 import { describe, expect, it } from "vitest";
 
-import { collectionOptions, defaultChoice, renameWarning } from "./NexusCollectionUpload";
+import {
+  collectionOptions,
+  defaultChoice,
+  pageNameProblem,
+  renameWarning,
+  withPageName,
+} from "./NexusCollectionUpload";
+import type { NexusCollectionInfo } from "../../../core/nexus/collectionPayload";
 
 const IVY = { slug: "tumkz9", name: "Ivy's Panties", gameDomain: "fallout4", latestRevision: 3 };
 const OTHER = { slug: "zz9zz9", name: "Something Else", gameDomain: "fallout4" };
@@ -33,28 +40,48 @@ describe("the collections offered", () => {
 
 describe("the collection selected at first", () => {
   it("is the one the last upload went to", () => {
-    expect(defaultChoice([OTHER], REMEMBERED, "Renamed")).toBe("tumkz9");
+    expect(defaultChoice(REMEMBERED)).toBe("tumkz9");
   });
 
-  it("is the one collection with this package's name, ignoring case and spaces", () => {
-    expect(defaultChoice([OTHER, IVY], undefined, "  ivy's panties ")).toBe("tumkz9");
+  it("is nothing when nothing is remembered, even if a page carries the package's name", () => {
+    // The first real use was starting over on NEW pages; the page with the
+    // package's name was the one being left behind.
+    expect(defaultChoice(undefined)).toBeUndefined();
+  });
+});
+
+describe("the name on Nexus", () => {
+  it("accepts the names the curator wants for the new pages", () => {
+    expect(pageNameProblem("Ivy's Panties - Event Horizon")).toBeUndefined();
+    expect(pageNameProblem("Meridia's Panties - Event Horizon")).toBeUndefined();
   });
 
-  it("is nothing when two collections share the name, or none has it", () => {
-    const twin = { ...IVY, slug: "aaaaaa" };
-    expect(defaultChoice([IVY, twin], undefined, "Ivy's Panties")).toBeUndefined();
-    expect(defaultChoice([OTHER], undefined, "Ivy's Panties")).toBeUndefined();
+  it("refuses what Nexus refuses, counting without surrounding spaces", () => {
+    expect(pageNameProblem("x".repeat(37))).toMatch(/3 to 36 characters; this is 37/);
+    expect(pageNameProblem("  Iv  ")).toMatch(/this is 2/);
+  });
+
+  it("is what the upload sends, trimmed, leaving the rest of the payload alone", () => {
+    const info = {
+      info: { author: "DuduPhudu", authorUrl: "", name: "Ivy's Panties", domainName: "fallout4", gameVersions: [] },
+      mods: [],
+    } as NexusCollectionInfo;
+    const named = withPageName(info, " Ivy's Panties - Event Horizon ");
+    expect(named.info.name).toBe("Ivy's Panties - Event Horizon");
+    expect(named.info.author).toBe("DuduPhudu");
+    expect(info.info.name).toBe("Ivy's Panties");
   });
 });
 
 describe("renaming a live collection", () => {
   it("warns when the chosen collection has another name, because Vortex renames it on upload", () => {
-    const lite = { slug: "q8w3rt", name: "Ivy's Panties Lite", gameDomain: "fallout4" };
-    expect(renameWarning([IVY, lite], "q8w3rt", "Ivy's Panties")).toMatch(/renames "Ivy's Panties Lite" on Nexus to "Ivy's Panties"/);
+    expect(renameWarning([IVY], "tumkz9", "Ivy's Panties - Event Horizon")).toMatch(
+      /renames "Ivy's Panties" on Nexus to "Ivy's Panties - Event Horizon"/,
+    );
   });
 
   it("stays quiet for the same name, a new collection, or no choice yet", () => {
-    expect(renameWarning([IVY], "tumkz9", "Ivy's Panties")).toBeUndefined();
+    expect(renameWarning([IVY], "tumkz9", " Ivy's Panties ")).toBeUndefined();
     expect(renameWarning([IVY], "", "Anything")).toBeUndefined();
     expect(renameWarning([IVY], undefined, "Anything")).toBeUndefined();
   });

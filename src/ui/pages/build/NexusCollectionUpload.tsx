@@ -14,7 +14,7 @@
 
 import * as React from "react";
 
-import { Button, Callout, ChoiceCard, Modal, ProgressRing, Section } from "../../components";
+import { Button, Callout, ChoiceCard, Field, Input, Modal, ProgressRing, Section } from "../../components";
 import { useApi } from "../../state";
 import { writeToClipboard } from "../../clipboard";
 import { readEhcoll } from "../../../core/manifest/readEhcoll";
@@ -27,6 +27,8 @@ import { getCollectionsConfigDir } from "../../../core/paths/appDataPaths";
 import { openExternalUrl } from "../../../core/revealPath";
 import { ehLog } from "../../../core/logging/ehLog";
 import {
+  NEXUS_COLLECTION_NAME_MAX,
+  NEXUS_COLLECTION_NAME_MIN,
   countNexusCollectionMods,
   nexusCollectionProblems,
   toNexusCollectionInfo,
@@ -120,6 +122,7 @@ function UploadModal(props: {
   const [phase, setPhase] = React.useState<NexusUploadPhase>({ kind: "loading" });
   const [loaded, setLoaded] = React.useState<NexusUploadLoaded | undefined>();
   const [selected, setSelected] = React.useState<string | undefined>();
+  const [pageName, setPageName] = React.useState("");
   const abortRef = React.useRef<AbortController | undefined>();
 
   React.useEffect(() => {
@@ -141,7 +144,8 @@ function UploadModal(props: {
         const read = await readEhcoll(props.outputPath);
         const manifest = read.manifest;
         const info = toNexusCollectionInfo(manifest);
-        const problems = nexusCollectionProblems(info);
+        // The name is checked in the dialog, where the curator can change it.
+        const problems = nexusCollectionProblems(withPageName(info, "Name")).filter(Boolean);
         if (problems.length > 0) {
           if (live) setPhase({ kind: "blocked", title: "Nexus would refuse this package.", details: problems });
           return;
@@ -155,7 +159,8 @@ function UploadModal(props: {
         ]);
         if (!live) return;
         setLoaded({ info, packageId: manifest.package.id, gameId: manifest.game.id, own, remembered });
-        setSelected(defaultChoice(own, remembered, info.info.name));
+        setSelected(defaultChoice(remembered));
+        setPageName(remembered?.name ?? info.info.name);
         setPhase({ kind: "choose" });
       } catch (err) {
         ehLog("error", "nexus-collection.ui.load-failed", { err });
@@ -177,6 +182,8 @@ function UploadModal(props: {
 
   const upload = async (): Promise<void> => {
     if (loaded === undefined || selected === undefined) return;
+    if (pageNameProblem(pageName) !== undefined) return;
+    const info = withPageName(loaded.info, pageName);
     let target: NexusCollectionLink | undefined;
     if (selected !== NEW_COLLECTION) {
       target =
@@ -202,7 +209,7 @@ function UploadModal(props: {
     // long time, and leaving Event Horizon's page must not make it invisible.
     let lastPercent = -1;
     const outcome = await uploadToNexusCollection(api, {
-      info: loaded.info,
+      info,
       packagePath: props.outputPath,
       target,
       signal: controller.signal,
@@ -257,7 +264,7 @@ function UploadModal(props: {
       id: "eh-nexus-collection-upload",
       type: "success",
       title: "Draft uploaded to Nexus",
-      message: `${loaded.info.info.name}: publish it on Nexus when it is ready.`,
+      message: `${info.info.name}: publish it on Nexus when it is ready.`,
       actions: [{ title: "Open", action: () => void openExternalUrl(url) }],
     });
   };
@@ -271,6 +278,8 @@ function UploadModal(props: {
       phase={phase}
       loaded={loaded}
       selected={selected}
+      pageName={pageName}
+      onPageNameChange={setPageName}
       outputPath={props.outputPath}
       outputBytes={props.outputBytes}
       changelogBbcode={props.changelogBbcode}
@@ -294,6 +303,9 @@ export function NexusUploadDialog(props: {
   phase: NexusUploadPhase;
   loaded?: NexusUploadLoaded;
   selected?: string;
+  /** What the collection is called ON NEXUS; see {@link pageNameProblem}. */
+  pageName: string;
+  onPageNameChange: (name: string) => void;
   outputPath: string;
   outputBytes: number;
   changelogBbcode?: string;
@@ -317,7 +329,7 @@ export function NexusUploadDialog(props: {
       footer={
         <Footer
           phase={props.phase}
-          canUpload={props.selected !== undefined}
+          canUpload={props.selected !== undefined && pageNameProblem(props.pageName) === undefined}
           changelogBbcode={props.changelogBbcode}
           onClose={props.onClose}
           onUpload={props.onUpload}
@@ -326,7 +338,14 @@ export function NexusUploadDialog(props: {
         />
       }
     >
-      <Body phase={props.phase} loaded={props.loaded} selected={props.selected} onSelect={props.onSelect} />
+      <Body
+        phase={props.phase}
+        loaded={props.loaded}
+        selected={props.selected}
+        onSelect={props.onSelect}
+        pageName={props.pageName}
+        onPageNameChange={props.onPageNameChange}
+      />
     </Modal>
   );
 }
@@ -336,6 +355,8 @@ function Body(props: {
   loaded?: NexusUploadLoaded;
   selected?: string;
   onSelect: (slug: string) => void;
+  pageName: string;
+  onPageNameChange: (name: string) => void;
 }): JSX.Element {
   const { phase, loaded } = props;
   switch (phase.kind) {
@@ -395,6 +416,8 @@ function Body(props: {
           selected={props.selected}
           onSelect={props.onSelect}
           note={phase.note}
+          pageName={props.pageName}
+          onPageNameChange={props.onPageNameChange}
         />
       );
   }
@@ -405,11 +428,14 @@ function Choose(props: {
   selected?: string;
   onSelect: (slug: string) => void;
   note?: string;
+  pageName: string;
+  onPageNameChange: (name: string) => void;
 }): JSX.Element {
   const { loaded } = props;
   const counts = countNexusCollectionMods(loaded.info);
   const options = collectionOptions(loaded.own, loaded.remembered);
-  const rename = renameWarning(options, props.selected, loaded.info.info.name);
+  const rename = renameWarning(options, props.selected, props.pageName);
+  const nameProblem = pageNameProblem(props.pageName);
   return (
     <div className="eh-stack eh-stack--sm">
       {props.note !== undefined && <p className="eh-note">{props.note}</p>}
@@ -437,6 +463,20 @@ function Choose(props: {
         label="A new collection"
         sub="Nexus creates it, as a draft, from this upload."
       />
+      <Field
+        label="Name on Nexus"
+        hint={
+          "Vortex renames the page to this on every upload, so rename it here rather than on the site. " +
+          "Event Horizon keeps the collection's own name."
+        }
+        error={nameProblem}
+      >
+        <Input
+          type="text"
+          value={props.pageName}
+          onChange={(e): void => props.onPageNameChange(e.target.value)}
+        />
+      </Field>
       {rename !== undefined && (
         <Callout tone="warning" role="silent">
           {rename}
@@ -573,31 +613,50 @@ export function collectionOptions(
 export function renameWarning(
   options: readonly OwnNexusCollection[],
   selected: string | undefined,
-  packageName: string,
+  pageName: string,
 ): string | undefined {
   if (selected === undefined || selected === NEW_COLLECTION) return undefined;
   const option = options.find((c) => c.slug === selected);
-  if (option === undefined || option.name === packageName) return undefined;
+  const name = pageName.trim();
+  if (option === undefined || option.name === name) return undefined;
   return (
-    `Uploading renames "${option.name}" on Nexus to "${packageName}" as soon as ` +
+    `Uploading renames "${option.name}" on Nexus to "${name}" as soon as ` +
     `the upload finishes. The name is public even while the new revision is a draft.`
   );
 }
 
 /**
- * Which option starts selected: where the last upload went, else the one
- * collection with this package's name. Otherwise nothing, so the curator picks
- * — a wrong default here makes a stray collection or a draft on the wrong page.
+ * Why a name cannot go to Nexus, or undefined when it can.
+ *
+ * The name on Nexus is set here, not taken from the package, because Vortex's
+ * upload renames an existing collection to whatever name it is sent, on every
+ * revision: a page renamed on the website would snap back at the next upload.
+ * Remembered with the collection and sent every time, it stays put.
  */
-export function defaultChoice(
-  own: readonly OwnNexusCollection[],
-  remembered: NexusCollectionLink | undefined,
-  packageName: string,
-): string | undefined {
-  if (remembered !== undefined) return remembered.slug;
-  const wanted = packageName.trim().toLowerCase();
-  const named = own.filter((c) => c.name.trim().toLowerCase() === wanted);
-  return named.length === 1 ? named[0]!.slug : undefined;
+export function pageNameProblem(name: string): string | undefined {
+  const length = name.trim().length;
+  if (length < NEXUS_COLLECTION_NAME_MIN || length > NEXUS_COLLECTION_NAME_MAX) {
+    return `Nexus takes ${NEXUS_COLLECTION_NAME_MIN} to ${NEXUS_COLLECTION_NAME_MAX} characters; this is ${length}.`;
+  }
+  return undefined;
+}
+
+/** The payload with the collection named as it should be on Nexus. */
+export function withPageName(info: NexusCollectionInfo, pageName: string): NexusCollectionInfo {
+  return { ...info, info: { ...info.info, name: pageName.trim() } };
+}
+
+/**
+ * Which option starts selected: where the last upload went. Otherwise nothing,
+ * so the curator picks — a wrong default makes a stray collection or a draft on
+ * the wrong page.
+ *
+ * A collection that merely shares the package's name is NOT preselected: the
+ * first real use was a curator starting over on new pages, and the page with
+ * the old name was exactly the one being left behind.
+ */
+export function defaultChoice(remembered: NexusCollectionLink | undefined): string | undefined {
+  return remembered?.slug;
 }
 
 function fileName(p: string): string {

@@ -889,6 +889,8 @@ describe("render", () => {
         phase,
         loaded,
         selected: "tumkz9",
+        pageName: "Ivy's Panties",
+        onPageNameChange: () => undefined,
         outputPath: "C:/Users/x/AppData/Roaming/Vortex/event-horizon/collections/ivy-panties-1.0.29.zip",
         outputBytes: 871.8 * 1024 ** 2,
         changelogBbcode: "[b]1.0.29[/b]",
@@ -921,6 +923,22 @@ describe("render", () => {
 
     it("choosing another collection - the live page gets renamed, said before the button", () => {
       write("nexus-upload-rename", dialog({ kind: "choose" }, { selected: "q8w3rt" }));
+    });
+
+    it("starting fresh - a new page with its own name, nothing preselected", () => {
+      // The curator's first real use: new pages named "<collection> - Event
+      // Horizon", nothing remembered yet, so nothing is chosen for them.
+      write(
+        "nexus-upload-new-page",
+        dialog(
+          { kind: "choose" },
+          {
+            loaded: { ...loaded, remembered: undefined },
+            selected: "",
+            pageName: "Ivy's Panties - Event Horizon",
+          },
+        ),
+      );
     });
 
     it("uploading - how far the transfer is, and the only way out is Stop", () => {
