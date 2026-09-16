@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-curator
-description: "Skill for the Curator area of Event-Horizon. 399 symbols across 81 files."
+description: "Skill for the Curator area of Event-Horizon. 377 symbols across 72 files."
 ---
 
 # Curator
 
-399 symbols | 81 files | Cohesion: 73%
+377 symbols | 72 files | Cohesion: 74%
 
 ## When to Use
 
@@ -35,8 +35,8 @@ Start here when exploring this area:
 - **`describeRemoveConfirm`** (Function) — `src/core/curator/archiveOnDisk.ts:38`
 - **`resolveInstallFiles`** (Function) — `src/core/curator/installPlan.ts:340`
 - **`pluginOwners`** (Function) — `src/core/curator/pluginPool.ts:111`
-- **`freezeAttribute`** (Function) — `src/core/curator/readProfile.ts:151`
-- **`endIfIdle`** (Function) — `src/core/curator/requirementStep.ts:119`
+- **`lightFlagTargets`** (Function) — `src/core/curator/pluginView.ts:38`
+- **`key`** (Function) — `src/core/curator/pluginView.ts:41`
 
 ## Key Symbols
 
@@ -47,6 +47,8 @@ Start here when exploring this area:
 | `describeRemoveConfirm` | Function | `src/core/curator/archiveOnDisk.ts` | 38 |
 | `resolveInstallFiles` | Function | `src/core/curator/installPlan.ts` | 340 |
 | `pluginOwners` | Function | `src/core/curator/pluginPool.ts` | 111 |
+| `lightFlagTargets` | Function | `src/core/curator/pluginView.ts` | 38 |
+| `key` | Function | `src/core/curator/pluginView.ts` | 41 |
 | `freezeAttribute` | Function | `src/core/curator/readProfile.ts` | 151 |
 | `endIfIdle` | Function | `src/core/curator/requirementStep.ts` | 119 |
 | `onStop` | Function | `src/core/curator/requirementStep.ts` | 132 |
@@ -60,8 +62,6 @@ Start here when exploring this area:
 | `parseGameList` | Function | `src/core/curator/requirements.ts` | 72 |
 | `pickInstallFile` | Function | `src/core/curator/requirements.ts` | 984 |
 | `reusableAnswers` | Function | `src/core/curator/requirements.ts` | 198 |
-| `runHeal` | Function | `src/core/doctor/runHeal.ts` | 98 |
-| `cleanGameFolder` | Function | `src/core/environment/cleanGameFolder.ts` | 44 |
 
 ## Execution Flows
 

@@ -33,7 +33,7 @@ description: "Skill for the Install area of Event-Horizon. 109 symbols across 24
 Start here when exploring this area:
 
 - **`Notice`** (Function) — `src/ui/components/Notice.tsx:21`
-- **`reconcileMods`** (Function) — `src/ui/pages/install/steps.tsx:2897`
+- **`reconcileMods`** (Function) — `src/ui/pages/install/steps.tsx:2932`
 - **`wizardReducer`** (Function) — `src/ui/pages/install/state.ts:296`
 - **`describeHeal`** (Function) — `src/core/doctor/heal.ts:66`
 - **`getInstallSession`** (Function) — `src/ui/pages/install/installSession.ts:1468`
@@ -43,7 +43,7 @@ Start here when exploring this area:
 | Symbol | Type | File | Line |
 |--------|------|------|------|
 | `Notice` | Function | `src/ui/components/Notice.tsx` | 21 |
-| `reconcileMods` | Function | `src/ui/pages/install/steps.tsx` | 2897 |
+| `reconcileMods` | Function | `src/ui/pages/install/steps.tsx` | 2932 |
 | `wizardReducer` | Function | `src/ui/pages/install/state.ts` | 296 |
 | `describeHeal` | Function | `src/core/doctor/heal.ts` | 66 |
 | `getInstallSession` | Function | `src/ui/pages/install/installSession.ts` | 1468 |

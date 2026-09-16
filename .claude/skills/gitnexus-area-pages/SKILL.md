@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-pages
-description: "Skill for the Pages area of Event-Horizon. 29 symbols across 11 files."
+description: "Skill for the Pages area of Event-Horizon. 27 symbols across 11 files."
 ---
 
 # Pages
 
-29 symbols | 11 files | Cohesion: 73%
+27 symbols | 11 files | Cohesion: 72%
 
 ## When to Use
 
@@ -19,8 +19,8 @@ description: "Skill for the Pages area of Event-Horizon. 29 symbols across 11 fi
 |------|---------|
 | `src/ui/pages/ModDiffsPage.tsx` | ModDiffsPage, MatchedModList, ModEntryList, ReportView, SnapshotMeta (+6) |
 | `src/ui/pages/PluginDiffsPage.tsx` | PluginDiffsPage, EnabledMismatchList, PluginEntryList, PluginNameCell, PositionChangedList (+1) |
-| `src/ui/EventHorizonMainPage.tsx` | AppShell, NavBar, RouteOutlet |
 | `src/ui/pages/AboutPage.tsx` | handleClick, openExternal |
+| `src/ui/EventHorizonMainPage.tsx` | RouteOutlet |
 | `src/ui/errors/ErrorContext.tsx` | useErrorReporterFormatted |
 | `src/ui/pages/CollectionsPage.tsx` | CollectionsPage |
 | `src/ui/pages/HomePage.tsx` | HomePage |
@@ -48,11 +48,9 @@ Start here when exploring this area:
 | `ModDiffsPage` | Function | `src/ui/pages/ModDiffsPage.tsx` | 67 |
 | `PluginDiffsPage` | Function | `src/ui/pages/PluginDiffsPage.tsx` | 53 |
 | `BuildPage` | Function | `src/ui/pages/build/BuildPage.tsx` | 157 |
-| `InstallPage` | Function | `src/ui/pages/install/InstallPage.tsx` | 53 |
+| `InstallPage` | Function | `src/ui/pages/install/InstallPage.tsx` | 64 |
 | `DiffSectionBlock` | Function | `src/ui/components/DiffSectionBlock.tsx` | 33 |
-| `AppShell` | Function | `src/ui/EventHorizonMainPage.tsx` | 88 |
-| `NavBar` | Function | `src/ui/EventHorizonMainPage.tsx` | 113 |
-| `RouteOutlet` | Function | `src/ui/EventHorizonMainPage.tsx` | 162 |
+| `RouteOutlet` | Function | `src/ui/EventHorizonMainPage.tsx` | 179 |
 | `ChangeGroup` | Function | `src/ui/components/ChangelogView.tsx` | 69 |
 | `MatchedModList` | Function | `src/ui/pages/ModDiffsPage.tsx` | 528 |
 | `ModEntryList` | Function | `src/ui/pages/ModDiffsPage.tsx` | 374 |
@@ -62,6 +60,8 @@ Start here when exploring this area:
 | `ChangedModRow` | Function | `src/ui/pages/ModDiffsPage.tsx` | 437 |
 | `FieldDiffRow` | Function | `src/ui/pages/ModDiffsPage.tsx` | 561 |
 | `TierBadge` | Function | `src/ui/pages/ModDiffsPage.tsx` | 316 |
+| `formatFieldValue` | Function | `src/ui/pages/ModDiffsPage.tsx` | 584 |
+| `partitionDiffs` | Function | `src/ui/pages/ModDiffsPage.tsx` | 424 |
 
 ## Execution Flows
 

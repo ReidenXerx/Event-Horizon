@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-build
-description: "Skill for the Build area of Event-Horizon. 462 symbols across 101 files."
+description: "Skill for the Build area of Event-Horizon. 464 symbols across 102 files."
 ---
 
 # Build
 
-462 symbols | 101 files | Cohesion: 83%
+464 symbols | 102 files | Cohesion: 83%
 
 ## When to Use
 
@@ -48,8 +48,9 @@ Start here when exploring this area:
 | `describeProfileDrift` | Function | `src/core/curator/profileDrift.ts` | 106 |
 | `isProfileUnmoved` | Function | `src/core/curator/profileDrift.ts` | 90 |
 | `doctorLightFlagBaseline` | Function | `src/core/doctor/health.ts` | 188 |
-| `overallHealth` | Function | `src/core/doctor/health.ts` | 861 |
+| `overallHealth` | Function | `src/core/doctor/health.ts` | 873 |
 | `canReapply` | Function | `src/core/doctor/loadOrderStatus.ts` | 254 |
+| `pickDoctorReceipt` | Function | `src/core/doctor/pickReceipt.ts` | 62 |
 | `getDraftsRoot` | Function | `src/core/draftStorage.ts` | 122 |
 | `listDrafts` | Function | `src/core/draftStorage.ts` | 163 |
 | `describeInstallAttempt` | Function | `src/core/installer/attemptRecord.ts` | 231 |
@@ -61,7 +62,6 @@ Start here when exploring this area:
 | `formatBytes` | Function | `src/core/manifest/unexplainedFiles.ts` | 139 |
 | `listModDiffFiles` | Function | `src/core/modDiffStorage.ts` | 60 |
 | `readModDiffReport` | Function | `src/core/modDiffStorage.ts` | 95 |
-| `listPluginDiffFiles` | Function | `src/core/pluginDiffStorage.ts` | 60 |
 
 ## Execution Flows
 

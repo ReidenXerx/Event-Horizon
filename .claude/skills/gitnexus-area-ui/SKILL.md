@@ -60,7 +60,7 @@ Start here when exploring this area:
 | `main` | Function | `scripts/ui/fingerprint-screens.mjs` | 394 |
 | `log` | Function | `scripts/ui/fingerprint-screens.mjs` | 394 |
 | `serialise` | Function | `scripts/ui/fingerprint-screens.mjs` | 238 |
-| `EventHorizonMainPage` | Function | `src/ui/EventHorizonMainPage.tsx` | 65 |
+| `EventHorizonMainPage` | Function | `src/ui/EventHorizonMainPage.tsx` | 66 |
 | `ErrorProvider` | Function | `src/ui/errors/ErrorContext.tsx` | 85 |
 
 ## Execution Flows
