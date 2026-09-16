@@ -17,7 +17,7 @@
 const Module = require("module");
 const path = require("path");
 
-const registered = { mainPages: [], actions: [] };
+const registered = { mainPages: [], actions: [], installers: [] };
 const iconSets = [];
 
 const vortexApiStub = {
@@ -130,6 +130,11 @@ select: () => {},
   registerAction: (group, pos, icon, opts, title) => registered.actions.push({ group, pos, title }),
   registerReducer: () => {},
   registerSettings: () => {},
+  // Added when the collection interception landed. A missing stub here is not
+  // a soft failure: init() would throw "registerInstaller is not a function"
+  // and the smoke run would blame the whole extension.
+  registerInstaller: (id, priority, testSupported, install) =>
+    registered.installers.push({ id, priority, testSupported, install }),
   once: () => {},
 };
 
@@ -152,6 +157,10 @@ console.log("actions          :", registered.actions.length);
 for (const a of registered.actions) {
   console.log(`   ${a.group.padEnd(24)} ${String(a.pos).padEnd(4)} ${a.title}`);
 }
+console.log("installers       :", registered.installers.length);
+for (const i of registered.installers) {
+  console.log(`   ${String(i.priority).padEnd(4)} ${i.id}  (Vortex's collections installer sits at 5)`);
+}
 
 // sanity assertions
 let bad = 0;
@@ -163,6 +172,19 @@ if (registered.mainPages.length !== 1) { console.error("WARN: expected exactly 1
 // Three since the legacy INSTALL dialog followed (2026-09-15): it skipped every
 // check the Install page runs and the "Hands off" warning.
 if (registered.actions.length !== 3) { console.error("WARN: expected 3 actions"); bad++; }
+/**
+ * The collection claim. A number, not a name, decides this: Vortex walks its
+ * installers sorted ascending by priority and takes the first that says
+ * supported, and its own collections installer is registered at 5. Registering
+ * at or above that means the claim never happens and nothing says so — the
+ * extension loads, the installer exists, and Vortex just gets there first.
+ */
+const intercept = registered.installers.find((i) => i.id === "event-horizon-collection");
+if (intercept === undefined) {
+  console.error("WARN: the collection interceptor did not register"); bad++;
+} else if (!(intercept.priority < 5)) {
+  console.error(`WARN: interceptor priority ${intercept.priority} does not beat Vortex's collections installer (5)`); bad++;
+}
 const dupes = new Map();
 for (const a of registered.actions) {
   const key = a.group + "#" + a.pos;

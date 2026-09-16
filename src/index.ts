@@ -1,6 +1,8 @@
 import * as path from "path";
 import { util, type types } from "@nexusmods/vortex-api";
 
+import { registerCollectionIntercept } from "./core/installer/collectionIntercept";
+
 import createExportModsAction from "./actions/exportModsAction";
 import createCompareModsAction from "./actions/compareModsAction";
 import { createComparePluginsAction } from "./actions/comparePluginsAction";
@@ -153,6 +155,19 @@ function init(context: types.IExtensionContext): boolean {
    * "Hands off" warning), so every install from the toolbar skipped all of
    * them. Installs happen on the Install page only.
    */
+
+  /**
+   * Claim an Event Horizon collection archive before Vortex's own collections
+   * installer sees it. Registered here rather than in `once` because the
+   * installer list is consulted by priority, not by registration order, and
+   * an installer that registers late has simply missed the installs that
+   * happened first.
+   *
+   * OBSERVATION BUILD: this refuses the install and records what Vortex handed
+   * over. It cannot touch a normal collection — the test demands Event
+   * Horizon's own manifest.json beside the collection.json.
+   */
+  registerCollectionIntercept(context);
 
   // Vortex's events are untyped and `start-install` is absent from the
   // published typings, so the only way to learn what the installer accepts is
