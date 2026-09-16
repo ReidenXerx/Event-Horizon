@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-resolver
-description: "Skill for the Resolver area of Event-Horizon. 126 symbols across 41 files."
+description: "Skill for the Resolver area of Event-Horizon. 115 symbols across 36 files."
 ---
 
 # Resolver
 
-126 symbols | 41 files | Cohesion: 66%
+115 symbols | 36 files | Cohesion: 67%
 
 ## When to Use
 
@@ -17,16 +17,16 @@ description: "Skill for the Resolver area of Event-Horizon. 126 symbols across 4
 
 | File | Symbols |
 |------|---------|
-| `src/core/resolver/resolveInstallPlan.ts` | enforceInstallTargetInvariant, resolveExternalDependencies, resolveInstallPlan, resolveOrphanedMods, resolvePluginOrder (+21) |
+| `src/core/resolver/resolveInstallPlan.ts` | checkDeploymentMethod, checkExtensions, checkGameVersion, checkVortexVersion, compareSemverLike (+21) |
 | `src/core/resolver/userState.ts` | buildSuggestedProfileName, buildUserSideState, judgeResumeCandidate, lookupProfile, pickInstallTarget (+14) |
 | `src/ui/pages/install/engine.ts` | checkEnvironment, checkSystemRuntimes, profileExistsInState, runLoadingPipeline, runLoadingPipelineWithReceipt (+2) |
 | `src/core/getModsListForProfile.ts` | getActiveGameId, getActiveProfileId, getActiveProfileIdFromState, belongsToGame, getModsForGame (+1) |
-| `src/core/resolver/enrichStagingSetHashes.ts` | collectExternalStagingSetHashTargets, collectStagingSetHashTargetsForTest, enrichInstalledModsWithStagingSetHashes, normalizeName |
 | `src/core/resolver/gameVersionGuidance.ts` | compareVersions, parse, describe, gameVersionGuidance |
 | `src/core/installer/installMarker.ts` | listInterruptedInstalls, parseMarker, str |
 | `src/core/paths/appDataPaths.ts` | getEventHorizonDir, getEventHorizonRoot, getVortexUserDataPath |
 | `src/ui/pages/doctor/EnvironmentTools.tsx` | onGame, runCheck, activeGame |
 | `src/utils/utils.ts` | exportDiffReport, pickJsonFile, pickTxtFile |
+| `src/core/resolver/collectAvailableDownloads.ts` | belongsToGame, collectAvailableDownloads, readDownloadFiles |
 
 ## Entry Points
 
