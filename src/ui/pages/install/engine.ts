@@ -678,6 +678,30 @@ export async function warnIfSevenZipBroken(
       wine: looksLikeWine(),
     });
 
+    /**
+     * ─── THE FIX LIVES ON THE OTHER SIDE OF THE PREFIX ────────────────────
+     * The repair runs on the LINUX side, and Event Horizon is inside the Wine
+     * prefix — it cannot reach out and run it. The extension also ships no
+     * scripts (the published zip is dist/, assets/, info.json and a licence),
+     * so there is nothing on a Nexus-installed machine to point at either.
+     *
+     * What actually helps is therefore the exact text to paste into a normal
+     * terminal, in one click, rather than steps to transcribe from a dialog
+     * by hand. The script finds the prefix itself, so no path has to be
+     * filled in here — and it only LOOKS until it is passed --apply.
+     *
+     * Offered on Wine only: on Windows this command is meaningless.
+     */
+    const fixCommand = [
+      "# Event Horizon — repair Vortex's 7-Zip in its Wine/Proton prefix.",
+      "# Run these on the LINUX side, in a normal terminal. Not inside Wine.",
+      "git clone https://github.com/ReidenXerx/Event-Horizon.git",
+      "bash Event-Horizon/scripts/setup-proton.sh",
+      "# ^ looks only and changes nothing. It prints what it found, including",
+      "#   whether 7-Zip can start at all. Then, only if it found something:",
+      "bash Event-Horizon/scripts/setup-proton.sh --apply",
+    ].join("\n");
+
     api.sendNotification?.({
       id: "eh-sevenzip-health",
       type: health.kind === "indeterminate" ? "info" : "warning",
@@ -697,6 +721,34 @@ export async function warnIfSevenZipBroken(
             );
           },
         },
+        ...(looksLikeWine()
+          ? [
+              {
+                title: "Copy fix command",
+                action: (): void => {
+                  void (async (): Promise<void> => {
+                    const { writeToClipboard } = await import("../../clipboard");
+                    const copied = await writeToClipboard(fixCommand);
+                    // Says which happened. A copy button that silently did
+                    // nothing is the failure this whole notification exists to
+                    // avoid repeating, so the fallback SHOWS the text to copy
+                    // by hand rather than leaving an empty clipboard.
+                    api.sendNotification?.({
+                      id: "eh-sevenzip-copy",
+                      type: copied ? "success" : "warning",
+                      title: copied
+                        ? "Copied — paste it in a Linux terminal"
+                        : "Could not copy to the clipboard",
+                      message: copied
+                        ? "Run it outside Wine. It only looks until you add --apply."
+                        : "Use \"What to do\" and copy the command by hand.",
+                      displayMS: 6000,
+                    });
+                  })();
+                },
+              },
+            ]
+          : []),
       ],
     });
     // Only a FATAL verdict is returned, and only that one blocks. A broken

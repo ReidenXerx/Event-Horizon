@@ -35,6 +35,7 @@ const NOT_A_CLASS = new Set([
   "eh-ring-gradient", // <linearGradient id> in ProgressRing
   "eh-doctor-collection", // Vortex notification id
   "eh-sevenzip-health",
+  "eh-sevenzip-copy", // the "copied to clipboard" follow-up notification
   "eh-prereq-repair",
   "eh-mod-diff-file-select", // a Field's element id on the diff pages
   "eh-diff-file-select",

@@ -102,7 +102,15 @@ else
 
   if [ -z "$PREFIX" ]; then
     say "not in the usual places — sweeping \$HOME (a moment)"
-    VORTEX_DIR="$(find "$HOME" -maxdepth 12 -type d -path '*/AppData/Roaming/Vortex' -print -quit 2>/dev/null)"
+    # -xdev, because a prefix is never on another filesystem and a sweep that
+    # wanders onto an NFS/SMB mount or a backup snapshot can hang for minutes
+    # with no output — on the machine of someone already convinced the tool is
+    # broken. The pruned directories are the big ones that cannot contain a
+    # drive_c: caches and checkouts, not places a prefix hides.
+    VORTEX_DIR="$(find "$HOME" -xdev -maxdepth 12 \
+      \( -type d \( -name node_modules -o -name .cache -o -name .git \
+                    -o -name .npm -o -name .cargo -o -name Trash \) -prune \) -o \
+      \( -type d -path '*/AppData/Roaming/Vortex' -print -quit \) 2>/dev/null)"
     [ -n "$VORTEX_DIR" ] && PREFIX="${VORTEX_DIR%%/drive_c/*}"
   fi
 fi
@@ -373,6 +381,97 @@ else
   fi
 fi
 
+# ── 3c. Does 7-Zip start, and can it LIST? ───────────────────────────────────
+#
+# TWO different failures wear the same error, and only ONE of them is the thing
+# the runtime below fixes:
+#
+#   cannot start        — 7z.exe will not launch, usually the missing VC++
+#                         runtime. This is the case this script was written for
+#                         and vcrun2022 is the answer.
+#   starts, cannot list — the process runs and exits cleanly, but its listing
+#                         output never arrives. Installing runtimes changes
+#                         NOTHING here, because nothing is missing.
+#
+# The second is real and was measured on a player's prefix: 29 listing attempts
+# since August, zero successes, while mods installed perfectly — because
+# installing is extraction, and only listing was broken. Event Horizon reports
+# that as "list-unavailable". Without this test the script diagnoses every such
+# prefix as the first case and sends the user after a runtime they already have,
+# which is exactly what happened to one tester.
+line
+say "[3c] 7-ZIP ROUND TRIP"
+
+SEVENZIP_VERDICT="untested"
+sevenzip_roundtrip() {
+  # Needs a binary AND a wine that owns the prefix. Missing either means there
+  # is nothing to test, and saying "untested" beats inventing a verdict.
+  [ -n "$SEVENZIP" ]    || { SEVENZIP_VERDICT="no-binary"; return 0; }
+  [ -n "$OWNING_WINE" ] || { SEVENZIP_VERDICT="no-wine";   return 0; }
+
+  t="$(mktemp -d 2>/dev/null || printf '/tmp/eh-7z-%s' "$$")"
+  mkdir -p "$t" 2>/dev/null || { SEVENZIP_VERDICT="untested"; return 0; }
+  printf 'event horizon probe\n' > "$t/probe.txt" 2>/dev/null || {
+    SEVENZIP_VERDICT="untested"; rm -rf "$t"; return 0; }
+
+  # Quiet on purpose: wine is noisy on stderr even when it works, and this is a
+  # diagnostic rather than something the user is meant to read.
+  if ! WINEPREFIX="$PREFIX" "$OWNING_WINE" "$SEVENZIP" a "$t/probe.zip" "$t/probe.txt" \
+        >"$t/add.log" 2>&1 || [ ! -s "$t/probe.zip" ]; then
+    SEVENZIP_VERDICT="cannot-start"
+    rm -rf "$t"
+    return 0
+  fi
+
+  # Exit status alone is not enough: the failure being hunted here is an empty
+  # LISTING from a process that exited fine, so the probe file must appear in
+  # the output for this to count as working.
+  if WINEPREFIX="$PREFIX" "$OWNING_WINE" "$SEVENZIP" l "$t/probe.zip" \
+       >"$t/list.log" 2>&1 && grep -q 'probe\.txt' "$t/list.log"; then
+    SEVENZIP_VERDICT="ok"
+  else
+    SEVENZIP_VERDICT="list-broken"
+  fi
+  rm -rf "$t"
+  return 0
+}
+
+sevenzip_roundtrip
+case "$SEVENZIP_VERDICT" in
+  ok)
+    say "result: 7-Zip creates AND lists archives in this prefix. It works."
+    say ""
+    say "        Nothing below will improve anything. If Event Horizon still"
+    say "        warns, send it the log rather than installing runtimes."
+    ;;
+  list-broken)
+    say "result: 7-Zip RUNS but cannot LIST."
+    say ""
+    say "        It created an archive and then could not read it back. The"
+    say "        process starts, so no runtime is missing — vcrun2022 will not"
+    say "        change this, and installing it is not the fix."
+    say ""
+    say "        Mods will still INSTALL: unpacking is extraction, and that"
+    say "        works. What Event Horizon loses is checking whether a .rar or"
+    say "        .7z you supplied yourself is intact, and it will say so rather"
+    say "        than call your file damaged."
+    say ""
+    say "        Worth trying, in order:"
+    say "          - a different Proton build for this prefix (Experimental vs"
+    say "            a GE build); they differ in what they can run, and this is"
+    say "            the most common cause when 7-Zip runs but misbehaves"
+    say "          - re-running with --wine pointing at the runtime Vortex"
+    say "            actually launches with, if the one above was a guess"
+    ;;
+  cannot-start)
+    say "result: 7-Zip will NOT start in this prefix."
+    say "        This is the case the runtime below is for."
+    ;;
+  no-binary)  say "result: not tested — no 7z.exe was found under this prefix." ;;
+  no-wine)    say "result: not tested — no wine was found to run it with." ;;
+  *)          say "result: not tested." ;;
+esac
+
 # Decide the command.
 #
 # An ARRAY, not a string. The runtime that turned up on the tester's machine
@@ -471,9 +570,33 @@ RC="${PIPESTATUS[0]}"
 
 line
 if [ "$RC" = 0 ]; then
-  say "DONE. Restart Vortex, then try the install again."
-  say "Event Horizon checks the extractor when you load a collection and will"
-  say "tell you if it still is not working."
+  # A zero exit means the installer finished, NOT that 7-Zip works now. Saying
+  # "DONE" on that alone is the same assert-instead-of-verify that had Event
+  # Horizon telling players their archives were damaged: a claim about a thing
+  # nobody re-tested. So re-run the round trip and report what it actually says.
+  say "Installed. Re-testing 7-Zip in the prefix…"
+  sevenzip_roundtrip
+  case "$SEVENZIP_VERDICT" in
+    ok)
+      say "VERIFIED: 7-Zip now creates and lists archives in this prefix."
+      say "Restart Vortex and try the install again."
+      ;;
+    list-broken)
+      say "PARTLY FIXED: 7-Zip starts, but still cannot list."
+      say "The runtime went in and it did not change this, which means the"
+      say "runtime was never what was missing. Try a different Proton build for"
+      say "this prefix. Mods will still install; see [3c] above for what is lost."
+      ;;
+    cannot-start)
+      say "STILL BROKEN: 7-Zip will not start even after installing the runtime."
+      say "Paste the output above along with:  bash scripts/diagnose-install.sh"
+      ;;
+    *)
+      say "Could not re-test ($SEVENZIP_VERDICT)."
+      say "Restart Vortex; Event Horizon checks the extractor when you load a"
+      say "collection and will tell you if it still is not working."
+      ;;
+  esac
 elif grep -qiE 'version mismatch|wineserver binary was not upgraded' "$RUN_LOG" 2>/dev/null; then
   # The one failure that is NOT ambiguous, and the one a tester actually hit.
   # Calling it "not necessarily fatal" wasted their time: nothing was
