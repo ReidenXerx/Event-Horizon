@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-resolver
-description: "Skill for the Resolver area of Event-Horizon. 157 symbols across 56 files."
+description: "Skill for the Resolver area of Event-Horizon. 111 symbols across 33 files."
 ---
 
 # Resolver
 
-157 symbols | 56 files | Cohesion: 65%
+111 symbols | 33 files | Cohesion: 68%
 
 ## When to Use
 
@@ -19,14 +19,14 @@ description: "Skill for the Resolver area of Event-Horizon. 157 symbols across 5
 |------|---------|
 | `src/core/resolver/resolveInstallPlan.ts` | checkDeploymentMethod, checkExtensions, checkGameVersion, checkVortexVersion, compareSemverLike (+21) |
 | `src/core/resolver/userState.ts` | buildSuggestedProfileName, buildUserSideState, judgeResumeCandidate, lookupProfile, pickInstallTarget (+14) |
-| `src/actions/installCollectionAction.ts` | createInstallCollectionAction, formatError, isPlanInstallable, profileExistsInState, resolveStaleReceipt (+2) |
 | `src/ui/pages/install/engine.ts` | checkEnvironment, checkSystemRuntimes, profileExistsInState, runLoadingPipeline, runLoadingPipelineWithReceipt (+2) |
 | `src/core/getModsListForProfile.ts` | getActiveGameId, getActiveProfileId, getActiveProfileIdFromState, belongsToGame, getModsForGame (+1) |
-| `src/core/resolver/enrichStagingSetHashes.ts` | collectExternalStagingSetHashTargets, collectStagingSetHashTargetsForTest, enrichInstalledModsWithStagingSetHashes, normalizeName |
-| `src/core/stagingPath.ts` | installRootFor, installationPathFromState, stagingRootForModId, stagingRootFromFolder |
-| `src/utils/utils.ts` | exportDiffReport, pickEhcollFile, pickJsonFile, pickTxtFile |
-| `src/core/resolver/collectAvailableDownloads.test.ts` | action, engine, pipelines, read |
 | `src/core/resolver/gameVersionGuidance.ts` | compareVersions, parse, describe, gameVersionGuidance |
+| `src/core/installer/installMarker.ts` | listInterruptedInstalls, parseMarker, str |
+| `src/core/paths/appDataPaths.ts` | getEventHorizonDir, getEventHorizonRoot, getVortexUserDataPath |
+| `src/ui/pages/doctor/EnvironmentTools.tsx` | onGame, runCheck, activeGame |
+| `src/utils/utils.ts` | exportDiffReport, pickJsonFile, pickTxtFile |
+| `src/core/resolver/collectAvailableDownloads.ts` | belongsToGame, collectAvailableDownloads, readDownloadFiles |
 
 ## Entry Points
 
@@ -35,8 +35,8 @@ Start here when exploring this area:
 - **`createCompareModsAction`** (Function) — `src/actions/compareModsAction.ts:21`
 - **`createComparePluginsAction`** (Function) — `src/actions/comparePluginsAction.ts:16`
 - **`createExportModsAction`** (Function) — `src/actions/exportModsAction.ts:17`
-- **`createInstallCollectionAction`** (Function) — `src/actions/installCollectionAction.ts:119`
-- **`archiveFileCacheKey`** (Function) — `src/core/archiveHashCache.ts:84`
+- **`enrichModsWithArchiveHashes`** (Function) — `src/core/archiveHashing.ts:184`
+- **`discoveredStore`** (Function) — `src/core/comparePlugins.ts:160`
 
 ## Key Symbols
 
@@ -45,23 +45,23 @@ Start here when exploring this area:
 | `createCompareModsAction` | Function | `src/actions/compareModsAction.ts` | 21 |
 | `createComparePluginsAction` | Function | `src/actions/comparePluginsAction.ts` | 16 |
 | `createExportModsAction` | Function | `src/actions/exportModsAction.ts` | 17 |
-| `createInstallCollectionAction` | Function | `src/actions/installCollectionAction.ts` | 119 |
-| `archiveFileCacheKey` | Function | `src/core/archiveHashCache.ts` | 84 |
 | `enrichModsWithArchiveHashes` | Function | `src/core/archiveHashing.ts` | 184 |
-| `hashFileSha256` | Function | `src/core/archiveHashing.ts` | 39 |
-| `cleanup` | Function | `src/core/archiveHashing.ts` | 59 |
-| `recoverMissingArchives` | Function | `src/core/archiveRecovery.ts` | 248 |
 | `discoveredStore` | Function | `src/core/comparePlugins.ts` | 160 |
 | `exportPluginsDiffReport` | Function | `src/core/comparePlugins.ts` | 371 |
-| `liveStagingShapes` | Function | `src/core/curator/liveStagingShapes.ts` | 41 |
-| `lightFlagTargets` | Function | `src/core/curator/pluginView.ts` | 38 |
-| `key` | Function | `src/core/curator/pluginView.ts` | 41 |
 | `profileDriftSince` | Function | `src/core/curator/profileDrift.ts` | 51 |
 | `logBundleDirs` | Function | `src/core/diagnostics/logBundle.ts` | 45 |
 | `profileId` | Function | `src/core/environment/snapshot.ts` | 203 |
-| `stagingRoot` | Function | `src/core/environment/snapshot.ts` | 326 |
 | `exportModsToJsonFile` | Function | `src/core/exportMods.ts` | 8 |
 | `getActiveGameId` | Function | `src/core/getModsListForProfile.ts` | 283 |
+| `getActiveProfileId` | Function | `src/core/getModsListForProfile.ts` | 288 |
+| `getActiveProfileIdFromState` | Function | `src/core/getModsListForProfile.ts` | 320 |
+| `belongsToGame` | Function | `src/core/getModsListForProfile.ts` | 325 |
+| `getModsForGame` | Function | `src/core/getModsListForProfile.ts` | 660 |
+| `getModsForProfile` | Function | `src/core/getModsListForProfile.ts` | 625 |
+| `listInstallAttempts` | Function | `src/core/installer/attemptRecord.ts` | 147 |
+| `listInterruptedInstalls` | Function | `src/core/installer/installMarker.ts` | 132 |
+| `resumeCandidates` | Function | `src/core/installer/resumeSources.ts` | 48 |
+| `beginOp` | Function | `src/core/logging/ehLog.ts` | 153 |
 
 ## Execution Flows
 

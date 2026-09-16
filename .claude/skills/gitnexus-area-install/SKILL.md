@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-install
-description: "Skill for the Install area of Event-Horizon. 105 symbols across 23 files."
+description: "Skill for the Install area of Event-Horizon. 109 symbols across 24 files."
 ---
 
 # Install
 
-105 symbols | 23 files | Cohesion: 74%
+109 symbols | 24 files | Cohesion: 73%
 
 ## When to Use
 
@@ -17,34 +17,36 @@ description: "Skill for the Install area of Event-Horizon. 105 symbols across 23
 
 | File | Symbols |
 |------|---------|
-| `src/ui/pages/install/installSession.ts` | onPhase, onHashProgress, onPhase, onHashProgress, onPhase (+27) |
+| `src/ui/pages/install/installSession.ts` | onProgress, onPhase, onHashProgress, onPhase, onHashProgress (+28) |
 | `src/ui/pages/install/steps.tsx` | BucketList, CuratorReportsNotice, DamagedArchiveNotice, ExternalArchiveNotice, FailureBody (+23) |
 | `src/ui/pages/install/state.ts` | wizardReducer, canProceedFromDecisions, countUndecidedConflicts, defaultConflictChoice, defaultOrphanChoice (+3) |
 | `src/ui/pages/install/fetchLink.ts` | fetchFromNexus, gameMismatchMessage, readKnownGames, throwIfAborted, vortexDownloadPath (+1) |
 | `src/ui/pages/install/installProgress.ts` | describeElapsed, describeQuiet, estimateRemainingMs, formatDuration, trackPhase |
+| `src/ui/pages/install/startWarning.test.ts` | bundle, confirmSession, confirm |
 | `src/core/installer/installLink.ts` | fileSizeOf, nexusFilePageUrl, vortexGamesForNexusDomain |
-| `src/ui/pages/curator/requirementsIo.ts` | nexusExtOf, fn |
 | `src/ui/pages/install/autoSortGate.test.ts` | bundle, confirmSession |
 | `src/ui/pages/install/deploymentGate.test.ts` | bundle, confirmSession |
-| `src/core/installer/autoDeploy.ts` | blocksInstall, readsAutoDeploy |
+| `src/ui/pages/curator/requirementsIo.ts` | nexusExtOf, fn |
 
 ## Entry Points
 
 Start here when exploring this area:
 
 - **`Notice`** (Function) — `src/ui/components/Notice.tsx:21`
-- **`reconcileMods`** (Function) — `src/ui/pages/install/steps.tsx:2905`
-- **`wizardReducer`** (Function) — `src/ui/pages/install/state.ts:289`
-- **`fileSizeOf`** (Function) — `src/core/installer/installLink.ts:321`
-- **`nexusFilePageUrl`** (Function) — `src/core/installer/installLink.ts:311`
+- **`reconcileMods`** (Function) — `src/ui/pages/install/steps.tsx:2897`
+- **`wizardReducer`** (Function) — `src/ui/pages/install/state.ts:296`
+- **`describeHeal`** (Function) — `src/core/doctor/heal.ts:66`
+- **`getInstallSession`** (Function) — `src/ui/pages/install/installSession.ts:1468`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
 | `Notice` | Function | `src/ui/components/Notice.tsx` | 21 |
-| `reconcileMods` | Function | `src/ui/pages/install/steps.tsx` | 2905 |
-| `wizardReducer` | Function | `src/ui/pages/install/state.ts` | 289 |
+| `reconcileMods` | Function | `src/ui/pages/install/steps.tsx` | 2897 |
+| `wizardReducer` | Function | `src/ui/pages/install/state.ts` | 296 |
+| `describeHeal` | Function | `src/core/doctor/heal.ts` | 66 |
+| `getInstallSession` | Function | `src/ui/pages/install/installSession.ts` | 1468 |
 | `fileSizeOf` | Function | `src/core/installer/installLink.ts` | 321 |
 | `nexusFilePageUrl` | Function | `src/core/installer/installLink.ts` | 311 |
 | `vortexGamesForNexusDomain` | Function | `src/core/installer/installLink.ts` | 299 |
@@ -52,31 +54,29 @@ Start here when exploring this area:
 | `fn` | Function | `src/ui/pages/curator/requirementsIo.ts` | 179 |
 | `nexus` | Function | `src/ui/pages/curator/useCuratorActions.ts` | 225 |
 | `waitForVortexDownload` | Function | `src/ui/pages/install/fetchLink.ts` | 364 |
-| `describeHeal` | Function | `src/core/doctor/heal.ts` | 66 |
-| `getInstallSession` | Function | `src/ui/pages/install/installSession.ts` | 1355 |
 | `blocksInstall` | Function | `src/core/installer/autoDeploy.ts` | 48 |
 | `readsAutoDeploy` | Function | `src/core/installer/autoDeploy.ts` | 33 |
 | `probeDeploymentMethod` | Function | `src/core/installer/probeDeployment.ts` | 60 |
 | `StatGrid` | Function | `src/ui/components/StatTile.tsx` | 60 |
 | `StatTile` | Function | `src/ui/components/StatTile.tsx` | 35 |
 | `AboutPage` | Function | `src/ui/pages/AboutPage.tsx` | 21 |
-| `canProceedFromDecisions` | Function | `src/ui/pages/install/state.ts` | 530 |
-| `countUndecidedConflicts` | Function | `src/ui/pages/install/state.ts` | 557 |
+| `canProceedFromDecisions` | Function | `src/ui/pages/install/state.ts` | 545 |
+| `countUndecidedConflicts` | Function | `src/ui/pages/install/state.ts` | 572 |
 
 ## Execution Flows
 
 | Flow | Type | Steps |
 |------|------|-------|
+| `RunEnvironmentGate → GetVortexUserDataPath` | cross_community | 9 |
 | `RunEnvironmentGate → EHRuntime` | cross_community | 8 |
 | `RunEnvironmentGate → Notify` | cross_community | 8 |
 | `RunEnvironmentGate → GetSnapshot` | cross_community | 7 |
+| `BeginInstall → EHRuntime` | cross_community | 7 |
+| `BeginInstall → Notify` | cross_community | 7 |
 | `InstallFromLink → ToPosix` | cross_community | 7 |
-| `RunEnvironmentGate → GetVortexUserDataPath` | cross_community | 7 |
 | `InstallFromLink → GuessGenericHints` | cross_community | 6 |
 | `InstallFromLink → GuessGenericTitle` | cross_community | 6 |
 | `InstallFromLink → CountProblems` | cross_community | 6 |
-| `RunEnvironmentGate → WizardReducer` | cross_community | 6 |
-| `Heal → EHRuntime` | cross_community | 6 |
 
 ## How to Explore
 

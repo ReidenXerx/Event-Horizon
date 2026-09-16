@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-installer
-description: "Skill for the Installer area of Event-Horizon. 437 symbols across 107 files."
+description: "Skill for the Installer area of Event-Horizon. 437 symbols across 104 files."
 ---
 
 # Installer
 
-437 symbols | 107 files | Cohesion: 74%
+437 symbols | 104 files | Cohesion: 74%
 
 ## When to Use
 
@@ -17,10 +17,10 @@ description: "Skill for the Installer area of Event-Horizon. 437 symbols across 
 
 | File | Symbols |
 |------|---------|
-| `src/core/installer/runInstall.ts` | buildAbortedResult, buildDisplayNameByModId, buildFailReceipt, buildManifestIndex, buildNexusModIdMap (+59) |
-| `src/core/installer/downloadDirect.ts` | onAbort, onAbort, onAbort, defaultRequest, discardPart (+20) |
+| `src/core/installer/runInstall.ts` | buildAbortedResult, buildDisplayNameByModId, buildFailReceipt, buildManifestIndex, buildNexusModIdMap (+64) |
+| `src/core/installer/downloadDirect.ts` | defaultRequest, discardPart, download, formatDuration, formatSize (+20) |
 | `src/core/installer/modInstall.ts` | delayRespectingAbort, downloadFolderFor, downloadNexusArchiveOnly, installFromBundledArchive, installFromExistingDownload (+19) |
-| `src/core/installLedger.ts` | InstallLedgerError, expectString, getInstallLedgerDir, getReceiptPath, isIso8601 (+10) |
+| `src/core/installLedger.ts` | InstallLedgerError, expectString, getInstallLedgerDir, getReceiptPath, isIso8601 (+11) |
 | `src/core/installer/installLink.ts` | dispositionParams, fileNameFromContentDisposition, safeDownloadName, sanitizeFileName, categoryOf (+10) |
 | `src/core/installer/applyUserlist.ts` | applyGroupDefinition, applyGroupRule, applyPluginEntry, applyPluginGroup, applyPluginRuleWithCollectionWins (+8) |
 | `src/core/installer/applyMirrors.ts` | applyMirrorPlan, mirrorEntryFor, placeFile, replaceFile, restoreOne (+7) |
@@ -61,7 +61,7 @@ Start here when exploring this area:
 | `findModTypeMismatches` | Function | `src/core/installer/checkModTypes.ts` | 41 |
 | `emptyPluginOrderDrift` | Function | `src/core/installer/checkPluginOrder.ts` | 55 |
 | `readUserPluginsTxt` | Function | `src/core/installer/checkPluginOrder.ts` | 185 |
-| `buildCuratorReport` | Function | `src/core/installer/curatorReport.ts` | 108 |
+| `describeSevenZipHealth` | Function | `src/core/installer/checkSevenZipHealth.ts` | 108 |
 
 ## Execution Flows
 

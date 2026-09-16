@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-manifest
-description: "Skill for the Manifest area of Event-Horizon. 520 symbols across 115 files."
+description: "Skill for the Manifest area of Event-Horizon. 533 symbols across 118 files."
 ---
 
 # Manifest
 
-520 symbols | 115 files | Cohesion: 73%
+533 symbols | 118 files | Cohesion: 72%
 
 ## When to Use
 
@@ -21,12 +21,12 @@ description: "Skill for the Manifest area of Event-Horizon. 520 symbols across 1
 | `src/core/manifest/readZip.ts` | ZipReadError, extractZipEntryToFile, findDataOffset, findEntry, findZip64Extra (+20) |
 | `src/core/manifest/packageZip.ts` | PackageEhcollError, describeBytes, listBundles, packageBytesAtMost, packageEhcoll (+19) |
 | `src/core/manifest/collectionConfig.ts` | reconcileExternalModsConfig, modsNewlyBundled, modsNoLongerBundled, toBuildManifestExternalMods, createDefaultConfig (+19) |
-| `src/ui/pages/build/engine.ts` | loadBuildContext, pickDefaultCollectionName, resolveGameVersion, BuildRefusedError, BundleResolutionError (+13) |
+| `src/ui/pages/build/engine.ts` | loadBuildContext, pickDefaultCollectionName, resolveGameVersion, BuildRefusedError, BundleResolutionError (+12) |
 | `src/core/manifest/buildManifest.ts` | BuildManifestError, buildLoadOrder, buildManifest, buildPackageMetadata, buildUserlist (+12) |
 | `src/core/manifest/externalHints.ts` | countBy, downloadsFromState, modsFromState, applyHint, describeUndeclared (+10) |
 | `src/core/manifest/bundleZip.ts` | writeChunk, listBundleFolder, assertBundlePaths, isAborted, sortForBundle (+8) |
 | `src/core/manifest/readEhcoll.ts` | ReadEhcollError, assertReadableFile, classifyEntries, crossCheckBundled, extractManifest (+7) |
-| `src/core/manifest/runSelfChecks.ts` | findModsThatPromptTheUser, makeReadEntry, describeDivergedMods, runSelfChecks, recoverArchive (+6) |
+| `src/core/manifest/bundleFromStaging.ts` | describeExternalDrift, mergeMeasuredBundles, restoreArchiveHashes, measureBundledMods, fail (+6) |
 
 ## Entry Points
 

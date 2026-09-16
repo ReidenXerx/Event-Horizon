@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-doctor
-description: "Skill for the Doctor area of Event-Horizon. 70 symbols across 16 files."
+description: "Skill for the Doctor area of Event-Horizon. 71 symbols across 17 files."
 ---
 
 # Doctor
 
-70 symbols | 16 files | Cohesion: 76%
+71 symbols | 17 files | Cohesion: 76%
 
 ## When to Use
 
@@ -56,12 +56,12 @@ Start here when exploring this area:
 | `standingOf` | Function | `src/core/doctor/loadOrderStatus.ts` | 159 |
 | `assessActiveOrder` | Function | `src/core/doctor/loadOrderWatcher.ts` | 102 |
 | `status` | Function | `src/ui/pages/doctor/LoadOrderBadge.tsx` | 105 |
-| `evaluateHealth` | Function | `src/core/doctor/health.ts` | 318 |
-| `curatorPluginsOff` | Function | `src/core/doctor/loadOrderStatus.ts` | 362 |
-| `describeLoadOrder` | Function | `src/core/doctor/loadOrderStatus.ts` | 276 |
-| `badgePill` | Function | `src/ui/pages/doctor/LoadOrderBadge.tsx` | 61 |
 | `startLoadOrderWatcher` | Function | `src/core/doctor/loadOrderWatcher.ts` | 205 |
 | `dismiss` | Function | `src/core/doctor/loadOrderWatcher.ts` | 217 |
+| `look` | Function | `src/core/doctor/loadOrderWatcher.ts` | 232 |
+| `schedule` | Function | `src/core/doctor/loadOrderWatcher.ts` | 333 |
+| `skip` | Function | `src/core/doctor/loadOrderWatcher.ts` | 225 |
+| `evaluateHealth` | Function | `src/core/doctor/health.ts` | 318 |
 
 ## Execution Flows
 
@@ -70,13 +70,13 @@ Start here when exploring this area:
 | `StartLoadOrderWatcher → GetVortexUserDataPath` | cross_community | 7 |
 | `Look → BaselineOf` | cross_community | 5 |
 | `Look → SkippedPluginOrder` | cross_community | 5 |
+| `RunEnvironmentGate → DismissNotification` | cross_community | 5 |
 | `Look → InstalledAtMs` | cross_community | 4 |
+| `BeginInstall → DismissNotification` | cross_community | 4 |
 | `Look → Key` | cross_community | 3 |
 | `Look → ActiveContextFromState` | cross_community | 3 |
 | `Look → ReadReceipts` | cross_community | 3 |
 | `LoadOrderCard → CuratorPluginsOff` | cross_community | 3 |
-| `StartLoadOrderWatcher → EHRuntime` | cross_community | 3 |
-| `Look → EHRuntime` | cross_community | 3 |
 
 ## How to Explore
 

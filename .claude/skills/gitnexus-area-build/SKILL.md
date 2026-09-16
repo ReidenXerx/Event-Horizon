@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-build
-description: "Skill for the Build area of Event-Horizon. 457 symbols across 100 files."
+description: "Skill for the Build area of Event-Horizon. 462 symbols across 101 files."
 ---
 
 # Build
 
-457 symbols | 100 files | Cohesion: 84%
+462 symbols | 101 files | Cohesion: 83%
 
 ## When to Use
 
@@ -19,9 +19,9 @@ description: "Skill for the Build area of Event-Horizon. 457 symbols across 100 
 |------|---------|
 | `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildChangelog, BuildDiffCard, BuildWizard, BuildingPanel (+57) |
 | `src/ui/pages/build/buildSession.ts` | cancelLoading, cancelRecovering, getState, subscribe, buildProgress (+30) |
+| `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, handlePickFile, DecisionsStep, DoNotInterfereModal (+20) |
 | `src/ui/pages/build/BuildDashboard.tsx` | BuildDashboard, handleDismissBuilt, handleOpenBuilt, handleOpenDraft, DashboardHeader (+19) |
-| `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, DecisionsStep, DoNotInterfereModal, DoneStep (+19) |
-| `src/ui/pages/build/engine.ts` | validateCuratorInput, downloadedFromNexus, findUnidentifiedMods, isExternal, isExternal (+14) |
+| `src/ui/pages/build/engine.ts` | validateCuratorInput, describeMissingArchives, isMissingArchiveWarning, downloadedFromNexus, findUnidentifiedMods (+14) |
 | `src/ui/pages/build/buildSessionRegistry.ts` | BuildSessionRegistry, getBuildSessionRegistry, ensure, get, makeHooks (+13) |
 | `src/ui/pages/build/buildDiff.test.ts` | findPackages, findPackages, findPackages, findPackages, findPackages (+9) |
 | `src/core/draftStorage.ts` | getDraftsRoot, listDrafts, deleteDraft, getDraftPath, isPlainObject (+6) |

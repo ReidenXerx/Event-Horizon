@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-curator
-description: "Skill for the Curator area of Event-Horizon. 381 symbols across 74 files."
+description: "Skill for the Curator area of Event-Horizon. 399 symbols across 81 files."
 ---
 
 # Curator
 
-381 symbols | 74 files | Cohesion: 74%
+399 symbols | 81 files | Cohesion: 73%
 
 ## When to Use
 
