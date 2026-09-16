@@ -2,16 +2,19 @@
  * The curator's side of a collection's presentation: the images it picked,
  * kept beside the collection config, and what a build puts in the package.
  *
- * Images live in `<configDir>/.presentation/<packageId>/`. Keyed by package id
- * rather than slug, because renaming a draft changes the slug while the
- * collection stays the same; and a dot folder, because every `*.json` directly
- * in the config folder is read as a collection config.
+ * Images live in `<configDir>/.presentation/<packageId>/`. Keyed by package id,
+ * the collection's identity, rather than by slug, which is only the config's
+ * file name; and a dot folder, because every `*.json` directly in the config
+ * folder is read as a collection config. A rename on the Build form picks a
+ * different collection with a different package id, so that collection is
+ * given copies (copyPresentationImages).
  *
  * A picked image is COPIED there, named by its content, so the original can be
  * moved or deleted without breaking the next build, and picking the same image
  * twice stores it once.
  */
 
+import { constants as fsConstants } from "fs";
 import * as fsp from "fs/promises";
 import * as path from "path";
 
@@ -83,6 +86,46 @@ export async function importPresentationImage(args: {
   await fsp.mkdir(dir, { recursive: true });
   await fsp.copyFile(args.sourcePath, path.join(dir, file));
   return { file, size: stat.size };
+}
+
+/**
+ * Give another collection copies of a presentation's images.
+ *
+ * For a rename on the Build form. The name picks the collection, so a new name
+ * is a new collection with a new package id, and these folders are keyed by
+ * package id: the new collection's folder is empty, and its build found none of
+ * the images the form had just shown. Copied, not moved: the collection under
+ * the old name keeps its own presentation.
+ *
+ * Never rejects. An image that cannot be copied is reported, and the build
+ * warns about it when it measures the images it ships.
+ */
+export async function copyPresentationImages(args: {
+  configDir: string;
+  fromPackageId: string;
+  toPackageId: string;
+  presentation: PresentationConfig;
+}): Promise<{ copied: string[]; failed: string[] }> {
+  const copied: string[] = [];
+  const failed: string[] = [];
+  if (args.fromPackageId === args.toPackageId) return { copied, failed };
+  const p = args.presentation;
+  const files = [
+    ...new Set([p.header, p.tile, ...(p.gallery ?? []).map((g) => g.file)]),
+  ].filter(isPresentationFileName);
+  const from = presentationAssetsDir(args.configDir, args.fromPackageId);
+  const to = presentationAssetsDir(args.configDir, args.toPackageId);
+  for (const file of files) {
+    try {
+      await fsp.mkdir(to, { recursive: true });
+      // Stored names are content hashes, so one already there is this image.
+      await fsp.copyFile(path.join(from, file), path.join(to, file), fsConstants.COPYFILE_EXCL);
+      copied.push(file);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") failed.push(file);
+    }
+  }
+  return { copied, failed };
 }
 
 export type BuildPresentation = {

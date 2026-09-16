@@ -60,6 +60,7 @@ import { prepareChangelog, type PreparedChangelog } from "./buildChangelog";
 import { saveChangelogHistory } from "../../../core/changelog/changelogHistory";
 import type { ChangelogEntry } from "../../../core/changelog/changelog";
 import {
+  copyPresentationImages,
   resolvePresentationForBuild,
   type BuildPresentation,
 } from "../../../core/presentation/presentationAssets";
@@ -634,6 +635,86 @@ export function withFormOverrides(args: {
     changelog: args.overrides.changelog,
   };
   return { config, mods: applyPostProcessedDeclarations(args.mods, config) };
+}
+
+/**
+ * The config a build writes to: the one the name on the form picks.
+ *
+ * ─── A RENAME IS A NEW COLLECTION ──────────────────────────────────────
+ * Renaming does not rename anything. The name picks the slug, the slug picks
+ * the config, and the config carries the packageId that ties releases
+ * together. So a new name builds a NEW collection, the old one is still listed
+ * under its old name, and nobody who installed it will be offered this as an
+ * update. That is a defensible design and a terrible surprise, so it is said
+ * out loud.
+ *
+ * ─── WHAT GOES WITH THE NEW NAME ───────────────────────────────────────
+ * Two things on this form belong to the collection rather than to one build,
+ * and live on its config: the prerequisites and the presentation (header, card
+ * image, gallery, colours, About, links). The config the new name picks starts
+ * without them, and a build shipped without them while the form showed them:
+ *  - the prerequisites were silently reset to "none required", the one part of
+ *    a collection that stops a user's game from launching at all;
+ *  - Meridia's Panties - Event Horizon 1.0.18 (2026-09-16) shipped with no
+ *    header, card image or Discord link, all on screen when Build was pressed.
+ * Both are taken along when the collection the name picks has none of its
+ * own. The presentation's images are kept per package id, so a new collection
+ * is given copies.
+ */
+export async function configForBuildName(args: {
+  configDir: string;
+  name: string;
+  context: Pick<BuildContext, "collectionConfig" | "configPath" | "defaultName" | "externalMods">;
+}): Promise<{ config: CollectionConfig; configPath: string; warnings: string[] }> {
+  const { context } = args;
+  const slug = slugify(args.name);
+  if (slug === slugify(context.defaultName)) {
+    return { config: context.collectionConfig, configPath: context.configPath, warnings: [] };
+  }
+
+  const reloaded = await loadOrCreateCollectionConfig({ configDir: args.configDir, slug });
+  const forked = reloaded.config.packageId !== context.collectionConfig.packageId;
+  let config = reloaded.config;
+
+  const reconciled = reconcileExternalModsConfig({
+    config,
+    externalMods: context.externalMods.map((m) => ({ id: m.id, name: m.name })),
+  });
+  if (reconciled.changed) config = reconciled.config;
+
+  const previous = context.collectionConfig;
+  if (config.externalDependencies === undefined && previous.externalDependencies !== undefined) {
+    config = { ...config, externalDependencies: previous.externalDependencies };
+  }
+  if (config.presentation === undefined && previous.presentation !== undefined) {
+    config = { ...config, presentation: previous.presentation };
+    const images = await copyPresentationImages({
+      configDir: args.configDir,
+      fromPackageId: previous.packageId,
+      toPackageId: config.packageId,
+      presentation: previous.presentation,
+    });
+    ehLog(images.failed.length > 0 ? "warn" : "info", "build.rename.presentation-carried", {
+      from: previous.packageId,
+      to: config.packageId,
+      copied: images.copied.length,
+      failed: images.failed,
+    });
+  }
+
+  const warnings: string[] = [];
+  if (forked) {
+    warnings.push(
+      `This built a NEW collection called "${args.name}", not a new ` +
+        `version of "${context.defaultName}". A collection's name is its ` +
+        `identity here, so renaming forks it: "${context.defaultName}" is ` +
+        `still on your dashboard with its own release history, and anyone ` +
+        `who installed it will not see this as an update. If you meant to ` +
+        `rename, delete the old one; if you meant to update it, build again ` +
+        `under its original name.`,
+    );
+  }
+  return { config, configPath: reloaded.configPath, warnings };
 }
 
 export interface BuildOverrides {
@@ -1308,63 +1389,14 @@ export async function runBuildPipeline(
   const outputDir = getCollectionsDir();
   const configDir = path.join(outputDir, ".config");
 
-  // If the curator renamed the collection, load (or create) the
-  // config file for the NEW slug — the package id of the original
-  // collection stays with the original name.
-  let collectionConfig = context.collectionConfig;
-  let configPath = context.configPath;
-  const renameWarnings: string[] = [];
-  if (slug !== slugify(context.defaultName)) {
-    const reloaded = await loadOrCreateCollectionConfig({ configDir, slug });
-    const forked = reloaded.config.packageId !== context.collectionConfig.packageId;
-    collectionConfig = reloaded.config;
-    configPath = reloaded.configPath;
+  // A renamed collection builds into the config its NEW name picks; the package
+  // id of the original stays with the original name.
+  const named = await configForBuildName({ configDir, name: curator.name, context });
+  let collectionConfig = named.config;
+  const configPath = named.configPath;
+  const renameWarnings = named.warnings;
 
-    const reconciled = reconcileExternalModsConfig({
-      config: collectionConfig,
-      externalMods: context.externalMods.map((m) => ({
-        id: m.id,
-        name: m.name,
-      })),
-    });
-    if (reconciled.changed) {
-      collectionConfig = reconciled.config;
-    }
-
-    // The prerequisites the curator ticked live on the config, not the form,
-    // and a rename swaps the config out from under them. They were being
-    // silently reset to "none required" — the one part of a collection that
-    // stops a user's game from launching at all.
-    if (
-      collectionConfig.externalDependencies === undefined &&
-      context.collectionConfig.externalDependencies !== undefined
-    ) {
-      collectionConfig = {
-        ...collectionConfig,
-        externalDependencies: context.collectionConfig.externalDependencies,
-      };
-    }
-
-    if (forked) {
-      // Renaming does not rename anything — the name picks the slug, the slug
-      // picks the config, and the config carries the packageId that ties
-      // releases together. So this is a NEW collection, the old one is still
-      // listed under its old name, and nobody who installed it will be
-      // offered this as an update. That is a defensible design and a terrible
-      // surprise, so it is said out loud.
-      renameWarnings.push(
-        `This built a NEW collection called "${curator.name}", not a new ` +
-          `version of "${context.defaultName}". A collection's name is its ` +
-          `identity here, so renaming forks it: "${context.defaultName}" is ` +
-          `still on your dashboard with its own release history, and anyone ` +
-          `who installed it will not see this as an update. If you meant to ` +
-          `rename, delete the old one; if you meant to update it, build again ` +
-          `under its original name.`,
-      );
-    }
-  }
-
-  // AFTER the rename block, which can swap the whole config out, and together
+  // AFTER the rename, which can swap the whole config out, and together
   // with the form's overrides — see withFormOverrides for the build that read
   // its answers before them.
   ({ config: collectionConfig, mods } = withFormOverrides({
