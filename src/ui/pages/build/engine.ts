@@ -601,6 +601,41 @@ export function applyPostProcessedDeclarations(
   return kept.map((m) => declarationsFor(config.externalMods[m.id], m));
 }
 
+/**
+ * The config a build runs on, and the mods with the curator's answers on them.
+ *
+ * ─── ONE STEP, IN THIS ORDER ───────────────────────────────────────────
+ * The answers ("reproduce my version", "these files are mine", "leave it out")
+ * are read from the config AFTER the form's overrides are merged into it. They
+ * were read before: the overlay saw the config as the form had loaded it, and
+ * bundling saw it with the form's changes, so the two halves of one build
+ * disagreed about the same mod.
+ *
+ * It shipped that way on 2026-09-16. Meridia's Dynamic Container Loot had been
+ * answered "reproduce my version" (mirror); its Nexus page went away, the curator
+ * marked it external and chose Bundled to freeze their copy. Bundling measured
+ * it as a bundle, the overlay — reading the stale config — still marked it
+ * mirrored, and packaging refused the build: "marked mirrored=true but 2 of its
+ * 2 file(s) were not collected". The overlay itself already ranks bundle over
+ * mirror; it was simply handed the wrong config.
+ */
+export function withFormOverrides(args: {
+  config: CollectionConfig;
+  overrides: Pick<BuildOverrides, "externalMods" | "readme" | "changelog">;
+  mods: readonly AuditorMod[];
+}): { config: CollectionConfig; mods: AuditorMod[] } {
+  const config: CollectionConfig = {
+    ...args.config,
+    externalMods: {
+      ...args.config.externalMods,
+      ...args.overrides.externalMods,
+    },
+    readme: args.overrides.readme,
+    changelog: args.overrides.changelog,
+  };
+  return { config, mods: applyPostProcessedDeclarations(args.mods, config) };
+}
+
 export interface BuildOverrides {
   /** modId → override to apply on top of the existing config entry. */
   externalMods: Record<string, ExternalModConfigEntry>;
@@ -1329,20 +1364,14 @@ export async function runBuildPipeline(
     }
   }
 
-  // AFTER the rename block, which can swap the whole config out: applying the
-  // curator's declarations to the old one would read answers that belong to a
-  // different collection.
-  mods = applyPostProcessedDeclarations(mods, collectionConfig);
-
-  collectionConfig = {
-    ...collectionConfig,
-    externalMods: {
-      ...collectionConfig.externalMods,
-      ...overrides.externalMods,
-    },
-    readme: overrides.readme,
-    changelog: overrides.changelog,
-  };
+  // AFTER the rename block, which can swap the whole config out, and together
+  // with the form's overrides — see withFormOverrides for the build that read
+  // its answers before them.
+  ({ config: collectionConfig, mods } = withFormOverrides({
+    config: collectionConfig,
+    overrides,
+    mods,
+  }));
 
   checkAbort();
   onProgress?.({ phase: "writing-config" });
