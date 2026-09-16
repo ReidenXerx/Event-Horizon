@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-ui
-description: "Skill for the Ui area of Event-Horizon. 65 symbols across 14 files."
+description: "Skill for the Ui area of Event-Horizon. 69 symbols across 15 files."
 ---
 
 # Ui
 
-65 symbols | 14 files | Cohesion: 91%
+69 symbols | 15 files | Cohesion: 89%
 
 ## When to Use
 
@@ -22,11 +22,11 @@ description: "Skill for the Ui area of Event-Horizon. 65 symbols across 14 files
 | `scripts/nexus-page.mjs` | connect, editPage, evalJs, readPage, send (+6) |
 | `scripts/lib/setup-ui.mjs` | banner, info, nextSteps, ok, step (+2) |
 | `scripts/bearing-teaching/merge-package-scripts.mjs` | isStealth, main, resolveGitnexusCmd |
+| `src/ui/EventHorizonMainPage.tsx` | AppShell, NavBar, EventHorizonMainPage |
 | `scripts/nexus-collection-file.mjs` | log, stamp |
 | `scripts/release-nexus.mjs` | info, step |
+| `src/ui/runtime/routeRequest.ts` | subscribe, take |
 | `scripts/bearing-verify.mjs` | main |
-| `scripts/nexus-collection-file.test.mjs` | log |
-| `scripts/nexus-page.test.mjs` | fetchImpl |
 
 ## Entry Points
 
@@ -67,8 +67,6 @@ Start here when exploring this area:
 
 | Flow | Type | Steps |
 |------|------|-------|
-| `Main → Sub` | cross_community | 5 |
-| `Main → GateCommentKey` | cross_community | 5 |
 | `Check → RgbOffsets` | intra_community | 5 |
 | `EventHorizonMainPage → Spinner` | cross_community | 5 |
 | `EditPage → NormalizeText` | cross_community | 4 |
@@ -77,6 +75,8 @@ Start here when exploring this area:
 | `EventHorizonMainPage → BuildErrorReport` | cross_community | 4 |
 | `EventHorizonMainPage → UseApiOptional` | cross_community | 4 |
 | `Banner → Stamp` | intra_community | 3 |
+| `Banner → Log` | intra_community | 3 |
+| `Check → Hex` | intra_community | 3 |
 
 ## How to Explore
 

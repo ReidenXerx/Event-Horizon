@@ -5,7 +5,7 @@ description: "Skill for the Identity area of Event-Horizon. 30 symbols across 6 
 
 # Identity
 
-30 symbols | 6 files | Cohesion: 76%
+30 symbols | 6 files | Cohesion: 75%
 
 ## When to Use
 

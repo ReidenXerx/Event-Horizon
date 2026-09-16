@@ -1,16 +1,16 @@
 ---
 name: gitnexus-area-build
-description: "Skill for the Build area of Event-Horizon. 464 symbols across 102 files."
+description: "Skill for the Build area of Event-Horizon. 500 symbols across 108 files."
 ---
 
 # Build
 
-464 symbols | 102 files | Cohesion: 83%
+500 symbols | 108 files | Cohesion: 83%
 
 ## When to Use
 
 - Working with code in `src/`
-- Understanding how compareVersionStrings, entriesSince, describeEvidence work
+- Understanding how compareVersionStrings, entriesSince, archivesFreedByRemoval work
 - Modifying build-related functionality
 
 ## Key Files
@@ -19,14 +19,14 @@ description: "Skill for the Build area of Event-Horizon. 464 symbols across 102 
 |------|---------|
 | `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildChangelog, BuildDiffCard, BuildWizard, BuildingPanel (+57) |
 | `src/ui/pages/build/buildSession.ts` | cancelLoading, cancelRecovering, getState, subscribe, buildProgress (+30) |
+| `src/ui/pages/build/BuildDashboard.tsx` | BuildDashboard, handleDismissBuilt, handleOpenBuilt, handleOpenDraft, DashboardHeader (+20) |
 | `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, handlePickFile, DecisionsStep, DoNotInterfereModal (+20) |
-| `src/ui/pages/build/BuildDashboard.tsx` | BuildDashboard, handleDismissBuilt, handleOpenBuilt, handleOpenDraft, DashboardHeader (+19) |
-| `src/ui/pages/build/engine.ts` | validateCuratorInput, describeMissingArchives, isMissingArchiveWarning, downloadedFromNexus, findUnidentifiedMods (+14) |
+| `src/ui/pages/build/engine.ts` | validateCuratorInput, describeMissingArchives, isMissingArchiveWarning, downloadedFromNexus, findUnidentifiedMods (+15) |
 | `src/ui/pages/build/buildSessionRegistry.ts` | BuildSessionRegistry, getBuildSessionRegistry, ensure, get, makeHooks (+13) |
 | `src/ui/pages/build/buildDiff.test.ts` | findPackages, findPackages, findPackages, findPackages, findPackages (+9) |
-| `src/core/draftStorage.ts` | getDraftsRoot, listDrafts, deleteDraft, getDraftPath, isPlainObject (+6) |
+| `src/ui/pages/build/NexusCollectionUpload.tsx` | Body, Choose, Footer, NexusCollectionUpload, NexusUploadDialog (+8) |
+| `src/core/draftStorage.ts` | getDraftsRoot, listDrafts, deleteDraft, getAppDataPath, getDraftPath (+6) |
 | `src/ui/pages/HomePage.tsx` | CuratorPanel, Dashboard, DashboardBody, ErrorPanel, FooterRow (+6) |
-| `src/core/build/nexusAvailability.ts` | categoryOf, checkNexusAvailability, classifyFile, currentMainFile, fileIdOf (+6) |
 
 ## Entry Points
 
@@ -34,9 +34,9 @@ Start here when exploring this area:
 
 - **`compareVersionStrings`** (Function) — `src/core/changelog/changelog.ts:826`
 - **`entriesSince`** (Function) — `src/core/changelog/changelog.ts:862`
+- **`archivesFreedByRemoval`** (Function) — `src/core/curator/cleanupPlan.ts:509`
+- **`cleanupSubset`** (Function) — `src/core/curator/cleanupPlan.ts:521`
 - **`describeEvidence`** (Function) — `src/core/curator/cleanupPlan.ts:274`
-- **`describeProfileDrift`** (Function) — `src/core/curator/profileDrift.ts:106`
-- **`isProfileUnmoved`** (Function) — `src/core/curator/profileDrift.ts:90`
 
 ## Key Symbols
 
@@ -44,7 +44,10 @@ Start here when exploring this area:
 |--------|------|------|------|
 | `compareVersionStrings` | Function | `src/core/changelog/changelog.ts` | 826 |
 | `entriesSince` | Function | `src/core/changelog/changelog.ts` | 862 |
+| `archivesFreedByRemoval` | Function | `src/core/curator/cleanupPlan.ts` | 509 |
+| `cleanupSubset` | Function | `src/core/curator/cleanupPlan.ts` | 521 |
 | `describeEvidence` | Function | `src/core/curator/cleanupPlan.ts` | 274 |
+| `formatSize` | Function | `src/core/curator/cleanupPlan.ts` | 475 |
 | `describeProfileDrift` | Function | `src/core/curator/profileDrift.ts` | 106 |
 | `isProfileUnmoved` | Function | `src/core/curator/profileDrift.ts` | 90 |
 | `doctorLightFlagBaseline` | Function | `src/core/doctor/health.ts` | 188 |
@@ -59,9 +62,6 @@ Start here when exploring this area:
 | `mustAskReplayMode` | Function | `src/core/installer/fomodReplayMode.ts` | 183 |
 | `countKinds` | Function | `src/core/manifest/unexplainedFiles.ts` | 175 |
 | `describeUnexplainedFile` | Function | `src/core/manifest/unexplainedFiles.ts` | 153 |
-| `formatBytes` | Function | `src/core/manifest/unexplainedFiles.ts` | 139 |
-| `listModDiffFiles` | Function | `src/core/modDiffStorage.ts` | 60 |
-| `readModDiffReport` | Function | `src/core/modDiffStorage.ts` | 95 |
 
 ## Execution Flows
 

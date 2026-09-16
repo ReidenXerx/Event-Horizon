@@ -74,7 +74,6 @@ Start here when exploring this area:
 | `DownloadsView → SortStorageKeyFor` | cross_community | 4 |
 | `DownloadsView → Storage` | cross_community | 4 |
 | `DownloadsView → InitialSort` | cross_community | 3 |
-| `Resizer → ClampWidth` | intra_community | 3 |
 
 ## How to Explore
 

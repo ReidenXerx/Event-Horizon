@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-manifest
-description: "Skill for the Manifest area of Event-Horizon. 539 symbols across 119 files."
+description: "Skill for the Manifest area of Event-Horizon. 543 symbols across 121 files."
 ---
 
 # Manifest
 
-539 symbols | 119 files | Cohesion: 73%
+543 symbols | 121 files | Cohesion: 72%
 
 ## When to Use
 
@@ -18,12 +18,12 @@ description: "Skill for the Manifest area of Event-Horizon. 539 symbols across 1
 | File | Symbols |
 |------|---------|
 | `src/core/manifest/parseManifest.ts` | ParseManifestError, describe, describeUnsupportedVersion, expectArray, expectBoolean (+44) |
+| `src/core/manifest/collectionConfig.ts` | choiceFromEntry, decidedPostProcessing, modsNewlyBundled, modsNoLongerBundled, toBuildManifestExternalMods (+22) |
 | `src/core/manifest/packageZip.ts` | PackageEhcollError, describeBytes, listBundles, packageBytesAtMost, packageEhcoll (+20) |
 | `src/core/manifest/readZip.ts` | ZipReadError, extractZipEntryToFile, findDataOffset, findEntry, findZip64Extra (+20) |
-| `src/core/manifest/collectionConfig.ts` | reconcileExternalModsConfig, modsNewlyBundled, modsNoLongerBundled, toBuildManifestExternalMods, createDefaultConfig (+19) |
-| `src/ui/pages/build/engine.ts` | loadBuildContext, pickDefaultCollectionName, resolveGameVersion, BuildRefusedError, BundleResolutionError (+12) |
 | `src/core/manifest/buildManifest.ts` | BuildManifestError, buildLoadOrder, buildManifest, buildPackageMetadata, buildUserlist (+12) |
-| `src/core/manifest/externalHints.ts` | countBy, downloadsFromState, modsFromState, applyHint, describeUndeclared (+10) |
+| `src/ui/pages/build/engine.ts` | BuildRefusedError, BundleResolutionError, applyPostProcessedDeclarations, declarationsFor, resolveDeploymentMethod (+11) |
+| `src/core/manifest/externalHints.ts` | applyHint, describeUndeclared, countBy, downloadsFromState, modsFromState (+10) |
 | `src/core/manifest/bundleZip.ts` | listBundleFolder, writeChunk, assertBundlePaths, isAborted, sortForBundle (+8) |
 | `src/core/manifest/readEhcoll.ts` | ReadEhcollError, assertReadableFile, classifyEntries, crossCheckBundled, extractManifest (+7) |
 | `src/core/manifest/bundleFromStaging.ts` | describeExternalDrift, mergeMeasuredBundles, restoreArchiveHashes, measureBundledMods, fail (+6) |
@@ -44,12 +44,12 @@ Start here when exploring this area:
 |--------|------|------|------|
 | `ParseManifestError` | Class | `src/core/manifest/parseManifest.ts` | 149 |
 | `PackageEhcollError` | Class | `src/core/manifest/packageZip.ts` | 209 |
-| `BuildRefusedError` | Class | `src/ui/pages/build/engine.ts` | 1174 |
-| `BundleResolutionError` | Class | `src/ui/pages/build/engine.ts` | 641 |
+| `BuildRefusedError` | Class | `src/ui/pages/build/engine.ts` | 1209 |
+| `BundleResolutionError` | Class | `src/ui/pages/build/engine.ts` | 676 |
 | `ZipReadError` | Class | `src/core/manifest/readZip.ts` | 81 |
 | `BuildManifestError` | Class | `src/core/manifest/buildManifest.ts` | 262 |
 | `ReadEhcollError` | Class | `src/core/manifest/readEhcoll.ts` | 133 |
-| `CollectionConfigError` | Class | `src/core/manifest/collectionConfig.ts` | 305 |
+| `CollectionConfigError` | Class | `src/core/manifest/collectionConfig.ts` | 315 |
 | `parseManifest` | Function | `src/core/manifest/parseManifest.ts` | 171 |
 | `bundleEntryOf` | Function | `src/core/manifest/bundleLayout.ts` | 25 |
 | `bundleFolderInPackage` | Function | `src/core/manifest/bundleLayout.ts` | 10 |
@@ -73,10 +73,10 @@ Start here when exploring this area:
 | `LoadPublishedDetails → GetEventHorizonDir` | cross_community | 10 |
 | `RunSelfChecks → GetVortexUserDataPath` | cross_community | 10 |
 | `LoadPublishedDetails → ResolveLogFile` | cross_community | 10 |
+| `NexusUploadModal → GetEventHorizonRoot` | cross_community | 10 |
 | `RunLoadingPipeline → GetEventHorizonRoot` | cross_community | 10 |
 | `PrepareChangelog → ToPosix` | cross_community | 9 |
 | `WriteEnvironmentSnapshot → GetVortexUserDataPath` | cross_community | 9 |
-| `RecordPostProcessingDecision → GetVortexUserDataPath` | cross_community | 9 |
 
 ## How to Explore
 

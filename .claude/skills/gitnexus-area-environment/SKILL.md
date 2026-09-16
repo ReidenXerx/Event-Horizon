@@ -71,12 +71,12 @@ Start here when exploring this area:
 | `WriteEnvironmentSnapshot → GetVortexUserDataPath` | cross_community | 9 |
 | `QuarantineFiles → GetVortexUserDataPath` | cross_community | 7 |
 | `RestoreQuarantine → GetVortexUserDataPath` | cross_community | 7 |
-| `RunEnvironmentPreflight → ToPosix` | cross_community | 6 |
 | `LaunchGame → Truncate` | cross_community | 6 |
 | `LaunchGame → MyGamesFolderCandidates` | cross_community | 5 |
-| `RunEnvironmentPreflight → ErrorCode` | cross_community | 5 |
 | `ProbeWinePrefix → ReadObject` | cross_community | 5 |
 | `WriteEnvironmentSnapshot → MyGamesFolderCandidates` | cross_community | 5 |
+| `WriteEnvironmentSnapshot → Truncate` | cross_community | 5 |
+| `LaunchGame → GetLocalAppDataPath` | cross_community | 4 |
 
 ## How to Explore
 

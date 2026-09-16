@@ -5,7 +5,7 @@ description: "Skill for the Doctor area of Event-Horizon. 71 symbols across 17 f
 
 # Doctor
 
-71 symbols | 17 files | Cohesion: 76%
+71 symbols | 17 files | Cohesion: 75%
 
 ## When to Use
 

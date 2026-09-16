@@ -74,7 +74,7 @@ Start here when exploring this area:
 | `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
 | `InstallDownloads → GetEventHorizonDir` | cross_community | 10 |
 | `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
-| `RunLoadingPipeline → GetEventHorizonRoot` | cross_community | 10 |
+| `NexusUploadModal → GetEventHorizonRoot` | cross_community | 10 |
 | `Act → GetEventHorizonDir` | cross_community | 10 |
 | `BuildPage → GetVortexUserDataPath` | cross_community | 10 |
 

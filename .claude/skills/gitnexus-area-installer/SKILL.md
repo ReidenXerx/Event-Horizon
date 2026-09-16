@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-installer
-description: "Skill for the Installer area of Event-Horizon. 458 symbols across 111 files."
+description: "Skill for the Installer area of Event-Horizon. 457 symbols across 110 files."
 ---
 
 # Installer
 
-458 symbols | 111 files | Cohesion: 74%
+457 symbols | 110 files | Cohesion: 73%
 
 ## When to Use
 
@@ -44,7 +44,7 @@ Start here when exploring this area:
 |--------|------|------|------|
 | `BundledPrefetchPool` | Class | `src/core/installer/bundledPrefetch.ts` | 117 |
 | `InstallStreaks` | Class | `src/core/installer/installStreaks.ts` | 59 |
-| `InstallLedgerError` | Class | `src/core/installLedger.ts` | 72 |
+| `InstallLedgerError` | Class | `src/core/installLedger.ts` | 73 |
 | `AbortError` | Class | `src/utils/abortError.ts` | 22 |
 | `DiskSpaceError` | Class | `src/utils/diskSpace.ts` | 112 |
 | `ChecksumMismatchError` | Class | `src/core/installer/downloadDirect.ts` | 70 |
@@ -76,7 +76,7 @@ Start here when exploring this area:
 | `LoadPublishedDetails → ResolveLogFile` | cross_community | 10 |
 | `InstallDownloads → GetEventHorizonDir` | cross_community | 10 |
 | `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
-| `RunLoadingPipeline → GetEventHorizonRoot` | cross_community | 10 |
+| `NexusUploadModal → GetEventHorizonRoot` | cross_community | 10 |
 
 ## How to Explore
 
