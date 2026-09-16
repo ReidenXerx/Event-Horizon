@@ -56,6 +56,7 @@ import type { DownloadMode, ExternalHint } from "./externalHints";
 import type { PackageFormat } from "./packageFileName";
 import { readPresentationConfig, type PresentationConfig } from "../presentation/presentation";
 import { beginOp, ehLog } from "../logging/ehLog";
+import type { NexusCollectionLink } from "../nexus/collectionUpload";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -259,6 +260,15 @@ export type CollectionConfig = {
    * the entry but cannot guarantee compatibility).
    */
   gameId?: string;
+  /**
+   * The Nexus collection this collection's packages upload to, remembered
+   * after the first upload so the next one offers the same page first.
+   *
+   * A hint, like {@link lastPackageFormat}: the curator can pick another
+   * collection every time, and an unusable value is dropped rather than
+   * refusing the config, because nothing about a build depends on it.
+   */
+  nexusCollection?: NexusCollectionLink;
 };
 
 export type LoadCollectionConfigInput = {
@@ -863,7 +873,72 @@ function parseAndValidate(raw: string, configPath: string): CollectionConfig {
   // Read the same forgiving way: an unusable part is dropped, never the config.
   const presentation = readPresentationConfig(obj.presentation);
   if (presentation !== undefined) config.presentation = presentation;
+  const nexusCollection = readNexusCollectionLink(obj.nexusCollection);
+  if (nexusCollection !== undefined) {
+    config.nexusCollection = nexusCollection;
+  } else if (obj.nexusCollection !== undefined) {
+    ehLog("warn", "collection-config.validate.nexus-collection-dropped", {
+      file: path.basename(configPath),
+    });
+  }
   return config;
+}
+
+/**
+ * A remembered Nexus collection, or undefined when the value cannot be used.
+ * The slug and domain end up in a web address, so both are held to the
+ * characters Nexus itself uses in them.
+ */
+export function readNexusCollectionLink(raw: unknown): NexusCollectionLink | undefined {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.id !== "number" || !Number.isInteger(r.id) || r.id <= 0) return undefined;
+  if (typeof r.slug !== "string" || !/^[a-z0-9]+$/i.test(r.slug)) return undefined;
+  if (typeof r.gameDomain !== "string" || !/^[a-z0-9]+$/i.test(r.gameDomain)) return undefined;
+  return {
+    id: r.id,
+    slug: r.slug,
+    gameDomain: r.gameDomain,
+    ...(typeof r.name === "string" && r.name !== "" ? { name: r.name } : {}),
+  };
+}
+
+/**
+ * The Nexus collection a package's collection last uploaded to.
+ *
+ * Found by package id, because that is what a built package carries: the
+ * upload starts from the file, and the file knows which collection it is, not
+ * which config file described it.
+ */
+export async function findNexusCollectionLink(
+  configDir: string,
+  packageId: string,
+): Promise<NexusCollectionLink | undefined> {
+  const summary = (await listPublishedCollections(configDir)).find((c) => c.packageId === packageId);
+  if (summary === undefined) return undefined;
+  const { config } = await loadOrCreateCollectionConfig({ configDir, slug: summary.slug });
+  return config.nexusCollection;
+}
+
+/**
+ * Remember where a package's collection uploaded. Returns false when no built
+ * collection has that package id — a package built elsewhere, or a config the
+ * curator deleted — in which case there is nowhere to remember it.
+ */
+export async function rememberNexusCollectionLink(
+  configDir: string,
+  packageId: string,
+  link: NexusCollectionLink,
+): Promise<boolean> {
+  const summary = (await listPublishedCollections(configDir)).find((c) => c.packageId === packageId);
+  if (summary === undefined) {
+    ehLog("warn", "collection-config.nexus-link.no-config", { packageId });
+    return false;
+  }
+  const { config } = await loadOrCreateCollectionConfig({ configDir, slug: summary.slug });
+  await saveCollectionConfig({ configDir, slug: summary.slug, config: { ...config, nexusCollection: link } });
+  ehLog("info", "collection-config.nexus-link.saved", { slug: summary.slug, collection: link.slug, id: link.id });
+  return true;
 }
 
 /**

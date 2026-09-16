@@ -56,6 +56,8 @@ import {
   PackageFormatModal,
   PresentationCard,
 } from "../pages/build/BuildPage";
+import { NexusCollectionUpload, NexusUploadDialog } from "../pages/build/NexusCollectionUpload";
+import { Card } from "../components";
 import { summarizeAvailability } from "../../core/build/nexusAvailability";
 import { DraftCard, PublishedCard, RecentlyBuiltCard } from "../pages/build/BuildDashboard";
 import { DashboardBody, Hero } from "../pages/HomePage";
@@ -848,6 +850,103 @@ describe("render", () => {
         onPick: () => undefined,
       }),
     );
+  });
+
+  describe("upload to a Nexus collection", () => {
+    // Ivy's real shape after the 2026-09-16 cleanup: most mods from Nexus,
+    // the frozen unofficial patch and the curator's own files bundled.
+    const nexusMod = (i: number) => ({
+      name: `Nexus mod ${i}`,
+      version: "1.0",
+      optional: false,
+      domainName: "fallout4",
+      source: { type: "nexus" as const, modId: 1000 + i, fileId: 5000 + i, updatePolicy: "exact" as const },
+    });
+    const loaded = {
+      info: {
+        info: { author: "DuduPhudu", authorUrl: "", name: "Ivy's Panties", domainName: "fallout4", gameVersions: ["1.10.163.0"] },
+        mods: [
+          ...Array.from({ length: 966 }, (_, i) => nexusMod(i)),
+          ...Array.from({ length: 11 }, (_, i) => ({
+            name: `Bundled ${i}`,
+            version: "1.0.0",
+            optional: false,
+            domainName: "fallout4",
+            source: { type: "bundle" as const },
+          })),
+        ],
+      },
+      packageId: "fa6eb141-03b0-4847-bb12-e4c5fe4fa385",
+      gameId: "fallout4",
+      own: [
+        { slug: "tumkz9", name: "Ivy's Panties", gameDomain: "fallout4", latestRevision: 12 },
+        { slug: "q8w3rt", name: "Ivy's Panties Lite", gameDomain: "fallout4", latestRevision: 2 },
+      ],
+      remembered: { id: 350133, slug: "tumkz9", gameDomain: "fallout4", name: "Ivy's Panties" },
+    };
+    const dialog = (phase: object, extra: object = {}) =>
+      React.createElement(NexusUploadDialog, {
+        phase,
+        loaded,
+        selected: "tumkz9",
+        outputPath: "C:/Users/x/AppData/Roaming/Vortex/event-horizon/collections/ivy-panties-1.0.29.zip",
+        outputBytes: 871.8 * 1024 ** 2,
+        changelogBbcode: "[b]1.0.29[/b]",
+        onSelect: () => undefined,
+        onClose: () => undefined,
+        onUpload: () => undefined,
+        onStop: () => undefined,
+        onBack: () => undefined,
+        ...extra,
+      } as never);
+
+    it("the offer - a .zip build can go to Nexus", () => {
+      // Inside the card it lives in on the Done panel, whose own fixture is a
+      // .ehcoll build and so only ever shows the ".zip only" note.
+      write(
+        "nexus-upload-offer",
+        React.createElement(Card, {
+          title: "Build complete",
+          children: React.createElement(NexusCollectionUpload, {
+            outputPath: "C:/collections/ivy-panties-1.0.29.zip",
+            outputBytes: 871.8 * 1024 ** 2,
+          }),
+        }),
+      );
+    });
+
+    it("choosing - the remembered collection first and selected", () => {
+      write("nexus-upload-choose", dialog({ kind: "choose" }));
+    });
+
+    it("choosing another collection - the live page gets renamed, said before the button", () => {
+      write("nexus-upload-rename", dialog({ kind: "choose" }, { selected: "q8w3rt" }));
+    });
+
+    it("uploading - how far the transfer is, and the only way out is Stop", () => {
+      write("nexus-upload-uploading", dialog({ kind: "uploading", transferred: 402 * 1024 ** 2, total: 871.8 * 1024 ** 2 }));
+    });
+
+    it("done - a draft, and what to do before publishing it", () => {
+      write(
+        "nexus-upload-done",
+        dialog({ kind: "done", link: loaded.remembered, revisionNumber: 13, remembered: true }),
+      );
+    });
+
+    it("rejected - Nexus's reasons, naming the mod", () => {
+      write(
+        "nexus-upload-rejected",
+        dialog({
+          kind: "failed",
+          failure: {
+            kind: "rejected",
+            title: "Nexus rejected the upload: The collection manifest is invalid",
+            details: ['"Reaper\'s RobCo Munitions Patches" (source/file_id): file not found'],
+          },
+        }),
+      );
+    });
   });
 
   it("recently built - the way back into a finished build", () => {

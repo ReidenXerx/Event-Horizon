@@ -36,6 +36,9 @@ const NOT_A_CLASS = new Set([
   "eh-doctor-collection", // Vortex notification id
   "eh-sevenzip-health",
   "eh-sevenzip-copy", // the "copied to clipboard" follow-up notification
+  "eh-nexus-collection-upload", // Vortex notification id for an upload's outcome
+  "eh-nexus-collection-upload-progress", // Vortex activity notification while it uploads
+  "eh-nexus-collection", // radio group name in the upload's collection picker
   "eh-prereq-repair",
   "eh-mod-diff-file-select", // a Field's element id on the diff pages
   "eh-diff-file-select",

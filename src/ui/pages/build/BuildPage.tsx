@@ -120,7 +120,8 @@ import { ConcurrentOpBanner } from "../../runtime/ConcurrentOpBanner";
 import { nativeNotify } from "../../runtime/nativeNotify";
 import { getActiveGameId } from "../../../core/getModsListForProfile";
 import { writeToClipboard } from "../../clipboard";
-import { packageFormatOf, type PackageFormat } from "../../../core/manifest/packageFileName";
+import type { PackageFormat } from "../../../core/manifest/packageFileName";
+import { NexusCollectionUpload } from "./NexusCollectionUpload";
 import { ChangelogEntryView } from "../../components/ChangelogView";
 import { pathToFileURL } from "url";
 import { CollectionBanner, hasBanner } from "../../components/CollectionShowcase";
@@ -3390,7 +3391,11 @@ export function DonePanel(props: {
             Copy
           </Button>
         </div>
-        <DistributionHint format={packageFormatOf(result.outputPath) ?? "ehcoll"} />
+        <NexusCollectionUpload
+          outputPath={result.outputPath}
+          outputBytes={result.outputBytes}
+          changelogBbcode={result.changelog?.bbcode}
+        />
         {result.changelog !== undefined && <BuildChangelog changelog={result.changelog} />}
         {/*
           Above the warnings, not inside them. Everything in that list can be
@@ -3615,37 +3620,16 @@ function BuildChangelog(props: {
   );
 }
 
-function DistributionHint(props: { format: PackageFormat }): JSX.Element {
-  if (props.format === "zip") {
-    return (
-      <Callout tone="info" title="Next: share it.">
-        Upload this <code>.zip</code> to your collection&apos;s Nexus mod page as
-        it is, with mod manager download turned off: Vortex must never install a
-        package as a mod. Players install it from Event Horizon&apos;s install
-        tab.
-      </Callout>
-    );
-  }
-  return (
-    <Callout tone="info" title="Next: share it.">
-      Uploading to Nexus? Name this package <code>.zip</code> instead of{" "}
-      <code>.ehcoll</code>, or build it as <code>.zip</code> next time, with mod
-      manager download turned off: Nexus quarantines files named{" "}
-      <code>.ehcoll</code>, and Vortex must never install a package as a mod.
-      Players install it from Event Horizon&apos;s install tab.
-    </Callout>
-  );
-}
-
 /**
  * Build asks what to write, every time (owner request 2026-09-15). The bytes
  * are identical and Event Horizon opens both; only the name differs, and the
- * name decides where the file can go. Nexus quarantines `.ehcoll`, so a package
- * headed for a mod page is built as `.zip` instead of renamed by hand.
+ * name decides where the file can go. A package headed for Nexus is built as
+ * `.zip`: Nexus quarantines `.ehcoll`, and a collection page hands its file to
+ * Vortex's installers, which only take a name they know as an archive.
  *
  * Both answers are buttons, so answering costs one click and closing the dialog
  * is not an answer. The format this collection's last build used is the primary
- * button; a first build offers `.zip` first, because a Nexus mod page is where
+ * button; a first build offers `.zip` first, because a Nexus collection is where
  * collections are published.
  *
  * Exported for the render harness.
@@ -3682,8 +3666,9 @@ export function PackageFormatModal(props: {
       <div className="eh-stack eh-stack--sm">
         <ul className="eh-list eh-list--spaced">
           <li>
-            <strong>.zip</strong>: upload it to your collection&apos;s Nexus mod
-            page as it is. Nexus quarantines files named <code>.ehcoll</code>.
+            <strong>.zip</strong>: for Nexus. Event Horizon uploads it to your
+            collection from the finished build. Nexus quarantines files named{" "}
+            <code>.ehcoll</code>.
           </li>
           <li>
             <strong>.ehcoll</strong>: for sharing anywhere else, or keeping.
