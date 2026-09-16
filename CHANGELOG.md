@@ -8,7 +8,38 @@ Vortex ignores everything after the dash when it decides whether an extension ha
 could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
-(7 September 2026), then 0.1.151 to 0.1.163.
+(7 September 2026), then 0.1.151 to 0.1.164.
+
+## [0.1.164] — 2026-09-16
+
+### Collection Doctor
+- **The Doctor checks the collection you are actually playing.** It opened on whichever collection's receipt
+  happened to sort first, so on a machine with more than one it could diagnose an install from weeks ago —
+  and everything it then said was about the wrong collection. That included "you are on a different
+  profile", whose **Switch to that profile** button moved Vortex off the collection you had just installed
+  and put an older load order back over it. The Doctor now opens on the collection whose profile Vortex is
+  on, falling back to the most recent install, and you can still pick another from the list at the top.
+- **"No ESL flags recorded" no longer reads as a fault.** A collection installed before Event Horizon
+  recorded the curator's ESL flags now says that is what happened, and that installing it again records
+  them.
+- **Re-check and Deep scan show that they are working.** Both ran with no sign they had started, so they
+  looked like dead buttons and got pressed again. They now show progress while they run, and the panel says
+  when it last checked: a check can take a few milliseconds, and "it finished instantly" and "nothing
+  happened" looked exactly the same.
+
+### Installing collections
+- **Event Horizon offers to tidy up old profiles.** Installing a new version of a collection creates a
+  profile for it on purpose, so you can go back to the version you were playing — but they add up. After a
+  successful install Event Horizon now offers to remove the profiles earlier versions of that same
+  collection left behind. You tick which ones go, nothing is removed until you confirm, and it never
+  touches the profile you are on, the one just installed, or any profile Event Horizon did not create.
+- **A file 7-Zip cannot read is no longer called damaged.** On Proton and Wine, Vortex's 7-Zip can unpack
+  archives but cannot list them, so every `.rar` and `.7z` you supplied yourself looked unreadable — and
+  Event Horizon told you the file was damaged and that downloading it again would probably fix it, which
+  could never have worked. It now says what it actually knows: the file is not the one the collection was
+  built from, and whether it is intact could not be checked. The broken extractor is named once in the
+  summary, so a report you send a curator cannot blame an archive that was fine. A genuinely truncated
+  download is still reported as damaged.
 
 ## [0.1.163] — 2026-09-16
 
