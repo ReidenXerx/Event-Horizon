@@ -30,6 +30,7 @@ import type { types } from "@nexusmods/vortex-api";
 
 import { EventHorizonStyles } from "./theme";
 import { EventHorizonRoute, ROUTES } from "./routes";
+import { getRouteRequest } from "./runtime/routeRequest";
 import { EventHorizonLogo } from "./components";
 import { ToastProvider } from "./components/Toast";
 import { ApiProvider } from "./state";
@@ -89,6 +90,22 @@ export function EventHorizonMainPage(
 function AppShell(): JSX.Element {
   const [route, setRoute] = React.useState<EventHorizonRoute>("home");
   const reportFormatted = useErrorReporterFormatted();
+
+  /**
+   * Somewhere outside React asked for a page — today that is the collection
+   * interceptor, which claims an Event Horizon archive from Vortex's
+   * installer and needs the user to land on Install rather than Home.
+   *
+   * Both halves are needed. `take()` covers the shell mounting AFTER the
+   * request (the user had never opened our page), and the subscription
+   * covers a request arriving while it is already open.
+   */
+  React.useEffect(() => {
+    const requests = getRouteRequest();
+    const pending = requests.take();
+    if (pending !== undefined) setRoute(pending);
+    return requests.subscribe(setRoute);
+  }, []);
 
   return (
     <div className="eh-app__inner">

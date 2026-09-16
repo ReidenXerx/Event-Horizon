@@ -35,7 +35,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
-import type { types } from "@nexusmods/vortex-api";
+import { util, type types } from "@nexusmods/vortex-api";
 
 import { ehLog } from "../logging/ehLog";
 
@@ -53,6 +53,15 @@ const EH_MARKER = "manifest.json";
  */
 export const EH_INSTALLER_PRIORITY = 1;
 export const EH_INSTALLER_ID = "event-horizon-collection";
+
+/**
+ * Event Horizon's main page, as `registerMainPage` named it in `index.ts`.
+ *
+ * Vortex's `show-main-page` matches on the page ID, not the title — it
+ * dispatches `setOpenMainPage(page.id)` — so "Event Horizon" would silently
+ * do nothing at all.
+ */
+export const EH_MAIN_PAGE_ID = "event-horizon";
 
 /**
  * Is this path that marker, at the ROOT of the archive?
@@ -98,18 +107,32 @@ export const testSupported: types.TestSupported = async (files, gameId) => {
 };
 
 /**
- * EXPERIMENT ONE: prove the claim fires, change nothing.
+ * Take the archive to Event Horizon's own install page, and let Vortex go.
  *
- * This deliberately installs NOTHING. The question it exists to answer is
- * whether the priority claim reaches us at all and what Vortex hands over when
- * it does — and an experiment that also writes mods cannot be run twice on the
- * same machine without cleaning up after itself.
+ * ─── WHY VORTEX MUST NOT FINISH THIS INSTALL ───────────────────────────
+ * Vortex loses extracted files when it installs in BULK, which a collection
+ * is. Installing one mod at a time is the thing that avoids it, and Event
+ * Horizon's driver is sequential for exactly that reason. So this hands the
+ * archive over and stops Vortex here; it never returns instructions that
+ * would have Vortex install the collection's mods.
  *
- * So it records the payload, says so on screen, and refuses the install. The
- * refusal is a thrown error rather than an empty instruction list on purpose:
- * `{ instructions: [] }` is a SUCCESSFUL install of nothing, which leaves an
- * empty mod in Vortex's list and reads, later, as the interception having
- * silently half-worked.
+ * ─── WHY IT CANCELS RATHER THAN FAILING ────────────────────────────────
+ * Three endings were possible and only one is honest:
+ *
+ *   `{ instructions: [] }`  — a SUCCESSFUL install of nothing. Leaves an empty
+ *                             mod in Vortex's list and reads later as the
+ *                             interception having half-worked.
+ *   `throw new Error(...)`  — "Installation failed", in red, for a handover
+ *                             that worked exactly as designed.
+ *   `UserCanceled`          — Vortex's own "this install stopped on purpose".
+ *                             No mod, no error dialog.
+ *
+ * Vortex removes the `<mod>.installing` temp folder in a `finally`, so the
+ * cancel leaves nothing behind either way.
+ *
+ * `archivePath` is what makes this possible at all: Vortex hands over the real
+ * archive on disk, so Event Horizon reads the package itself rather than
+ * reconstructing it from Vortex's extraction.
  */
 export function makeInstall(api: types.IExtensionApi): types.InstallFunc {
   const install: types.InstallFunc = async (
@@ -121,7 +144,7 @@ export function makeInstall(api: types.IExtensionApi): types.InstallFunc {
     unattended,
     archivePath,
   ) => {
-    ehLog("warn", "collection-intercept.claimed", {
+    ehLog("info", "collection-intercept.claimed", {
       gameId,
       fileCount: files.length,
       archivePath: archivePath ?? "(not given)",
@@ -134,28 +157,60 @@ export function makeInstall(api: types.IExtensionApi): types.InstallFunc {
         .map((f) => f.replace(/\\/g, "/"))
         .filter((f) => !f.includes("/"))
         .slice(0, 25),
-      note:
-        "Event Horizon claimed this archive ahead of Vortex's collection " +
-        "installer (priority 1 vs 5). Nothing was installed: this build only " +
-        "observes.",
     });
 
-    api.sendNotification?.({
-      id: "eh-collection-intercept",
-      type: "success",
-      title: "Event Horizon claimed the collection",
-      message:
-        "The interception works. Nothing was installed — this build only " +
-        "records what Vortex handed over. See the Event Horizon log.",
-      displayMS: 12000,
-    });
+    /**
+     * No path, no handover. Vortex has always supplied one here, but the
+     * parameter is optional in the typings and inventing a path would send
+     * the install page at a file that does not exist. Cancel and say why.
+     */
+    if (archivePath === undefined) {
+      ehLog("warn", "collection-intercept.no-archive-path", {
+        gameId,
+        why: "Vortex claimed the archive but passed no archivePath",
+      });
+      api.sendNotification?.({
+        id: "eh-collection-intercept",
+        type: "warning",
+        title: "Could not open this collection",
+        message:
+          "Vortex did not say where the downloaded file is, so Event Horizon " +
+          "could not open it. Install it from the Event Horizon page instead.",
+        displayMS: 12000,
+      });
+      throw new util.UserCanceled();
+    }
 
-    // Refused, loudly and on purpose. See the docblock: a silent empty success
-    // is the one outcome that would be mistaken for this working.
-    throw new Error(
-      "Event Horizon intercepted this collection archive (observation build). " +
-        "Nothing was installed.",
+    /**
+     * Hand the package to the install session BEFORE asking for the page.
+     * The session is a module-level singleton, so this works whether or not
+     * Event Horizon's page has ever been open this session — the shell reads
+     * the pending route when it mounts.
+     *
+     * Everything the user needs then happens on our side: the loading
+     * pipeline validates the package and, when it cannot be installed by this
+     * build (a schema from a newer Event Horizon, a damaged download), says
+     * so on our own screen with the real reason. That is why nothing is
+     * re-validated here — one explanation, in one place.
+     */
+    const { getInstallSession } = await import(
+      "../../ui/pages/install/installSession"
     );
+    const { getRouteRequest } = await import("../../ui/runtime/routeRequest");
+
+    getInstallSession().pickFile(api, archivePath);
+    getRouteRequest().request("install");
+    api.events.emit("show-main-page", EH_MAIN_PAGE_ID);
+
+    ehLog("info", "collection-intercept.handed-over", {
+      archivePath,
+      route: "install",
+      page: EH_MAIN_PAGE_ID,
+    });
+
+    // Vortex's own "stopped on purpose". See the docblock for why this is not
+    // an empty instruction list and not an Error.
+    throw new util.UserCanceled();
   };
   return install;
 }
