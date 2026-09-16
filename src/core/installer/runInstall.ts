@@ -896,6 +896,63 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     return hashCache;
   };
 
+  /**
+   * Is Vortex's EXTRACTOR broken on this machine, rather than the file?
+   *
+   * ─── NS-4: IDENTITY AND INTEGRITY ARE SEPARATE PASSES ─────────────────
+   * The hash settles identity. A listing settles integrity. Where 7-Zip
+   * cannot run, the integrity probe fails for every non-ZIP archive on the
+   * machine, and reading that back as "this file is damaged" is a verdict
+   * about the file produced by a check that never examined it.
+   *
+   * Measured on a Proton tester's machine: 29 listing attempts since August,
+   * zero successes, beginning with a `.7z`. 7-Zip there can add and extract
+   * (so installs work) but not LIST. They were told five times to download
+   * files again — which could never have helped — while Event Horizon's own
+   * preflight had told them 27 times that 7-Zip was the broken thing.
+   *
+   * Probed at most once per run and only after a listing has already failed:
+   * the self-test writes a real archive and reads it back, so on a healthy
+   * machine nothing ever pays for it. The first broken answer also writes the
+   * ONE summary line — a note repeated per archive is how a real finding
+   * turns into noise nobody reads.
+   */
+  let extractorProbed = false;
+  let extractorBroken: string | undefined;
+  const extractorBrokenReason = async (): Promise<string | undefined> => {
+    if (extractorProbed) return extractorBroken;
+    extractorProbed = true;
+    try {
+      const { checkSevenZipHealth } = await import("./checkSevenZipHealth");
+      const health = await checkSevenZipHealth();
+      if (health.kind !== "broken" && health.kind !== "unavailable") {
+        return undefined;
+      }
+      extractorBroken =
+        `Vortex's archive extractor (7-Zip) is not working on this machine, ` +
+        `so nothing could open the file to check it.`;
+      ehLog("warn", "install.extractor-broken", {
+        kind: health.kind,
+        why: health.why,
+        consequence:
+          "archive intactness cannot be checked here, so a hash mismatch is " +
+          "reported as a different file and never as a damaged one",
+      });
+      externalNotices.push(
+        `Vortex's archive extractor (7-Zip) is not working on this machine ` +
+          `(${health.why}). Mods still install, but Event Horizon could not ` +
+          `check whether any supplied archive is intact — so a file that does ` +
+          `not match the collection is reported as a different file, not as a ` +
+          `damaged one, and re-downloading it would not change that.`,
+      );
+    } catch {
+      // A probe that fails says nothing about 7z either way, and must not be
+      // allowed to invent the softer verdict.
+      extractorBroken = undefined;
+    }
+    return extractorBroken;
+  };
+
   let packageHashed = false;
   let packageSha256Cache: string | undefined;
   const packageIdentity = async (): Promise<{ packageSha256?: string }> => {
@@ -1478,6 +1535,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               actual: info.actual,
             }),
           bundledPool,
+          extractorBrokenReason,
         });
         // Clear the prompts that are wrong to answer mid-install: "Enable all"
         // per multi-plugin mod and "Deployment necessary" (see
@@ -2331,6 +2389,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           expectedSha256: manifestEntry?.source.sha256,
           ...(cachedHashes !== undefined ? { cache: cachedHashes } : {}),
           ...(ctx.abortSignal !== undefined ? { signal: ctx.abortSignal } : {}),
+          extractorBrokenReason,
         });
         ehLog("warn", "install.archive-identity", {
           name: installEntry.name,
@@ -4204,6 +4263,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
                 expected: info.expected,
                 actual: info.actual,
               }),
+            extractorBrokenReason,
           });
           if (entry === undefined) {
             carryForward.push(failed);
@@ -4912,6 +4972,12 @@ async function executeDecision(args: {
    * the cold path (synchronous extract).
    */
   bundledPool?: BundledPrefetchPool;
+  /**
+   * Answers "is the extractor itself broken?", asked only when an archive
+   * listing has already failed. Threaded from {@link runInstallImpl} rather
+   * than probed here, so the self-test runs at most once for the whole run.
+   */
+  extractorBrokenReason?: () => Promise<string | undefined>;
 }): Promise<InstalledModReportEntry | undefined> {
   const {
     ctx,
@@ -4924,6 +4990,7 @@ async function executeDecision(args: {
     onNotice,
     onSuppliedArchiveDiffers,
     bundledPool,
+    extractorBrokenReason,
   } = args;
   const { manifest } = ctx.plan;
   const decision = resolution.decision;
@@ -5052,6 +5119,9 @@ async function executeDecision(args: {
         onNotice,
         ...(onSuppliedArchiveDiffers !== undefined
           ? { onSuppliedArchiveDiffers }
+          : {}),
+        ...(extractorBrokenReason !== undefined
+          ? { extractorBrokenReason }
           : {}),
       });
     }
@@ -5206,6 +5276,12 @@ async function executePromptUserChoice(args: {
     expected: string;
     actual: string;
   }) => void;
+  /**
+   * Answers "is the extractor itself broken?", asked only when a listing has
+   * already failed. Threaded rather than probed here so the whole run pays
+   * for the self-test at most once. See the helper in {@link runInstallImpl}.
+   */
+  extractorBrokenReason?: () => Promise<string | undefined>;
 }): Promise<InstalledModReportEntry | undefined> {
   const {
     ctx,
@@ -5215,6 +5291,7 @@ async function executePromptUserChoice(args: {
     onSkip,
     onNotice,
     onSuppliedArchiveDiffers,
+    extractorBrokenReason,
   } = args;
   const compareKey = resolution.compareKey;
 
@@ -5255,6 +5332,7 @@ async function executePromptUserChoice(args: {
     archivePath: choice.localPath,
     expectedSha256: manifestEntry.source.sha256,
     ...(ctx.abortSignal !== undefined ? { signal: ctx.abortSignal } : {}),
+    ...(extractorBrokenReason !== undefined ? { extractorBrokenReason } : {}),
   });
   const pickedIsNotable = picked.kind === "differs" || picked.kind === "damaged";
   ehLog(pickedIsNotable ? "warn" : "info", "install.picked-archive", {

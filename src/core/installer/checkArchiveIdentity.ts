@@ -63,11 +63,20 @@ export type ArchiveIdentityCheck =
   /** The archive on disk is byte-identical to what the curator built from. */
   | { kind: "matches"; sha256: string }
   /**
-   * Different bytes under the same identity, in a file that still parses as
-   * an archive. The collection was not built from this, and downloading it
-   * again would fetch the same thing.
+   * Different bytes under the same identity. The collection was not built
+   * from this, and downloading it again would fetch the same thing.
+   *
+   * `intactnessUnknown` carries the reason when the hash proved the bytes
+   * differ but NOTHING could check whether the file is a valid archive —
+   * because the extractor that would have opened it cannot run here. Absent
+   * means a reader did open it, and it is intact.
    */
-  | { kind: "differs"; expected: string; actual: string }
+  | {
+      kind: "differs";
+      expected: string;
+      actual: string;
+      intactnessUnknown?: string;
+    }
   /**
    * Different bytes AND no reader can open it — a truncated or corrupted
    * download. This is the one case where downloading again actually helps,
@@ -90,6 +99,25 @@ export async function checkArchiveIdentity(args: {
   /** Injection point for tests; defaults to Vortex's own SevenZip. */
   sevenZip?: SevenZipApi;
   signal?: AbortSignal;
+  /**
+   * ─── NS-4: IDENTITY AND INTEGRITY ARE SEPARATE PASSES ─────────────────
+   * Asked ONLY when a listing came back unreadable, and answers one
+   * question: is the extractor itself broken on this machine? Returns the
+   * reason when it is, `undefined` when it works or cannot be established.
+   *
+   * Without it this function collapsed the two passes. The hash had already
+   * settled IDENTITY — the bytes differ — and the listing was only ever
+   * asking about INTEGRITY. When 7-Zip cannot run, that listing fails for
+   * every non-ZIP archive on the machine, and the failure was being read
+   * back as "the file is damaged": a verdict about the file, produced by a
+   * probe that never examined it. A Proton tester was told five times to
+   * re-download files that were fine, while Event Horizon's own preflight
+   * had told them 27 times that 7-Zip was the thing that was broken.
+   *
+   * Optional, and absent it behaves exactly as before — the caller that
+   * cannot answer the question does not get a softer verdict for free.
+   */
+  extractorBrokenReason?: () => Promise<string | undefined>;
 }): Promise<ArchiveIdentityCheck> {
   if (args.expectedSha256 === undefined || args.expectedSha256.length === 0) {
     return {
@@ -134,6 +162,35 @@ export async function checkArchiveIdentity(args: {
       ...(args.signal !== undefined ? { signal: args.signal } : {}),
     });
     if (attempt.kind === "unreadable") {
+      /**
+       * "No reader could open it" is evidence about the FILE only when a
+       * competent reader actually ran.
+       *
+       * Which one is competent depends on the file. Event Horizon's own ZIP
+       * reader needs no subprocess, so for anything that IS a zip — truncated,
+       * empty, or mangled — its refusal is a real verdict and `damaged`
+       * stands even on a machine where 7-Zip is dead. For a RAR or a .7z it
+       * is not a judge at all: only 7-Zip could have opened those, and where
+       * 7-Zip cannot run its silence says nothing about this file.
+       *
+       * Getting this wrong in the other direction is easy and was caught by
+       * an e2e: excusing EVERY unreadable file turned a genuinely truncated
+       * download into "just a different file", which is the one case where
+       * re-downloading really is the fix.
+       */
+      const { diagnoseArchive } = await import("../manifest/diagnoseArchive");
+      const diagnosis = await diagnoseArchive(args.archivePath);
+      if (diagnosis.kind === "not-an-archive") {
+        const brokenWhy = await args.extractorBrokenReason?.();
+        if (brokenWhy !== undefined) {
+          return {
+            kind: "differs",
+            expected,
+            actual,
+            intactnessUnknown: `${brokenWhy} (${diagnosis.looksLike})`,
+          };
+        }
+      }
       return { kind: "damaged", expected, actual, why: attempt.why };
     }
     return { kind: "differs", expected, actual };
@@ -166,7 +223,15 @@ export function describeArchiveIdentity(check: ArchiveIdentityCheck): string {
       return (
         `The archive on this machine is NOT the one the collection was built ` +
         `from (expected ${check.expected.slice(0, 16)}..., got ` +
-        `${check.actual.slice(0, 16)}...), but it is an intact archive. The ` +
+        `${check.actual.slice(0, 16)}...)` +
+        // "but it is an intact archive" is a second claim, and it is only
+        // ours to make when something actually opened the file.
+        (check.intactnessUnknown === undefined
+          ? `, but it is an intact archive.`
+          : `. Whether the file is intact was NOT checked — ` +
+            `${check.intactnessUnknown} So this says the bytes differ, and ` +
+            `nothing about the file being damaged.`) +
+        ` The ` +
         `most likely cause is that the mod was re-uploaded under the same ` +
         `file id since the collection was built, so the download now serves ` +
         `different bytes.`

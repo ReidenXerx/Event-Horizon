@@ -343,6 +343,111 @@ describe("a different archive is not the same thing as a broken one", () => {
     expect(check.kind).toBe("matches");
   });
 
+  /**
+   * The Proton case, from a real log bundle: 29 listing attempts on that
+   * machine, 0 successes, starting with a `.7z` — Vortex's bundled 7-Zip
+   * cannot LIST at all under that prefix (it can still add and extract, which
+   * is why installs work). Every non-ZIP archive therefore came back
+   * unreadable, and the user was told five times that their file was damaged
+   * and to download it again, which could never have helped.
+   */
+  /**
+   * A RAR, because that is the file the bug was actually about. Event
+   * Horizon's own ZIP reader is not a judge of one — only 7-Zip could ever
+   * have opened it.
+   */
+  const writeRar = (name: string): string => {
+    const p = path.join(dir, name);
+    fs.writeFileSync(
+      p,
+      Buffer.concat([
+        // "Rar!\x1a\x07\x00" — the real signature, so diagnoseArchive says
+        // "not-an-archive: a RAR archive (not a ZIP)" rather than truncated.
+        Buffer.from([0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x00]),
+        Buffer.from("body bytes nothing native can parse"),
+      ]),
+    );
+    return p;
+  };
+
+  /**
+   * The Proton case, from a real log bundle: 29 listing attempts on that
+   * machine, 0 successes, starting with a `.7z` — Vortex's bundled 7-Zip
+   * cannot LIST at all under that prefix (it can still add and extract, which
+   * is why installs work). Every non-ZIP archive therefore came back
+   * unreadable, and the user was told five times that their file was damaged
+   * and to download it again, which could never have helped.
+   */
+  it("says DIFFERS, not DAMAGED, for a RAR when the extractor cannot run", async () => {
+    const check = await checkArchiveIdentity({
+      archivePath: writeRar("mod.rar"),
+      expectedSha256: sha("what the curator had"),
+      sevenZip: brokenSevenZip(),
+      extractorBrokenReason: async () =>
+        "Vortex's 7-Zip cannot list archives on this system.",
+    });
+
+    // Identity is still proven — the hash settled that. Only intactness is
+    // unknown, and it says so rather than inventing a verdict either way.
+    expect(check.kind).toBe("differs");
+    expect(
+      check.kind === "differs" ? check.intactnessUnknown : undefined,
+    ).toMatch(/7-Zip/);
+  });
+
+  it("still says DAMAGED for a RAR when the extractor works", async () => {
+    // The other direction, and the reason the probe is a question rather than
+    // an assumption: a working extractor that cannot open the file IS
+    // evidence about the file, and must keep its verdict.
+    const check = await checkArchiveIdentity({
+      archivePath: writeRar("mod2.rar"),
+      expectedSha256: sha("what the curator had"),
+      sevenZip: brokenSevenZip(),
+      extractorBrokenReason: async () => undefined,
+    });
+
+    expect(check.kind).toBe("damaged");
+  });
+
+  it("keeps DAMAGED for a truncated ZIP even when the extractor is broken", async () => {
+    /**
+     * The narrowing, and the regression for getting it wrong: our own ZIP
+     * reader needs no subprocess, so its refusal to open a half-downloaded
+     * zip is a real verdict no matter what 7-Zip can do. Excusing this one
+     * would turn the single case where re-downloading IS the fix into "just a
+     * different file". An e2e caught this; the first version of the fix
+     * excused every unreadable file, and its unit fixture was a truncated zip
+     * that could not tell the two rules apart.
+     */
+    const full = buildStoredZip([
+      { name: "Data/thing.esp", body: "the real contents of this mod" },
+    ]);
+    const p = path.join(dir, "half.zip");
+    fs.writeFileSync(p, full.subarray(0, Math.floor(full.length / 2)));
+
+    const check = await checkArchiveIdentity({
+      archivePath: p,
+      expectedSha256: sha("what the curator had"),
+      sevenZip: brokenSevenZip(),
+      extractorBrokenReason: async () =>
+        "Vortex's 7-Zip cannot list archives on this system.",
+    });
+
+    expect(check.kind).toBe("damaged");
+  });
+
+  it("does not claim an unchecked file is intact", async () => {
+    const text = describeArchiveIdentity({
+      kind: "differs",
+      expected: "a".repeat(64),
+      actual: "b".repeat(64),
+      intactnessUnknown: "Vortex's 7-Zip cannot list archives on this system.",
+    });
+    expect(text).not.toMatch(/it is an intact archive/i);
+    expect(text).toMatch(/NOT checked/i);
+    expect(text).toMatch(/7-Zip/);
+  });
+
   it("tells the user to re-download, and does NOT blame a re-upload", async () => {
     // The whole point of splitting the case. This text is what the user acts
     // on, so it must point at their download rather than the curator's mod.
