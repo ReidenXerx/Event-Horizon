@@ -911,7 +911,7 @@ describe("render", () => {
           title: "Build complete",
           children: React.createElement(NexusCollectionUpload, {
             outputPath: "C:/collections/ivy-panties-1.0.29.zip",
-            outputBytes: 871.8 * 1024 ** 2,
+            onOpenUpload: () => undefined,
           }),
         }),
       );

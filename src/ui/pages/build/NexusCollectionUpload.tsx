@@ -68,13 +68,21 @@ export type NexusUploadPhase =
   | { kind: "done"; link: NexusCollectionLink; revisionNumber?: number; remembered: boolean }
   | { kind: "failed"; failure: NexusUploadFailure };
 
+/**
+ * The offer, inside the Done panel's card. It only asks for the dialog to
+ * open: the dialog itself ({@link NexusUploadModal}) must be rendered OUTSIDE
+ * the card by whoever owns the card.
+ *
+ * `.eh-card` is `position: relative`, and a Modal is positioned against its
+ * nearest positioned ancestor. Rendered in here, the backdrop filled the whole
+ * Done card — thousands of pixels tall with the changelog and decisions — and
+ * the dialog sat centred in it, below the fold, with page scrolling locked by
+ * the modal itself. The curator saw a blurred page and nothing to click.
+ */
 export function NexusCollectionUpload(props: {
   outputPath: string;
-  outputBytes: number;
-  /** This version's changelog as BBCode, for the revision notes on Nexus. */
-  changelogBbcode?: string;
+  onOpenUpload: () => void;
 }): JSX.Element {
-  const [open, setOpen] = React.useState(false);
   const isZip = packageFormatOf(props.outputPath) === "zip";
 
   return (
@@ -88,7 +96,7 @@ export function NexusCollectionUpload(props: {
               public until you publish it on Nexus.
             </p>
             <div className="eh-row">
-              <Button intent="primary" size="sm" onClick={(): void => setOpen(true)}>
+              <Button intent="primary" size="sm" onClick={props.onOpenUpload}>
                 Upload to Nexus…
               </Button>
             </div>
@@ -100,19 +108,15 @@ export function NexusCollectionUpload(props: {
           </p>
         )}
       </div>
-      {open && (
-        <UploadModal
-          outputPath={props.outputPath}
-          outputBytes={props.outputBytes}
-          changelogBbcode={props.changelogBbcode}
-          onClose={(): void => setOpen(false)}
-        />
-      )}
     </Section>
   );
 }
 
-function UploadModal(props: {
+/**
+ * The upload dialog with its state and Vortex calls. Render it OUTSIDE any
+ * `.eh-card`; see {@link NexusCollectionUpload}.
+ */
+export function NexusUploadModal(props: {
   outputPath: string;
   outputBytes: number;
   changelogBbcode?: string;

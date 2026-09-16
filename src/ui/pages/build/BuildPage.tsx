@@ -121,7 +121,7 @@ import { nativeNotify } from "../../runtime/nativeNotify";
 import { getActiveGameId } from "../../../core/getModsListForProfile";
 import { writeToClipboard } from "../../clipboard";
 import type { PackageFormat } from "../../../core/manifest/packageFileName";
-import { NexusCollectionUpload } from "./NexusCollectionUpload";
+import { NexusCollectionUpload, NexusUploadModal } from "./NexusCollectionUpload";
 import { ChangelogEntryView } from "../../components/ChangelogView";
 import { pathToFileURL } from "url";
 import { CollectionBanner, hasBanner } from "../../components/CollectionShowcase";
@@ -3278,9 +3278,12 @@ export function DonePanel(props: {
     candidate: PostProcessingCandidate,
     choice: PostProcessingChoice,
   ) => Promise<void>;
+  /** Open with the Nexus upload dialog showing. For tests and the render harness. */
+  initialUploadOpen?: boolean;
 }): JSX.Element {
   const { result } = props;
   const showToast = useToast();
+  const [uploadOpen, setUploadOpen] = React.useState(props.initialUploadOpen === true);
 
   // Answered in THIS sitting. Not read back from the config, because the
   // config is not reloaded here and a decision that appeared to vanish would
@@ -3359,118 +3362,132 @@ export function DonePanel(props: {
   }, [result.outputPath, showToast]);
 
   return (
-    <Card title="Build complete">
-      <div
-        className="eh-stack eh-stack--lg"
-      >
-        <StatGrid min={200}>
-          <StatTile label="Output size" value={formatBytes(result.outputBytes)} />
-          <StatTile label="Mods" value={result.modCount} />
-          <StatTile label="Bundled mods" value={result.bundledCount} />
-          <StatTile
-            label="Warnings"
-            value={result.warnings.length}
-            tone={result.warnings.length > 0 ? "warning" : "neutral"}
-          />
-        </StatGrid>
-        <BuildRulesScopeSummary result={result} />
-        <div className="eh-inset eh-mono eh-secondary">{result.outputPath}</div>
-        {/*
-          The package's checksum, next to its path.
+    <>
+      <Card title="Build complete">
+        <div
+          className="eh-stack eh-stack--lg"
+        >
+          <StatGrid min={200}>
+            <StatTile label="Output size" value={formatBytes(result.outputBytes)} />
+            <StatTile label="Mods" value={result.modCount} />
+            <StatTile label="Bundled mods" value={result.bundledCount} />
+            <StatTile
+              label="Warnings"
+              value={result.warnings.length}
+              tone={result.warnings.length > 0 ? "warning" : "neutral"}
+            />
+          </StatGrid>
+          <BuildRulesScopeSummary result={result} />
+          <div className="eh-inset eh-mono eh-secondary">{result.outputPath}</div>
+          {/*
+            The package's checksum, next to its path.
 
-          Publish this wherever the collection is shared. When someone cannot
-          open it, the first question is always whether their copy is intact,
-          and until this existed the only way to answer it was for two people
-          to run sha256sum by hand and read hex to each other over chat — which
-          is exactly how an alpha tester's afternoon went.
-        */}
-        <div className="eh-inset eh-row eh-row--nowrap">
-          <span className="eh-label">sha256</span>
-          <code className="eh-mono eh-fill">{result.outputSha256}</code>
-          <Button intent="ghost" size="sm" onClick={handleCopyHash}>
-            Copy
-          </Button>
+            Publish this wherever the collection is shared. When someone cannot
+            open it, the first question is always whether their copy is intact,
+            and until this existed the only way to answer it was for two people
+            to run sha256sum by hand and read hex to each other over chat — which
+            is exactly how an alpha tester's afternoon went.
+          */}
+          <div className="eh-inset eh-row eh-row--nowrap">
+            <span className="eh-label">sha256</span>
+            <code className="eh-mono eh-fill">{result.outputSha256}</code>
+            <Button intent="ghost" size="sm" onClick={handleCopyHash}>
+              Copy
+            </Button>
+          </div>
+          <NexusCollectionUpload
+            outputPath={result.outputPath}
+            onOpenUpload={(): void => setUploadOpen(true)}
+          />
+          {result.changelog !== undefined && <BuildChangelog changelog={result.changelog} />}
+          {/*
+            Above the warnings, not inside them. Everything in that list can be
+            read and ignored; this is the only finding on the page that ships a
+            broken collection if it is left alone.
+          */}
+          <PostProcessingDecisions
+            candidates={result.postProcessingCandidates}
+            decided={decided}
+            busy={decidingMod}
+            onDecide={handleDecide}
+          />
+          {/*
+            OPEN by default. These are warnings about a package the curator is
+            about to hand to strangers, and they were behind a disclosure that
+            said only "10 warnings" — so the one reading "this mod is missing 7
+            files its archive contains, worth opening before shipping" was one
+            click away and indistinguishable from "4382 contested files
+            recorded", which is pure bookkeeping.
+
+            A curator who has read them can collapse the section; a curator who
+            has not should not have to discover it exists. The install side
+            already shows its notices this way.
+          */}
+          {result.warnings.length > 0 && (
+            <details open className="eh-details eh-details--warning eh-inset eh-inset--warning">
+              <summary>
+                {result.warnings.length} thing{result.warnings.length === 1 ? "" : "s"}{" "}
+                worth reading before you share this
+              </summary>
+              <div className="eh-stack eh-stack--sm eh-details__body">
+                {/*
+                  Ordered by severity, not by which part of the pipeline happened
+                  to emit them. warningTone already classifies every line and the
+                  dot colour already shows it — but the list was in production
+                  order, so on the real build the one reading "is missing 7
+                  file(s) ... worth opening before shipping" sat EIGHTH, below
+                  four pieces of bookkeeping. Sorting costs nothing and puts what
+                  needs doing where it is read.
+
+                  Stable within a tone, so the pipeline's own ordering still
+                  decides ties and the list does not reshuffle between builds.
+                */}
+                {sortWarningsBySeverity(result.warnings).map((w, i) => (
+                  <WarningRow key={`${i}-${w.slice(0, 24)}`} text={w} />
+                ))}
+              </div>
+            </details>
+          )}
+          <div className="eh-actions">
+            <Button intent="ghost" onClick={handleCopyPath}>
+              Copy path
+            </Button>
+            {/* Was two buttons, "Open file" and "Open folder", both routed
+                through a helper that ignored shell.openPath's returned error
+                string — so a failure did nothing and said nothing. "Open file"
+                could not have worked often anyway: .ehcoll has no handler
+                registered on a normal machine, so the OS returns "no
+                application associated" and that was the string being dropped.
+
+                One action now, the one people actually want: show the package
+                in the file manager with it highlighted, ready to attach or
+                copy. It reports when it cannot. */}
+            <Button intent="ghost" onClick={handleShowInFolder}>
+              Show in folder
+            </Button>
+            <Button intent="ghost" onClick={props.onBuildAnother}>
+              Build another
+            </Button>
+            <Button intent="primary" onClick={props.onGoHome}>
+              Done
+            </Button>
+          </div>
         </div>
-        <NexusCollectionUpload
+      </Card>
+      {/*
+        Beside the card, never inside it: `.eh-card` is `position: relative`,
+        so a modal rendered in it is centred in the card — below the fold of a
+        card this tall — with page scrolling locked. See NexusCollectionUpload.
+      */}
+      {uploadOpen && (
+        <NexusUploadModal
           outputPath={result.outputPath}
           outputBytes={result.outputBytes}
           changelogBbcode={result.changelog?.bbcode}
+          onClose={(): void => setUploadOpen(false)}
         />
-        {result.changelog !== undefined && <BuildChangelog changelog={result.changelog} />}
-        {/*
-          Above the warnings, not inside them. Everything in that list can be
-          read and ignored; this is the only finding on the page that ships a
-          broken collection if it is left alone.
-        */}
-        <PostProcessingDecisions
-          candidates={result.postProcessingCandidates}
-          decided={decided}
-          busy={decidingMod}
-          onDecide={handleDecide}
-        />
-        {/*
-          OPEN by default. These are warnings about a package the curator is
-          about to hand to strangers, and they were behind a disclosure that
-          said only "10 warnings" — so the one reading "this mod is missing 7
-          files its archive contains, worth opening before shipping" was one
-          click away and indistinguishable from "4382 contested files
-          recorded", which is pure bookkeeping.
-
-          A curator who has read them can collapse the section; a curator who
-          has not should not have to discover it exists. The install side
-          already shows its notices this way.
-        */}
-        {result.warnings.length > 0 && (
-          <details open className="eh-details eh-details--warning eh-inset eh-inset--warning">
-            <summary>
-              {result.warnings.length} thing{result.warnings.length === 1 ? "" : "s"}{" "}
-              worth reading before you share this
-            </summary>
-            <div className="eh-stack eh-stack--sm eh-details__body">
-              {/*
-                Ordered by severity, not by which part of the pipeline happened
-                to emit them. warningTone already classifies every line and the
-                dot colour already shows it — but the list was in production
-                order, so on the real build the one reading "is missing 7
-                file(s) ... worth opening before shipping" sat EIGHTH, below
-                four pieces of bookkeeping. Sorting costs nothing and puts what
-                needs doing where it is read.
-
-                Stable within a tone, so the pipeline's own ordering still
-                decides ties and the list does not reshuffle between builds.
-              */}
-              {sortWarningsBySeverity(result.warnings).map((w, i) => (
-                <WarningRow key={`${i}-${w.slice(0, 24)}`} text={w} />
-              ))}
-            </div>
-          </details>
-        )}
-        <div className="eh-actions">
-          <Button intent="ghost" onClick={handleCopyPath}>
-            Copy path
-          </Button>
-          {/* Was two buttons, "Open file" and "Open folder", both routed
-              through a helper that ignored shell.openPath's returned error
-              string — so a failure did nothing and said nothing. "Open file"
-              could not have worked often anyway: .ehcoll has no handler
-              registered on a normal machine, so the OS returns "no
-              application associated" and that was the string being dropped.
-
-              One action now, the one people actually want: show the package
-              in the file manager with it highlighted, ready to attach or
-              copy. It reports when it cannot. */}
-          <Button intent="ghost" onClick={handleShowInFolder}>
-            Show in folder
-          </Button>
-          <Button intent="ghost" onClick={props.onBuildAnother}>
-            Build another
-          </Button>
-          <Button intent="primary" onClick={props.onGoHome}>
-            Done
-          </Button>
-        </div>
-      </div>
-    </Card>
+      )}
+    </>
   );
 }
 
