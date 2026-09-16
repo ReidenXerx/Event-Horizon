@@ -2345,6 +2345,16 @@ describe("render", () => {
           installationPath: "C:/staging/xlodgen",
           archiveSha256: "abc",
         },
+        // A Nexus mod the curator marked external, which offers
+        // "Use the Nexus download" (owner request 2026-09-16).
+        {
+          id: "Race Compatibility SKSE-122592-2-1-0-1743431985",
+          name: "Race Compatibility SKSE",
+          installationPath: "C:/staging/race-compatibility",
+          archiveSha256: "def",
+          nexusModId: 122592,
+          nexusFileId: 555,
+        },
       ],
       externalHints: new Map([
         ["ext-2", { via: "download-url", url: "https://example.com/xlodgen-output.7z" }],
@@ -2382,7 +2392,10 @@ describe("render", () => {
             gameVersion: "1.6.1170.0",
             gameVersionPolicy: "exact",
           },
-          overrides: { "ext-1": { treatAsExternal: true, url: "example.com/no-scheme" } },
+          overrides: {
+            "ext-1": { treatAsExternal: true, url: "example.com/no-scheme" },
+            "Race Compatibility SKSE-122592-2-1-0-1743431985": { treatAsExternal: true, bundled: true },
+          },
           readme: "",
           changelog: "",
           validationError: "Version must be semver: 1.0.4a is not.",
@@ -2398,6 +2411,7 @@ describe("render", () => {
         refreshedAt: new Date(Date.now() - 3 * 60_000).toISOString(),
         onDiscardDraft: () => undefined,
         onDismissDraftBanner: () => undefined,
+        onCheckBackToNexus: async () => ({ kind: "switch" }),
         recoverableCount: 2,
         onRecoverArchives: () => undefined,
         onCheckAvailability: () => undefined,

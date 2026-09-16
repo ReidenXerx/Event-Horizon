@@ -122,6 +122,13 @@ import { getActiveGameId } from "../../../core/getModsListForProfile";
 import { writeToClipboard } from "../../clipboard";
 import type { PackageFormat } from "../../../core/manifest/packageFileName";
 import { NexusCollectionUpload, NexusUploadModal } from "./NexusCollectionUpload";
+import {
+  BACK_TO_NEXUS_PATCH,
+  canGoBackToNexus,
+  checkBackToNexus,
+  visibleExternalRows,
+  type BackToNexusVerdict,
+} from "./backToNexus";
 import { ChangelogEntryView } from "../../components/ChangelogView";
 import { pathToFileURL } from "url";
 import { CollectionBanner, hasBanner } from "../../components/CollectionShowcase";
@@ -748,6 +755,16 @@ function BuildWizard(props: BuildWizardProps): JSX.Element {
         }
         onRecoverArchives={(): void => session.recoverArchives(api)}
         onCheckAvailability={(): void => session.checkNexusAvailability(api)}
+        onCheckBackToNexus={(mod): Promise<BackToNexusVerdict> => {
+          const getModFiles = api.ext.nexusGetModFiles;
+          return checkBackToNexus({
+            mod,
+            getModFiles:
+              getModFiles === undefined
+                ? undefined
+                : async (modId) => (await getModFiles(formState.ctx.gameId, modId)) as never,
+          });
+        }}
         {...(state.availabilityProgress !== undefined
           ? { availabilityProgress: state.availabilityProgress }
           : {})}
@@ -1187,6 +1204,11 @@ interface FormPanelProps {
   onRecoverArchives: () => void;
   /** Ask Nexus whether users can still download every mod. */
   onCheckAvailability: () => void;
+  /**
+   * Look one Nexus mod's file up before switching it back from external.
+   * Optional: without it (the render harness) the action is not offered.
+   */
+  onCheckBackToNexus?: (mod: BuildContext["mods"][number]) => Promise<BackToNexusVerdict>;
   availabilityProgress?: { done: number; total: number };
   availability?: {
     summary: AvailabilitySummary;
@@ -1523,6 +1545,8 @@ export function FormPanel(props: FormPanelProps): JSX.Element {
     ctx, curator, overrides, readme, changelog, validationError, restoredAt,
     reverifyEverything,
   } = state;
+  const showToast = useToast();
+  const [backToNexusBusy, setBackToNexusBusy] = React.useState<string | undefined>();
 
   /**
    * Prerequisite decisions live in the collection config, not the form draft:
@@ -1587,13 +1611,10 @@ export function FormPanel(props: FormPanelProps): JSX.Element {
   // was rescanned — minutes on a 1000-mod profile, for a checkbox. Deriving it
   // makes the row appear the moment it is marked, which is the only way the
   // action reads as having worked.
-  const externalRows = React.useMemo(() => {
-    const byId = new Map(ctx.externalMods.map((m) => [m.id, m]));
-    for (const m of ctx.mods) {
-      if (overrides[m.id]?.treatAsExternal === true) byId.set(m.id, m);
-    }
-    return [...byId.values()];
-  }, [ctx.externalMods, ctx.mods, overrides]);
+  const externalRows = React.useMemo(
+    () => visibleExternalRows(ctx.externalMods, ctx.mods, overrides),
+    [ctx.externalMods, ctx.mods, overrides],
+  );
 
   const updateOverride = (
     modId: string,
@@ -1606,6 +1627,40 @@ export function FormPanel(props: FormPanelProps): JSX.Element {
     onChange({ overrides: next });
     persistNow(next, ctx.collectionConfig);
   };
+
+  // "Use the Nexus download" — see backToNexus.ts. Nexus is asked first, so a
+  // file that has left Nexus is refused here rather than failing on someone's
+  // install.
+  const onCheckBackToNexus = props.onCheckBackToNexus;
+  const handleBackToNexus =
+    onCheckBackToNexus === undefined
+      ? undefined
+      : (mod: BuildContext["mods"][number]): void => {
+          if (backToNexusBusy !== undefined) return;
+          setBackToNexusBusy(mod.id);
+          void onCheckBackToNexus(mod)
+            .then((verdict) => {
+              if (verdict.kind === "refuse") {
+                showToast({
+                  intent: "warning",
+                  title: `${mod.name} stays external`,
+                  message: verdict.why,
+                  ttl: 0,
+                });
+                return;
+              }
+              updateOverride(mod.id, BACK_TO_NEXUS_PATCH);
+              showToast({
+                intent: "success",
+                title: `${mod.name} downloads from Nexus again`,
+                message:
+                  verdict.note ??
+                  "Its bundle is off; if your files differ from the Nexus archive, the build asks how to ship them.",
+                ttl: verdict.note === undefined ? 6000 : 0,
+              });
+            })
+            .finally(() => setBackToNexusBusy(undefined));
+        };
 
   return (
     <div className="eh-stack eh-stack--lg">
@@ -1823,6 +1878,8 @@ export function FormPanel(props: FormPanelProps): JSX.Element {
             overrides={overrides}
             hints={ctx.externalHints}
             onChange={updateOverride}
+            {...(handleBackToNexus !== undefined ? { onBackToNexus: handleBackToNexus } : {})}
+            {...(backToNexusBusy !== undefined ? { backToNexusBusy } : {})}
           />
         )}
       </Card>
@@ -2535,6 +2592,10 @@ interface ExternalModsTableProps {
   mods: BuildContext["externalMods"];
   overrides: Record<string, ExternalModConfigEntry>;
   onChange: (modId: string, patch: Partial<ExternalModConfigEntry>) => void;
+  /** Switch a Nexus mod marked external back to its Nexus download. */
+  onBackToNexus?: (mod: BuildContext["externalMods"][number]) => void;
+  /** The mod whose Nexus file is being looked up right now. */
+  backToNexusBusy?: string;
 }
 
 /**
@@ -2705,6 +2766,20 @@ function ExternalModsTable(
                       styled as a problem, which is what made "no archive"
                       read as "cannot be bundled". */}
                   <Pill intent="neutral">identified by files</Pill>
+                </div>
+              )}
+              {props.onBackToNexus !== undefined && canGoBackToNexus(mod, override) && (
+                <div>
+                  <Button
+                    intent="ghost"
+                    size="sm"
+                    busy={props.backToNexusBusy === mod.id}
+                    disabled={props.backToNexusBusy !== undefined && props.backToNexusBusy !== mod.id}
+                    title="Checks this mod's file on Nexus, then ships it as an ordinary Nexus download again."
+                    onClick={(): void => props.onBackToNexus?.(mod)}
+                  >
+                    Use the Nexus download
+                  </Button>
                 </div>
               )}
             </div>
