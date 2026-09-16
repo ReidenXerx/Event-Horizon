@@ -138,6 +138,18 @@ export function isReleasableVersion(version) {
 }
 
 /**
+ * What a release is called on Nexus and GitHub: "Event Horizon 0.2.0 Beta".
+ *
+ * The stage ("Beta") lives in the name, never in the version. The version was
+ * where "alpha" lived (0.1.0-alpha.N) and Vortex's comparison drops a suffix, so
+ * a stage there would stop every installed copy from being offered the update.
+ */
+export function releaseName(name, version, stage) {
+  const label = typeof stage === "string" ? stage.trim() : "";
+  return label === "" ? `${name} ${version}` : `${name} ${version} ${label}`;
+}
+
+/**
  * `semver.coerce` as Vortex uses it: the first `x`, `x.y` or `x.y.z` run of
  * digits, missing parts zero, everything else ignored. Returns [major, minor,
  * patch] or undefined when the string has no digits.

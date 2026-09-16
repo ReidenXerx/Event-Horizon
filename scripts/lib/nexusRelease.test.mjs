@@ -21,6 +21,7 @@ import {
   isReleasableVersion,
   nexusClient,
   readZipEntry,
+  releaseName,
   vortexWouldOfferUpdate,
 } from "./nexusRelease.mjs";
 
@@ -43,6 +44,14 @@ describe("versions, as Vortex compares them", () => {
     expect(isReleasableVersion("0.1.151")).toBe(true);
     expect(isReleasableVersion("0.1.0-alpha.151")).toBe(false);
     expect(isReleasableVersion("0.1")).toBe(false);
+  });
+
+  it("names the stage after the version, and leaves the version plain", () => {
+    expect(releaseName("Event Horizon", "0.2.0", "Beta")).toBe("Event Horizon 0.2.0 Beta");
+    expect(releaseName("Event Horizon", "0.2.0", undefined)).toBe("Event Horizon 0.2.0");
+    expect(releaseName("Event Horizon", "0.2.0", "  ")).toBe("Event Horizon 0.2.0");
+    expect(isReleasableVersion("0.2.0")).toBe(true);
+    expect(vortexWouldOfferUpdate("0.1.164", "0.2.0")).toBe(true);
   });
 });
 

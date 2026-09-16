@@ -36,6 +36,7 @@ import {
   isReleasableVersion,
   nexusClient,
   readZipEntry,
+  releaseName,
   vortexWouldOfferUpdate,
 } from "./lib/nexusRelease.mjs";
 
@@ -73,6 +74,8 @@ const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"))
 const nexus = pkg.nexus ?? {};
 const version = pkg.version;
 const tag = `v${version}`;
+// "Event Horizon 0.2.0 Beta": the stage is named here, never put in the version (see releaseName).
+const title = releaseName(nexus.fileName ?? "Event Horizon", version, nexus.stage);
 
 // ── 1. version and notes ─────────────────────────────────────────────────
 step(`Release ${version}${dryRun ? " (dry run)" : ""}`);
@@ -141,7 +144,7 @@ step("Uploading to Nexus");
 const uploadId = await client.uploadArchive({ bytes, filename: zipName, onState: info });
 const created = await client.createModFileVersion(file.id, {
   upload_id: uploadId,
-  name: `${nexus.fileName} ${version}`,
+  name: title,
   version,
   description: pkg.description ?? zipInfo.description ?? "",
   file_category: "main",
@@ -160,15 +163,15 @@ if (!after.some((v) => v.version === version)) fail(`Nexus does not list ${versi
 
 // ── 6. GitHub ────────────────────────────────────────────────────────────
 step("Tagging and publishing the GitHub Release");
-git("tag", "-a", tag, "-m", `Event Horizon ${version}`);
+git("tag", "-a", tag, "-m", title);
 git("push", "origin", tag);
 const notesFile = path.join(os.tmpdir(), `event-horizon-${version}-notes.md`);
 fs.writeFileSync(notesFile, `${notes}\n\nAlso on Nexus Mods: https://www.nexusmods.com/${nexus.gameDomain}/mods/${nexus.modId}\n`, "utf8");
-const release = gh("release", "create", tag, zipPath, "--verify-tag", "--title", `Event Horizon ${version}`, "--notes-file", notesFile);
+const release = gh("release", "create", tag, zipPath, "--verify-tag", "--title", title, "--notes-file", notesFile);
 if (release.status !== 0) {
   fail(
     `Nexus has ${version} and the tag is pushed, but the GitHub Release failed:\n${release.stderr}\n` +
-      `Finish it with: gh release create ${tag} "${zipPath}" --verify-tag --title "Event Horizon ${version}" --notes-file "${notesFile}"`,
+      `Finish it with: gh release create ${tag} "${zipPath}" --verify-tag --title "${title}" --notes-file "${notesFile}"`,
   );
 }
 step(`Released ${version}`);

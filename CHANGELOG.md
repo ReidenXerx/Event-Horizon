@@ -8,7 +8,60 @@ Vortex ignores everything after the dash when it decides whether an extension ha
 could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
-(7 September 2026), then 0.1.151 to 0.1.164.
+(7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
+
+## [0.2.0] — 2026-09-17
+
+**Event Horizon is in beta.** Collections can now live on Nexus collection pages: you add one there, Event
+Horizon installs it, and when the curator publishes a new revision Event Horizon offers you the update.
+
+### Installing collections
+- **Add collection on a Nexus collection page opens in Event Horizon.** Vortex downloads the collection and
+  Event Horizon opens its install, instead of Vortex installing it: Vortex loses files when it installs
+  hundreds of mods at once, and it cannot carry the curator's ESL flags, installer answers or load order.
+  Only Event Horizon collections are taken this way. Every other Nexus collection installs in Vortex as it
+  always did.
+- **Updates come to you.** For a collection you installed from its Nexus page, Event Horizon checks for a
+  newer published revision when Vortex starts. A notification offers **Update**, and so does the
+  collection's card: it downloads the new revision and opens its install. The new revision installs into
+  its own profile, so the version you were playing stays one click away. Nothing is checked while Vortex is
+  logged out of Nexus, and a collection you installed from a file is never checked.
+- **Without Event Horizon, an Event Horizon collection installs nothing.** Someone who adds it in plain
+  Vortex gets no mods and a description saying the collection needs Event Horizon, rather than a bulk
+  install that loses files.
+
+### Building collections
+- **Upload a finished build to a Nexus collection page.** When a build finishes as a .zip, **Upload to
+  Nexus…** sends it to a new or existing collection page of yours through Vortex's own upload, so Event
+  Horizon never handles your Nexus login. It arrives as a draft revision: publishing stays your click on the
+  website. The page lists the real mods, Nexus mods by page and file and bundled ones as bundled, so their
+  authors get collection credit. The name, author and game are checked before the transfer, a rejection
+  from Nexus names the mod it is about, and progress shows in Vortex's notifications, so a long upload
+  survives leaving the page.
+- **You choose the collection's name on Nexus.** Vortex renames a collection page to the name each upload
+  carries, so a name set on the website snapped back. The upload dialog now has a **Name on Nexus** field
+  (3 to 36 characters), remembered with the collection, and a page that merely shares the collection's name
+  is no longer picked for you.
+- **The upload dialog opens on screen.** Pressing Upload to Nexus blurred the page and showed nothing: the
+  dialog opened far below the visible area, inside the finished build's card.
+- **A Nexus mod you marked external can go back to its Nexus download.** The external mods table gains
+  **Use the Nexus download**. Nexus is asked first: a file it still offers switches back, and a file that
+  has left Nexus is refused, naming the newer file to update to.
+- **Switching a mod to Bundled no longer fails the build.** A mod answered "reproduce my version" earlier
+  and then switched to Bundled was still counted as mirrored, and packaging stopped with "marked
+  mirrored=true but … file(s) were not collected".
+- **A restored draft no longer brings back decisions you removed.** Restoring a build draft laid its older
+  copy of the per-mod decisions over the collection's settings, so a bundling answer you had taken out came
+  back at the next build. The collection's settings now win.
+- **A renamed collection keeps its header, card image, gallery and links.** A new name on the Build form
+  builds a new collection, and that collection shipped without the presentation the form was showing. It
+  now takes it along, with copies of the images.
+
+### Linux and Steam Deck
+- **Copy fix command.** On Wine and Proton, the notification about a broken 7-Zip gains **Copy fix
+  command**: the exact lines to paste into a terminal to run setup-proton for your game's prefix.
+  setup-proton now tests the prefix's 7-Zip before it changes anything and again afterwards, and says
+  plainly when the problem is one it cannot fix.
 
 ## [0.1.164] — 2026-09-16
 
