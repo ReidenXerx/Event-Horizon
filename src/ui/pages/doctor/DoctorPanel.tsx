@@ -34,6 +34,20 @@ export interface DoctorPanelProps {
   /** Deep scan is expensive, so it is a separate, explicit action. */
   onRunDeepScan?: () => void;
   onRecheck?: () => void;
+  /**
+   * ─── A BUTTON THAT LOOKS DEAD IS A BUTTON THAT GETS PRESSED AGAIN ────
+   * Both of these ran with nothing to show for it: the deep scan marked only
+   * the "Mod files" card, and Re-check marked nothing at all. Reported as
+   * "we didn't show that process started and for user its kinda do nothing".
+   *
+   * `checkedAt` is the half that matters for Re-check specifically: a gather
+   * takes 4–16ms, so the busy state is gone before the eye catches it, and
+   * only a result that visibly CHANGES says the press did anything.
+   */
+  scanning?: boolean;
+  rechecking?: boolean;
+  /** When the displayed verdicts were produced (epoch ms). */
+  checkedAt?: number;
   onHeal?: (action: HealAction, checkId: string) => void;
   /**
    * Set while an install is running. Every heal re-runs a pipeline step that
@@ -248,12 +262,26 @@ export function DoctorPanel(props: DoctorPanelProps): JSX.Element {
             <span className="eh-body">
               {props.packageName} v{props.packageVersion} — measured against the
               last install of this collection on this machine.
+              {props.checkedAt !== undefined && (
+                <span className="eh-muted">
+                  {" "}
+                  Checked {new Date(props.checkedAt).toLocaleTimeString()}.
+                </span>
+              )}
             </span>
           </div>
           <div className="eh-row">
             {props.onRecheck !== undefined && (
-              <Button intent="ghost" onClick={props.onRecheck}>
-                Re-check
+              <Button
+                intent="ghost"
+                busy={props.rechecking === true}
+                // Not while a deep scan is running: the scan feeds the very
+                // verdicts a re-check would recompute, so the two racing
+                // produces a reading from half a scan.
+                disabled={props.scanning === true}
+                onClick={props.onRecheck}
+              >
+                {props.rechecking === true ? "Checking…" : "Re-check"}
               </Button>
             )}
             {props.onRunDeepScan !== undefined && (
@@ -263,10 +291,14 @@ export function DoctorPanel(props: DoctorPanelProps): JSX.Element {
               // answer is worse than no answer.
               <Button
                 intent="primary"
-                disabled={props.healingBlocked !== undefined}
+                busy={props.scanning === true}
+                disabled={
+                  props.healingBlocked !== undefined ||
+                  props.rechecking === true
+                }
                 onClick={props.onRunDeepScan}
               >
-                Deep scan files
+                {props.scanning === true ? "Scanning files…" : "Deep scan files"}
               </Button>
             )}
           </div>

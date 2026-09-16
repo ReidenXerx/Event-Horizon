@@ -506,6 +506,57 @@ describe("render", () => {
     );
   });
 
+  /**
+   * The state a press produces, which is the whole of that bug: Re-check
+   * marked NOTHING and the deep scan marked only the "Mod files" card, so
+   * both buttons read as dead and got pressed again. Photographed because
+   * "you can see it started" is the entire fix, and a screenshot is worth
+   * more than a claim about one.
+   *
+   * No `checkedAt` here on purpose: it renders through
+   * `toLocaleTimeString()`, and a committed fingerprint that moves with the
+   * machine's timezone is a false diff for everyone but its author.
+   */
+  it("doctor-working — a deep scan running, with both buttons showing it", () => {
+    const checks = evaluateHealth(
+      {
+        packageName: "Ivy 2",
+        packageVersion: "1.0.10",
+        vortexProfileId: "prof-1",
+        mods: Array.from({ length: 12 }, (_, i) => ({
+          vortexModId: `m${i}`,
+          compareKey: `nexus:${i}:${i}`,
+          name: `Mod ${i}`,
+        })),
+        rulesApplication: { appliedRuleCount: 4 },
+      },
+      {
+        existingProfileIds: ["prof-1"],
+        activeProfileId: "prof-1",
+        installedModIds: Array.from({ length: 12 }, (_, i) => `m${i}`),
+        enabledModIds: Array.from({ length: 12 }, (_, i) => `m${i}`),
+        currentModRuleCount: 4,
+      },
+    );
+    write(
+      "doctor-working",
+      React.createElement(
+        "div",
+        { className: "eh-page" },
+        React.createElement(DoctorPanel, {
+          packageName: "Ivy 2",
+          packageVersion: "1.0.10",
+          checks,
+          scanning: true,
+          busyCheckId: "staging",
+          onRecheck: () => undefined,
+          onRunDeepScan: () => undefined,
+          onHeal: () => undefined,
+        } as never),
+      ),
+    );
+  });
+
   // The state where the .ehcoll is gone: diagnosis still works, and the three
   // cures that re-run manifest-reading steps say why they cannot. Worth a
   // screenshot because "disabled with a reason" is only better than "hidden"

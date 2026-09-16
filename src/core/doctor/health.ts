@@ -672,13 +672,25 @@ export function evaluateHealth(
       affectedCount: 0,
     });
   } else if (recordedFlags.length === 0) {
+    /**
+     * Two different situations, and one sentence covered both badly. "This
+     * install did not record any ESL flags" reads as something having gone
+     * wrong NOW, and was reported as a bug in exactly those words. Almost
+     * always it means the collection was installed by an Event Horizon that
+     * did not yet carry the curator's flags — a fact about that install's
+     * age, with nothing to fix and a clear way forward.
+     */
+    const recordedAnOrder = (baseline ?? []).length > 0;
     checks.push({
       id: "plugin-light-flags",
       title: "ESL (light) flags",
       status: "unknown",
-      summary:
-        "This install did not record any ESL flags, so there is nothing to " +
-        "compare against.",
+      summary: recordedAnOrder
+        ? "This collection was installed before Event Horizon recorded the " +
+          "curator's ESL flags, so there is nothing to compare against. " +
+          "Installing it again with this version records them."
+        : "This install recorded no plugin list, so there are no ESL flags " +
+          "to compare against.",
       detail: [],
       affectedCount: 0,
     });

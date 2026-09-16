@@ -40,6 +40,7 @@ import { stagingRootForModId } from "../../../core/stagingPath";
 import { EnvironmentTools } from "./EnvironmentTools";
 import { LoadOrderCard } from "./LoadOrderCard";
 import { baselineOf, previewRepin } from "../../../core/doctor/loadOrderStatus";
+import { pickDoctorReceipt } from "../../../core/doctor/pickReceipt";
 import { disableAutoSort, readsAutoSort } from "../../../core/installer/autoSort";
 import type { HealthObservations } from "../../../core/doctor/health";
 
@@ -168,6 +169,15 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
   >(undefined);
   const [pkgSearched, setPkgSearched] = React.useState(false);
   const [tick, setTick] = React.useState(0);
+  /**
+   * Both buttons ran with no sign they had started — reported as "we didn't
+   * show that process started and for user its kinda do nothing". A gather
+   * takes 4–16ms, so a spinner alone would flash by unseen; `checkedAt` is
+   * the other half, giving an instant re-check a visible result.
+   */
+  const [scanning, setScanning] = React.useState(false);
+  const [rechecking, setRechecking] = React.useState(false);
+  const [checkedAt, setCheckedAt] = React.useState<number | undefined>(undefined);
 
   // ── receipts ─────────────────────────────────────────────────────────
   React.useEffect(() => {
@@ -180,12 +190,40 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
         ]);
         const receipts = await listReceipts(getVortexUserDataPath());
         if (!alive) return;
-        const first = receipts[0];
+        /**
+         * Which collection to open on is a real decision, not `[0]` — see
+         * {@link pickDoctorReceipt}. Reading the active profile is allowed to
+         * fail: the pick then degrades to the newest install rather than
+         * throwing away the page.
+         */
+        let activeProfileId: string | undefined;
+        try {
+          const { getActiveProfileId } = await import(
+            "../../../core/getModsListForProfile"
+          );
+          activeProfileId = getActiveProfileId(api.getState());
+        } catch (err) {
+          ehLog("debug", "doctor.active-profile-unreadable", { err });
+          activeProfileId = undefined;
+        }
+        if (!alive) return;
+        const first = pickDoctorReceipt(receipts, activeProfileId);
         if (first === undefined) {
           setLoaded(undefined);
           setLoadError(undefined);
           return;
         }
+        // Which collection every check below is about. A report of "Doctor
+        // says X" cannot be read without it — that is how a whole install's
+        // worth of checks got attributed to the wrong collection unnoticed.
+        ehLog("info", "doctor.receipt.selected", {
+          package: first.packageName,
+          version: first.packageVersion,
+          profile: first.vortexProfileName ?? first.vortexProfileId,
+          activeProfile: activeProfileId ?? "unreadable",
+          onActiveProfile: first.vortexProfileId === activeProfileId,
+          receipts: receipts.length,
+        });
         setLoaded({ receipts, selected: first });
       } catch (err) {
         if (!alive) return;
@@ -195,7 +233,7 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
     return (): void => {
       alive = false;
     };
-  }, []);
+  }, [api]);
 
   // ── find the package (for the deep scan and manifest-backed cures) ────
   React.useEffect(() => {
@@ -273,12 +311,17 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
         if (!alive) return;
         setObs(obs);
         setChecks(evaluateHealth(toHealthView(loaded.selected), obs));
+        setCheckedAt(Date.now());
       } catch (err) {
         if (!alive) return;
         reportError(err, {
           title: "Couldn't check this collection's health",
           context: { step: "doctor-diagnose" },
         });
+      } finally {
+        // Guarded: the effect's cleanup runs before this on an unmount, and
+        // setting state there is a React warning for no gain.
+        if (alive) setRechecking(false);
       }
     })();
     return (): void => {
@@ -306,6 +349,7 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
   // ── deep scan ────────────────────────────────────────────────────────
   const runDeepScan = React.useCallback(() => {
     if (loaded === undefined || pkg === undefined) return;
+    setScanning(true);
     setBusyCheckId("staging");
     void (async (): Promise<void> => {
       try {
@@ -343,6 +387,7 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
         });
       } finally {
         setBusyCheckId(undefined);
+        setScanning(false);
       }
     })();
   }, [api, loaded, pkg, reportError]);
@@ -532,7 +577,13 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
           {...(busyCheckId !== undefined ? { busyCheckId } : {})}
           {...(blocked !== undefined ? { healingBlocked: blocked } : {})}
           {...(pkg !== undefined ? { onRunDeepScan: runDeepScan } : {})}
-          onRecheck={() => setTick((n) => n + 1)}
+          scanning={scanning}
+          rechecking={rechecking}
+          {...(checkedAt !== undefined ? { checkedAt } : {})}
+          onRecheck={() => {
+            setRechecking(true);
+            setTick((n) => n + 1);
+          }}
           onHeal={heal}
           {...(pkg === undefined
             ? {
