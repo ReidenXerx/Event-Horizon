@@ -65,6 +65,7 @@ import type {
 import { INSTALL_LEDGER_SCHEMA_VERSION } from "../types/installLedger";
 import type { SupportedGameId } from "../types/ehcoll";
 import { ehLog, beginOp } from "./logging/ehLog";
+import { readNexusCollectionRevision } from "./nexus/collectionRevision";
 
 // ===========================================================================
 // Error type
@@ -346,6 +347,14 @@ export function parseReceipt(raw: string): InstallReceipt {
   if (verifications !== undefined) out.verifications = verifications;
   if (gameIniApplication !== undefined)
     out.gameIniApplication = gameIniApplication;
+  /**
+   * Which Nexus collection revision this install came from. Validated, and an
+   * unusable value is dropped rather than refusing the receipt: it only decides
+   * whether an update is offered, and a receipt the Doctor cannot read over it
+   * would cost far more than a missed update check.
+   */
+  const nexusCollection = readNexusCollectionRevision(obj.nexusCollection);
+  if (nexusCollection !== undefined) out.nexusCollection = nexusCollection;
   return out;
 }
 

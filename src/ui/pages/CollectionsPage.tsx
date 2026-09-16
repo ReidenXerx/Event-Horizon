@@ -59,6 +59,13 @@ import {
 import type { EventHorizonRoute } from "../routes";
 import { useApi } from "../state";
 import { useEHRuntime } from "../runtime/useEHRuntime";
+import {
+  checkCollectionUpdates,
+  getCollectionUpdateStore,
+  pendingUpdateFor,
+  startCollectionUpdate,
+} from "../runtime/collectionUpdates";
+import type { CollectionUpdate } from "../../core/nexus/collectionUpdates";
 import { EXTENSION_VERSION } from "../version";
 import { getVortexUserDataPath } from "../../core/paths";
 import { looksLikeWine } from "../../core/proton";
@@ -264,6 +271,24 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
   const refresh = React.useCallback((): void => {
     setRefreshTick((t) => t + 1);
   }, []);
+
+  // Newer Nexus revisions of these collections, as the last check found them.
+  // The check itself runs at Vortex startup; a visit re-asks at most every few
+  // minutes, so opening this page is never what hammers Nexus.
+  const [updates, setUpdates] = React.useState<ReadonlyMap<string, CollectionUpdate>>(
+    () => getCollectionUpdateStore().all(),
+  );
+  React.useEffect(() => getCollectionUpdateStore().subscribe(setUpdates), []);
+  React.useEffect(() => {
+    if (loadedReceipts === undefined) return;
+    if (!loadedReceipts.some((r) => r.nexusCollection !== undefined)) return;
+    // Logged, not raised: a background check the player did not ask for must
+    // not put an error dialog over the page they did open.
+    checkCollectionUpdates(api, { notify: false }).catch((err: unknown) => {
+      ehLog("warn", "collection-updates.page-check-failed", { err });
+    });
+  }, [api, loadedReceipts]);
+
 
   /**
    * Re-run the install for a collection already on this machine.
@@ -572,6 +597,10 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
                 isActive={receipt.vortexProfileId === activeProfileId}
                 onOpen={(): void => setSelected(receipt)}
                 presentation={presentations.get(receipt.packageId)}
+                update={pendingUpdateFor(receipt, updates.get(receipt.packageId))}
+                onUpdate={(update): void => {
+                  void startCollectionUpdate(api, update);
+                }}
               />
             ))}
           </div>
@@ -609,8 +638,11 @@ export function ReceiptCard(props: {
   onOpen: () => void;
   /** How the collection presents itself, when this machine has it. */
   presentation?: ShownPresentation | undefined;
+  /** A newer revision on Nexus, when the last check found one. */
+  update?: CollectionUpdate | undefined;
+  onUpdate?: (update: CollectionUpdate) => void;
 }): JSX.Element {
-  const { receipt, isActive, onOpen, presentation } = props;
+  const { receipt, isActive, onOpen, presentation, update } = props;
   const tile = presentation?.tile;
   return (
     <Card
@@ -633,6 +665,14 @@ export function ReceiptCard(props: {
       <div className="eh-stack eh-stack--sm eh-body eh-fill">
         <div className="eh-row">
           <Pill intent="info">v{receipt.packageVersion}</Pill>
+          {/*
+            Only an install from a collection page knows its revision, and only
+            those are checked for updates — so this pill is also the answer to
+            "why does this collection never offer an update".
+          */}
+          {receipt.nexusCollection !== undefined && (
+            <Pill intent="neutral">rev {receipt.nexusCollection.revisionNumber}</Pill>
+          )}
           <Pill intent="neutral">{receipt.gameId}</Pill>
           {receipt.installTargetMode === "fresh-profile" ? (
             <Pill intent="info">fresh profile</Pill>
@@ -680,6 +720,21 @@ export function ReceiptCard(props: {
             </span>
           )}
         </div>
+        {update !== undefined && props.onUpdate !== undefined && (
+          <div className="eh-row">
+            <Button
+              intent="primary"
+              size="sm"
+              onClick={(event): void => {
+                // The whole card opens the details; this button must not.
+                event.stopPropagation();
+                props.onUpdate?.(update);
+              }}
+            >
+              Update to revision {update.latestRevision}
+            </Button>
+          </div>
+        )}
       </div>
       </div>
     </Card>

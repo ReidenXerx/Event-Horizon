@@ -225,6 +225,30 @@ export type InstallReceipt = {
    * regardless of how many recovery cycles ran.
    */
   verifications?: ModVerificationReceipt[];
+  /**
+   * The Nexus collection revision this install came from, when the package was
+   * a file Vortex downloaded from a collection page (the website's Install, or
+   * Event Horizon's own Update).
+   *
+   * Absent for every other install: a package picked from disk or fetched from
+   * a mod page carries no revision, and a revision guessed from dates would
+   * offer "updates" to the version the player already has. Absent means no
+   * update check, which is the owner's decision (2026-09-16), not a gap.
+   */
+  nexusCollection?: InstallReceiptNexusCollection;
+};
+
+/**
+ * Which Nexus collection revision a package was downloaded as, read from
+ * Vortex's download record (`modInfo.nexus.ids`) at the end of the install.
+ */
+export type InstallReceiptNexusCollection = {
+  /** The short code in the collection's address, e.g. "tumkz9". */
+  slug: string;
+  revisionNumber: number;
+  /** Nexus's name for the game's site, e.g. "fallout4". */
+  gameDomain: string;
+  collectionId?: number;
 };
 
 /**

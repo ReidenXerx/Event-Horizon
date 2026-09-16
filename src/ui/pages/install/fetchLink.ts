@@ -367,11 +367,19 @@ export async function waitForVortexDownload(
   downloadId: string,
   signal: AbortSignal,
   onProgress: (received: number, total: number | undefined) => void,
-  options: { fileName?: string; pollMs?: number; appearWithinMs?: number } = {},
+  options: {
+    fileName?: string;
+    pollMs?: number;
+    appearWithinMs?: number;
+    /** How to start over, lowercase, for the messages: "paste the link again" unless said. */
+    retry?: string;
+  } = {},
 ): Promise<types.IDownload> {
   const pollMs = options.pollMs ?? 500;
   const appearWithinMs = options.appearWithinMs ?? 30_000;
   const what = options.fileName !== undefined ? `"${options.fileName}"` : "the file";
+  const retry = options.retry ?? "paste the link again";
+  const Retry = retry.charAt(0).toUpperCase() + retry.slice(1);
   const startedAt = Date.now();
   let seen = false;
   for (;;) {
@@ -385,13 +393,13 @@ export async function waitForVortexDownload(
         ehLog("warn", "install.link.vortex-download-stopped", { downloadId, why: "removed" });
         throw new Error(
           `The download of ${what} was removed from Vortex's Downloads tab before it finished, so there is nothing to ` +
-            "wait for. Paste the link again to start it over.",
+            `wait for. ${Retry} to start it over.`,
         );
       }
       if (Date.now() - startedAt > appearWithinMs) {
         ehLog("warn", "install.link.vortex-download-stopped", { downloadId, why: "never listed" });
         throw new Error(
-          `Vortex accepted the download of ${what} but never listed it in its Downloads tab. Check that tab, then paste the link again.`,
+          `Vortex accepted the download of ${what} but never listed it in its Downloads tab. Check that tab, then ${retry}.`,
         );
       }
     } else {
@@ -406,7 +414,7 @@ export async function waitForVortexDownload(
         ehLog("warn", "install.link.vortex-download-stopped", { downloadId, why: "paused", received: dl.received });
         throw new Error(
           `The download of ${what} is paused in Vortex's Downloads tab, so Event Horizon stopped waiting for it. Resume it ` +
-            'there; when it has finished, pick the file with "Choose package file" (Vortex\'s download folder), or paste the link again.',
+            `there; when it has finished, pick the file with "Choose package file" (Vortex's download folder), or ${retry}.`,
         );
       }
       const received = typeof dl.received === "number" ? dl.received : 0;

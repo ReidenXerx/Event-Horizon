@@ -317,6 +317,13 @@ wins. This is well-trodden ground.
 
 ### 5.2 Real unknowns (must be validated before committing)
 
+> **Resolved on Vortex 2.6.3 (2026-09-16).** A website Install downloads the
+> collection archive and then runs the installer list, so `registerInstaller`
+> DOES see it: Event Horizon claims at priority 1, below the collections
+> installer's 5 (`src/core/installer/collectionIntercept.ts`). Vortex's own
+> collection update only fires for collections its installer created, which an
+> Event Horizon package never is — so updates are Event Horizon's own (see §6).
+
 | Risk | Likelihood | Impact |
 |---|---|---|
 | Vortex pre-routes `nxm://collections/...` URLs directly to vanilla collection installer, bypassing `registerInstaller` entirely | **MED-HIGH** | Fatal — our installer never sees the download |
@@ -372,9 +379,14 @@ as a regular mod attachment            → nxm://mods/... URL
   enter that codepath. Aligns with the
   [`PROPOSAL_INSTALLER.md` §2 non-goal](PROPOSAL_INSTALLER.md):
   *"Replacing or modifying Vortex's built-in collection system."*
-- **Auto-updates work for free.** When the curator uploads v1.0.1, the
-  user gets the standard mod-update flow and our installer claims the
-  new version too.
+- ~~**Auto-updates work for free.**~~ **Not true** — nothing offered a newer
+  package until 2026-09-16. Updates now come from a Nexus *collection* page:
+  the install records the revision Vortex downloaded, Event Horizon compares
+  it with the collection's latest published revision at Vortex start, and
+  Update downloads the new revision and opens Event Horizon's install on it
+  (`src/core/nexus/collectionUpdates.ts`, `src/ui/runtime/collectionUpdates.ts`).
+  A package installed from a file or a mod page records no revision and is
+  never offered an update.
 - **Discovery works** — same SEO, tags, comments, endorsements as any
   Nexus mod.
 - **Honest framing**: Event Horizon collections ARE distributed as

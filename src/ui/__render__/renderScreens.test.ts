@@ -1862,6 +1862,53 @@ describe("render", () => {
     );
   });
 
+  it("collections — a newer revision on Nexus, offered on the card", () => {
+    // Installed from the collection page (so the revision is known) next to a
+    // file install, which shows no revision and is never offered an update.
+    const fromPage = {
+      packageId: "ivy",
+      packageVersion: "1.0.29",
+      packageName: "Ivy's Panties",
+      gameId: "fallout4",
+      installedAt: "2026-09-16T10:00:00.000Z",
+      vortexProfileId: "p1",
+      vortexProfileName: "Ivy's Panties (Event Horizon v1.0.29)",
+      installTargetMode: "fresh-profile",
+      mods: Array.from({ length: 977 }, () => ({})),
+      nexusCollection: { slug: "tumkz9", revisionNumber: 12, gameDomain: "fallout4", collectionId: 350133 },
+    };
+    write(
+      "collections-update",
+      React.createElement(
+        "div",
+        { className: "eh-stack" },
+        React.createElement(ReceiptCard, {
+          receipt: fromPage,
+          isActive: true,
+          onOpen: () => undefined,
+          update: {
+            packageId: "ivy",
+            packageName: "Ivy's Panties",
+            gameId: "fallout4",
+            installed: fromPage.nexusCollection,
+            latestRevision: 13,
+          },
+          onUpdate: () => undefined,
+        } as never),
+        React.createElement(ReceiptCard, {
+          receipt: {
+            ...fromPage,
+            packageId: "file-install",
+            packageName: "Ivy's Panties (from a file)",
+            nexusCollection: undefined,
+          },
+          isActive: false,
+          onOpen: () => undefined,
+        } as never),
+      ),
+    );
+  });
+
   it("decisions — the mods needing a human answer", () => {
     // 27 of them on the real plan. This is the screen where a user with no
     // context has to make choices about mods they have never heard of.

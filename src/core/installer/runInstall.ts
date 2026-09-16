@@ -96,6 +96,7 @@ import {
   type GameIniApplicationReceipt,
   type InstallReceipt,
   type InstallReceiptMod,
+  type InstallReceiptNexusCollection,
   type ModVerificationFailExample,
   type ModVerificationReceipt,
   type ReceiptPluginEntry,
@@ -147,6 +148,7 @@ import { buildCuratorReport } from "./curatorReport";
 import * as path from "path";
 import { selectors } from "@nexusmods/vortex-api";
 import { readReceipt } from "../installLedger";
+import { nexusCollectionOfDownload } from "../nexus/collectionRevision";
 import { computeStagingSetHash } from "../manifest/stagingSetHash";
 import type { EhcollStagingFile } from "../../types/ehcoll";
 import {
@@ -4711,6 +4713,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       finishingSkipped,
       pluginFlagChanges: pluginFlagRepair.changes,
       failedMods: failedForReceipt,
+      nexusCollection: await nexusRevisionOfPackageFile(ctx),
     });
 
     let receiptPath: string;
@@ -5990,6 +5993,53 @@ export async function deployAndWait(
  * not distinguish them — it only describes "what this collection
  * currently controls on this machine."
  */
+/**
+ * The Nexus collection revision the package file was downloaded as, for the
+ * receipt, or undefined.
+ *
+ * Two sources, in order. The download record, when Vortex fetched this very
+ * file from a collection page. Otherwise the previous receipt — but only for
+ * the SAME package version: a repair or a resumed run of the release the player
+ * already has may read the package from a copy elsewhere, and rewriting the
+ * receipt without its revision would silently end every future update check.
+ * A different version from a file is a file install, and carries nothing.
+ *
+ * Runs after every mod is installed, so it must not be able to fail the run:
+ * the only thing riding on it is whether updates are offered later, and an
+ * install that finished must not be reported as broken over that.
+ */
+async function nexusRevisionOfPackageFile(ctx: DriverContext): Promise<InstallReceiptNexusCollection | undefined> {
+  try {
+    const state = ctx.api.getState();
+    const downloaded = nexusCollectionOfDownload(state, ctx.ehcollZipPath, (gameId) =>
+      selectors.downloadPathForGame(state, gameId),
+    );
+    if (downloaded !== undefined) {
+      ehLog("info", "install.receipt.nexus-revision", {
+        from: "download",
+        slug: downloaded.slug,
+        revision: downloaded.revisionNumber,
+      });
+      return downloaded;
+    }
+    const { manifest } = ctx.plan;
+    const previous = await readReceipt(ctx.appDataPath, manifest.package.id);
+    const carried =
+      previous?.packageVersion === manifest.package.version ? previous.nexusCollection : undefined;
+    ehLog("info", "install.receipt.nexus-revision", {
+      from: carried !== undefined ? "previous receipt, same version" : "none",
+      ...(carried !== undefined ? { slug: carried.slug, revision: carried.revisionNumber } : {}),
+      ...(carried === undefined
+        ? { why: "the package file matches no Vortex download of a collection revision" }
+        : {}),
+    });
+    return carried;
+  } catch (err) {
+    ehLog("warn", "install.receipt.nexus-revision-failed", { err });
+    return undefined;
+  }
+}
+
 function buildReceipt(args: {
   ctx: DriverContext;
   profileId: string;
@@ -6037,6 +6087,12 @@ function buildReceipt(args: {
    * mods with no provenance and no way to resume.
    */
   failedMods: readonly { compareKey: string; name: string; reason: string }[];
+  /**
+   * The Nexus collection revision the package file was downloaded as. Absent
+   * when Vortex has no record of downloading it from a collection page, which
+   * is what keeps a file install out of update checks.
+   */
+  nexusCollection?: InstallReceiptNexusCollection;
 }): InstallReceipt {
   const {
     ctx,
@@ -6053,6 +6109,7 @@ function buildReceipt(args: {
     finishingSkipped,
     pluginFlagChanges,
     failedMods,
+    nexusCollection,
   } = args;
   const { manifest } = ctx.plan;
   const now = new Date().toISOString();
@@ -6175,6 +6232,7 @@ function buildReceipt(args: {
       : {}),
     // Absent on a complete run, so its presence IS the partial signal.
     ...(failedMods.length > 0 ? { failedMods: [...failedMods] } : {}),
+    ...(nexusCollection !== undefined ? { nexusCollection } : {}),
   };
 }
 

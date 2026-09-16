@@ -163,9 +163,9 @@ function init(context: types.IExtensionContext): boolean {
    * an installer that registers late has simply missed the installs that
    * happened first.
    *
-   * OBSERVATION BUILD: this refuses the install and records what Vortex handed
-   * over. It cannot touch a normal collection — the test demands Event
-   * Horizon's own manifest.json beside the collection.json.
+   * A claimed archive opens in Event Horizon's install page and Vortex's own
+   * install is cancelled. It cannot touch a normal collection — the test
+   * demands Event Horizon's own manifest.json beside the collection.json.
    */
   registerCollectionIntercept(context);
 
@@ -183,6 +183,11 @@ function init(context: types.IExtensionContext): boolean {
     // typings cannot answer. Logged for the same reason: so a check that
     // never works is visible as that, rather than as silence.
     probeNexusAccount(context.api);
+    // Collections installed from a Nexus collection page are checked for a
+    // newer revision once Vortex has settled, and again on a game switch.
+    void import("./ui/runtime/collectionUpdates").then(({ watchCollectionUpdates }) =>
+      watchCollectionUpdates(context.api),
+    );
   });
 
   return true;

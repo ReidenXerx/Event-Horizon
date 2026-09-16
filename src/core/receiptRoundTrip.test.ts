@@ -70,6 +70,25 @@ describe("install receipt round-trip", () => {
     expect(out.verifications).toEqual(verifications);
   });
 
+  it("keeps the Nexus collection revision updates are checked against", () => {
+    // Destroyed at write, every install from a collection page would read as
+    // a file install on the next start, and no player would ever be offered
+    // an update — with nothing failing anywhere.
+    const nexusCollection = { slug: "tumkz9", revisionNumber: 13, gameDomain: "fallout4", collectionId: 350133 };
+    const out = throughDisk({ ...base(), nexusCollection } as InstallReceipt);
+    expect(out.nexusCollection).toEqual(nexusCollection);
+  });
+
+  it("drops an unusable Nexus revision without refusing the receipt", () => {
+    // The receipt is what the Doctor heals from; a bad update hint must not
+    // cost the player that.
+    const out = parseReceipt(
+      JSON.stringify({ ...base(), nexusCollection: { slug: "../x", revisionNumber: 13, gameDomain: "fallout4" } }),
+    );
+    expect(out.nexusCollection).toBeUndefined();
+    expect(out.packageId).toBe("11111111-2222-4333-8444-555555555555");
+  });
+
   it("keeps the identity fields the next install reconciles against", () => {
     // packageId and packageVersion decide whether the next run is an UPDATE of
     // this collection or a stranger, which drives orphan detection.

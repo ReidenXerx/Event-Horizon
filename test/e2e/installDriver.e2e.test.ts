@@ -262,6 +262,124 @@ describe("install driver, end to end", () => {
     expect(await listInstallAttempts(world.appDataPath)).toEqual([]);
   });
 
+  describe("which Nexus collection revision the receipt records", () => {
+    /**
+     * Updates are offered only for installs that came from a Nexus collection
+     * page (owner decision 2026-09-16), and the receipt is the only place that
+     * says so. The revision is not in the package — it is in Vortex's record
+     * of DOWNLOADING the package — so this runs the real driver against a
+     * download record shaped the way Vortex writes one for a collection.
+     */
+    const withCollectionDownload = async (localPath: string) => {
+      const { __testPaths } = await import("@nexusmods/vortex-api");
+      const downloadDir = path.join(world!.root, "downloads");
+      fs.mkdirSync(downloadDir, { recursive: true });
+      const previous = __testPaths.downloadPath;
+      __testPaths.downloadPath = downloadDir;
+      const fake = makeFakeVortex({ gameId: "fallout4", downloads: { "dl-coll": localPath } });
+      const files = (fake.state as { persistent: { downloads: { files: Record<string, Record<string, unknown>> } } })
+        .persistent.downloads.files;
+      files["dl-coll"]!.game = ["fallout4"];
+      files["dl-coll"]!.modInfo = {
+        game: "fallout4",
+        source: "nexus",
+        nexus: {
+          ids: { gameId: "fallout4", collectionId: 350133, collectionSlug: "tumkz9", revisionId: 9001, revisionNumber: 13 },
+        },
+      };
+      return { fake, downloadDir, restore: () => (__testPaths.downloadPath = previous) };
+    };
+
+    const oneModWorld = () =>
+      makeWorld({
+        mods: [{ id: "rev-mod", nexus: { modId: 7, fileId: 7 }, archiveSha256: "e".repeat(64), files: { "Data/r.esp": "r" } }],
+      });
+
+    it("records the revision when the package is the file Vortex downloaded from the collection page", async () => {
+      world = oneModWorld();
+      const manifest = await packageFrom(world);
+      const { fake, downloadDir, restore } = await withCollectionDownload("Ivy's Panties-rev13.zip");
+      try {
+        const result = await install(manifest, fake, undefined, {}, {
+          ehcollZipPath: path.join(downloadDir, "Ivy's Panties-rev13.zip"),
+        });
+        expect((result as { kind: string }).kind).toBe("success");
+      } finally {
+        restore();
+      }
+      const { readReceipt } = await import("../../src/core/installLedger");
+      const receipt = await readReceipt(world.appDataPath, manifest.package.id);
+      expect(receipt?.nexusCollection).toEqual({
+        slug: "tumkz9",
+        revisionNumber: 13,
+        gameDomain: "fallout4",
+        collectionId: 350133,
+      });
+    });
+
+    it("keeps the revision when the same version is run again from a copy elsewhere", async () => {
+      // A repair or a resumed run reads the package wherever it is found. The
+      // version is the one downloaded from the page, so its revision still
+      // holds — and dropping it would silently end every later update check.
+      world = oneModWorld();
+      const manifest = await packageFrom(world);
+      const { fake, downloadDir, restore } = await withCollectionDownload("Ivy's Panties-rev13.zip");
+      const { readReceipt } = await import("../../src/core/installLedger");
+      try {
+        await install(manifest, fake, undefined, {}, { ehcollZipPath: path.join(downloadDir, "Ivy's Panties-rev13.zip") });
+        const again = await install(manifest, fake, undefined, {}, {
+          ehcollZipPath: path.join(world.root, "Desktop", "ivy-copy.zip"),
+        });
+        expect((again as { kind: string }).kind).toBe("success");
+      } finally {
+        restore();
+      }
+      expect((await readReceipt(world.appDataPath, manifest.package.id))?.nexusCollection?.revisionNumber).toBe(13);
+    });
+
+    it("does not carry the revision to a different version installed from a file", async () => {
+      // That file is a file install: which revision it matches is unknown, and
+      // an update check guessing from the old one would offer the wrong thing.
+      world = oneModWorld();
+      const manifest = await packageFrom(world);
+      const { fake, downloadDir, restore } = await withCollectionDownload("Ivy's Panties-rev13.zip");
+      const { readReceipt } = await import("../../src/core/installLedger");
+      try {
+        await install(manifest, fake, undefined, {}, { ehcollZipPath: path.join(downloadDir, "Ivy's Panties-rev13.zip") });
+        const newer = { ...manifest, package: { ...manifest.package, version: "1.0.1" } } as EhcollManifest;
+        const result = await install(newer, fake, undefined, {}, {
+          ehcollZipPath: path.join(world.root, "Desktop", "ivy-panties-1.0.1.zip"),
+        });
+        expect((result as { kind: string }).kind).toBe("success");
+      } finally {
+        restore();
+      }
+      const receipt = await readReceipt(world.appDataPath, manifest.package.id);
+      expect(receipt?.packageVersion).toBe("1.0.1");
+      expect(receipt?.nexusCollection).toBeUndefined();
+    });
+
+    it("records nothing for a package file Vortex did not download as a revision", async () => {
+      // A mod-page zip or a file picked from disk: no revision is known, so no
+      // update check may ever run for it.
+      world = oneModWorld();
+      const manifest = await packageFrom(world);
+      const { fake, restore } = await withCollectionDownload("Ivy's Panties-rev13.zip");
+      try {
+        const result = await install(manifest, fake, undefined, {}, {
+          ehcollZipPath: path.join(world.root, "Desktop", "ivy-panties-1.0.29.zip"),
+        });
+        expect((result as { kind: string }).kind).toBe("success");
+      } finally {
+        restore();
+      }
+      const { readReceipt } = await import("../../src/core/installLedger");
+      const receipt = await readReceipt(world.appDataPath, manifest.package.id);
+      expect(receipt).toBeDefined();
+      expect(receipt?.nexusCollection).toBeUndefined();
+    });
+  });
+
   it("leaves a mod with no recorded choices on the original one-step path", async () => {
     // Replay must not change how the other 840 mods in a collection install.
     // A mod without choices is downloaded AND installed by Vortex in one go,
