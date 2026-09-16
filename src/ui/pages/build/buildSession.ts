@@ -102,7 +102,14 @@ import {
   getAppDataPath,
   loadDraft,
 } from "../../../core/draftStorage";
-import type { ExternalModConfigEntry } from "../../../core/manifest/collectionConfig";
+import {
+  getCollectionConfigPath,
+  loadOrCreateCollectionConfig,
+  type ExternalModConfigEntry,
+} from "../../../core/manifest/collectionConfig";
+import { getCollectionsConfigDir } from "../../../core/paths/appDataPaths";
+import { overridesForRestoredDraft } from "./draftOverrides";
+import * as fsp from "fs/promises";
 import type { VerificationLevel } from "../../../types/ehcoll";
 import type { PackageFormat } from "../../../core/manifest/packageFileName";
 import { ehLog } from "../../../core/logging/ehLog";
@@ -414,6 +421,24 @@ export interface BuildSessionRegistryHooks {
   notifyStateChanged(session: BuildSession): void;
 }
 
+/**
+ * A collection's per-mod decisions from its config file, or undefined when it
+ * has none. Never creates a config: a draft being restored must not leave files
+ * behind for a name that was only ever typed.
+ */
+async function readConfigOverridesOf(
+  slug: string,
+): Promise<Record<string, ExternalModConfigEntry> | undefined> {
+  const configDir = getCollectionsConfigDir();
+  try {
+    await fsp.access(getCollectionConfigPath(configDir, slug));
+    const { config } = await loadOrCreateCollectionConfig({ configDir, slug });
+    return { ...config.externalMods };
+  } catch {
+    return undefined;
+  }
+}
+
 class BuildSession {
   /**
    * Stable on-disk identity for this draft. Survives Vortex restarts
@@ -690,6 +715,23 @@ class BuildSession {
         if (this.controller !== controller) return;
 
         if (envelope !== undefined) {
+          // The config wins over the draft's copy of the per-mod decisions:
+          // see draftOverrides.ts for the build that shipped a removed one.
+          const restored = await overridesForRestoredDraft({
+            draftName: envelope.payload.curator?.name,
+            draftOverrides: envelope.payload.overrides,
+            contextConfigPath: ctx.configPath,
+            contextOverrides: baseForm.overrides,
+            readConfigOverrides: readConfigOverridesOf,
+          });
+          if (this.controller !== controller) return;
+          if (restored.ignoredDraftEntries.length > 0) {
+            ehLog("warn", "build.draft.stale-overrides-ignored", {
+              draftId: this.draftId,
+              source: restored.source,
+              ignored: restored.ignoredDraftEntries,
+            });
+          }
           this.setState({
             ...baseForm,
             curator: {
@@ -704,10 +746,7 @@ class BuildSession {
                   ? envelope.payload.curator.gameVersion
                   : baseForm.curator.gameVersion,
             },
-            overrides: {
-              ...baseForm.overrides,
-              ...envelope.payload.overrides,
-            },
+            overrides: restored.overrides,
             readme: envelope.payload.readme,
             changelog: envelope.payload.changelog,
             verificationLevel:
