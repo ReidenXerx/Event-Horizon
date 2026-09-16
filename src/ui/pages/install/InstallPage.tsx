@@ -26,7 +26,18 @@ import { useApi } from "../../state";
 import { useToast } from "../../components";
 import { ConcurrentOpBanner } from "../../runtime/ConcurrentOpBanner";
 import { nativeNotify } from "../../runtime/nativeNotify";
+import { selectors, types } from "@nexusmods/vortex-api";
 import { switchToProfile } from "../../../core/installer/profile";
+import {
+  deploymentInProgress,
+  readKnownProfiles,
+  removeSupersededProfiles,
+  supersededEhProfiles,
+  type SupersededProfile,
+} from "../../../core/installer/profileCleanup";
+import { getActiveProfileId } from "../../../core/getModsListForProfile";
+import { getVortexUserDataPath } from "../../../core/paths";
+import type { InstallResult } from "../../../types/installDriver";
 import {
   ConfirmStep,
   DecisionsStep,
@@ -44,7 +55,7 @@ import {
   type InstallSessionSnapshot,
 } from "./installSession";
 import { LinkReceiptNotice } from "./LinkReceiptNotice";
-import type { WizardAction, WizardState } from "./state";
+import type { PreviewBundle, WizardAction, WizardState } from "./state";
 import type { EventHorizonRoute } from "../../routes";
 
 export interface InstallPageProps {
@@ -298,11 +309,21 @@ function InstallWizard(props: InstallPageProps): JSX.Element {
         />
       );
 
-    case "done":
+    case "done": {
+      const superseded = offerableProfiles(api, state.result, state.bundle);
       return (
         <DoneStep
           result={state.result}
           bundle={state.bundle}
+          supersededProfileCount={superseded.length}
+          onCleanUpProfiles={(): void => {
+            void cleanUpProfiles({
+              api,
+              showToast,
+              gameId: state.bundle.plan.manifest.game.id,
+              profiles: superseded,
+            });
+          }}
           onStartOver={(): void => session.finish()}
           /**
            * Re-run the SAME package. Not "start over": the partial receipt
@@ -347,6 +368,7 @@ function InstallWizard(props: InstallPageProps): JSX.Element {
           }}
         />
       );
+    }
 
     case "error":
       return (
@@ -362,6 +384,143 @@ function InstallWizard(props: InstallPageProps): JSX.Element {
       return <PickStep onPick={(): void => undefined} />;
     }
   }
+}
+
+// ===========================================================================
+// Cleaning up the profiles earlier versions left behind
+// ===========================================================================
+
+/**
+ * The profiles an earlier version of this collection created.
+ *
+ * A plain function rather than a hook: it is called from inside the render
+ * switch, where a hook would break the rules of hooks, and it is a cheap read
+ * of state Vortex already holds in memory.
+ *
+ * Fresh-profile runs only. A current-profile install created no profile, so
+ * there is nothing it superseded and nothing to offer.
+ */
+function offerableProfiles(
+  api: types.IExtensionApi,
+  result: InstallResult,
+  bundle: PreviewBundle,
+): SupersededProfile[] {
+  if (result.kind !== "success") return [];
+  if (result.installTargetMode !== "fresh-profile") return [];
+
+  const gameId = bundle.plan.manifest.game.id;
+  const state = api.getState();
+
+  // Both reads are allowed to fail. Losing one only means a profile stays OFF
+  // the list, which is the safe direction — this must never cost the user the
+  // Done screen after an install that worked.
+  let activeProfileId: string | undefined;
+  try {
+    activeProfileId = getActiveProfileId(state);
+  } catch {
+    activeProfileId = undefined;
+  }
+  let lastActiveProfileId: string | undefined;
+  try {
+    lastActiveProfileId = selectors.lastActiveProfileForGame(state, gameId);
+  } catch {
+    lastActiveProfileId = undefined;
+  }
+
+  return supersededEhProfiles({
+    profiles: readKnownProfiles(state),
+    gameId,
+    packageName: bundle.plan.manifest.package.name,
+    keepProfileId: result.profileId,
+    activeProfileId,
+    lastActiveProfileId,
+  });
+}
+
+/**
+ * Ask which of them to remove, then remove exactly those.
+ *
+ * The tick list IS the consent: every profile is named, all start ticked, and
+ * the user unticks whatever they want to keep. Nothing is decided for them,
+ * and the text says what is lost — a profile carries the load order and the
+ * enabled/disabled state the user had in it.
+ */
+async function cleanUpProfiles(deps: {
+  api: types.IExtensionApi;
+  showToast: ReturnType<typeof useToast>;
+  gameId: string;
+  profiles: readonly SupersededProfile[];
+}): Promise<void> {
+  const { api, showToast, gameId, profiles } = deps;
+  const CONFIRM = "Remove ticked";
+
+  const answer = await api.showDialog?.(
+    "question",
+    "Remove older profiles for this collection?",
+    {
+      text:
+        "Event Horizon created these Vortex profiles for earlier versions of " +
+        "this collection. Removing one throws away the load order and the " +
+        "enabled/disabled state you had in it, and that cannot be undone. " +
+        "The profile this install just created is not listed, and neither is " +
+        "the one you are on. Untick anything you want to keep.",
+      checkboxes: profiles.map((p) => ({
+        id: p.id,
+        text: p.name,
+        value: true,
+      })),
+    },
+    [{ label: "Cancel" }, { label: CONFIRM }],
+  );
+  if (answer?.action !== CONFIRM) return;
+
+  const chosen = profiles.filter(
+    (p) => (answer.input as Record<string, unknown> | undefined)?.[p.id] === true,
+  );
+  if (chosen.length === 0) return;
+
+  // Checked here rather than before the dialog: deployment can start while
+  // the user is reading it, and this is the moment the answer matters.
+  if (deploymentInProgress(api.getState())) {
+    showToast({
+      intent: "warning",
+      title: "Not while Vortex is deploying",
+      message:
+        "Vortex is deploying right now, and pulling a profile out from under " +
+        "it is how a deploy half-finishes. Try again once it has stopped.",
+      ttl: 7000,
+    });
+    return;
+  }
+
+  const outcome = await removeSupersededProfiles({
+    api,
+    gameId,
+    userDataPath: getVortexUserDataPath(),
+    profiles: chosen,
+  });
+
+  if (outcome.failed.length === 0) {
+    showToast({
+      intent: "success",
+      title: "Old profiles removed",
+      message: `${outcome.removed.length} profile${
+        outcome.removed.length === 1 ? "" : "s"
+      } removed.`,
+      ttl: 4000,
+    });
+    return;
+  }
+  // Names the ones that survived. "Some failed" without saying which leaves
+  // the user to diff a profile list by eye.
+  showToast({
+    intent: "warning",
+    title: "Some profiles could not be removed",
+    message:
+      `${outcome.removed.length} removed; still here: ` +
+      outcome.failed.map((f) => `${f.profile.name} (${f.error})`).join("; "),
+    ttl: 9000,
+  });
 }
 
 // ===========================================================================

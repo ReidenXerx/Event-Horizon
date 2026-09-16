@@ -506,56 +506,21 @@ describe("render", () => {
     );
   });
 
-  /**
-   * The state a press produces, which is the whole of that bug: Re-check
-   * marked NOTHING and the deep scan marked only the "Mod files" card, so
-   * both buttons read as dead and got pressed again. Photographed because
-   * "you can see it started" is the entire fix, and a screenshot is worth
-   * more than a claim about one.
+  /*
+   * NOT photographed: the Doctor's working state (Re-check "Checking…",
+   * Deep scan "Scanning files…").
    *
-   * No `checkedAt` here on purpose: it renders through
-   * `toLocaleTimeString()`, and a committed fingerprint that moves with the
-   * machine's timezone is a false diff for everyone but its author.
+   * It was, briefly, and the fingerprint moved by 9/255 on every run — the
+   * busy Button renders a SPINNER, so each shot catches it at a different
+   * rotation, and an unlucky phase would produce a large diff that reads as a
+   * regression. A screen nobody can trust is worse than no screen: it trains
+   * whoever runs `ui:check` to wave changes through. Same rule that keeps
+   * `checkedAt` (a `toLocaleTimeString()` value) out of the shots above.
+   *
+   * The busy state is a `busy` prop on the shared Button, which owns the
+   * spinner and the disabled/aria-busy behaviour; this file is not where that
+   * contract is worth re-proving.
    */
-  it("doctor-working — a deep scan running, with both buttons showing it", () => {
-    const checks = evaluateHealth(
-      {
-        packageName: "Ivy 2",
-        packageVersion: "1.0.10",
-        vortexProfileId: "prof-1",
-        mods: Array.from({ length: 12 }, (_, i) => ({
-          vortexModId: `m${i}`,
-          compareKey: `nexus:${i}:${i}`,
-          name: `Mod ${i}`,
-        })),
-        rulesApplication: { appliedRuleCount: 4 },
-      },
-      {
-        existingProfileIds: ["prof-1"],
-        activeProfileId: "prof-1",
-        installedModIds: Array.from({ length: 12 }, (_, i) => `m${i}`),
-        enabledModIds: Array.from({ length: 12 }, (_, i) => `m${i}`),
-        currentModRuleCount: 4,
-      },
-    );
-    write(
-      "doctor-working",
-      React.createElement(
-        "div",
-        { className: "eh-page" },
-        React.createElement(DoctorPanel, {
-          packageName: "Ivy 2",
-          packageVersion: "1.0.10",
-          checks,
-          scanning: true,
-          busyCheckId: "staging",
-          onRecheck: () => undefined,
-          onRunDeepScan: () => undefined,
-          onHeal: () => undefined,
-        } as never),
-      ),
-    );
-  });
 
   // The state where the .ehcoll is gone: diagnosis still works, and the three
   // cures that re-run manifest-reading steps say why they cannot. Worth a
@@ -2114,6 +2079,16 @@ describe("render", () => {
         onStartOver: () => undefined,
         onGoCollections: () => undefined,
         onSwitchProfile: () => undefined,
+        /*
+         * The offer to remove the profiles earlier versions of this
+         * collection left behind. Pictured on the QUIET screen rather than
+         * the loud one: here the actions row is legible, so where this sits
+         * and how it reads beside the primary action can actually be judged.
+         * done-loud keeps the contrast — it passes no count, and a run that
+         * supersedes nothing shows no button at all.
+         */
+        supersededProfileCount: 3,
+        onCleanUpProfiles: () => undefined,
       } as never),
     );
   });

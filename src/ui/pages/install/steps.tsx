@@ -2315,6 +2315,17 @@ export interface DoneStepProps {
    * into. No-op for aborted/failed results.
    */
   onSwitchProfile?: (profileId: string, profileName: string) => void;
+  /**
+   * How many profiles earlier versions of this collection left behind, and
+   * the action that offers to remove them.
+   *
+   * The COUNT comes in rather than the list because this component reads no
+   * Vortex state — the same reason every other action here is a callback.
+   * Zero (or absent) hides the button entirely: a "clean up 0 profiles"
+   * button is a thing to read, decide about, and get nothing from.
+   */
+  supersededProfileCount?: number;
+  onCleanUpProfiles?: () => void;
 }
 
 export function DoneStep(props: DoneStepProps): JSX.Element {
@@ -2325,6 +2336,8 @@ export function DoneStep(props: DoneStepProps): JSX.Element {
     onGoCollections,
     onSwitchProfile,
     onRetryFailed,
+    supersededProfileCount,
+    onCleanUpProfiles,
   } = props;
 
   let badge: JSX.Element;
@@ -2463,6 +2476,28 @@ export function DoneStep(props: DoneStepProps): JSX.Element {
             Switch to {result.profileName}
           </Button>
         )}
+        {/*
+          Offered, never done automatically, and never the primary action. A
+          fresh-profile install leaves one profile per version behind by
+          design — that is what lets someone go back — so the pile is only
+          clutter once the user says it is. Hidden at zero.
+        */}
+        {result.kind === "success" &&
+          onCleanUpProfiles !== undefined &&
+          (supersededProfileCount ?? 0) > 0 && (
+            <Button
+              intent="ghost"
+              onClick={onCleanUpProfiles}
+              title={
+                `Remove the Vortex profiles that earlier versions of this ` +
+                `collection created. You choose which ones; nothing is ` +
+                `removed until you confirm.`
+              }
+            >
+              Clean up {supersededProfileCount} old profile
+              {supersededProfileCount === 1 ? "" : "s"}
+            </Button>
+          )}
         <Button intent="primary" onClick={onGoCollections}>
           View installed collections
         </Button>
