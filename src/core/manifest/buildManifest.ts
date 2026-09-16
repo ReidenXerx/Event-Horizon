@@ -92,7 +92,7 @@ const SUPPORTED_GAME_IDS: ReadonlySet<SupportedGameId> = new Set([
  * Future work: capture `nexusGameId` per-mod (from `mod.attributes.downloadGame`)
  * and prefer that over this fallback table.
  */
-const NEXUS_GAME_DOMAIN_BY_GAME_ID: Record<SupportedGameId, string> = {
+export const NEXUS_GAME_DOMAIN_BY_GAME_ID: Record<SupportedGameId, string> = {
   skyrimse: "skyrimspecialedition",
   fallout3: "fallout3",
   falloutnv: "newvegas",

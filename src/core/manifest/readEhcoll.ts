@@ -489,6 +489,17 @@ function classifyEntries(entries: PackageListEntry[]): ClassifiedLayout {
       hasChangelog = true;
       continue;
     }
+    /**
+     * Vortex's collection marker, written beside our manifest so an Event
+     * Horizon package published as a Nexus collection is claimed by Event
+     * Horizon's installer instead of Vortex's. It says nothing a reader needs
+     * — the manifest is the package — so it is recognised and ignored rather
+     * than left to the "unknown top-level entry" path, where every package
+     * would pick up a warning about a file we put there on purpose.
+     */
+    if (normalized === "collection.json") {
+      continue;
+    }
     if (normalized.startsWith("bundled/")) {
       if (!entry.nameEncodingKnown) {
         unflaggedBundled.push(normalized);

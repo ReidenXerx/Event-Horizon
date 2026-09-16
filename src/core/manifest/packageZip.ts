@@ -67,6 +67,7 @@ import { DiskSpaceError, requireFreeSpace, type FreeBytesProbe } from "../../uti
 import type { EhcollStagingFile } from "../../types/ehcoll";
 import { isPresentationEntry, presentationImages } from "../presentation/presentation";
 import { resolveSevenZip, sevenZipAdd, type SevenZipApi } from "./sevenZip";
+import { NEXUS_GAME_DOMAIN_BY_GAME_ID } from "./buildManifest";
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -279,6 +280,7 @@ export async function packageEhcoll(
     checkAbort();
     onProgress?.({ step: "writing-manifest", message: "Writing the manifest..." });
     await writeManifestJson(stagingDir, input.manifest);
+    await writeCollectionJson(stagingDir, input.manifest);
 
     checkAbort();
     await writeOptionalMarkdown(stagingDir, "README.md", input.readme);
@@ -616,6 +618,72 @@ async function writeManifestJson(
   const sorted = sortDeep(manifest);
   const json = JSON.stringify(sorted, null, 2) + "\n";
   await fsp.writeFile(path.join(stagingDir, "manifest.json"), json, "utf8");
+}
+
+/**
+ * Vortex's collection marker, written beside our manifest.
+ *
+ * ─── WHY A PACKAGE CARRIES ONE ─────────────────────────────────────────
+ * Event Horizon claims an archive from Vortex's installer only when BOTH
+ * `collection.json` and our `manifest.json` sit at its root: Vortex's own
+ * collection test is `collection.json` alone, so our claim has to be strictly
+ * narrower than theirs or it would take every Nexus collection the user
+ * installs. This file is the half of that pair Vortex recognises, and it is
+ * what lets a package published as a Nexus collection open in Event Horizon
+ * when someone presses Install on the website.
+ *
+ * ─── WHY IT LISTS NO MODS ──────────────────────────────────────────────
+ * On purpose, and not negotiable. A user WITHOUT Event Horizon who installs
+ * this gets Vortex's collection installer, and Vortex loses extracted files
+ * when it installs in bulk — which a collection is. Listing the real mods
+ * would hand those users exactly the failure this project exists to prevent.
+ * So Vortex is given nothing to install.
+ *
+ * ─── WHAT A USER WITHOUT EVENT HORIZON ACTUALLY SEES ───────────────────
+ * Less than you would hope, and this is Vortex's limit, not an oversight.
+ * Its install dialog shows `installInstructions` only when the collection has
+ * required or optional mods; with none it renders its own default "No
+ * additional instructions." So the message rides in `description` as well,
+ * which Vortex shows on the collection itself. `installInstructions` keeps a
+ * copy for any Vortex that does render it.
+ *
+ * Fields are exactly Vortex's validator requirements — `info`, `mods`,
+ * `modRules`; and on info `author`, `authorUrl`, `name`, `description`,
+ * `domainName` — read from its schema rather than guessed. `domainName` is
+ * the NEXUS domain, which is not the Vortex game id: `skyrimse` is
+ * `skyrimspecialedition` on Nexus.
+ */
+async function writeCollectionJson(
+  stagingDir: string,
+  manifest: EhcollManifest,
+): Promise<void> {
+  const message =
+    `${manifest.package.name} is installed by Event Horizon, not by Vortex's ` +
+    `collection installer. Install the Event Horizon extension ` +
+    `(nexusmods.com/site/mods/2235), then install this collection again — ` +
+    `Event Horizon will open it and install every mod one at a time. ` +
+    `Installed by Vortex alone, this collection installs nothing.`;
+
+  const collection = {
+    info: {
+      author: manifest.package.author,
+      // Required by Vortex's validator; Event Horizon records no author URL,
+      // and an invented one would send people somewhere nobody chose.
+      authorUrl: "",
+      name: manifest.package.name,
+      description: message,
+      domainName: NEXUS_GAME_DOMAIN_BY_GAME_ID[manifest.game.id],
+      installInstructions: message,
+    },
+    mods: [],
+    modRules: [],
+  };
+  const json = JSON.stringify(collection, null, 2) + "\n";
+  await fsp.writeFile(path.join(stagingDir, "collection.json"), json, "utf8");
+  ehLog("info", "package.collection-json", {
+    domainName: collection.info.domainName,
+    note: "marker for Event Horizon's installer claim; lists no mods by design",
+  });
 }
 
 async function writeOptionalMarkdown(
