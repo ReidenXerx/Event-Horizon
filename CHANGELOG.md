@@ -10,6 +10,20 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.2] — 2026-09-17
+
+### Playing
+- **Play no longer refuses a correctly downgraded game over its launcher.** Simple Fallout 4 Downgrader moves
+  Fallout4.exe and steam_api64.dll back and leaves Fallout4Launcher.exe, which then cannot load the older DLL.
+  Event Horizon refused to start the game because of that launcher, which Play never starts. A DLL mismatch
+  now stops Play only for the script extender's loader and the game itself. For any other program Event
+  Horizon warns, says a downgrade leaves exactly this, and says not to swap DLLs to make it go away.
+- **Play checks the game's version before starting it.** When Steam updates a game after you installed a
+  collection, the script extender closes without a word. Play now compares the game's version with the one
+  the collection on your active profile was built for. If they differ, it stops and says how to move the game
+  back, and on Steam how to stop it updating again. This covers collections installed with this version or
+  later, and a version that cannot be read never blocks.
+
 ## [0.2.1] — 2026-09-17
 
 ### My Collections
