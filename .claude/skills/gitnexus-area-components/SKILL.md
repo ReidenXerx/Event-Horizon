@@ -54,7 +54,7 @@ Start here when exploring this area:
 | `start` | Function | `src/ui/components/toastModel.ts` | 56 |
 | `stop` | Function | `src/ui/components/toastModel.ts` | 65 |
 | `openExternalUrl` | Function | `src/core/revealPath.ts` | 139 |
-| `action` | Function | `src/ui/pages/build/NexusCollectionUpload.tsx` | 271 |
+| `action` | Function | `src/ui/pages/build/NexusCollectionUpload.tsx` | 273 |
 | `ToastProvider` | Function | `src/ui/components/Toast.tsx` | 95 |
 | `createToastTimers` | Function | `src/ui/components/toastModel.ts` | 52 |
 | `blocks` | Function | `src/ui/components/Markdown.tsx` | 206 |

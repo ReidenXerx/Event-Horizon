@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-build
-description: "Skill for the Build area of Event-Horizon. 500 symbols across 108 files."
+description: "Skill for the Build area of Event-Horizon. 511 symbols across 112 files."
 ---
 
 # Build
 
-500 symbols | 108 files | Cohesion: 83%
+511 symbols | 112 files | Cohesion: 83%
 
 ## When to Use
 
@@ -19,14 +19,14 @@ description: "Skill for the Build area of Event-Horizon. 500 symbols across 108 
 |------|---------|
 | `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildChangelog, BuildDiffCard, BuildWizard, BuildingPanel (+57) |
 | `src/ui/pages/build/buildSession.ts` | cancelLoading, cancelRecovering, getState, subscribe, buildProgress (+30) |
-| `src/ui/pages/build/BuildDashboard.tsx` | BuildDashboard, handleDismissBuilt, handleOpenBuilt, handleOpenDraft, DashboardHeader (+20) |
+| `src/ui/pages/build/BuildDashboard.tsx` | BuildDashboard, handleDismissBuilt, handleOpenBuilt, handleOpenDraft, DashboardHeader (+23) |
 | `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, handlePickFile, DecisionsStep, DoNotInterfereModal (+20) |
-| `src/ui/pages/build/engine.ts` | validateCuratorInput, describeMissingArchives, isMissingArchiveWarning, downloadedFromNexus, findUnidentifiedMods (+15) |
-| `src/ui/pages/build/buildSessionRegistry.ts` | BuildSessionRegistry, getBuildSessionRegistry, ensure, get, makeHooks (+13) |
+| `src/ui/pages/build/engine.ts` | validateCuratorInput, describeMissingArchives, isMissingArchiveWarning, downloadedFromNexus, findUnidentifiedMods (+14) |
+| `src/ui/pages/build/buildSessionRegistry.ts` | BuildSessionRegistry, getBuildSessionRegistry, get, notifyStateChanged, emit (+13) |
+| `src/ui/pages/build/NexusCollectionUpload.tsx` | Body, Choose, NexusCollectionUpload, close, Reasons (+12) |
 | `src/ui/pages/build/buildDiff.test.ts` | findPackages, findPackages, findPackages, findPackages, findPackages (+9) |
-| `src/ui/pages/build/NexusCollectionUpload.tsx` | Body, Choose, Footer, NexusCollectionUpload, NexusUploadDialog (+8) |
-| `src/core/draftStorage.ts` | getDraftsRoot, listDrafts, deleteDraft, getAppDataPath, getDraftPath (+6) |
 | `src/ui/pages/HomePage.tsx` | CuratorPanel, Dashboard, DashboardBody, ErrorPanel, FooterRow (+6) |
+| `src/core/build/nexusAvailability.ts` | checkNexusAvailability, isAbort, categoryOf, classifyFile, currentMainFile (+6) |
 
 ## Entry Points
 
@@ -54,14 +54,14 @@ Start here when exploring this area:
 | `overallHealth` | Function | `src/core/doctor/health.ts` | 873 |
 | `canReapply` | Function | `src/core/doctor/loadOrderStatus.ts` | 254 |
 | `pickDoctorReceipt` | Function | `src/core/doctor/pickReceipt.ts` | 62 |
-| `getDraftsRoot` | Function | `src/core/draftStorage.ts` | 122 |
-| `listDrafts` | Function | `src/core/draftStorage.ts` | 163 |
 | `describeInstallAttempt` | Function | `src/core/installer/attemptRecord.ts` | 231 |
 | `describeFomodModes` | Function | `src/core/installer/fomodReplayMode.ts` | 78 |
 | `s` | Function | `src/core/installer/fomodReplayMode.ts` | 84 |
 | `mustAskReplayMode` | Function | `src/core/installer/fomodReplayMode.ts` | 183 |
 | `countKinds` | Function | `src/core/manifest/unexplainedFiles.ts` | 175 |
 | `describeUnexplainedFile` | Function | `src/core/manifest/unexplainedFiles.ts` | 153 |
+| `formatBytes` | Function | `src/core/manifest/unexplainedFiles.ts` | 139 |
+| `listModDiffFiles` | Function | `src/core/modDiffStorage.ts` | 60 |
 
 ## Execution Flows
 
@@ -73,10 +73,10 @@ Start here when exploring this area:
 | `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
 | `LoadPublishedDetails → ResolveLogFile` | cross_community | 10 |
 | `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
+| `NexusUploadModal → GetEventHorizonRoot` | cross_community | 10 |
 | `BuildPage → GetVortexUserDataPath` | cross_community | 10 |
 | `BuildWizard → GetVortexUserDataPath` | cross_community | 10 |
 | `OnRecovered → GetVortexUserDataPath` | cross_community | 10 |
-| `PrepareChangelog → ToPosix` | cross_community | 9 |
 
 ## How to Explore
 

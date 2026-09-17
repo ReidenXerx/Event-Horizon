@@ -33,8 +33,8 @@ description: "Skill for the Pages area of Event-Horizon. 27 symbols across 11 fi
 Start here when exploring this area:
 
 - **`useErrorReporterFormatted`** (Function) — `src/ui/errors/ErrorContext.tsx:65`
-- **`CollectionsPage`** (Function) — `src/ui/pages/CollectionsPage.tsx:116`
-- **`HomePage`** (Function) — `src/ui/pages/HomePage.tsx:54`
+- **`CollectionsPage`** (Function) — `src/ui/pages/CollectionsPage.tsx:117`
+- **`HomePage`** (Function) — `src/ui/pages/HomePage.tsx:55`
 - **`ModDiffsPage`** (Function) — `src/ui/pages/ModDiffsPage.tsx:67`
 - **`PluginDiffsPage`** (Function) — `src/ui/pages/PluginDiffsPage.tsx:53`
 
@@ -43,8 +43,8 @@ Start here when exploring this area:
 | Symbol | Type | File | Line |
 |--------|------|------|------|
 | `useErrorReporterFormatted` | Function | `src/ui/errors/ErrorContext.tsx` | 65 |
-| `CollectionsPage` | Function | `src/ui/pages/CollectionsPage.tsx` | 116 |
-| `HomePage` | Function | `src/ui/pages/HomePage.tsx` | 54 |
+| `CollectionsPage` | Function | `src/ui/pages/CollectionsPage.tsx` | 117 |
+| `HomePage` | Function | `src/ui/pages/HomePage.tsx` | 55 |
 | `ModDiffsPage` | Function | `src/ui/pages/ModDiffsPage.tsx` | 67 |
 | `PluginDiffsPage` | Function | `src/ui/pages/PluginDiffsPage.tsx` | 53 |
 | `BuildPage` | Function | `src/ui/pages/build/BuildPage.tsx` | 165 |

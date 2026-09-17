@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-install
-description: "Skill for the Install area of Event-Horizon. 109 symbols across 24 files."
+description: "Skill for the Install area of Event-Horizon. 116 symbols across 26 files."
 ---
 
 # Install
 
-109 symbols | 24 files | Cohesion: 73%
+116 symbols | 26 files | Cohesion: 70%
 
 ## When to Use
 
@@ -21,12 +21,12 @@ description: "Skill for the Install area of Event-Horizon. 109 symbols across 24
 | `src/ui/pages/install/steps.tsx` | BucketList, CuratorReportsNotice, DamagedArchiveNotice, ExternalArchiveNotice, FailureBody (+23) |
 | `src/ui/pages/install/state.ts` | wizardReducer, canProceedFromDecisions, countUndecidedConflicts, defaultConflictChoice, defaultOrphanChoice (+3) |
 | `src/ui/pages/install/fetchLink.ts` | fetchFromNexus, gameMismatchMessage, readKnownGames, throwIfAborted, vortexDownloadPath (+1) |
+| `src/ui/pages/install/engine.ts` | checkEnvironment, checkSystemRuntimes, profileExistsInState, runLoadingPipeline, checkAbort |
 | `src/ui/pages/install/installProgress.ts` | describeElapsed, describeQuiet, estimateRemainingMs, formatDuration, trackPhase |
 | `src/ui/pages/install/startWarning.test.ts` | bundle, confirmSession, confirm |
 | `src/core/installer/installLink.ts` | fileSizeOf, nexusFilePageUrl, vortexGamesForNexusDomain |
 | `src/ui/pages/install/autoSortGate.test.ts` | bundle, confirmSession |
 | `src/ui/pages/install/deploymentGate.test.ts` | bundle, confirmSession |
-| `src/ui/pages/curator/requirementsIo.ts` | nexusExtOf, fn |
 
 ## Entry Points
 
@@ -67,6 +67,8 @@ Start here when exploring this area:
 
 | Flow | Type | Steps |
 |------|------|-------|
+| `RunLoadingPipeline → GetEventHorizonRoot` | cross_community | 10 |
+| `RunLoadingPipeline → GetVortexUserDataPath` | cross_community | 9 |
 | `RunEnvironmentGate → GetVortexUserDataPath` | cross_community | 9 |
 | `RunEnvironmentGate → EHRuntime` | cross_community | 8 |
 | `RunEnvironmentGate → Notify` | cross_community | 8 |
@@ -74,9 +76,7 @@ Start here when exploring this area:
 | `BeginInstall → EHRuntime` | cross_community | 7 |
 | `BeginInstall → Notify` | cross_community | 7 |
 | `InstallFromLink → ToPosix` | cross_community | 7 |
-| `InstallFromLink → GuessGenericHints` | cross_community | 6 |
-| `InstallFromLink → GuessGenericTitle` | cross_community | 6 |
-| `InstallFromLink → CountProblems` | cross_community | 6 |
+| `RunLoadingPipeline → Truncate` | cross_community | 7 |
 
 ## How to Explore
 

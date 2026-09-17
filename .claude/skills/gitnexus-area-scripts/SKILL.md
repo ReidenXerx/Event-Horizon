@@ -33,7 +33,7 @@ description: "Skill for the Scripts area of Event-Horizon. 72 symbols across 13 
 Start here when exploring this area:
 
 - **`parseChangedSymbols`** (Function) — `scripts/bearing-test-order.mjs:81`
-- **`nexusClient`** (Function) — `scripts/lib/nexusRelease.mjs:223`
+- **`nexusClient`** (Function) — `scripts/lib/nexusRelease.mjs:235`
 - **`parseArgs`** (Function) — `scripts/nexus-collection-file.mjs:50`
 - **`publish`** (Function) — `scripts/nexus-collection-file.mjs:179`
 - **`refuseExtensionPage`** (Function) — `scripts/nexus-collection-file.mjs:107`
@@ -44,7 +44,7 @@ Start here when exploring this area:
 |--------|------|------|------|
 | `UsageError` | Class | `scripts/nexus-collection-file.mjs` | 48 |
 | `parseChangedSymbols` | Function | `scripts/bearing-test-order.mjs` | 81 |
-| `nexusClient` | Function | `scripts/lib/nexusRelease.mjs` | 223 |
+| `nexusClient` | Function | `scripts/lib/nexusRelease.mjs` | 235 |
 | `parseArgs` | Function | `scripts/nexus-collection-file.mjs` | 50 |
 | `publish` | Function | `scripts/nexus-collection-file.mjs` | 179 |
 | `refuseExtensionPage` | Function | `scripts/nexus-collection-file.mjs` | 107 |

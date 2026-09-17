@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-doctor
-description: "Skill for the Doctor area of Event-Horizon. 71 symbols across 17 files."
+description: "Skill for the Doctor area of Event-Horizon. 77 symbols across 19 files."
 ---
 
 # Doctor
 
-71 symbols | 17 files | Cohesion: 75%
+77 symbols | 19 files | Cohesion: 77%
 
 ## When to Use
 
@@ -18,15 +18,15 @@ description: "Skill for the Doctor area of Event-Horizon. 71 symbols across 17 f
 | File | Symbols |
 |------|---------|
 | `src/core/doctor/loadOrderStatus.ts` | activeContextFromState, assessReceiptOrder, baselineOf, currentOrderFromState, installedAtMs (+14) |
-| `src/core/doctor/loadOrderWatcher.ts` | assessActiveOrder, readReceipts, reapplyOwned, startLoadOrderWatcher, dismiss (+6) |
+| `src/core/doctor/loadOrderWatcher.ts` | assessActiveOrder, readReceipts, reapplyOwned, reapplyBlockedReason, reapplyCuratorOrder (+6) |
 | `src/core/doctor/loadOrderWatcher.test.ts` | on, receipt, on, fire, reorder (+1) |
-| `src/core/doctor/health.ts` | countCheck, detailList, evaluateHealth, healingBlockedReason, assessObservedLoadOrder |
+| `src/core/doctor/health.ts` | healingBlockedReason, countCheck, detailList, evaluateHealth, assessObservedLoadOrder |
 | `src/core/doctor/gather.ts` | countModRules, gatherObservations, readEnabledModIds, readInstalledModIds, readProfileIds |
+| `src/ui/runtime/ehRuntime.ts` | EHRuntime, getEHRuntime, getSnapshot, subscribe |
 | `src/core/doctor/health.test.ts` | drifted, observations, healthy, on |
 | `src/ui/pages/doctor/LoadOrderBadge.test.ts` | on, receipt, getState, stateOn |
+| `src/ui/runtime/collectionUpdates.ts` | action, startCollectionUpdate, refuse |
 | `src/ui/pages/doctor/EnvironmentTools.tsx` | saveLogs, saveSnapshot, formatBytes |
-| `src/core/curator/pluginPool.ts` | livePluginList, readPluginList |
-| `src/ui/pages/doctor/LoadOrderBadge.tsx` | status, badgePill |
 
 ## Entry Points
 
@@ -56,27 +56,27 @@ Start here when exploring this area:
 | `standingOf` | Function | `src/core/doctor/loadOrderStatus.ts` | 159 |
 | `assessActiveOrder` | Function | `src/core/doctor/loadOrderWatcher.ts` | 102 |
 | `status` | Function | `src/ui/pages/doctor/LoadOrderBadge.tsx` | 105 |
+| `healingBlockedReason` | Function | `src/core/doctor/health.ts` | 945 |
+| `reapplyBlockedReason` | Function | `src/core/doctor/loadOrderWatcher.ts` | 138 |
+| `reapplyCuratorOrder` | Function | `src/core/doctor/loadOrderWatcher.ts` | 150 |
 | `startLoadOrderWatcher` | Function | `src/core/doctor/loadOrderWatcher.ts` | 205 |
 | `dismiss` | Function | `src/core/doctor/loadOrderWatcher.ts` | 217 |
-| `look` | Function | `src/core/doctor/loadOrderWatcher.ts` | 232 |
-| `schedule` | Function | `src/core/doctor/loadOrderWatcher.ts` | 333 |
-| `skip` | Function | `src/core/doctor/loadOrderWatcher.ts` | 225 |
-| `evaluateHealth` | Function | `src/core/doctor/health.ts` | 318 |
+| `action` | Function | `src/core/doctor/loadOrderWatcher.ts` | 294 |
 
 ## Execution Flows
 
 | Flow | Type | Steps |
 |------|------|-------|
+| `RunEnvironmentGate → EHRuntime` | cross_community | 8 |
+| `BeginInstall → EHRuntime` | cross_community | 7 |
 | `StartLoadOrderWatcher → GetVortexUserDataPath` | cross_community | 7 |
+| `Heal → EHRuntime` | cross_community | 6 |
+| `InstallFromLink → EHRuntime` | cross_community | 6 |
 | `Look → BaselineOf` | cross_community | 5 |
 | `Look → SkippedPluginOrder` | cross_community | 5 |
 | `RunEnvironmentGate → DismissNotification` | cross_community | 5 |
-| `Look → InstalledAtMs` | cross_community | 4 |
-| `BeginInstall → DismissNotification` | cross_community | 4 |
-| `Look → Key` | cross_community | 3 |
-| `Look → ActiveContextFromState` | cross_community | 3 |
-| `Look → ReadReceipts` | cross_community | 3 |
-| `LoadOrderCard → CuratorPluginsOff` | cross_community | 3 |
+| `Session → EHRuntime` | cross_community | 5 |
+| `OpenConfirm → EHRuntime` | cross_community | 5 |
 
 ## How to Explore
 

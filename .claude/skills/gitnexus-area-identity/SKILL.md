@@ -1,43 +1,50 @@
 ---
 name: gitnexus-area-identity
-description: "Skill for the Identity area of Event-Horizon. 30 symbols across 6 files."
+description: "Skill for the Identity area of Event-Horizon. 33 symbols across 7 files."
 ---
 
 # Identity
 
-30 symbols | 6 files | Cohesion: 75%
+33 symbols | 7 files | Cohesion: 74%
 
 ## When to Use
 
 - Working with code in `src/`
-- Understanding how runKeyTier, normalizeVersion, archiveReference work
+- Understanding how createCompareModsAction, matchSnapshots, compareSnapshots work
 - Modifying identity-related functionality
 
 ## Key Files
 
 | File | Symbols |
 |------|---------|
-| `src/core/identity/modIdentity.ts` | archiveShaKey, runKeyTier, nameVersionKey, nexusFileKey, nexusModKey (+12) |
+| `src/core/identity/modIdentity.ts` | diceCoefficient, matchBySimilarity, matchSnapshots, archiveShaKey, runKeyTier (+12) |
 | `src/core/identity/compareKey.ts` | archiveReference, nexusFileReference, nexusModReference, externalArchiveCompareKey, nexusCompareKey |
+| `src/utils/utils.ts` | compareSnapshots, exportDiffReport, getModCompareKey, pickJsonFile |
 | `src/core/manifest/buildManifest.ts` | buildRule, buildRules, synthesizeRuleReference |
 | `src/core/manifest/collectionScope.ts` | findHashedIdentityCollisions, groupBy |
-| `src/utils/utils.ts` | compareSnapshots, getModCompareKey |
+| `src/actions/compareModsAction.ts` | createCompareModsAction |
 | `src/core/curator/collectionDiff.ts` | keyFor |
 
 ## Entry Points
 
 Start here when exploring this area:
 
-- **`runKeyTier`** (Function) — `src/core/identity/modIdentity.ts:268`
-- **`normalizeVersion`** (Function) — `src/core/identity/modIdentity.ts:113`
-- **`archiveReference`** (Function) — `src/core/identity/compareKey.ts:121`
-- **`nexusFileReference`** (Function) — `src/core/identity/compareKey.ts:102`
-- **`nexusModReference`** (Function) — `src/core/identity/compareKey.ts:116`
+- **`createCompareModsAction`** (Function) — `src/actions/compareModsAction.ts:21`
+- **`matchSnapshots`** (Function) — `src/core/identity/modIdentity.ts:249`
+- **`compareSnapshots`** (Function) — `src/utils/utils.ts:379`
+- **`exportDiffReport`** (Function) — `src/utils/utils.ts:455`
+- **`getModCompareKey`** (Function) — `src/utils/utils.ts:289`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
+| `createCompareModsAction` | Function | `src/actions/compareModsAction.ts` | 21 |
+| `matchSnapshots` | Function | `src/core/identity/modIdentity.ts` | 249 |
+| `compareSnapshots` | Function | `src/utils/utils.ts` | 379 |
+| `exportDiffReport` | Function | `src/utils/utils.ts` | 455 |
+| `getModCompareKey` | Function | `src/utils/utils.ts` | 289 |
+| `pickJsonFile` | Function | `src/utils/utils.ts` | 70 |
 | `runKeyTier` | Function | `src/core/identity/modIdentity.ts` | 268 |
 | `normalizeVersion` | Function | `src/core/identity/modIdentity.ts` | 113 |
 | `archiveReference` | Function | `src/core/identity/compareKey.ts` | 121 |
@@ -47,17 +54,11 @@ Start here when exploring this area:
 | `externalArchiveCompareKey` | Function | `src/core/identity/compareKey.ts` | 50 |
 | `nexusCompareKey` | Function | `src/core/identity/compareKey.ts` | 42 |
 | `findHashedIdentityCollisions` | Function | `src/core/manifest/collectionScope.ts` | 192 |
-| `matchSnapshots` | Function | `src/core/identity/modIdentity.ts` | 249 |
-| `compareSnapshots` | Function | `src/utils/utils.ts` | 379 |
-| `getModCompareKey` | Function | `src/utils/utils.ts` | 289 |
+| `diceCoefficient` | Function | `src/core/identity/modIdentity.ts` | 186 |
+| `matchBySimilarity` | Function | `src/core/identity/modIdentity.ts` | 362 |
 | `archiveShaKey` | Function | `src/core/identity/modIdentity.ts` | 214 |
 | `nameVersionKey` | Function | `src/core/identity/modIdentity.ts` | 230 |
 | `nexusFileKey` | Function | `src/core/identity/modIdentity.ts` | 207 |
-| `nexusModKey` | Function | `src/core/identity/modIdentity.ts` | 226 |
-| `stagingSetKey` | Function | `src/core/identity/modIdentity.ts` | 220 |
-| `str` | Function | `src/core/identity/modIdentity.ts` | 201 |
-| `buildRule` | Function | `src/core/manifest/buildManifest.ts` | 801 |
-| `buildRules` | Function | `src/core/manifest/buildManifest.ts` | 753 |
 
 ## Execution Flows
 
@@ -75,7 +76,7 @@ Start here when exploring this area:
 
 ## How to Explore
 
-1. `context({name: "runKeyTier"})` — see callers and callees
+1. `context({name: "createCompareModsAction"})` — see callers and callees
 2. `query({search_query: "identity"})` — find related execution flows
 3. Read key files listed above for implementation details
 4. `explain({target: "<file or symbol>"})` — persisted taint findings (source→sink data flows), when indexed with `--pdg`

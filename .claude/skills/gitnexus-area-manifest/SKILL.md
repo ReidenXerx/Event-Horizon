@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-manifest
-description: "Skill for the Manifest area of Event-Horizon. 543 symbols across 121 files."
+description: "Skill for the Manifest area of Event-Horizon. 538 symbols across 119 files."
 ---
 
 # Manifest
 
-543 symbols | 121 files | Cohesion: 72%
+538 symbols | 119 files | Cohesion: 72%
 
 ## When to Use
 
@@ -18,7 +18,7 @@ description: "Skill for the Manifest area of Event-Horizon. 543 symbols across 1
 | File | Symbols |
 |------|---------|
 | `src/core/manifest/parseManifest.ts` | ParseManifestError, describe, describeUnsupportedVersion, expectArray, expectBoolean (+44) |
-| `src/core/manifest/collectionConfig.ts` | choiceFromEntry, decidedPostProcessing, modsNewlyBundled, modsNoLongerBundled, toBuildManifestExternalMods (+22) |
+| `src/core/manifest/collectionConfig.ts` | choiceFromEntry, decidedPostProcessing, modsNewlyBundled, modsNoLongerBundled, toBuildManifestExternalMods (+21) |
 | `src/core/manifest/packageZip.ts` | PackageEhcollError, describeBytes, listBundles, packageBytesAtMost, packageEhcoll (+20) |
 | `src/core/manifest/readZip.ts` | ZipReadError, extractZipEntryToFile, findDataOffset, findEntry, findZip64Extra (+20) |
 | `src/core/manifest/buildManifest.ts` | BuildManifestError, buildLoadOrder, buildManifest, buildPackageMetadata, buildUserlist (+12) |
@@ -44,8 +44,8 @@ Start here when exploring this area:
 |--------|------|------|------|
 | `ParseManifestError` | Class | `src/core/manifest/parseManifest.ts` | 149 |
 | `PackageEhcollError` | Class | `src/core/manifest/packageZip.ts` | 209 |
-| `BuildRefusedError` | Class | `src/ui/pages/build/engine.ts` | 1209 |
-| `BundleResolutionError` | Class | `src/ui/pages/build/engine.ts` | 676 |
+| `BuildRefusedError` | Class | `src/ui/pages/build/engine.ts` | 1290 |
+| `BundleResolutionError` | Class | `src/ui/pages/build/engine.ts` | 757 |
 | `ZipReadError` | Class | `src/core/manifest/readZip.ts` | 81 |
 | `BuildManifestError` | Class | `src/core/manifest/buildManifest.ts` | 262 |
 | `ReadEhcollError` | Class | `src/core/manifest/readEhcoll.ts` | 133 |

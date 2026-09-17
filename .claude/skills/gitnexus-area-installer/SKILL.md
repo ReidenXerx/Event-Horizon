@@ -1,30 +1,30 @@
 ---
 name: gitnexus-area-installer
-description: "Skill for the Installer area of Event-Horizon. 457 symbols across 110 files."
+description: "Skill for the Installer area of Event-Horizon. 453 symbols across 110 files."
 ---
 
 # Installer
 
-457 symbols | 110 files | Cohesion: 73%
+453 symbols | 110 files | Cohesion: 73%
 
 ## When to Use
 
 - Working with code in `src/`
-- Understanding how describeGameIniApplication, shouldApplyGameIni, applyIniTweaks work
+- Understanding how purgeGameDeployment, readReceipt, describeGameIniApplication work
 - Modifying installer-related functionality
 
 ## Key Files
 
 | File | Symbols |
 |------|---------|
-| `src/core/installer/runInstall.ts` | buildAbortedResult, buildDisplayNameByModId, buildFailReceipt, buildManifestIndex, buildNexusModIdMap (+64) |
-| `src/core/installer/downloadDirect.ts` | onAbort, onAbort, onAbort, discardPart, download (+20) |
+| `src/core/installer/runInstall.ts` | buildAbortedResult, buildDisplayNameByModId, buildFailReceipt, buildManifestIndex, buildNexusModIdMap (+69) |
+| `src/core/installer/downloadDirect.ts` | discardPart, download, formatDuration, formatSize, hostOf (+20) |
 | `src/core/installer/modInstall.ts` | delayRespectingAbort, downloadFolderFor, downloadNexusArchiveOnly, installFromBundledArchive, installFromExistingDownload (+19) |
-| `src/core/installLedger.ts` | InstallLedgerError, expectString, getInstallLedgerDir, getReceiptPath, isIso8601 (+11) |
 | `src/core/installer/installLink.ts` | dispositionParams, fileNameFromContentDisposition, safeDownloadName, sanitizeFileName, categoryOf (+10) |
 | `src/core/installer/applyUserlist.ts` | applyGroupDefinition, applyGroupRule, applyPluginEntry, applyPluginGroup, applyPluginRuleWithCollectionWins (+8) |
 | `src/core/installer/applyMirrors.ts` | applyMirrorPlan, mirrorEntryFor, placeFile, replaceFile, restoreOne (+7) |
 | `src/core/installer/checkNexusAccount.ts` | describeSelectorAvailability, hasNexusSlice, nexusSlice, probeNexusAccount, readNexusAccount (+4) |
+| `src/core/installer/installMarker.ts` | clearInstallMarker, getMarkerDir, listInterruptedInstalls, markerPath, parseMarker (+4) |
 | `src/core/installer/bundledPrefetch.ts` | BundledPrefetchPool, dispose, prime, pump, runExtraction (+3) |
 | `src/core/installer/linkCarrier.ts` | baseName, decodeText, parseJsonEntry, parseLinkCarrier, crc32 (+3) |
 
@@ -32,11 +32,11 @@ description: "Skill for the Installer area of Event-Horizon. 457 symbols across 
 
 Start here when exploring this area:
 
+- **`purgeGameDeployment`** (Function) — `src/core/environment/vortexEnvironment.ts:175`
+- **`readReceipt`** (Function) — `src/core/installLedger.ts:433`
 - **`describeGameIniApplication`** (Function) — `src/core/installer/applyGameIni.ts:340`
 - **`shouldApplyGameIni`** (Function) — `src/core/installer/applyGameIni.ts:315`
 - **`applyIniTweaks`** (Function) — `src/core/installer/applyIniTweaks.ts:53`
-- **`emptyIniTweakApplication`** (Function) — `src/core/installer/applyIniTweaks.ts:41`
-- **`describeModTypeChanges`** (Function) — `src/core/installer/applyModTypes.ts:159`
 
 ## Key Symbols
 
@@ -44,10 +44,11 @@ Start here when exploring this area:
 |--------|------|------|------|
 | `BundledPrefetchPool` | Class | `src/core/installer/bundledPrefetch.ts` | 117 |
 | `InstallStreaks` | Class | `src/core/installer/installStreaks.ts` | 59 |
-| `InstallLedgerError` | Class | `src/core/installLedger.ts` | 73 |
 | `AbortError` | Class | `src/utils/abortError.ts` | 22 |
 | `DiskSpaceError` | Class | `src/utils/diskSpace.ts` | 112 |
 | `ChecksumMismatchError` | Class | `src/core/installer/downloadDirect.ts` | 70 |
+| `purgeGameDeployment` | Function | `src/core/environment/vortexEnvironment.ts` | 175 |
+| `readReceipt` | Function | `src/core/installLedger.ts` | 433 |
 | `describeGameIniApplication` | Function | `src/core/installer/applyGameIni.ts` | 340 |
 | `shouldApplyGameIni` | Function | `src/core/installer/applyGameIni.ts` | 315 |
 | `applyIniTweaks` | Function | `src/core/installer/applyIniTweaks.ts` | 53 |
@@ -61,7 +62,6 @@ Start here when exploring this area:
 | `findModTypeMismatches` | Function | `src/core/installer/checkModTypes.ts` | 41 |
 | `emptyPluginOrderDrift` | Function | `src/core/installer/checkPluginOrder.ts` | 55 |
 | `readUserPluginsTxt` | Function | `src/core/installer/checkPluginOrder.ts` | 185 |
-| `describeSevenZipHealth` | Function | `src/core/installer/checkSevenZipHealth.ts` | 108 |
 
 ## Execution Flows
 
@@ -80,7 +80,7 @@ Start here when exploring this area:
 
 ## How to Explore
 
-1. `context({name: "describeGameIniApplication"})` — see callers and callees
+1. `context({name: "purgeGameDeployment"})` — see callers and callees
 2. `query({search_query: "installer"})` — find related execution flows
 3. Read key files listed above for implementation details
 4. `explain({target: "<file or symbol>"})` — persisted taint findings (source→sink data flows), when indexed with `--pdg`
