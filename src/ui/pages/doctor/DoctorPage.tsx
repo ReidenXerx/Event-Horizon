@@ -11,11 +11,14 @@
  * opens, even if the `.ehcoll` was deleted months ago.
  *
  * The deep scan and three of the six cures re-run pipeline steps that read the
- * MANIFEST, so they need the package. It is looked up by name and version in
- * the collections folder; when that fails the user can point at it. Until then
- * those actions are disabled WITH THE REASON rather than hidden — a button
- * that quietly vanishes reads as a missing feature, one that explains itself
- * reads as a tool that knows what it is doing.
+ * MANIFEST, so they need the package — and the page gets it ITSELF: the copy
+ * kept when the collection was installed, else the collections folder, else
+ * the exact installed revision downloaded again from Nexus. Asking the player
+ * to go and find a file they used weeks ago is the last resort now, not the
+ * greeting, and while that is happening the buttons say which step it is on.
+ * Until then those actions are disabled WITH THE REASON rather than hidden — a
+ * button that quietly vanishes reads as a missing feature, one that explains
+ * itself reads as a tool that knows what it is doing.
  * ──────────────────────────────────────────────────────────────────────
  */
 
@@ -30,7 +33,7 @@ import { assessObservedLoadOrder, doctorLightFlagBaseline, evaluateHealth, heali
 import { ehLog } from "../../../core/logging/ehLog";
 import type { HealAction, HealthCheck, HealthReceiptView } from "../../../core/doctor/health";
 import { gatherObservations } from "../../../core/doctor/gather";
-import { describeHeal, healNeedsManifest } from "../../../core/doctor/heal";
+import { describeHeal, healNeedsConfirmation, healNeedsManifest } from "../../../core/doctor/heal";
 import { runHeal } from "../../../core/doctor/runHeal";
 import { getInstallSession } from "../install/installSession";
 import type { EventHorizonRoute } from "../../routes";
@@ -168,6 +171,10 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
     { path: string; manifest: EhcollManifest } | undefined
   >(undefined);
   const [pkgSearched, setPkgSearched] = React.useState(false);
+  /** Set while the collection is being fetched again, so the page says so. */
+  const [pkgFetching, setPkgFetching] = React.useState<string | undefined>(undefined);
+  /** Why the collection could not be obtained, when it could not be. */
+  const [pkgUnavailable, setPkgUnavailable] = React.useState<string | undefined>(undefined);
   const [tick, setTick] = React.useState(0);
   /**
    * Both buttons ran with no sign they had started — reported as "we didn't
@@ -241,25 +248,51 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
     let alive = true;
     setPkg(undefined);
     setPkgSearched(false);
+    setPkgFetching(undefined);
+    setPkgUnavailable(undefined);
     void (async (): Promise<void> => {
       try {
         // Shared with My Collections' "check and continue": two callers
         // disagreeing about which package belongs to a collection is exactly
         // the bug a second hand-rolled copy produces.
-        const { locateCollectionPackage } = await import(
-          "../../../core/manifest/locatePackage"
-        );
-        const found = await locateCollectionPackage({
-          packageName: loaded.selected.packageName,
-          packageVersion: loaded.selected.packageVersion,
+        /**
+         * The copy kept at install time first, then the collections folder,
+         * then the exact revision from the page it came from — see
+         * {@link ensureCollectionPackage}. The player is asked for a file only
+         * when all three fail, which for a collection installed from Nexus
+         * should be never.
+         */
+        const [{ ensureCollectionPackage }, { getVortexUserDataPath }] =
+          await Promise.all([
+            import("../../runtime/ensurePackage"),
+            import("../../../core/paths"),
+          ]);
+        const found = await ensureCollectionPackage({
+          api,
+          receipt: loaded.selected,
+          appDataPath: getVortexUserDataPath(),
+          onDownloadProgress: (received, total) => {
+            if (!alive) return;
+            setPkgFetching(
+              total !== undefined && total > 0
+                ? `Fetching the collection again — ${Math.floor((received / total) * 100)}%`
+                : "Fetching the collection again…",
+            );
+          },
         });
-        if (found === undefined) {
-          if (alive) setPkgSearched(true);
+        if (found.kind !== "ready") {
+          if (alive) {
+            setPkgFetching(undefined);
+            setPkgUnavailable(found.reason);
+            setPkgSearched(true);
+          }
           return;
         }
         const { readEhcoll } = await import("../../../core/manifest/readEhcoll");
         const result = await readEhcoll(found.path);
         if (!alive) return;
+        setPkgFetching(undefined);
+        setPkgUnavailable(undefined);
         setPkg({ path: found.path, manifest: result.manifest });
         setPkgSearched(true);
       } catch {
@@ -339,11 +372,17 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
    */
   const blocked = healingBlockedReason(getInstallSession().getSnapshot().state);
 
+  /**
+   * Only what the player must act on. Event Horizon keeps a copy of every
+   * collection it installs and can fetch the installed revision again from
+   * Nexus, so this is now the last resort rather than the usual greeting: a
+   * file install whose package is gone, or a fetch that failed.
+   */
   const missingPackage =
     pkg === undefined && pkgSearched
-      ? "The package for this collection (.ehcoll or .zip) was not found in " +
-        "your collections folder. Repairs that re-run a step of the install " +
-        "need it — pick it to enable them."
+      ? (pkgUnavailable ??
+        "The package for this collection could not be found. Repairs that " +
+          "re-run a step of the install need it — pick it to enable them.")
       : undefined;
 
   // ── deep scan ────────────────────────────────────────────────────────
@@ -399,16 +438,21 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
       const described = describeHeal(action);
 
       void (async (): Promise<void> => {
-        // Every cure writes to the machine and several are destructive by
-        // design (rules REPLACE the user's). Ask first, in the words that say
-        // what is lost.
-        const result = await api.showDialog?.(
-          "question",
-          described.title,
-          { text: described.body },
-          [{ label: "Cancel" }, { label: described.confirm }],
-        );
-        if (result?.action !== described.confirm) return;
+        /**
+         * Only the cures that take something away still ask — replacing the
+         * player's mod rules, or removing and rebuilding mod folders. Putting
+         * a recorded load order back is one press, because seeing the problem
+         * and fixing it should not be two conversations.
+         */
+        if (healNeedsConfirmation(action)) {
+          const result = await api.showDialog?.(
+            "question",
+            described.title,
+            { text: described.body },
+            [{ label: "Cancel" }, { label: described.confirm }],
+          );
+          if (result?.action !== described.confirm) return;
+        }
 
         setBusyCheckId(checkId);
         try {
@@ -519,6 +563,10 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
         </Card>
       )}
 
+      {pkgFetching !== undefined && (
+        <Callout tone="info">{pkgFetching}</Callout>
+      )}
+
       {missingPackage !== undefined && (
         <Callout
           tone="warning"
@@ -588,7 +636,13 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
           {...(pkg === undefined
             ? {
                 unavailableHeal: (action: HealAction): string | undefined =>
-                  healNeedsManifest(action) ? "Needs the package" : undefined,
+                  healNeedsManifest(action)
+                    ? pkgFetching !== undefined
+                      ? "Fetching the collection…"
+                      : pkgSearched
+                        ? "Needs the package"
+                        : "Reading the collection…"
+                    : undefined,
               }
             : {})}
         />

@@ -10,18 +10,25 @@ import { describe, expect, it } from "vitest";
 import { buildOutputFileName } from "../manifest/packageFileName";
 import {
   describeHeal,
+  healNeedsConfirmation,
   healNeedsManifest,
   matchEhcollFile,
   rebuildPluginOrder,
 } from "./heal";
 import type { HealAction } from "./health";
 
+/**
+ * Every action in the union. `restore-light-flags` was missing here while the
+ * union had it, which quietly excused it from both checks below — the exact
+ * hole those checks exist to close.
+ */
 const ALL: HealAction[] = [
   "reinstall-mods",
   "enable-mods",
   "reapply-rules",
   "reapply-userlist",
   "repin-plugin-order",
+  "restore-light-flags",
   "switch-profile",
 ];
 
@@ -33,6 +40,10 @@ describe("healNeedsManifest", () => {
     expect(ALL.filter((a) => !healNeedsManifest(a)).sort()).toEqual([
       "enable-mods",
       "repin-plugin-order",
+      // The receipt carries each plugin's name and the curator's flag, so this
+      // one needs no manifest either — it was simply missing from this list
+      // while the union already had it.
+      "restore-light-flags",
       "switch-profile",
     ]);
     expect(ALL.filter(healNeedsManifest).sort()).toEqual([
@@ -46,6 +57,48 @@ describe("healNeedsManifest", () => {
     // A missing case returns undefined, which is falsy, which would silently
     // offer a manifest-backed repair with no manifest.
     for (const a of ALL) expect(typeof healNeedsManifest(a)).toBe("boolean");
+  });
+});
+
+describe("healNeedsConfirmation", () => {
+  it("asks only for the cures that take something away", () => {
+    /**
+     * Owner poll, 2026-09-18: a player looking at "your load order is wrong"
+     * should fix it with ONE press. A dialog in front of a reversible repair
+     * protects nothing and reads as the tool hesitating.
+     *
+     * Rules and the LOOT userlist REPLACE what the player set for this game;
+     * reinstalling REMOVES and rebuilds mod folders and can take an hour.
+     * Those three still say what is lost before they do it.
+     */
+    expect(ALL.filter((a) => !healNeedsConfirmation(a)).sort()).toEqual([
+      "enable-mods",
+      "repin-plugin-order",
+      "restore-light-flags",
+      "switch-profile",
+    ]);
+    expect(ALL.filter(healNeedsConfirmation).sort()).toEqual([
+      "reapply-rules",
+      "reapply-userlist",
+      "reinstall-mods",
+    ]);
+  });
+
+  it("answers for every action", () => {
+    // Same trap as above, opposite direction: a missing case is falsy, which
+    // would run a destructive repair with no question asked.
+    for (const a of ALL) expect(typeof healNeedsConfirmation(a)).toBe("boolean");
+  });
+
+  it("still describes every cure, including the ones that no longer ask", () => {
+    // The body text is what a card can show under the button; only the dialog
+    // went away.
+    for (const a of ALL) {
+      const d = describeHeal(a);
+      expect(d.title.length).toBeGreaterThan(0);
+      expect(d.body.length).toBeGreaterThan(0);
+      expect(d.confirm.length).toBeGreaterThan(0);
+    }
   });
 });
 

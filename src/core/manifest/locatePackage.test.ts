@@ -40,9 +40,23 @@ describe("locating a collection's package", () => {
     }
   });
 
-  it("routes both callers through locateCollectionPackage", () => {
+  it("routes both callers through the shared lookup", () => {
+    /**
+     * Two spellings, one route. The Doctor now calls
+     * `ensureCollectionPackage`, which adds the steps a player should never
+     * have to take — the copy kept at install time, and re-downloading the
+     * installed revision — and reaches `locateCollectionPackage` underneath.
+     * My Collections still calls the lookup directly.
+     *
+     * What this test is really guarding is the next line down: neither caller
+     * may go back to deciding for itself which file belongs to a collection.
+     */
     const offenders = sources
-      .filter((s) => !s.text.includes("locateCollectionPackage"))
+      .filter(
+        (s) =>
+          !s.text.includes("locateCollectionPackage") &&
+          !s.text.includes("ensureCollectionPackage"),
+      )
       .map((s) => s.file);
     expect(offenders).toEqual([]);
   });

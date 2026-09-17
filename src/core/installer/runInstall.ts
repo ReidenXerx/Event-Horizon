@@ -280,6 +280,7 @@ import {
   readVerifyJournal,
   reusableVerifications,
 } from "./verifyJournal";
+import { storeInstalledPackage } from "./packageStore";
 import { repairDecisionFor } from "../resolver/resolveInstallPlan";
 // NOTE: there used to be a `pluginsTxt.ts` writer module here. It
 // was deleted along with the `writing-plugins-txt` driver phase
@@ -4831,6 +4832,30 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     let receiptPath: string;
     try {
       receiptPath = await writeReceiptWithRetry(ctx.appDataPath, receipt);
+      /**
+       * ─── KEEP THE COLLECTION, SO A REPAIR IS ONE BUTTON ────────────────
+       * After the receipt, deliberately: the two belong together, and the
+       * Doctor diagnoses from the receipt but repairs from the package. A
+       * stored package that did not match the receipt beside it would be
+       * worse than none. This is also why only a SUCCESSFUL run stores one.
+       *
+       * Failure here is logged and ignored — the collection installed
+       * correctly, and the only consequence is that a later repair asks for
+       * the file or downloads it again.
+       */
+      reportProgress(
+        "writing-receipt",
+        1,
+        1,
+        "Keeping a copy of the collection for repairs…",
+      );
+      await storeInstalledPackage({
+        appDataPath: ctx.appDataPath,
+        packageId: plan.manifest.package.id,
+        packageVersion: plan.manifest.package.version,
+        packageName: plan.manifest.package.name,
+        sourcePath: ctx.ehcollZipPath,
+      });
       // The line whose ABSENCE cost a whole diagnosis.
       //
       // A successful run's last log line used to be `plugins.light-flags`,

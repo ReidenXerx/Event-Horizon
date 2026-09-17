@@ -314,6 +314,7 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
             import("./install/installSession"),
           ]);
         let target = await locateCollectionPackage({
+          packageId: receipt.packageId,
           packageName: receipt.packageName,
           packageVersion: receipt.packageVersion,
         });
@@ -324,7 +325,7 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
           const { pickEhcollFile } = await import("../../utils/utils");
           const picked = await pickEhcollFile(api);
           if (picked === undefined) return;
-          target = { path: picked, fileName: picked };
+          target = { path: picked, fileName: picked, source: "found" };
         }
 
         setSelected(undefined);

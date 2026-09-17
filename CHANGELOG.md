@@ -10,6 +10,23 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.4] — 2026-09-18
+
+### The Doctor
+- **Repairs no longer ask you to go and find the collection file.** Half the Doctor's repairs re-run a step
+  of the install, so they needed the `.ehcoll` — and nothing had ever recorded where it went. The tool that
+  could name your exact problem was answering "fix my load order" with "first find the file you installed
+  weeks ago". Event Horizon now **keeps a copy of every collection it installs**, beside that install's
+  receipt, and uses it without a word. If it is ever missing, the exact revision you installed is downloaded
+  again from its collection page — not the newest one, which would be a different collection.
+- **Every repair is one press.** Restoring the load order, the ESL flags, re-enabling the collection's mods
+  and switching to its profile now just happen when you press the button: they put back a recorded state,
+  they remove nothing, and you can undo them by doing the opposite. Re-applying mod rules or LOOT rules
+  (which replace what you set for the game) and reinstalling mods (which rebuilds mod folders) still say
+  what they will do first.
+- The deep scan and the repairs that were labelled "Needs the package" now say **"Reading the collection…"**
+  or **"Fetching the collection…"** while that is happening, instead of looking broken.
+
 ## [0.2.3] — 2026-09-18
 
 ### Installing

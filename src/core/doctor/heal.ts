@@ -58,11 +58,49 @@ export function healNeedsManifest(action: HealAction): boolean {
 }
 
 /**
+ * Must the user confirm this cure, or is pressing the button enough?
+ *
+ * Owner poll, 2026-09-18: a player who can see that their load order is wrong
+ * should fix it with ONE press. A dialog between the diagnosis and the cure
+ * buys nothing when the cure is reversible and touches nothing the player
+ * owns — it just makes the tool feel like it is protecting itself.
+ *
+ * So the line is drawn at what cannot simply be pressed again:
+ *
+ *   • order, ESL flags, enabling mods, switching profile — all restore a
+ *     recorded state, none removes anything, and every one of them can be
+ *     undone by doing the opposite. One press.
+ *   • reapply-rules REPLACES the player's own mod rules for this game, and
+ *     reinstall-mods REMOVES and rebuilds mod folders and can take an hour.
+ *     Both still ask, in the words that say what is lost.
+ *
+ * The userlist is the same act as the rules, one layer down (LOOT), so it
+ * keeps its confirmation for the same reason.
+ */
+export function healNeedsConfirmation(action: HealAction): boolean {
+  switch (action) {
+    case "reapply-rules":
+    case "reapply-userlist":
+    case "reinstall-mods":
+      return true;
+    case "switch-profile":
+    case "enable-mods":
+    case "repin-plugin-order":
+    case "restore-light-flags":
+      return false;
+  }
+}
+
+/**
  * What the user is agreeing to, in their words, before it happens.
  *
  * Every one of these writes to the machine, and several are slow. A button
  * labelled "Reinstall 3 changed mods" that silently also re-runs deployment is
  * a worse surprise than a slow one.
+ *
+ * Still written for every action, including the ones that no longer ask: the
+ * body text is what a card shows under the button, and
+ * {@link healNeedsConfirmation} decides only whether a dialog is raised.
  */
 export function describeHeal(action: HealAction): {
   title: string;
