@@ -10,6 +10,21 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.1] — 2026-09-17
+
+### My Collections
+- **A card no longer says "current profile" about a collection you are not playing.** That badge described how
+  a collection was installed: into a profile of its own, or into the profile that was active at the time. But
+  "current profile" read as "this is the profile Vortex is on", so an older install could look current while
+  the collection you were actually playing said "active". It now says **own profile** or **existing profile**
+  (hover it for what that means), on the collection cards, the Dashboard and the details view, and **active**
+  comes first on the card of the collection whose profile Vortex is on.
+
+### Building collections
+- **Copy the changelog as Markdown after an upload.** Nexus collection pages take Markdown, so the upload dialog
+  now offers **Copy changelog (Markdown)** beside the BBCode copy: this version's changes, ready for the
+  revision notes.
+
 ## [0.2.0] — 2026-09-17
 
 **Event Horizon is in beta.** Collections can now live on Nexus collection pages: you add one there, Event
