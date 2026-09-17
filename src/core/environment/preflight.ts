@@ -19,7 +19,7 @@ import * as fsp from "fs/promises";
 import * as path from "path";
 
 import { ehLog } from "../logging/ehLog";
-import { probeFilesFor } from "../manifest/externalDependencies";
+import { probeFilesFor, scriptExtenderFor } from "../manifest/externalDependencies";
 import { isMachineOwned, parseIni } from "../manifest/gameIni";
 import { rebaseUnder, segmentsOf } from "../paths";
 import { probeWinePrefix, type WineHost, type WinePrefixProbe } from "../proton";
@@ -302,12 +302,24 @@ export async function runEnvironmentPreflight(
   if (facts.executable !== undefined && !facts.executable.includes("/") && !facts.executable.includes("\\")) {
     exeNames.push(facts.executable);
   }
+  // What Play starts: the script extender's loader, and the game executable it
+  // (or Play, for a game whose extender patches the exe) starts. Only these can
+  // block; see decideBinaryImports.
+  const scriptExtender = scriptExtenderFor(facts.gameId);
+  const started = [
+    ...(scriptExtender !== undefined ? [scriptExtender.loader] : []),
+    ...(facts.executable !== undefined && !facts.executable.includes("/") && !facts.executable.includes("\\")
+      ? [facts.executable]
+      : []),
+  ];
+  if (scriptExtender !== undefined) exeNames.push(scriptExtender.loader);
   report.imports = await probeImportMismatches({ gameDir, exeNames, vanillaRootNames });
   report.checks.push(
     decideBinaryImports({
       gameName: facts.gameName,
       checked: report.imports.checked,
       findings: report.imports.findings,
+      started,
       unreadable: report.imports.unreadable,
     }),
   );

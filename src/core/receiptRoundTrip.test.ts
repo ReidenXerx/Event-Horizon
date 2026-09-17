@@ -79,6 +79,22 @@ describe("install receipt round-trip", () => {
     expect(out.nexusCollection).toEqual(nexusCollection);
   });
 
+  it("keeps the game version Play checks the game against", () => {
+    // Destroyed at write, Play would never check a version and a game Steam
+    // moved to next-gen would start and close without a word.
+    const gameVersion = { required: "1.10.163.0", policy: "exact" as const };
+    const out = throughDisk({ ...base(), gameVersion } as InstallReceipt);
+    expect(out.gameVersion).toEqual(gameVersion);
+  });
+
+  it("drops a game version nobody could determine, without refusing the receipt", () => {
+    const unknown = parseReceipt(JSON.stringify({ ...base(), gameVersion: { required: "unknown", policy: "exact" } }));
+    expect(unknown.gameVersion).toBeUndefined();
+    const badPolicy = parseReceipt(JSON.stringify({ ...base(), gameVersion: { required: "1.10.163.0", policy: "roughly" } }));
+    expect(badPolicy.gameVersion).toBeUndefined();
+    expect(badPolicy.packageId).toBe("11111111-2222-4333-8444-555555555555");
+  });
+
   it("drops an unusable Nexus revision without refusing the receipt", () => {
     // The receipt is what the Doctor heals from; a bad update hint must not
     // cost the player that.

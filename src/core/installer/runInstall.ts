@@ -6233,6 +6233,10 @@ function buildReceipt(args: {
     // Absent on a complete run, so its presence IS the partial signal.
     ...(failedMods.length > 0 ? { failedMods: [...failedMods] } : {}),
     ...(nexusCollection !== undefined ? { nexusCollection } : {}),
+    // What Play checks the game against before starting it; see InstallReceipt.gameVersion.
+    ...(manifest.game.version.trim() !== "" && manifest.game.version !== "unknown"
+      ? { gameVersion: { required: manifest.game.version, policy: manifest.game.versionPolicy } }
+      : {}),
   };
 }
 

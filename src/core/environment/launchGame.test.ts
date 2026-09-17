@@ -153,6 +153,46 @@ describe("launchGame", () => {
     expect(runExecutable).not.toHaveBeenCalled();
   });
 
+  // The Discord player, 2026-09-16: Steam moved Fallout 4 to next-gen and F4SE exited with code 1, unexplained.
+  it("refuses before starting a game whose version no longer fits the collection on the active profile", async () => {
+    fs.writeFileSync(path.join(game, "f4se_loader.exe"), "loader");
+    const appDataPath = path.join(tmp, "AppData");
+    const { serializeReceipt, getReceiptPath } = await import("../installLedger");
+    const receipt = {
+      schemaVersion: 1,
+      packageId: "0456490d-525b-49e3-92d2-5c6e617990be",
+      packageVersion: "1.0.32",
+      packageName: "Ivy's Panties - Event Horizon",
+      gameId: "fallout4",
+      installedAt: "2026-09-17T00:00:00.000Z",
+      vortexProfileId: "profile-ivy",
+      vortexProfileName: "Ivy",
+      installTargetMode: "fresh-profile",
+      mods: [],
+      gameVersion: { required: "1.10.163.0", policy: "exact" },
+    };
+    const file = getReceiptPath(appDataPath, receipt.packageId);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, serializeReceipt(receipt as never));
+    const runExecutable = vi.fn(async () => undefined);
+    const a = {
+      getState: () => ({
+        settings: {
+          profiles: { activeGameId: "fallout4", activeProfileId: "profile-ivy" },
+          gameMode: { discovered: { fallout4: { path: game, store: "steam", version: "1.10.984.0" } } },
+        },
+        session: { base: { toolsRunning: {} }, gameMode: { known: [{ id: "fallout4", name: "Fallout 4", executable: "Fallout4.exe" }] } },
+      }),
+      runExecutable,
+      store: { dispatch: vi.fn() },
+    } as never;
+    const outcome = await launchGame(a, "fallout4", { appDataPath });
+    expect(outcome.kind === "refused" ? outcome.title : outcome.kind).toBe(
+      "Fallout 4 is version 1.10.984.0, but Ivy's Panties - Event Horizon was built for 1.10.163.0.",
+    );
+    expect(runExecutable).not.toHaveBeenCalled();
+  });
+
   it("starts the loader from the game folder, asks Vortex to deploy first, and tells Vortex it runs", async () => {
     fs.writeFileSync(path.join(game, "f4se_loader.exe"), "loader");
     const { api: a, runExecutable, dispatch } = api("fallout4", async (_exe, _args, options) => {

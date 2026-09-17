@@ -1,7 +1,7 @@
 /**
- * The preflight end to end, on a real folder: the tester's Steam launcher with
- * a GOG steam_api64.dll must block; the same launcher with the right DLL must
- * not; a mismatched DLL the store did not install only warns; a Prefs file the
+ * The preflight end to end, on a real folder: a store DLL the game executable
+ * or the script extender's loader cannot load must block, one only the launcher
+ * cannot load only warns (Play never starts the launcher); a mismatched DLL the store did not install only warns; a Prefs file the
  * launcher did not write blocks; archive-loading INI leftovers warn; and a game
  * Vortex has no folder for stops before anything touches the disk.
  */
@@ -82,15 +82,33 @@ describe("runEnvironmentPreflight", () => {
     });
   });
 
-  it("blocks the tester's case: a store DLL without the export the store's launcher imports", async () => {
+  // The rule changed on 2026-09-17 (owner poll): only what Event Horizon starts can block. A Steam game moved back
+  // with Simple Fallout 4 Downgrader keeps the next-gen launcher beside the old steam_api64.dll; the launcher cannot
+  // open, the game and its script extender can, and Play never starts the launcher.
+  it("only warns when the launcher, which Play never starts, cannot load a store DLL", async () => {
     write(path.join(game, "steam_api64.dll"), buildPe({ exports: ["SteamAPI_Init", "SteamAPI_Shutdown"] }));
     const report = await runEnvironmentPreflight(facts(), { scanFolder: false, context: "test" });
     const check = report.checks.find((c) => c.id === "binary-imports");
-    expect(check?.status).toBe("blocked");
-    expect(check?.title).toMatch(/Fallout4Launcher\.exe cannot start: steam_api64\.dll/);
+    expect(check?.status).toBe("warning");
+    expect(check?.title).toMatch(/Fallout4Launcher\.exe cannot open with this steam_api64\.dll, but Event Horizon does not start it/);
     expect(report.imports?.findings).toEqual([
       { exe: "Fallout4Launcher.exe", dll: "steam_api64.dll", missing: ["SteamInternal_CreateInterface"], dllIsVanilla: true },
     ]);
+  });
+
+  it("blocks when the game executable itself cannot load a store DLL", async () => {
+    write(path.join(game, "Fallout4.exe"), buildPe({ imports: [{ dll: "steam_api64.dll", names: ["SteamAPI_Init", "SteamAPI_RunCallbacks"] }] }));
+    const report = await runEnvironmentPreflight(facts(), { scanFolder: false, context: "test" });
+    const check = report.checks.find((c) => c.id === "binary-imports");
+    expect(check?.status).toBe("blocked");
+    expect(check?.title).toMatch(/Fallout4\.exe cannot start: steam_api64\.dll is the wrong version/);
+  });
+
+  it("checks the script extender's loader too, and blocks when it cannot load a store DLL", async () => {
+    write(path.join(game, "f4se_loader.exe"), buildPe({ imports: [{ dll: "steam_api64.dll", names: ["SteamAPI_Missing"] }] }));
+    const report = await runEnvironmentPreflight(facts(), { scanFolder: false, context: "test" });
+    expect(report.imports?.checked).toContain("f4se_loader.exe");
+    expect(report.checks.find((c) => c.id === "binary-imports")?.status).toBe("blocked");
   });
 
   it("only warns when the mismatched DLL is not one the store installed", async () => {

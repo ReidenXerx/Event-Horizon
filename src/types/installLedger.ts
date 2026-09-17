@@ -236,6 +236,25 @@ export type InstallReceipt = {
    * update check, which is the owner's decision (2026-09-16), not a gap.
    */
   nexusCollection?: InstallReceiptNexusCollection;
+  /**
+   * The game version this release was built for, and how strictly it holds.
+   *
+   * Read by Play, which stops before starting a game that no longer matches.
+   * Steam updates a game on its own, and a script extender built for the old
+   * executable then exits without a word: a player's F4SE exited with code 1
+   * right after Steam moved Fallout 4 to next-gen (2026-09-16). Absent on
+   * receipts written before this field existed and when the build could not
+   * detect a version; Play checks nothing then.
+   */
+  gameVersion?: InstallReceiptGameVersion;
+};
+
+/** What `InstallReceipt.gameVersion` records: the manifest's requirement at install time. */
+export type InstallReceiptGameVersion = {
+  /** `manifest.game.version`, e.g. "1.10.163.0". */
+  required: string;
+  /** `manifest.game.versionPolicy`. */
+  policy: "exact" | "minimum";
 };
 
 /**

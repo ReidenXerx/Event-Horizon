@@ -111,21 +111,52 @@ describe("decideBinaryImports", () => {
     dll: "steam_api64.dll",
     missing: ["SteamInternal_CreateInterface"],
   };
+  const started = ["f4se_loader.exe", "Fallout4.exe"];
 
-  it("blocks when a store-installed DLL lacks what a store executable imports", () => {
-    const c = decideBinaryImports({ gameName: G, checked: ["Fallout4Launcher.exe"], findings: [{ ...finding, dllIsVanilla: true }] });
+  it("blocks when a store DLL lacks what the game executable Event Horizon starts imports", () => {
+    const c = decideBinaryImports({
+      gameName: G,
+      checked: ["Fallout4.exe"],
+      findings: [{ ...finding, exe: "Fallout4.exe", dllIsVanilla: true }],
+      started,
+    });
     expect(c.status).toBe("blocked");
     expect(c.lines[0]).toMatch(/SteamInternal_CreateInterface/);
     expect(c.steps.join(" ")).toMatch(/Verify integrity/);
   });
 
+  // The Discord player, 2026-09-17: Simple Fallout 4 Downgrader moves Fallout4.exe and steam_api64.dll back and
+  // leaves the next-gen launcher, which then cannot open. Play never starts the launcher.
+  it("only warns when the program that cannot load its DLL is one Event Horizon never starts", () => {
+    const c = decideBinaryImports({
+      gameName: G,
+      checked: ["Fallout4.exe", "Fallout4Launcher.exe", "f4se_loader.exe"],
+      findings: [{ ...finding, missing: ["SteamInternal_CreateInterface", "SteamInternal_ContextInit"], dllIsVanilla: true }],
+      started,
+    });
+    expect(c.status).toBe("warning");
+    expect(c.title).toMatch(/Fallout4Launcher.exe cannot open with this steam_api64.dll, but Event Horizon does not start it/);
+    expect(c.lines.join(" ")).toMatch(/Simple Fallout 4 Downgrader/);
+    expect(c.steps.join(" ")).toMatch(/Do not swap DLLs/);
+  });
+
+  it("matches the started programs whatever their letter case", () => {
+    const c = decideBinaryImports({
+      gameName: G,
+      checked: ["FALLOUT4.EXE"],
+      findings: [{ ...finding, exe: "FALLOUT4.EXE", dllIsVanilla: true }],
+      started,
+    });
+    expect(c.status).toBe("blocked");
+  });
+
   it("only warns for a DLL the store did not install — a mod or tool may replace it", () => {
-    const c = decideBinaryImports({ gameName: G, checked: ["Fallout4.exe"], findings: [{ ...finding, dllIsVanilla: false }] });
+    const c = decideBinaryImports({ gameName: G, checked: ["Fallout4.exe"], findings: [{ ...finding, exe: "Fallout4.exe", dllIsVanilla: false }], started });
     expect(c.status).toBe("warning");
   });
 
   it("passes with no findings", () => {
-    expect(decideBinaryImports({ gameName: G, checked: ["Fallout4.exe"], findings: [] }).status).toBe("ok");
+    expect(decideBinaryImports({ gameName: G, checked: ["Fallout4.exe"], findings: [], started }).status).toBe("ok");
   });
 });
 
@@ -190,7 +221,7 @@ describe("checks that could not run say unknown, never ok", () => {
   });
 
   it("DLL imports: no executable could be read", () => {
-    const c = decideBinaryImports({ gameName: G, checked: [], findings: [], unreadable: ["Fallout4.exe"] });
+    const c = decideBinaryImports({ gameName: G, checked: [], findings: [], started: ["f4se_loader.exe", "Fallout4.exe"], unreadable: ["Fallout4.exe"] });
     expect(c.status).toBe("unknown");
     expect(c.lines).toEqual(["Unreadable: Fallout4.exe"]);
   });

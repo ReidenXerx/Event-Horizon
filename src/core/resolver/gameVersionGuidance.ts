@@ -118,7 +118,10 @@ export function gameVersionGuidance(args: {
   gameId: string;
   required: string;
   installed: string;
+  /** What to do once the version is right. Default: "re-run this install". */
+  retry?: string;
 }): string[] {
+  const retry = args.retry ?? "re-run this install";
   const game = GUIDANCE[args.gameId];
   if (game === undefined) return [];
 
@@ -149,12 +152,12 @@ export function gameVersionGuidance(args: {
     out.push(
       `Steam users can also download an older build directly through the ` +
         `console (download_depot), and GOG users can install an older offline ` +
-        `installer. Verify the game files afterwards, then re-run this install.`,
+        `installer. Verify the game files afterwards, then ${retry}.`,
     );
   } else if (direction < 0) {
     out.push(
       `Your ${game.name} is OLDER than this collection expects. Update the game ` +
-        `to ${args.required} through Steam or GOG, then re-run this install.`,
+        `to ${args.required} through Steam or GOG, then ${retry}.`,
     );
   }
 

@@ -36,6 +36,8 @@ import type { types } from "@nexusmods/vortex-api";
 import { ehLog } from "../logging/ehLog";
 import { scriptExtenderFor } from "../manifest/externalDependencies";
 import { blockingChecks } from "./environmentChecks";
+import { getVortexUserDataPath } from "../paths";
+import { checkPlayGameVersion } from "./playGameVersion";
 import { runEnvironmentPreflight } from "./preflight";
 import { gatherPreflightFacts } from "./vortexEnvironment";
 
@@ -136,7 +138,12 @@ function runningTools(state: unknown): string[] {
   return running !== undefined && running !== null ? Object.keys(running) : [];
 }
 
-export async function launchGame(api: types.IExtensionApi, gameId: string): Promise<LaunchOutcome> {
+export async function launchGame(
+  api: types.IExtensionApi,
+  gameId: string,
+  /** Where Event Horizon keeps its data (install receipts); tests point it at a temp folder. */
+  options: { appDataPath?: string } = {},
+): Promise<LaunchOutcome> {
   const state = api.getState();
   const refuse = (title: string, lines: string[], steps: string[]): LaunchOutcome => {
     ehLog("warn", "play.refused", { gameId, title, lines, steps });
@@ -167,6 +174,15 @@ export async function launchGame(api: types.IExtensionApi, gameId: string): Prom
     const first = blocked[0]!;
     return refuse(first.title, [...first.lines, ...blocked.slice(1).map((c) => c.title)], first.steps);
   }
+  const versionRefusal = await checkPlayGameVersion({
+    api,
+    gameId,
+    gameName: facts.gameName,
+    ...(facts.store !== undefined ? { store: facts.store } : {}),
+    appDataPath: options.appDataPath ?? getVortexUserDataPath(),
+  });
+  if (versionRefusal !== undefined) return refuse(versionRefusal.title, versionRefusal.lines, versionRefusal.steps);
+
   const gameDir = report.gameDir;
   if (gameDir === undefined) {
     return refuse(`Vortex has no folder for ${facts.gameName}.`, [], []);

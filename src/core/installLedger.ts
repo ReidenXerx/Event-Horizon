@@ -55,6 +55,7 @@ import * as path from "path";
 
 import type {
   InstallReceipt,
+  InstallReceiptGameVersion,
   InstallReceiptMod,
   InstallTargetMode,
   ModVerificationReceipt,
@@ -355,7 +356,22 @@ export function parseReceipt(raw: string): InstallReceipt {
    */
   const nexusCollection = readNexusCollectionRevision(obj.nexusCollection);
   if (nexusCollection !== undefined) out.nexusCollection = nexusCollection;
+  /**
+   * The game version the release was built for. Dropped rather than refusing
+   * the receipt when unusable, like `nexusCollection`: it only decides whether
+   * Play checks the game's version before starting it.
+   */
+  const gameVersion = readGameVersionRequirement(obj.gameVersion);
+  if (gameVersion !== undefined) out.gameVersion = gameVersion;
   return out;
+}
+
+function readGameVersionRequirement(raw: unknown): InstallReceiptGameVersion | undefined {
+  if (raw === null || typeof raw !== "object") return undefined;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.required !== "string" || o.required.trim() === "" || o.required === "unknown") return undefined;
+  if (o.policy !== "exact" && o.policy !== "minimum") return undefined;
+  return { required: o.required, policy: o.policy };
 }
 
 /**

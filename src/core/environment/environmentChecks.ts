@@ -378,16 +378,50 @@ export type ImportMismatch = {
   dllIsVanilla: boolean;
 };
 
+/**
+ * Only what Event Horizon STARTS can block (owner poll, 2026-09-17).
+ *
+ * A player on Steam ran Simple Fallout 4 Downgrader, as Ivy's page tells them
+ * to. It moves Fallout4.exe and steam_api64.dll back to 1.10.163 and leaves the
+ * next-gen Fallout4Launcher.exe, which needs SteamInternal_CreateInterface and
+ * SteamInternal_ContextInit, two functions the old DLL does not have. The
+ * launcher cannot open, the game can, and Play starts the game through the
+ * script extender. Blocking on the launcher refused a working game, and the
+ * player started swapping DLLs to get past it. A mismatch in a program Event
+ * Horizon never starts is now a warning.
+ */
 export function decideBinaryImports(input: {
   gameName: string;
   checked: readonly string[];
   findings: readonly ImportMismatch[];
+  /** The programs Event Horizon starts: the script extender loader and the game executable. */
+  started: readonly string[];
   unreadable?: readonly string[];
 }): EnvironmentCheck {
   const describe = (f: ImportMismatch): string =>
     `${f.exe} needs ${f.missing.slice(0, 3).join(", ")}${f.missing.length > 3 ? ` (+${f.missing.length - 3} more)` : ""} from ${f.dll}, and the ${f.dll} in the game folder does not have ${f.missing.length === 1 ? "it" : "them"}.`;
-  const hard = input.findings.filter((f) => f.dllIsVanilla);
+  const started = new Set(input.started.map((n) => n.toLowerCase()));
+  const isStarted = (f: ImportMismatch): boolean => started.has(f.exe.toLowerCase());
+  const hard = input.findings.filter((f) => f.dllIsVanilla && isStarted(f));
+  const notStarted = input.findings.filter((f) => f.dllIsVanilla && !isStarted(f));
   const soft = input.findings.filter((f) => !f.dllIsVanilla);
+  if (hard.length === 0 && notStarted.length > 0) {
+    const f = notStarted[0]!;
+    return {
+      id: "binary-imports",
+      status: "warning",
+      title: `${f.exe} cannot open with this ${f.dll}, but Event Horizon does not start it.`,
+      lines: [
+        ...input.findings.map(describe),
+        `Event Horizon starts the game through ${input.started.join(" and ")}, which ${input.started.length === 1 ? "is" : "are"} checked on ${input.started.length === 1 ? "its" : "their"} own. ` +
+          `A downgrade tool that moves the game and ${f.dll} back but not ${f.exe} leaves exactly this (Simple Fallout 4 Downgrader does), and it does not stop the game.`,
+      ],
+      steps: [
+        "Nothing to do if you downgraded the game on purpose. Do not swap DLLs to make this go away.",
+        `Otherwise verify the game files in your store, then load the collection again.`,
+      ],
+    };
+  }
   if (hard.length > 0) {
     return {
       id: "binary-imports",

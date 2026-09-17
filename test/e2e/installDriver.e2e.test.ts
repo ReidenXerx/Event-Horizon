@@ -378,6 +378,26 @@ describe("install driver, end to end", () => {
       expect(receipt).toBeDefined();
       expect(receipt?.nexusCollection).toBeUndefined();
     });
+
+    it("records the game version the collection was built for, which Play checks before starting", async () => {
+      // Without it Play cannot notice that Steam moved the game on after the
+      // install, and the script extender exits without a word.
+      world = oneModWorld();
+      const manifest = await packageFrom(world);
+      const { fake, restore } = await withCollectionDownload("Ivy's Panties-rev13.zip");
+      try {
+        await install(manifest, fake, undefined, {}, {
+          ehcollZipPath: path.join(world.root, "Desktop", "ivy-panties-1.0.29.zip"),
+        });
+      } finally {
+        restore();
+      }
+      const { readReceipt } = await import("../../src/core/installLedger");
+      expect((await readReceipt(world.appDataPath, manifest.package.id))?.gameVersion).toEqual({
+        required: "1.10.163.0",
+        policy: "exact",
+      });
+    });
   });
 
   it("leaves a mod with no recorded choices on the original one-step path", async () => {
