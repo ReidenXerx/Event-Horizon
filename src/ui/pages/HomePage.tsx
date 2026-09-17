@@ -42,6 +42,7 @@ import {
 import type { EventHorizonRoute } from "../routes";
 import { PlayGameButton } from "../play/PlayGameButton";
 import { LoadOrderBadge } from "./doctor/LoadOrderBadge";
+import { installModeLabel } from "./installModeLabel";
 
 export interface HomePageProps {
   onNavigate: (route: EventHorizonRoute) => void;
@@ -393,16 +394,8 @@ function PlayerPanel(props: {
                   {/* Every receipt, not just the three shown: the newest
                       install into a profile owns its order. */}
                   <LoadOrderBadge receipt={receipt} receipts={receipts} />
-                  <Pill
-                    intent={
-                      receipt.installTargetMode === "fresh-profile"
-                        ? "info"
-                        : "warning"
-                    }
-                  >
-                    {receipt.installTargetMode === "fresh-profile"
-                      ? "fresh profile"
-                      : "current profile"}
+                  <Pill intent="neutral" title={installModeLabel(receipt.installTargetMode).title}>
+                    {installModeLabel(receipt.installTargetMode).short}
                   </Pill>
                   <PlayGameButton gameId={receipt.gameId} size="sm" />
                 </div>

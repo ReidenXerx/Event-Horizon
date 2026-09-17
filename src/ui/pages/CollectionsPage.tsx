@@ -28,6 +28,7 @@ import { uninstallMod } from "../../core/installer/modInstall";
 import { enableModInProfile } from "../../core/installer/profile";
 import { switchToProfile } from "../../core/installer/profile";
 import type { InstallReceipt } from "../../types/installLedger";
+import { installModeLabel } from "./installModeLabel";
 import {
   Button,
   Callout,
@@ -664,6 +665,12 @@ export function ReceiptCard(props: {
       {tile !== undefined && <img className="eh-card__media" src={tile.url} alt="" />}
       <div className="eh-stack eh-stack--sm eh-body eh-fill">
         <div className="eh-row">
+          {/* First, so the one card whose profile Vortex is on is found at a glance. */}
+          {isActive && (
+            <Pill intent="success" withDot>
+              active
+            </Pill>
+          )}
           <Pill intent="info">v{receipt.packageVersion}</Pill>
           {/*
             Only an install from a collection page knows its revision, and only
@@ -674,16 +681,9 @@ export function ReceiptCard(props: {
             <Pill intent="neutral">rev {receipt.nexusCollection.revisionNumber}</Pill>
           )}
           <Pill intent="neutral">{receipt.gameId}</Pill>
-          {receipt.installTargetMode === "fresh-profile" ? (
-            <Pill intent="info">fresh profile</Pill>
-          ) : (
-            <Pill intent="warning">current profile</Pill>
-          )}
-          {isActive && (
-            <Pill intent="success" withDot>
-              active
-            </Pill>
-          )}
+          <Pill intent="neutral" title={installModeLabel(receipt.installTargetMode).title}>
+            {installModeLabel(receipt.installTargetMode).short}
+          </Pill>
         </div>
         <div>
           <strong>Profile:</strong> {receipt.vortexProfileName}
@@ -1073,12 +1073,8 @@ function ReceiptDetailModal(props: {
               subMono
             />
             <StatTile
-              label="Mode"
-              value={
-                receipt.installTargetMode === "fresh-profile"
-                  ? "Fresh profile"
-                  : "Current profile"
-              }
+              label="Installed into"
+              value={installModeLabel(receipt.installTargetMode).long}
             />
             <StatTile
               label="Installed at"

@@ -120,6 +120,8 @@ export function NexusUploadModal(props: {
   outputPath: string;
   outputBytes: number;
   changelogBbcode?: string;
+  /** This version's notes as Markdown: collection pages take Markdown, mod pages BBCode. */
+  changelogMarkdown?: string;
   onClose: () => void;
 }): JSX.Element {
   const api = useApi();
@@ -287,6 +289,7 @@ export function NexusUploadModal(props: {
       outputPath={props.outputPath}
       outputBytes={props.outputBytes}
       changelogBbcode={props.changelogBbcode}
+      changelogMarkdown={props.changelogMarkdown}
       onSelect={setSelected}
       onClose={close}
       onUpload={(): void => void upload()}
@@ -313,6 +316,7 @@ export function NexusUploadDialog(props: {
   outputPath: string;
   outputBytes: number;
   changelogBbcode?: string;
+  changelogMarkdown?: string;
   onSelect: (slug: string) => void;
   onClose: () => void;
   onUpload: () => void;
@@ -335,6 +339,7 @@ export function NexusUploadDialog(props: {
           phase={props.phase}
           canUpload={props.selected !== undefined && pageNameProblem(props.pageName) === undefined}
           changelogBbcode={props.changelogBbcode}
+          changelogMarkdown={props.changelogMarkdown}
           onClose={props.onClose}
           onUpload={props.onUpload}
           onStop={props.onStop}
@@ -500,6 +505,7 @@ function Footer(props: {
   phase: NexusUploadPhase;
   canUpload: boolean;
   changelogBbcode?: string;
+  changelogMarkdown?: string;
   onClose: () => void;
   onUpload: () => void;
   onStop: () => void;
@@ -541,6 +547,11 @@ function Footer(props: {
       const url = nexusCollectionUrl(phase.link, phase.revisionNumber);
       return (
         <>
+          {props.changelogMarkdown !== undefined && (
+            <Button intent="ghost" onClick={(): void => void writeToClipboard(props.changelogMarkdown as string)}>
+              Copy changelog (Markdown)
+            </Button>
+          )}
           {props.changelogBbcode !== undefined && (
             <Button intent="ghost" onClick={(): void => void writeToClipboard(props.changelogBbcode as string)}>
               Copy changelog (BBCode)

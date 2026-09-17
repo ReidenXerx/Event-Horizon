@@ -894,6 +894,7 @@ describe("render", () => {
         outputPath: "C:/Users/x/AppData/Roaming/Vortex/event-horizon/collections/ivy-panties-1.0.29.zip",
         outputBytes: 871.8 * 1024 ** 2,
         changelogBbcode: "[b]1.0.29[/b]",
+        changelogMarkdown: "## 1.0.29",
         onSelect: () => undefined,
         onClose: () => undefined,
         onUpload: () => undefined,

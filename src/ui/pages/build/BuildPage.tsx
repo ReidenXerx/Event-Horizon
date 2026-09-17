@@ -3559,6 +3559,7 @@ export function DonePanel(props: {
           outputPath={result.outputPath}
           outputBytes={result.outputBytes}
           changelogBbcode={result.changelog?.bbcode}
+          changelogMarkdown={result.changelog?.markdown}
           onClose={(): void => setUploadOpen(false)}
         />
       )}
