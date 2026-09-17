@@ -1,5 +1,21 @@
 # Distributing collections
 
+**Current, 2026-09-17 — collections live on Nexus collection pages, and the mod
+pages are deleted.** A finished `.zip` build uploads to a Nexus collection as a
+draft revision that the curator publishes on the website; a player presses Add
+collection, and Event Horizon (0.2.0 or newer) claims the archive and installs
+it, then offers newer revisions. Ivy is
+[fallout4/collections/dmt85e](https://www.nexusmods.com/games/fallout4/collections/dmt85e)
+and Meridia is
+[skyrimspecialedition/collections/ecb76c](https://www.nexusmods.com/games/skyrimspecialedition/collections/ecb76c).
+The mod pages fallout4/109025 and skyrimspecialedition/191820 were hidden by
+moderation over permission to distribute other authors' files from a mod page
+("this is not a Collection, and does not have the same public domain rights
+that Collections do") and were deleted on 2026-09-17. The generated output
+files the collections need (FaceGen, BodySlide, DynDOLOD output, grass cache)
+are direct pixeldrain downloads that Event Horizon hash-checks when the player
+picks them. Everything below is the history of how it got here.
+
 **Status**: SETTLED 2026-09-11 — a collection is distributed as a **Nexus mod
 page** (landing page: description, install steps, checklist, 18+ notice) whose
 package, the full `.ehcoll`, is hosted on **pixeldrain**. Vortex's own
