@@ -950,6 +950,16 @@ function ReceiptDetailModal(props: {
        */
       if (notOurs === 0 && failed === 0) {
         await deleteReceipt(appData, receipt.packageId);
+        /**
+         * And the copy of the collection kept for repairs. It is a full
+         * package — gigabytes when the curator bundles mods — and it exists
+         * only to serve the receipt that has just been deleted. Leaving it
+         * would be a silent, permanent disk leak per uninstalled collection.
+         */
+        const { clearStoredPackage } = await import(
+          "../../core/installer/packageStore"
+        );
+        await clearStoredPackage(appData, receipt.packageId);
       } else {
         ehLog("info", "collection.uninstall.receipt-kept", {
           packageId: receipt.packageId,

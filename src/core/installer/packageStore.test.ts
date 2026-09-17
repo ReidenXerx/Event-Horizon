@@ -140,3 +140,32 @@ describe("keeping the installed collection", () => {
     expect(await readStoredPackage(await tmp(), PKG)).toBeUndefined();
   });
 });
+
+describe("the kept package does not outlive the collection", () => {
+  /**
+   * A full package is gigabytes when the curator bundles mods, and it exists
+   * only to serve one receipt. An uninstall that deletes the receipt and
+   * leaves the package behind is a silent, permanent leak that no screen would
+   * ever show — so the wiring is pinned in source, the way `locatePackage`'s
+   * callers are.
+   */
+  const page = path.join(__dirname, "..", "..", "ui", "pages", "CollectionsPage.tsx");
+  const text = (): string => require("fs").readFileSync(page, "utf8") as string;
+
+  it("has the anchors it looks for, so this cannot go vacuous", () => {
+    const s = text();
+    expect(s.length).toBeGreaterThan(0);
+    expect(s).toContain("deleteReceipt(");
+  });
+
+  it("clears the kept package in the same branch that deletes the receipt", () => {
+    const s = text();
+    const del = s.indexOf("deleteReceipt(");
+    const clear = s.indexOf("clearStoredPackage(");
+    expect(clear).toBeGreaterThan(-1);
+    // Right after the delete, inside the same `notOurs === 0 && failed === 0`
+    // branch — never in the path that KEEPS the receipt because mods survive.
+    expect(clear).toBeGreaterThan(del);
+    expect(s.slice(del, clear)).not.toContain("receipt-kept");
+  });
+});

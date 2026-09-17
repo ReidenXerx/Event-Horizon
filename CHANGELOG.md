@@ -26,6 +26,7 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
   what they will do first.
 - The deep scan and the repairs that were labelled "Needs the package" now say **"Reading the collection…"**
   or **"Fetching the collection…"** while that is happening, instead of looking broken.
+- Uninstalling a collection deletes the kept copy along with its receipt, so nothing is left on your disk.
 
 ## [0.2.3] — 2026-09-18
 
