@@ -180,7 +180,11 @@ import {
   repinCuratorOrder,
 } from "./repinPluginOrder";
 import { compareSelections } from "../curator/fomodSelectionDiff";
-import { getActiveGameId, liveFomodSelections } from "../getModsListForProfile";
+import {
+  getActiveGameId,
+  getModsForGame,
+  liveFomodSelections,
+} from "../getModsListForProfile";
 import { purgeGameDeployment } from "../environment/vortexEnvironment";
 import type { PluginOrderEntry } from "./checkPluginOrder";
 import { InstallStreaks } from "./installStreaks";
@@ -270,6 +274,12 @@ import {
   ownedModIds,
   readJournal,
 } from "./installJournal";
+import {
+  appendVerifyJournal,
+  clearVerifyJournal,
+  readVerifyJournal,
+  reusableVerifications,
+} from "./verifyJournal";
 import { repairDecisionFor } from "../resolver/resolveInstallPlan";
 // NOTE: there used to be a `pluginsTxt.ts` writer module here. It
 // was deleted along with the `writing-plugins-txt` driver phase
@@ -673,6 +683,9 @@ async function recordAttemptOutcome(
       // The receipt is now the record of what is installed. Leaving the
       // journal behind would leave two answers to one question.
       await clearJournal(ctx.appDataPath, pkg.id);
+      // Same reason, for the verification half: the receipt carries every
+      // verdict once the run completes, so the resume trail has done its job.
+      await clearVerifyJournal(ctx.appDataPath, pkg.id);
       ehLog("info", "install.attempt.cleared", { packageId: pkg.id });
       return;
     }
@@ -1908,9 +1921,42 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       // A log with no verify lines used to be equally consistent with "1755
       // mods verified clean", "the curator built with verificationLevel none"
       // and "the run died before this phase". Say which.
+      /**
+       * ─── WHAT AN EARLIER RUN ALREADY PROVED ────────────────────────────
+       * Verification is the long pole on a large collection: 4.85 hours for
+       * 3,236 mods in the run this was written for. A tester who stops it an
+       * hour in used to lose the hour. See {@link verifyJournal}.
+       */
+      const journalLevel = declaredLevel === "thorough" ? "thorough" : "fast";
+      const installedAtByModId = new Map<string, number>();
+      try {
+        for (const m of getModsForGame(api.getState(), plan.manifest.game.id, activeProfileId)) {
+          const t = m.installTime === undefined ? NaN : Date.parse(m.installTime);
+          if (!Number.isNaN(t)) installedAtByModId.set(m.id, t);
+        }
+      } catch {
+        // No install times means no proof is retired by one. Documented in
+        // reusableVerifications: the safe direction here is to still resume.
+      }
+      const reusable = reusableVerifications({
+        entries: await readVerifyJournal(ctx.appDataPath, plan.manifest.package.id),
+        packageVersion: plan.manifest.package.version,
+        level: journalLevel,
+        installedAt: installedAtByModId,
+      });
+      let resumedFromJournal = 0;
+
       ehLog("info", "verify.phase.start", {
         level: declaredLevel,
         modCount: installedMods.length,
+        alreadyProven: reusable.size,
+        ...(reusable.size > 0
+          ? {
+              why:
+                "an earlier run proved these mods clean and nothing has " +
+                "re-installed them since — this pass continues where it stopped",
+            }
+          : {}),
       });
       reportProgress(
         "verifying-mods",
@@ -1939,6 +1985,27 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
          * without pretending a file check failed — `judgeReinstall` asks the
          * archive about differing files, and there are none to ask about.
          */
+        /**
+         * Already proven, by a run that was stopped before it could finish.
+         * The row carries its own counts, so the receipt reads exactly as it
+         * would have if this pass had done the hashing itself.
+         */
+        const proven = reusable.get(installEntry.compareKey);
+        if (proven !== undefined && proven.vortexModId === installEntry.vortexModId) {
+          noteVerifiedOk(installEntry.compareKey, expectedFiles);
+          verifications.push({
+            kind: "ok",
+            vortexModId: installEntry.vortexModId,
+            compareKey: installEntry.compareKey,
+            name: installEntry.name,
+            level: proven.level,
+            verifiedFileCount: proven.verifiedFileCount,
+            extraFileCount: proven.extraFileCount,
+          });
+          resumedFromJournal += 1;
+          continue;
+        }
+
         let staleInstallerOptions = false;
         let verifyResult: VerifyResult;
         try {
@@ -2065,9 +2132,20 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             vortexModId: installEntry.vortexModId,
             compareKey: installEntry.compareKey,
             name: installEntry.name,
-            level: declaredLevel === "thorough" ? "thorough" : "fast",
+            level: journalLevel,
             verifiedFileCount: verifyResult.verifiedCount,
             extraFileCount: verifyResult.extraFiles.length,
+          });
+          // Written now, not at the end: the end is exactly what an interrupted
+          // run never reaches.
+          await appendVerifyJournal(ctx.appDataPath, plan.manifest.package.id, {
+            compareKey: installEntry.compareKey,
+            vortexModId: installEntry.vortexModId,
+            packageVersion: plan.manifest.package.version,
+            level: journalLevel,
+            verifiedFileCount: verifyResult.verifiedCount,
+            extraFileCount: verifyResult.extraFiles.length,
+            at: Date.now(),
           });
           continue;
         }
@@ -2568,6 +2646,14 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       const recovered = verifications.filter(
         (v) => v.kind === "ok" && v.retryAttempted === true,
       ).length;
+      ehLog("info", "verify.phase.done", {
+        level: declaredLevel,
+        modCount: installedMods.length,
+        checkedNow: installedMods.length - resumedFromJournal,
+        resumedFromJournal,
+        failed,
+        recovered,
+      });
       reportProgress(
         "verifying-mods",
         installedMods.length,
@@ -4250,10 +4336,36 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           carryForward.push(failed);
           continue;
         }
+        /**
+         * The mod may have finished installing after we gave up on it — a
+         * dialog answered late is the normal way that happens. Re-installing
+         * it then walks into Vortex's replace-or-variant modal, which nothing
+         * can pre-answer. See {@link adoptIfNowInstalled}.
+         */
+        const adopted = adoptIfNowInstalled({
+          api,
+          gameId: plan.manifest.game.id,
+          enablementProfileId: activeProfileId,
+          resolution,
+        });
+        if (adopted !== undefined) {
+          ehLog("info", "install.retry.already-installed", {
+            name: failed.name,
+            compareKey: failed.compareKey,
+            vortexModId:
+              adopted.decision.kind === "nexus-already-installed"
+                ? adopted.decision.existingModId
+                : undefined,
+            firstError: failed.error,
+            why:
+              "Vortex finished this install after the watchdog gave up on it " +
+              "— adopting the mod instead of installing a second copy",
+          });
+        }
         try {
           const entry = await executeDecision({
             ctx,
-            resolution,
+            resolution: adopted ?? resolution,
             manifestEntry,
             profileId: activeProfileId,
             onTempArchive: (tp) => tempArchivesToCleanup.push(tp),
@@ -4941,6 +5053,97 @@ function collectBundledZipEntriesForPrefetch(
     out.push({ bundleFolder: dec.bundleFolder, preferredName: res.name });
   }
   return out;
+}
+
+/**
+ * Did this mod become installed WHILE we were failing it?
+ *
+ * ─── THE FIELD FAILURE ─────────────────────────────────────────────────
+ * A tester's 3,236-mod run, 2026-09-17. Race-Based Textures opened a dialog at
+ * 03:15 and he was asleep; the stall watchdog gave up at 03:25 and the driver
+ * moved on. Vortex did not move on — it kept the install alive, he answered at
+ * 05:04, and Vortex logged `finish mod install … outcome: success`.
+ *
+ * At 16:25 the retry pass below re-ran the ORIGINAL decision, `nexus-download`,
+ * against a pool that now contained that very mod. Vortex answered the only way
+ * it can: "already installed — replace, or install as a variant?" — a modal
+ * nothing can pre-answer (only avoid). Nobody was watching, ten more minutes
+ * burned, and the receipt recorded a mod as FAILED that had been sitting
+ * installed for eleven hours. His next run resolved it `nexus-already-installed`
+ * in one millisecond, which is the whole proof.
+ *
+ * So the retry re-asks the question the resolver asks, against the pool as it is
+ * NOW (NS-3): the pool, not the profile, and not the plan's stale snapshot.
+ *
+ * ─── THE IDENTITY IS `(modId, fileId)`, AND THAT IS NOT A SHORTCUT ─────
+ * `getModsForGame` reads Vortex's state directly and does NOT carry
+ * `archiveSha256` — that field is filled by `enrichModsWithArchiveHashes`,
+ * which hashes archives and is far too expensive to run here. A first draft of
+ * this function ranked a "proven hash" above an unhashed copy; its own test
+ * proved the branch could never fire on this path, so it is gone rather than
+ * shipped as dead code above a safety claim that was not true.
+ *
+ * What remains is the resolver's own rule, and its reasoning transfers exactly:
+ * a Nexus file id is immutable and refers to one uploaded file forever, so
+ * `(modId, fileId)` IS the identity, and an absent hash means "byte-identity
+ * unknown", never "different bytes" (NS-4). Adopting here reaches the same
+ * verdict the FIRST pass would have reached for this mod had it been installed
+ * a minute earlier — `nexus-already-installed` — which is the consistency that
+ * matters: every other mod in the run was judged by this rule.
+ *
+ * Note what this does NOT get: a mod recovered by the retry is recorded
+ * `skip / recovered-after-verification`, because the verify phase ran before it
+ * existed. So a wrong adoption is not caught downstream in this run. That is
+ * the honest cost, and it is still far below the alternative — the alternative
+ * IS the modal, the ten-minute stall, and a receipt that calls an installed mod
+ * failed.
+ *
+ * With more than one copy of the same file in the pool, an ENABLED one wins:
+ * this run enables what it installs, so an enabled copy is the likelier one to
+ * be ours. Beyond that, pool order decides and either answer is the same file.
+ */
+export function adoptIfNowInstalled(args: {
+  api: types.IExtensionApi;
+  gameId: string;
+  enablementProfileId: string;
+  resolution: ModResolution;
+}): ModResolution | undefined {
+  const { api, gameId, enablementProfileId, resolution } = args;
+  const decision = resolution.decision;
+  // Only the download arm can be superseded this way. An external mod has no
+  // (modId, fileId) identity to re-ask with, and every other arm either
+  // already adopts or is waiting on the user.
+  if (decision.kind !== "nexus-download") return undefined;
+
+  const asNumber = (v: number | string | undefined): number | undefined => {
+    if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
+    if (typeof v !== "string" || v.trim() === "") return undefined;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  };
+
+  let pool;
+  try {
+    pool = getModsForGame(api.getState(), gameId, enablementProfileId);
+  } catch {
+    // A pool we cannot read is not evidence of anything. Re-install, which is
+    // exactly what this pass did before.
+    return undefined;
+  }
+
+  const sameFile = pool.filter(
+    (m) =>
+      asNumber(m.nexusModId) === decision.modId &&
+      asNumber(m.nexusFileId) === decision.fileId,
+  );
+  if (sameFile.length === 0) return undefined;
+
+  const hit = sameFile.find((m) => m.enabled) ?? sameFile[0];
+
+  return {
+    ...resolution,
+    decision: { kind: "nexus-already-installed", existingModId: hit.id },
+  };
 }
 
 // ===========================================================================

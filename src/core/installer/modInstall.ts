@@ -154,6 +154,32 @@ const INSTALL_ABSOLUTE_CAP_MS = 6 * 60 * 60_000;
  * archive "stalled" after 270 seconds — a file that does not take four minutes
  * to extract. The pause was watching a key the FOMOD installer never sets.
  *
+ * ─── AND `visibleDialog` IS NOT THE MODAL SURFACE AT ALL ─────────────────
+ * The FOURTH signal is the one that carries `api.showDialog`, and it took two
+ * testers in one week to find it. `session.base.visibleDialog` only ever holds
+ * the id of an extension-REGISTERED dialog component, set by `setDialogVisible`
+ * — Vortex's own session reducer, read out of app.asar:
+ *
+ *     setDialogVisible: (state, payload) =>
+ *       ({ ...state, visibleDialog: payload.dialogId })
+ *
+ * Every `showDialog` modal goes somewhere else entirely — SHOW_MODAL_DIALOG,
+ * into the NOTIFICATIONS reducer, newest first:
+ *
+ *     addDialog: (state, payload) =>
+ *       ({ ...state, dialogs: [payload, ...state.dialogs] })
+ *
+ * That array is where "Invalid fomod — Cancel / Ignore" sits, and the
+ * replace-or-install-as-a-variant question, and every error Vortex asks about
+ * mid-install. So the three signals above covered neither of the two dialogs
+ * our testers actually hit:
+ *
+ *   • Drag, 2026-09-17: "Invalid fomod" open 17 minutes on one mod and 7 on
+ *     another. Zero `install.waiting-on-user` lines in the whole run.
+ *   • KazumaDessu, same day: a dialog held Race-Based Textures from 03:15 to
+ *     05:04 while he slept. The watchdog gave up at 03:25, called it failed,
+ *     and Vortex went on to install the mod successfully an hour later.
+ *
  * Deliberately fails to FALSE. If a shape ever changes, the watchdog goes back
  * to being occasionally impatient rather than never firing at all, which would
  * turn a real hang into an install that waits forever.
@@ -167,6 +193,7 @@ export function isAwaitingUserInput(api: types.IExtensionApi): boolean {
           fomod?: {
             installer?: { dialog?: { activeInstanceId?: unknown } };
           };
+          notifications?: { dialogs?: unknown };
         };
       }
     )?.session;
@@ -177,6 +204,12 @@ export function isAwaitingUserInput(api: types.IExtensionApi): boolean {
     if (fomodInstance !== undefined && fomodInstance !== null && fomodInstance !== "") {
       return true;
     }
+
+    // Every `api.showDialog` modal, including the ones Vortex raises on our
+    // behalf mid-install. A non-empty array IS an open modal: Vortex removes
+    // the entry on dismissDialog, so nothing lingers after the click.
+    const modals = session?.notifications?.dialogs;
+    if (Array.isArray(modals) && modals.length > 0) return true;
 
     const base = session?.base;
     const dialog = base?.visibleDialog;

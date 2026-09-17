@@ -346,7 +346,10 @@ export async function runEnvironmentPreflight(
 /** One line per check with its evidence, then the folder and import detail. */
 export function logEnvironmentReport(report: EnvironmentReport, context: string, elapsedMs?: number): void {
   for (const c of report.checks) {
-    ehLog(c.status === "ok" ? "info" : "warn", "environment.check", {
+    // `info` is a check with something to read and nothing wrong, so it logs
+    // like `ok` — a support log that shouts about a healthy folder trains
+    // people to skip the lines that matter.
+    ehLog(c.status === "ok" || c.status === "info" ? "info" : "warn", "environment.check", {
       context,
       gameId: report.gameId,
       id: c.id,

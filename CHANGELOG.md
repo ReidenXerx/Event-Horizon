@@ -10,6 +10,31 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.3] — 2026-09-18
+
+### Installing
+- **A dialog waiting for you is no longer mistaken for a hang.** Event Horizon already paused its stall timer
+  while Vortex had a dialog open — but it was watching the wrong place, so the most common dialogs of all did
+  not count: Vortex's own "Invalid fomod", "replace or install as a variant", and every error it asks you
+  about mid-install. Two testers lost mods to this in one week, one of them while asleep. All of them pause
+  the timer now, for as long as the dialog is on screen.
+- **A mod that finished installing late is no longer installed a second time.** If a dialog held a mod past
+  the stall timer, Event Horizon gave up on it and Vortex went on to install it anyway once the dialog was
+  answered. The end-of-run retry then re-installed it, walked into Vortex's "replace or install as a
+  variant?" question, stalled again, and recorded a mod as FAILED that had been installed for hours. The
+  retry now re-asks Vortex's mod pool first and adopts what is already there.
+- **Verifying can be stopped and continued.** Checking a 3,000-mod collection takes hours, and stopping it
+  used to throw away everything it had proven. Each mod is now recorded as it passes, so the next run picks
+  up where it left off. A proof is used again only for the same collection version, at the same level, and
+  only while Vortex says the mod has not been re-installed since — otherwise it is checked again.
+
+### Before installing
+- **"Not a clean game" is no longer said about Event Horizon's own deployment.** After a collection was
+  installed, every later preview warned that the game folder was not clean — about the collection's own
+  files, with nothing foreign in the folder at all. There was nothing the player could do to clear it. When
+  nothing unmanaged is present and the game's own files are intact, this is now shown as information, and it
+  still says what Install will do to those files. A warning returns the moment something foreign is there.
+
 ## [0.2.2] — 2026-09-17
 
 ### Playing

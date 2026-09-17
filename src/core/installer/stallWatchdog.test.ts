@@ -77,6 +77,49 @@ describe("knowing when Vortex is waiting on a person", () => {
     );
   });
 
+  it("sees a showDialog modal, which lives in the NOTIFICATIONS reducer", () => {
+    /**
+     * The one that cost two testers a day each. `api.showDialog` dispatches
+     * SHOW_MODAL_DIALOG into `session.notifications.dialogs` — it never touches
+     * `session.base.visibleDialog`, so "Invalid fomod — Cancel / Ignore" and
+     * the replace-or-variant question both read as silence.
+     *
+     * Drag's run: 17 minutes on one such dialog, zero install.waiting-on-user
+     * lines. KazumaDessu's: 03:15 to 05:04 asleep, the mod declared failed at
+     * 03:25 and installed successfully at 05:04.
+     */
+    expect(
+      isAwaitingUserInput(
+        withFullSession({
+          base: { visibleDialog: "", overlayOpen: false },
+          fomod: { installer: { dialog: { activeInstanceId: undefined } } },
+          notifications: {
+            dialogs: [{ id: "d1", type: "error", title: "Invalid fomod" }],
+          },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("is false when the modal list is empty or absent", () => {
+    expect(
+      isAwaitingUserInput(
+        withFullSession({
+          base: { visibleDialog: "", overlayOpen: false },
+          notifications: { dialogs: [] },
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isAwaitingUserInput(
+        withFullSession({
+          base: { visibleDialog: "", overlayOpen: false },
+          notifications: {},
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it("sees an open overlay", () => {
     expect(isAwaitingUserInput(withSession({ overlayOpen: true }))).toBe(true);
   });

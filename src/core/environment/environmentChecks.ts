@@ -41,7 +41,13 @@ export type EnvironmentCheckId =
   | "game-folder"
   | "ini-leftovers";
 
-export type EnvironmentStatus = "ok" | "blocked" | "warning" | "unknown";
+/**
+ * `info` is shown but does not count as a problem: the check has something the
+ * user should read before clicking Install, and nothing is wrong. It exists
+ * because "your game folder is not clean" was being said about Event Horizon's
+ * OWN deployment — see {@link decideGameFolder}.
+ */
+export type EnvironmentStatus = "ok" | "blocked" | "warning" | "unknown" | "info";
 
 export type EnvironmentCheck = {
   id: EnvironmentCheckId;
@@ -521,6 +527,36 @@ export function decideGameFolder(input: {
     steps.push(
       "When you click Install, Event Horizon purges Vortex's deployment and moves the files above into a quarantine folder beside the game folder — nothing is deleted, and the Doctor page can put every file back.",
     );
+  }
+  /**
+   * ─── VORTEX'S OWN DEPLOYMENT IS NOT AN UNCLEAN GAME ────────────────────
+   * Nothing foreign is here: no unmanaged files, no missing or altered game
+   * files. What is here is a deployment — usually the collection the player
+   * just finished installing, which is the state this tool PUT the folder in.
+   *
+   * A tester finished a 3,236-mod install and every later preview greeted him
+   * with "The Skyrim Special Edition folder is not a clean game", over 540,730
+   * files that were all Vortex's, with `unmanaged: 0`. He read it as a loop he
+   * could not get out of, and he was right to: nothing he could do would make
+   * that warning go away, because nothing was wrong.
+   *
+   * Still SHOWN, and the purge step stays: on a fresh install those files are
+   * about to be purged and quarantined, which is a real thing to know before
+   * clicking. It is the severity that was the lie, not the text.
+   */
+  if (unmanaged.length === 0 && report.vanillaMissing.length === 0 && report.vanillaSizeMismatch.length === 0) {
+    return {
+      id: "game-folder",
+      status: "info",
+      title: `The ${input.gameName} folder holds a Vortex deployment and nothing foreign.`,
+      lines: [
+        ...lines,
+        `Checked against ${report.vanilla.detail}`,
+        ...presenceOnly,
+        ...toolLines,
+      ],
+      steps,
+    };
   }
   if (report.vanillaMissing.length > 0 || report.vanillaSizeMismatch.length > 0) {
     steps.push("Verify the game files in your store (Steam: Verify integrity; GOG Galaxy: Verify / Repair).");

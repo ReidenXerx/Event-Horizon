@@ -197,6 +197,48 @@ describe("decideGameFolder", () => {
   it("passes a clean game", () => {
     expect(decideGameFolder({ gameName: G, scan: scan({}) }).status).toBe("ok");
   });
+
+  it("does not call Vortex's own deployment an unclean game", () => {
+    /**
+     * A tester finished a 3,236-mod install and every later preview told him
+     * "The Skyrim Special Edition folder is not a clean game" — about 540,730
+     * files that were all Vortex's own, `unmanaged: 0`, nothing missing and
+     * nothing altered. He reported it as a loop, correctly: no action of his
+     * could clear a warning about a folder in the state this tool put it in.
+     *
+     * Informational, not a warning. It is still SHOWN, and it still says what
+     * Install will do to those files, because that part was never the lie.
+     */
+    const c = decideGameFolder({ gameName: G, scan: scan({}, 540_730) });
+    expect(c.status).toBe("info");
+    expect(c.title).not.toMatch(/not a clean game/);
+    expect(c.lines.join("\n")).toMatch(/540730 mod files deployed/);
+    expect(c.steps.join("\n")).toMatch(/purges Vortex's deployment and moves the files above into a quarantine/);
+    // Neither a blocker nor a warning: it must not reach the verdict lines.
+    expect(blockingChecks([c])).toEqual([]);
+  });
+
+  it("still warns when a deployment sits beside something foreign", () => {
+    // The severity drops ONLY when nothing foreign is there. One unmanaged
+    // file and it is a warning again, deployment or not.
+    const c = decideGameFolder({
+      gameName: G,
+      scan: scan({ unmanaged: [{ path: "Data/F4SE/Plugins/old.dll", size: 1, mtimeMs: 0 }] }, 540_730),
+    });
+    expect(c.status).toBe("warning");
+  });
+
+  it("still warns when the game's own files are missing or altered", () => {
+    expect(
+      decideGameFolder({ gameName: G, scan: scan({ vanillaMissing: ["Data/Skyrim.esm"] }, 12) }).status,
+    ).toBe("warning");
+    expect(
+      decideGameFolder({
+        gameName: G,
+        scan: scan({ vanillaSizeMismatch: [{ path: "SkyrimSE.exe", expected: 1, actual: 2 }] }, 12),
+      }).status,
+    ).toBe("warning");
+  });
 });
 
 describe("describeBlockedChecks", () => {

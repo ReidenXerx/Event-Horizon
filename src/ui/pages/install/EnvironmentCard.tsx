@@ -27,6 +27,8 @@ const INTENT: Record<EnvironmentCheck["status"], "danger" | "warning" | "neutral
   warning: "warning",
   unknown: "neutral",
   ok: "success",
+  // Shown, never alarming: something to read, nothing to fix.
+  info: "neutral",
 };
 
 export function EnvironmentCard(props: {
