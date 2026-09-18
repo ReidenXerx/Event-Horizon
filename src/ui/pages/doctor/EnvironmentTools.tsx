@@ -25,6 +25,7 @@ import { useErrorReporter } from "../../errors";
 import { useApi } from "../../state";
 import { EXTENSION_VERSION } from "../../version";
 import { getActiveGameId } from "../../../core/getModsListForProfile";
+import { ehLog } from "../../../core/logging/ehLog";
 import type { EnvironmentReport } from "../../../core/environment/preflight";
 import type { QuarantineSummary } from "../../../core/environment/quarantine";
 import type { SnapshotProgress } from "../../../core/environment/snapshot";
@@ -185,9 +186,86 @@ export function EnvironmentTools(): JSX.Element {
       if (filePath === undefined || filePath.length === 0) return;
       setSavingLogs(true);
       try {
-        const { collectLogSources, logBundleDirs, writeLogBundle } = await import("../../../core/diagnostics/logBundle");
-        const sources = await collectLogSources(logBundleDirs());
-        const result = await writeLogBundle({ filePath, extensionVersion: EXTENSION_VERSION, sources });
+        const [
+          { collectLogSources, logBundleDirs, writeLogBundle },
+          { scriptExtenderLogFor },
+          { iniLocationFor },
+          { detectRuntimes },
+          { readRegistryValue, fileExists },
+          { util },
+        ] = await Promise.all([
+          import("../../../core/diagnostics/logBundle"),
+          import("../../../core/runtime/scriptExtenderLog"),
+          import("../../../core/manifest/gameIni"),
+          import("../../../core/runtime/detectRuntimes"),
+          import("../../../core/runtime/nodePrereqDeps"),
+          import("@nexusmods/vortex-api"),
+        ]);
+
+        /**
+         * ─── THE TWO THINGS THE CURATOR CANNOT SEE FROM THEIR OWN MACHINE ──
+         * A physics failure reproduces on nobody's machine but the tester's,
+         * so the bundle has to carry the evidence rather than prompt for it:
+         * the script extender's log says whether the plugin loaded at all,
+         * and the runtime inventory says whether the thing it links against
+         * is even installed. Both are best-effort — a bundle that fails to
+         * save because a side quest failed would be a worse trade.
+         */
+        const extraFiles: Array<{ absPath: string; zipName: string }> = [];
+        let system: Record<string, unknown> | undefined;
+        try {
+          const documentsPath = (
+            util as unknown as { getVortexPath?: (id: string) => string }
+          ).getVortexPath?.("documents");
+          const where = gameId !== undefined ? scriptExtenderLogFor(gameId) : undefined;
+          if (gameId !== undefined && where !== undefined && documentsPath !== undefined) {
+            const store = (
+              api.getState() as unknown as {
+                settings?: { gameMode?: { discovered?: Record<string, { store?: string }> } };
+              }
+            ).settings?.gameMode?.discovered?.[gameId]?.store;
+            const location = iniLocationFor(gameId, documentsPath, store);
+            if (location !== undefined) {
+              extraFiles.push({
+                absPath: `${location.dir}/${where.folder}/${where.file}`,
+                zipName: `game/${where.file}`,
+              });
+            }
+          }
+        } catch (err) {
+          ehLog("info", "log-bundle.extender-log.skipped", { err });
+        }
+        try {
+          system = {
+            runtimes: await detectRuntimes(
+              {
+                readRegistryValue,
+                fileExists,
+                systemDir: `${process.env.WINDIR ?? "C:\Windows"}\System32`,
+              },
+              [
+                "vcredist-x64",
+                "vcredist-x86",
+                "vcredist2013-x64",
+                "vcredist2013-x86",
+                "vcredist2012-x86",
+                "dotnet48",
+                "dotnet8-desktop-x64",
+                "directx9",
+              ],
+            ),
+          };
+        } catch (err) {
+          ehLog("info", "log-bundle.runtimes.skipped", { err });
+        }
+
+        const sources = await collectLogSources({ ...logBundleDirs(), extraFiles });
+        const result = await writeLogBundle({
+          filePath,
+          extensionVersion: EXTENSION_VERSION,
+          sources,
+          ...(system !== undefined ? { system } : {}),
+        });
         toast({
           intent: result.skipped.length === 0 ? "success" : "warning",
           message:

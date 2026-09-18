@@ -10,7 +10,18 @@
  *     half of a failure that happens inside Vortex
  *   - Event Horizon's small JSON records: install receipts, attempt records,
  *     in-progress markers, journals, quarantine records
- *   - bundle.json: what was included, what could not be read, and the host
+ *   - the game's script-extender log (f4se.log / skse64.log), which is the
+ *     only artefact that says whether a plugin DLL actually loaded
+ *   - bundle.json: what was included, what could not be read, the host, and
+ *     the Microsoft runtimes the machine has
+ *
+ * ─── WHY THE LAST TWO ARE IN HERE ──────────────────────────────────────
+ * "My body physics stopped working" cannot be reproduced on the curator's
+ * machine — that is the whole shape of the problem: their setup is fine, the
+ * tester's is not, and the difference is usually something underneath the
+ * collection rather than in it. Asking a tester to find f4se.log and recite
+ * their installed VC++ versions is a round of questions that goes badly.
+ * Putting both in the file they already send answers it without asking.
  *
  * Nothing is masked (the curator's choice: exact paths diagnose; the file goes
  * to one person). Written to `<name>.partial` and renamed when complete, so a
@@ -37,6 +48,13 @@ export type LogBundleDirs = {
   ehRoot: string;
   /** Folders of Event Horizon's JSON records. */
   recordDirs: string[];
+  /**
+   * Files from outside Event Horizon's own folders, already resolved by the
+   * caller — the script-extender log above all. Passed in rather than found
+   * here because locating it needs the active game and its store, which this
+   * module deliberately knows nothing about.
+   */
+  extraFiles?: Array<{ absPath: string; zipName: string }>;
 };
 
 export type LogBundleSource = { absPath: string; zipName: string; size: number; mtimeMs: number };
@@ -112,6 +130,7 @@ export async function collectLogSources(dirs: LogBundleDirs): Promise<LogBundleS
   for (const dir of dirs.recordDirs) {
     for (const file of await filesUnder(dir)) await add(file, inEh(file, path.basename(dir)));
   }
+  for (const extra of dirs.extraFiles ?? []) await add(extra.absPath, extra.zipName);
   return out;
 }
 
@@ -119,6 +138,11 @@ export async function writeLogBundle(args: {
   filePath: string;
   extensionVersion: string;
   sources: readonly LogBundleSource[];
+  /**
+   * Anything else worth recording ABOUT the machine rather than copied FROM
+   * it — the Microsoft runtimes it has, above all. Merged into bundle.json.
+   */
+  system?: Record<string, unknown>;
   now?: Date;
 }): Promise<{ filePath: string; files: number; bytes: number; skipped: Array<{ name: string; error: string }> }> {
   const partial = `${args.filePath}.partial`;
@@ -155,6 +179,7 @@ export async function writeLogBundle(args: {
                 node: process.version,
                 electron: process.versions["electron"],
               },
+              ...(args.system !== undefined ? { system: args.system } : {}),
               files: args.sources.map((s) => ({ name: s.zipName, source: s.absPath, size: s.size, mtimeMs: s.mtimeMs })),
               unreadable,
             },

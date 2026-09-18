@@ -130,3 +130,91 @@ describe("collectLogSources + writeLogBundle", () => {
     expect(fs.existsSync(`${filePath}.partial`)).toBe(false);
   });
 });
+
+describe("what the bundle carries about the MACHINE, not the collection", () => {
+  /**
+   * The curator cannot reproduce a tester's broken physics — their own setup
+   * is fine, which is exactly why the cause is usually underneath the
+   * collection. So the two artefacts that answer it have to travel in the
+   * file the tester already sends, rather than being asked for afterwards.
+   */
+  it("includes a file from outside Event Horizon's folders, under the name it was given", async () => {
+    const dirs = {
+      vortexUserData: path.join(tmp, "vortex"),
+      ehRoot: path.join(tmp, "eh"),
+      recordDirs: [],
+      extraFiles: [
+        { absPath: path.join(tmp, "MyGames", "F4SE", "f4se.log"), zipName: "game/f4se.log" },
+      ],
+    };
+    write(path.join(dirs.ehRoot, "logs", "event-horizon-2026-09-19.log"), "eh\n");
+    write(dirs.extraFiles[0]!.absPath, "checking plugin cbp.dll\n");
+
+    const sources = await collectLogSources(dirs);
+    expect(sources.map((s) => s.zipName)).toContain("game/f4se.log");
+
+    const zip = path.join(tmp, "bundle.zip");
+    await writeLogBundle({ filePath: zip, extensionVersion: "0.2.6", sources });
+    const names = (await listZipEntries(zip)).map((e) => e.name);
+    expect(names).toContain("game/f4se.log");
+    expect((await readZipEntry(zip, "game/f4se.log")).toString("utf8")).toBe(
+      "checking plugin cbp.dll\n",
+    );
+  });
+
+  it("records the machine's runtimes in bundle.json", async () => {
+    const dirs = { vortexUserData: path.join(tmp, "v"), ehRoot: path.join(tmp, "e"), recordDirs: [] };
+    write(path.join(dirs.ehRoot, "logs", "a.log"), "x\n");
+    const zip = path.join(tmp, "b.zip");
+    await writeLogBundle({
+      filePath: zip,
+      extensionVersion: "0.2.6",
+      sources: await collectLogSources(dirs),
+      system: {
+        runtimes: [
+          { id: "vcredist-x64", name: "Visual C++ v14 (x64)", status: "absent" },
+          { id: "dotnet48", name: ".NET Framework 4.8", status: "present", version: "Release 533509" },
+        ],
+      },
+    });
+    const manifest = JSON.parse((await readZipEntry(zip, "bundle.json")).toString("utf8")) as {
+      system?: { runtimes?: Array<{ id: string; status: string }> };
+    };
+    expect(manifest.system?.runtimes?.[0]).toEqual({
+      id: "vcredist-x64",
+      name: "Visual C++ v14 (x64)",
+      status: "absent",
+    });
+  });
+
+  it("still writes a bundle when there is nothing extra to add", async () => {
+    // Both additions are best-effort: a bundle that failed to save because a
+    // side quest failed would be a far worse trade than a bundle without it.
+    const dirs = { vortexUserData: path.join(tmp, "v2"), ehRoot: path.join(tmp, "e2"), recordDirs: [] };
+    write(path.join(dirs.ehRoot, "logs", "a.log"), "x\n");
+    const zip = path.join(tmp, "c.zip");
+    const result = await writeLogBundle({
+      filePath: zip,
+      extensionVersion: "0.2.6",
+      sources: await collectLogSources(dirs),
+    });
+    expect(result.files).toBeGreaterThan(0);
+    const manifest = JSON.parse((await readZipEntry(zip, "bundle.json")).toString("utf8")) as {
+      system?: unknown;
+    };
+    expect(manifest.system).toBeUndefined();
+  });
+
+  it("does not fail the bundle over an extra file that is not there", async () => {
+    const dirs = {
+      vortexUserData: path.join(tmp, "v3"),
+      ehRoot: path.join(tmp, "e3"),
+      recordDirs: [],
+      extraFiles: [{ absPath: path.join(tmp, "nope", "f4se.log"), zipName: "game/f4se.log" }],
+    };
+    write(path.join(dirs.ehRoot, "logs", "a.log"), "x\n");
+    const sources = await collectLogSources(dirs);
+    expect(sources.map((s) => s.zipName)).not.toContain("game/f4se.log");
+    expect(sources.length).toBeGreaterThan(0);
+  });
+});
