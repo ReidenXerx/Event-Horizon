@@ -327,7 +327,7 @@ export async function downloadRevision(
 }
 
 function safeFileName(name: string): string {
-  const cleaned = name.replace(/[<>:"/\\|?* -]/g, "_").trim();
+  const cleaned = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim();
   return cleaned === "" ? "collection" : cleaned;
 }
 
