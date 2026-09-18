@@ -32,6 +32,9 @@
 export type PrerequisiteId =
   | "vcredist-x64"
   | "vcredist-x86"
+  | "vcredist2013-x64"
+  | "vcredist2013-x86"
+  | "vcredist2012-x86"
   | "dotnet48"
   | "dotnet8-desktop-x64"
   | "directx9";
@@ -91,6 +94,52 @@ export const PREREQUISITES: readonly Prerequisite[] = [
     approxBytes: 13_900_000,
     silentArgs: ["/quiet", "/norestart"],
     recommended: true,
+  },
+  /**
+   * ─── THE OLDER RUNTIMES ARE NOT SUPERSEDED ─────────────────────────
+   * A 2015–2022 redistributable does NOT satisfy a binary built against
+   * 2013 or 2012: those link `msvcr120.dll` / `msvcr110.dll` by name, and
+   * the 14.x runtime ships neither. Microsoft supports them side by side and
+   * a modding machine that has been used for a while accumulates all of
+   * them — the curator's own has 2022, 2013 (x64 and x86) and 2012 (x86).
+   *
+   * Off by default, because most collections never touch a binary this old
+   * and 14 MB of installer nobody needs is its own rudeness. The detector
+   * still reports them, so the offer appears when one is genuinely absent.
+   */
+  {
+    id: "vcredist2013-x64",
+    name: "Visual C++ 2013 Redistributable (x64)",
+    why:
+      "Some script-extender plugins and older tools link msvcr120.dll by " +
+      "name. The 2015–2022 runtime does not contain it, so they fail to load " +
+      "with no message naming the cause.",
+    url: "https://aka.ms/highdpimfc2013x64enu",
+    approxBytes: 7_200_744,
+    silentArgs: ["/quiet", "/norestart"],
+    recommended: false,
+  },
+  {
+    id: "vcredist2013-x86",
+    name: "Visual C++ 2013 Redistributable (x86)",
+    why: "The 32-bit half of the same runtime, for older 32-bit modding tools.",
+    url: "https://aka.ms/highdpimfc2013x86enu",
+    approxBytes: 6_510_136,
+    silentArgs: ["/quiet", "/norestart"],
+    recommended: false,
+  },
+  {
+    id: "vcredist2012-x86",
+    name: "Visual C++ 2012 Redistributable (x86)",
+    why:
+      "Fallout 3 / New Vegas era utilities and a few FOMOD installers link " +
+      "msvcr110.dll. Nothing newer provides it.",
+    url:
+      "https://download.microsoft.com/download/1/6/B/" +
+      "16B06F60-3B20-4FF2-B699-5E9B7962F9AE/VSU_4/vcredist_x86.exe",
+    approxBytes: 6_554_576,
+    silentArgs: ["/quiet", "/norestart"],
+    recommended: false,
   },
   {
     id: "dotnet48",

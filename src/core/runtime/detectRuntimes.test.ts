@@ -183,3 +183,74 @@ describe("what the player is told", () => {
     expect(said).toMatch(/Mods themselves will install fine/);
   });
 });
+
+describe("the older VC++ runtimes, which are not superseded", () => {
+  /**
+   * A 2015-2022 redistributable does not satisfy a binary that links
+   * msvcr120.dll or msvcr110.dll by name - Microsoft ships them side by side,
+   * and the curator's own machine carries 2022, 2013 (x64+x86) and 2012 (x86).
+   */
+  const NATIVE = (ver: string, arch: string): string =>
+    `HKLM\\SOFTWARE\\Microsoft\\VisualStudio\\${ver}\\VC\\Runtimes\\${arch}`;
+  const WOW = (ver: string, arch: string): string =>
+    `HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\VisualStudio\\${ver}\\VC\\Runtimes\\${arch}`;
+
+  it("finds the 2013 x64 runtime under the WOW node, where it actually lives", async () => {
+    /**
+     * The measured shape, and the reason the probe now tries both views:
+     * 12.0 x64 registers ONLY under WOW6432Node. The old probe looked at the
+     * native view for x64 and would have called an installed runtime missing.
+     */
+    const f = await only(
+      deps({
+        registry: {
+          [`${WOW("12.0", "x64")}\\Installed`]: "1",
+          [`${WOW("12.0", "x64")}\\Version`]: "v12.0.40664.00",
+        },
+      }),
+      "vcredist2013-x64",
+    );
+    expect(f.status).toBe("present");
+    expect(f.version).toBe("v12.0.40664.00");
+  });
+
+  it("finds the 2012 x86 runtime", async () => {
+    const f = await only(
+      deps({ registry: { [`${WOW("11.0", "x86")}\\Installed`]: "1" } }),
+      "vcredist2012-x86",
+    );
+    expect(f.status).toBe("present");
+  });
+
+  it("does not mistake a 2022 runtime for a 2013 one", async () => {
+    // The whole point: having 14.x says nothing about 12.x.
+    const f = await only(
+      deps({ registry: { [`${NATIVE("14.0", "x64")}\\Installed`]: "1" } }),
+      "vcredist2013-x64",
+    );
+    expect(f.status).toBe("absent");
+  });
+
+  it("still prefers the native view when a runtime is in both", async () => {
+    // 14.0 x64 registers in both, and the native key carries the newer
+    // version. Reading the stale one would report an out-of-date runtime.
+    const f = await only(
+      deps({
+        registry: {
+          [`${NATIVE("14.0", "x64")}\\Installed`]: "1",
+          [`${NATIVE("14.0", "x64")}\\Version`]: "v14.51.36247.00",
+          [`${WOW("14.0", "x64")}\\Installed`]: "1",
+          [`${WOW("14.0", "x64")}\\Version`]: "v14.44.35211.00",
+        },
+      }),
+      "vcredist-x64",
+    );
+    expect(f.version).toBe("v14.51.36247.00");
+  });
+
+  it("reports a registry that refuses as unknown, not missing", async () => {
+    const f = await only(deps({ throwOn: "VisualStudio\\12.0" }), "vcredist2013-x86");
+    expect(f.status).toBe("unknown");
+    expect(f.detail).toMatch(/could not be read/);
+  });
+});

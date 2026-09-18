@@ -88,15 +88,39 @@ const DOTNET48_MIN_RELEASE = 528040;
 async function probeVcRedist(
   deps: DetectRuntimeDeps,
   arch: "x64" | "x86",
+  /** Visual Studio's version for this runtime: 14.0 = 2015–2022. */
+  vsVersion: "14.0" | "12.0" | "11.0" = "14.0",
 ): Promise<{ status: RuntimeStatus; version?: string; detail?: string }> {
-  // The x86 runtime registers under the 32-bit view on a 64-bit Windows.
-  const key =
-    arch === "x64"
-      ? "SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64"
-      : "SOFTWARE\\WOW6432Node\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x86";
+  /**
+   * BOTH registry views, in order, because which one a runtime lands in is
+   * not something to reason about — it is something to look at. Measured on
+   * a machine carrying all three:
+   *
+   *   14.0 x64 → native AND WOW6432Node (native is the newer)
+   *   14.0 x86 → WOW6432Node only
+   *   12.0 x64 → WOW6432Node only      ← "absent" under the old rule
+   *   12.0 x86 → WOW6432Node only
+   *   11.0 x86 → WOW6432Node only
+   *
+   * This probe hardcoded native-for-x64, which is right for 14.0 and wrong
+   * for 12.0: it would have reported an installed 2013 x64 runtime missing.
+   */
+  const keys = [
+    `SOFTWARE\\Microsoft\\VisualStudio\\${vsVersion}\\VC\\Runtimes\\${arch}`,
+    `SOFTWARE\\WOW6432Node\\Microsoft\\VisualStudio\\${vsVersion}\\VC\\Runtimes\\${arch}`,
+  ];
   try {
-    const installed = await deps.readRegistryValue("HKLM", key, "Installed");
-    if (installed === undefined) return { status: "absent" };
+    let key: string | undefined;
+    let installed: string | undefined;
+    for (const candidate of keys) {
+      const value = await deps.readRegistryValue("HKLM", candidate, "Installed");
+      if (value !== undefined) {
+        key = candidate;
+        installed = value;
+        break;
+      }
+    }
+    if (installed === undefined || key === undefined) return { status: "absent" };
     // `Installed` is a DWORD; anything other than 1 means a broken or
     // partially-removed install, which is not "present".
     if (Number.parseInt(installed, 10) !== 1) {
@@ -200,6 +224,9 @@ async function probeDirectX9(
 const NAMES: Record<PrerequisiteId, string> = {
   "vcredist-x64": "Visual C++ 2015–2022 Redistributable (x64)",
   "vcredist-x86": "Visual C++ 2015–2022 Redistributable (x86)",
+  "vcredist2013-x64": "Visual C++ 2013 Redistributable (x64)",
+  "vcredist2013-x86": "Visual C++ 2013 Redistributable (x86)",
+  "vcredist2012-x86": "Visual C++ 2012 Redistributable (x86)",
   dotnet48: ".NET Framework 4.8",
   "dotnet8-desktop-x64": ".NET 8 Desktop Runtime (x64)",
   directx9: "DirectX 9 runtime (d3dx9)",
@@ -243,11 +270,17 @@ export async function detectRuntimes(
         ? await probeVcRedist(deps, "x64")
         : id === "vcredist-x86"
           ? await probeVcRedist(deps, "x86")
-          : id === "dotnet48"
-            ? await probeDotNet48(deps)
-            : id === "dotnet8-desktop-x64"
-              ? await probeDotNetDesktop8(deps)
-              : await probeDirectX9(deps);
+            : id === "vcredist2013-x64"
+            ? await probeVcRedist(deps, "x64", "12.0")
+            : id === "vcredist2013-x86"
+              ? await probeVcRedist(deps, "x86", "12.0")
+              : id === "vcredist2012-x86"
+                ? await probeVcRedist(deps, "x86", "11.0")
+                : id === "dotnet48"
+                  ? await probeDotNet48(deps)
+                  : id === "dotnet8-desktop-x64"
+                    ? await probeDotNetDesktop8(deps)
+                    : await probeDirectX9(deps);
     out.push({ id, name: NAMES[id], ...probe });
   }
   return out;
