@@ -21,8 +21,16 @@ type Listener = (...args: unknown[]) => void;
 function fakeApi(nexusDownloadResult: unknown): {
   api: never;
   listenerCount: () => number;
+  emitted: Array<{ event: string; args: unknown[] }>;
 } {
   const listeners = new Map<string, Set<Listener>>();
+  /**
+   * `emit` exists because the install is now ALWAYS ours: the download is
+   * download-only and `start-install-download` is emitted here rather than
+   * left to Vortex's "Install mods when downloaded" setting. A fake without
+   * it made the success path throw "api.events.emit is not a function".
+   */
+  const emitted: Array<{ event: string; args: unknown[] }> = [];
   const api = {
     ext: { nexusDownload: vi.fn().mockResolvedValue(nexusDownloadResult) },
     events: {
@@ -33,6 +41,9 @@ function fakeApi(nexusDownloadResult: unknown): {
       removeListener: (ev: string, fn: Listener) => {
         listeners.get(ev)?.delete(fn);
       },
+      emit: (ev: string, ...args: unknown[]) => {
+        emitted.push({ event: ev, args });
+      },
     },
     getState: () => ({ persistent: { downloads: { files: {} } } }),
     store: { subscribe: () => () => undefined },
@@ -40,6 +51,7 @@ function fakeApi(nexusDownloadResult: unknown): {
   return {
     api: api as never,
     listenerCount: () => listeners.get("did-install-mod")?.size ?? 0,
+    emitted,
   };
 }
 
@@ -150,5 +162,40 @@ describe("installNexusViaApi — a failed download must not leak its watchdog", 
       new Promise((r) => setTimeout(() => r("pending"), 50)),
     ]);
     expect(settled).toBe("pending");
+  });
+
+  it("downloads only, and starts the install itself", async () => {
+    /**
+     * ─── THE FIELD FAILURE ───────────────────────────────────────────────
+     * `allowInstall: true` hands the install to Vortex, and whether Vortex
+     * does it depends on two things we do not control: the player's "Install
+     * mods when downloaded" setting, and whether the flag is still on the
+     * active download when it finishes. A tester ran 963 mods that way: 25
+     * stalls of 600s each in one session, a run that gave up at "4 mods in a
+     * row failed", and the only mods that installed by themselves were the
+     * ones with FOMOD answers, because those already took the explicit path.
+     *
+     * `false` is unambiguous — Vortex's `allowInstall !== false` guard means
+     * it will never install this download itself, so ours is the only one.
+     *
+     * So: the fifth argument is FALSE, always, and the install is emitted
+     * here. Both halves are asserted — the flag alone would still leave the
+     * mod sitting in the downloads folder.
+     */
+    const { api, emitted } = fakeApi("archive-1");
+    void installNexusViaApi(api, {
+      gameId: "fallout4",
+      nexusModId: 1,
+      nexusFileId: 2,
+      fileName: "x.7z",
+    } as never);
+    await new Promise((r) => setTimeout(r, 20));
+
+    const nexusDownload = (api as unknown as {
+      ext: { nexusDownload: { mock: { calls: unknown[][] } } };
+    }).ext.nexusDownload;
+    expect(nexusDownload.mock.calls[0]![4]).toBe(false);
+    expect(emitted.map((e) => e.event)).toContain("start-install-download");
+    expect(emitted[0]!.args[0]).toBe("archive-1");
   });
 });

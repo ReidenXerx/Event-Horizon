@@ -10,6 +10,21 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.5] — 2026-09-18
+
+### Installing
+- **Mods install without you clicking Install for each one.** Event Horizon asked Vortex to download *and*
+  install each mod in one step — but whether Vortex does the second half depends on its own **"Install mods
+  when downloaded"** setting. With that off, Vortex posts a "Download finished / Install" notification and
+  waits for a click, so the run sat on every mod for ten minutes and then gave up. A tester with 963 mods
+  spent a session clicking Install per mod, and the only mods that went through by themselves were the ones
+  carrying the curator's installer answers, because those already took a different path. Every mod now takes
+  that path: Event Horizon downloads, then installs it itself. Your Vortex settings no longer change whether
+  an install can finish.
+- Vortex's "Download finished" prompts are cleared while an install runs, like the other prompts that are
+  wrong to answer mid-install — its **Install All** button would install the very mod Event Horizon is
+  installing, and a second copy is what raises Vortex's "replace, or install as a variant?" question.
+
 ## [0.2.4] — 2026-09-18
 
 ### The Doctor

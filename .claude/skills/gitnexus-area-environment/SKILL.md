@@ -33,27 +33,27 @@ description: "Skill for the Environment area of Event-Horizon. 127 symbols acros
 Start here when exploring this area:
 
 - **`describeCleanPlan`** (Function) — `src/core/environment/cleanGameFolder.ts:144`
-- **`decideBinaryImports`** (Function) — `src/core/environment/environmentChecks.ts:392`
-- **`isStarted`** (Function) — `src/core/environment/environmentChecks.ts:403`
-- **`decideGameFolder`** (Function) — `src/core/environment/environmentChecks.ts:461`
-- **`decideGameManaged`** (Function) — `src/core/environment/environmentChecks.ts:74`
+- **`decideBinaryImports`** (Function) — `src/core/environment/environmentChecks.ts:398`
+- **`isStarted`** (Function) — `src/core/environment/environmentChecks.ts:409`
+- **`decideGameFolder`** (Function) — `src/core/environment/environmentChecks.ts:467`
+- **`decideGameManaged`** (Function) — `src/core/environment/environmentChecks.ts:80`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
 | `describeCleanPlan` | Function | `src/core/environment/cleanGameFolder.ts` | 144 |
-| `decideBinaryImports` | Function | `src/core/environment/environmentChecks.ts` | 392 |
-| `isStarted` | Function | `src/core/environment/environmentChecks.ts` | 403 |
-| `decideGameFolder` | Function | `src/core/environment/environmentChecks.ts` | 461 |
-| `decideGameManaged` | Function | `src/core/environment/environmentChecks.ts` | 74 |
-| `decideIniLeftovers` | Function | `src/core/environment/environmentChecks.ts` | 546 |
-| `decideLauncherRan` | Function | `src/core/environment/environmentChecks.ts` | 309 |
-| `decideProtectedLocation` | Function | `src/core/environment/environmentChecks.ts` | 237 |
-| `decideWinePrefix` | Function | `src/core/environment/environmentChecks.ts` | 154 |
-| `folderLine` | Function | `src/core/environment/environmentChecks.ts` | 183 |
-| `protectedRootOf` | Function | `src/core/environment/environmentChecks.ts` | 226 |
-| `norm` | Function | `src/core/environment/environmentChecks.ts` | 227 |
+| `decideBinaryImports` | Function | `src/core/environment/environmentChecks.ts` | 398 |
+| `isStarted` | Function | `src/core/environment/environmentChecks.ts` | 409 |
+| `decideGameFolder` | Function | `src/core/environment/environmentChecks.ts` | 467 |
+| `decideGameManaged` | Function | `src/core/environment/environmentChecks.ts` | 80 |
+| `decideIniLeftovers` | Function | `src/core/environment/environmentChecks.ts` | 582 |
+| `decideLauncherRan` | Function | `src/core/environment/environmentChecks.ts` | 315 |
+| `decideProtectedLocation` | Function | `src/core/environment/environmentChecks.ts` | 243 |
+| `decideWinePrefix` | Function | `src/core/environment/environmentChecks.ts` | 160 |
+| `folderLine` | Function | `src/core/environment/environmentChecks.ts` | 189 |
+| `protectedRootOf` | Function | `src/core/environment/environmentChecks.ts` | 232 |
+| `norm` | Function | `src/core/environment/environmentChecks.ts` | 233 |
 | `groupEntries` | Function | `src/core/environment/gameFolderScan.ts` | 242 |
 | `logEnvironmentReport` | Function | `src/core/environment/preflight.ts` | 346 |
 | `runEnvironmentPreflight` | Function | `src/core/environment/preflight.ts` | 205 |

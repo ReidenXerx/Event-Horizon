@@ -400,10 +400,24 @@ describe("install driver, end to end", () => {
     });
   });
 
-  it("leaves a mod with no recorded choices on the original one-step path", async () => {
-    // Replay must not change how the other 840 mods in a collection install.
-    // A mod without choices is downloaded AND installed by Vortex in one go,
-    // so the driver never emits start-install-download at all.
+  it("installs a mod with no recorded choices itself, rather than leaving it to Vortex", async () => {
+    /**
+     * ─── THE FIELD FAILURE THIS TEST USED TO PIN ────────────────────────
+     * It used to assert the opposite: that a mod without choices is
+     * downloaded AND installed by Vortex in one go, so the driver never emits
+     * `start-install-download`. That one-step form depends on a setting the
+     * PLAYER owns — Vortex's "Install mods when downloaded". With it off,
+     * Vortex posts a "Download finished / Install" notification and waits for
+     * a human click.
+     *
+     * A tester on 2026-09-18 ran 963 mods that way: 25 stalls of 600s in one
+     * session, a run abandoned at "4 mods in a row failed", and the only mods
+     * that installed unattended were the ones carrying FOMOD answers, because
+     * those already took the explicit path. He sat clicking Install per mod.
+     *
+     * So the driver now always downloads only and always installs. Same call
+     * for every mod, with the curator's answers when there are any.
+     */
     world = makeWorld({
       mods: [
         {
@@ -426,7 +440,10 @@ describe("install driver, end to end", () => {
 
     await install(await packageFrom(world), fake);
 
-    expect(emitsOf(fake, "start-install-download")).toEqual([]);
+    // One explicit install, for the archive that was just downloaded — and
+    // exactly one, so nothing installs it twice.
+    const emits = emitsOf(fake, "start-install-download");
+    expect(emits).toHaveLength(1);
     expect(fake.installed).toHaveLength(1);
   });
 

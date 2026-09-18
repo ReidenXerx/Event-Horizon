@@ -39,6 +39,16 @@
  * string-match may catch a notification from a mod outside the collection;
  * that is true here too.
  *
+ * "Ready to install" was added on 2026-09-18. Vortex posts it when a download
+ * finishes and the player has "Install mods when downloaded" off, and its
+ * action is "Install All" — which installs THIS archive, the one the driver is
+ * already installing, plus every other finished download in the list. Pressed
+ * mid-install that is a second copy of a mod the driver just placed, and
+ * Vortex meets the second one with "replace, or install as a variant?", the
+ * modal nothing can pre-answer. A tester spent a whole run clicking these
+ * because the driver used to depend on that setting; it no longer does (see
+ * installNexusViaApi), so the prompt is now both wrong and unnecessary.
+ *
  * "Deployment necessary" was added on 2026-09-15, after players on the Ivy
  * page answered Vortex mid-install. It offers Deploy, and a deploy the player
  * clicks mid-install is a wrong result: after the driver's purge before the
@@ -60,7 +70,11 @@ import type { types } from "@nexusmods/vortex-api";
  * that answering it during a driven install produces a WRONG result, not
  * merely an interruption. The arguments are in the header above.
  */
-export const DRIVEN_INSTALL_NOISE = ["multiple-plugins-", "deployment-necessary"] as const;
+export const DRIVEN_INSTALL_NOISE = [
+  "multiple-plugins-",
+  "deployment-necessary",
+  "ready-to-install-",
+] as const;
 
 /** Is this notification one we clear during an install? */
 export function isNoisyDuringInstall(id: unknown): boolean {

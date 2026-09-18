@@ -72,7 +72,24 @@ describe("isNoisyDuringInstall", () => {
 
   it("carries exactly these prefixes, and every addition needs an argument", () => {
     // Guards against this quietly becoming a general notification filter.
-    expect(DRIVEN_INSTALL_NOISE).toEqual(["multiple-plugins-", "deployment-necessary"]);
+    // Each entry's argument is in the module header; this list failing is the
+    // prompt to write one, which is what it is for.
+    expect(DRIVEN_INSTALL_NOISE).toEqual([
+      "multiple-plugins-",
+      "deployment-necessary",
+      "ready-to-install-",
+    ]);
+  });
+
+  it("clears Vortex's download-finished prompt", () => {
+    /**
+     * Its action is "Install All", which installs the archive the driver is
+     * installing right now plus every other finished download. Pressed
+     * mid-install that is a duplicate mod and Vortex's "replace, or install as
+     * a variant?" modal — a wrong result, not merely an interruption, which is
+     * the bar for being on this list.
+     */
+    expect(isNoisyDuringInstall("ready-to-install-671fa91c-e360-4b49")).toBe(true);
   });
 });
 

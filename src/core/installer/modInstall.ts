@@ -221,9 +221,39 @@ export function isAwaitingUserInput(api: types.IExtensionApi): boolean {
 }
 
 /**
- * Install a Nexus mod by triggering Vortex's typed `nexusDownload`
- * helper with `allowInstall=true`. Returns the new Vortex mod id once
- * Vortex's install pipeline reports completion via `did-install-mod`.
+ * Download a Nexus mod through Vortex's typed `nexusDownload` helper, then
+ * install it OURSELVES. Returns the new Vortex mod id once the install
+ * pipeline reports completion via `did-install-mod`.
+ *
+ * ─── WHY WE NEVER LET VORTEX INSTALL THE DOWNLOAD ──────────────────────
+ * `nexusDownload(..., allowInstall = true)` downloads and installs in one
+ * step, and that is what this used to do for every mod with no recorded FOMOD
+ * answers. Whether the second half happens is decided in Vortex's download
+ * manager, read out of app.asar:
+ *
+ *     const allowInstall = activeDownload?.allowInstall;
+ *     const autoInstall  = state.settings.automation?.install
+ *                       || download?.modInfo?.startedAsUpdate === true;
+ *     (allowInstall || (allowInstall !== false && autoInstall))
+ *       && emit("start-install-download", downloadId);
+ *
+ * Two things we do not control sit in that expression: the player's "Install
+ * mods when downloaded" setting, and whether the flag is still on the ACTIVE
+ * download when it finishes. A tester's run on 2026-09-18 proved the gap 25
+ * times in one session — `start download mod {allowInstall: true}`, the
+ * download completes, and nothing installs. Vortex posts "Download finished /
+ * Install" and waits for a human, so each mod was declared stalled after 600s
+ * and the run gave up at "4 mods in a row failed". The only mods that
+ * installed unattended were the ones carrying FOMOD answers, because those
+ * already took the explicit path below; he was clicking Install per mod, for
+ * 963 mods.
+ *
+ * `false` is the one value with no ambiguity in it: `allowInstall !== false`
+ * guards the auto path, so Vortex will NEVER install a download we asked not
+ * to have installed — no race, and no second copy meeting "replace, or
+ * install as a variant?". So the download is always download-ONLY and the
+ * install is always ours: the same call for every mod, with the curator's
+ * answers when there are any.
  */
 export async function installNexusViaApi(
   api: types.IExtensionApi,
@@ -275,6 +305,15 @@ export async function installNexusViaApi(
 
   const replaying = args.choices !== undefined;
 
+  /**
+   * Armed around the DOWNLOAD only.
+   *
+   * It is the stall watchdog for the download phase — without it a Nexus
+   * request that never answers has no deadline at all. It is stood down the
+   * moment the download resolves, and `installFromExistingDownload` arms its
+   * own waiter BEFORE it emits, so no completion event can fall between them.
+   */
+
   // ── retry, because not every empty answer means the file is gone ──────
   //
   // Two shapes turned up in one tester's run, and they are NOT the same
@@ -299,18 +338,13 @@ export async function installNexusViaApi(
     if (args.signal?.aborted) throw makeAbortErrorLocal("nexus install");
     const attemptStartedAt = Date.now();
 
-    // Subscribe BEFORE triggering — `did-install-mod` can fire before the
-    // `nexusDownload` promise resolves on hot caches. Re-armed per attempt,
-    // because a cancelled waiter cannot be reused. Not needed when replaying:
-    // nothing installs until we say so, and installFromExistingDownload does
-    // its own waiting.
-    completed = replaying
-      ? undefined
-      : waitForInstallCompletion(api, {
-          gameId: args.gameId,
-          matchArchiveId: undefined, // we don't know it yet; matched below
-          signal: args.signal,
-        });
+    // Re-armed per attempt, because a cancelled waiter cannot be reused. It
+    // watches the download; the install that follows does its own waiting.
+    completed = waitForInstallCompletion(api, {
+      gameId: args.gameId,
+      matchArchiveId: undefined, // we don't know it yet; stood down below
+      signal: args.signal,
+    });
 
     try {
       const id = await api.ext.nexusDownload(
@@ -318,9 +352,10 @@ export async function installNexusViaApi(
         args.nexusModId,
         args.nexusFileId,
         args.fileName,
-        // Download only, when there are choices to hand the installer. The
-        // one-step form gives no opportunity to supply them.
-        !replaying,
+        // Download only, ALWAYS. The one-step form gives no opportunity to
+        // supply the curator's answers, and whether it installs at all is a
+        // setting the player owns — see this function's header.
+        false,
       );
       if (typeof id === "string" && id.length > 0) {
         archiveId = id;
@@ -385,25 +420,24 @@ export async function installNexusViaApi(
       : new Error(String(lastError));
   }
 
-  if (replaying) {
-    const installed = await installFromExistingDownload(api, {
-      gameId: args.gameId,
-      archiveId,
-      choices: args.choices!,
-      ...(args.unattended !== undefined
-        ? { unattended: args.unattended }
-        : {}),
-      ...(args.signal !== undefined ? { signal: args.signal } : {}),
-    });
-    return { archiveId, vortexModId: installed.vortexModId };
+  // The download is done, so the download watchdog's job is over. Stood down
+  // before the install's own waiter is armed — leaving it subscribed is how a
+  // `did-install-mod` for a LATER mod once matched the wrong waiter.
+  if (completed !== undefined) {
+    standDownWaiter(completed);
+    completed = undefined;
   }
 
-  // Now narrow the listener to this specific archiveId.
-  completed!.setExpectedArchiveId(archiveId);
-
-  const result = await completed!.promise;
-
-  return { archiveId, vortexModId: result.modId };
+  const installed = await installFromExistingDownload(api, {
+    gameId: args.gameId,
+    archiveId,
+    ...(replaying ? { choices: args.choices! } : {}),
+    ...(replaying && args.unattended !== undefined
+      ? { unattended: args.unattended }
+      : {}),
+    ...(args.signal !== undefined ? { signal: args.signal } : {}),
+  });
+  return { archiveId, vortexModId: installed.vortexModId };
 }
 
 /**
