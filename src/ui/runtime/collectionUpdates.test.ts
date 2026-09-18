@@ -229,3 +229,37 @@ describe("the update a card offers", () => {
     expect(pendingUpdateFor(receiptAt(12), other)).toBeUndefined();
   });
 });
+
+describe("when Vortex never accepts the download", () => {
+  it("gives up after a minute instead of leaving Update pending forever", async () => {
+    /**
+     * `emit` returns nothing, so the callback is the only thing that can
+     * settle this. A `start-download` nobody answers used to leave the Update
+     * button waiting with no error and no notification.
+     *
+     * Short on purpose: this waits only for Vortex to ACCEPT the download and
+     * hand back an id. The transfer itself is waited on separately and may
+     * take as long as the file takes.
+     */
+    const events = new EventEmitter();
+    events.on("get-nexus-collection-revision", () => undefined);
+    const api = {
+      events,
+      getState: () => ({ persistent: { downloads: { files: {} } } }),
+      emitAndAwait: async (event: string) =>
+        event === "get-nexus-collection-revision"
+          ? [{ id: 1, revisionNumber: 13, downloadLink: "https://nexus/dl", collection: { id: 350133, name: "Ivy" } }]
+          : [[{ URI: "https://cf-files.nexus-cdn.com/x.zip" }]],
+    } as never;
+
+    vi.useFakeTimers();
+    try {
+      const p = downloadRevision(api, update(), deps(), () => undefined);
+      const assertion = expect(p).rejects.toThrow(/did not start the download within 60s/);
+      await vi.advanceTimersByTimeAsync(61_000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

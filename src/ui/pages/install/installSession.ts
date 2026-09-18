@@ -1083,7 +1083,23 @@ class InstallSession {
               `Vortex switched to ${activeAtPurge ?? "no game"} before the purge, so nothing was purged`,
             );
           }
-          await purgeGameDeployment(api);
+          /**
+           * Bounded like the driver's own purge, and for the same reason: the
+           * callback is the only thing that can settle it, so a `purge-mods`
+           * nobody answers leaves this button spinning forever. The budget is
+           * the deploy's, sized by the mod count — a purge unlinks what a
+           * deploy linked, so a big setup gets proportionally longer.
+           */
+          const [{ deployBudgetMs, countMods }, { looksLikeWine }] =
+            await Promise.all([
+              import("../../../core/installer/timeBudgets"),
+              import("../../../core/proton"),
+            ]);
+          await purgeGameDeployment(api, {
+            timeoutMs: deployBudgetMs(countMods(api.getState()), {
+              wine: looksLikeWine(),
+            }),
+          });
           purged = true;
         },
         confirm: async (preview) => {

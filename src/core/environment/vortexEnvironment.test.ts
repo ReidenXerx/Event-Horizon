@@ -7,7 +7,7 @@
  * double here THROWS on any other shape rather than tolerating it: a double
  * that agrees with the code cannot falsify the code.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { gameExecutable, purgeGameDeployment, readDiscovery } from "./vortexEnvironment";
 
@@ -44,6 +44,68 @@ describe("purgeGameDeployment", () => {
   it("rejects with Vortex's error", async () => {
     const { api } = vortexLikeEvents(new Error("files were changed outside Vortex"));
     await expect(purgeGameDeployment(api)).rejects.toThrow(/changed outside Vortex/);
+  });
+
+  it("gives up when the callback never comes, instead of waiting forever", async () => {
+    /**
+     * `emit` returns nothing, so the callback is the ONLY thing that can
+     * settle this promise. A purge-mods with no listener, or a handler that
+     * throws before calling back, used to leave it pending forever — the
+     * driver wrapped its own purge in a budget for exactly this reason and
+     * the clean-game path before an install did not.
+     *
+     * Not a cap on how long a purge may take: the caller sizes it from the
+     * mod count, the same budget the deploy uses.
+     */
+    const api = { events: { emit: (): void => undefined } };
+    vi.useFakeTimers();
+    try {
+      const p = purgeGameDeployment(api, { timeoutMs: 1_000 });
+      const assertion = expect(p).rejects.toThrow(/did not answer the purge within 1s/);
+      await vi.advanceTimersByTimeAsync(1_100);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still waits with no budget, which is what the driver's own wrapper relies on", async () => {
+    const api = { events: { emit: (): void => undefined } };
+    vi.useFakeTimers();
+    try {
+      let settled = false;
+      void purgeGameDeployment(api).then(
+        () => (settled = true),
+        () => (settled = true),
+      );
+      await vi.advanceTimersByTimeAsync(60 * 60_000);
+      expect(settled).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ignores a callback that arrives after it gave up", async () => {
+    // Vortex answering late must not resolve a promise already rejected, and
+    // must not throw an unhandled anything.
+    let late: ((err: unknown) => void) | undefined;
+    const api = {
+      events: {
+        emit: (_e: string, _allow: unknown, cb: (err: unknown) => void): void => {
+          late = cb;
+        },
+      },
+    };
+    vi.useFakeTimers();
+    try {
+      const p = purgeGameDeployment(api, { timeoutMs: 1_000 });
+      const assertion = expect(p).rejects.toThrow(/did not answer/);
+      await vi.advanceTimersByTimeAsync(1_100);
+      await assertion;
+      expect(() => late?.(null)).not.toThrow();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

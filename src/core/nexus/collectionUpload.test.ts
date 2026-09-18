@@ -257,3 +257,84 @@ describe("finding the curator's collections", () => {
     expect(nexusCollectionUrl(EXISTING, 7)).toBe("https://www.nexusmods.com/games/fallout4/collections/tumkz9/revisions/7");
   });
 });
+
+describe("an upload that stops answering", () => {
+  /**
+   * `callback` used to be the only thing that could settle the upload, so a
+   * handler that threw before calling back — or a Nexus request that never
+   * returned — left the Upload button spinning with no error. That is the
+   * failure `canUploadCollections` was written to prevent for the listener
+   * case, on the other side of the same emit.
+   *
+   * The budget is SILENCE, not time: a package is gigabytes and an upload
+   * legitimately takes hours, so every progress tick re-arms it.
+   */
+  const quietApi = (): { api: never; progress: (n: number) => void } => {
+    let onProgress: ((t: number, total: number) => void) | undefined;
+    const events = new EventEmitter();
+    events.on(
+      "submit-collection",
+      (
+        _info: unknown,
+        _path: unknown,
+        _id: unknown,
+        _cb: unknown,
+        options: { onProgress?: (t: number, total: number) => void },
+      ) => {
+        onProgress = options.onProgress;
+      },
+    );
+    return {
+      api: { events, getState: () => LOGGED_IN, emitAndAwait: async () => [] } as never,
+      progress: (n: number) => onProgress?.(n, 100),
+    };
+  };
+
+  it("gives up after fifteen quiet minutes rather than spinning forever", async () => {
+    vi.useFakeTimers();
+    try {
+      const { api } = quietApi();
+      const p = uploadToNexusCollection(api, { info: INFO, packagePath: "C:/out/ivy.zip" });
+      await vi.advanceTimersByTimeAsync(15 * 60_000 + 1_000);
+      const outcome = await p;
+      expect(outcome.ok).toBe(false);
+      expect(outcome.ok === false ? outcome.failure.title : "").toMatch(/stopped reporting progress/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps waiting while bytes are still moving", async () => {
+    // The healthy multi-hour upload. Fourteen quiet minutes, a tick, fourteen
+    // more: a wall-clock cap would have killed this one.
+    vi.useFakeTimers();
+    try {
+      const { api, progress } = quietApi();
+      let settled = false;
+      void uploadToNexusCollection(api, { info: INFO, packagePath: "C:/out/ivy.zip" }).then(
+        () => (settled = true),
+      );
+      await vi.advanceTimersByTimeAsync(14 * 60_000);
+      progress(50);
+      await vi.advanceTimersByTimeAsync(14 * 60_000);
+      expect(settled).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("settles when the caller aborts, instead of leaving the promise open", async () => {
+    // The signal was handed to Vortex but never wired to our own promise, so
+    // Cancel depended entirely on Vortex choosing to call back.
+    const { api } = quietApi();
+    const ac = new AbortController();
+    const p = uploadToNexusCollection(api, {
+      info: INFO,
+      packagePath: "C:/out/ivy.zip",
+      signal: ac.signal,
+    });
+    ac.abort();
+    const outcome = await p;
+    expect(outcome.ok).toBe(false);
+  });
+});

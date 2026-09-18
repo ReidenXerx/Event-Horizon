@@ -173,11 +173,47 @@ export function gatherPreflightFacts(args: {
  * No fallback: a purge that could not run normally should stop the install,
  * not be papered over.
  */
-export function purgeGameDeployment(api: {
-  events: { emit: (event: string, ...args: unknown[]) => unknown };
-}): Promise<void> {
+export function purgeGameDeployment(
+  api: {
+    events: { emit: (event: string, ...args: unknown[]) => unknown };
+  },
+  options: {
+    /**
+     * How long to wait for Vortex's callback before giving up.
+     *
+     * NOT a cap on how long a purge may legitimately take — it is sized by the
+     * caller from the mod count (`deployBudgetMs`), the same budget the deploy
+     * uses, because a purge unlinks what a deploy linked. Its job is to end a
+     * wait for a callback that is never coming: `emit` returns nothing, so a
+     * purge-mods with no listener, or a handler that throws before calling
+     * back, leaves this promise pending FOREVER with no error and no UI.
+     *
+     * The driver's own purge has always been wrapped like this. The clean-game
+     * path before an install was not, and that is the asymmetry this closes.
+     */
+    timeoutMs?: number;
+  } = {},
+): Promise<void> {
   return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const timer =
+      options.timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            reject(
+              new Error(
+                `Vortex did not answer the purge within ${Math.round(
+                  (options.timeoutMs ?? 0) / 1000,
+                )}s. Check its notifications — nothing was moved.`,
+              ),
+            );
+          }, options.timeoutMs);
     api.events.emit("purge-mods", false, (err: unknown) => {
+      if (settled) return;
+      settled = true;
+      if (timer !== undefined) clearTimeout(timer);
       if (err === null || err === undefined) resolve();
       else reject(err instanceof Error ? err : new Error(String(err)));
     });

@@ -205,9 +205,63 @@ export function uploadToNexusCollection(
 
   return new Promise<NexusUploadOutcome>((resolve) => {
     let settled = false;
+    /**
+     * ─── A SILENCE BUDGET, NOT A TIME LIMIT ────────────────────────────
+     * A collection package is gigabytes and an upload legitimately takes
+     * hours, so a wall-clock cap would kill the healthy case — the same
+     * reasoning the install watchdog settled on.
+     *
+     * What is NOT legitimate is silence. Vortex reports bytes through
+     * `onProgress`, so every tick re-arms this; it can only fire when nothing
+     * has moved for a quarter of an hour. Before this, `callback` was the
+     * ONLY thing that could settle the promise, so an upload handler that
+     * threw before calling back, or a Nexus request that never returned, left
+     * the Upload button spinning with no error — the exact failure
+     * `canUploadCollections` was written to prevent one line earlier.
+     */
+    const QUIET_MS = 15 * 60_000;
+    let quiet: ReturnType<typeof setTimeout> | undefined;
+    const done = (): void => {
+      if (quiet !== undefined) clearTimeout(quiet);
+      input.signal?.removeEventListener("abort", onAbort);
+    };
+    const armQuiet = (): void => {
+      if (quiet !== undefined) clearTimeout(quiet);
+      quiet = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        done();
+        const err = new Error(
+          `Vortex reported nothing about this upload for ${QUIET_MS / 60_000} minutes. ` +
+            `It may still be running — check Vortex's notifications before uploading again.`,
+        );
+        op.fail(err, { kind: "stalled" });
+        resolve({
+          ok: false,
+          failure: {
+            kind: "failed",
+            title: "The upload stopped reporting progress.",
+            details: [err.message],
+          },
+        });
+      }, QUIET_MS);
+    };
+    function onAbort(): void {
+      if (settled) return;
+      settled = true;
+      done();
+      const failure = describeUploadError(
+        new Error("cancelled"),
+        info,
+        input.signal,
+      );
+      op.fail(new Error("cancelled"), { kind: failure.kind, reasons: failure.details.length });
+      resolve({ ok: false, failure });
+    }
     const callback = (err: unknown, response?: SubmitResponse): void => {
       if (settled) return;
       settled = true;
+      done();
       if (err !== null && err !== undefined) {
         const failure = describeUploadError(err, info, input.signal);
         op.fail(err, { kind: failure.kind, reasons: failure.details.length });
@@ -223,8 +277,15 @@ export function uploadToNexusCollection(
       resolve(outcome);
     };
     try {
+      input.signal?.addEventListener("abort", onAbort, { once: true });
+      armQuiet();
       api.events.emit(SUBMIT_EVENT, info, input.packagePath, target?.id, callback, {
-        onProgress: input.onProgress,
+        // Every byte Vortex reports re-arms the silence budget, and the
+        // caller's own progress handler still runs exactly as before.
+        onProgress: (transferred: number, total: number): void => {
+          armQuiet();
+          input.onProgress?.(transferred, total);
+        },
         abortSignal: input.signal,
       });
     } catch (err) {

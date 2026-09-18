@@ -294,12 +294,37 @@ export async function downloadRevision(
   let downloadId: string;
   try {
     downloadId = await new Promise<string>((resolve, reject) => {
+      /**
+       * This waits only for Vortex to ACCEPT the download and hand back an id
+       * — the transfer itself is waited on separately, and is allowed to take
+       * as long as the file takes. So a short budget is right here, and its
+       * absence was the failure shape: `emit` returns nothing, so a callback
+       * that never comes left Update pending forever with no error.
+       */
+      const ACCEPT_MS = 60_000;
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(
+          new Error(
+            "Vortex did not start the download within 60s. Check its " +
+              "notifications, then press Update again.",
+          ),
+        );
+      }, ACCEPT_MS);
       api.events.emit(
         "start-download",
         uris,
         modInfo,
         fileName,
-        (err: unknown, id?: string) => (err ? reject(err) : resolve(id as string)),
+        (err: unknown, id?: string) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          if (err) reject(err);
+          else resolve(id as string);
+        },
         "never",
         { allowInstall: false },
       );
