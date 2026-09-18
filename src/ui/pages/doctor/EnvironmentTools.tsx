@@ -61,6 +61,9 @@ export function EnvironmentTools(): JSX.Element {
   const [busyRecord, setBusyRecord] = React.useState<string | undefined>(undefined);
   const [tick, setTick] = React.useState(0);
   const [savingLogs, setSavingLogs] = React.useState(false);
+  /** What the script extender said about its plugins, last time it ran. */
+  const [extender, setExtender] = React.useState<string[] | undefined>(undefined);
+  const [extenderBusy, setExtenderBusy] = React.useState(false);
   /** Microsoft runtimes: what the machine has, and the repair in progress. */
   const [runtimes, setRuntimes] = React.useState<RuntimeFinding[] | undefined>(undefined);
   const [runtimeBusy, setRuntimeBusy] = React.useState<string | undefined>(undefined);
@@ -317,6 +320,64 @@ export function EnvironmentTools(): JSX.Element {
     })();
   }, [reportError]);
 
+  /**
+   * ─── THE ARTEFACT THAT SEPARATES FOUR IDENTICAL SYMPTOMS ─────────────
+   * "My body physics stopped working" has at least four causes — a missing
+   * VC++ runtime so the DLL never loaded, a body never built in BodySlide, a
+   * missing skeleton, a plugin built for another game version — and the
+   * collection verifies byte-for-byte in all of them. The script extender's
+   * own log is the one place that says, per DLL, whether the thing loaded.
+   */
+  const checkExtender = React.useCallback((): void => {
+    if (gameId === undefined) return;
+    setExtenderBusy(true);
+    void (async (): Promise<void> => {
+      try {
+        const [{ readScriptExtenderLog, summariseScriptExtenderLog }, { util }] =
+          await Promise.all([
+            import("../../../core/runtime/scriptExtenderLog"),
+            import("@nexusmods/vortex-api"),
+          ]);
+        const documentsPath = (
+          util as unknown as { getVortexPath?: (id: string) => string }
+        ).getVortexPath?.("documents");
+        if (documentsPath === undefined || documentsPath === "") {
+          setExtender(["Vortex did not say where your Documents folder is."]);
+          return;
+        }
+        const store = (
+          api.getState() as unknown as {
+            settings?: { gameMode?: { discovered?: Record<string, { store?: string }> } };
+          }
+        ).settings?.gameMode?.discovered?.[gameId]?.store;
+        const found = await readScriptExtenderLog({
+          gameId,
+          documentsPath,
+          ...(store !== undefined ? { store } : {}),
+        });
+        setExtender(
+          found.kind === "read"
+            ? [...summariseScriptExtenderLog(found.log).lines, `Read from ${found.path}`]
+            : found.kind === "absent"
+              ? [
+                  `No script-extender log at ${found.path}.`,
+                  "Start the game once through Play, then check again — the log is written at launch.",
+                ]
+              : found.kind === "unreadable"
+                ? [`Could not read ${found.path}: ${found.why}`]
+                : ["Event Horizon does not know where this game's script extender writes its log."],
+        );
+      } catch (err) {
+        reportError(err, {
+          title: "Couldn't read the script-extender log",
+          context: { step: "doctor-extender-log" },
+        });
+      } finally {
+        setExtenderBusy(false);
+      }
+    })();
+  }, [api, gameId, reportError]);
+
   const installMissingRuntimes = React.useCallback((): void => {
     void (async (): Promise<void> => {
       const [{ repairRuntimes, missingRuntimeIds }] = await Promise.all([
@@ -415,6 +476,34 @@ export function EnvironmentTools(): JSX.Element {
                   {r.name}
                   {r.version !== undefined ? ` (${r.version})` : ""}
                   {r.detail !== undefined ? ` — ${r.detail}` : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </Card>
+
+      <Card title="Script extender plugins" inert>
+        <div className="eh-stack eh-stack--sm">
+          <span className="eh-secondary">
+            What F4SE or SKSE said the last time the game started: which plugins loaded, and which did not. A
+            plugin that fails to load takes its feature with it silently — body physics is the usual way people
+            notice — and nothing else on this page can see that.
+          </span>
+          <div className="eh-row">
+            <Button
+              intent="ghost"
+              disabled={extenderBusy || gameId === undefined}
+              onClick={checkExtender}
+            >
+              {extenderBusy ? "Reading…" : "Check the script extender's log"}
+            </Button>
+          </div>
+          {extender !== undefined && (
+            <ul className="eh-list">
+              {extender.map((line, i) => (
+                <li key={i} className="eh-secondary eh-pre-wrap">
+                  {line}
                 </li>
               ))}
             </ul>
