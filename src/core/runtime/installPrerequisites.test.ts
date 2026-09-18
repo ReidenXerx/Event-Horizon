@@ -227,3 +227,58 @@ describe("planPrerequisites", () => {
     );
   });
 });
+
+describe("the catalogue itself", () => {
+  /**
+   * These are downloads this tool runs as executables on someone's machine,
+   * so where they come from is not a detail. Every URL in the catalogue was
+   * verified by fetching it — ranged GET, HTTP 206, MZ magic, Microsoft-owned
+   * host — and this test keeps the HOST half of that true for free.
+   */
+  it("fetches every runtime from a Microsoft host over https", async () => {
+    const { PREREQUISITES } = await import("./prerequisites");
+    expect(PREREQUISITES.length).toBeGreaterThan(0);
+    for (const p of PREREQUISITES) {
+      const url = new URL(p.url);
+      expect(url.protocol).toBe("https:");
+      expect(
+        url.hostname === "aka.ms" ||
+          url.hostname.endsWith(".microsoft.com") ||
+          url.hostname === "go.microsoft.com",
+      ).toBe(true);
+    }
+  });
+
+  it("ships the CURRENT 14.x package, not the one named after 2022", async () => {
+    /**
+     * Measured 2026-09-18 by downloading both and reading the version
+     * resource — not remembered:
+     *
+     *   aka.ms/vs/17 -> 14.44.35211  "Visual C++ 2015-2022 Redistributable"
+     *   aka.ms/vs/18 -> 14.51.36247  "Visual C++ v14 Redistributable"
+     *   aka.ms/vs/19 -> does not exist
+     *
+     * Same binary-compatible ABI, newer, and a smaller download. This test
+     * exists so nobody "corrects" it back to the familiar vs/17 link.
+     */
+    const { PREREQUISITES } = await import("./prerequisites");
+    const vc = PREREQUISITES.filter((p) => p.id === "vcredist-x64" || p.id === "vcredist-x86");
+    expect(vc).toHaveLength(2);
+    for (const p of vc) {
+      expect(p.url).toContain("/vs/18/release/");
+      expect(p.recommended).toBe(true);
+    }
+  });
+
+  it("keeps the older runtimes off by default", async () => {
+    // 2013 and 2012 are real link-by-name dependencies for some plugins, and
+    // dead weight for most collections. Detected, never pushed.
+    const { PREREQUISITES } = await import("./prerequisites");
+    for (const id of ["vcredist2013-x64", "vcredist2013-x86", "vcredist2012-x86"] as const) {
+      const p = PREREQUISITES.find((x) => x.id === id);
+      expect(p, id).toBeDefined();
+      expect(p!.recommended, id).toBe(false);
+      expect(p!.silentArgs).toContain("/quiet");
+    }
+  });
+});

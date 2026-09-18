@@ -73,25 +73,41 @@ export interface Prerequisite {
  * plugins link against.
  */
 export const PREREQUISITES: readonly Prerequisite[] = [
+  /**
+   * ─── THE CURRENT 14.x PACKAGE IS NOT "2022" ANY MORE ───────────────
+   * Microsoft kept the same binary-compatible 14.x ABI and moved the package
+   * forward a Visual Studio generation. Measured by downloading both and
+   * reading their version resource, 2026-09-18:
+   *
+   *   aka.ms/vs/17 → 14.44.35211, "Visual C++ 2015-2022 Redistributable"
+   *   aka.ms/vs/18 → 14.51.36247, "Visual C++ v14 Redistributable"   ← newer
+   *   aka.ms/vs/19 → does not exist (aka.ms falls through to a search page)
+   *
+   * 18 is also the smaller download (18.7 MB against 25.6 MB for x64), and
+   * because every 14.x runtime is binary compatible it satisfies anything
+   * built against 2015, 2017, 2019 or 2022. So it is what we ship. The name
+   * says "v14" rather than a year for the same reason Microsoft's does: the
+   * year was never the thing that mattered.
+   */
   {
     id: "vcredist-x64",
-    name: "Visual C++ 2015–2022 Redistributable (x64)",
+    name: "Visual C++ v14 Redistributable (x64, covers 2015–2022)",
     why:
       "Vortex's 7-Zip, xEdit, ENB and most script-extender plugins link " +
       "against this. Without it they either fail to start or fail silently.",
-    url: "https://aka.ms/vs/17/release/vc_redist.x64.exe",
-    approxBytes: 25_600_000,
+    url: "https://aka.ms/vs/18/release/vc_redist.x64.exe",
+    approxBytes: 18_731_856,
     silentArgs: ["/quiet", "/norestart"],
     recommended: true,
   },
   {
     id: "vcredist-x86",
-    name: "Visual C++ 2015–2022 Redistributable (x86)",
+    name: "Visual C++ v14 Redistributable (x86, covers 2015–2022)",
     why:
       "Older 32-bit tools — Fallout 3 / New Vegas era utilities and some " +
       "FOMOD installers — still need the 32-bit runtime.",
-    url: "https://aka.ms/vs/17/release/vc_redist.x86.exe",
-    approxBytes: 13_900_000,
+    url: "https://aka.ms/vs/18/release/vc_redist.x86.exe",
+    approxBytes: 6_941_536,
     silentArgs: ["/quiet", "/norestart"],
     recommended: true,
   },

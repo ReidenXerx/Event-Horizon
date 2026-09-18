@@ -222,8 +222,8 @@ async function probeDirectX9(
 
 /** Human names, kept beside the probes so a finding can stand alone. */
 const NAMES: Record<PrerequisiteId, string> = {
-  "vcredist-x64": "Visual C++ 2015–2022 Redistributable (x64)",
-  "vcredist-x86": "Visual C++ 2015–2022 Redistributable (x86)",
+  "vcredist-x64": "Visual C++ v14 Redistributable (x64, covers 2015–2022)",
+  "vcredist-x86": "Visual C++ v14 Redistributable (x86, covers 2015–2022)",
   "vcredist2013-x64": "Visual C++ 2013 Redistributable (x64)",
   "vcredist2013-x86": "Visual C++ 2013 Redistributable (x86)",
   "vcredist2012-x86": "Visual C++ 2012 Redistributable (x86)",

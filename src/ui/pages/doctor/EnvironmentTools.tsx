@@ -28,6 +28,7 @@ import { getActiveGameId } from "../../../core/getModsListForProfile";
 import type { EnvironmentReport } from "../../../core/environment/preflight";
 import type { QuarantineSummary } from "../../../core/environment/quarantine";
 import type { SnapshotProgress } from "../../../core/environment/snapshot";
+import type { RuntimeFinding } from "../../../core/runtime/detectRuntimes";
 import { PlayGameButton } from "../../play/PlayGameButton";
 import { EnvironmentCard } from "../install/EnvironmentCard";
 
@@ -60,6 +61,9 @@ export function EnvironmentTools(): JSX.Element {
   const [busyRecord, setBusyRecord] = React.useState<string | undefined>(undefined);
   const [tick, setTick] = React.useState(0);
   const [savingLogs, setSavingLogs] = React.useState(false);
+  /** Microsoft runtimes: what the machine has, and the repair in progress. */
+  const [runtimes, setRuntimes] = React.useState<RuntimeFinding[] | undefined>(undefined);
+  const [runtimeBusy, setRuntimeBusy] = React.useState<string | undefined>(undefined);
 
   // Follow Vortex's active game.
   React.useEffect(() => {
@@ -68,7 +72,7 @@ export function EnvironmentTools(): JSX.Element {
       setReport(undefined);
     };
     api.events?.on?.("gamemode-activated", onGame);
-    return (): void => {
+  return (): void => {
       api.events?.removeListener?.("gamemode-activated", onGame);
     };
   }, [api]);
@@ -262,6 +266,85 @@ export function EnvironmentTools(): JSX.Element {
     (q) => q.held > 0 || (q.absent > 0 && q.record.restoredAt === undefined && q.record.dismissedAt === undefined),
   );
 
+    /**
+   * ─── THE CHECK A PLAYER REACHES FOR AFTER THE INSTALL ────────────────
+   * The install preview has detected these since `detectRuntimes` existed,
+   * but a missing runtime does not announce itself at install time — it
+   * announces itself weeks later as a script-extender plugin that silently
+   * never loads. Fallout 4 body physics is the case that prompted this: the
+   * bodies are there, the physics is not, and nothing is printed anywhere a
+   * player would look.
+   *
+   * So the same probe lives here, where someone goes when the game is already
+   * wrong, and the older VC++ runtimes are included — a 14.x redistributable
+   * does not provide msvcr120/msvcr110, and asking for them explicitly is not
+   * crying wolf.
+   */
+  const checkRuntimes = React.useCallback((): void => {
+    setRuntimeBusy("Checking…");
+    void (async (): Promise<void> => {
+      try {
+        const [{ detectRuntimes }, { readRegistryValue, fileExists }] = await Promise.all([
+          import("../../../core/runtime/detectRuntimes"),
+          import("../../../core/runtime/nodePrereqDeps"),
+        ]);
+        const findings = await detectRuntimes(
+          {
+            readRegistryValue,
+            fileExists,
+            systemDir: `${process.env.WINDIR ?? "C:\Windows"}\System32`,
+          },
+          [
+            "vcredist-x64",
+            "vcredist-x86",
+            "vcredist2013-x64",
+            "vcredist2013-x86",
+            "vcredist2012-x86",
+            "dotnet48",
+            "dotnet8-desktop-x64",
+            "directx9",
+          ],
+        );
+        setRuntimes(findings);
+      } catch (err) {
+        reportError(err, {
+          title: "Couldn't check the system runtimes",
+          context: { step: "doctor-runtimes" },
+        });
+      } finally {
+        setRuntimeBusy(undefined);
+      }
+    })();
+  }, [reportError]);
+
+  const installMissingRuntimes = React.useCallback((): void => {
+    void (async (): Promise<void> => {
+      const [{ repairRuntimes, missingRuntimeIds }] = await Promise.all([
+        import("../../runtime/runtimeRepair"),
+      ]);
+      const ids = missingRuntimeIds(runtimes ?? []);
+      if (ids.length === 0) return;
+      setRuntimeBusy("Downloading…");
+      try {
+        const outcome = await repairRuntimes({
+          api,
+          ids,
+          onStep: (message) => setRuntimeBusy(message),
+        });
+        setRuntimes(outcome.after.length > 0 ? outcome.after : runtimes);
+        toast({
+          intent: outcome.fixed ? "success" : "warning",
+          message: outcome.lines.join(" "),
+        });
+        // Re-read regardless: the repair's own probe is the authority, and a
+        // partial result should still refresh what the card shows.
+        checkRuntimes();
+      } finally {
+        setRuntimeBusy(undefined);
+      }
+    })();
+  }, [api, checkRuntimes, runtimes, toast]);
+
   return (
     <>
       <Card title="Game setup" inert>
@@ -300,6 +383,43 @@ export function EnvironmentTools(): JSX.Element {
             )}
           </div>
         )}
+      </Card>
+
+      <Card title="System runtimes" inert>
+        <div className="eh-stack eh-stack--sm">
+          <span className="eh-secondary">
+            The Microsoft runtimes that script-extender plugins, xEdit and ENB link against. A missing one does
+            not announce itself: the collection installs perfectly, every file verifies, and a plugin silently
+            never loads — broken body physics in Fallout 4 is the usual way people notice.
+          </span>
+          <div className="eh-row">
+            <Button intent="ghost" disabled={runtimeBusy !== undefined} onClick={checkRuntimes}>
+              {runtimeBusy ?? "Check system runtimes"}
+            </Button>
+            {runtimes !== undefined && runtimes.some((r) => r.status === "absent") && (
+              <Button
+                intent="primary"
+                disabled={runtimeBusy !== undefined}
+                onClick={installMissingRuntimes}
+              >
+                Install the missing ones
+              </Button>
+            )}
+          </div>
+          {runtimes !== undefined && (
+            <ul className="eh-list">
+              {runtimes.map((r) => (
+                <li key={r.id} className="eh-secondary eh-pre-wrap">
+                  {r.status === "present" ? "OK" : r.status === "absent" ? "MISSING" : "could not check"}
+                  {" — "}
+                  {r.name}
+                  {r.version !== undefined ? ` (${r.version})` : ""}
+                  {r.detail !== undefined ? ` — ${r.detail}` : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </Card>
 
       <Card title="Logs" inert>
