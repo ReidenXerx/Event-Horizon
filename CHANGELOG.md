@@ -10,6 +10,31 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.6] — 2026-09-18
+
+### Installing
+- **Hardlink deployment is now required.** Event Horizon refuses to install when Vortex is set to copy or
+  symlink deployment, and says where to change it. Copy is the one that bites silently: a Vortex purge under
+  copy deployment rewrites plugins from your staging folder, which undoes the collection's ESL flags — a big
+  collection then stops loading and nothing in the install reports a problem. Symlink is not supported or
+  tested. If Vortex does not tell us which method it uses, the install goes ahead as before, and **Play is
+  unaffected** — a collection already on your disk still starts.
+
+### Fewer silent hangs
+- **Three waits that could last forever now end with a message.** Cleaning the game folder before an install,
+  uploading a collection, and starting a collection update all waited on Vortex to call back, and nothing
+  ended the wait if it never did. None of these is a time limit on the work itself: the purge gets the same
+  budget the install's own purge uses, sized by your mod count; the upload only gives up after **fifteen
+  minutes with no progress at all**, so a multi-hour upload of a large package is untouched; and the update
+  waits a minute for Vortex to accept the download, not for the download to finish. Cancelling an upload now
+  also ends it on our side instead of waiting for Vortex to agree.
+
+### Building collections
+- **A build no longer claims a deployment method it could not read.** It recorded "hardlink" whenever Vortex's
+  setting was unreadable, which could produce a "deployment method differs" line about something nobody had
+  observed. It now records that it did not know, and older versions of Event Horizon can still read packages
+  built this way.
+
 ## [0.2.5] — 2026-09-18
 
 ### Installing
