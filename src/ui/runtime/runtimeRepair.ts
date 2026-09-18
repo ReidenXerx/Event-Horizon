@@ -44,6 +44,27 @@ export type RuntimeRepairOutcome = {
   after: RuntimeFinding[];
 };
 
+/**
+ * What the install preview is allowed to interrupt someone about.
+ *
+ * Two filters, and both matter:
+ *
+ *  • `absent` only. An `unknown` probe is a check that could not run — no
+ *    reg.exe, a Wine prefix answering strangely, a refusal — and that is not
+ *    a reason to download and execute an installer on someone's machine.
+ *  • `recommended` only. The 2013/2012 runtimes are genuine link-by-name
+ *    dependencies for some plugins AND absent on most healthy machines, so
+ *    warning about them before every install is how a warning screen teaches
+ *    people to skip it. They are still detected; they surface in the Doctor,
+ *    where someone has asked the question.
+ */
+export function runtimesToOfferBeforeInstall(
+  findings: readonly RuntimeFinding[],
+  recommended: ReadonlySet<PrerequisiteId>,
+): RuntimeFinding[] {
+  return findings.filter((f) => f.status === "absent" && recommended.has(f.id));
+}
+
 /** Which findings are worth offering to install. */
 export function missingRuntimeIds(
   findings: readonly RuntimeFinding[],

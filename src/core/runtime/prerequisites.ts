@@ -200,6 +200,17 @@ export const PREREQUISITES: readonly Prerequisite[] = [
   },
 ];
 
+/**
+ * The ids the install preview is allowed to warn about before an install.
+ *
+ * Derived from the catalogue rather than re-listed, so adding a runtime and
+ * deciding whether it nags are the same decision in the same place. The rest
+ * are still detected — they surface in the Doctor, where someone has asked.
+ */
+export const RECOMMENDED_RUNTIME_IDS: ReadonlySet<PrerequisiteId> = new Set(
+  PREREQUISITES.filter((p) => p.recommended).map((p) => p.id),
+);
+
 /** What an installer's exit code actually means. */
 export type ExitVerdict =
   | { kind: "installed" }

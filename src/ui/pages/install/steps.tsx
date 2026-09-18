@@ -75,6 +75,8 @@ import {
 } from "../../../core/installer/checkNexusAccount";
 import type { NexusAccount } from "../../../core/installer/checkNexusAccount";
 import { describeRuntimeFindings } from "../../../core/runtime/detectRuntimes";
+import { RECOMMENDED_RUNTIME_IDS } from "../../../core/runtime/prerequisites";
+import { runtimesToOfferBeforeInstall } from "../../runtime/runtimeRepair";
 import {
   ConflictChoice,
   DriverProgress,
@@ -754,9 +756,56 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
     [bundle.environment],
   );
 
+  /**
+   * The absent ones only — and only the RECOMMENDED absent ones.
+   *
+   * The catalogue's `recommended` flag is exactly this decision already made:
+   * the VC++ v14 pair and .NET Framework 4.8 are what xEdit, ENB and
+   * script-extender plugins link against. The 2013/2012 runtimes and the
+   * optional .NET/DirectX entries are real dependencies for SOME binaries and
+   * absent on most healthy machines, so nagging about them before every
+   * install is how a warning screen teaches people to skip it. They live in
+   * the Doctor, where someone has asked.
+   */
+  const missingRuntimes = React.useMemo(
+    () =>
+      runtimesToOfferBeforeInstall(
+        bundle.runtimeFindings ?? [],
+        RECOMMENDED_RUNTIME_IDS,
+      ),
+    [bundle.runtimeFindings],
+  );
+  const [runtimeBusy, setRuntimeBusy] = React.useState<string | undefined>(undefined);
+  const [runtimeFixed, setRuntimeFixed] = React.useState<string | undefined>(undefined);
+
+  const installMissingRuntimes = React.useCallback((): void => {
+    // `useApiOptional` — this screen also renders in the screenshot harness,
+    // where there is no Vortex to install anything with.
+    if (api === undefined) return;
+    void (async (): Promise<void> => {
+      const { repairRuntimes } = await import("../../runtime/runtimeRepair");
+      setRuntimeBusy("Downloading…");
+      try {
+        const outcome = await repairRuntimes({
+          api,
+          ids: missingRuntimes.map((f) => f.id),
+          onStep: (message) => setRuntimeBusy(message),
+        });
+        setRuntimeFixed(outcome.lines.join(" "));
+      } finally {
+        setRuntimeBusy(undefined);
+      }
+    })();
+  }, [api, missingRuntimes]);
+
   const verdict = computeVerdict(
     plan,
-    [...accountLines, ...runtimeLines, ...environment.warnings],
+    [
+      ...accountLines,
+      ...runtimeLines,
+      ...environment.warnings,
+      ...(runtimeFixed !== undefined ? [runtimeFixed] : []),
+    ],
     environment.blockers,
   );
 
@@ -810,6 +859,53 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
           </span>
         </div>
       </Callout>
+
+      {/* ─── THE ONE THING ON THIS SCREEN THE PLAYER CAN FIX RIGHT NOW ───
+          Every other line here describes the collection. This one describes
+          the MACHINE, and unlike the rest it has a button: a missing VC++
+          runtime is the difference between a collection that installs
+          perfectly and then has no working body physics, and one that works.
+
+          Offered, never enforced. A missing runtime does not stop a single
+          mod installing, so refusing the install over it would be inventing a
+          blocker; and a probe that came back `unknown` is excluded entirely —
+          a check that could not run is not a reason to download and execute
+          an installer on someone's machine. */}
+      {missingRuntimes.length > 0 && api !== undefined && (
+        <Callout
+          tone="warning"
+          title={
+            missingRuntimes.length === 1
+              ? "A system runtime this collection's mods need is missing"
+              : `${missingRuntimes.length} system runtimes this collection's mods need are missing`
+          }
+          actions={
+            <Button
+              intent="primary"
+              size="sm"
+              disabled={runtimeBusy !== undefined}
+              onClick={installMissingRuntimes}
+            >
+              {runtimeBusy ?? "Install them now"}
+            </Button>
+          }
+        >
+          <div className="eh-stack eh-stack--sm">
+            <ul className="eh-list">
+              {missingRuntimes.map((r) => (
+                <li key={r.id} className="eh-secondary">
+                  <strong className="eh-strong">{r.name}</strong>
+                  {r.detail !== undefined ? ` — ${r.detail}` : ""}
+                </li>
+              ))}
+            </ul>
+            <span className="eh-note">
+              Downloaded from Microsoft and installed silently, then checked again to see whether it
+              actually helped. Nothing about the collection changes.
+            </span>
+          </div>
+        </Callout>
+      )}
 
       {/* Two groups, not six equal numbers.
           The first three describe what happens if you do nothing but press
