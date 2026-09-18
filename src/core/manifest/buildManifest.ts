@@ -188,6 +188,8 @@ export type BuildManifestInput = {
   vortex: {
     version: string;
     deploymentMethod: VortexDeploymentMethod;
+    /** True when the method above is the required one, not a read one. */
+    deploymentMethodAssumed?: boolean;
     /** Defaults to []. */
     requiredExtensions?: RequiredExtension[];
   };
@@ -436,6 +438,9 @@ export function buildManifest(input: BuildManifestInput): BuildManifestResult {
     vortex: {
       version: input.vortex.version,
       deploymentMethod: input.vortex.deploymentMethod,
+      ...(input.vortex.deploymentMethodAssumed === true
+        ? { deploymentMethodAssumed: true }
+        : {}),
       requiredExtensions: input.vortex.requiredExtensions ?? [],
     },
     mods,

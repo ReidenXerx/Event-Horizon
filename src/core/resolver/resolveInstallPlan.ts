@@ -199,7 +199,7 @@ export function resolveCompatibility(
   const gameVersion = checkGameVersion(manifest, userState, errors, warnings);
   const extensions = checkExtensions(manifest, userState, errors);
   const vortexVersion = checkVortexVersion(manifest, userState, warnings);
-  const deploymentMethod = checkDeploymentMethod(manifest, userState, warnings);
+  const deploymentMethod = checkDeploymentMethod(manifest, userState, warnings, errors);
 
   /**
    * ─── THE AXIS THE VERSION CHECK CANNOT SEE ────────────────────────────
@@ -395,19 +395,63 @@ function checkVortexVersion(
   return { required, installed, status: "warn-mismatch" };
 }
 
+/**
+ * ─── HARDLINK IS A REQUIREMENT, NOT A PREFERENCE ───────────────────────
+ * This used to push one line ending "(Informational.)" and let the install
+ * proceed on any method. It is not informational:
+ *
+ *   • COPY is proven broken for us. Vortex's purge under copy deployment
+ *     rewrites plugins FROM STAGING, which undoes the collection's ESL flags
+ *     — the reason `restore-light-flags` exists in the Doctor at all. A
+ *     collection needs those flags to load past 254 plugins, so the game
+ *     stops starting and nothing in the install reports a problem.
+ *   • SYMLINK is not something Event Horizon supports or tests. Owner
+ *     decision, 2026-09-18: hardlink is the requirement, and an unsupported
+ *     method stops the install rather than producing a collection nobody can
+ *     stand behind.
+ *
+ * An UNKNOWN method still does not block (it never has): a setting we cannot
+ * read is not evidence of a wrong one, and the same fail-open rule governs
+ * every other environment probe here.
+ *
+ * Deliberately an install-time error and NOT an environment check: the
+ * environment report is shared with Play, and a player whose collection is
+ * already deployed must still be able to start their game.
+ */
 function checkDeploymentMethod(
   manifest: EhcollManifest,
   userState: UserSideState,
   warnings: string[],
+  errors: string[],
 ): DeploymentMethodCheck {
   const curator = manifest.vortex.deploymentMethod;
   const user = userState.deploymentMethod;
   if (!user) {
     return { curator, user, status: "unknown" };
   }
+  if (user !== "hardlink") {
+    errors.push(
+      `Vortex is deploying ${userState.gameId} by ${user === "copy" ? "copying" : "symlinking"}, ` +
+        `and Event Horizon installs only with hardlink deployment. ` +
+        (user === "copy"
+          ? "Under copy deployment a purge rewrites plugins from staging, which silently undoes the collection's ESL flags and stops the game loading. "
+          : "Symlink deployment is not supported or tested. ") +
+        `Change it in Vortex: Settings → Mods → Deployment Method → "Hardlink Deployment", then load the collection again.`,
+    );
+    return { curator, user, status: "warn-mismatch" };
+  }
   if (user === curator) {
     return { curator, user, status: "ok" };
   }
+  if (manifest.vortex.deploymentMethodAssumed === true) {
+    // The build could not read the curator's setting and wrote the required
+    // method. Comparing against it would report a difference from a value
+    // nobody observed.
+    return { curator, user, status: "unknown" };
+  }
+  // Both hardlink-capable but the manifest records something else — usually a
+  // collection built before the build recorded the method honestly. Worth
+  // saying, not worth stopping.
   warnings.push(
     `Deployment method differs: collection built with "${curator}", you are using "${user}". (Informational.)`,
   );

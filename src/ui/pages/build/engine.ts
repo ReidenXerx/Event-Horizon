@@ -2339,7 +2339,13 @@ export async function runBuildPipeline(
     },
     vortex: {
       version: resolveVortexVersion(state),
-      deploymentMethod: resolveDeploymentMethod(state, gameId),
+      ...(() => {
+        const dm = resolveDeploymentMethod(state, gameId);
+        return {
+          deploymentMethod: dm.method,
+          ...(dm.assumed ? { deploymentMethodAssumed: true } : {}),
+        };
+      })(),
     },
     pluginsTxtContent,
     pluginLightFlags: capturedFlags.light,
@@ -2958,24 +2964,41 @@ async function resolveGameVersion(
   return "unknown";
 }
 
+/**
+ * What Vortex is actually deploying this game with — and whether we know.
+ *
+ * The default arm used to return "hardlink", which recorded a GUESS as a fact
+ * in every manifest built on a machine whose activator setting could not be
+ * read. The player-side twin of this function
+ * (`core/resolver/userState.ts:resolveDeploymentMethod`) returns `undefined`
+ * there and says why: "we want it to see truth". Two implementations of one
+ * question disagreeing is how a manifest ends up asserting something nobody
+ * checked.
+ *
+ * The written value stays a real enum member, because an older Event Horizon
+ * fails to parse the WHOLE manifest on an enum value it does not know. The
+ * honesty travels beside it in an optional flag that an older client ignores.
+ */
 function resolveDeploymentMethod(
   state: types.IState,
   gameId: string,
-): VortexDeploymentMethod {
+): { method: VortexDeploymentMethod; assumed: boolean } {
   const settings = (state as unknown as {
     settings?: { mods?: { activator?: Record<string, string> } };
   }).settings;
   const raw = settings?.mods?.activator?.[gameId];
   switch (raw) {
     case "hardlink_activator":
-      return "hardlink";
+      return { method: "hardlink", assumed: false };
     case "symlink_activator":
     case "symlink_activator_elevate":
-      return "symlink";
+      return { method: "symlink", assumed: false };
     case "move_activator":
-      return "copy";
+      return { method: "copy", assumed: false };
     default:
-      return "hardlink";
+      // Unreadable, not hardlink. The value is the one the installer requires
+      // anyway; the flag is what stops it being read as an observation.
+      return { method: "hardlink", assumed: true };
   }
 }
 

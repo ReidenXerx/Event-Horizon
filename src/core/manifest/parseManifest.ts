@@ -430,6 +430,11 @@ function validateVortex(
     errors,
   ) as VortexDeploymentMethod | undefined;
 
+  // Optional: absent on every manifest built before it existed, and absent
+  // whenever the build DID read a real answer.
+  const deploymentMethodAssumed =
+    obj.deploymentMethodAssumed === true ? true : undefined;
+
   const requiredExtensions = expectArray(
     obj.requiredExtensions,
     "vortex.requiredExtensions",
@@ -455,7 +460,12 @@ function validateVortex(
     return undefined;
   }
 
-  return { version, deploymentMethod, requiredExtensions: parsedExtensions };
+  return {
+    version,
+    deploymentMethod,
+    ...(deploymentMethodAssumed === true ? { deploymentMethodAssumed: true } : {}),
+    requiredExtensions: parsedExtensions,
+  };
 }
 
 function validateRequiredExtension(

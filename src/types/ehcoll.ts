@@ -219,11 +219,25 @@ export type VortexMetadata = {
   /** Vortex client version the curator used. Warn-only mismatch. */
   version: string;
   /**
-   * Curator's deployment method. Informational only — the user's Vortex
-   * may use a different method; the installer respects whichever is set
-   * on the user side.
+   * Curator's deployment method.
+   *
+   * Since 2026-09-18 the installer REQUIRES hardlink on the player's side, so
+   * this records what the curator's machine was doing rather than deciding
+   * anything. See {@link deploymentMethodAssumed} before comparing it.
    */
   deploymentMethod: VortexDeploymentMethod;
+  /**
+   * True when the build could not read Vortex's activator setting and wrote
+   * the required method rather than a fact.
+   *
+   * The build used to default to "hardlink" silently, which made an unknown
+   * indistinguishable from a real answer and could produce a mismatch line
+   * that was simply invented. Optional, and absent on every manifest built
+   * before this existed — an older Event Horizon ignores unknown fields, so
+   * recording it this way cannot stop an older client reading the package,
+   * which adding an "unknown" enum value would have done.
+   */
+  deploymentMethodAssumed?: boolean;
   /**
    * Other Vortex extensions the install REQUIRES to be present and enabled
    * on the user side (e.g. LOOT). Refuse-to-install on missing.
