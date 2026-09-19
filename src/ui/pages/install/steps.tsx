@@ -1511,6 +1511,34 @@ function ConflictRow(props: {
     }
   };
 
+  /**
+   * ─── A REMEMBERED ANSWER IS STILL AN ANSWER THAT NEEDS CHECKING ──────
+   * `checkPickedFile` ran only from the picker, so the check covered a FRESH
+   * pick and nothing else — while the case it was written for is an UPDATE,
+   * where the answer is pre-filled from the previous revision and nobody
+   * picks anything. The row rendered as `Picked: <path>` with no verdict,
+   * counted toward "All answered", and unblocked Continue untouched.
+   *
+   * That is the same guarantee failing on the one path that most needs it: a
+   * mod hosted off-Nexus gets a new build at the same path, or the author
+   * replaces the download in place, and the remembered answer still points at
+   * it. `usableSources` proves path, size and mtime — never identity.
+   *
+   * Keyed on the path so a re-check happens when the answer changes and not
+   * when the component merely re-renders.
+   */
+  const checkedPath = React.useRef<string | undefined>(undefined);
+  React.useEffect(() => {
+    if (value?.kind !== "use-local-file") {
+      checkedPath.current = undefined;
+      return;
+    }
+    if (checkedPath.current === value.localPath) return;
+    checkedPath.current = value.localPath;
+    void checkPickedFile(value.localPath);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
   const handlePickFile = async (): Promise<void> => {
     if (decision.kind !== "external-prompt-user") return;
     try {
@@ -1520,10 +1548,10 @@ function ConflictRow(props: {
         expectedFilename: decision.expectedFilename,
       });
       if (file !== undefined) {
+        // The effect above runs the check, keyed on the path. Re-picking the
+        // same file does not re-check it, and does not need to: its verdict
+        // is already on screen.
         onChange({ kind: "use-local-file", localPath: file });
-        // Deliberately not a success toast any more: whether this was the
-        // right file is exactly what has not been established yet.
-        void checkPickedFile(file);
       }
     } catch (err) {
       reportError(err, {

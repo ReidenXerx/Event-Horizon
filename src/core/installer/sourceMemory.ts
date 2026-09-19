@@ -174,6 +174,40 @@ export async function usableSources(
   return out;
 }
 
+/**
+ * Forget ONE mod's answer.
+ *
+ * The counterpart to `rememberSource`, and it was missing — which made the
+ * memory write-only per mod. `setConflictChoice` records a `use-local-file`
+ * pick and returns early for every other choice, so a player who picked a
+ * file, was told by the pick-time check that it is NOT the one the collection
+ * was built from, and switched that row to "Skip" left the rejected path
+ * sitting in the store. The next revision pre-filled it, rendered it as an
+ * answered row, and installed the archive they had explicitly refused.
+ *
+ * Never throws: losing a convenience is not worth failing an install for, and
+ * neither is failing to lose one.
+ */
+export async function forgetOneSource(
+  appDataPath: string,
+  packageId: string,
+  compareKey: string,
+): Promise<void> {
+  try {
+    const current = await readSourceMemory(appDataPath, packageId);
+    if (current[compareKey] === undefined) return;
+    delete current[compareKey];
+    await fsp.mkdir(getSourceMemoryDir(appDataPath), { recursive: true });
+    await fsp.writeFile(
+      memoryPath(appDataPath, packageId),
+      JSON.stringify(current, null, 2),
+      "utf8",
+    );
+  } catch {
+    // As above.
+  }
+}
+
 /** Forget one collection's answers entirely. Never throws. */
 export async function forgetSources(
   appDataPath: string,

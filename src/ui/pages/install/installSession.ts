@@ -468,12 +468,34 @@ class InstallSession {
     // completed install, and forget exactly the ones the user would have to
     // give again. A tester with two dozen external mods had to re-supply every
     // one of them to resume.
-    if (choice.kind !== "use-local-file") return;
     const bundle =
       this.state.kind === "decisions" || this.state.kind === "confirm"
         ? this.state.bundle
         : undefined;
     if (bundle === undefined) return;
+
+    /**
+     * ─── AND FORGET IT WHEN THEY CHANGE THEIR MIND ──────────────────────
+     * Any other choice REPLACES a remembered pick, so leaving the old one in
+     * the store made this memory write-only per mod. The path that matters:
+     * the player picks a file, the pick-time check tells them it is not the
+     * one the collection was built from, and they switch the row to Skip. The
+     * rejected path stayed remembered, and the next revision pre-filled it as
+     * an answered row — reversing an explicit refusal, silently.
+     */
+    if (choice.kind !== "use-local-file") {
+      void (async (): Promise<void> => {
+        const { forgetOneSource } = await import(
+          "../../../core/installer/sourceMemory"
+        );
+        await forgetOneSource(
+          bundle.appDataPath,
+          bundle.plan.manifest.package.id,
+          compareKey,
+        );
+      })();
+      return;
+    }
     void (async (): Promise<void> => {
       const { rememberSource } = await import(
         "../../../core/installer/sourceMemory"

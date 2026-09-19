@@ -16,6 +16,7 @@ import * as os from "os";
 import * as path from "path";
 
 import {
+  forgetOneSource,
   forgetSources,
   readSourceMemory,
   rememberSource,
@@ -152,5 +153,43 @@ describe("usableSources", () => {
 
   it("handles an empty memory", async () => {
     expect(await usableSources({}, async () => stamped)).toEqual({});
+  });
+});
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * An answer must be forgettable one mod at a time.
+ *
+ * Without it the memory was write-only per mod: `setConflictChoice` recorded
+ * a `use-local-file` pick and returned early for every other choice. So a
+ * player who picked a file, was told by the pick-time check that it is NOT
+ * the one the collection was built from, and switched that row to Skip left
+ * the rejected path in the store — and the next revision pre-filled it as an
+ * answered row, reversing an explicit refusal.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("forgetting one mod's answer", () => {
+  it("removes just that entry and keeps the others", async () => {
+    await rememberSource(dir, "pkg", "external:aaa", "C:/a.7z");
+    await rememberSource(dir, "pkg", "external:bbb", "C:/b.7z");
+
+    await forgetOneSource(dir, "pkg", "external:aaa");
+
+    const left = await readSourceMemory(dir, "pkg");
+    expect(Object.keys(left)).toEqual(["external:bbb"]);
+  });
+
+  it("is a no-op for a key that was never remembered", async () => {
+    await rememberSource(dir, "pkg", "external:bbb", "C:/b.7z");
+    await forgetOneSource(dir, "pkg", "external:nope");
+    expect(Object.keys(await readSourceMemory(dir, "pkg"))).toEqual([
+      "external:bbb",
+    ]);
+  });
+
+  it("never throws when there is nothing there at all", async () => {
+    await expect(
+      forgetOneSource(dir, "no-such-package", "external:aaa"),
+    ).resolves.toBeUndefined();
   });
 });
