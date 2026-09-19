@@ -435,3 +435,93 @@ describe("a same-version re-run from a different profile", () => {
     expect(target).toMatchObject({ profileId: "vanilla-profile" });
   });
 });
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * The same fork, on the one path that had none of the protection: an UPDATE.
+ *
+ * An update is the only case where a receipt EXISTS and the target is still
+ * fresh-profile — a new release gets a new profile so the working one stays
+ * switchable. `interruptedProfile` was consulted only in the receipt-missing
+ * branch, so the resume the caller had already computed was discarded and
+ * every retry of a failed update forked another profile.
+ *
+ * It is safe to honour precisely because `judgeResumeCandidate` has already
+ * refused any attempt at a DIFFERENT release, which the last test here pins.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("a failed UPDATE resumes its profile instead of forking", () => {
+  const receiptForOlderRelease = {
+    packageId: PACKAGE_ID,
+    packageVersion: "1.0.9",
+    vortexProfileId: "some-older-profile",
+    vortexProfileName: "Meridia Panties (Event Horizon v1.0.9)",
+  } as unknown as InstallReceipt;
+
+  it("continues the profile the interrupted attempt at THIS release filled", () => {
+    const resumable = resumableProfileFromAttempts(
+      stateWith(skyrimProfiles),
+      "skyrimse",
+      PACKAGE_ID,
+      VERSION,
+      [attempt()],
+    );
+    expect(resumable.kind).toBe("resume");
+
+    const target = pickInstallTarget(
+      manifest,
+      receiptForOlderRelease,
+      "active-profile",
+      "Active",
+      resumable,
+      true,
+    );
+
+    expect(target.kind).toBe("fresh-profile");
+    // The whole point: the run lands in the half-filled profile.
+    expect(target).toMatchObject({
+      resumeProfileId: PROFILE_ID,
+      resumeProfileName: "Meridia Panties (Event Horizon v1.0.10)",
+    });
+    expect(target).not.toHaveProperty("resumeRefusedWhy");
+  });
+
+  it("still forks when the interrupted attempt was a DIFFERENT release", () => {
+    // The guard that makes the case above safe. An attempt at 1.0.9 must not
+    // be resumed while installing 1.0.10 — its profile holds another release.
+    const resumable = resumableProfileFromAttempts(
+      stateWith(skyrimProfiles),
+      "skyrimse",
+      PACKAGE_ID,
+      VERSION,
+      [attempt({ packageVersion: "1.0.9" })],
+    );
+    expect(resumable.kind).toBe("refused");
+
+    const target = pickInstallTarget(
+      manifest,
+      receiptForOlderRelease,
+      "active-profile",
+      "Active",
+      resumable,
+      true,
+    );
+
+    expect(target.kind).toBe("fresh-profile");
+    expect(target).not.toHaveProperty("resumeProfileId");
+    // The attempt's own reason, not the receipt's version change.
+    expect(target).toMatchObject({ resumeRefusedWhy: "version-changed" });
+  });
+
+  it("reports the receipt's version change only when nobody looked", () => {
+    const target = pickInstallTarget(
+      manifest,
+      receiptForOlderRelease,
+      "active-profile",
+      "Active",
+      undefined,
+      true,
+    );
+    expect(target).toMatchObject({ resumeRefusedWhy: "version-changed" });
+  });
+});

@@ -205,10 +205,47 @@ export function pickInstallTarget(
      * into it.
      */
     if (receipt.packageVersion !== manifest.package.version) {
+      /**
+       * ─── THE RECEIPT'S VERSION SAYS NOTHING ABOUT THE ATTEMPT'S ───────
+       * A new release gets a new profile — and it must still CONTINUE the
+       * profile an interrupted attempt at THIS release already filled.
+       *
+       * It did not, and an UPDATE is the only place that could go wrong:
+       * `interruptedProfile` was documented and implemented as "consulted
+       * only in the receipt-missing branch", while an update is the one case
+       * with a receipt AND a fresh target. So the resume the caller had
+       * already computed was thrown away, and every retry of a failed update
+       * forked another profile — the exact five-profiles bug
+       * {@link InstallIntoFreshProfile.resumeProfileId} was written for,
+       * unreachable from the only path that can reach it. Three failed
+       * attempts at a 900-mod collection left three identically named
+       * profiles and no way to tell which one held the mods.
+       *
+       * Safe because the candidate is ALREADY version-matched:
+       * `judgeResumeCandidate` refuses an attempt whose own `packageVersion`
+       * differs from the one being installed now ("a different release is
+       * not a resume"), so a resume reached here is always a resume of this
+       * release. `version-changed` describes the RECEIPT, which is not the
+       * thing being resumed — and reporting it as the reason no resume
+       * happened was true of the receipt and false of the attempt.
+       */
       return {
         kind: "fresh-profile",
         suggestedProfileName: buildSuggestedProfileName(manifest),
-        resumeRefusedWhy: "version-changed",
+        ...(interruptedProfile?.kind === "resume"
+          ? {
+              resumeProfileId: interruptedProfile.id,
+              resumeProfileName: interruptedProfile.name,
+            }
+          : {
+              // The attempt's own reason when there is one; the receipt's
+              // version change only when nobody looked for an attempt.
+              resumeRefusedWhy: interruptedProfile?.why ?? "version-changed",
+              ...(interruptedProfile?.kind === "refused" &&
+              interruptedProfile.attemptProfileId !== undefined
+                ? { resumeRefusedProfileId: interruptedProfile.attemptProfileId }
+                : {}),
+            }),
       };
     }
     /**
