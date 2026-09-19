@@ -32,6 +32,7 @@
 import type { InstallReceiptMod } from "../../types/installLedger";
 import type { EhcollMod, EhcollStagingFile } from "../../types/ehcoll";
 import { ehLog } from "../logging/ehLog";
+import { computeStagingPathSetHash } from "../manifest/stagingSetHash";
 
 export type DriftCandidate = {
   compareKey: string;
@@ -46,7 +47,7 @@ export type DriftCandidate = {
 /**
  * Which mods are worth checking for drift.
  *
- * Three conditions, and each excludes a case where a mismatch would mean
+ * Four conditions, and each excludes a case where a mismatch would mean
  * something other than drift:
  *
  *  1. The receipt recorded a hash. Absent means the previous install could not
@@ -56,6 +57,10 @@ export type DriftCandidate = {
  *
  *  2. The mod is STILL IN the new manifest. One that was dropped between
  *     versions is being removed, not drifting.
+ *
+ *  4. The recorded hash covered the SAME FILE LIST this version records — see
+ *     the note inside. Conditions 3 and 4 are not the same question: the key
+ *     is about the ARCHIVE, this is about which of its files are recorded.
  *
  *  3. Its identity is UNCHANGED — same `compareKey`, which encodes
  *     `nexus:modId:fileId` or `external:<sha256>`. A mod the curator UPDATED
@@ -71,11 +76,47 @@ export function selectDriftCandidates(args: {
   manifestMods: readonly EhcollMod[];
 }): DriftCandidate[] {
   const stillPresent = new Set(args.manifestMods.map((m) => m.compareKey));
+  /**
+   * (4) The recorded hash covered the SAME FILE LIST this version records.
+   *
+   * Condition 3 reasons that an unchanged `compareKey` means an unchanged
+   * list. It does not: the key encodes the ARCHIVE, so a curator who narrows
+   * or widens which of that archive's files the collection records leaves it
+   * untouched while the set changes underneath. The two sides then digest
+   * different lists and differ by construction — the loud, confident,
+   * completely wrong report that a folder nobody touched was edited, with
+   * advice to reinstall it.
+   *
+   * Only decidable when the receipt says what its hash covered. Receipts
+   * written before `stagingSetPaths` existed carry no answer, and unknown
+   * leaves the candidate in: that is the behaviour those receipts already
+   * had, and dropping them all would silently retire drift detection for
+   * every player who has not reinstalled since.
+   */
+  const pathSetByKey = new Map<string, string | undefined>(
+    args.manifestMods.map((m) => [
+      m.compareKey,
+      // Optional access deliberately: this whole module is a diagnostic that
+      // must never fail an install, and a manifest entry with no `state` is
+      // simply one with nothing recorded to compare.
+      computeStagingPathSetHash(m.state?.stagingFiles ?? []),
+    ]),
+  );
 
   const out: DriftCandidate[] = [];
+  let listChanged = 0;
   for (const mod of args.receiptMods) {
     if (mod.stagingSetHash === undefined) continue; // (1)
     if (!stillPresent.has(mod.compareKey)) continue; // (2) and (3)
+    const nowPaths = pathSetByKey.get(mod.compareKey);
+    if (
+      mod.stagingSetPaths !== undefined &&
+      nowPaths !== undefined &&
+      mod.stagingSetPaths !== nowPaths
+    ) {
+      listChanged += 1;
+      continue; // (4)
+    }
     out.push({
       compareKey: mod.compareKey,
       name: mod.name,
@@ -87,6 +128,9 @@ export function selectDriftCandidates(args: {
     receiptMods: args.receiptMods.length,
     manifestMods: args.manifestMods.length,
     candidates: out.length,
+    // Not drift and not health: the collection now records a different set of
+    // files for these mods, so the two fingerprints are not comparable.
+    listChanged,
   });
   return out;
 }
@@ -130,9 +174,9 @@ export async function findDriftedMods(args: {
    * exactly the recorded paths makes both sides describe the same set — and
    * costs less than the walk it replaces.
    *
-   * Safe for a drift candidate specifically: they were selected for having an
-   * UNCHANGED compareKey, so the current manifest's list for that mod is the
-   * same list the previous install recorded.
+   * Safe for a drift candidate specifically: `selectDriftCandidates` drops any
+   * mod whose recorded path list differs from this version's (condition 4),
+   * so both sides describe one set.
    */
   manifestFilesFor: (compareKey: string) => readonly EhcollStagingFile[] | undefined;
   /** Where the user's hash cache lives. Omit to hash everything afresh. */

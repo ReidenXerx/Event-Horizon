@@ -149,7 +149,10 @@ import * as path from "path";
 import { selectors } from "@nexusmods/vortex-api";
 import { readReceipt } from "../installLedger";
 import { nexusCollectionOfDownload } from "../nexus/collectionRevision";
-import { computeStagingSetHash } from "../manifest/stagingSetHash";
+import {
+  computeStagingPathSetHash,
+  computeStagingSetHash,
+} from "../manifest/stagingSetHash";
 import type { EhcollStagingFile } from "../../types/ehcoll";
 import {
   checkArchiveIdentity,
@@ -389,7 +392,7 @@ function stagingSetHashFor(
   mod: InstalledModReportEntry,
   verifiedOkKeys: ReadonlySet<string>,
   expectedFilesByCompareKey: ReadonlyMap<string, EhcollStagingFile[]>,
-): { stagingSetHash?: string } {
+): { stagingSetHash?: string; stagingSetPaths?: string } {
   if (!verifiedOkKeys.has(mod.compareKey)) return {};
   const files = expectedFilesByCompareKey.get(mod.compareKey);
   if (files === undefined || files.length === 0) return {};
@@ -398,7 +401,22 @@ function stagingSetHashFor(
   // reference, which is the correct outcome: there is nothing to build one
   // from.
   const hash = computeStagingSetHash(files);
-  return hash === undefined ? {} : { stagingSetHash: hash };
+  if (hash === undefined) return {};
+  /**
+   * WHICH files the hash was taken over, recorded beside it.
+   *
+   * The drift check re-derives its side from the CURRENT manifest, and a
+   * curator can narrow or widen a mod's recorded file list without changing
+   * its `compareKey` — the key encodes the archive, not the selection. The
+   * two sides then digest different sets and differ by construction, which
+   * reads as "something edited this folder" about a folder nobody touched.
+   * Kept together so that comparison can be made first.
+   */
+  const paths = computeStagingPathSetHash(files);
+  return {
+    stagingSetHash: hash,
+    ...(paths !== undefined ? { stagingSetPaths: paths } : {}),
+  };
 }
 
 /**
@@ -1266,6 +1284,37 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     if (prefetchEntries.length > 0) {
       bundledPool.prime(prefetchEntries);
     }
+
+    /**
+     * ─── MEASURE DRIFT BEFORE ANYTHING CAN ERASE IT ─────────────────────
+     * This used to run at the very end, just before the receipt, justified
+     * by: "these mods are resolved as already-installed and are therefore
+     * NOT touched by this run: the drift survives it."
+     *
+     * That premise is false, and false for exactly the mods drift detection
+     * is about. Three passes between there and here rewrite an
+     * already-installed mod's folder: the MIRROR restores the curator's file
+     * set over anything the player changed, the REPAIR uninstalls and
+     * reinstalls a mod that failed verification, and phase 4 below removes
+     * mods outright. All three are gated on `ownedByUs`, which is seeded
+     * from the PREVIOUS RECEIPT precisely so revision N's mods count as ours.
+     *
+     * So the detector hashed a folder the mirror had already corrected, got
+     * back the expected hash, and reported nothing — while
+     * `describeStagingDrift` exists to say "reinstall or keep, Event Horizon
+     * has changed nothing". It could also lie the other way: a mirrored mod
+     * whose bytes the curator changed in this revision is rewritten here and
+     * then reported as "something edited it — you, a tool, or the game
+     * itself", seconds after we edited it.
+     *
+     * Measured here, the answer is about the folder as the player left it.
+     * It is still REPORTED at the end, where it is the player's to act on.
+     */
+    const driftNoticeEarly = await detectDrift({
+      ctx,
+      gameId: plan.manifest.game.id,
+      reportProgress,
+    });
 
     // ── 4. remove replaced + orphan-uninstalled mods ────────────────
     // Skipped silently when nothing to do (fresh-profile mode produces
@@ -4303,15 +4352,11 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     // supposed to differ, and reporting drift on it would fire for every
     // upgraded mod in the collection.
     //
-    // Placed after installation rather than before it because these mods are
-    // resolved as already-installed and are therefore NOT touched by this
-    // run: the drift survives it, so telling the user afterwards is telling
-    // them about something still true.
-    const driftNotice = await detectDrift({
-      ctx,
-      gameId: plan.manifest.game.id,
-      reportProgress,
-    });
+    // MEASURED before phase 4, and this is the only place it is reported.
+    // Measuring here instead read the folder after the mirror, the repair and
+    // the removals had each had a chance to rewrite it — see the comment at
+    // the measurement for the two opposite ways that was wrong.
+    const driftNotice = driftNoticeEarly;
 
     // Mods installed, deployed, rules and order applied — but if anything
     // failed we did NOT reproduce the curator's state, so no receipt.

@@ -626,6 +626,29 @@ export type InstallReceiptMod = {
   stagingSetHash?: string;
 
   /**
+   * WHICH files `stagingSetHash` was taken over — a digest of the sorted path
+   * list alone, with no content in it.
+   *
+   * The drift check compares the recorded hash against a fresh one derived
+   * from the CURRENT manifest's list for the same mod, on the reasoning that
+   * an unchanged `compareKey` implies an unchanged list. It does not:
+   * `compareKey` encodes the ARCHIVE (`nexus:modId:fileId` or
+   * `external:<sha256>`), so a curator who narrows or widens which of that
+   * archive's files the collection records leaves it untouched while the set
+   * changes underneath. Both sides then digest different lists, differ by
+   * construction, and the player is told a folder nobody touched was edited.
+   *
+   * With this, that comparison can be made first: same paths and a different
+   * content hash is drift; different paths means the question does not apply.
+   *
+   * Optional, and absent means UNKNOWN exactly as above — receipts written
+   * before it existed have a `stagingSetHash` and no way to say what it
+   * covered, so drift on them stays as trustworthy (and as approximate) as it
+   * was.
+   */
+  stagingSetPaths?: string;
+
+  /**
    * Set when this mod was installed from a hand-supplied archive that is NOT
    * the one the collection was built from, with both hashes.
    *

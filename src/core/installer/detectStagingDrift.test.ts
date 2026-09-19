@@ -227,3 +227,64 @@ describe("what the user is told", () => {
     expect(lines).not.toMatch(/1 mods/);
   });
 });
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * Condition 4: the recorded hash and the fresh one must cover the SAME
+ * FILE LIST, or they differ for a reason that is not drift.
+ *
+ * Condition 3 reasons that an unchanged `compareKey` implies an unchanged
+ * list. It does not — the key encodes the archive, so a curator who narrows
+ * which of that archive's files the collection records leaves it untouched
+ * while the recorded set changes underneath. Both sides then digest different
+ * lists, and the player is told a folder nobody touched was edited, with
+ * advice to reinstall it. That is the failure that makes people stop reading
+ * warnings, which this file's own header names.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("a changed FILE LIST is not drift", () => {
+  const file = (path: string) => ({ path, size: 1, sha256: "b".repeat(64) });
+  const modWithFiles = (compareKey: string, paths: string[]): EhcollMod =>
+    ({
+      compareKey,
+      name: `Mod ${compareKey}`,
+      state: { stagingFiles: paths.map(file) },
+    }) as unknown as EhcollMod;
+
+  const pathsHashOf = async (paths: string[]): Promise<string> => {
+    const { computeStagingPathSetHash } = await import(
+      "../manifest/stagingSetHash"
+    );
+    return computeStagingPathSetHash(paths.map(file))!;
+  };
+
+  it("drops a mod whose recorded paths changed since the receipt", async () => {
+    const before = await pathsHashOf(["Data/a.esp", "Data/b.esp"]);
+    const out = selectDriftCandidates({
+      receiptMods: [receiptMod("nexus:1:2", { stagingSetPaths: before })],
+      // The curator now records only one of the two files.
+      manifestMods: [modWithFiles("nexus:1:2", ["Data/a.esp"])],
+    });
+    expect(out).toEqual([]);
+  });
+
+  it("keeps a mod whose recorded paths are identical", async () => {
+    const same = await pathsHashOf(["Data/a.esp", "Data/b.esp"]);
+    const out = selectDriftCandidates({
+      receiptMods: [receiptMod("nexus:1:2", { stagingSetPaths: same })],
+      manifestMods: [modWithFiles("nexus:1:2", ["Data/b.esp", "Data/a.esp"])],
+    });
+    // Order must not matter — the digest sorts.
+    expect(out).toHaveLength(1);
+  });
+
+  it("keeps a mod from a receipt written before the field existed", () => {
+    // Unknown is not "changed". Dropping these would silently retire drift
+    // detection for every player who has not reinstalled since.
+    const out = selectDriftCandidates({
+      receiptMods: [receiptMod("nexus:1:2")],
+      manifestMods: [modWithFiles("nexus:1:2", ["Data/a.esp"])],
+    });
+    expect(out).toHaveLength(1);
+  });
+});

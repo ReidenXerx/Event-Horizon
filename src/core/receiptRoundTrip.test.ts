@@ -154,6 +154,43 @@ describe("install receipt round-trip", () => {
     expect("stagingSetHash" in out.mods[0]).toBe(false);
   });
 
+  it("keeps stagingSetPaths — WHICH files that hash covered", () => {
+    // Without it the drift check cannot tell "the folder changed" from "the
+    // collection now records a different set of files for this mod", and
+    // reports the second as the first: a loud, confident warning about a
+    // folder nobody touched, with advice to reinstall it.
+    const hash = "a".repeat(64);
+    const paths = "c".repeat(64);
+    const mods = [
+      {
+        vortexModId: "mod-1",
+        compareKey: "nexus:1:2",
+        source: "nexus",
+        name: "A Mod",
+        installedAt: "1970-01-01T00:00:00.000Z",
+        stagingSetHash: hash,
+        stagingSetPaths: paths,
+      },
+    ];
+    const out = throughDisk({ ...base(), mods } as unknown as InstallReceipt);
+    expect(out.mods[0].stagingSetPaths).toBe(paths);
+  });
+
+  it("keeps an absent stagingSetPaths absent — unknown, not changed", () => {
+    const mods = [
+      {
+        vortexModId: "mod-1",
+        compareKey: "nexus:1:2",
+        source: "nexus",
+        name: "A Mod",
+        installedAt: "1970-01-01T00:00:00.000Z",
+        stagingSetHash: "a".repeat(64),
+      },
+    ];
+    const out = throughDisk({ ...base(), mods } as unknown as InstallReceipt);
+    expect("stagingSetPaths" in out.mods[0]).toBe(false);
+  });
+
   it("rejects a stagingSetHash that is not a sha256", () => {
     // It is compared for equality against a freshly computed hash. A
     // truncated or uppercase value would never match and would report drift

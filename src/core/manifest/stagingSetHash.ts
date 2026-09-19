@@ -119,3 +119,47 @@ export function computeStagingSetHash(
   }
   return hasher.digest("hex");
 }
+
+/**
+ * The same set, reduced to WHICH FILES it names — not what is in them.
+ *
+ * ─── WHY A SECOND DIGEST EXISTS ─────────────────────────────────────────
+ * `computeStagingSetHash` is both sides of a comparison across TIME: the
+ * receipt records one for a mod at revision N, and drift detection re-hashes
+ * that folder later. That only means anything while both sides describe the
+ * same set of files — and there is a case where they do not.
+ *
+ * Drift candidates are chosen for having an UNCHANGED `compareKey`, and the
+ * comment there reasons that the new manifest's list for such a mod is
+ * therefore the same list the previous install recorded. `compareKey` encodes
+ * the ARCHIVE (`nexus:modId:fileId` or `external:<sha256>`), so it is
+ * unchanged whenever the archive is — including when the curator narrows or
+ * widens which of that archive's files the collection records. The recorded
+ * set changes while the identity does not.
+ *
+ * Both sides then digest different file lists, the hashes differ by
+ * construction, and the player is told that something edited a folder nobody
+ * touched — with the advice to reinstall it.
+ *
+ * Comparing this digest first separates the two: same paths and a different
+ * content hash is drift; different paths means the question does not apply,
+ * and unknown must not be reported as changed (the same rule that keeps a mod
+ * with no recorded hash out of the candidate list).
+ *
+ * Volatile files are excluded and separators normalised exactly as above, for
+ * the same reasons — the two digests have to agree about which files exist.
+ */
+export function computeStagingPathSetHash(
+  files: readonly EhcollStagingFile[],
+): string | undefined {
+  const stable = files.filter((f) => !isVolatileFile(f.path));
+  if (stable.length === 0) return undefined;
+
+  const sorted = stable
+    .map((f) => toPosix(f.path))
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+
+  const hasher = crypto.createHash("sha256");
+  for (const key of sorted) hasher.update(`${key}\n`);
+  return hasher.digest("hex");
+}

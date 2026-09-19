@@ -638,6 +638,26 @@ function validateModEntries(
       );
     }
 
+    // Which files that hash covered. Same shape, same optionality, and the
+    // same meaning for absent: unknown. A receipt from before this existed
+    // has a hash and no record of its file list, which is exactly the state
+    // the drift check has always been in.
+    const stagingSetPaths =
+      entry.stagingSetPaths === undefined
+        ? undefined
+        : expectString(
+            entry,
+            "stagingSetPaths",
+            `${where}.stagingSetPaths`,
+            localErrs,
+          );
+    if (stagingSetPaths !== undefined && !/^[0-9a-f]{64}$/.test(stagingSetPaths)) {
+      localErrs.push(
+        `${where}.stagingSetPaths must be 64 lowercase hex characters. ` +
+          `Got ${JSON.stringify(stagingSetPaths)}.`,
+      );
+    }
+
     if (localErrs.length > 0) {
       errors.push(...localErrs);
       return;
@@ -650,6 +670,7 @@ function validateModEntries(
       name: name as string,
       installedAt: installedAt as string,
       ...(stagingSetHash !== undefined ? { stagingSetHash } : {}),
+      ...(stagingSetPaths !== undefined ? { stagingSetPaths } : {}),
       // Only the two known values are carried through. Anything else — a
       // future value, a corrupted field — reads as ABSENT, which callers must
       // treat as "not proven ours" (NS-2). Never coerce it to "installed".
