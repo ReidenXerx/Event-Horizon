@@ -5,6 +5,8 @@
  * added and one removed", and reporting it that way would make a routine
  * version bump look like the curator had swapped a mod out.
  */
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -13,6 +15,7 @@ import {
   isUnchanged,
   summarizeBuiltMods,
 } from "./collectionDiff";
+import { scopeCollectionMods } from "../manifest/collectionScope";
 import type { AuditorMod } from "../getModsListForProfile";
 import type { BuiltModSummary } from "./collectionDiff";
 
@@ -396,5 +399,73 @@ describe("the name bridge picks a candidate it can actually bridge to", () => {
     expect(diff.added).toHaveLength(1);
     expect(diff.removed).toHaveLength(1);
     expect(diff.approximate).toBe(0);
+  });
+});
+
+/**
+ * Disabling a mod is how a curator takes it OUT of the collection — the
+ * workflow the owner named: "its unhandy that i need only remove them for
+ * exclude from collection".
+ *
+ * `scopeCollectionMods` has always said so ("a profile IS its set of enabled
+ * mods"), and the build form's own diff has always compared against its
+ * output. The dashboard did not: it handed `diffCollectionAgainstProfile`
+ * every mod the profile tracks, so a disabled mod matched its shipped entry
+ * and came back as `toggled` — "switched off", phrased as something wanting
+ * the curator's attention — while the build treated the same profile as
+ * having one mod fewer. Two answers, one profile, one screen apart.
+ */
+describe("a disabled mod is simply not in the collection", () => {
+  it("reads as REMOVED once the profile is scoped, not as toggled", () => {
+    const profile = [
+      nexus("Kept", 7, 100),
+      nexus("Switched Off", 8, 200, { enabled: false }),
+    ];
+    const diff = diffCollectionAgainstProfile({
+      built: [
+        builtMod("nexus:7:100", "Kept"),
+        builtMod("nexus:8:200", "Switched Off"),
+      ],
+      current: scopeCollectionMods(profile).included,
+    });
+    expect(diff.removed.map((r) => r.name)).toEqual(["Switched Off"]);
+    expect(diff.toggled).toEqual([]);
+    expect(diff.unchanged).toBe(1);
+  });
+
+  it("is what the UNSCOPED call got wrong — kept as the contrast", () => {
+    // The old dashboard behaviour, pinned so the difference stays visible.
+    const diff = diffCollectionAgainstProfile({
+      built: [builtMod("nexus:8:200", "Switched Off")],
+      current: [nexus("Switched Off", 8, 200, { enabled: false })],
+    });
+    expect(diff.toggled).toEqual([{ name: "Switched Off", nowEnabled: false }]);
+    expect(diff.removed).toEqual([]);
+  });
+});
+
+describe("the dashboard scopes the profile before diffing it", () => {
+  /**
+   * A source check rather than a render: the defect was one argument at one
+   * call site, and nothing else in the dashboard's diff can go wrong in a way
+   * a mounted component would show but this would not.
+   */
+  const src = () =>
+    readFileSync(
+      new URL("../../ui/pages/build/BuildDashboard.tsx", import.meta.url),
+      "utf8",
+    );
+
+  it("passes scopeCollectionMods(...).included as `current`", () => {
+    const body = src();
+    const at = body.indexOf("diffCollectionAgainstProfile({");
+    expect(at).toBeGreaterThan(-1);
+    expect(body.slice(at, at + 300)).toContain("scopeCollectionMods(");
+  });
+
+  it("has no unscoped getModsForProfile left in that call", () => {
+    expect(src()).not.toContain(
+      "current: getModsForProfile(state, gameId, profileId),",
+    );
   });
 });

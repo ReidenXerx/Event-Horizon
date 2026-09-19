@@ -1297,9 +1297,24 @@ function PublishedDetailsPanel(props: {
       if (typeof gameId !== "string" || gameId === "") return undefined;
       const profileId = getActiveProfileIdFromState(state, gameId);
       if (profileId === undefined) return undefined;
+      /**
+       * ─── SCOPED, LIKE THE BUILD ITSELF ────────────────────────────────
+       * A collection contains a profile's ENABLED mods — `scopeCollectionMods`
+       * decides that, and the build form's own diff already compares against
+       * its output. This one compared against every mod the profile tracks,
+       * so the two views disagreed about the same profile: switching a mod
+       * off to drop it from the collection showed here as "switched off", a
+       * change apparently needing attention, while the build correctly
+       * treated it as gone.
+       *
+       * The curator's workflow is the point — disabling a mod IS how you
+       * exclude it, and nothing should suggest otherwise or ask them to
+       * uninstall it to make the message go away.
+       */
       return diffCollectionAgainstProfile({
         built: shippedMods,
-        current: getModsForProfile(state, gameId, profileId),
+        current: scopeCollectionMods(getModsForProfile(state, gameId, profileId))
+          .included,
       });
     } catch {
       // A diff that cannot be computed is simply not shown. It is context for
