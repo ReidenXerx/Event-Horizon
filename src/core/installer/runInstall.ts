@@ -198,9 +198,12 @@ import {
   type ExistingRule,
 } from "./applyModRules";
 import {
+  applyIniTweakRemovals,
   applyIniTweaks,
+  describeIniTweakRemovals,
   describeIniTweaks,
   emptyIniTweakApplication,
+  planIniTweakRemovals,
 } from "./applyIniTweaks";
 import {
   comparePluginOrder,
@@ -2895,8 +2898,52 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     const iniTweakApplication = applyIniTweaks({
       api,
       gameId: plan.manifest.game.id,
-      installed: modIdByCompareKey,
+      /**
+       * ─── INSTALLED ONLY, NOT CARRIED ────────────────────────────────
+       * `modIdByCompareKey` includes CARRIED mods — the player's own copy,
+       * kept because they answered "keep mine" to a divergence. Ticking a
+       * curator's INI tweak on one of those is a write into a mod Event
+       * Horizon did not install (NS-2), and it does not wash out: Vortex
+       * stores `enabledINITweaks` on the MOD, not per profile, so it follows
+       * their mod into every other profile of that game and outlives
+       * uninstalling the collection.
+       *
+       * Keep-existing is overwhelmingly an UPDATE event, which is why this
+       * survived a first-install-shaped review. `applyModTypeChanges` above
+       * already restricts itself the same way; this now matches it, and a
+       * tweak with no installed mod to tick lands in `skipped`, which exists
+       * to make a missing tweak explainable rather than mysterious.
+       */
+      installed: new Map(
+        installedMods.map((m) => [m.compareKey, m.vortexModId] as const),
+      ),
       manifestMods: plan.manifest.mods,
+    });
+
+    /**
+     * ─── AND UNDO THE ONES THIS VERSION NO LONGER ASKS FOR ──────────────
+     * Applying tweaks is additive: a collection must never untick something
+     * the user enabled on their own mods. What made unticking OUR OWN ticks
+     * unsafe was not knowing whose they were — and the receipt records that
+     * now, so exactly the pairs we ticked, and that this manifest has
+     * dropped, are switched back off. NS-2 is intact: we reverse our own
+     * writes and nothing else.
+     *
+     * Without it a performance preset the curator shipped once and dropped
+     * in the next revision stays merged into the player's INI at every
+     * deploy, for good, with no file in the mod list and no plugin count to
+     * show for it.
+     */
+    const iniTweaksTurnedOff = applyIniTweakRemovals({
+      api,
+      gameId: plan.manifest.game.id,
+      removals: planIniTweakRemovals({
+        previouslyEnabled: previousReceipt?.iniTweaks ?? [],
+        manifestMods: plan.manifest.mods,
+        installed: new Map(
+          installedMods.map((m) => [m.compareKey, m.vortexModId] as const),
+        ),
+      }),
     });
 
     // ── 6a. the user's own rules go first ───────────────────────────
@@ -4914,6 +4961,9 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           : {}),
         ...(driftNotice !== undefined ? { stagingDriftNotice: driftNotice } : {}),
       ...(droppedModNotice.length > 0 ? { droppedModNotice } : {}),
+      ...(describeIniTweakRemovals(iniTweaksTurnedOff).length > 0
+        ? { iniTweakRemovedNotice: describeIniTweakRemovals(iniTweaksTurnedOff) }
+        : {}),
         ...(externalNotices.length > 0
           ? { externalArchiveNotice: externalNotices }
           : {}),
@@ -4939,6 +4989,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       failedMods: failedForReceipt,
       nexusCollection: await nexusRevisionOfPackageFile(ctx),
       suppliedArchiveMismatches,
+      iniTweaks: iniTweakApplication.enabledKeys,
     });
 
     let receiptPath: string;
@@ -5078,6 +5129,9 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         : {}),
       ...(driftNotice !== undefined ? { stagingDriftNotice: driftNotice } : {}),
       ...(droppedModNotice.length > 0 ? { droppedModNotice } : {}),
+      ...(describeIniTweakRemovals(iniTweaksTurnedOff).length > 0
+        ? { iniTweakRemovedNotice: describeIniTweakRemovals(iniTweaksTurnedOff) }
+        : {}),
       ...(curatorReports.length > 0 ? { curatorReports } : {}),
       ...(finishingSkipped.length > 0
         ? {
@@ -6439,6 +6493,16 @@ function buildReceipt(args: {
     string,
     { expected: string; actual: string }
   >;
+  /**
+   * INI tweaks this run switched on, as (compareKey, tweak).
+   *
+   * Recorded so the NEXT revision can switch off exactly the ones it no
+   * longer asks for. Until this was carried, the only consumer of the tweak
+   * result was an on-screen notice, so nothing outlived the run and "we
+   * ticked this" could never be known again — which is what made unticking
+   * unsafe and left dropped tweaks on forever.
+   */
+  iniTweaks?: readonly { compareKey: string; tweak: string }[];
 }): InstallReceipt {
   const {
     ctx,
@@ -6591,6 +6655,13 @@ function buildReceipt(args: {
     // Absent on a complete run, so its presence IS the partial signal.
     ...(failedMods.length > 0 ? { failedMods: [...failedMods] } : {}),
     ...(nexusCollection !== undefined ? { nexusCollection } : {}),
+    /**
+     * What we ticked, so the next revision can untick what it drops.
+     * Absent when this collection ships no tweaks, which is most of them.
+     */
+    ...((args.iniTweaks?.length ?? 0) > 0
+      ? { iniTweaks: [...args.iniTweaks!] }
+      : {}),
     // What Play checks the game against before starting it; see InstallReceipt.gameVersion.
     ...(manifest.game.version.trim() !== "" && manifest.game.version !== "unknown"
       ? { gameVersion: { required: manifest.game.version, policy: manifest.game.versionPolicy } }

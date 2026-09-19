@@ -236,6 +236,26 @@ export type InstallReceipt = {
    * update check, which is the owner's decision (2026-09-16), not a gap.
    */
   nexusCollection?: InstallReceiptNexusCollection;
+
+  /**
+   * INI tweaks THIS collection switched on, as (compareKey, tweak file).
+   *
+   * Recorded so a later revision can switch them back off. Applying tweaks is
+   * additive by design — a collection must never untick something the user
+   * enabled on their own mods — and the only thing that made unticking unsafe
+   * was not knowing whose tick it was. This is that record, and nothing
+   * outside it is ever reversed (NS-2).
+   *
+   * It matters because an INI tweak is the most invisible thing a collection
+   * ships: no file in the mod list, no plugin count, just a game that behaves
+   * differently. A curator who drops a performance preset between revisions
+   * would otherwise leave it merged into the player's INI at every deploy,
+   * for good.
+   *
+   * Absent on receipts written before this existed, and absent means unknown —
+   * nothing is unticked on the strength of it.
+   */
+  iniTweaks?: { compareKey: string; tweak: string }[];
   /**
    * The game version this release was built for, and how strictly it holds.
    *

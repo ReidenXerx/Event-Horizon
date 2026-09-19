@@ -154,6 +154,37 @@ describe("install receipt round-trip", () => {
     expect("stagingSetHash" in out.mods[0]).toBe(false);
   });
 
+  it("keeps iniTweaks — the record that makes unticking safe", () => {
+    // Applying tweaks is additive because a collection must never untick
+    // something the USER enabled. The only thing that made unticking our own
+    // ticks unsafe was not knowing whose they were. Lose this field and a
+    // dropped tweak stays merged into their INI at every deploy, forever.
+    const out = throughDisk({
+      ...base(),
+      iniTweaks: [{ compareKey: "nexus:1:2", tweak: "LowShadows.ini" }],
+    } as unknown as InstallReceipt);
+    expect(out.iniTweaks).toEqual([
+      { compareKey: "nexus:1:2", tweak: "LowShadows.ini" },
+    ]);
+  });
+
+  it("drops a malformed iniTweaks entry rather than guessing", () => {
+    // A wrong entry unticks a setting the PLAYER chose, which is the thing
+    // the record exists to prevent.
+    const out = throughDisk({
+      ...base(),
+      iniTweaks: [
+        { compareKey: "nexus:1:2", tweak: "ok.ini" },
+        { compareKey: "", tweak: "no-key.ini" },
+        { compareKey: "nexus:9:9" },
+        "not-an-object",
+      ],
+    } as unknown as InstallReceipt);
+    expect(out.iniTweaks).toEqual([
+      { compareKey: "nexus:1:2", tweak: "ok.ini" },
+    ]);
+  });
+
   it("keeps stagingSetPaths — WHICH files that hash covered", () => {
     // Without it the drift check cannot tell "the folder changed" from "the
     // collection now records a different set of files for this mod", and

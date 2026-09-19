@@ -452,6 +452,14 @@ export type InstallSuccess = {
    */
   droppedModNotice?: string[];
   /**
+   * INI tweaks this collection had switched on that this version dropped,
+   * and which were therefore switched back off.
+   *
+   * Only ever ticks Event Horizon made itself — the receipt records which
+   * those were, and nothing outside that record is reversed (NS-2).
+   */
+  iniTweakRemovedNotice?: string[];
+  /**
    * How the user's resulting plugin order differs from the curator's.
    *
    * Applying the curator's LOOT rules is not the same as reproducing their
@@ -639,6 +647,8 @@ export type InstallFailed = {
   externalArchiveNotice?: string[];
   /** Mods the previous revision had and this one does not — see above. */
   droppedModNotice?: string[];
+  /** Curator INI tweaks this version dropped, switched back off. */
+  iniTweakRemovedNotice?: string[];
 };
 
 /** One mod that could not be installed, and why. */

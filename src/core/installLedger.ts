@@ -311,6 +311,23 @@ export function parseReceipt(raw: string): InstallReceipt {
         typeof (x as { reason?: unknown }).reason === "string",
     );
   }
+  /**
+   * Ticks this collection made, so the next revision can reverse exactly
+   * those and nothing else. A malformed entry is dropped rather than
+   * guessed at: the consequence of a wrong one is unticking a setting the
+   * PLAYER chose, which is the thing the record exists to prevent (NS-2).
+   */
+  if (Array.isArray(obj.iniTweaks)) {
+    out.iniTweaks = obj.iniTweaks.filter(
+      (x: unknown): x is { compareKey: string; tweak: string } =>
+        typeof x === "object" &&
+        x !== null &&
+        typeof (x as { compareKey?: unknown }).compareKey === "string" &&
+        (x as { compareKey: string }).compareKey.length > 0 &&
+        typeof (x as { tweak?: unknown }).tweak === "string" &&
+        (x as { tweak: string }).tweak.length > 0,
+    );
+  }
   if (Array.isArray(obj.pluginFlagChanges)) {
     out.pluginFlagChanges = obj.pluginFlagChanges.filter(
       (x: unknown): x is { plugin: string; wasLight: boolean } =>

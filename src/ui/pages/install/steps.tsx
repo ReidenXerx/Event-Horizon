@@ -3307,6 +3307,17 @@ function InstallNotes(props: {
       node: <GameIniNotice key="game" lines={result.gameIniNotice ?? []} />,
     });
   }
+  if ((result.iniTweakRemovedNotice?.length ?? 0) > 0) {
+    present.push({
+      label: "INI tweaks switched off",
+      node: (
+        <IniTweakNotice
+          key="ini-removed"
+          lines={result.iniTweakRemovedNotice ?? []}
+        />
+      ),
+    });
+  }
   if ((result.droppedModNotice?.length ?? 0) > 0) {
     present.push({
       label: "mods this version dropped",

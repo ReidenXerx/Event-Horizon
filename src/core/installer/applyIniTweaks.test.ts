@@ -9,7 +9,13 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { applyIniTweaks, describeIniTweaks } from "./applyIniTweaks";
+import {
+  applyIniTweakRemovals,
+  applyIniTweaks,
+  describeIniTweakRemovals,
+  describeIniTweaks,
+  planIniTweakRemovals,
+} from "./applyIniTweaks";
 import type { EhcollMod } from "../../types/ehcoll";
 
 const mod = (
@@ -106,7 +112,7 @@ describe("applyIniTweaks", () => {
       manifestMods: [mod("Plain", "k", [])],
     });
     expect(dispatched).toEqual([]);
-    expect(out).toEqual({ enabled: [], skipped: [] });
+    expect(out).toEqual({ enabled: [], enabledKeys: [], skipped: [] });
   });
 
   it("keeps going when one tweak throws", () => {
@@ -152,5 +158,99 @@ describe("describeIniTweaks", () => {
     const said = describeIniTweaks({ enabled: [], skipped: many });
     expect(said.join(" ")).toMatch(/and 7 more/);
     expect(said.length).toBeLessThan(10);
+  });
+});
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * Undoing a tick this collection made, and ONLY one it made.
+ *
+ * "Additive only" is right on a first install and wrong on an update: a
+ * curator who ships a performance preset in one revision and drops it in the
+ * next has changed their mind, and the player still has it merged into their
+ * INI at every deploy with nothing on screen to explain the difference.
+ *
+ * What made unticking unsafe was not knowing whose tick it was. The receipt
+ * answers that now, and every clause below is the part that keeps NS-2
+ * intact — we reverse our own writes, never the user's.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("unticking what this version dropped", () => {
+  const installed = new Map([["k1", "vid-1"], ["k2", "vid-2"]]);
+
+  it("unticks a tweak we ticked and this manifest no longer asks for", () => {
+    const out = planIniTweakRemovals({
+      previouslyEnabled: [{ compareKey: "k1", tweak: "LowShadows.ini" }],
+      manifestMods: [mod("A", "k1", [])],
+      installed,
+    });
+    expect(out).toEqual([
+      { compareKey: "k1", vortexModId: "vid-1", tweak: "LowShadows.ini" },
+    ]);
+  });
+
+  it("leaves a tweak the manifest STILL asks for switched on", () => {
+    expect(
+      planIniTweakRemovals({
+        previouslyEnabled: [{ compareKey: "k1", tweak: "LowShadows.ini" }],
+        manifestMods: [mod("A", "k1", ["LowShadows.ini"])],
+        installed,
+      }),
+    ).toEqual([]);
+  });
+
+  it("never touches a tweak that is not in OUR record", () => {
+    // The user enabled this one themselves. It is not ours to reverse.
+    expect(
+      planIniTweakRemovals({
+        previouslyEnabled: [],
+        manifestMods: [mod("A", "k1", [])],
+        installed,
+      }),
+    ).toEqual([]);
+  });
+
+  it("skips a mod this run did not install — no id to dispatch against", () => {
+    // Carried, or absent. Guessing an id here would write into a mod Event
+    // Horizon did not install.
+    expect(
+      planIniTweakRemovals({
+        previouslyEnabled: [{ compareKey: "gone", tweak: "T.ini" }],
+        manifestMods: [],
+        installed,
+      }),
+    ).toEqual([]);
+  });
+
+  it("does not repeat a pair recorded twice", () => {
+    const out = planIniTweakRemovals({
+      previouslyEnabled: [
+        { compareKey: "k1", tweak: "T.ini" },
+        { compareKey: "k1", tweak: "T.ini" },
+      ],
+      manifestMods: [],
+      installed,
+    });
+    expect(out).toHaveLength(1);
+  });
+
+  it("dispatches enabled:false and reports what it turned off", () => {
+    const { api, dispatched } = fakeApi();
+    const done = applyIniTweakRemovals({
+      api: api as never,
+      gameId: "skyrimse",
+      removals: [{ compareKey: "k1", vortexModId: "vid-1", tweak: "T.ini" }],
+    });
+    expect(done).toEqual(["T.ini"]);
+    expect(dispatched).toEqual([
+      { tweak: "T.ini", modId: "vid-1", enabled: false },
+    ]);
+  });
+
+  it("names them, and says whose ticks are safe", () => {
+    const line = describeIniTweakRemovals(["A.ini", "B.ini"]).join(" ");
+    expect(line).toContain("A.ini, B.ini");
+    expect(line).toContain("anything you ");
+    expect(describeIniTweakRemovals([])).toEqual([]);
   });
 });
