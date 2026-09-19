@@ -415,4 +415,55 @@ describe("the whole receipt, not a list of fields somebody remembered", () => {
     } as unknown as InstallReceipt;
     expect(throughDisk(r).fomodReplayMode).toBeUndefined();
   });
+
+  it("keeps the hand-supplied archive that was not the collection's", () => {
+    /**
+     * An off-Nexus mod whose author replaced the download installs a
+     * DIFFERENT version, and the consequence outlives the run: anything the
+     * curator changed inside that mod may not fit it, and every later
+     * question about the mod starts here. Until this field existed the fact
+     * lived only in a log line during the install.
+     */
+    const mod = {
+      vortexModId: "scar-mod",
+      compareKey: "external:deadbeef",
+      source: "external" as const,
+      name: "SCAR",
+      installedAt: "1970-01-01T00:00:00.000Z",
+      suppliedArchive: { expected: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", actual: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+    };
+    const out = throughDisk({ ...base(), mods: [mod] } as InstallReceipt);
+    expect(out.mods[0]?.suppliedArchive).toEqual({
+      expected: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      actual: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    });
+  });
+
+  it("drops a half-written mismatch rather than reporting half a comparison", () => {
+    // "expected X, got nothing" says less than silence and reads as a bug in
+    // the tool rather than a fact about the install.
+    const half = {
+      vortexModId: "m",
+      compareKey: "external:x",
+      source: "external" as const,
+      name: "M",
+      installedAt: "1970-01-01T00:00:00.000Z",
+      suppliedArchive: { expected: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+    };
+    const out = throughDisk({ ...base(), mods: [half] } as unknown as InstallReceipt);
+    expect(out.mods[0]?.suppliedArchive).toBeUndefined();
+  });
+
+  it("drops a mismatch whose hashes are not hashes", () => {
+    const bogus = {
+      vortexModId: "m",
+      compareKey: "external:x",
+      source: "external" as const,
+      name: "M",
+      installedAt: "1970-01-01T00:00:00.000Z",
+      suppliedArchive: { expected: "not-a-hash", actual: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+    };
+    const out = throughDisk({ ...base(), mods: [bogus] } as unknown as InstallReceipt);
+    expect(out.mods[0]?.suppliedArchive).toBeUndefined();
+  });
 });

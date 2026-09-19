@@ -1454,6 +1454,63 @@ function ConflictRow(props: {
   // Vortex's own picker, not Electron's — see pickModArchiveFile.
   const api = useApi();
 
+  /**
+   * ─── CHECKED WHEN IT IS PICKED, NOT WHEN IT IS INSTALLED ─────────────
+   * The bytes were always compared against the manifest — inside
+   * `installFromLocalArchive`, an hour into the run, as a log line nobody
+   * reads. Until then the picker matched on FILENAME, which its own type
+   * calls "not used for identity", and then said "Linked archive" in green.
+   *
+   * The case that makes this matter: a mod hosted off-Nexus gets a new
+   * version, the curator never hears about it, and the player downloads what
+   * the page offers today. It is a different file, and the first sign of that
+   * used to arrive after the install, when the mirror could not restore the
+   * mod's other files.
+   *
+   * Warned, never blocked (owner, 2026-09-19): a replaced download may be the
+   * only one the author still offers, and that is the player's call. It is
+   * simply made BEFORE the install now, while going back for the right file
+   * still costs nothing.
+   */
+  const [identity, setIdentity] = React.useState<
+    { state: "checking" } | { state: "done"; text: string; ok: boolean } | undefined
+  >(undefined);
+
+  const checkPickedFile = async (file: string): Promise<void> => {
+    if (decision.kind !== "external-prompt-user") return;
+    const expected = decision.expectedSha256;
+    if (expected === undefined) {
+      // Identity falls back to the staging-set hash for these, which cannot
+      // be known before installing. Claiming anything here would be a guess.
+      return;
+    }
+    setIdentity({ state: "checking" });
+    try {
+      const { checkArchiveIdentity } = await import(
+        "../../../core/installer/checkArchiveIdentity"
+      );
+      const check = await checkArchiveIdentity({
+        archivePath: file,
+        expectedSha256: expected,
+      });
+      setIdentity({
+        state: "done",
+        ok: check.kind === "matches",
+        text:
+          check.kind === "matches"
+            ? "This is the file the collection was built from."
+            : check.kind === "unknown"
+              ? `Could not check this file: ${check.why}`
+              : `This is NOT the file the collection was built from. The curator built with ` +
+                `"${decision.expectedFilename}". Yours will still be installed, but anything the ` +
+                `curator changed inside this mod may not fit it — if the page has been updated ` +
+                `since, ask them before relying on it.`,
+      });
+    } catch {
+      setIdentity(undefined);
+    }
+  };
+
   const handlePickFile = async (): Promise<void> => {
     if (decision.kind !== "external-prompt-user") return;
     try {
@@ -1464,10 +1521,9 @@ function ConflictRow(props: {
       });
       if (file !== undefined) {
         onChange({ kind: "use-local-file", localPath: file });
-        showToast({
-          intent: "success",
-          message: `Linked archive for ${resolution.name}.`,
-        });
+        // Deliberately not a success toast any more: whether this was the
+        // right file is exactly what has not been established yet.
+        void checkPickedFile(file);
       }
     } catch (err) {
       reportError(err, {
@@ -1523,6 +1579,21 @@ function ConflictRow(props: {
                 : `Expected filename: ${decision.expectedFilename}`
             }
           />
+          {identity !== undefined && value?.kind === "use-local-file" && (
+            <Callout
+              tone={
+                identity.state === "checking"
+                  ? "info"
+                  : identity.ok
+                    ? "success"
+                    : "warning"
+              }
+            >
+              {identity.state === "checking"
+                ? "Checking whether this is the file the collection was built from…"
+                : identity.text}
+            </Callout>
+          )}
           <ChoiceCard
             name={`conflict:${resolution.compareKey}`}
             checked={value?.kind === "skip"}

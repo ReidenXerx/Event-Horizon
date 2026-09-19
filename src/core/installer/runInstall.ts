@@ -4837,6 +4837,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       pluginFlagChanges: pluginFlagRepair.changes,
       failedMods: failedForReceipt,
       nexusCollection: await nexusRevisionOfPackageFile(ctx),
+      suppliedArchiveMismatches,
     });
 
     let receiptPath: string;
@@ -6331,6 +6332,11 @@ function buildReceipt(args: {
    * is what keeps a file install out of update checks.
    */
   nexusCollection?: InstallReceiptNexusCollection;
+  /** Hand-supplied archives that were not the collection's, by compareKey. */
+  suppliedArchiveMismatches?: ReadonlyMap<
+    string,
+    { expected: string; actual: string }
+  >;
 }): InstallReceipt {
   const {
     ctx,
@@ -6361,6 +6367,18 @@ function buildReceipt(args: {
       source: m.source,
       name: m.name,
       installedAt: now,
+      /**
+       * The hand-supplied archive that was not the collection's.
+       *
+       * Recorded because its consequence outlives the run and the player will
+       * not remember it: an off-Nexus mod whose author replaced the download
+       * installs a DIFFERENT version, anything the curator changed inside it
+       * may not fit, and every later question about that mod starts here.
+       * Until now this lived only in a log line during the install.
+       */
+      ...(args.suppliedArchiveMismatches?.get(m.compareKey) !== undefined
+        ? { suppliedArchive: args.suppliedArchiveMismatches.get(m.compareKey)! }
+        : {}),
       /**
        * The same test the journal uses (NS-2). An `*-already-installed`
        * decision hands back the USER'S mod id, so `installedMods` is not

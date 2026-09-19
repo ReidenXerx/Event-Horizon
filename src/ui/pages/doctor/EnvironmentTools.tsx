@@ -235,8 +235,43 @@ export function EnvironmentTools(): JSX.Element {
         } catch (err) {
           ehLog("info", "log-bundle.extender-log.skipped", { err });
         }
+        /**
+         * Named in the summary, not only buried in a receipt file.
+         *
+         * An off-Nexus mod whose author replaced the download installs a
+         * different version, and that is the first candidate for any odd
+         * behaviour in it. The receipts are already inside this zip — this
+         * just means the curator sees it without opening a 3,000-mod JSON.
+         */
+        let divergedExternals: Array<{
+          collection: string;
+          mod: string;
+          expected: string;
+          actual: string;
+        }> = [];
+        try {
+          const { listReceipts } = await import("../../../core/installLedger");
+          const { getVortexUserDataPath } = await import("../../../core/paths");
+          for (const receipt of await listReceipts(getVortexUserDataPath())) {
+            for (const mod of receipt.mods) {
+              if (mod.suppliedArchive === undefined) continue;
+              divergedExternals.push({
+                collection: `${receipt.packageName} v${receipt.packageVersion}`,
+                mod: mod.name,
+                expected: mod.suppliedArchive.expected,
+                actual: mod.suppliedArchive.actual,
+              });
+            }
+          }
+        } catch (err) {
+          ehLog("info", "log-bundle.diverged-externals.skipped", { err });
+          divergedExternals = [];
+        }
         try {
           system = {
+            ...(divergedExternals.length > 0
+              ? { suppliedArchivesThatDiffer: divergedExternals }
+              : {}),
             runtimes: await detectRuntimes(
               {
                 readRegistryValue,

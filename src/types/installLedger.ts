@@ -626,6 +626,26 @@ export type InstallReceiptMod = {
   stagingSetHash?: string;
 
   /**
+   * Set when this mod was installed from a hand-supplied archive that is NOT
+   * the one the collection was built from, with both hashes.
+   *
+   * Only external mods can reach this: a Nexus mod is fetched by file id and
+   * its bytes are checked against the manifest, while an external one is
+   * chosen by a person and `installFromLocalArchive` deliberately allows a
+   * different build — the author replaced the download, the page now offers a
+   * newer version, the curator never heard about it.
+   *
+   * Recorded because the consequence outlives the install and the player will
+   * not remember: this mod's files are that other version's, anything the
+   * curator changed inside it may not fit, and every later question about the
+   * mod — a failed verification, a mirror that could not finish, odd behaviour
+   * in game — has this as its first candidate. Absent means "nothing was
+   * wrong with the file", never "not checked": the check runs for every
+   * hand-supplied archive that has a recorded sha256.
+   */
+  suppliedArchive?: { expected: string; actual: string };
+
+  /**
    * Did Event Horizon PUT this mod here, or did it merely recognise one the
    * user already had?
    *

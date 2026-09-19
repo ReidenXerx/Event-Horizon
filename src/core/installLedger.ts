@@ -664,9 +664,34 @@ function validateModEntries(
       entry.displacedModId.length > 0
         ? { displacedModId: entry.displacedModId }
         : {}),
+      // The hand-supplied archive that was not the collection's. Both hashes
+      // or nothing: half of a comparison is not evidence, and a partial
+      // record here would be read as "checked and fine" by everything
+      // downstream. Same whitelist rule as above — no branch, no field.
+      ...(readSuppliedArchive(entry.suppliedArchive) !== undefined
+        ? { suppliedArchive: readSuppliedArchive(entry.suppliedArchive)! }
+        : {}),
     });
   });
   return out;
+}
+
+/**
+ * The recorded mismatch between the archive a player supplied and the one the
+ * collection was built from.
+ *
+ * Both hashes must be present and well-formed, or the whole field is dropped:
+ * "expected X, got nothing" says less than silence and reads like a bug in
+ * the tool rather than a fact about the install.
+ */
+function readSuppliedArchive(
+  raw: unknown,
+): { expected: string; actual: string } | undefined {
+  if (raw === null || typeof raw !== "object") return undefined;
+  const { expected, actual } = raw as { expected?: unknown; actual?: unknown };
+  const ok = (v: unknown): v is string =>
+    typeof v === "string" && /^[0-9a-f]{64}$/.test(v);
+  return ok(expected) && ok(actual) ? { expected, actual } : undefined;
 }
 
 /**
