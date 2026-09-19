@@ -184,6 +184,27 @@ export function pickInstallTarget(
    * silent profile switch is not something to do on an unverified assumption.
    */
   receiptProfileExists?: boolean,
+  /**
+   * The Nexus collection revision THIS package was downloaded as, when the
+   * player got it from a collection page.
+   *
+   * ─── THE BRANCH BELOW DECIDES A SAFETY MODEL, SO IT MUST NOT BE GUESSABLE ──
+   * `package.version` is typed by the curator and the build only nudges it —
+   * the dashboard says so outright. Publishing a revision without bumping it
+   * is an ordinary thing to do for a mod-URL fix or a presentation change, and
+   * it silently moved the player's Update button from the fresh-profile path
+   * (nothing destroyed before construction, rev N still switchable) to the
+   * in-place path, which uninstalls replaced mods BEFORE a single new one is
+   * installed. Same button, opposite outcome on failure, nothing checking.
+   *
+   * The player's Update button already compares revision numbers. This makes
+   * the installer branch on the same fact, so the two cannot disagree.
+   *
+   * `undefined` means "not from a collection page" — a file install, or a
+   * package read from a copy elsewhere — and then the version is the only
+   * evidence there is, exactly as before.
+   */
+  incomingRevision?: number,
 ): InstallTarget {
   if (receipt !== undefined) {
     /**
@@ -204,7 +225,20 @@ export function pickInstallTarget(
      * that state "drifted" and offered to fix it while the installer walked
      * into it.
      */
-    if (receipt.packageVersion !== manifest.package.version) {
+    /**
+     * A DIFFERENT RELEASE, decided from the strongest evidence available.
+     *
+     * The revision number when both sides have one — it is Nexus's, not the
+     * curator's to retype. The package version otherwise, which is every file
+     * install and every package read from somewhere other than a download.
+     */
+    const installedRevision = receipt.nexusCollection?.revisionNumber;
+    const differentRelease =
+      installedRevision !== undefined && incomingRevision !== undefined
+        ? incomingRevision !== installedRevision
+        : receipt.packageVersion !== manifest.package.version;
+
+    if (differentRelease) {
       /**
        * ─── THE RECEIPT'S VERSION SAYS NOTHING ABOUT THE ATTEMPT'S ───────
        * A new release gets a new profile — and it must still CONTINUE the

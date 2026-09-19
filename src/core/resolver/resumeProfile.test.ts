@@ -525,3 +525,89 @@ describe("a failed UPDATE resumes its profile instead of forking", () => {
     expect(target).toMatchObject({ resumeRefusedWhy: "version-changed" });
   });
 });
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * One Update button must not lead to two opposite safety models.
+ *
+ * `package.version` is typed by the curator — the build only nudges it — so
+ * republishing a revision without bumping it is an ordinary thing to do for a
+ * mod-URL or presentation fix. It used to move the player from the
+ * fresh-profile path (nothing destroyed before construction, the working
+ * revision still switchable) onto the in-place path, which uninstalls
+ * replaced mods BEFORE a single new one is installed: a failure at mod 3
+ * leaves those removals permanent.
+ *
+ * The player's Update button compares REVISION numbers. So does this now.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("a new revision is a new release, whatever the version says", () => {
+  const receiptAt = (revisionNumber: number, packageVersion: string) =>
+    ({
+      packageId: PACKAGE_ID,
+      packageVersion,
+      vortexProfileId: "rev-profile",
+      vortexProfileName: "Meridia Panties (Event Horizon v1.0.10)",
+      nexusCollection: { slug: "meridia", revisionNumber },
+    }) as unknown as InstallReceipt;
+
+  it("forks a profile for a NEW revision that kept the same version", () => {
+    const target = pickInstallTarget(
+      manifest, // version 1.0.10
+      receiptAt(12, "1.0.10"),
+      "rev-profile",
+      "Rev Profile",
+      undefined,
+      true,
+      13,
+    );
+    expect(target.kind).toBe("fresh-profile");
+  });
+
+  it("stays in place for a re-run of the SAME revision — a repair", () => {
+    const target = pickInstallTarget(
+      manifest,
+      receiptAt(13, "1.0.10"),
+      "rev-profile",
+      "Rev Profile",
+      undefined,
+      true,
+      13,
+    );
+    expect(target).toMatchObject({ kind: "current-profile", profileId: "rev-profile" });
+  });
+
+  it("falls back to the version when the package did not come from a page", () => {
+    // A file install: no download record, so the revision is unknown and the
+    // version string is the only evidence there is.
+    const target = pickInstallTarget(
+      manifest,
+      receiptAt(13, "1.0.9"),
+      "rev-profile",
+      "Rev Profile",
+      undefined,
+      true,
+      undefined,
+    );
+    expect(target.kind).toBe("fresh-profile");
+  });
+
+  it("falls back to the version when the RECEIPT has no revision", () => {
+    // Installed from a file originally, now updated from a page.
+    const target = pickInstallTarget(
+      manifest,
+      {
+        packageId: PACKAGE_ID,
+        packageVersion: "1.0.10",
+        vortexProfileId: "rev-profile",
+        vortexProfileName: "P",
+      } as unknown as InstallReceipt,
+      "rev-profile",
+      "Rev Profile",
+      undefined,
+      true,
+      13,
+    );
+    expect(target.kind).toBe("current-profile");
+  });
+});

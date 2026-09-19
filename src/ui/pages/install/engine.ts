@@ -57,6 +57,7 @@ import {
 } from "../../../core/resolver/userState";
 import type { SupportedGameId } from "../../../types/ehcoll";
 import type { InstallReceipt } from "../../../types/installLedger";
+import { nexusCollectionOfDownload } from "../../../core/nexus/collectionRevision";
 import type { InstallPlan } from "../../../types/installPlan";
 import { getVortexUserDataPath } from "../../../core/paths";
 import { getEventHorizonDir } from "../../../core/paths/appDataPaths";
@@ -320,6 +321,11 @@ export async function runLoadingPipeline(args: {
     // same-version re-run installs where the collection actually lives, or
     // merges it into whatever profile the user happens to be standing on.
     receiptProfileStillExists(state, activeGameId, receipt),
+    // Which REVISION this package is, when it came from a collection page.
+    // The version string is the curator's to retype; the revision is not, and
+    // a republished revision that kept its version used to move the player
+    // onto the destructive in-place path without anything noticing.
+    incomingRevisionOf(state, zipPath),
   );
 
   const plan = resolveInstallPlan(manifest, userState, installTarget);
@@ -441,7 +447,7 @@ export async function runLoadingPipelineWithReceipt(args: {
   environment?: EnvironmentReport;
   presentation?: ShownPresentation;
 }> {
-  const { api, ehcoll, receipt, appDataPath, events, signal } = args;
+  const { api, ehcoll, receipt, appDataPath, events, signal, zipPath } = args;
   const { manifest } = ehcoll;
   const presentation = await showPresentation(args.zipPath, manifest);
   // Re-checked here rather than carried from the first pass: this is the
@@ -571,6 +577,11 @@ export async function runLoadingPipelineWithReceipt(args: {
     // same-version re-run installs where the collection actually lives, or
     // merges it into whatever profile the user happens to be standing on.
     receiptProfileStillExists(state, activeGameId, receipt),
+    // Which REVISION this package is, when it came from a collection page.
+    // The version string is the curator's to retype; the revision is not, and
+    // a republished revision that kept its version used to move the player
+    // onto the destructive in-place path without anything noticing.
+    incomingRevisionOf(state, zipPath),
   );
 
   const plan = resolveInstallPlan(manifest, userState, installTarget);
@@ -770,4 +781,26 @@ function profileExistsInState(state: unknown, profileId: string): boolean {
   }).persistent?.profiles;
   if (!profiles) return false;
   return Object.prototype.hasOwnProperty.call(profiles, profileId);
+}
+
+
+/**
+ * The Nexus collection revision a package file was downloaded as, or
+ * undefined when it did not come from a collection page.
+ *
+ * Never throws: it decides which install target is picked, and a lookup that
+ * fails must fall back to the version comparison rather than take the install
+ * down with it.
+ */
+function incomingRevisionOf(
+  state: types.IState,
+  zipPath: string,
+): number | undefined {
+  try {
+    return nexusCollectionOfDownload(state, zipPath, (gameId) =>
+      selectors.downloadPathForGame(state, gameId),
+    )?.revisionNumber;
+  } catch {
+    return undefined;
+  }
 }
