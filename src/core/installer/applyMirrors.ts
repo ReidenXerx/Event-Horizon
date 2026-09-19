@@ -83,6 +83,27 @@ export type MirrorOutcome = {
    */
   removalsSkipped?: number;
   /**
+   * Every file this run DELETED, by path.
+   *
+   * A count was all this carried, and a count is not a record: the report
+   * said `0 file(s) written, 37 removed` about thirty-seven files nobody
+   * could name afterwards. The failure branch names files precisely because
+   * that is the moment a player's game stops matching the curator's — a
+   * deletion is the same moment with the evidence destroyed, so it gets the
+   * same treatment.
+   */
+  removedPaths: string[];
+  /**
+   * Extra files left alone because they POST-DATE the last install of this
+   * collection, i.e. they were not there when Event Horizon finished.
+   *
+   * Empty on a first install, where there is no "since" to be newer than.
+   * On an update the staging folder has been lived in — a tool's output, a
+   * file the player dropped in — and `planMirror` cannot tell that from a
+   * leftover, because both are simply "not in the curator's listing".
+   */
+  removalsWithheldNewer: string[];
+  /**
    * Files the package leaves to the mod's own archive that this run needed,
    * and how many it took from there — counted in `restored` as well. Absent
    * when the install produced every such file as recorded, the ordinary case.
@@ -117,10 +138,29 @@ export async function applyMirrorPlan(args: {
     /** Injection point for tests; defaults to Vortex's own 7-Zip. */
     sevenZip?: SevenZipApi;
   };
+  /**
+   * When Event Horizon last finished installing this collection, in epoch ms.
+   *
+   * A file in this folder modified AFTER that moment was not put there by us
+   * and was not there when we left: it is the player's, or a tool's working
+   * on their behalf. Deleting it is outside what a mirror is for (NS-2 in
+   * spirit — the mod is ours, the FILE is not).
+   *
+   * Absent on a first install, and absent is not zero: with no previous
+   * install there is no "since", every extra file is a leftover of our own
+   * making, and the plan is carried out as written.
+   */
+  protectNewerThanMs?: number;
   signal?: AbortSignal;
 }): Promise<MirrorOutcome> {
   const { stagingRoot, ehcollPath, plan, signal } = args;
-  const out: MirrorOutcome = { restored: 0, removed: 0, failures: [] };
+  const out: MirrorOutcome = {
+    restored: 0,
+    removed: 0,
+    failures: [],
+    removedPaths: [],
+    removalsWithheldNewer: [],
+  };
 
   const leftToArchive = args.fromArchive;
   const fromPackage =
@@ -194,9 +234,47 @@ export async function applyMirrorPlan(args: {
       out.aborted = true;
       return out;
     }
+    const absolute = path.join(stagingRoot, ...rel.split("/"));
+    /**
+     * ─── A FILE NEWER THAN OUR LAST INSTALL IS NOT OURS TO DELETE ───────
+     * `planMirror` classifies anything absent from the curator's listing as
+     * extra, which is right on a folder we created minutes ago and wrong on
+     * one that has been lived in since the last revision. BodySlide and
+     * Nemesis write their output into a mod's staging folder; on an update
+     * that output is "extra", and deleting it is how a player's body physics
+     * stops working with nothing in the report naming a file.
+     *
+     * The stat is only over `plan.remove`, which is empty on the overwhelming
+     * majority of mods, so this costs nothing on the common path.
+     *
+     * A stat that FAILS protects the file. We are about to delete it on the
+     * strength of knowing what it is, and we just failed to find that out.
+     */
+    if (args.protectNewerThanMs !== undefined) {
+      let modifiedMs: number;
+      try {
+        modifiedMs = (await fsp.stat(absolute)).mtimeMs;
+      } catch (err) {
+        /**
+         * Gone already — between the walk that listed it and this loop — is
+         * the state the deletion was asking for, so it is neither withheld
+         * nor removed. Any OTHER stat failure protects the file: we are
+         * about to delete it on the strength of knowing what it is, and we
+         * have just failed to find that out.
+         */
+        if ((err as NodeJS.ErrnoException)?.code === "ENOENT") continue;
+        out.removalsWithheldNewer.push(rel);
+        continue;
+      }
+      if (modifiedMs > args.protectNewerThanMs) {
+        out.removalsWithheldNewer.push(rel);
+        continue;
+      }
+    }
     try {
-      await fsp.rm(path.join(stagingRoot, ...rel.split("/")), { force: true });
+      await fsp.rm(absolute, { force: true });
       out.removed += 1;
+      out.removedPaths.push(rel);
     } catch (err) {
       out.failures.push({
         path: rel,
@@ -659,7 +737,8 @@ export function describeMirrorOutcome(
     outcome.removed === 0 &&
     outcome.failures.length === 0 &&
     outcome.aborted !== true &&
-    outcome.removalsSkipped === undefined
+    outcome.removalsSkipped === undefined &&
+    (outcome.removalsWithheldNewer?.length ?? 0) === 0
   ) {
     return undefined;
   }
@@ -674,6 +753,32 @@ export function describeMirrorOutcome(
   if (outcome.removed > 0) parts.push(`${outcome.removed} removed`);
   if (parts.length === 0) parts.push("nothing applied");
   let line = `"${modName}": ${parts.join(", ")}.`;
+  /**
+   * Name what was deleted, for the same reason failures are named: this is a
+   * file the player had and no longer has, and `37 removed` is not something
+   * anyone can act on or even check.
+   */
+  if (outcome.removed > 0 && (outcome.removedPaths?.length ?? 0) > 0) {
+    const named = outcome.removedPaths.slice(0, 5).join("; ");
+    const rest = outcome.removedPaths.length - Math.min(5, outcome.removedPaths.length);
+    line +=
+      ` Removed because the collection does not include them: ${named}` +
+      (rest > 0 ? `; and ${rest} more` : "") +
+      `.`;
+  }
+  if ((outcome.removalsWithheldNewer?.length ?? 0) > 0) {
+    const named = outcome.removalsWithheldNewer.slice(0, 5).join("; ");
+    const rest =
+      outcome.removalsWithheldNewer.length -
+      Math.min(5, outcome.removalsWithheldNewer.length);
+    line +=
+      ` ${outcome.removalsWithheldNewer.length} file(s) here are NOT in the ` +
+      `collection and were left alone because they changed after Event ` +
+      `Horizon last installed it — something on your side wrote them, so ` +
+      `they are yours to keep or delete: ${named}` +
+      (rest > 0 ? `; and ${rest} more` : "") +
+      `. This mod therefore holds more than the curator's copy does.`;
+  }
   if (outcome.aborted === true) {
     line += ` STOPPED before the plan finished, so this mod is part-mirrored.`;
   }

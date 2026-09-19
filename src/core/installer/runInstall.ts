@@ -3420,10 +3420,39 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
          * are.
          */
         const leftToArchive = mod.state.mirrorFromArchive ?? [];
+        /**
+         * ─── WHOSE FILES ARE THE EXTRAS? ────────────────────────────────
+         * Only for a mod THIS RUN DID NOT WRITE. The distinction is the
+         * whole rule:
+         *
+         *  - We just installed it from its archive → every file in the
+         *    folder is ours, seconds old, and an extra is something the
+         *    archive produced that the curator does not ship. Delete it, as
+         *    before. Protecting these by age would protect ALL of them and
+         *    quietly stop mirroring from working.
+         *  - It resolved as already-installed → the folder is the one from
+         *    the last revision, and it has been lived in since. A file newer
+         *    than our last receipt was written by the player or by a tool
+         *    acting for them — BodySlide and Nemesis write their output into
+         *    a mod's staging folder — and deleting it is how an update takes
+         *    a player's body physics away with `37 removed` as the only
+         *    record.
+         *
+         * `receiptWrittenAt` is NaN on a first install, which is the same
+         * answer by another route: no previous install, no "since", nothing
+         * to protect.
+         */
+        const writtenByThisRun =
+          !(installedMods[installedIndex]?.fromDecision ?? "").endsWith(
+            "already-installed",
+          );
+        const protectNewer =
+          !writtenByThisRun && !Number.isNaN(receiptWrittenAt);
         const outcome = await applyMirrorPlan({
           stagingRoot,
           ehcollPath: ctx.ehcollZipPath,
           plan: mirrorPlan,
+          ...(protectNewer ? { protectNewerThanMs: receiptWrittenAt } : {}),
           ...(leftToArchive.length > 0
             ? {
                 fromArchive: {

@@ -24,7 +24,7 @@ import {
   mirrorEntryFor,
   replaceFile,
 } from "./applyMirrors";
-import { planMirror } from "./mirrorStaging";
+import { planMirror, mirrorProvesTarget } from "./mirrorStaging";
 import { crc32 } from "../manifest/readZip";
 import type { SevenZipApi, SevenZipListEntry } from "../manifest/sevenZip";
 import { makeZip } from "../../../test/makeZip";
@@ -505,5 +505,125 @@ describe("a filesystem where rename cannot replace an existing file", () => {
         rm: async () => undefined,
       }),
     ).rejects.toThrow(/EPERM/);
+  });
+});
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * On an UPDATE the staging folder has been lived in.
+ *
+ * `planMirror` calls every file absent from the curator's listing "extra",
+ * which is right on a folder we created minutes ago and wrong on one that has
+ * survived since the last revision. BodySlide and Nemesis write their output
+ * into a mod's staging folder; on an update that output is extra, and
+ * deleting it is how an update takes a player's body physics away with
+ * "37 removed" as the only record of it.
+ *
+ * So a file modified since our last receipt is left alone — and because the
+ * folder then holds more than the curator's, the mirror may not certify it.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("files that post-date our last install are not ours to delete", () => {
+  const BUILT = Buffer.from("meshes BodySlide built for this player");
+
+  const planWithLeftover = () =>
+    planMirror({
+      target: [{ path: "Data/x.esp", size: CLEANED.length, sha256: sha(CLEANED) }],
+      current: [
+        { path: "Data/x.esp", size: CLEANED.length, sha256: sha(CLEANED) },
+        { path: "Data/built.nif", size: BUILT.length, sha256: sha(BUILT) },
+      ],
+    });
+
+  beforeEach(async () => {
+    await mkdir(join(staging, "Data"), { recursive: true });
+    await writeFile(join(staging, "Data", "x.esp"), CLEANED);
+    await writeFile(join(staging, "Data", "built.nif"), BUILT);
+    await writeFile(ehcoll, makeZip([
+      { name: mirrorEntryFor(sha(CLEANED)), data: CLEANED },
+    ]));
+  });
+
+  it("keeps a file newer than the last receipt, and says whose it is", async () => {
+    const plan = planWithLeftover();
+    expect(plan.remove).toEqual(["Data/built.nif"]);
+
+    const outcome = await applyMirrorPlan({
+      stagingRoot: staging,
+      ehcollPath: ehcoll,
+      plan,
+      // The previous install finished an hour ago; the file was written since.
+      protectNewerThanMs: Date.now() - 60 * 60 * 1000,
+    });
+
+    expect(outcome.removed).toBe(0);
+    expect(outcome.removalsWithheldNewer).toEqual(["Data/built.nif"]);
+    expect(existsSync(join(staging, "Data", "built.nif"))).toBe(true);
+    expect(await readFile(join(staging, "Data", "built.nif"))).toEqual(BUILT);
+
+    // The folder holds more than the curator's, so it cannot be certified as
+    // an exact reproduction — that is what a drift reference would claim.
+    expect(mirrorProvesTarget(plan, outcome)).toBe(false);
+
+    const line = describeMirrorOutcome("Some Mod", outcome);
+    expect(line).toContain("Data/built.nif");
+    expect(line).toContain("left alone");
+  });
+
+  it("still deletes a leftover OLDER than the last receipt", async () => {
+    // Nothing on the player's side wrote it since we finished: it is our own
+    // leftover from the previous revision, and mirroring exists to remove it.
+    const outcome = await applyMirrorPlan({
+      stagingRoot: staging,
+      ehcollPath: ehcoll,
+      plan: planWithLeftover(),
+      protectNewerThanMs: Date.now() + 60 * 60 * 1000,
+    });
+
+    expect(outcome.removed).toBe(1);
+    expect(outcome.removalsWithheldNewer).toEqual([]);
+    expect(existsSync(join(staging, "Data", "built.nif"))).toBe(false);
+  });
+
+  it("deletes as before when there is no previous install to be newer than", async () => {
+    // A first install: every file in the folder is ours, seconds old. Ageing
+    // them would protect ALL of them and silently stop mirroring working.
+    const outcome = await applyMirrorPlan({
+      stagingRoot: staging,
+      ehcollPath: ehcoll,
+      plan: planWithLeftover(),
+    });
+
+    expect(outcome.removed).toBe(1);
+    expect(outcome.removedPaths).toEqual(["Data/built.nif"]);
+    expect(existsSync(join(staging, "Data", "built.nif"))).toBe(false);
+  });
+
+  it("names what it deleted rather than only counting it", async () => {
+    const outcome = await applyMirrorPlan({
+      stagingRoot: staging,
+      ehcollPath: ehcoll,
+      plan: planWithLeftover(),
+    });
+    const line = describeMirrorOutcome("Some Mod", outcome);
+    expect(line).toContain("Data/built.nif");
+  });
+
+  it("treats a file that vanished before the delete as already gone", async () => {
+    const plan = planWithLeftover();
+    await rm(join(staging, "Data", "built.nif"));
+
+    const outcome = await applyMirrorPlan({
+      stagingRoot: staging,
+      ehcollPath: ehcoll,
+      plan,
+      protectNewerThanMs: Date.now() - 60 * 60 * 1000,
+    });
+
+    // Neither withheld nor removed: the folder is already what was asked for,
+    // so the mod stays certifiable.
+    expect(outcome.removalsWithheldNewer).toEqual([]);
+    expect(outcome.removed).toBe(0);
+    expect(mirrorProvesTarget(plan, outcome)).toBe(true);
   });
 });

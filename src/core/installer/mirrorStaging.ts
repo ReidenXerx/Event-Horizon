@@ -262,7 +262,10 @@ export function planMirror(args: {
  *
  *   - nothing unverifiable — every target file had a hash to check against;
  *   - nothing failed       — every write landed and was verified on arrival;
- *   - no removal withheld  — no extra files were left in place;
+ *   - no removal withheld  — no extra files were left in place, by the PLAN
+ *                            (the curator's listing was incomplete) or by the
+ *                            RUN (a file newer than our last install, which is
+ *                            the player's and not ours to delete);
  *   - not aborted          — the plan ran to the end.
  *
  * The last one is not redundant. `applyMirrorPlan` returns early on a stop
@@ -277,11 +280,21 @@ export function planMirror(args: {
  */
 export function mirrorProvesTarget(
   plan: MirrorPlan,
-  outcome: { failures: readonly unknown[]; aborted?: boolean },
+  outcome: {
+    failures: readonly unknown[];
+    aborted?: boolean;
+    /**
+     * Optional so the many callers that only build a `failures` list keep
+     * compiling — and read as "none withheld" when absent, which is what an
+     * outcome that cannot withhold any means.
+     */
+    removalsWithheldNewer?: readonly unknown[];
+  },
 ): boolean {
   return (
     plan.unverifiable.length === 0 &&
     plan.removalWithheld === undefined &&
+    (outcome.removalsWithheldNewer?.length ?? 0) === 0 &&
     outcome.failures.length === 0 &&
     outcome.aborted !== true
   );
