@@ -44,7 +44,7 @@ const rev = (slug: string, revisionNumber: number) => ({ slug, revisionNumber, g
 describe("finding collection updates", () => {
   it("offers the newer published revision of a collection installed from its page", async () => {
     const { api } = apiWith({ tumkz9: 13 });
-    const updates = await findCollectionUpdates(api, [receipt("a", rev("tumkz9", 12))]);
+    const { updates } = await findCollectionUpdates(api, [receipt("a", rev("tumkz9", 12))]);
     expect(updates).toEqual([
       {
         packageId: "a",
@@ -59,19 +59,19 @@ describe("finding collection updates", () => {
   it("offers nothing when the installed revision is the latest, or newer than it", async () => {
     // Newer happens when the curator retracts the revision the player has.
     const { api } = apiWith({ tumkz9: 12, kqrokq: 3 });
-    const updates = await findCollectionUpdates(api, [receipt("a", rev("tumkz9", 12)), receipt("b", rev("kqrokq", 4))]);
+    const { updates } = await findCollectionUpdates(api, [receipt("a", rev("tumkz9", 12)), receipt("b", rev("kqrokq", 4))]);
     expect(updates).toEqual([]);
   });
 
   it("never asks Nexus about a file install, which has no revision to compare", async () => {
     const { api, asked } = apiWith({ tumkz9: 13 });
-    expect(await findCollectionUpdates(api, [receipt("a")])).toEqual([]);
+    expect((await findCollectionUpdates(api, [receipt("a")])).updates).toEqual([]);
     expect(asked).toEqual([]);
   });
 
   it("asks nothing while Vortex is logged out, so a startup check cannot raise Vortex's error notifications", async () => {
     const { api, asked } = apiWith({ tumkz9: 13 }, { persistent: { nexus: {} } });
-    expect(await findCollectionUpdates(api, [receipt("a", rev("tumkz9", 12))])).toEqual([]);
+    expect((await findCollectionUpdates(api, [receipt("a", rev("tumkz9", 12))])).updates).toEqual([]);
     expect(asked).toEqual([]);
   });
 
@@ -83,7 +83,33 @@ describe("finding collection updates", () => {
 
   it("offers nothing when Nexus gives no answer", async () => {
     const { api } = apiWith({});
-    expect(await findCollectionUpdates(api, [receipt("a", rev("tumkz9", 12))])).toEqual([]);
+    expect((await findCollectionUpdates(api, [receipt("a", rev("tumkz9", 12))])).updates).toEqual([]);
+  });
+
+  /**
+   * An empty update list is two different answers, and the caller has to be
+   * able to tell them apart: "Nexus says you are current" and "Nexus could
+   * not be asked" both produce no updates, and treating the second as the
+   * first is how a re-check that failed silently removed an Update button a
+   * successful check had put there.
+   */
+  it("says nothing was ANSWERED when Nexus gave no answer", async () => {
+    const { api } = apiWith({});
+    const check = await findCollectionUpdates(api, [receipt("a", rev("tumkz9", 12))]);
+    expect([...check.answeredSlugs]).toEqual([]);
+  });
+
+  it("says the slug WAS answered when Nexus says it is current", async () => {
+    const { api } = apiWith({ tumkz9: 12 });
+    const check = await findCollectionUpdates(api, [receipt("a", rev("tumkz9", 12))]);
+    expect(check.updates).toEqual([]);
+    expect([...check.answeredSlugs]).toEqual(["tumkz9"]);
+  });
+
+  it("answers for nothing while logged out — asking is what did not happen", async () => {
+    const { api } = apiWith({ tumkz9: 13 }, { persistent: { nexus: {} } });
+    const check = await findCollectionUpdates(api, [receipt("a", rev("tumkz9", 12))]);
+    expect([...check.answeredSlugs]).toEqual([]);
   });
 
   it("reads the latest PUBLISHED revision, not a number from anywhere else", async () => {

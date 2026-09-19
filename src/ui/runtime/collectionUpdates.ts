@@ -49,9 +49,33 @@ class CollectionUpdateStore {
     return this.checkedAt.get(gameId) ?? 0;
   }
 
-  /** Replace one game's results; other games' stay as they were checked. */
-  replaceForGame(gameId: string, updates: readonly CollectionUpdate[], at = Date.now()): void {
-    const next = new Map([...this.updates].filter(([, u]) => u.gameId !== gameId));
+  /**
+   * Replace one game's results; other games' stay as they were checked.
+   *
+   * ─── ONLY WHAT WAS ANSWERED IS REPLACED ────────────────────────────
+   * This dropped every prior result for the game and wrote the new list over
+   * it, which is correct only when the new list is an ANSWER. An empty list
+   * also comes back when Nexus could not be asked — logged out, offline, a
+   * 503 — so a failed re-check silently removed an Update button that a
+   * successful check had put there, and nothing on screen said a check had
+   * failed. Unknown is not "up to date".
+   *
+   * `answeredSlugs` names the collections Nexus actually answered for. A
+   * previously-found update for a slug that was NOT answered is kept exactly
+   * as it was: the last thing anybody actually established.
+   */
+  replaceForGame(
+    gameId: string,
+    updates: readonly CollectionUpdate[],
+    answeredSlugs: ReadonlySet<string>,
+    at = Date.now(),
+  ): void {
+    const next = new Map(
+      [...this.updates].filter(
+        ([, u]) =>
+          u.gameId !== gameId || !answeredSlugs.has(u.installed.slug),
+      ),
+    );
     for (const u of updates) next.set(u.packageId, u);
     this.updates = next;
     this.checkedAt.set(gameId, at);
@@ -115,13 +139,22 @@ export async function checkCollectionUpdates(
     return [...updates.all().values()].filter((u) => u.gameId === gameId);
   }
   const receipts = (await listReceipts(getVortexUserDataPath())).filter((r) => r.gameId === gameId);
-  const found = await findCollectionUpdates(api, receipts);
-  updates.replaceForGame(gameId, found);
+  const { updates: found, answeredSlugs } = await findCollectionUpdates(api, receipts);
+  updates.replaceForGame(gameId, found, answeredSlugs);
+  const trackedSlugs = new Set(
+    receipts
+      .map((r) => r.nexusCollection?.slug)
+      .filter((slug): slug is string => slug !== undefined),
+  );
+  const unanswered = [...trackedSlugs].filter((slug) => !answeredSlugs.has(slug));
   ehLog("info", "collection-updates.found", {
     gameId,
     receipts: receipts.length,
-    tracked: receipts.filter((r) => r.nexusCollection !== undefined).length,
+    tracked: trackedSlugs.size,
     updates: found.map((u) => `${u.installed.slug} ${u.installed.revisionNumber}→${u.latestRevision}`),
+    // Not "up to date": Nexus did not answer for these, so whatever was known
+    // about them before still stands.
+    unanswered,
   });
   if (options.notify) {
     for (const update of found) notifyUpdate(api, update);

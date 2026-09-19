@@ -45,6 +45,32 @@ export async function latestPublishedRevision(api: NexusApi, slug: string): Prom
   return typeof revision === "number" && Number.isInteger(revision) ? revision : undefined;
 }
 
+
+/**
+ * What one round of checking actually established.
+ *
+ * ─── AN EMPTY LIST IS TWO DIFFERENT ANSWERS ────────────────────────────
+ * `updates: []` is returned when Nexus said every collection is current AND
+ * when Nexus could not be asked at all — not logged in, offline, a 503, or an
+ * `emitAndAwait` that resolved to nothing. The caller used to take the empty
+ * list and replace the game's stored results with it, so a check that failed
+ * ELEVEN MINUTES after one that found revision 13 silently removed the Update
+ * button, with nothing anywhere saying a check had failed.
+ *
+ * The curator side of this product already refuses to make that conflation —
+ * "unknown is not the same as up to date" — and the player side is where it
+ * matters more, because the player cannot go and look.
+ *
+ * `answeredSlugs` is therefore the load-bearing half: a slug is in it only
+ * when Nexus returned a revision number for it. A slug that is absent was not
+ * answered, and what was previously known about it must be kept rather than
+ * overwritten with an assumption.
+ */
+export type CollectionUpdateCheck = {
+  updates: CollectionUpdate[];
+  answeredSlugs: Set<string>;
+};
+
 /**
  * The updates for these receipts, one per collection with a newer revision.
  *
@@ -56,15 +82,18 @@ export async function latestPublishedRevision(api: NexusApi, slug: string): Prom
 export async function findCollectionUpdates(
   api: NexusApi,
   receipts: readonly InstallReceipt[],
-): Promise<CollectionUpdate[]> {
+): Promise<CollectionUpdateCheck> {
   const tracked = receipts.filter((r) => r.nexusCollection !== undefined);
-  if (tracked.length === 0) return [];
+  if (tracked.length === 0) return { updates: [], answeredSlugs: new Set() };
   if (!isLoggedInToNexus(api.getState())) {
     ehLog("info", "collection-updates.skipped", { tracked: tracked.length, why: "Vortex is not logged in to Nexus" });
-    return [];
+    // Nothing was ASKED, so nothing was answered. Returning an empty update
+    // list alone reads as "all up to date" — see CollectionUpdateCheck.
+    return { updates: [], answeredSlugs: new Set() };
   }
   const latestBySlug = new Map<string, number | undefined>();
   const updates: CollectionUpdate[] = [];
+  const answeredSlugs = new Set<string>();
   for (const receipt of tracked) {
     const installed = receipt.nexusCollection!;
     if (!latestBySlug.has(installed.slug)) {
@@ -77,6 +106,7 @@ export async function findCollectionUpdates(
       installed: installed.revisionNumber,
       latest: latest ?? "(no answer)",
     });
+    if (latest !== undefined) answeredSlugs.add(installed.slug);
     if (latest !== undefined && latest > installed.revisionNumber) {
       updates.push({
         packageId: receipt.packageId,
@@ -87,5 +117,5 @@ export async function findCollectionUpdates(
       });
     }
   }
-  return updates;
+  return { updates, answeredSlugs };
 }

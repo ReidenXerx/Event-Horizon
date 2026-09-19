@@ -195,14 +195,48 @@ describe("pressing Update", () => {
 });
 
 describe("what the checks found", () => {
+  const answered = (...slugs: string[]) => new Set(slugs);
+
   it("replaces one game's updates and keeps the other game's", () => {
     const store = getCollectionUpdateStore();
     const skyrim = { ...update("pkg-skyrim"), gameId: "skyrimse" };
-    store.replaceForGame("skyrimse", [skyrim]);
-    store.replaceForGame("fallout4", [update("pkg-fo4")]);
-    store.replaceForGame("fallout4", []);
+    store.replaceForGame("skyrimse", [skyrim], answered("tumkz9"));
+    store.replaceForGame("fallout4", [update("pkg-fo4")], answered("tumkz9"));
+    // Nexus answered for this game and said it is current.
+    store.replaceForGame("fallout4", [], answered("tumkz9"));
     expect([...store.all().keys()]).toEqual(["pkg-skyrim"]);
-    store.replaceForGame("skyrimse", []);
+    store.replaceForGame("skyrimse", [], answered("tumkz9"));
+  });
+
+  /**
+   * The failure this exists for: a startup check finds revision 13 and shows
+   * an Update button; ten minutes later a page visit re-checks, Nexus 503s or
+   * the session has lapsed, and the button silently disappears with nothing
+   * saying a check failed. Unknown is not "up to date" — the curator side of
+   * this product already refuses that conflation, and the player cannot go
+   * and look for themselves.
+   */
+  it("KEEPS a known update when the re-check could not ask about it", () => {
+    const store = getCollectionUpdateStore();
+    store.replaceForGame("fallout4", [update("pkg-fo4")], answered("tumkz9"));
+    // Nothing answered: not logged in, offline, or a 503.
+    store.replaceForGame("fallout4", [], answered());
+    expect([...store.all().keys()]).toEqual(["pkg-fo4"]);
+    store.replaceForGame("fallout4", [], answered("tumkz9"));
+    expect([...store.all().keys()]).toEqual([]);
+  });
+
+  it("only keeps the slugs that went unanswered, not the whole game", () => {
+    const store = getCollectionUpdateStore();
+    const other = {
+      ...update("pkg-other"),
+      installed: { ...update("pkg-other").installed, slug: "kqrokq" },
+    };
+    store.replaceForGame("fallout4", [update("pkg-fo4"), other], answered("tumkz9", "kqrokq"));
+    // One answered and current, the other not answered at all.
+    store.replaceForGame("fallout4", [], answered("tumkz9"));
+    expect([...store.all().keys()]).toEqual(["pkg-other"]);
+    store.replaceForGame("fallout4", [], answered("kqrokq"));
   });
 });
 
