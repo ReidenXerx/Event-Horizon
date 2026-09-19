@@ -457,3 +457,42 @@ project rather than this one, it belongs upstream — say so and it can be promo
   "does not match" after a shell edit, `od -c` the line before debugging anything else — and write
   code files with the file-writing tool, not a heredoc. *Scar: two in one session — a toast dedupe
   separator and a test regex — each costing a round of "but the file looks right".*
+
+## PP-1 — A patch script that prints "ok" before it writes is lying to you
+
+The pattern that keeps failing is a helper that asserts a unique match, substitutes into an
+in-memory string, prints success, and writes the file at the END of the script. It fails two ways,
+and both happened in one session:
+
+- A later assertion throws, the script aborts before the write, and every earlier "ok" is discarded.
+  I then reported a conclusion drawn from a build that still contained the code I believed I had
+  removed.
+- The write is simply never called. Four "ok" lines, a clean recompile, and a byte-identical
+  artifact — 4836 bytes before and after.
+
+**Write inside the helper, read the file back, and only then print.** The artifact's size is the
+cheap second check: if a real code change recompiles to exactly the same byte count, it did not
+land.
+
+This is the same disease as trusting a log's silence. "I printed success" is not evidence that
+anything happened; the only evidence is the file on disk and the binary built from it.
+
+## PP-2 — Rewriting a file can change its LINE ENDINGS, and a test will blame your code
+
+Python's `open(p, "w")` on Windows turns every `\n` into `\r\n`. Rewrite an LF source file with it
+and you have silently added one byte per line — 7,624 of them in `runInstall.ts`.
+
+Nothing about that is visible in `git diff`, which shows only your intended hunk, or in `tsc`, or in
+the file on screen. What broke was a source-text scar test measuring a 2,000-BYTE window: the
+target slid to 2,015 and the test failed, pointing at a branch 2,000 lines away from anything I had
+touched. Several minutes went into hunting a defect that did not exist.
+
+- Write with `newline="\n"`, or use the file-writing tool.
+- When a test fails in code you did not touch, **compare the bytes before blaming the logic**:
+  `b.count(b"\r\n")` against `git show HEAD:<path>` settles it in one command.
+- A guard that can be defeated by line endings guards nothing — the `read()` helper in
+  `checkArchiveIdentity.test.ts` now normalises, and that was verified by forcing the file to CRLF
+  and watching the test still pass.
+
+*Scar: 2026-09-19, one confusing failure and a detour, from a whitespace change nobody made on
+purpose.*

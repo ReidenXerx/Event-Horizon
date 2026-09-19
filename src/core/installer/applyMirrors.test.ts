@@ -397,6 +397,46 @@ describe("what the user is told", () => {
       describeMirrorOutcome("Mod", { restored: 0, removed: 0, failures: [] }),
     ).toBeUndefined();
   });
+
+  it("names the supplied archive as the cause when it is the cause", () => {
+    /**
+     * ─── THE TWO FACTS THAT WERE NEVER JOINED ───────────────────────────
+     * A mirrored mod may leave its UNCHANGED files to its own archive so the
+     * package does not re-host the author's bytes. For a Nexus mod that is
+     * safe — modId + fileId + sha256 pin the file. An EXTERNAL mod is
+     * supplied by hand, and installFromLocalArchive deliberately allows a
+     * different build of it, so those files are simply not in the archive the
+     * player pointed at and every candidate fails its hash check.
+     *
+     * The run knew that and said only "4 could NOT be mirrored", which reads
+     * as a bug in the tool rather than a file the player can go and fetch.
+     */
+    const line = describeMirrorOutcome(
+      "SCAR",
+      {
+        restored: 1,
+        removed: 0,
+        failures: [{ path: "Data/scar.esp", why: "not in the archive" }],
+      },
+      { expected: "SCAR-v2.01.AE.7z", actual: "SCAR-v2.02.7z" },
+    );
+    expect(line).toContain("does not match the curator's copy");
+    expect(line).toContain("not the one the collection was built from");
+    expect(line).toContain("SCAR-v2.01.AE.7z");
+    expect(line).toContain("SCAR-v2.02.7z");
+    expect(line).toContain("pick the matching download");
+  });
+
+  it("says nothing about the supplied archive when nothing failed", () => {
+    // A differing archive that still produced every file is not a problem to
+    // report: the mod matches the curator, which is the only claim that counts.
+    const line = describeMirrorOutcome(
+      "SCAR",
+      { restored: 2, removed: 0, failures: [] },
+      { expected: "a.7z", actual: "b.7z" },
+    );
+    expect(line).not.toContain("not the one the collection was built from");
+  });
 });
 
 describe("a filesystem where rename cannot replace an existing file", () => {

@@ -468,8 +468,18 @@ describe("the driver acts on the difference, and the user sees it", () => {
   // without the other: a verdict nothing branches on, or a notice nothing
   // renders. Both typecheck. Five features in this codebase shipped exactly
   // that way before anyone noticed.
+  /**
+   * Source text with line endings normalised.
+   *
+   * The assertion below measures a 2000-BYTE window, and this file is edited
+   * on Windows: a tool that rewrites it with CRLF adds one byte per line and
+   * pushes the target out of the window. That happened — the test failed on a
+   * change 2,000 lines away from the branch it guards, which sends the reader
+   * hunting a defect that is not there. A scar test that can be defeated by
+   * line endings protects nothing.
+   */
   const read = (rel: string): string =>
-    fs.readFileSync(path.join(__dirname, rel), "utf8");
+    fs.readFileSync(path.join(__dirname, rel), "utf8").replace(/\r\n/g, "\n");
 
   it("routes a damaged archive AWAY from the curator report", async () => {
     // The finding itself: a truncated download is not the curator's problem,

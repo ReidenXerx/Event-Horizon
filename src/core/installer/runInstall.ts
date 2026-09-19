@@ -3458,7 +3458,17 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             },
           );
         }
-        const line = describeMirrorOutcome(mod.name, outcome);
+        /**
+         * The run has known both halves of this since the install step and
+         * has never joined them: these files were left to the mod's own
+         * archive, and the archive the player supplied is not the curator's.
+         * Without the second fact the first reads as a bug in the tool.
+         */
+        const line = describeMirrorOutcome(
+          mod.name,
+          outcome,
+          suppliedArchiveMismatches.get(mod.compareKey),
+        );
         if (line !== undefined) mirrorLines.push(line);
         if (outcome.failures.length > 0) mirrorFailures.push(mod.name);
 

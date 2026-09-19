@@ -633,6 +633,26 @@ export async function replaceFile(
 export function describeMirrorOutcome(
   modName: string,
   outcome: MirrorOutcome,
+  /**
+   * Set when this mod was installed from a hand-supplied archive that is NOT
+   * the one the collection was built from.
+   *
+   * ─── WHY THIS ARGUMENT EXISTS ──────────────────────────────────────
+   * A mirrored mod may leave its UNCHANGED files to its own archive, so the
+   * package does not re-host the author's bytes (`state.mirrorFromArchive`).
+   * For a Nexus mod that is safe: modId + fileId + sha256 pin the file, so
+   * the player's archive is the curator's. An EXTERNAL mod is supplied by
+   * hand and `installFromLocalArchive` deliberately allows a different
+   * build — "a mirror, a repack, a newer build the author replaced the page
+   * with" — so those files simply are not in it, every candidate fails its
+   * hash check, and the restore is refused.
+   *
+   * The run knew both halves and said only the second: the player read "4
+   * files could not be restored from the mod's own archive" with nothing
+   * connecting it to the download they chose. Naming the cause is the whole
+   * difference between a dead end and a fix they can act on.
+   */
+  suppliedArchiveDiffers?: { expected: string; actual: string },
 ): string | undefined {
   if (
     outcome.restored === 0 &&
@@ -671,6 +691,14 @@ export function describeMirrorOutcome(
     line +=
       ` ${outcome.failures.length} could NOT be mirrored, so this mod does ` +
       `not match the curator's copy: ${named}`;
+    if (suppliedArchiveDiffers !== undefined) {
+      line +=
+        ` — the file you supplied for this mod is not the one the collection ` +
+        `was built from (collection: ${suppliedArchiveDiffers.expected}, ` +
+        `yours: ${suppliedArchiveDiffers.actual}), and these files could only ` +
+        `have come from that archive. Re-run the install and pick the matching ` +
+        `download to finish this mod.`;
+    }
   }
   return line;
 }
