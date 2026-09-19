@@ -128,6 +128,18 @@ const RECHECK_AFTER_MS = 10 * 60 * 1000;
  * Check the active game's collections, remember what was found, and — when
  * `notify` — tell the player through Vortex's notifications.
  */
+/**
+ * Checks running right now, by game.
+ *
+ * `lastCheckedAt` is only stamped when a check COMPLETES, so two callers
+ * arriving during the same round-trip — the 30-second startup check and a
+ * player opening Collections — both saw a stale timestamp and both asked
+ * Nexus. Two answers then landed in whichever order they landed, and the
+ * later one won. Sharing the promise makes the second caller wait for the
+ * first answer instead of buying a second one.
+ */
+const checksInFlight = new Map<string, Promise<CollectionUpdate[]>>();
+
 export async function checkCollectionUpdates(
   api: types.IExtensionApi,
   options: { notify: boolean; force?: boolean },
@@ -135,9 +147,26 @@ export async function checkCollectionUpdates(
   const updates = getCollectionUpdateStore();
   const gameId = selectors.activeGameId(api.getState());
   if (typeof gameId !== "string" || gameId === "") return [];
+  const running = checksInFlight.get(gameId);
+  if (running !== undefined) return running;
   if (options.force !== true && Date.now() - updates.lastCheckedAt(gameId) < RECHECK_AFTER_MS) {
     return [...updates.all().values()].filter((u) => u.gameId === gameId);
   }
+  const started = runOneCheck(api, gameId, options.notify);
+  checksInFlight.set(gameId, started);
+  try {
+    return await started;
+  } finally {
+    checksInFlight.delete(gameId);
+  }
+}
+
+async function runOneCheck(
+  api: types.IExtensionApi,
+  gameId: string,
+  notify: boolean,
+): Promise<CollectionUpdate[]> {
+  const updates = getCollectionUpdateStore();
   const receipts = (await listReceipts(getVortexUserDataPath())).filter((r) => r.gameId === gameId);
   const { updates: found, answeredSlugs } = await findCollectionUpdates(api, receipts);
   updates.replaceForGame(gameId, found, answeredSlugs);
@@ -156,7 +185,7 @@ export async function checkCollectionUpdates(
     // about them before still stands.
     unanswered,
   });
-  if (options.notify) {
+  if (notify) {
     for (const update of found) notifyUpdate(api, update);
   }
   return found;
@@ -418,6 +447,9 @@ function safeFileName(name: string): string {
 /** How long after Vortex starts to check, so its Nexus login has settled. */
 const STARTUP_DELAY_MS = 30_000;
 
+/** And once more, for a login that had not settled by then. */
+const RETRY_DELAY_MS = 120_000;
+
 /**
  * Check at startup and whenever the player switches game.
  *
@@ -430,9 +462,41 @@ export function watchCollectionUpdates(api: types.IExtensionApi): void {
     if (timer !== undefined) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = undefined;
-      checkCollectionUpdates(api, { notify: true, force: true }).catch((err: unknown) => {
-        ehLog("warn", "collection-updates.check-failed", { why, err });
-      });
+      void (async (): Promise<void> => {
+        try {
+          const found = await checkCollectionUpdates(api, {
+            notify: true,
+            force: true,
+          });
+          /**
+           * ─── ONE RETRY, BECAUSE THIRTY SECONDS IS A GUESS ──────────────
+           * The delay exists so Vortex's Nexus login has settled. When it has
+           * not, `findCollectionUpdates` asks nothing and the session gets no
+           * check at all until the player switches game or opens Collections
+           * — which, for someone who does neither, means no update is ever
+           * offered.
+           *
+           * Retried only when NOTHING was answered: a check that reached
+           * Nexus needs no second opinion, and a collection that is current
+           * answered perfectly well by saying so.
+           */
+          if (found.length === 0 && !isLoggedInToNexus(api.getState())) {
+            timer = setTimeout(() => {
+              timer = undefined;
+              checkCollectionUpdates(api, { notify: true, force: true }).catch(
+                (err: unknown) => {
+                  ehLog("warn", "collection-updates.check-failed", {
+                    why: `${why} (retry)`,
+                    err,
+                  });
+                },
+              );
+            }, RETRY_DELAY_MS);
+          }
+        } catch (err: unknown) {
+          ehLog("warn", "collection-updates.check-failed", { why, err });
+        }
+      })();
     }, STARTUP_DELAY_MS);
   };
   later("startup");

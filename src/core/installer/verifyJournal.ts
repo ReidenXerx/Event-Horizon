@@ -104,10 +104,23 @@ export async function appendVerifyJournal(
   }
 }
 
-/** Every proof recorded for this collection, newest last. */
+/**
+ * Every proof recorded for this collection, newest last.
+ *
+ * `forVersion` prunes as it reads: proofs recorded for a DIFFERENT release
+ * can never be reused (`reusableVerifications` drops them anyway), and the
+ * journal is only cleared when a run SUCCEEDS — so a collection whose
+ * installs keep being interrupted across several releases accumulates lines
+ * nothing will ever read again. Filtering here bounds the file and keeps the
+ * rest of the pipeline reasoning about proofs that could still apply.
+ *
+ * Omitted, everything is returned, which is what a caller inspecting the
+ * whole journal wants.
+ */
 export async function readVerifyJournal(
   appDataPath: string,
   packageId: string,
+  forVersion?: string,
 ): Promise<VerifyJournalEntry[]> {
   let raw: string;
   try {
@@ -119,6 +132,7 @@ export async function readVerifyJournal(
 
   const out: VerifyJournalEntry[] = [];
   let unreadableLines = 0;
+  let otherVersions = 0;
   for (const line of raw.split("\n")) {
     if (line.length === 0) continue;
     try {
@@ -131,6 +145,12 @@ export async function readVerifyJournal(
         typeof p.at !== "number"
       ) {
         unreadableLines += 1;
+        continue;
+      }
+      // A proof for another release can never be reused; dropping it here
+      // keeps the journal from growing across interrupted upgrades.
+      if (forVersion !== undefined && p.packageVersion !== forVersion) {
+        otherVersions += 1;
         continue;
       }
       out.push({
@@ -155,6 +175,16 @@ export async function readVerifyJournal(
       unreadableLines,
       usable: out.length,
       consequence: "those mods will simply be verified again",
+    });
+  }
+  if (otherVersions > 0) {
+    ehLog("info", "verify.journal.other-versions", {
+      packageId,
+      otherVersions,
+      forVersion,
+      consequence:
+        "proofs from earlier releases of this collection, which could never " +
+        "be reused for this one",
     });
   }
   return out;

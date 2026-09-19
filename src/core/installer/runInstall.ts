@@ -1992,7 +1992,14 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         // reusableVerifications: the safe direction here is to still resume.
       }
       const reusable = reusableVerifications({
-        entries: await readVerifyJournal(ctx.appDataPath, plan.manifest.package.id),
+        entries: await readVerifyJournal(
+          ctx.appDataPath,
+          plan.manifest.package.id,
+          // Prunes as it reads: the journal is only cleared on a SUCCESSFUL
+          // run, so a collection whose installs keep being interrupted across
+          // releases otherwise accumulates proofs nothing can ever reuse.
+          plan.manifest.package.version,
+        ),
         packageVersion: plan.manifest.package.version,
         level: journalLevel,
         installedAt: installedAtByModId,

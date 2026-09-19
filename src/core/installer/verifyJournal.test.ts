@@ -150,6 +150,30 @@ describe("the file it keeps", () => {
     expect(back[0]?.verifiedFileCount).toBe(42);
   });
 
+  it("prunes proofs from other releases as it reads", async () => {
+    /**
+     * The journal is cleared only when a run SUCCEEDS, so a collection whose
+     * installs keep being interrupted across releases accumulates lines that
+     * `reusableVerifications` will drop anyway — forever. Filtering on read
+     * bounds the file and keeps the pipeline reasoning about proofs that
+     * could still apply.
+     */
+    const dir = await tmp();
+    await appendVerifyJournal(dir, PKG, entry({ packageVersion: "1.0.0" }));
+    await appendVerifyJournal(
+      dir,
+      PKG,
+      entry({ compareKey: "nexus:1:2", packageVersion: "1.0.1" }),
+    );
+
+    expect(
+      (await readVerifyJournal(dir, PKG, "1.0.1")).map((e) => e.compareKey),
+    ).toEqual(["nexus:1:2"]);
+    // Omitted, nothing is pruned — a caller inspecting the whole journal
+    // wants all of it.
+    expect(await readVerifyJournal(dir, PKG)).toHaveLength(2);
+  });
+
   it("reads the lines before a truncated tail, which is the killed run's shape", async () => {
     const dir = await tmp();
     await appendVerifyJournal(dir, PKG, entry());
