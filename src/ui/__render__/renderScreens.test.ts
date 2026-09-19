@@ -120,8 +120,21 @@ const page = (title: string, body: string): string => `<!doctype html>
   /* Animations would capture mid-flight and make every screenshot differ.
      They are jumped to their END rather than removed: removing them also
      removed the transform an entrance animation leaves behind, and the
-     screenshots then certified a modal layout Vortex never draws. */
-  *,*::before,*::after{animation-delay:-60s !important;transition:none !important;}
+     screenshots then certified a modal layout Vortex never draws.
+
+     PAUSED as well as delayed, and that second half is what makes it
+     deterministic. A delay of -60s starts a finite animation past its end,
+     which is the intent — but an INFINITE one (the logo's glow, the progress
+     bar's shimmer) is merely 60s in and still running, so the frame depends
+     on how long Edge took to get to the screenshot. That produced a fingerprint
+     failure on a different screen almost every run: a handful of 8px cells
+     changing by 4-6/255 on pick, then about, then dashboard-home, with no code
+     behind any of them. Accepting those bakes one random frame in and hides
+     the next real change; raising the tolerance hides it everywhere. Freezing
+     the clock fixes the cause. */
+  *,*::before,*::after{animation-delay:-60s !important;
+                       animation-play-state:paused !important;
+                       transition:none !important;}
   /* .eh-stagger > * starts at opacity:0 and is revealed BY its animation.
      Killing animations above left every staggered child invisible - which
      photographed as a large empty band where the quick-action cards are, and
