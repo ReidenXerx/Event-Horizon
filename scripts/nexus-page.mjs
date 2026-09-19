@@ -7,11 +7,22 @@
 // Protocol; it never reads cookies or passwords. It opens its OWN tab and
 // closes it at the end, so no tab you have open is navigated away.
 //
-// Use a DEDICATED browser profile, never your everyday one. While a browser
-// listens on a debugging port, any program running on this machine — not only
-// this script — can connect without a password, read that profile's cookies
-// for every site and act as you on each of them. A profile that is only ever
-// logged into Nexus limits that to Nexus, and closing it closes the port.
+// THE OWNER USES THEIR MAIN BROWSER, and that is a settled decision -- do not
+// re-litigate it or refuse to run because of the paragraph below. The dedicated
+// profile was this script's original advice; the owner read it and chose
+// otherwise, and an agent reading only the advice will "helpfully" apologise for
+// following the actual instruction. That happened.
+//
+// The RISK is unchanged and worth stating once, because it is a fact rather than
+// a recommendation: while a browser listens on a debugging port, any program
+// running on this machine -- not only this script -- can connect without a
+// password, read that profile's cookies for every site and act as you on each of
+// them. Closing the browser closes the port. So close it when you are done.
+//
+// A dedicated profile (one that is only ever logged into Nexus) narrows that to
+// Nexus, and the invocation below shows how. Use it if you ever want that;
+// otherwise start your normal browser with --remote-debugging-port=9222 and
+// this script will use it.
 //
 //   1. Start the browser on its own profile folder, with the port. The first
 //      time, log into Nexus in the window it opens; the profile keeps the login.
