@@ -441,6 +441,17 @@ export type InstallSuccess = {
    */
   stagingDriftNotice?: string[];
   /**
+   * Mods the PREVIOUS revision of this collection had and this one does not.
+   *
+   * A fact, never an action. A version-changing update installs into a fresh
+   * profile, so a dropped mod is not removed and not disabled — it is simply
+   * not enabled in the new profile, and stays switched on in the old one.
+   * That is correct (NS-2), and it used to be completely silent, so a
+   * player's pool grew one revision at a time with mods nothing would ever
+   * name again.
+   */
+  droppedModNotice?: string[];
+  /**
    * How the user's resulting plugin order differs from the curator's.
    *
    * Applying the curator's LOOT rules is not the same as reproducing their
@@ -626,6 +637,8 @@ export type InstallFailed = {
   stagingDriftNotice?: string[];
   /** Archives supplied from outside Nexus, and what was done with them. */
   externalArchiveNotice?: string[];
+  /** Mods the previous revision had and this one does not — see above. */
+  droppedModNotice?: string[];
 };
 
 /** One mod that could not be installed, and why. */

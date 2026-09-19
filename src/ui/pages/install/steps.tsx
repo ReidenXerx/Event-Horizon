@@ -2875,6 +2875,31 @@ function ExternalArchiveNotice(props: {
   );
 }
 
+
+/**
+ * Mods the previous revision had and this one does not.
+ *
+ * Phrased so it cannot be read as a deletion, because it is not one: a
+ * version-changing update installs into a fresh profile, so these mods are
+ * still installed and still switched on in the profile the player was using
+ * before. The notice exists because that was otherwise invisible — a pool
+ * that grows one revision at a time with mods nothing ever names again.
+ */
+function DroppedModNotice(props: {
+  lines: readonly string[];
+}): JSX.Element | null {
+  if (props.lines.length === 0) return null;
+  return (
+    <Notice
+      label="Mods this version dropped"
+      intent="info"
+      summary="Still installed, and still switched on in your previous profile."
+    >
+      <NoticeLines lines={props.lines} />
+    </Notice>
+  );
+}
+
 /**
  * ESL / light flags — restored, or a plugin count that will not load.
  *
@@ -3226,6 +3251,14 @@ function InstallNotes(props: {
     present.push({
       label: "game settings",
       node: <GameIniNotice key="game" lines={result.gameIniNotice ?? []} />,
+    });
+  }
+  if ((result.droppedModNotice?.length ?? 0) > 0) {
+    present.push({
+      label: "mods this version dropped",
+      node: (
+        <DroppedModNotice key="dropped" lines={result.droppedModNotice ?? []} />
+      ),
     });
   }
   if ((result.externalArchiveNotice?.length ?? 0) > 0) {

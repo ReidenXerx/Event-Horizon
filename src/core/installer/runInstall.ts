@@ -4358,6 +4358,32 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     // the measurement for the two opposite ways that was wrong.
     const driftNotice = driftNoticeEarly;
 
+    /**
+     * ─── WHAT THE PREVIOUS REVISION HAD AND THIS ONE DOES NOT ───────────
+     * Said, never done. A version-changing update installs into a fresh
+     * profile, so a mod the curator dropped is not removed and not disabled:
+     * it stays in Vortex's per-game pool, switched on in the profile of the
+     * revision the player was on, and simply not enabled in the new one.
+     *
+     * That behaviour is right — NS-2 forbids destroying it and the player may
+     * still want it — but it was entirely silent, so a pool grew one revision
+     * at a time with mods nothing would ever mention again. `droppedMods.ts`
+     * has the reasoning and the rules about whose mods we may talk about.
+     */
+    const { findDroppedMods, describeDroppedMods } = await import(
+      "./droppedMods"
+    );
+    const droppedModNotice = describeDroppedMods(
+      findDroppedMods({
+        previousMods: previousReceiptMods,
+        currentCompareKeys: new Set(
+          plan.manifest.mods.map((m) => m.compareKey),
+        ),
+        stillInstalled: liveModIds,
+      }),
+      previousReceipt?.vortexProfileName,
+    );
+
     // Mods installed, deployed, rules and order applied — but if anything
     // failed we did NOT reproduce the curator's state, so no receipt.
     //
@@ -4887,6 +4913,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           ? { iniTweakNotice: describeIniTweaks(iniTweakApplication) }
           : {}),
         ...(driftNotice !== undefined ? { stagingDriftNotice: driftNotice } : {}),
+      ...(droppedModNotice.length > 0 ? { droppedModNotice } : {}),
         ...(externalNotices.length > 0
           ? { externalArchiveNotice: externalNotices }
           : {}),
@@ -5050,6 +5077,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           }
         : {}),
       ...(driftNotice !== undefined ? { stagingDriftNotice: driftNotice } : {}),
+      ...(droppedModNotice.length > 0 ? { droppedModNotice } : {}),
       ...(curatorReports.length > 0 ? { curatorReports } : {}),
       ...(finishingSkipped.length > 0
         ? {
