@@ -66,8 +66,20 @@ describe("alongsideInstallName", () => {
   });
 
   it("distinguishes two revisions of the SAME collection", () => {
-    // A new revision gets its own profile and may need a different build of
-    // the same mod; both have to be able to exist at once.
+    /**
+     * A new revision gets its own profile, and both have to keep working —
+     * that rollback is the point of the fresh-profile design.
+     *
+     * The reason this cannot be dropped in favour of the discriminator
+     * alone, which was proposed on the grounds that the copies accumulate:
+     * this path runs only for MIRRORED mods, and the mirror rewrites the
+     * copy's staging folder to the curator's bytes. One shared copy means
+     * whichever revision installed last decides its contents, so switching
+     * back to the previous profile would silently serve the newer revision's
+     * files. A different BUILD is already separated by compareKey inside the
+     * discriminator; this separates the same build mirrored differently,
+     * which compareKey cannot see.
+     */
     expect(alongsideInstallName(base)).not.toBe(
       alongsideInstallName({ ...base, collectionVersion: "1.0.11" }),
     );

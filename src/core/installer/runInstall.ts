@@ -4990,6 +4990,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       nexusCollection: await nexusRevisionOfPackageFile(ctx),
       suppliedArchiveMismatches,
       iniTweaks: iniTweakApplication.enabledKeys,
+      previousMods: previousReceiptMods,
     });
 
     let receiptPath: string;
@@ -5016,6 +5017,11 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         appDataPath: ctx.appDataPath,
         packageId: plan.manifest.package.id,
         packageVersion: plan.manifest.package.version,
+        // Which revision this copy is, so a later repair cannot hand back an
+        // older one that happens to share the curator's version string.
+        ...(receipt.nexusCollection?.revisionNumber !== undefined
+          ? { revisionNumber: receipt.nexusCollection.revisionNumber }
+          : {}),
         packageName: plan.manifest.package.name,
         sourcePath: ctx.ehcollZipPath,
       });
@@ -6503,6 +6509,12 @@ function buildReceipt(args: {
    * unsafe and left dropped tweaks on forever.
    */
   iniTweaks?: readonly { compareKey: string; tweak: string }[];
+  /**
+   * The previous receipt's mod entries, for facts that outlive one run.
+   *
+   * Today only `suppliedArchive` — see `suppliedArchiveFor`.
+   */
+  previousMods?: readonly InstallReceiptMod[];
 }): InstallReceipt {
   const {
     ctx,
@@ -6524,6 +6536,39 @@ function buildReceipt(args: {
   const { manifest } = ctx.plan;
   const now = new Date().toISOString();
 
+  /**
+   * ─── A MISMATCH THE RUN DID NOT RE-ASK ABOUT IS STILL TRUE ───────────
+   * `suppliedArchiveMismatches` is filled only by THIS run's pick path. On
+   * an update an external mod whose identity has not changed resolves as
+   * already-installed, nobody is asked for a file, the map is empty for it —
+   * and the new receipt replaced the old one without the field.
+   *
+   * So the fact survived exactly one run, while the field's own comment says
+   * "its consequence outlives the run and the player will not remember it".
+   * Everything downstream went quiet with it: the Doctor's log bundle stopped
+   * listing the mod, and `describeMirrorOutcome` lost the sentence that
+   * connects a mirror failing the same files every update to the download the
+   * player chose once, months ago.
+   *
+   * Carried forward only when this run did NOT install the mod itself. A
+   * decision arm other than `*-already-installed` means the archive question
+   * was asked again, and this run's answer — including the absence of a
+   * mismatch, i.e. they found the right file — is the current one.
+   */
+  const previousSupplied = new Map(
+    (args.previousMods ?? [])
+      .filter((m) => m.suppliedArchive !== undefined)
+      .map((m) => [m.compareKey, m.suppliedArchive!] as const),
+  );
+  const suppliedArchiveFor = (
+    m: InstalledModReportEntry,
+  ): { expected: string; actual: string } | undefined => {
+    const thisRun = args.suppliedArchiveMismatches?.get(m.compareKey);
+    if (thisRun !== undefined) return thisRun;
+    if (!m.fromDecision.endsWith("already-installed")) return undefined;
+    return previousSupplied.get(m.compareKey);
+  };
+
   const modEntries: InstallReceiptMod[] = [];
 
   for (const m of installedMods) {
@@ -6542,8 +6587,8 @@ function buildReceipt(args: {
        * may not fit, and every later question about that mod starts here.
        * Until now this lived only in a log line during the install.
        */
-      ...(args.suppliedArchiveMismatches?.get(m.compareKey) !== undefined
-        ? { suppliedArchive: args.suppliedArchiveMismatches.get(m.compareKey)! }
+      ...(suppliedArchiveFor(m) !== undefined
+        ? { suppliedArchive: suppliedArchiveFor(m)! }
         : {}),
       /**
        * The same test the journal uses (NS-2). An `*-already-installed`

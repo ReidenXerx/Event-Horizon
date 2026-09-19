@@ -42,6 +42,15 @@ export async function locateCollectionPackage(args: {
   packageId?: string;
   packageName: string;
   packageVersion: string;
+  /**
+   * The receipt's Nexus revision, when it has one.
+   *
+   * The version string is the curator's to retype, so two revisions can share
+   * it; the kept copy is then accepted on a match that proves nothing and a
+   * repair walks the player backwards into the revision they just left.
+   * Passing it lets the store refuse that. Absent is not a mismatch.
+   */
+  revisionNumber?: number;
   /** Defaults to Vortex's user-data path. Injected by tests. */
   appDataPath?: string;
 }): Promise<LocatedPackage | undefined> {
@@ -60,8 +69,9 @@ export async function locateCollectionPackage(args: {
      * a folder this never looked in — so the Doctor asked them to go and find
      * the file, weeks later, before it would repair anything.
      *
-     * The kept copy is keyed by package id and refuses a version that is not
-     * the installed one, so it cannot answer with the wrong collection.
+     * The kept copy is keyed by package id and refuses a version — and, when
+     * both sides name one, a REVISION — that is not the installed one, so it
+     * cannot answer with the wrong collection.
      */
     if (args.packageId !== undefined) {
       const { readStoredPackage } = await import("../installer/packageStore");
@@ -69,6 +79,7 @@ export async function locateCollectionPackage(args: {
         args.appDataPath ?? getVortexUserDataPath(),
         args.packageId,
         args.packageVersion,
+        args.revisionNumber,
       );
       if (kept !== undefined) {
         return { path: kept.path, fileName: kept.meta.fileName, source: "kept" };

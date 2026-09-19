@@ -317,6 +317,11 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
           packageId: receipt.packageId,
           packageName: receipt.packageName,
           packageVersion: receipt.packageVersion,
+          // So a kept copy of an OLDER revision that shares this version
+          // string is refused rather than repaired from.
+          ...(receipt.nexusCollection?.revisionNumber !== undefined
+            ? { revisionNumber: receipt.nexusCollection.revisionNumber }
+            : {}),
         });
 
         if (target === undefined) {

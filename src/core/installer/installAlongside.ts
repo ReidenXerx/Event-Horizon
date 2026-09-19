@@ -129,6 +129,26 @@ export function alongsideInstallName(args: {
     .digest("hex")
     .slice(0, 8);
 
+  /**
+   * ─── THE VERSION IS LOAD-BEARING, NOT DECORATION ────────────────────
+   * It makes the name per-RELEASE, so each revision gets its own copy — and
+   * an audit reasonably proposed removing it, because the discriminator
+   * already makes the name unique per (collection, mod) and the copies
+   * otherwise accumulate one per revision, unreclaimable.
+   *
+   * That would be a regression, and the reason is what this whole path is
+   * for: it runs ONLY for mirrored mods (`state.mirrored`), and the mirror
+   * pass afterwards rewrites the copy's staging folder to the curator's
+   * bytes. Two revisions sharing one copy would mean whichever installed
+   * last decides its contents — so switching back to the previous revision's
+   * profile, the rollback the fresh-profile design exists to provide, would
+   * silently hand the player the NEWER revision's files.
+   *
+   * A different BUILD of the mod is already separated by `compareKey` inside
+   * the discriminator. This separates the same build mirrored differently,
+   * which the compareKey cannot see. The cost is disk space, and NS-1 is
+   * explicit that download size is not the goal reliability is measured by.
+   */
   const marker = ` - ${clean(args.collectionName)} v${clean(
     args.collectionVersion,
   )} [${discriminator}] - Event Horizon`;

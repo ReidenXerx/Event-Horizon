@@ -46,13 +46,20 @@ const sourceFile = async (dir: string, name: string, body: string): Promise<stri
 const keep = async (
   appData: string,
   sourcePath: string,
-  over: Partial<{ packageVersion: string; packageName: string }> = {},
+  over: Partial<{
+    packageVersion: string;
+    packageName: string;
+    revisionNumber: number;
+  }> = {},
 ): ReturnType<typeof storeInstalledPackage> =>
   storeInstalledPackage({
     appDataPath: appData,
     packageId: PKG,
     packageVersion: over.packageVersion ?? "1.1.8",
     packageName: over.packageName ?? "Gate to SovnGoon",
+    ...(over.revisionNumber !== undefined
+      ? { revisionNumber: over.revisionNumber }
+      : {}),
     sourcePath,
   });
 
@@ -167,5 +174,71 @@ describe("the kept package does not outlive the collection", () => {
     // branch — never in the path that KEEPS the receipt because mods survive.
     expect(clear).toBeGreaterThan(del);
     expect(s.slice(del, clear)).not.toContain("receipt-kept");
+  });
+});
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * A version string is not an identity.
+ *
+ * The curator types it, so two revisions can carry the same one — and
+ * `storeInstalledPackage` swallows every failure deliberately, because a
+ * finished install must not be reported as broken over a housekeeping copy.
+ * Put together: update to a new revision that kept its version, the copy
+ * fails on a full disk, and the store still holds the PREVIOUS revision's
+ * archive under a version that matches. The Doctor then repairs from it and
+ * walks the player backwards into the revision they just left, with every
+ * check passing.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("the kept copy must be the right REVISION, not just the right version", () => {
+  it("refuses a stored copy whose revision is not the one asked for", async () => {
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "eh-pkg-rev-"));
+    try {
+      const src = await sourceFile(dir, "c.ehcoll", "rev-12 bytes");
+      await keep(dir, src, { packageVersion: "1.1.8", revisionNumber: 12 });
+
+      // Same version string, different revision: not this install's package.
+      expect(await readStoredPackage(dir, PKG, "1.1.8", 13)).toBeUndefined();
+      // The matching revision is still served.
+      expect(await readStoredPackage(dir, PKG, "1.1.8", 12)).toBeDefined();
+    } finally {
+      await fsp.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to the version check when either side has no revision", async () => {
+    // A copy kept before this field existed, or one from a file install, has
+    // nothing to compare. Unknown is not a mismatch — refusing here would
+    // retire the kept copy for everyone who has not reinstalled since.
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "eh-pkg-rev-"));
+    try {
+      const src = await sourceFile(dir, "c.ehcoll", "legacy bytes");
+      await keep(dir, src, { packageVersion: "1.1.8" });
+      expect(await readStoredPackage(dir, PKG, "1.1.8", 13)).toBeDefined();
+
+      const dir2 = await fsp.mkdtemp(path.join(os.tmpdir(), "eh-pkg-rev2-"));
+      try {
+        const src2 = await sourceFile(dir2, "c.ehcoll", "rev bytes");
+        await keep(dir2, src2, { packageVersion: "1.1.8", revisionNumber: 12 });
+        // Caller does not know the revision: the version still decides.
+        expect(await readStoredPackage(dir2, PKG, "1.1.8")).toBeDefined();
+      } finally {
+        await fsp.rm(dir2, { recursive: true, force: true });
+      }
+    } finally {
+      await fsp.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("still refuses a mismatched VERSION regardless of revision", async () => {
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "eh-pkg-rev-"));
+    try {
+      const src = await sourceFile(dir, "c.ehcoll", "bytes");
+      await keep(dir, src, { packageVersion: "1.1.8", revisionNumber: 12 });
+      expect(await readStoredPackage(dir, PKG, "1.2.0", 12)).toBeUndefined();
+    } finally {
+      await fsp.rm(dir, { recursive: true, force: true });
+    }
   });
 });

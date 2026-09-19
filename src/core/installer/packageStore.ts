@@ -49,6 +49,27 @@ export type StoredPackageMeta = {
   packageId: string;
   /** Must match the receipt's `packageVersion` before the copy is used. */
   packageVersion: string;
+  /**
+   * The Nexus collection revision this copy is, when it came from a page.
+   *
+   * ─── BECAUSE THE VERSION IS NOT AN IDENTITY ─────────────────────────
+   * The version string is typed by the curator, so two different revisions
+   * can carry the same one. `storeInstalledPackage` swallows every failure —
+   * deliberately, since a finished install must not be reported as broken
+   * over a housekeeping copy — and the likeliest time to fail is exactly
+   * when the package is the multi-gigabyte mirrored kind.
+   *
+   * Put together: update to a new revision that kept its version, the copy
+   * fails on a full disk, and the store still holds the PREVIOUS revision's
+   * archive under a version string that matches. `locatePackage` then offers
+   * it as "kept" and the Doctor's repair hands the old manifest to the
+   * installer, walking the player backwards into the revision they just
+   * left, with every check passing.
+   *
+   * Absent when the package did not come from a collection page, and absent
+   * is not a mismatch — a file install has no revision to disagree about.
+   */
+  revisionNumber?: number;
   packageName: string;
   /** File name inside the store, e.g. `<id>.ehcoll`. */
   fileName: string;
@@ -77,6 +98,8 @@ export async function storeInstalledPackage(input: {
   appDataPath: string;
   packageId: string;
   packageVersion: string;
+  /** See {@link StoredPackageMeta.revisionNumber}. */
+  revisionNumber?: number;
   packageName: string;
   sourcePath: string;
 }): Promise<StoredPackageMeta | undefined> {
@@ -112,6 +135,9 @@ export async function storeInstalledPackage(input: {
     const meta: StoredPackageMeta = {
       packageId: input.packageId,
       packageVersion: input.packageVersion,
+      ...(input.revisionNumber !== undefined
+        ? { revisionNumber: input.revisionNumber }
+        : {}),
       packageName: input.packageName,
       fileName,
       sizeBytes: size,
@@ -152,6 +178,12 @@ export async function readStoredPackage(
   appDataPath: string,
   packageId: string,
   expectVersion?: string,
+  /**
+   * The revision the caller expects. A stored copy that names a DIFFERENT
+   * one is refused even when the version strings agree — see
+   * {@link StoredPackageMeta.revisionNumber}.
+   */
+  expectRevision?: number,
 ): Promise<{ path: string; meta: StoredPackageMeta } | undefined> {
   let meta: StoredPackageMeta;
   try {
@@ -167,6 +199,10 @@ export async function readStoredPackage(
     meta = {
       packageId: parsed.packageId,
       packageVersion: parsed.packageVersion,
+      ...(typeof parsed.revisionNumber === "number" &&
+      Number.isInteger(parsed.revisionNumber)
+        ? { revisionNumber: parsed.revisionNumber }
+        : {}),
       packageName: typeof parsed.packageName === "string" ? parsed.packageName : "",
       fileName: parsed.fileName,
       sizeBytes: typeof parsed.sizeBytes === "number" ? parsed.sizeBytes : 0,
@@ -183,6 +219,30 @@ export async function readStoredPackage(
       stored: meta.packageVersion,
       wanted: expectVersion,
       consequence: "the kept package is not this install's, so it is not used",
+    });
+    return undefined;
+  }
+
+  /**
+   * Revisions disagreeing beats version strings agreeing.
+   *
+   * Only when BOTH sides name one: a copy kept before this field existed, or
+   * one from a file install, has nothing to compare and falls back to the
+   * version check exactly as before. Unknown is not a mismatch.
+   */
+  if (
+    expectRevision !== undefined &&
+    meta.revisionNumber !== undefined &&
+    meta.revisionNumber !== expectRevision
+  ) {
+    ehLog("info", "package-store.revision-mismatch", {
+      packageId,
+      stored: meta.revisionNumber,
+      wanted: expectRevision,
+      consequence:
+        "the kept package is an older revision under the same version " +
+        "string, so it is not used — repairing from it would walk the " +
+        "player backwards into the revision they just left",
     });
     return undefined;
   }

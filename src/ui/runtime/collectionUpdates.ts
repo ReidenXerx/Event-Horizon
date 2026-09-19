@@ -252,6 +252,32 @@ export async function startCollectionUpdate(
       });
     });
     api.dismissNotification?.(progressId);
+    /**
+     * ─── CHECKED AGAIN, BECAUSE THE DOWNLOAD TOOK MINUTES ───────────────
+     * The check before the download is the one that matters for "is it sane
+     * to start", and it stops being true while the download runs — a
+     * collection revision is hundreds of megabytes, and the player is free
+     * to start installing something else in the meantime.
+     *
+     * `openInstall` calls `pickFile`, which resets the install wizard. Doing
+     * that mid-run leaves the other install executing against the state it
+     * captured while the wizard shows this collection's preview: its
+     * progress and its result are both dropped, because the session is no
+     * longer in the state that accepts them. The player sees a run that
+     * never finishes and an install page that is not the one running, and
+     * the obvious response — press Install again — is the worst one.
+     *
+     * The download is not wasted: it is in Vortex's download folder, so
+     * pressing Update again once the other install has finished finds it
+     * there rather than fetching it twice.
+     */
+    if (getEHRuntime().getSnapshot().installBusy) {
+      return refuse(
+        "An install started while this update was downloading. The file is " +
+          "in your downloads — press Update again once that install has " +
+          "finished.",
+      );
+    }
     await deps.openInstall(api, archivePath);
     ehLog("info", "collection-update.opened", {
       packageId: update.packageId,

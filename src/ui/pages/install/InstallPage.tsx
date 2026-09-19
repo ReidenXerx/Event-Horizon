@@ -440,10 +440,26 @@ function offerableProfiles(
 /**
  * Ask which of them to remove, then remove exactly those.
  *
- * The tick list IS the consent: every profile is named, all start ticked, and
- * the user unticks whatever they want to keep. Nothing is decided for them,
- * and the text says what is lost — a profile carries the load order and the
- * enabled/disabled state the user had in it.
+ * The tick list IS the consent: every profile is named, NONE start ticked,
+ * and the user ticks what they want gone. The text says what is lost — a
+ * profile carries the load order and the enabled/disabled state the user had
+ * in it, and removing it cannot be undone.
+ *
+ * ─── WHY NOTHING IS PRE-TICKED ─────────────────────────────────────────
+ * They used to start ticked, on the reasoning that unticking is as easy as
+ * ticking. It is not, when the affirmative button is "Remove ticked": a
+ * player who opens this expecting to review and presses the obvious button
+ * destroys every listed profile in one press.
+ *
+ * What that costs is specific. A version-changing update deliberately
+ * installs into a NEW profile "so the version that was working stays
+ * switchable" — the previous revision's profile is the rollback that whole
+ * design exists to provide, and it is in this list. Pre-ticked, the dialog
+ * offered to undo the safety net as its default answer.
+ *
+ * Unticked, a reflex press does nothing at all, which is the right outcome
+ * for a reflex. Housekeeping is worth two clicks; an unrecoverable rollback
+ * is not worth one.
  */
 async function cleanUpProfiles(deps: {
   api: types.IExtensionApi;
@@ -461,13 +477,14 @@ async function cleanUpProfiles(deps: {
       text:
         "Event Horizon created these Vortex profiles for earlier versions of " +
         "this collection. Removing one throws away the load order and the " +
-        "enabled/disabled state you had in it, and that cannot be undone. " +
-        "The profile this install just created is not listed, and neither is " +
-        "the one you are on. Untick anything you want to keep.",
+        "enabled/disabled state you had in it, and that cannot be undone — " +
+        "including your way back to the version you were on before this " +
+        "update. The profile this install just created is not listed, and " +
+        "neither is the one you are on. Tick only the ones you want removed.",
       checkboxes: profiles.map((p) => ({
         id: p.id,
         text: p.name,
-        value: true,
+        value: false,
       })),
     },
     [{ label: "Cancel" }, { label: CONFIRM }],

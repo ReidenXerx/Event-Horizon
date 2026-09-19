@@ -297,3 +297,43 @@ describe("when Vortex never accepts the download", () => {
     }
   });
 });
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * The download takes minutes, and "no install is running" stops being true.
+ *
+ * `openInstall` calls `pickFile`, which resets the install wizard. Doing that
+ * mid-run leaves the other install executing against the state it captured
+ * while the wizard shows this collection's preview — its progress and its
+ * result are both dropped, because the session is no longer in the state that
+ * accepts them. The player sees a run that never finishes next to an install
+ * page that is not the one running, and presses Install again.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("an install that starts while the update downloads", () => {
+  it("refuses to hijack the wizard, and keeps the downloaded file", async () => {
+    const { api } = fakeApi({ revision: REVISION, urls: URLS });
+    const d = deps({
+      // The install begins while this "download" is in flight.
+      waitForDownload: vi.fn(async () => {
+        getEHRuntime().setInstallBusy(true);
+        return { localPath: "Ivy's Panties-rev13.zip" };
+      }),
+    });
+
+    expect(await startCollectionUpdate(api, update("pkg-busy"), d)).toBe(
+      "refused",
+    );
+    expect(d.openInstall).not.toHaveBeenCalled();
+  });
+
+  it("still opens the install when nothing else started", async () => {
+    // The guard must not fire on the ordinary path.
+    const { api } = fakeApi({ revision: REVISION, urls: URLS });
+    const d = deps();
+    expect(await startCollectionUpdate(api, update("pkg-free"), d)).toBe(
+      "opened",
+    );
+    expect(d.openInstall).toHaveBeenCalled();
+  });
+});
