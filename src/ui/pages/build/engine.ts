@@ -1002,6 +1002,13 @@ export async function loadBuildContext(
   // panel three inches below correctly labelled the same mod "ships as an
   // external mod". Two answers to one question, on one screen.
   const unidentified = findUnidentifiedMods(mods, collectionConfig);
+  // The two halves cost different things, so they are counted separately: a
+  // Nexus mod with no archive cannot be packaged at all, while an external one
+  // is a build refusal the curator can clear by bundling it instead.
+  op.step("archives-missing", {
+    nexus: unidentified.length,
+    total: mods.filter((m) => m.archiveSha256 === undefined).length,
+  });
 
   // Computed HERE, after the config is loaded, because it now depends on it.
   //
@@ -1166,7 +1173,22 @@ export async function loadBuildContext(
     scopeWarnings: [
       ...describeScope(scope),
       ...describeHashedCollisions(hashedCollisions),
-      ...describeMissingArchives(unidentified),
+      // Both halves, from one set. `unidentified` is the Nexus half on its
+      // own, and passing only that meant an EXTERNAL mod with no archive was
+      // never mentioned on the form at all — the curator first heard about it
+      // when the build refused, twenty minutes later. The predicates are what
+      // keep the two halves from swapping: a Nexus mod marked
+      // `treatAsExternal` belongs in the external half, and a bundled mod in
+      // neither, because nobody is ever asked to supply it.
+      ...describeMissingArchives(
+        mods.filter((m) => m.archiveSha256 === undefined),
+        {
+          isExternal: (m) =>
+            shipsAsExternal(isNexusMod(m), collectionConfig.externalMods[m.id]),
+          isBundled: (m) =>
+            collectionConfig.externalMods[m.id]?.bundled === true,
+        },
+      ),
       // A prerequisite the curator does not have themselves cannot be
       // detected, only deduced from what the collection ships.
       ...dependencyWarnings,
@@ -1218,6 +1240,21 @@ const EXTERNAL_ARCHIVE_MISSING =
   "no source archive and no Nexus source to fetch one from";
 
 /**
+ * Which of these mods is the player asked to supply, and which does the
+ * package carry?
+ *
+ * Both default to the answer for a caller with no config in hand: external
+ * means "not from Nexus", and nothing is bundled. Passing the config-aware
+ * versions is what stops a Nexus mod marked `treatAsExternal` being told it
+ * "cannot be packaged" — it packages fine — and what stops a bundled mod
+ * being warned about at all, since nobody is ever asked to supply it.
+ */
+export type MissingArchiveContext = {
+  isExternal?: (mod: AuditorMod) => boolean;
+  isBundled?: (mod: AuditorMod) => boolean;
+};
+
+/**
  * Did this warning come from `describeMissingArchives`?
  *
  * Lives beside the producer deliberately — a predicate that travels with the
@@ -1230,7 +1267,10 @@ export function isMissingArchiveWarning(warning: string): boolean {
   );
 }
 
-export function describeMissingArchives(missing: AuditorMod[]): string[] {
+export function describeMissingArchives(
+  missing: AuditorMod[],
+  ctx?: MissingArchiveContext,
+): string[] {
   if (missing.length === 0) return [];
 
   // The two halves fail COMPLETELY differently and used to share one sentence.
@@ -1241,8 +1281,12 @@ export function describeMissingArchives(missing: AuditorMod[]): string[] {
   // build shipped all 955 mods with six of these present. Telling the curator
   // those six "cannot be packaged", and advising a verification level that is
   // now the only one there is, was wrong on both counts.
-  const nexus = missing.filter(isNexusMod);
-  const external = missing.filter((m) => !isNexusMod(m));
+  const isExternal = ctx?.isExternal ?? ((m: AuditorMod) => !isNexusMod(m));
+  const isBundled = ctx?.isBundled ?? ((): boolean => false);
+  const nexus = missing.filter((m) => !isExternal(m));
+  // A bundled mod ships its own bytes, so no player is ever shown a picker
+  // for it and its missing archive costs nobody anything.
+  const external = missing.filter((m) => isExternal(m) && !isBundled(m));
   const lines: string[] = [];
 
   if (nexus.length > 0) {
@@ -1257,11 +1301,13 @@ export function describeMissingArchives(missing: AuditorMod[]): string[] {
   if (external.length > 0) {
     lines.push(
       `${external.length} mod${external.length === 1 ? "" : "s"} have ` +
-        `${EXTERNAL_ARCHIVE_MISSING}. They still ship — they ` +
-        `are identified by the SHA-256 of their deployed files instead — but ` +
-        `that identity is weaker: a user whose copy differs even slightly will ` +
-        `not match it, and will be asked to supply the mod themselves. ` +
-        `Re-importing their archives into Vortex would give them a real identity.`,
+        `${EXTERNAL_ARCHIVE_MISSING}, and the player is asked to supply ` +
+        `${external.length === 1 ? "it" : "them"} by hand. The build will ` +
+        `refuse until each one has an archive here, because your archive's ` +
+        `hash is the only thing that can tell a player their pick is the ` +
+        `wrong file while they can still go and get the right one. ` +
+        `Import the archives into Vortex, tick "Bundle" so the package ` +
+        `carries the files instead, or take the mods out of the profile.`,
     );
   }
 
@@ -1694,6 +1740,51 @@ export async function runBuildPipeline(
       err,
     });
     driftOp.fail(err);
+  }
+
+  /**
+   * ─── A MOD THE PLAYER IS ASKED FOR MUST HAVE AN ARCHIVE HERE ────────
+   * Checked at the first moment the answer exists — bundling has just been
+   * MEASURED, so "the package carries this one, nobody is prompted" is a fact
+   * rather than the curator's intention — and long before anything is
+   * written, so a refusal costs a retry.
+   *
+   * Why a refusal and not a warning: the curator's archive hash is the only
+   * thing the player's file picker can check a pick against. Without it the
+   * picker accepts anything, and the divergence surfaces much later as file
+   * checks that fail without naming a file to fetch instead.
+   * `externalArchiveGate.ts` has the full reasoning.
+   */
+  const { externalArchiveRefusal } = await import(
+    "../../../core/manifest/externalArchiveGate"
+  );
+  const measuredBundleIds = new Set(measuredBundles.map((b) => b.modId));
+  const externalGate = externalArchiveRefusal(
+    mods
+      // A mod whose repack FAILED is already refused by name, with the real
+      // reason, when the bundles are resolved. Letting it through here would
+      // beat that refusal to the curator and tell them to tick "Bundle" —
+      // which is exactly what they did.
+      .filter((m) => !bundleFailures.has(m.id))
+      .map((m) => ({
+        id: m.id,
+        name: m.name,
+        archiveSha256: m.archiveSha256,
+        shipsAsExternal: shipsAsExternal(
+          isNexusMod(m),
+          collectionConfig.externalMods[m.id],
+        ),
+        bundled: measuredBundleIds.has(m.id),
+      })),
+  );
+  if (externalGate !== undefined) {
+    ehLog("error", "build.refused", {
+      gameId,
+      code: externalGate.code,
+      mods: externalGate.mods.length,
+      detail: externalGate.mods.slice(0, 20),
+    });
+    throw new BuildRefusedError(externalGate.code, externalGate.message);
   }
 
   // ── Prerequisites that are NOT Vortex mods ───────────────────────────
