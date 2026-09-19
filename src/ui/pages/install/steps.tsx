@@ -44,6 +44,7 @@ import {
   StepDots,
 } from "../../components";
 import { useApi, useApiOptional } from "../../state";
+import { profilesEnabling } from "../../../core/curator/profilesEnabling";
 import { useToast } from "../../components";
 import { useKeyboardShortcut } from "../../hooks/useKeyboardShortcut";
 import { formatBytes } from "../../../utils/diskSpace";
@@ -1253,6 +1254,33 @@ export function DecisionsStep(props: DecisionsStepProps): JSX.Element {
     state.conflictChoices,
   );
 
+  /**
+   * Where else each orphan is switched on.
+   *
+   * Read live from Vortex rather than carried in the plan: it is a fact about
+   * the player's profiles at the moment they are deciding, and the plan was
+   * built before this screen opened. `removeMods` is game-scoped, so this is
+   * what "Uninstall it" would actually cost them (NS-3).
+   */
+  const api = useApi();
+  const orphanAlsoEnabledIn = (modId: string): string[] => {
+    try {
+      const target = state.bundle.plan.installTarget;
+      return profilesEnabling({
+        state: api.getState(),
+        gameId: state.bundle.plan.manifest.game.id,
+        modId,
+        ...(target.kind === "current-profile"
+          ? { excludeProfileId: target.profileId }
+          : {}),
+      });
+    } catch {
+      // A prompt that cannot read state still has to render; it simply falls
+      // back to the generic wording rather than failing the step.
+      return [];
+    }
+  };
+
   return (
     <StepFrame
       current="decisions"
@@ -1335,6 +1363,7 @@ export function DecisionsStep(props: DecisionsStepProps): JSX.Element {
               <OrphanRow
                 key={o.existingModId}
                 orphan={o}
+                alsoEnabledIn={orphanAlsoEnabledIn(o.existingModId)}
                 value={
                   state.orphanChoices[o.existingModId] ?? defaultOrphanChoice()
                 }
@@ -1657,8 +1686,23 @@ function OrphanRow(props: {
   orphan: OrphanedModDecision;
   value: OrphanChoice;
   onChange: (choice: OrphanChoice) => void;
+  /** Profiles of this game, other than the target, where the mod is ON. */
+  alsoEnabledIn: readonly string[];
 }): JSX.Element {
-  const { orphan, value, onChange } = props;
+  const { orphan, value, onChange, alsoEnabledIn } = props;
+  /**
+   * ─── UNINSTALL IS GAME-SCOPED, AND THE PROMPT HAS TO SAY SO ──────────
+   * Vortex keeps one mod pool per game; a profile only records which mods
+   * are enabled (NS-3). So "Uninstall it" removes the mod from EVERY profile
+   * the player has, and "Removes the mod entirely (file system + Vortex
+   * state). Destructive." — true as far as it goes — never said that.
+   *
+   * Someone reading "orphaned" as "no longer part of this collection" and
+   * ticking Uninstall is not agreeing to lose it from the profile they play.
+   * When another profile has it switched on, that profile is named here and
+   * the wording stops being generic.
+   */
+  const elsewhere = alsoEnabledIn.length;
   return (
     <Card
       compact
@@ -1681,7 +1725,17 @@ function OrphanRow(props: {
           checked={value.kind === "uninstall"}
           onChange={(): void => onChange({ kind: "uninstall" })}
           label="Uninstall it"
-          sub="Removes the mod entirely (file system + Vortex state). Destructive."
+          sub={
+            elsewhere > 0
+              ? `Removes the mod entirely — from EVERY profile, not just this ` +
+                `collection's. It is switched on in ${alsoEnabledIn
+                  .slice(0, 3)
+                  .map((n) => `"${n}"`)
+                  .join(", ")}` +
+                (elsewhere > 3 ? ` and ${elsewhere - 3} more` : "") +
+                `, which would lose it too. Destructive.`
+              : "Removes the mod entirely (file system + Vortex state). Destructive."
+          }
         />
       </div>
     </Card>
