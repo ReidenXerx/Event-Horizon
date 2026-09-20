@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-ui
-description: "Skill for the Ui area of Event-Horizon. 69 symbols across 15 files."
+description: "Skill for the Ui area of Event-Horizon. 68 symbols across 14 files."
 ---
 
 # Ui
 
-69 symbols | 15 files | Cohesion: 89%
+68 symbols | 14 files | Cohesion: 89%
 
 ## When to Use
 
@@ -49,9 +49,9 @@ Start here when exploring this area:
 | `step` | Function | `scripts/lib/setup-ui.mjs` | 35 |
 | `summaryTable` | Function | `scripts/lib/setup-ui.mjs` | 58 |
 | `warn` | Function | `scripts/lib/setup-ui.mjs` | 43 |
-| `parseArgs` | Function | `scripts/nexus-page.mjs` | 116 |
-| `value` | Function | `scripts/nexus-page.mjs` | 117 |
-| `withNewTab` | Function | `scripts/nexus-page.mjs` | 46 |
+| `parseArgs` | Function | `scripts/nexus-page.mjs` | 127 |
+| `value` | Function | `scripts/nexus-page.mjs` | 128 |
+| `withNewTab` | Function | `scripts/nexus-page.mjs` | 57 |
 | `compare` | Function | `scripts/ui/fingerprint-screens.mjs` | 189 |
 | `contentBounds` | Function | `scripts/ui/fingerprint-screens.mjs` | 127 |
 | `decodePng` | Function | `scripts/ui/fingerprint-screens.mjs` | 54 |
@@ -67,7 +67,6 @@ Start here when exploring this area:
 
 | Flow | Type | Steps |
 |------|------|-------|
-| `Check → RgbOffsets` | intra_community | 5 |
 | `EventHorizonMainPage → Spinner` | cross_community | 5 |
 | `EditPage → NormalizeText` | cross_community | 4 |
 | `EventHorizonMainPage → ToastCard` | cross_community | 4 |
@@ -76,7 +75,8 @@ Start here when exploring this area:
 | `EventHorizonMainPage → UseApiOptional` | cross_community | 4 |
 | `Banner → Stamp` | intra_community | 3 |
 | `Banner → Log` | intra_community | 3 |
-| `Check → Hex` | intra_community | 3 |
+| `EventHorizonMainPage → CreateToastTimers` | cross_community | 3 |
+| `NextSteps → Stamp` | intra_community | 3 |
 
 ## How to Explore
 

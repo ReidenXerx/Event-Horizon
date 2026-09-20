@@ -70,6 +70,7 @@ Start here when exploring this area:
 | `LoadBuildDiff → IsNexusSourced` | cross_community | 4 |
 | `LoadBuildDiff → NexusCompareKey` | cross_community | 4 |
 | `CurrentFingerprint → GroupBy` | cross_community | 3 |
+| `Diff → GroupBy` | cross_community | 3 |
 | `RefreshProfileMembership → GroupBy` | cross_community | 3 |
 | `CurrentFingerprint → NexusCompareKey` | cross_community | 3 |
 | `RefreshProfileMembership → NexusCompareKey` | cross_community | 3 |

@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-manifest
-description: "Skill for the Manifest area of Event-Horizon. 522 symbols across 115 files."
+description: "Skill for the Manifest area of Event-Horizon. 542 symbols across 122 files."
 ---
 
 # Manifest
 
-522 symbols | 115 files | Cohesion: 73%
+542 symbols | 122 files | Cohesion: 72%
 
 ## When to Use
 
@@ -20,11 +20,11 @@ description: "Skill for the Manifest area of Event-Horizon. 522 symbols across 1
 | `src/core/manifest/parseManifest.ts` | ParseManifestError, describe, describeUnsupportedVersion, expectArray, expectBoolean (+44) |
 | `src/core/manifest/collectionConfig.ts` | choiceFromEntry, decidedPostProcessing, modsNewlyBundled, modsNoLongerBundled, toBuildManifestExternalMods (+21) |
 | `src/core/manifest/packageZip.ts` | PackageEhcollError, describeBytes, listBundles, packageBytesAtMost, packageEhcoll (+20) |
-| `src/core/manifest/readZip.ts` | ZipReadError, extractZipEntryToFile, findDataOffset, findEntry, findZip64Extra (+20) |
-| `src/ui/pages/build/engine.ts` | BuildRefusedError, BundleResolutionError, applyPostProcessedDeclarations, declarationsFor, resolveDeploymentMethod (+12) |
+| `src/core/manifest/readZip.ts` | ZipReadError, extractZipEntryToFile, findDataOffset, findEntry, findZip64Extra (+19) |
 | `src/core/manifest/buildManifest.ts` | BuildManifestError, buildLoadOrder, buildManifest, buildPackageMetadata, buildUserlist (+12) |
+| `src/ui/pages/build/engine.ts` | BuildRefusedError, BundleResolutionError, applyPostProcessedDeclarations, declarationsFor, resolveDeploymentMethod (+10) |
 | `src/core/manifest/externalHints.ts` | applyHint, describeUndeclared, countBy, downloadsFromState, modsFromState (+10) |
-| `src/core/manifest/bundleZip.ts` | listBundleFolder, writeChunk, assertBundlePaths, isAborted, sortForBundle (+8) |
+| `src/core/manifest/bundleZip.ts` | writeChunk, assertBundlePaths, isAborted, writeBundleZip, emit (+8) |
 | `src/core/manifest/readEhcoll.ts` | ReadEhcollError, assertReadableFile, classifyEntries, crossCheckBundled, extractManifest (+7) |
 | `src/core/manifest/bundleFromStaging.ts` | describeExternalDrift, mergeMeasuredBundles, restoreArchiveHashes, measureBundledMods, fail (+6) |
 
@@ -35,8 +35,8 @@ Start here when exploring this area:
 - **`parseManifest`** (Function) — `src/core/manifest/parseManifest.ts:171`
 - **`bundleEntryOf`** (Function) — `src/core/manifest/bundleLayout.ts:25`
 - **`bundleFolderInPackage`** (Function) — `src/core/manifest/bundleLayout.ts:10`
-- **`listBundleFolder`** (Function) — `src/core/manifest/bundleZip.ts:87`
 - **`packageEhcoll`** (Function) — `src/core/manifest/packageZip.ts:238`
+- **`repairDecisionFor`** (Function) — `src/core/resolver/resolveInstallPlan.ts:1176`
 
 ## Key Symbols
 
@@ -44,24 +44,24 @@ Start here when exploring this area:
 |--------|------|------|------|
 | `ParseManifestError` | Class | `src/core/manifest/parseManifest.ts` | 149 |
 | `PackageEhcollError` | Class | `src/core/manifest/packageZip.ts` | 209 |
-| `BuildRefusedError` | Class | `src/ui/pages/build/engine.ts` | 1290 |
+| `BuildRefusedError` | Class | `src/ui/pages/build/engine.ts` | 1336 |
 | `BundleResolutionError` | Class | `src/ui/pages/build/engine.ts` | 757 |
 | `ZipReadError` | Class | `src/core/manifest/readZip.ts` | 81 |
-| `BuildManifestError` | Class | `src/core/manifest/buildManifest.ts` | 262 |
+| `BuildManifestError` | Class | `src/core/manifest/buildManifest.ts` | 264 |
 | `ReadEhcollError` | Class | `src/core/manifest/readEhcoll.ts` | 133 |
 | `CollectionConfigError` | Class | `src/core/manifest/collectionConfig.ts` | 315 |
 | `parseManifest` | Function | `src/core/manifest/parseManifest.ts` | 171 |
 | `bundleEntryOf` | Function | `src/core/manifest/bundleLayout.ts` | 25 |
 | `bundleFolderInPackage` | Function | `src/core/manifest/bundleLayout.ts` | 10 |
-| `listBundleFolder` | Function | `src/core/manifest/bundleZip.ts` | 87 |
 | `packageEhcoll` | Function | `src/core/manifest/packageZip.ts` | 238 |
-| `repairDecisionFor` | Function | `src/core/resolver/resolveInstallPlan.ts` | 1132 |
+| `repairDecisionFor` | Function | `src/core/resolver/resolveInstallPlan.ts` | 1176 |
 | `isAbort` | Function | `src/utils/abortError.ts` | 54 |
 | `put` | Function | `src/core/diagnostics/zipWriter.ts` | 67 |
 | `buildGogHashdbTable` | Function | `src/core/environment/fixtures.testutil.ts` | 218 |
 | `buildPe` | Function | `src/core/environment/fixtures.testutil.ts` | 24 |
 | `alloc` | Function | `src/core/environment/fixtures.testutil.ts` | 30 |
 | `cstr` | Function | `src/core/environment/fixtures.testutil.ts` | 36 |
+| `rva` | Function | `src/core/environment/fixtures.testutil.ts` | 35 |
 
 ## Execution Flows
 

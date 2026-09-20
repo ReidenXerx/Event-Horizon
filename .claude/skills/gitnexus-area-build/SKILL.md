@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-build
-description: "Skill for the Build area of Event-Horizon. 509 symbols across 112 files."
+description: "Skill for the Build area of Event-Horizon. 505 symbols across 110 files."
 ---
 
 # Build
 
-509 symbols | 112 files | Cohesion: 83%
+505 symbols | 110 files | Cohesion: 84%
 
 ## When to Use
 
@@ -17,11 +17,11 @@ description: "Skill for the Build area of Event-Horizon. 509 symbols across 112 
 
 | File | Symbols |
 |------|---------|
-| `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildChangelog, BuildDiffCard, BuildWizard, BuildingPanel (+56) |
+| `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildChangelog, BuildDiffCard, BuildWizard, BuildingPanel (+57) |
 | `src/ui/pages/build/buildSession.ts` | cancelLoading, cancelRecovering, getState, subscribe, buildProgress (+30) |
-| `src/ui/pages/build/BuildDashboard.tsx` | BuildDashboard, handleDismissBuilt, handleOpenBuilt, handleOpenDraft, DashboardHeader (+23) |
-| `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, handlePickFile, DecisionsStep, DoNotInterfereModal (+20) |
-| `src/ui/pages/build/engine.ts` | validateCuratorInput, describeMissingArchives, isMissingArchiveWarning, downloadedFromNexus, findUnidentifiedMods (+14) |
+| `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, checkPickedFile, handlePickFile, DecisionsStep (+22) |
+| `src/ui/pages/build/BuildDashboard.tsx` | BuildDashboard, handleDismissBuilt, handleOpenBuilt, handleOpenDraft, DashboardHeader (+20) |
+| `src/ui/pages/build/engine.ts` | validateCuratorInput, describeMissingArchives, downloadedFromNexus, findUnidentifiedMods, isBundled (+17) |
 | `src/ui/pages/build/buildSessionRegistry.ts` | BuildSessionRegistry, getBuildSessionRegistry, get, notifyStateChanged, emit (+13) |
 | `src/ui/pages/build/NexusCollectionUpload.tsx` | Body, Choose, NexusCollectionUpload, close, Reasons (+12) |
 | `src/ui/pages/build/buildDiff.test.ts` | findPackages, findPackages, findPackages, findPackages, findPackages (+9) |
@@ -50,6 +50,7 @@ Start here when exploring this area:
 | `formatSize` | Function | `src/core/curator/cleanupPlan.ts` | 475 |
 | `describeProfileDrift` | Function | `src/core/curator/profileDrift.ts` | 106 |
 | `isProfileUnmoved` | Function | `src/core/curator/profileDrift.ts` | 90 |
+| `profilesEnabling` | Function | `src/core/curator/profilesEnabling.ts` | 44 |
 | `doctorLightFlagBaseline` | Function | `src/core/doctor/health.ts` | 188 |
 | `overallHealth` | Function | `src/core/doctor/health.ts` | 873 |
 | `canReapply` | Function | `src/core/doctor/loadOrderStatus.ts` | 254 |
@@ -61,7 +62,6 @@ Start here when exploring this area:
 | `countKinds` | Function | `src/core/manifest/unexplainedFiles.ts` | 175 |
 | `describeUnexplainedFile` | Function | `src/core/manifest/unexplainedFiles.ts` | 153 |
 | `formatBytes` | Function | `src/core/manifest/unexplainedFiles.ts` | 139 |
-| `listModDiffFiles` | Function | `src/core/modDiffStorage.ts` | 60 |
 
 ## Execution Flows
 

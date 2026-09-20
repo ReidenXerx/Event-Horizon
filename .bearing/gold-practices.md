@@ -496,3 +496,22 @@ touched. Several minutes went into hunting a defect that did not exist.
 
 *Scar: 2026-09-19, one confusing failure and a detour, from a whitespace change nobody made on
 purpose.*
+
+## PP-3 — This repo has NO formatter. Running one is a 400-line unrelated diff
+
+There is no `.prettierrc`, no `format` script, no lint script. The code is hand-formatted, and the
+long comment blocks that carry this project's reasoning are wrapped deliberately.
+
+`npx prettier --write` on two files I had just edited rewrapped **~380 lines I never touched** in
+`engine.ts` alone — re-breaking call arguments, collapsing multi-line expectations — burying a
+60-line change in churn no reviewer could read past. `git diff -w` does NOT reveal it as harmless,
+because prettier moves code, not only whitespace.
+
+- Do not run a formatter here. Match the surrounding style by hand.
+- If you already did: `git stash push -- <files>` (NOT `git checkout --`, which the sandbox denies
+  as irreversible), then re-apply your edits with the Edit tool and drop the stash.
+- Check `git diff --stat` against the size of the change you intended, every time. A number far
+  larger than your edit is the tell.
+
+*Scar: 2026-09-19, a two-file format that had to be unpicked edit by edit before it could be
+committed.*

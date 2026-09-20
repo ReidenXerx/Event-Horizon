@@ -1,16 +1,16 @@
 ---
 name: gitnexus-area-install
-description: "Skill for the Install area of Event-Horizon. 105 symbols across 22 files."
+description: "Skill for the Install area of Event-Horizon. 108 symbols across 23 files."
 ---
 
 # Install
 
-105 symbols | 22 files | Cohesion: 72%
+108 symbols | 23 files | Cohesion: 67%
 
 ## When to Use
 
 - Working with code in `src/`
-- Understanding how Notice, reconcileMods, wizardReducer work
+- Understanding how wizardReducer, describeHeal, healNeedsConfirmation work
 - Modifying install-related functionality
 
 ## Key Files
@@ -18,7 +18,7 @@ description: "Skill for the Install area of Event-Horizon. 105 symbols across 22
 | File | Symbols |
 |------|---------|
 | `src/ui/pages/install/installSession.ts` | onProgress, onPhase, onHashProgress, onPhase, onHashProgress (+28) |
-| `src/ui/pages/install/steps.tsx` | BucketList, CuratorReportsNotice, DamagedArchiveNotice, ExternalArchiveNotice, FailureBody (+23) |
+| `src/ui/pages/install/steps.tsx` | DroppedModNotice, ExternalArchiveNotice, GameIniNotice, IniTweakNotice, InstallNotes (+25) |
 | `src/ui/pages/install/state.ts` | wizardReducer, canProceedFromDecisions, countUndecidedConflicts, defaultConflictChoice, defaultOrphanChoice (+3) |
 | `src/ui/pages/install/engine.ts` | checkEnvironment, checkSystemRuntimes, profileExistsInState, runLoadingPipeline, checkAbort |
 | `src/ui/pages/install/installProgress.ts` | describeElapsed, describeQuiet, estimateRemainingMs, formatDuration, trackPhase |
@@ -32,22 +32,22 @@ description: "Skill for the Install area of Event-Horizon. 105 symbols across 22
 
 Start here when exploring this area:
 
-- **`Notice`** (Function) — `src/ui/components/Notice.tsx:21`
-- **`reconcileMods`** (Function) — `src/ui/pages/install/steps.tsx:2932`
 - **`wizardReducer`** (Function) — `src/ui/pages/install/state.ts:296`
 - **`describeHeal`** (Function) — `src/core/doctor/heal.ts:104`
 - **`healNeedsConfirmation`** (Function) — `src/core/doctor/heal.ts:79`
+- **`getInstallSession`** (Function) — `src/ui/pages/install/installSession.ts:1506`
+- **`Notice`** (Function) — `src/ui/components/Notice.tsx:21`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `Notice` | Function | `src/ui/components/Notice.tsx` | 21 |
-| `reconcileMods` | Function | `src/ui/pages/install/steps.tsx` | 2932 |
 | `wizardReducer` | Function | `src/ui/pages/install/state.ts` | 296 |
 | `describeHeal` | Function | `src/core/doctor/heal.ts` | 104 |
 | `healNeedsConfirmation` | Function | `src/core/doctor/heal.ts` | 79 |
-| `getInstallSession` | Function | `src/ui/pages/install/installSession.ts` | 1468 |
+| `getInstallSession` | Function | `src/ui/pages/install/installSession.ts` | 1506 |
+| `Notice` | Function | `src/ui/components/Notice.tsx` | 21 |
+| `reconcileMods` | Function | `src/ui/pages/install/steps.tsx` | 3206 |
 | `blocksInstall` | Function | `src/core/installer/autoDeploy.ts` | 48 |
 | `readsAutoDeploy` | Function | `src/core/installer/autoDeploy.ts` | 33 |
 | `probeDeploymentMethod` | Function | `src/core/installer/probeDeployment.ts` | 60 |
@@ -80,7 +80,7 @@ Start here when exploring this area:
 
 ## How to Explore
 
-1. `context({name: "Notice"})` — see callers and callees
+1. `context({name: "wizardReducer"})` — see callers and callees
 2. `query({search_query: "install"})` — find related execution flows
 3. Read key files listed above for implementation details
 4. `explain({target: "<file or symbol>"})` — persisted taint findings (source→sink data flows), when indexed with `--pdg`
