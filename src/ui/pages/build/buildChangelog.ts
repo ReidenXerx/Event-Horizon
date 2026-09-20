@@ -54,7 +54,20 @@ export type PrepareChangelogInput = {
   manifest: EhcollManifest;
   /** What the curator typed for this version. */
   notes: string;
-  /** How many older packages to open looking for the previous version. */
+  /**
+   * How many older packages to open looking for the previous version.
+   *
+   * Unbounded by default, and that is the point. It used to stop at three,
+   * which is fine only if the previous version is among the three newest
+   * packages in the folder — and a same-version republish consumes a slot
+   * every time, so three republished builds sitting beside the new one used
+   * up the whole budget and the changelog was written as a FIRST RELEASE,
+   * losing the entire history, saying nothing about why.
+   *
+   * Opening a package reads one entry out of a zip. Spending a few of those
+   * to avoid silently discarding a collection's history is not a trade worth
+   * thinking about (NS-1). The parameter survives for tests.
+   */
   maxPackagesRead?: number;
   loadHistory?: (configDir: string, slug: string) => Promise<ChangelogHistory | undefined>;
   knownSlugs?: () => Promise<string[]>;
@@ -104,11 +117,15 @@ async function findPreviousPackage(
   const known = await (args.knownSlugs ?? ((): Promise<string[]> => slugsIn(args.configDir)))();
   const packages = await (args.findPackages ?? findBuiltPackages)(args.outputDir, args.slug, known);
   const read = args.readManifest ?? readPackageManifest;
-  const limit = args.maxPackagesRead ?? 3;
+  const limit = args.maxPackagesRead ?? Number.POSITIVE_INFINITY;
   let note: string | undefined;
   let opened = 0;
+  let stoppedEarly = false;
   for (const pkg of packages) {
-    if (opened >= limit) break;
+    if (opened >= limit) {
+      stoppedEarly = true;
+      break;
+    }
     opened += 1;
     let manifest: EhcollManifest;
     try {
@@ -126,6 +143,21 @@ async function findPreviousPackage(
       snapshot: snapshotManifest(manifest),
       ...(manifest.package.changelog !== undefined ? { entries: manifest.package.changelog } : {}),
     };
+  }
+  /**
+   * Nothing matched. "First release" is about to be written, and it has to
+   * say so rather than just being true-looking: a curator who has built this
+   * collection ten times and sees an empty changelog needs to know whether
+   * the tool looked and found nothing, or stopped looking.
+   */
+  if (note === undefined && opened > 0) {
+    note = stoppedEarly
+      ? `Stopped after opening ${opened} package(s) without finding an ` +
+        `earlier version of this collection, so this version's changelog is ` +
+        `written as a first release.`
+      : `Opened ${opened} package(s) in the output folder and none was an ` +
+        `earlier version of this collection, so this version's changelog is ` +
+        `written as a first release.`;
   }
   return note !== undefined ? { note } : {};
 }

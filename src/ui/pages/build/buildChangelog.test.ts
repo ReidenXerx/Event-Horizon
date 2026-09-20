@@ -97,6 +97,73 @@ describe("prepareChangelog", () => {
     expect(prepared.note).toBeUndefined();
   });
 
+  it("finds the previous version however many republished builds sit in front of it", async () => {
+    /**
+     * The scan used to open three packages and stop. A same-version
+     * republish consumes a slot every time it runs — and republishing the
+     * same version is a routine part of this workflow — so three of them
+     * beside the new build exhausted the budget, the previous version was
+     * never opened, and the changelog was written as a FIRST RELEASE with
+     * the collection's whole history discarded and nothing said about it.
+     */
+    const packages: Record<string, EhcollManifest> = {
+      "C:/c/ivy-s-panties-1.0.27-c.zip": manifest("1.0.27", ["A", "B"]),
+      "C:/c/ivy-s-panties-1.0.27-b.zip": manifest("1.0.27", ["A", "B"]),
+      "C:/c/ivy-s-panties-1.0.27-a.zip": manifest("1.0.27", ["A", "B"]),
+      "C:/c/ivy-s-panties-other.zip": manifest("2.0.0", ["X"], {
+        id: "00000000-0000-4000-8000-000000000000",
+      }),
+      "C:/c/ivy-s-panties-1.0.26.zip": manifest("1.0.26", ["A"]),
+    };
+    const prepared = await prepareChangelog({
+      ...common,
+      manifest: manifest("1.0.27", ["A", "B"]),
+      notes: "",
+      loadHistory: async () => undefined,
+      findPackages: async () => Object.keys(packages).map((p) => pkg(p.slice("C:/c/".length))),
+      readManifest: async (p) => packages[p]!,
+    });
+    expect(prepared.entry.changes?.mods.added).toEqual([{ name: "B" }]);
+    expect(prepared.note).toBeUndefined();
+  });
+
+  it("says it looked when it opened packages and none was an earlier version", async () => {
+    // "First release" has to be a statement about what the scan did, not a
+    // shape the output happens to take when nothing matched.
+    const packages: Record<string, EhcollManifest> = {
+      "C:/c/ivy-s-panties-other.zip": manifest("2.0.0", ["X"], {
+        id: "00000000-0000-4000-8000-000000000000",
+      }),
+    };
+    const prepared = await prepareChangelog({
+      ...common,
+      manifest: manifest("1.0.27", ["A"]),
+      notes: "",
+      loadHistory: async () => undefined,
+      findPackages: async () => [pkg("ivy-s-panties-other.zip")],
+      readManifest: async (p) => packages[p]!,
+    });
+    expect(prepared.entry.firstRelease).toEqual({ mods: 1, plugins: 0 });
+    expect(prepared.note).toContain("none was an earlier version");
+  });
+
+  it("says it STOPPED when a caller caps how many packages it may open", async () => {
+    const packages: Record<string, EhcollManifest> = {
+      "C:/c/ivy-s-panties-1.0.27-a.zip": manifest("1.0.27", ["A", "B"]),
+      "C:/c/ivy-s-panties-1.0.26.zip": manifest("1.0.26", ["A"]),
+    };
+    const prepared = await prepareChangelog({
+      ...common,
+      manifest: manifest("1.0.27", ["A", "B"]),
+      notes: "",
+      loadHistory: async () => undefined,
+      maxPackagesRead: 1,
+      findPackages: async () => [pkg("ivy-s-panties-1.0.27-a.zip"), pkg("ivy-s-panties-1.0.26.zip")],
+      readManifest: async (p) => packages[p]!,
+    });
+    expect(prepared.note).toContain("Stopped after opening 1");
+  });
+
   it("writes a first release and says why when the earlier package cannot be read", async () => {
     const prepared = await prepareChangelog({
       ...common,
