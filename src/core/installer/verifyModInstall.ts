@@ -111,8 +111,29 @@ export type VerifyOk = {
    * archive set without FOMOD selections.
    */
   extraFiles: string[];
-  /** Total files actually verified. */
+  /**
+   * Files verified to the level this run claims.
+   *
+   * At `"thorough"` that means hash-compared. At `"fast"` it means
+   * size-compared, which is all `"fast"` ever promised.
+   */
   verifiedCount: number;
+  /**
+   * Files that were only size-compared although the run was `"thorough"`,
+   * because the curator's manifest carries no `sha256` for them.
+   *
+   * A build records a file without a hash when reading it failed twice — an
+   * antivirus holding a handle, a OneDrive placeholder that would not
+   * rehydrate — and the build warns about it there. On this side the file
+   * simply has no reference to compare against, so it gets the weaker check.
+   *
+   * It used to get the weaker check and be counted as verified anyway, which
+   * is the one shape a verifier must never have: the Done card said "1,204
+   * files verified" at thorough level while some of those had been checked
+   * only on a number that a same-size rewrite reproduces exactly. Separating
+   * the two costs nothing and stops the count claiming work that was skipped.
+   */
+  sizeOnlyCount: number;
 };
 
 export type VerifyFail = {
@@ -307,6 +328,8 @@ export async function verifyModInstall(
   const sizeMismatches: VerifyFail["sizeMismatches"] = [];
   const hashCandidates: Array<{ expected: EhcollStagingFile; actual: OnDiskFile }> =
     [];
+  /** Thorough run, no recorded hash — see {@link VerifyOk.sizeOnlyCount}. */
+  const sizeOnlyPaths: string[] = [];
 
   for (const expected of expectedVerifiable) {
     const actual = onDiskByPath.get(pathKey(expected.path, caseMode));
@@ -322,8 +345,12 @@ export async function verifyModInstall(
       });
       continue;
     }
-    if (level === "thorough" && expected.sha256 !== undefined) {
-      hashCandidates.push({ expected, actual });
+    if (level === "thorough") {
+      if (expected.sha256 === undefined) {
+        sizeOnlyPaths.push(expected.path);
+      } else {
+        hashCandidates.push({ expected, actual });
+      }
     }
   }
 
@@ -402,6 +429,14 @@ export async function verifyModInstall(
     };
   }
 
+  /**
+   * Every file on this path was found and size-matched, so the split is
+   * exact: at thorough, the hash candidates are what got the real check and
+   * the rest had no hash to check against.
+   */
+  const verifiedCount =
+    level === "thorough" ? hashCandidates.length : expectedVerifiable.length;
+
   ehLog("info", "verify-install.ok", {
     vortexModId,
     level,
@@ -410,7 +445,9 @@ export async function verifyModInstall(
     // pre-filter total claims to have checked files that were deliberately
     // skipped. The fail path already used the filtered count, so the two
     // disagreed — and the Done card sums these into "files verified".
-    verifiedCount: expectedVerifiable.length,
+    verifiedCount,
+    sizeOnlyCount: sizeOnlyPaths.length,
+    sizeOnlyExamples: sizeOnlyPaths.slice(0, 5),
     skippedVolatile: expectedFiles.length - expectedVerifiable.length,
     extraCount: extraFiles.length,
     ms: Date.now() - startedAt,
@@ -418,7 +455,8 @@ export async function verifyModInstall(
   return {
     kind: "ok",
     extraFiles,
-    verifiedCount: expectedVerifiable.length,
+    verifiedCount,
+    sizeOnlyCount: sizeOnlyPaths.length,
   };
 }
 

@@ -472,6 +472,19 @@ export type ModVerificationOkReceipt = {
   /** verificationLevel that was actually run for this mod. */
   level: "fast" | "thorough";
   verifiedFileCount: number;
+  /**
+   * Of the files cross-referenced, how many got only the SIZE check although
+   * `level` is `"thorough"` — because the curator's manifest records no
+   * `sha256` for them (a build that could not read the file twice).
+   *
+   * Absent or 0 means the thorough run really was thorough throughout. It is
+   * reported rather than folded into `verifiedFileCount` because a count that
+   * includes size-only checks under a thorough label overstates the check
+   * that ran, and this receipt is what a support session reads.
+   *
+   * Optional so a receipt written by an older build still parses.
+   */
+  sizeOnlyFileCount?: number;
   /** Files on disk not in the manifest snapshot (FOMOD divergence). */
   extraFileCount: number;
   /**

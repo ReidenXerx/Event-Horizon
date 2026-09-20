@@ -3550,10 +3550,18 @@ function IntegritySection(props: {
   let skipCount = 0;
   let levelNoneSkips = 0;
   let totalVerifiedFiles = 0;
+  /**
+   * Files a thorough run could only size-check, because the collection
+   * carries no hash for them. Shown rather than folded into "Files verified":
+   * a size match is reproduced exactly by a same-size rewrite, so counting
+   * those as verified says a check ran that did not.
+   */
+  let totalSizeOnlyFiles = 0;
   for (const v of verifications) {
     if (v.kind === "ok") {
       okCount++;
       totalVerifiedFiles += v.verifiedFileCount;
+      totalSizeOnlyFiles += v.sizeOnlyFileCount ?? 0;
       if (v.retryAttempted === true) recoveredCount++;
     } else if (v.kind === "fail") {
       failCount++;
@@ -3593,6 +3601,9 @@ function IntegritySection(props: {
           tone={failCount === 0 ? "success" : "neutral"}
         />
         <StatTile label="Files verified" value={totalVerifiedFiles} />
+        {totalSizeOnlyFiles > 0 && (
+          <StatTile label="Size-checked only" value={totalSizeOnlyFiles} />
+        )}
         {recoveredCount > 0 && (
           <StatTile label="Recovered" value={recoveredCount} tone="warning" />
         )}
@@ -3603,6 +3614,17 @@ function IntegritySection(props: {
           <StatTile label="Skipped" value={skipCount} />
         )}
       </StatGrid>
+      {totalSizeOnlyFiles > 0 && (
+        <p className="eh-note eh-prose">
+          {totalSizeOnlyFiles} file
+          {totalSizeOnlyFiles === 1 ? " was" : "s were"} compared on size
+          alone: this collection records no checksum for
+          {totalSizeOnlyFiles === 1 ? " it" : " them"}, so a file of the right
+          size could not be checked further. Nothing is wrong with your
+          install — the gap is in what the collection shipped, and it is worth
+          telling the curator.
+        </p>
+      )}
       {recovered.length > 0 && fails.length === 0 && (
         <p className="eh-note eh-prose">
           {recovered.length} mod{recovered.length === 1 ? "" : "s"} needed a

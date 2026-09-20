@@ -65,6 +65,13 @@ export type VerifyJournalEntry = {
   level: VerifyJournalLevel;
   /** Files compared, carried into the receipt so the count stays honest. */
   verifiedFileCount: number;
+  /**
+   * Size-only checks inside a thorough run — see
+   * {@link ModVerificationOkReceipt.sizeOnlyFileCount}. Optional: an entry
+   * written before this field existed simply does not carry it, and a resumed
+   * install must not invent a zero it cannot prove.
+   */
+  sizeOnlyFileCount?: number;
   /** Files present that the curator did not record. Informational. */
   extraFileCount: number;
   /** Epoch ms. Compared against Vortex's installTime for the same mod. */
@@ -160,6 +167,9 @@ export async function readVerifyJournal(
         level: p.level,
         verifiedFileCount:
           typeof p.verifiedFileCount === "number" ? p.verifiedFileCount : 0,
+        ...(typeof p.sizeOnlyFileCount === "number"
+          ? { sizeOnlyFileCount: p.sizeOnlyFileCount }
+          : {}),
         extraFileCount: typeof p.extraFileCount === "number" ? p.extraFileCount : 0,
         at: p.at,
       });

@@ -2060,6 +2060,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             name: installEntry.name,
             level: proven.level,
             verifiedFileCount: proven.verifiedFileCount,
+            sizeOnlyFileCount: proven.sizeOnlyFileCount,
             extraFileCount: proven.extraFileCount,
           });
           resumedFromJournal += 1;
@@ -2194,6 +2195,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             name: installEntry.name,
             level: journalLevel,
             verifiedFileCount: verifyResult.verifiedCount,
+            sizeOnlyFileCount: verifyResult.sizeOnlyCount,
             extraFileCount: verifyResult.extraFiles.length,
           });
           // Written now, not at the end: the end is exactly what an interrupted
@@ -2204,6 +2206,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             packageVersion: plan.manifest.package.version,
             level: journalLevel,
             verifiedFileCount: verifyResult.verifiedCount,
+            sizeOnlyFileCount: verifyResult.sizeOnlyCount,
             extraFileCount: verifyResult.extraFiles.length,
             at: Date.now(),
           });
@@ -2477,6 +2480,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
                 name: alongside.name,
                 level: declaredLevel === "thorough" ? "thorough" : "fast",
                 verifiedFileCount: check.verifiedCount,
+                sizeOnlyFileCount: check.sizeOnlyCount,
                 extraFileCount: check.extraFiles.length,
                 retryAttempted: true,
               });
@@ -2501,6 +2505,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             name: retried.installEntry.name,
             level: declaredLevel === "thorough" ? "thorough" : "fast",
             verifiedFileCount: retried.verifiedCount,
+            sizeOnlyFileCount: retried.sizeOnlyCount,
             extraFileCount: retried.extraFileCount,
             retryAttempted: true,
           });
@@ -7239,6 +7244,7 @@ type RecoverResult =
       kind: "recovered";
       installEntry: InstalledModReportEntry;
       verifiedCount: number;
+      sizeOnlyCount: number;
       extraFileCount: number;
     }
   /**
@@ -7552,6 +7558,7 @@ async function tryRecoverFailedMod(args: {
       kind: "recovered",
       installEntry: newEntry,
       verifiedCount: secondResult.verifiedCount,
+      sizeOnlyCount: secondResult.sizeOnlyCount,
       extraFileCount: secondResult.extraFiles.length,
     };
   }
