@@ -2487,6 +2487,36 @@ function PrerequisitesCard(props: PrerequisitesCardProps): JSX.Element {
  * it no longer can, because `utimes` cannot set ctime. What is left is bytes
  * changing with NO metadata change at all, which is corruption rather than
  * anything a tool does on purpose.
+ *
+ * ─── WHY IT IS OFF BY DEFAULT, WHICH IS NOT THE OBVIOUS ANSWER ─────────
+ * Asked to default it on "because precision comes first" (NS-1), and the
+ * answer inverts once you follow what a stale hit actually does.
+ *
+ * Measured on Windows, because the name misleads: Node's `ctimeMs` here is
+ * the NTFS CHANGE time, not the creation time. It moves on every write and
+ * `utimes` cannot put it back; `birthtimeMs` is the one that means "created"
+ * and never moves. So the fingerprint already covers every deliberate edit —
+ * there is no file a curator can change that this misses.
+ *
+ * The residual is silent corruption, and there re-reading is the WORSE
+ * choice. A stale hit records what the file was when it was last known good,
+ * which is what the mod's ARCHIVE still produces — so the player reproduces
+ * it and verification passes. Re-reading records the corrupted bytes as the
+ * reference instead: for a Nexus mod every player then fails against bytes
+ * they cannot reproduce, and for a mirrored mod the corrupted copy is what
+ * ships. Catching corruption needs a SECOND OPINION, not a second read, and
+ * that is the external-mod checksum pass comparing staging to the archive.
+ * The one case where a stale hash would really ship wrong bytes — a bundled
+ * mod — `packageZip` already refuses by name, naming this checkbox as the
+ * remedy.
+ *
+ * So it is a recovery action: it exists for when a MEASUREMENT is wrong — an
+ * interrupted read, a mangled cache file, a bug in the key — not to buy
+ * safety. Defaulting it on would also have masked the mtime-only key bug
+ * rather than exposing it, and NS-1's other half is the one that applies: an
+ * optimisation that cannot change an answer is mandatory, not optional.
+ *
+ * Settled with the curator, 2026-09-20.
  */
 function IntegrityLevelCard(props: IntegrityLevelCardProps): JSX.Element {
   const { modCount, reverify, onReverifyChange } = props;
@@ -2507,13 +2537,12 @@ function IntegrityLevelCard(props: IntegrityLevelCardProps): JSX.Element {
         label="Re-read every file"
         sub={
           <>
-            Ignores cached hashes and reads all {modCount} mods from disk again.
-            A hash is reused only while a file&apos;s size, modified time and
-            created time all match, so a tool that rewrites a file and restores
-            its timestamps is already caught. Worth ticking only if you suspect
-            bytes changed with no trace at all — disk corruption rather than
-            anything Vortex or a mod tool does. Costs a full pass over your
-            staging folder.
+            Throws away every hash measured before and reads all {modCount}{" "}
+            mods from disk again. You do not need this to catch files you
+            changed — changing a file moves a timestamp that nothing can fake,
+            so it gets re-read on its own. Tick it when you think a past
+            measurement is wrong instead: the build says so by name when it
+            finds one. Costs a full pass over your staging folder.
           </>
         }
       />
