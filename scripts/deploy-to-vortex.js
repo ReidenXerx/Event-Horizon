@@ -65,6 +65,66 @@ function pruneRemovedSync(srcRoot, destRoot) {
   return pruned;
 }
 
+/**
+ * Refuse to deploy compiled output older than the sources that made it.
+ *
+ * This script COPIES dist/; it has never built it. That is deliberate — a
+ * deploy after a build you already ran should not spend another minute on
+ * tsc — and it is also how a deploy silently ships the previous build.
+ *
+ * It happened, and nothing caught it: info.json still read the right version,
+ * so the deployed copy reported 0.2.7; the smoke test passed, because it only
+ * proves the extension LOADS, not that it contains any particular change.
+ * The change was simply not there, and the only way to find out was to notice
+ * a log line missing a field it should have had.
+ *
+ * So the check is a timestamp, which is exactly strong enough for the job: a
+ * source file newer than every emitted .js means tsc has not run since it was
+ * edited. It refuses rather than building on its own, because a deploy that
+ * quietly compiles is a deploy that can quietly compile something you were
+ * mid-edit on.
+ */
+function newestMtime(dir, filter) {
+  if (!fs.existsSync(dir)) return { ms: 0, file: undefined };
+  let best = { ms: 0, file: undefined };
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const inner = newestMtime(full, filter);
+      if (inner.ms > best.ms) best = inner;
+    } else if (filter(entry.name)) {
+      const ms = fs.statSync(full).mtimeMs;
+      if (ms > best.ms) best = { ms, file: full };
+    }
+  }
+  return best;
+}
+
+const newestSource = newestMtime(
+  path.join(repoRoot, "src"),
+  (name) => /\.(ts|tsx)$/.test(name) && !/\.test\.tsx?$/.test(name),
+);
+const newestBuilt = newestMtime(sourceDistDir, (name) => name.endsWith(".js"));
+if (newestSource.ms > newestBuilt.ms) {
+  const rel = (f) => (f === undefined ? "(none)" : path.relative(repoRoot, f));
+  console.error(
+    [
+      "",
+      "✖ dist/ is older than src/ — this would deploy the PREVIOUS build.",
+      `  newest source : ${rel(newestSource.file)}`,
+      `  newest output : ${rel(newestBuilt.file)}`,
+      "",
+      "  Run `npm run build` first. Nothing was copied.",
+      "",
+      "  Why this refuses instead of building: the version in info.json and a",
+      "  passing smoke test both look identical either way, so a stale deploy",
+      "  is invisible until something behaves like the old code.",
+      "",
+    ].join("\n"),
+  );
+  process.exit(1);
+}
+
 console.log(`Deploying to ${targetDir} ...`);
 
 copyRecursiveSync(sourceDistDir, path.join(targetDir, "dist"));
