@@ -2537,12 +2537,15 @@ function IntegrityLevelCard(props: IntegrityLevelCardProps): JSX.Element {
         label="Re-read every file"
         sub={
           <>
-            Throws away every hash measured before and reads all {modCount}{" "}
-            mods from disk again. You do not need this to catch files you
-            changed — changing a file moves a timestamp that nothing can fake,
-            so it gets re-read on its own. Tick it when you think a past
-            measurement is wrong instead: the build says so by name when it
-            finds one. Costs a full pass over your staging folder.
+            <strong>A repair tool, not an extra safety check.</strong> It
+            throws away every hash measured before and reads all {modCount}{" "}
+            mods from disk again.{" "}
+            <strong>Tick it when the build refuses a mod</strong> saying its
+            files changed after it measured them, and you know nothing changed
+            — that means a stored measurement is wrong, and this is what
+            clears it. You never need it for files you edited yourself:
+            changing a file moves a timestamp nothing can fake, so it is
+            re-read on its own. Costs a full pass over your staging folder.
           </>
         }
       />
