@@ -69,11 +69,29 @@ proposed and never checked is not a fixed point, it is a guess with a number on 
 
 ## Invariants — must always hold
 
-- **NS-1** — **Reliability and precision are the goal; download size and install time are not
-  constraints.** The curator's words: "i dont care about file size at all. bc 1 time download in
-  modern world even if its 20gb is minor shit man." A reference collection ships at 10.3 GB. Any
-  design that trades correctness for bytes or minutes is answering a question nobody asked — and
-  the opposite trade needs no justification.
+- **NS-1** — **Reliability and precision are the goal; download size, install time and BUILD time
+  are not constraints.** The curator's words: "i dont care about file size at all. bc 1 time
+  download in modern world even if its 20gb is minor shit man." A reference collection ships at
+  10.3 GB. Any design that trades correctness for bytes or minutes is answering a question nobody
+  asked — and the opposite trade needs no justification.
+
+  **The asymmetry is total, and it is why this is an invariant rather than a preference.** The
+  curator, on a check that adds five minutes to a build: *"any spending by time acceptable if it
+  will increase precision. because if we fail user COULDNT FIX THE COLLECTION OF THOUSANDS OF MODS
+  AT ALL."* Time spent building is paid ONCE, by one person, who can see it happening and chose
+  it. A wrong collection is paid by every player, silently, in a game that misbehaves with no file
+  to point at — and nobody hand-repairs a thousand-mod install. So a verification that could have
+  run and did not is never a saving, and "it makes the build slower" is not an argument against a
+  check that can only be made by doing the work. Measured precedent: the external-mod checksum
+  pass reads 42.85 GiB and adds ~4.9 minutes, and it is kept.
+
+  **This does not license waste — it requires the opposite.** An optimisation that CANNOT change
+  an answer is mandatory, not optional: the curator's words again, *"i always appreciate
+  optimizations when it wont hurt precision or edge case handling. even more we MUST do it
+  always."* The test is whether a wrong result is reachable. A cache keyed on CONTENT — the
+  CRC-by-SHA-256 store, where a hit proves the bytes — qualifies and is required. A cache keyed on
+  a timestamp does not, because a tool that restores an mtime turns it into a silently missed
+  divergence, which is the failure this whole class of check exists to end.
 
 - **NS-2** — **Never destroy a mod Event Horizon did not install.** This was violated twice, in one
   week, by two unrelated code paths, which is why it is an invariant rather than a code comment.

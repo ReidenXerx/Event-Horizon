@@ -36,10 +36,17 @@ import { findArchiveByHash } from "../findArchiveByHash";
 import type { AuditorMod } from "../getModsListForProfile";
 import { ehLog } from "../logging/ehLog";
 import { detectCaseSensitivity } from "../paths";
+import { getEventHorizonRoot } from "../paths/appDataPaths";
 import { installRootFor, stagingRootFromFolder } from "../stagingPath";
 import type { SelfCheckReport } from "./selfCheckMod";
 import type { UnexplainedFile } from "./unexplainedFiles";
 import { selfCheckMod, summarizeSelfChecks } from "./selfCheckMod";
+import {
+  loadCrcCache,
+  makeCrcLookup,
+  saveCrcCache,
+  type CrcBySha256Cache,
+} from "./crcBySha256";
 import { crc32File } from "./readZip";
 import { resolveSevenZip, sevenZipExtractFull } from "./sevenZip";
 import type { SevenZipApi } from "./sevenZip";
@@ -363,12 +370,22 @@ async function stagedWithChecksums(args: {
   mod: AuditorMod;
   installRoot: string | undefined;
   isExternal: boolean;
+  /**
+   * CRC by SHA-256 — see `crcBySha256.ts`. Content-addressed, so a hit is
+   * the same bytes rather than a guess about them, and a mod nobody has
+   * touched since the last build costs a lookup instead of a read.
+   */
+  crcCache: ReturnType<typeof makeCrcLookup>;
   signal?: AbortSignal;
 }): Promise<Array<{ path: string; size: number; crc?: string }>> {
-  const plain = (args.mod.stagingFiles ?? []).map((f) => ({
-    path: f.path,
-    size: f.size,
-  }));
+  const staging = args.mod.stagingFiles ?? [];
+  const plain = staging.map((f) => ({ path: f.path, size: f.size }));
+  // path → the sha256 the capture recorded, which is this cache's key.
+  const shaByPath = new Map(
+    staging
+      .filter((f) => f.sha256 !== undefined)
+      .map((f) => [f.path, f.sha256!] as const),
+  );
   if (!args.isExternal || plain.length === 0) return plain;
 
   const root = stagingRootFromFolder(args.installRoot, args.mod.installationPath);
@@ -402,10 +419,14 @@ async function stagedWithChecksums(args: {
     plain.map(async (f) => {
       if (args.signal?.aborted === true) return f;
       if (!wanted.has(f.path)) return f;
+      const sha = shaByPath.get(f.path);
+      const cached = args.crcCache.get(sha);
+      if (cached !== undefined) return { ...f, crc: cached };
       try {
         const crc = (
           await crc32File(path.join(root, ...f.path.split("/")), args.signal)
         ).toLowerCase();
+        args.crcCache.set(sha, crc);
         read += 1;
         bytes += f.size;
         return { ...f, crc };
@@ -420,6 +441,7 @@ async function stagedWithChecksums(args: {
     mod: args.mod.name,
     staged: plain.length,
     checksummed: read,
+    fromCache: plain.length - read - failed - (plain.length - comparableFiles.length),
     unreadable: failed,
     bytesRead: bytes,
     // Plugins, deliberately — a flipped light flag is not a divergence.
@@ -821,6 +843,23 @@ export async function runSelfChecks(
   let done = 0;
 
   /**
+   * Loaded once for the whole run, saved once at the end.
+   *
+   * Keyed on each file's SHA-256, so a hit proves the bytes rather than
+   * guessing at them from a timestamp — `crcBySha256.ts` has the reasoning.
+   * Without it a 37 GiB external output is re-read on every build; with it,
+   * only what actually changed is.
+   */
+  const crcCacheDir = getEventHorizonRoot();
+  let crcCacheFile: CrcBySha256Cache;
+  try {
+    crcCacheFile = await loadCrcCache(crcCacheDir);
+  } catch {
+    crcCacheFile = { schema: "", entries: {} };
+  }
+  const crcCache = makeCrcLookup(crcCacheFile);
+
+  /**
    * ─── PROBED ONCE, FOR THE FOLDER EVERY MOD LIVES UNDER ─────────────────
    * `selfCheckMod` compares recorded paths and needs to know whether this
    * filesystem tells two of them apart by letter case. It takes a `caseMode`
@@ -914,6 +953,7 @@ export async function runSelfChecks(
       isExternal:
         opts?.downloadedFromNexus !== undefined &&
         !opts.downloadedFromNexus.has(mod.id),
+      crcCache,
       ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
     });
     /**
@@ -1201,6 +1241,22 @@ export async function runSelfChecks(
         }
       : {}),
   });
+
+  /**
+   * Written once, after every mod — not per file, and never on the hot path.
+   * A failure here is logged and ignored: the only thing a lost cache costs
+   * is the next build re-reading what it already knew.
+   */
+  await saveCrcCache(crcCacheDir, crcCacheFile, crcCache.added);
+  if (crcCache.hits > 0 || crcCache.added.size > 0) {
+    ehLog("info", "self-check.crc-cache", {
+      hits: crcCache.hits,
+      computed: crcCache.added.size,
+      consequence:
+        "hits are files whose bytes were already identified, so they were " +
+        "not read again",
+    });
+  }
 
   return {
     reports,
