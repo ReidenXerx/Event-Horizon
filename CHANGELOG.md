@@ -10,6 +10,64 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.8] — 2026-09-21
+
+Almost all of this is the curator's side, and most of it was found by building a real collection on
+0.2.7 and watching where the tool told the truth about the wrong thing.
+
+### Building collections
+- **A mod you answered "mirror" for no longer blocks the build.** 0.2.7 started refusing to build
+  when a mod the player supplies by hand had no archive on your machine — a good rule with a hole in
+  it: mirroring already carries that mod's files in the package. With no archive there is nothing a
+  mirror could leave to one, so it carries *all* of them and writes them over whatever the player
+  supplies. The refusal pushed curators toward bundling, which replaces the author's download, and a
+  curator who would not do that to an author was left with no answer at all — for a mod they had
+  already answered and which the previous release shipped correctly.
+- **Two warnings had the same blind spot and said the opposite of the truth.** The build form said a
+  mirrored mod would make the build refuse; the drift warning said "the collection ships the
+  ARCHIVE, so whoever installs it gets the original, not your version" about a mod whose files the
+  package carries. Both now recognise mirroring, and both offer it alongside bundling with the
+  difference stated: mirroring leaves the author's download in place, bundling replaces it.
+- **A stale copy of an archive is now suspected before you are asked to decide anything.** Regenerate
+  a mod, upload the new archive, update the link — and forget to replace the copy in Vortex's
+  downloads, and the build compares your new staging against the old file. On a real build that read
+  as "1,176 files its archive cannot produce", every word true of the file on disk and none of it
+  true of the file players download. Event Horizon now notices that every differing file was written
+  after the archive was, says both dates, and names the cheapest thing to try first. It only fires
+  when *every* differing file is newer — a regeneration rewrites the whole output at once, while a
+  handful of hand-edited files is a real difference with a real decision behind it.
+- **Why that mattered more than a bigger download:** the build records your archive's checksum as the
+  one a player's download is held to. Build on a stale copy and every player who fetches the correct
+  file is told they have the wrong one.
+- **The checksum pass says what it is doing.** It reported one line per mod when the mod finished and
+  nothing in between, so a 39.7 GB output was eight minutes of total silence — indistinguishable from
+  a hang, and reasonably reported as one. It now names each mod, its file count and its size when it
+  starts, then reports progress and throughput every fifteen seconds.
+- **And it no longer opens every file at once.** It started a read for every staged file
+  simultaneously — over three thousand on a single mod — which is a way to run out of file handles
+  and a way to make a disk seek instead of stream. Measured on one profile: a 3,040-file mod managed
+  11 MB/s while a 68-file mod on the same disk managed 80. It is bounded now, by the same cpu-aware
+  limit the hashing pass has always used.
+- **"Re-read every file" explains itself.** It is a repair tool, not an extra safety check, and the
+  card now says so and names the moment to tick it: when the build refuses a mod because its files
+  changed after it measured them and you know nothing changed. You never need it for files you
+  edited — changing a file moves a timestamp nothing can fake, so it is re-read on its own.
+- **An archive Event Horizon recovered for you keeps its download link.** The record was written and
+  then quietly dropped every time it was read back, so the hash outlived the file: a later build
+  could identify a mod and not open it. Measured on a real machine before the fix — 990 recovered
+  entries, none of them carrying the link.
+- **Builds start faster.** Adding the creation-time field to the hash fingerprint in 0.2.7 left every
+  previous entry unmatchable, and nothing removed them: 430,675 dead entries, 134 MB of JSON read on
+  every build. They are dropped on load now.
+
+### Under the hood
+- The screenshot check photographs whole screens. It captured a fixed window and quietly cut anything
+  taller, then compared the part that fitted and reported a match — so the bottom third of the build
+  form and, worse, half of the Done screen, including every post-processing decision card, had no
+  cover at all while looking exactly as covered as the rest.
+- Deploying a development build refuses to ship compiled output older than its sources, after a
+  deploy silently shipped the previous build with a matching version number and a passing smoke test.
+
 ## [0.2.7] — 2026-09-20
 
 The update path, end to end. Most of 0.1 and 0.2 went into making a first install right; this release
