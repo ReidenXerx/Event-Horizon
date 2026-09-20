@@ -314,4 +314,74 @@ describe("waitForVortexDownload", () => {
       waitForVortexDownload(api, "d", new AbortController().signal, () => undefined, { pollMs: 5, appearWithinMs: 30 }),
     ).rejects.toThrow(/never listed/);
   });
+
+  /**
+   * The ending nothing published. Paused, failed and removed are all state
+   * changes Vortex announces; a transfer that simply stops announces nothing
+   * — `state` stays "started", `received` stops moving — and the wait used to
+   * poll that forever with no message and no log line, so the only way out
+   * was killing Vortex mid-install.
+   */
+  it("stops waiting for a started download that has moved no bytes", async () => {
+    const api = stateWith(() => ({ d: { id: "d", state: "started", received: 1024, size: 999_999 } }));
+    await expect(
+      waitForVortexDownload(api, "d", new AbortController().signal, () => undefined, {
+        pollMs: 5,
+        stalledAfterMs: 30,
+      }),
+    ).rejects.toThrow(/has not moved for/);
+  });
+
+  it("does not touch a download that is still moving, however slowly", async () => {
+    // One byte per poll is enough. The watchdog asks whether bytes arrive at
+    // all, never whether they arrive fast enough — "slow" is not a failure
+    // and a 10 GB file over a bad line must be allowed to finish.
+    let received = 0;
+    const api = stateWith(() => {
+      received += 1;
+      return received < 20
+        ? { d: { id: "d", state: "started", received, size: 999_999 } }
+        : { d: { id: "d", state: "finished", received, size: 999_999, localPath: "x.zip" } };
+    });
+    const dl = await waitForVortexDownload(api, "d", new AbortController().signal, () => undefined, {
+      pollMs: 1,
+      stalledAfterMs: 5,
+    });
+    expect(dl.localPath).toBe("x.zip");
+  });
+
+  it("leaves a QUEUED download alone — zero bytes in init is what a queue looks like", async () => {
+    // Vortex holds downloads behind others in "init" at zero bytes for as
+    // long as the queue takes. Firing on that would break the one case the
+    // player cannot influence at all.
+    let polls = 0;
+    const api = stateWith(() => {
+      polls += 1;
+      return polls < 30
+        ? { d: { id: "d", state: "init", received: 0 } }
+        : { d: { id: "d", state: "finished", received: 5, localPath: "q.zip" } };
+    });
+    const dl = await waitForVortexDownload(api, "d", new AbortController().signal, () => undefined, {
+      pollMs: 1,
+      stalledAfterMs: 5,
+    });
+    expect(dl.localPath).toBe("q.zip");
+  });
+
+  it("leaves a finished transfer alone while Vortex hashes it", async () => {
+    // received === size and not yet "finished" is Vortex hashing, which on a
+    // 10 GB file takes minutes of complete silence.
+    let polls = 0;
+    const api = stateWith(() => {
+      polls += 1;
+      return polls < 30
+        ? { d: { id: "d", state: "started", received: 999_999, size: 999_999 } }
+        : { d: { id: "d", state: "finished", received: 999_999, size: 999_999, localPath: "h.zip" } };
+    });
+    const dl = await waitForVortexDownload(api, "d", new AbortController().signal, () => undefined, {
+      pollMs: 1,
+      stalledAfterMs: 5,
+    });
+    expect(dl.localPath).toBe("h.zip");
+  });
 });

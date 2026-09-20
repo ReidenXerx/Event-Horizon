@@ -359,8 +359,27 @@ function throwIfAborted(signal: AbortSignal): void {
  * after the transfer, and `localPath` is what says where it landed. No
  * limit on a download that is moving — a 10 GB file takes as long as it
  * takes — but a download that stops being one ends the wait with the
- * reason: removed from Vortex's list, paused there, or never listed at all.
- * Cancellable, which stops the waiting and leaves Vortex's download alone.
+ * reason: removed from Vortex's list, paused there, never listed at all, or
+ * STALLED. Cancellable, which stops the waiting and leaves Vortex's download
+ * alone.
+ *
+ * ─── WHY STALLED NEEDED ITS OWN ARM ─────────────────────────────────────
+ * Every other ending is a state change Vortex publishes. A transfer that
+ * simply stops — the connection dropped, the mirror wedged, the machine
+ * slept — publishes nothing: `state` stays `"started"` and `received` stops
+ * moving. The loop polled that forever, with no message and no log line, and
+ * the only way out was killing Vortex mid-install.
+ *
+ * The arm is deliberately hard to trigger by accident, because a false
+ * positive interrupts a download that was going to finish:
+ *   - only while `state === "started"`, so a download QUEUED behind others
+ *     (which sits in `"init"` at zero bytes, legitimately, for as long as the
+ *     queue takes) is never touched;
+ *   - never once `received` has reached `size`, because that is Vortex
+ *     hashing a finished transfer, which on a 10 GB file takes minutes;
+ *   - and only after fifteen minutes without a single byte.
+ * A transfer that has moved no bytes in fifteen minutes while Vortex still
+ * calls it started is not slow, it is dead.
  */
 export async function waitForVortexDownload(
   api: types.IExtensionApi,
@@ -373,6 +392,8 @@ export async function waitForVortexDownload(
     appearWithinMs?: number;
     /** How to start over, lowercase, for the messages: "paste the link again" unless said. */
     retry?: string;
+    /** Silence this long on a started transfer ends the wait. See above. */
+    stalledAfterMs?: number;
   } = {},
 ): Promise<types.IDownload> {
   const pollMs = options.pollMs ?? 500;
@@ -380,8 +401,11 @@ export async function waitForVortexDownload(
   const what = options.fileName !== undefined ? `"${options.fileName}"` : "the file";
   const retry = options.retry ?? "paste the link again";
   const Retry = retry.charAt(0).toUpperCase() + retry.slice(1);
+  const stalledAfterMs = options.stalledAfterMs ?? 15 * 60_000;
   const startedAt = Date.now();
   let seen = false;
+  let mostReceived = -1;
+  let movedAt = Date.now();
   for (;;) {
     throwIfAborted(signal);
     const files = (api.getState() as unknown as {
@@ -420,6 +444,32 @@ export async function waitForVortexDownload(
       const received = typeof dl.received === "number" ? dl.received : 0;
       const total = typeof dl.size === "number" && dl.size > 0 ? dl.size : undefined;
       onProgress(received, total);
+
+      if (received > mostReceived) {
+        mostReceived = received;
+        movedAt = Date.now();
+      } else if (
+        dl.state === "started" &&
+        !(total !== undefined && received >= total) &&
+        Date.now() - movedAt > stalledAfterMs
+      ) {
+        const silentMs = Date.now() - movedAt;
+        ehLog("warn", "install.link.vortex-download-stopped", {
+          downloadId,
+          why: "stalled",
+          received,
+          total,
+          silentMs,
+          state: dl.state,
+        });
+        throw new Error(
+          `The download of ${what} has not moved for ${Math.round(silentMs / 60_000)} minutes — ` +
+            `Vortex still calls it running, but no bytes have arrived` +
+            `${total !== undefined ? ` (${received} of ${total})` : ""}. ` +
+            `It may still recover on its own: check Vortex's Downloads tab, and when it has finished, pick the ` +
+            `file with "Choose package file" (Vortex's download folder), or ${retry}.`,
+        );
+      }
     }
     await new Promise((resolve) => setTimeout(resolve, pollMs));
   }

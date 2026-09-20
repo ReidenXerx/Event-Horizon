@@ -166,12 +166,18 @@ export type BuildManifestInput = {
     /**
      * Curator's chosen integrity-verification depth. Drives whether the
      * snapshot's mods carry `stagingFiles` (and whether each entry has
-     * a sha256). Defaults to `"fast"` — full file lists with size, no
-     * hashes — which catches Vortex's "lost file" bug without making
-     * builds painful for large collections.
+     * a sha256).
      *
-     * The `"none"` value is reserved for backward-compat / explicit
-     * opt-out by the curator; new builds should pick fast or thorough.
+     * **Defaults to `"thorough"`, and nothing new is built with anything
+     * else** — the build hard-codes it. This comment used to say the default
+     * was `"fast"`, which had stopped being true and is the wrong kind of
+     * wrong for a field that decides whether a player's files can be checked
+     * at all.
+     *
+     * `"fast"` and `"none"` remain READABLE forever: packages already in the
+     * wild recorded them, and that is a fact about those packages rather
+     * than a setting to migrate. See `parseManifest`, which accepts all
+     * three, and the writer below.
      */
     verificationLevel?: VerificationLevel;
   };
