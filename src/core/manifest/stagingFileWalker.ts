@@ -278,8 +278,9 @@ export async function hashStagingFiles(
     workers,
     async (file) => {
       // 205GB re-read on every build is what made "thorough" a level the
-      // curator had to opt into. A hash is reused only while path, size AND
-      // mtime all match, so a file that changed is always re-read.
+      // curator had to opt into. A hash is reused only while path, size,
+      // mtime AND ctime all match, so a file that changed is always re-read
+      // — including one whose mtime was restored, which mtime alone missed.
       //
       // Outside the try because the retry in the catch needs it too.
       const key =
