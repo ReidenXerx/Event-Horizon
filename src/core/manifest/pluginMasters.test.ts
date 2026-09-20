@@ -140,6 +140,59 @@ describe("reading a plugin's masters", () => {
   });
 });
 
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * A master list that could not be read in full is not a short master list.
+ *
+ * The walk used to `break` on a subrecord whose declared size overran the
+ * header and then return `{kind: "ok", masters}` with whatever it had
+ * collected. `sawHedr` guards the "dataSize too small" shape, but it cannot
+ * guard this one: the bad subrecord comes AFTER the HEDR, so the flag is
+ * already true and the partial list sails through.
+ *
+ * The consequence is the one this module's own docblock says must never
+ * happen — "needs nothing" passes the build gate, so a plugin whose masters
+ * were lost ships silently, and the collection is unloadable on a machine
+ * that lacks them.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("a header it could not finish reading", () => {
+  it("refuses rather than returning the masters it happened to reach", async () => {
+    // Real HEDR, one real master, then a subrecord claiming 400 bytes it
+    // does not have. The old code returned ok with ["Skyrim.esm"] — a list
+    // that is true as far as it goes and wrong as an answer.
+    const overrun = Buffer.concat([
+      Buffer.from("XXXX", "latin1"),
+      (() => {
+        const n = Buffer.alloc(2);
+        n.writeUInt16LE(400);
+        return n;
+      })(),
+      Buffer.alloc(4),
+    ]);
+    const body = Buffer.concat([hedr(), mast("Skyrim.esm"), overrun]);
+    const file = await write("overrun.esp", tes4(body));
+
+    const read = await readPluginMasters(file);
+    expect(read.kind).toBe("not-a-plugin");
+    if (read.kind === "not-a-plugin") {
+      expect(read.why).toContain("runs past");
+    }
+  });
+
+  it("still reads a header whose subrecords all fit", async () => {
+    // The guard must not fire on a well-formed plugin.
+    const body = Buffer.concat([hedr(), mast("Skyrim.esm"), mast("Dawnguard.esm")]);
+    const file = await write("fine.esp", tes4(body));
+
+    const read = await readPluginMasters(file);
+    expect(read.kind).toBe("ok");
+    if (read.kind === "ok") {
+      expect(read.masters).toEqual(["Skyrim.esm", "Dawnguard.esm"]);
+    }
+  });
+});
+
 describe("which masters a collection is not expected to ship", () => {
   it("knows the base game masters for both supported games", () => {
     expect(isBaseGameMaster("Skyrim.esm", "skyrimse")).toBe(true);

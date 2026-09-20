@@ -153,7 +153,34 @@ export async function readPluginHeader(
       const size = data.readUInt16LE(at + 4);
       const start = at + SUBRECORD_HEADER_BYTES;
       const end = start + size;
-      if (end > data.length) break; // truncated subrecord: stop, keep what we have
+      if (end > data.length) {
+        /**
+         * ─── A PARTIAL MASTER LIST IS THE ANSWER THIS MUST NEVER GIVE ────
+         * This used to `break` and fall through to `{kind: "ok", masters}`
+         * with whatever had been collected so far — and the docblock above
+         * names precisely why that is the worst available outcome: "needs
+         * nothing" passes the build gate, so a plugin whose masters were
+         * lost ships silently.
+         *
+         * `sawHedr` was added to catch a dataSize that is too SMALL, and it
+         * does. It cannot catch this: a subrecord whose declared size
+         * overruns the buffer occurs AFTER the HEDR has already been seen,
+         * so the flag is true and the walk returns "ok" having read only the
+         * MAST records that happened to come before the bad one. Every other
+         * malformed shape here fails closed with a reason; this one did not.
+         *
+         * The gate reads a non-"ok" verdict as `masters: undefined`, which
+         * it counts as unchecked rather than as satisfied, so refusing here
+         * withholds a claim instead of inventing a blocking one.
+         */
+        return {
+          kind: "not-a-plugin",
+          why:
+            `a subrecord at byte ${at} of the TES4 header declares ${size} ` +
+            `bytes, which runs past the ${data.length} the header holds, so ` +
+            `the master list could not be read in full`,
+        };
+      }
       if (type === "HEDR") sawHedr = true;
       if (type === "MAST") {
         // NUL-terminated, and latin1 because that is what the engine writes.

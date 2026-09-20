@@ -147,24 +147,43 @@ export async function checkCollectionUpdates(
   const updates = getCollectionUpdateStore();
   const gameId = selectors.activeGameId(api.getState());
   if (typeof gameId !== "string" || gameId === "") return [];
+  /**
+   * ─── JOINING A CHECK MUST NOT INHERIT ITS SILENCE ───────────────────
+   * Coalescing concurrent checks is right — two callers arriving during one
+   * round-trip should not buy two answers. But whether to NOTIFY belongs to
+   * the caller, not to whoever happened to start the request first: the
+   * startup check asks with `notify: true`, a Collections page visit asks
+   * with `notify: false`, and the startup one landing mid-visit used to
+   * silently adopt the visit's silence. The player then got no notification
+   * for an update that had just been found.
+   *
+   * So the shared work is the REQUEST, and the notification is decided here,
+   * per caller, on whatever that request returned.
+   */
   const running = checksInFlight.get(gameId);
-  if (running !== undefined) return running;
+  if (running !== undefined) {
+    const shared = await running;
+    if (options.notify) for (const update of shared) notifyUpdate(api, update);
+    return shared;
+  }
   if (options.force !== true && Date.now() - updates.lastCheckedAt(gameId) < RECHECK_AFTER_MS) {
     return [...updates.all().values()].filter((u) => u.gameId === gameId);
   }
-  const started = runOneCheck(api, gameId, options.notify);
+  const started = runOneCheck(api, gameId);
   checksInFlight.set(gameId, started);
+  let found: CollectionUpdate[];
   try {
-    return await started;
+    found = await started;
   } finally {
     checksInFlight.delete(gameId);
   }
+  if (options.notify) for (const update of found) notifyUpdate(api, update);
+  return found;
 }
 
 async function runOneCheck(
   api: types.IExtensionApi,
   gameId: string,
-  notify: boolean,
 ): Promise<CollectionUpdate[]> {
   const updates = getCollectionUpdateStore();
   const receipts = (await listReceipts(getVortexUserDataPath())).filter((r) => r.gameId === gameId);
@@ -185,9 +204,7 @@ async function runOneCheck(
     // about them before still stands.
     unanswered,
   });
-  if (notify) {
-    for (const update of found) notifyUpdate(api, update);
-  }
+  // Notification is the CALLER's decision — see checkCollectionUpdates.
   return found;
 }
 
