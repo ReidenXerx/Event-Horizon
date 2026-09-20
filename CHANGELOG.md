@@ -10,6 +10,151 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.7] — 2026-09-20
+
+The update path, end to end. Most of 0.1 and 0.2 went into making a first install right; this release
+is the second install, the third, and the one that failed halfway. Alongside it, a pass over every
+place the tool could report a check it had not actually run.
+
+### Updating a collection
+- **An update is decided by the revision, not by the version string.** Two very different things used
+  to hang on whether the curator remembered to change a number. A new revision builds into its own
+  profile, so the version you are playing stays switchable and nothing is removed until the new one
+  works; the same revision re-run stays the in-place repair it should be. The Update button already
+  compared revisions — the installer now branches on the same fact, so the two cannot disagree.
+- **A failed update resumes the profile it was filling instead of forking another.** Press Update,
+  die at mod 400, press Update again, and you got a second profile with the same name — then a third.
+  Since Vortex reopens on whichever profile was last active, you were usually looking at a different
+  one from the one filling up, which is what "Event Horizon installs mods disabled" turned out to be.
+- **A check that could not reach Nexus no longer erases an update it found earlier.** Not logged in,
+  offline, a 503 — all of these produced an empty answer that replaced what was known, so the Update
+  button silently disappeared and nothing said why. Only collections Nexus actually answered for are
+  replaced now.
+- **You are told which mods the new revision dropped.** Nothing is deleted — it never was, and it
+  still is not — but a mod the curator removed simply stopped being mentioned anywhere, while staying
+  in Vortex's pool and switched on in your previous profile. The Done screen now names them and says
+  where they are still enabled. This is also the answer to "why is my staging folder 40 GB bigger
+  than the collection".
+- **INI tweaks the new revision dropped are switched off again.** Applying them has always been
+  additive, so a performance preset the curator later removed stayed merged into your INI at every
+  deploy, permanently, with nothing to explain the difference. Only tweaks Event Horizon itself
+  ticked are switched off; your own are left alone, and you are told which went off.
+- **An INI tweak is never ticked on a mod you kept as your own.** Vortex stores that setting on the
+  mod rather than the profile, so it followed your copy into every other profile of that game and
+  outlived uninstalling the collection.
+- **Nothing is pre-ticked on the "remove superseded profiles" screen.** Every profile started ticked
+  with "Remove ticked" as the obvious button, so opening it to look and pressing the obvious button
+  destroyed all of them — including the previous revision's profile, which is the rollback the whole
+  design exists to give you.
+- **"Uninstall it" now says it removes the mod from every profile, and names the others.** True of
+  Vortex's own behaviour all along; the prompt said "destructive" without saying that part.
+- **An update can no longer reset an install that is already running.** The busy check happened
+  before a download that takes minutes and never again, so a collection you started meanwhile had its
+  wizard reset out from under it.
+- **The kept copy of a collection is matched by revision**, not by a version string that two
+  revisions can share — which could otherwise let a repair walk you backwards into the revision you
+  just left, with every check passing.
+- **One update check per moment, and one retry when Nexus has not finished logging you in.** Two
+  callers arriving together asked Nexus twice and the later answer won; a session that had not
+  settled at startup meant no check at all until you switched game or opened Collections.
+
+### Installing
+- **A file you supply by hand is checked the moment you pick it.** It used to be matched on filename,
+  shown as "Linked archive" in green, and only actually compared an hour into the run as a log line
+  nobody reads. The verdict — matches, differs, or damaged — now appears next to the pick, naming the
+  file the curator built with, while going back for the right one still costs nothing. Warned, never
+  blocked: a replaced download may be the only one the author still offers, and that is your call.
+- **A remembered answer from the previous revision gets the same check.** It was pre-filled, counted
+  as answered and unblocked Continue without anyone touching it — the one path that most needs it.
+  And an answer you take back is now forgotten, instead of being pre-filled again next revision after
+  you explicitly refused it.
+- **The mirror no longer deletes files you wrote.** Anything absent from the curator's list counted
+  as "extra", which is right on a folder made minutes ago and wrong on one lived in since the last
+  revision — so BodySlide and Nemesis output could be removed, reported as "37 removed" with no way
+  to know what. Files changed since the last install are left alone, and deletions are named.
+- **Changed-since-last-time detection measures before the run can change it.** It ran after the
+  mirror and the repair had already rewritten the folders it was asking about, so it could miss real
+  drift and could also warn you that something edited a mod seconds after Event Horizon edited it. A
+  mod whose recorded file list changed this revision is no longer reported as drifted either — that
+  is the collection changing, not your disk.
+- **A download that stops without saying so now ends with a message.** Paused, failed and removed
+  were all handled; a transfer that simply stalls publishes nothing, so the wait ran forever and the
+  only way out was killing Vortex mid-install. It gives up after fifteen minutes with no bytes at
+  all, never while Vortex is hashing a finished transfer, and never on a download still queued —
+  slow is not a failure.
+- **Missing Visual C++ and .NET runtimes are offered before the install, with a button.** These have
+  been detected for a while and turned into a sentence in a list; the fix was one paragraph away from
+  the person who needed it. Now: a callout above the plan, installed silently from Microsoft, then
+  re-probed so the result is what the registry says afterwards. Offered, never enforced — and only
+  for runtimes genuinely absent, never for a probe that could not run.
+- **"Files verified" now means files actually verified.** Where a collection carries no checksum for
+  a file, it can only be size-checked — and a size match is reproduced exactly by a rewrite of the
+  same length. Those are counted separately now, under "Size-checked only", instead of being added to
+  a number that claimed more than had happened.
+- **A collection too old to carry checksums says so.** That case used to render no integrity section
+  at all, which looked exactly like a fully verified clean install — the one situation where nothing
+  can be promised, looking like the most confident one. It still installs; it now tells you.
+- **The launcher check refuses to answer about a file it could only read in part.** It reads which
+  symbols a game executable needs from the DLLs beside it — the check that catches a GOG
+  `steam_api64.dll` in a Steam install. A partly-read table meant fewer missing symbols, which reads
+  as "this is fine". It now says "cannot tell" instead.
+
+### When something goes wrong
+- **The log bundle carries the script extender's log and what runtimes the machine has.** "My body
+  physics stopped working" has at least four causes that all verify byte-for-byte, and asking a
+  tester to find `f4se.log` and recite their installed VC++ versions is a round of questions that
+  usually ends in a guess. Both now ride in the file you already send.
+- **Event Horizon reads that log.** F4SE and SKSE are the only things that know whether a DLL loaded
+  at all, and nothing here had ever looked. Per plugin: loaded, skipped, or failed — with the
+  extender's own words as the reason, and support DLLs that the extender deliberately skips reported
+  as skipped rather than as two failures to go hunting.
+- **A mod supplied from a file that did not match is named when it is why the mirror could not
+  finish.** The run knew both halves and reported "4 could not be mirrored" with nothing connecting
+  it to the download you chose.
+
+### Building collections
+- **Every file of an external mod is checked against its archive, whatever the mod weighs.** Drift
+  detection compared file NAMES, which is blind to the thing curators do most: regenerate an output
+  mod. A regenerated BodySlide output shipped with 1,130 of its 2,994 files disagreeing with the
+  archive players download — every name identical and every size identical, because rebuilding a mesh
+  moves vertices, not file layout. The tester downloaded the correct archive and still got meshes the
+  collection was never built against. Checksums are the only thing that can tell, so checksums are
+  what it reads now, with no size budget: a 19.7 GB output is exactly the mod where half a check is
+  worthless.
+- **That check costs about five minutes on a 43 GiB collection, and is paid once.** Checksums are
+  cached against the file's SHA-256 — the content, not its name or timestamp — so unchanged bytes are
+  never read twice, and the same mod in two collections is read once ever. A cache that cannot be
+  wrong is the only kind this check can have.
+- **A file whose timestamp was restored can no longer look unchanged.** The hash cache keyed on path,
+  size and modified time, which several tools reproduce exactly when they rewrite a file. It now also
+  carries the creation-time field, which no timestamp-restoring tool can forge. One consequence worth
+  knowing: this invalidates the existing cache, so your next build re-reads everything once and is
+  fast again after.
+- **A plugin whose master list could not be read in full is refused, not half-reported.** The reader
+  returned what it had reached, the gate read that as the complete list, and a plugin with masters
+  missing could ship in a collection that will not load on a machine without them.
+- **A build refuses when a mod the player must supply by hand has no archive here.** The curator's
+  archive is the only thing that makes that picker safe — without it there is nothing to check the
+  player's file against. The build names those mods and all three ways out, and the form says it
+  before Build is pressed.
+- **Disabling a mod takes it out of the collection, quietly.** The dashboard reported it as "switched
+  off — needs attention" while the build treated the same profile as having one mod fewer: two
+  answers about one profile, one screen apart, with "uninstall the mod" as the workaround.
+- **The changelog no longer writes "first release" because it stopped looking.** It opened three
+  packages in the output folder and gave up, and republishing the same version consumes a slot every
+  time, so three of those beside the new build discarded the entire history in silence. It reads the
+  folder now, and says what it found either way.
+- **Collection artwork is re-checked when it is read, not only when it is extracted** — a promise the
+  code made in its own first paragraph and kept only on the way in.
+
+### Under the hood
+- The screenshot harness freezes its clock, so a run is byte-identical to the last one and a failing
+  check means something actually changed.
+- Proofs kept for resuming an interrupted install are pruned on read instead of accumulating forever
+  across releases.
+- A helper that was written, tested and never called — while the installer reinstalled about 11% of
+  every collection for no reason — is gone, along with the quiet overstatement inside it.
+
 ## [0.2.6] — 2026-09-18
 
 ### Installing
