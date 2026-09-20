@@ -138,10 +138,26 @@ export async function installRequirementStep(input: RequirementStepInput): Promi
 
   try {
     let archiveId: string | undefined;
+    /**
+     * A probe that THREW and a probe that found nothing both leave
+     * `archiveId` undefined, and the step then downloads. That is the safe
+     * direction — a redundant download still produces a correct install —
+     * but the two are not the same fact, and the log is where a curator
+     * asking "why did it download something I already have" finds out.
+     */
+    let probeFailed = false;
     try {
       archiveId = await input.existingArchive();
     } catch (err) {
-      ehLog("warn", "curator.requirement.install.existing-probe-failed", { mod: name, nexusModId, err });
+      probeFailed = true;
+      ehLog("warn", "curator.requirement.install.existing-probe-failed", {
+        mod: name,
+        nexusModId,
+        err,
+        consequence:
+          "cannot tell whether this file is already downloaded, so the step " +
+          "downloads it again; the install is still correct, only slower",
+      });
     }
     if (wait.signal.aborted) {
       return { ok: false, why: "stopped before it started", refused: false, stopped: true, via };
@@ -155,6 +171,8 @@ export async function installRequirementStep(input: RequirementStepInput): Promi
       game: vortexGameId,
       via,
       ...(archiveId === undefined ? {} : { dlId: archiveId }),
+      // Distinguishes "you have no copy" from "we could not look".
+      ...(probeFailed ? { existingUnknown: true } : {}),
     });
 
     const newModId = await updateOneAndWait({
