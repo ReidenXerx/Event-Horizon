@@ -26,7 +26,25 @@ export function buildPe(spec: PeSpec): Buffer {
   const is64 = spec.is64 ?? true;
   const FILE_ALIGN = 0x200;
   const SECTION_RVA = 0x1000;
-  const sec = Buffer.alloc(0x8000);
+  /**
+   * Sized from the spec, not fixed: the cap tests build tables with thousands
+   * of descriptors or tens of thousands of thunks, and a fixed 32 KiB section
+   * silently truncated them into a different fixture than the one asked for.
+   * Every allocation below is 8-aligned, so the per-entry slack is generous
+   * on purpose — a fixture that runs out of room is a test that proves
+   * nothing.
+   */
+  const entryCount = (spec.imports ?? []).reduce(
+    (n, imp) => n + (imp.names?.length ?? 0) + (imp.ordinals?.length ?? 0) + 1,
+    0,
+  );
+  const sec = Buffer.alloc(
+    0x8000 +
+      24 * ((spec.imports?.length ?? 0) + 1) +
+      64 * (spec.imports?.length ?? 0) +
+      32 * entryCount +
+      32 * (spec.exports?.length ?? 0),
+  );
   let cursor = 0;
   const alloc = (n: number): number => {
     const at = cursor;

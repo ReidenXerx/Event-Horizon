@@ -141,20 +141,50 @@ function parse(buf: Buffer): PeImage | undefined {
   const importDir = dir(1);
   if (importDir.rva !== 0) {
     let at = offsetOf(importDir.rva);
+    /**
+     * ─── THE CAPS FAIL CLOSED ─────────────────────────────────────────
+     * Both loops below are bounded so a malformed or hostile file cannot
+     * spin forever. A bound that is simply reached, though, means the table
+     * was read only in PART — and a partly-read import table produces a
+     * SHORTER list of imports, which this module's one caller turns into
+     * FEWER missing symbols and a launcher gate that says the install is
+     * fine.
+     *
+     * That is the wrong direction for a check whose entire job is refusing
+     * to start a game that cannot start. So reaching a cap is treated the
+     * same as any other unreadable structure: `Malformed`, which surfaces as
+     * `undefined` — "cannot say" — exactly as the export table's own count
+     * check above already does.
+     *
+     * The bounds are far above anything real: 4,096 imported DLLs and 65,536
+     * symbols from one of them. A file that exceeds either is not a game
+     * executable we have anything to say about.
+     */
+    let descriptorsTerminated = false;
     for (let d = 0; d < MAX_DESCRIPTORS; d += 1, at += 20) {
       const originalThunk = u32(at);
       const nameRva = u32(at + 12);
       const firstThunk = u32(at + 16);
-      if (nameRva === 0 && originalThunk === 0 && firstThunk === 0) break;
-      if (nameRva === 0) break;
+      if (nameRva === 0 && originalThunk === 0 && firstThunk === 0) {
+        descriptorsTerminated = true;
+        break;
+      }
+      if (nameRva === 0) {
+        descriptorsTerminated = true;
+        break;
+      }
       const dll = cstring(offsetOf(nameRva)).toLowerCase();
       const entry = imports.get(dll) ?? { names: [], ordinals: [] };
       let thunk = offsetOf(originalThunk !== 0 ? originalThunk : firstThunk);
+      let thunksTerminated = false;
       for (let t = 0; t < MAX_THUNKS; t += 1) {
         const low = u32(thunk);
         const high = is64 ? u32(thunk + 4) : 0;
         thunk += is64 ? 8 : 4;
-        if (low === 0 && high === 0) break;
+        if (low === 0 && high === 0) {
+          thunksTerminated = true;
+          break;
+        }
         const byOrdinal = is64 ? (high & 0x80000000) !== 0 : (low & 0x80000000) !== 0;
         if (byOrdinal) {
           entry.ordinals.push(low & 0xffff);
@@ -163,8 +193,10 @@ function parse(buf: Buffer): PeImage | undefined {
           entry.names.push(cstring(offsetOf(low & 0x7fffffff) + 2));
         }
       }
+      if (!thunksTerminated) throw new Malformed();
       imports.set(dll, entry);
     }
+    if (!descriptorsTerminated) throw new Malformed();
   }
 
   return { is64, exports, exportOrdinals, imports };

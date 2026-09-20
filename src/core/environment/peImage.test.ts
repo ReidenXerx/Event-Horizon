@@ -45,6 +45,59 @@ describe("parsePeImage", () => {
   });
 });
 
+/**
+ * ─────────────────────────────────────────────────────────────────────────
+ * Both bounded loops must fail CLOSED.
+ *
+ * The parser caps the import descriptor and thunk loops so a malformed file
+ * cannot spin forever. Reaching a cap used to just stop reading, which hands
+ * the caller a SHORTER import list — and `missingImports` turns a shorter
+ * import list into FEWER missing symbols, which is a launcher gate saying the
+ * install is fine about a file it only partly read.
+ *
+ * Wrong direction for a check whose job is refusing to start a game that
+ * cannot start. A cap now means `undefined`: "cannot say", which is what this
+ * module already returns for every other unreadable structure.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+describe("the loop bounds", () => {
+  it("returns undefined when the descriptor table never terminates", () => {
+    // 4,097 descriptors: the 4,096-iteration cap is reached one short of the
+    // terminator, so the table was read in part.
+    const imports = Array.from({ length: 4097 }, (_, i) => ({
+      dll: `d${i}.dll`,
+      names: ["F"],
+    }));
+    expect(parsePeImage(buildPe({ imports }))).toBeUndefined();
+  });
+
+  it("reads a descriptor table that terminates inside the cap", () => {
+    // The control, and it earned its place: at 4,096 DLLs the cap is spent on
+    // the last real descriptor and the terminator is never reached, so the
+    // largest table this can read is 4,095. Without this test the one above
+    // would have passed while measuring nothing in particular.
+    const imports = Array.from({ length: 4095 }, (_, i) => ({
+      dll: `d${i}.dll`,
+      names: ["F"],
+    }));
+    const img = parsePeImage(buildPe({ imports }));
+    expect(img?.imports.size).toBe(4095);
+  });
+
+  it("returns undefined when one DLL's thunk list never terminates", () => {
+    const names = Array.from({ length: (1 << 16) + 1 }, (_, i) => `F${i}`);
+    expect(parsePeImage(buildPe({ imports: [{ dll: "x.dll", names }] }))).toBeUndefined();
+  });
+
+  it("reads a thunk list that terminates inside the cap", () => {
+    // Same control, same reason: one under the cap must still parse, or the
+    // test above proves only that a large fixture broke somewhere.
+    const names = Array.from({ length: (1 << 16) - 1 }, (_, i) => `F${i}`);
+    const img = parsePeImage(buildPe({ imports: [{ dll: "x.dll", names }] }));
+    expect(img?.imports.get("x.dll")?.names.length).toBe((1 << 16) - 1);
+  });
+});
+
 describe("missingImports", () => {
   const launcher = parsePeImage(
     buildPe({ imports: [{ dll: "steam_api64.dll", names: ["SteamAPI_Init", "SteamInternal_CreateInterface"] }] }),
