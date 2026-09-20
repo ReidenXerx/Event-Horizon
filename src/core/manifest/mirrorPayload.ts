@@ -67,6 +67,25 @@ export type ArchiveProvision = {
   compared: number;
   /** Of those, files that could not be read — and so ship. */
   unreadable: number;
+  /**
+   * Compared, readable, and the archive's copy is DIFFERENT.
+   *
+   * The mirror does not act on these — a file the archive cannot supply is
+   * simply one the package carries — but for an external mod it is the whole
+   * story: the archive players download no longer produces the bytes the
+   * collection recorded.
+   *
+   * It was invisible before, and that cost a tester their game. A curator
+   * regenerated a BodySlide output after uploading its archive; 1,130 of
+   * 2,994 files changed, EVERY ONE of them at the same size and the same
+   * path, so the name-level drift check saw nothing. Players installed the
+   * correct archive and got meshes the collection was never built against.
+   *
+   * Same size at the same path is exactly the case where only a checksum can
+   * tell, which is why it is recorded here rather than inferred from
+   * `compared - provided.length` by a caller who cannot name the files.
+   */
+  changed: string[];
 };
 
 /**
@@ -91,7 +110,12 @@ export async function findFilesTheArchiveProvides(args: {
     else same.push(entry);
   }
 
-  const out: ArchiveProvision = { provided: [], compared: 0, unreadable: 0 };
+  const out: ArchiveProvision = {
+    provided: [],
+    compared: 0,
+    unreadable: 0,
+    changed: [],
+  };
   for (const file of args.staged) {
     if (args.signal?.aborted === true) break;
     // Without a hash the user's side could not check the archive's copy — and
@@ -112,6 +136,11 @@ export async function findFilesTheArchiveProvides(args: {
     }
     if (candidates.some((e) => e.crc!.toLowerCase() === crc)) {
       out.provided.push(file.path);
+    } else {
+      // Same size, same path, different checksum. For the mirror this only
+      // means "the package carries it"; for an external mod it means the
+      // archive and the staging folder have diverged in content alone.
+      out.changed.push(file.path);
     }
   }
   return out;

@@ -65,6 +65,8 @@ import {
 } from "./bundleZip";
 import { computeStagingSetHash } from "./stagingSetHash";
 import { declaresAlternatives } from "./omissionLeads";
+import { findFilesTheArchiveProvides } from "./mirrorPayload";
+import type { ArchiveListing } from "./archiveContents";
 import type { SevenZipApi } from "./sevenZip";
 import type { AuditorMod } from "../getModsListForProfile";
 import type { CollectionConfig } from "./collectionConfig";
@@ -695,4 +697,194 @@ export function mergeMeasuredBundles(
   const byModId = new Map(first.map((b) => [b.modId, b] as const));
   for (const bundle of second) byModId.set(bundle.modId, bundle);
   return [...byModId.values()];
+}
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * The same archive, the same file names, DIFFERENT BYTES.
+ *
+ * {@link detectExternalDrift} compares path lists and nothing else, and that
+ * is blind to the one thing a curator does most often: regenerate an output
+ * mod. BodySlide, FaceGen, LOD and xEdit output all rewrite files IN PLACE —
+ * same names, and for BodySlide the same sizes too, because the mesh layout
+ * does not change when the vertices do.
+ *
+ * Measured on the real case that caused this: 2,994 recorded files, 2,994 of
+ * them the same size after a regeneration, so a size check would have caught
+ * exactly none. A tester installed the correct archive — its SHA-256 matched
+ * the collection's own identity for the mod — and 1,130 files still came out
+ * different. Their body physics broke, and nothing on the curator's side had
+ * said a word.
+ *
+ * So this reads the checksum, which is the only thing that can tell. It is
+ * the same size+CRC-32 comparison the mirror already trusts to decide what a
+ * package may leave to an archive — {@link findFilesTheArchiveProvides} —
+ * pointed at a different question: not "what can we omit" but "does this
+ * archive still make what we recorded".
+ *
+ * ─── WHY IT IS BUDGETED ────────────────────────────────────────────────
+ * Checking costs a read of the staging folder, and one real collection has a
+ * 19.7 GB external output mod in it. Reading that on every build to check 69
+ * files would make the check the most expensive thing in the build, and a
+ * check people turn off protects nobody.
+ *
+ * So each mod gets a byte budget, largest-value-first: files are taken in
+ * ascending size, so the budget buys the most FILES it can rather than the
+ * fewest. Coverage is reported rather than implied — `checked` against
+ * `staged` — because "we looked at 200 of 2,994" is a different claim from
+ * "we looked", and the curator is entitled to know which one they got.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+export type ExternalContentDrift = {
+  modId: string;
+  modName: string;
+  /** Staged paths whose bytes the archive no longer produces. */
+  changed: string[];
+  /** Files actually read and compared. */
+  checked: number;
+  /** Files the mod stages in total, so coverage is visible. */
+  staged: number;
+  /** True when the budget stopped us short of every file. */
+  partial: boolean;
+  bundled: boolean;
+};
+
+/** Bytes read per mod before the check stops and says so. */
+const CONTENT_DRIFT_BUDGET_BYTES = 256 * 1024 * 1024;
+
+export async function detectExternalContentDrift(args: {
+  mods: AuditorMod[];
+  config: CollectionConfig;
+  isExternal: (mod: AuditorMod) => boolean;
+  archivePathFor: (mod: AuditorMod) => string | undefined;
+  stagingRootOf: (mod: AuditorMod) => string | undefined;
+  /** Resolves undefined when the archive cannot be listed. */
+  listArchive: (archivePath: string) => Promise<ArchiveListing | undefined>;
+  /** CRC-32 of one file on disk, as 8 hex digits. */
+  crcFile: (absolutePath: string) => Promise<string>;
+  byteBudget?: number;
+  signal?: AbortSignal;
+  onProgress?: (done: number, total: number, modName: string) => void;
+}): Promise<ExternalContentDrift[]> {
+  const budget = args.byteBudget ?? CONTENT_DRIFT_BUDGET_BYTES;
+  const candidates = args.mods.filter((m) => args.isExternal(m));
+  const op = beginOp("bundle.content-drift", { candidates: candidates.length });
+  const out: ExternalContentDrift[] = [];
+
+  let done = 0;
+  for (const mod of candidates) {
+    if (args.signal?.aborted === true) break;
+    done += 1;
+    args.onProgress?.(done, candidates.length, mod.name);
+
+    const bundled = args.config.externalMods[mod.id]?.bundled === true;
+    /**
+     * A bundled mod ships its own bytes, so the archive's contents decide
+     * nothing for anybody. Skipped rather than reported: it is not drift,
+     * and reading gigabytes to say so would be the expensive kind of silence.
+     */
+    if (bundled) continue;
+
+    const archivePath = args.archivePathFor(mod);
+    const root = args.stagingRootOf(mod);
+    if (archivePath === undefined || root === undefined) continue;
+
+    const staged = mod.stagingFiles ?? [];
+    if (staged.length === 0) continue;
+
+    let listing: ArchiveListing | undefined;
+    try {
+      listing = await args.listArchive(archivePath);
+    } catch (err) {
+      ehLog("debug", "bundle.content-drift.archive-unreadable", {
+        modId: mod.id,
+        err,
+      });
+      continue;
+    }
+    if (listing === undefined) continue;
+
+    // Smallest first, so a fixed budget compares as many files as possible.
+    const ordered = [...staged].sort((a, b) => a.size - b.size);
+    const within: typeof ordered = [];
+    let spent = 0;
+    for (const f of ordered) {
+      if (spent + f.size > budget && within.length > 0) break;
+      within.push(f);
+      spent += f.size;
+    }
+
+    const proof = await findFilesTheArchiveProvides({
+      staged: within,
+      listing,
+      crcOf: (p) => args.crcFile(path.join(root, ...p.split("/"))),
+      ...(args.signal !== undefined ? { signal: args.signal } : {}),
+    });
+
+    if (proof.changed.length === 0) continue;
+    out.push({
+      modId: mod.id,
+      modName: mod.name,
+      changed: proof.changed,
+      checked: proof.compared,
+      staged: staged.length,
+      partial: within.length < staged.length,
+      bundled,
+    });
+  }
+
+  op.ok({
+    drifted: out.length,
+    detail: out.slice(0, 20).map((d) => ({
+      mod: d.modName,
+      changed: d.changed.length,
+      checked: d.checked,
+      staged: d.staged,
+      partial: d.partial,
+    })),
+  });
+  return out;
+}
+
+/**
+ * What the curator reads when an archive stopped producing what they staged.
+ *
+ * Deliberately blunter than the name-level warning: added and removed files
+ * are often innocent (a FOMOD option, a leftover), while a file that changed
+ * CONTENT at the same path means the thing players download is not the thing
+ * the collection was built from. There is no reading of that which is fine.
+ */
+export function describeExternalContentDrift(
+  drift: ExternalContentDrift[],
+): string[] {
+  if (drift.length === 0) return [];
+  const worst = [...drift].sort((a, b) => b.changed.length - a.changed.length);
+  const one = drift.length === 1;
+
+  const lines = [
+    `${drift.length} external mod${one ? "" : "s"} no longer contain${one ? "s" : ""} ` +
+      `what ${one ? "its" : "their"} archive produces — same file names, same ` +
+      `sizes, different contents. This is what regenerating an output mod ` +
+      `(BodySlide, FaceGen, LOD) after uploading its archive looks like, and ` +
+      `nothing else on this screen can see it.` +
+      `\n\nPlayers download the archive, so they get the OLD files while the ` +
+      `collection records yours — every one of them fails its file check, ` +
+      `and in-game it looks like broken bodies or missing detail rather than ` +
+      `anything to do with the collection. Re-upload the archive from your ` +
+      `current staging folder, or tick "bundle" so the package carries your ` +
+      `files instead.`,
+  ];
+  for (const d of worst.slice(0, 5)) {
+    const coverage = d.partial
+      ? ` — checked ${d.checked} of ${d.staged} files, so there may be more`
+      : "";
+    lines.push(
+      `  • "${d.modName}": ${d.changed.length} file(s) differ` +
+        ` (e.g. ${d.changed[0]})${coverage}.`,
+    );
+  }
+  if (worst.length > 5) {
+    lines.push(`  • and ${worst.length - 5} more; see the event-horizon log.`);
+  }
+  return [lines.join("\n")];
 }
