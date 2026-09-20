@@ -47,6 +47,8 @@ import {
   saveCrcCache,
   type CrcBySha256Cache,
 } from "./crcBySha256";
+import { pMap } from "../../utils/pMap";
+import { getDefaultHashConcurrency } from "./stagingFileWalker";
 import { crc32File } from "./readZip";
 import { resolveSevenZip, sevenZipExtractFull } from "./sevenZip";
 import type { SevenZipApi } from "./sevenZip";
@@ -415,8 +417,46 @@ async function stagedWithChecksums(args: {
   let read = 0;
   let failed = 0;
   let bytes = 0;
-  const out = await Promise.all(
-    plain.map(async (f) => {
+
+  /**
+   * ─── SAY WHAT IT IS ON, AND KEEP SAYING IT ──────────────────────────
+   * This logged one line PER MOD, on completion, and nothing at all while a
+   * mod was in flight. On a real profile that is 3m28s of total silence for
+   * a 2.27 GB mod and roughly ten minutes for a 37 GB FaceGen output — and
+   * the curator, quite reasonably, asked whether the build had hung. It had
+   * not; it was reading at 60-80 MB/s. Nothing on screen or in the log could
+   * tell those apart, which is the same "cannot tell slow from hung" hole
+   * `engine.ts` names about the 34-minute hashing pass.
+   *
+   * So: one line when a mod STARTS, carrying what it is about to read, and
+   * a heartbeat while it does. Time-based rather than per-file, because a
+   * mod with 3,040 files would otherwise write 3,040 lines to say one thing.
+   */
+  const totalBytes = plain.reduce(
+    (n, f) => (wanted.has(f.path) ? n + f.size : n),
+    0,
+  );
+  ehLog("debug", "self-check.external-crc.start", {
+    mod: args.mod.name,
+    files: comparableFiles.length,
+    bytes: totalBytes,
+  });
+  const startedAt = Date.now();
+  let lastBeat = startedAt;
+  const HEARTBEAT_MS = 15_000;
+
+  /**
+   * Bounded, where this used to start every read at once.
+   *
+   * `Promise.all` over the file list opened one handle per staged file —
+   * 3,040 of them on a single mod here — which is both a way to hit EMFILE
+   * and a way to make a disk seek instead of stream. The hashing pass next
+   * door has always used the same cpu-aware bound; this now matches it.
+   */
+  const out = await pMap(
+    plain,
+    Math.max(1, getDefaultHashConcurrency()),
+    async (f) => {
       if (args.signal?.aborted === true) return f;
       if (!wanted.has(f.path)) return f;
       const sha = shaByPath.get(f.path);
@@ -429,13 +469,27 @@ async function stagedWithChecksums(args: {
         args.crcCache.set(sha, crc);
         read += 1;
         bytes += f.size;
+        const now = Date.now();
+        if (now - lastBeat >= HEARTBEAT_MS) {
+          lastBeat = now;
+          const secs = (now - startedAt) / 1000;
+          ehLog("debug", "self-check.external-crc.progress", {
+            mod: args.mod.name,
+            done: read,
+            of: comparableFiles.length,
+            bytesRead: bytes,
+            ofBytes: totalBytes,
+            mbPerSec: Math.round(bytes / 1024 / 1024 / Math.max(1, secs)),
+          });
+        }
         return { ...f, crc };
       } catch {
         // Locked, vanished, or unreadable. Says nothing about the archive.
         failed += 1;
         return f;
       }
-    }),
+    },
+    args.signal,
   );
   ehLog("debug", "self-check.external-crc", {
     mod: args.mod.name,
@@ -444,6 +498,7 @@ async function stagedWithChecksums(args: {
     fromCache: plain.length - read - failed - (plain.length - comparableFiles.length),
     unreadable: failed,
     bytesRead: bytes,
+    ms: Date.now() - startedAt,
     // Plugins, deliberately — a flipped light flag is not a divergence.
     skippedPlugins: plain.length - comparableFiles.length,
   });

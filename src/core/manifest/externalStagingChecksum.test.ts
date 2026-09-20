@@ -33,6 +33,7 @@ const listing = (crc: string): ArchiveListing => ({
   crcCoverage: 1,
 });
 
+
 describe("a regenerated file at the same path and size", () => {
   it("is UNEXPLAINED once the staged side carries a checksum", () => {
     const r = verifyStagingAgainstArchive(
@@ -86,6 +87,28 @@ describe("only non-Nexus mods pay for it", () => {
       "utf8",
     ) as string;
 
+  /**
+   * The body of `stagedWithChecksums`, from its declaration to the next
+   * top-level declaration.
+   *
+   * Function-scoped, not a byte count. This read `slice(at, at + 2400)` and
+   * a docblock added INSIDE the function pushed the target past 2,400
+   * characters — the test failed while the behaviour it guards was
+   * untouched, pointing at nothing. PP-2 records the same trap costing a
+   * debugging session after a CRLF rewrite moved a different window.
+   */
+  const stagedWithChecksumsBody = (): string => {
+    const body = src();
+    const at = body.indexOf("async function stagedWithChecksums(");
+    expect(at).toBeGreaterThan(-1);
+    const rest = body.slice(at + 1);
+    // Column-0 declarations only: anything indented is inside this function.
+    const next = rest.search(
+      /\n(?:export )?(?:async )?function |\nexport (?:const|type) /,
+    );
+    return next === -1 ? rest : rest.slice(0, next);
+  };
+
   it("gates the checksum pass on the mod NOT being downloaded from Nexus", () => {
     const body = src();
     const at = body.indexOf("const staged = await stagedWithChecksums(");
@@ -114,8 +137,12 @@ describe("only non-Nexus mods pay for it", () => {
   it("leaves a file it could not read without a checksum", () => {
     // Locked or vanished says nothing about the archive, so it must not
     // become a divergence.
-    const body = src();
-    const at = body.indexOf("async function stagedWithChecksums(");
-    expect(body.slice(at, at + 2400)).toContain("return f;");
+    //
+    // Scoped to the FUNCTION, not to a byte window. It used to read
+    // `slice(at, at + 2400)`, and adding a docblock inside the function
+    // pushed the target past 2,400 characters — the test then failed while
+    // the behaviour it guards was untouched, pointing at nothing. PP-2
+    // records the same trap costing a debugging session on a CRLF rewrite.
+    expect(stagedWithChecksumsBody()).toContain("return f;");
   });
 });
