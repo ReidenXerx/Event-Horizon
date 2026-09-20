@@ -1187,6 +1187,11 @@ export async function loadBuildContext(
             shipsAsExternal(isNexusMod(m), collectionConfig.externalMods[m.id]),
           isBundled: (m) =>
             collectionConfig.externalMods[m.id]?.bundled === true,
+          // Mirroring carries the files too, so the build will NOT refuse and
+          // the player's pick cannot decide anything. Saying otherwise sent a
+          // curator to re-download a mod they had already answered.
+          isMirrored: (m) =>
+            collectionConfig.externalMods[m.id]?.mirrored === true,
         },
       ),
       // A prerequisite the curator does not have themselves cannot be
@@ -1243,15 +1248,22 @@ const EXTERNAL_ARCHIVE_MISSING =
  * Which of these mods is the player asked to supply, and which does the
  * package carry?
  *
- * Both default to the answer for a caller with no config in hand: external
- * means "not from Nexus", and nothing is bundled. Passing the config-aware
- * versions is what stops a Nexus mod marked `treatAsExternal` being told it
- * "cannot be packaged" — it packages fine — and what stops a bundled mod
- * being warned about at all, since nobody is ever asked to supply it.
+ * All three default to the answer for a caller with no config in hand:
+ * external means "not from Nexus", and nothing is bundled or mirrored.
+ * Passing the config-aware versions is what stops a Nexus mod marked
+ * `treatAsExternal` being told it "cannot be packaged" — it packages fine —
+ * and what stops a bundled or mirrored mod being warned about at all, since
+ * the package carries those either way.
  */
 export type MissingArchiveContext = {
   isExternal?: (mod: AuditorMod) => boolean;
   isBundled?: (mod: AuditorMod) => boolean;
+  /**
+   * Answered "mirror". Added after this warning told a curator the build
+   * "will refuse until each one has an archive here" about a mod they had
+   * already answered — and which the gate, correctly, does not refuse.
+   */
+  isMirrored?: (mod: AuditorMod) => boolean;
 };
 
 /**
@@ -1283,10 +1295,17 @@ export function describeMissingArchives(
   // now the only one there is, was wrong on both counts.
   const isExternal = ctx?.isExternal ?? ((m: AuditorMod) => !isNexusMod(m));
   const isBundled = ctx?.isBundled ?? ((): boolean => false);
+  const isMirrored = ctx?.isMirrored ?? ((): boolean => false);
   const nexus = missing.filter((m) => !isExternal(m));
   // A bundled mod ships its own bytes, so no player is ever shown a picker
-  // for it and its missing archive costs nobody anything.
-  const external = missing.filter((m) => isExternal(m) && !isBundled(m));
+  // for it and its missing archive costs nobody anything. A MIRRORED one is
+  // in the same position on the only axis this warning is about: with no
+  // archive to leave files to, the package carries all of them and writes
+  // them over whatever the player supplied, so the pick cannot decide
+  // anything and the build does not refuse.
+  const external = missing.filter(
+    (m) => isExternal(m) && !isBundled(m) && !isMirrored(m),
+  );
   const lines: string[] = [];
 
   if (nexus.length > 0) {
@@ -1306,8 +1325,11 @@ export function describeMissingArchives(
         `refuse until each one has an archive here, because your archive's ` +
         `hash is the only thing that can tell a player their pick is the ` +
         `wrong file while they can still go and get the right one. ` +
-        `Import the archives into Vortex, tick "Bundle" so the package ` +
-        `carries the files instead, or take the mods out of the profile.`,
+        `Import the archives into Vortex; or answer "mirror", which carries ` +
+        `the files in the package and writes them over whatever the player ` +
+        `supplies while they still download from the author; or tick ` +
+        `"Bundle", which carries them and replaces the author's download; ` +
+        `or take the mods out of the profile.`,
     );
   }
 

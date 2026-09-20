@@ -527,6 +527,17 @@ export type ExternalDrift = {
   /** Already flagged for bundling, so the drift is about to be shipped correctly. */
   bundled: boolean;
   /**
+   * Already answered MIRROR, which ships the drift just as correctly.
+   *
+   * Bundling is not the only way the package carries the curator's bytes, and
+   * treating it as the only one made this warning say the opposite of the
+   * truth about a mirrored mod — "the collection ships the ARCHIVE, so
+   * whoever installs it gets the original, not your version" — and then
+   * recommend the one answer a curator may have refused on purpose, because
+   * bundling takes the author's download away (NS-5).
+   */
+  mirrored: boolean;
+  /**
    * The archive carries a FOMOD script, so its file set is a menu rather than
    * a promise and `removed` was suppressed. Reported so the caller can say why
    * a mod is listed on one direction only.
@@ -612,6 +623,7 @@ export async function detectExternalDrift(args: {
       removed,
       added,
       bundled: args.config.externalMods[mod.id]?.bundled === true,
+      mirrored: args.config.externalMods[mod.id]?.mirrored === true,
       declaredAlternatives: menu,
     });
   }
@@ -630,7 +642,9 @@ export async function detectExternalDrift(args: {
  * Detail lines are newline-joined into the entry they belong to.
  */
 export function describeExternalDrift(drift: ExternalDrift[]): string[] {
-  const unbundled = drift.filter((d) => !d.bundled);
+  // Both answers ship the curator's own files; only an UNANSWERED mod is
+  // still shipping the archive, which is the only thing this warns about.
+  const unbundled = drift.filter((d) => !d.bundled && !d.mirrored);
   if (unbundled.length === 0) return [];
 
   const worst = [...unbundled].sort(
@@ -642,8 +656,10 @@ export function describeExternalDrift(drift: ExternalDrift[]): string[] {
       `the archive ${one ? "it" : "they"} came from — files have been added or ` +
       `removed in the staging folder since. Right now the collection ships the ` +
       `ARCHIVE, so whoever installs it gets the original, not your version. ` +
-      `Tick "bundle" on ${one ? "it" : "them"} to pack your actual files into ` +
-      `the .ehcoll instead.`,
+      `Answer "mirror" on ${one ? "it" : "them"} to carry your files in the ` +
+      `.ehcoll and write them over what the archive produced — the player ` +
+      `still downloads from the author — or "bundle" to replace the ` +
+      `download entirely.`,
   ];
   for (const d of worst.slice(0, 5)) {
     const parts: string[] = [];

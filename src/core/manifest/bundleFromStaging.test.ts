@@ -212,6 +212,7 @@ describe("describeExternalDrift", () => {
     removed: ["a", "b"],
     added: ["PC_README.md"],
     bundled: false,
+    mirrored: false,
     declaredAlternatives: false,
     ...over,
   });
@@ -220,14 +221,30 @@ describe("describeExternalDrift", () => {
     const lines = describeExternalDrift([drifted()]).join(" ");
     expect(lines).toMatch(/ships the ARCHIVE/);
     expect(lines).toMatch(/not your version/);
-    expect(lines).toMatch(/tick "bundle"/i);
     expect(lines).toMatch(/Ivy'sPantiesSettings/);
+    // BOTH answers are offered, and the difference between them is stated,
+    // because it is the one a curator may care about most: bundling takes the
+    // author's download away (NS-5) and mirroring does not.
+    expect(lines).toMatch(/"mirror"/i);
+    expect(lines).toMatch(/"bundle"/i);
+    expect(lines).toMatch(/still downloads from the author/i);
   });
 
   it("stays quiet about mods already flagged for bundling", () => {
     // Their drift is about to ship correctly; nagging would train the curator
     // to ignore the message that matters.
     expect(describeExternalDrift([drifted({ bundled: true })])).toEqual([]);
+  });
+
+  it("stays just as quiet about mods already answered MIRROR", () => {
+    /**
+     * The blind spot this whole warning had: bundling is not the only way the
+     * package carries the curator's bytes. Told about a mirrored mod, it said
+     * the exact opposite of the truth — "the collection ships the ARCHIVE, so
+     * whoever installs it gets the original, not your version" — and then
+     * recommended bundling, which a curator may have refused on purpose.
+     */
+    expect(describeExternalDrift([drifted({ mirrored: true })])).toEqual([]);
   });
 
   it("explains that a FOMOD's unselected options were not counted", () => {

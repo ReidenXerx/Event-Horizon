@@ -52,6 +52,50 @@ const nexus = (id: string): AuditorMod =>
 /** No Nexus ids: identified by its staged files, so it ships anyway. */
 const external = (id: string): AuditorMod => mod(id);
 
+describe("who the external half is about", () => {
+  /**
+   * The warning is about mods the PLAYER will be asked to supply, and its
+   * whole point is that the pick cannot be checked. A mod whose files the
+   * package carries is not one of those — and bundling was treated as the
+   * only way that happens.
+   *
+   * Told about a mirrored mod, it said the build "will refuse until each one
+   * has an archive here", which the gate does not do, and recommended
+   * bundling, which takes the author's download away (NS-5). A curator who
+   * had already answered "mirror" was sent to re-download a mod they had
+   * solved.
+   */
+  const ctx = (bundled: string[], mirrored: string[]) => ({
+    isExternal: () => true,
+    isBundled: (m: AuditorMod) => bundled.includes(m.id),
+    isMirrored: (m: AuditorMod) => mirrored.includes(m.id),
+  });
+
+  it("says nothing about a mod answered MIRROR", () => {
+    expect(
+      describeMissingArchives([external("porcPubes")], ctx([], ["porcPubes"])),
+    ).toEqual([]);
+  });
+
+  it("says nothing about a mod answered BUNDLE", () => {
+    expect(
+      describeMissingArchives([external("porcPubes")], ctx(["porcPubes"], [])),
+    ).toEqual([]);
+  });
+
+  it("still speaks up for a mod with no answer at all", () => {
+    const lines = describeMissingArchives([external("porcPubes")], ctx([], []));
+    expect(lines.join(" ")).toMatch(/porcPubes|asked to supply/i);
+  });
+
+  it("offers mirror alongside bundle, and says what separates them", () => {
+    const lines = describeMissingArchives([external("x")], ctx([], [])).join(" ");
+    expect(lines).toMatch(/"mirror"/i);
+    expect(lines).toMatch(/"Bundle"/i);
+    expect(lines).toMatch(/still download from the author/i);
+  });
+});
+
 describe("recognising the missing-archive warnings", () => {
   it("matches every sentence the producer can emit", () => {
     // Both halves, together and apart — the producer branches on which kinds
