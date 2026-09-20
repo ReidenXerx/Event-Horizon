@@ -306,19 +306,6 @@ function divergenceFingerprint(r: SelfCheckReport): string | undefined {
 
 
 /**
- * ──────────────────────────────────────────────────────────────────────
- * Bytes read per NON-NEXUS mod before the checksum pass stops.
- *
- * The comparison below is the difference between "explained" and "we only
- * checked the sizes", and it costs a read of the staging folder — which is
- * exactly the cost `stagingFiles` was shaped to avoid across a 205 GB
- * profile. So it is spent only where it buys the most: a mod the player
- * downloads from somewhere other than Nexus.
- * ──────────────────────────────────────────────────────────────────────
- */
-const EXTERNAL_CRC_BUDGET_BYTES = 256 * 1024 * 1024;
-
-/**
  * Bethesda plugins, which are excluded from the checksum pass below.
  *
  * Not a general "is this a plugin" helper on purpose: the only thing that
@@ -390,33 +377,37 @@ async function stagedWithChecksums(args: {
   // Smallest first, so a fixed budget covers the most FILES rather than the
   // fewest. Coverage is partial by design; a partial checksum pass still
   // catches a regeneration, which touches most of a mod at once.
-  // Plugins never get one — see the note above. Filtered before the budget so
-  // their bytes do not crowd out files that CAN be compared.
+  /**
+   * ─── EVERY FILE, WHATEVER THE MOD WEIGHS ────────────────────────────
+   * An earlier cut of this budgeted the reads per mod and reported partial
+   * coverage. That was the wrong trade for the one job it has: a collection
+   * with a 19.7 GB external output in it is exactly the collection where a
+   * silently half-checked mod ships, and "we looked at some of it" is not a
+   * claim anybody can act on. NS-1 — reliability is the goal and build time
+   * is not the budget it is measured against.
+   *
+   * Nothing is read twice: this is one pass per file, and only for mods the
+   * player fetches from outside Nexus.
+   */
   const comparableFiles = plain.filter(
     (f) => !PLUGIN_EXTENSIONS.has(path.extname(f.path).toLowerCase()),
   );
   if (comparableFiles.length === 0) return plain;
-
-  const order = [...comparableFiles].sort((a, b) => a.size - b.size);
-  const budgeted = new Set<string>();
-  let spent = 0;
-  for (const f of order) {
-    if (spent + f.size > EXTERNAL_CRC_BUDGET_BYTES && budgeted.size > 0) break;
-    budgeted.add(f.path);
-    spent += f.size;
-  }
+  const wanted = new Set(comparableFiles.map((f) => f.path));
 
   let read = 0;
   let failed = 0;
+  let bytes = 0;
   const out = await Promise.all(
     plain.map(async (f) => {
       if (args.signal?.aborted === true) return f;
-      if (!budgeted.has(f.path)) return f;
+      if (!wanted.has(f.path)) return f;
       try {
         const crc = (
           await crc32File(path.join(root, ...f.path.split("/")), args.signal)
         ).toLowerCase();
         read += 1;
+        bytes += f.size;
         return { ...f, crc };
       } catch {
         // Locked, vanished, or unreadable. Says nothing about the archive.
@@ -430,7 +421,9 @@ async function stagedWithChecksums(args: {
     staged: plain.length,
     checksummed: read,
     unreadable: failed,
-    partial: budgeted.size < plain.length,
+    bytesRead: bytes,
+    // Plugins, deliberately — a flipped light flag is not a divergence.
+    skippedPlugins: plain.length - comparableFiles.length,
   });
   return out;
 }

@@ -177,8 +177,9 @@ describe("the tripwire", () => {
 
   it("only computes them for mods that are NOT downloaded from Nexus", () => {
     // A Nexus mod is identified by (modId, fileId, sha256), so a changed
-    // archive is a different file and the resolver already knows. The cost
-    // and the risk are only worth taking where nothing else checks.
+    // archive is a different file and the resolver already knows. That
+    // restriction is what keeps an unbudgeted pass affordable: it runs over
+    // the external mods only, never the whole profile.
     const at = source().indexOf("const staged = await stagedWithChecksums(");
     expect(at).toBeGreaterThan(-1);
     expect(source().slice(at, at + 420)).toContain(

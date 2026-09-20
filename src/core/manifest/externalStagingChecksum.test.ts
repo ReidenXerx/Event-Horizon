@@ -94,8 +94,12 @@ describe("only non-Nexus mods pay for it", () => {
     expect(call).toContain("!opts.downloadedFromNexus.has(mod.id)");
   });
 
-  it("budgets the reads, because one real external mod is 19.7 GB", () => {
-    expect(src()).toContain("EXTERNAL_CRC_BUDGET_BYTES");
+  it("checks EVERY file, however big the mod is", () => {
+    // A 19.7 GB external output is exactly the mod where a half-checked
+    // result ships, so there is no byte budget and no partial coverage.
+    const body = src();
+    expect(body).not.toContain("EXTERNAL_CRC_BUDGET_BYTES");
+    expect(body).not.toContain("partial:");
   });
 
   it("never checksums a plugin — a flipped light flag is not a divergence", () => {
