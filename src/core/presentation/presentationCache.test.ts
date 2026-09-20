@@ -122,4 +122,22 @@ describe("loadCachedPresentation", () => {
     expect(shown?.gallery).toEqual([]);
     expect(await loadCachedPresentation(cacheRoot, PACKAGE_ID, "9.9.9")).toBeUndefined();
   });
+
+  it("leaves out an image swapped for different bytes of the same size", async () => {
+    /**
+     * The read path used to accept a file on size alone, resting on the fact
+     * that its bytes were checked at extraction — months earlier, in a
+     * directory anyone can write to. This module opens by saying an image
+     * that does not match the recorded hash is not what the curator shipped
+     * and is not shown, and this is where that promise is kept.
+     */
+    await extractPresentation({ zipPath: zip, packageId: PACKAGE_ID, version: "1.0.0", presentation: presentation(), cacheRoot });
+    const shot = path.join(presentationCacheDir(cacheRoot, PACKAGE_ID, "1.0.0"), "shot.png");
+    // Same length, different bytes — indistinguishable to a size check.
+    fs.writeFileSync(shot, Buffer.alloc(SHOT.length, 0x41));
+    const shown = await loadCachedPresentation(cacheRoot, PACKAGE_ID, "1.0.0");
+    expect(shown?.gallery).toEqual([]);
+    // The untouched one still shows: the check is per file, not all-or-nothing.
+    expect(shown?.header?.url).toMatch(/^file:/);
+  });
 });

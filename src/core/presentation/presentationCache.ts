@@ -141,13 +141,23 @@ export async function extractPresentation(args: {
 
 /**
  * The presentation recorded for an installed version, for screens that no
- * longer have the package. Only images still on disk at their recorded size
- * are shown; their bytes were checked when they were extracted.
+ * longer have the package.
+ *
+ * Every image is checked against the hash the manifest recorded, the same
+ * check the extraction ran. It used to accept a file on SIZE alone, resting
+ * on "their bytes were checked when they were extracted" — a claim about the
+ * past, about files sitting in a directory anyone can write to, months after
+ * the fact. This module's own opening paragraph says an image whose bytes do
+ * not match the hash is not what the curator shipped and is not shown; the
+ * read path is where that promise is kept or broken, and hashing a handful of
+ * pictures costs milliseconds (NS-1).
  */
 export async function loadCachedPresentation(
   cacheRoot: string,
   packageId: string,
   version: string,
+  /** Injectable for tests; the real one reads the file. */
+  hash: (file: string) => Promise<string> = (file) => hashFileSha256(file),
 ): Promise<ShownPresentation | undefined> {
   const dir = presentationCacheDir(cacheRoot, packageId, version);
   let parsed: unknown;
@@ -160,11 +170,9 @@ export async function loadCachedPresentation(
   if (read === undefined) return undefined;
   const present = new Set<string>();
   for (const img of presentationImages(read)) {
-    try {
-      const stat = await fsp.stat(path.join(dir, fileNameOf(img)));
-      if (stat.size === img.size) present.add(img.file);
-    } catch {
-      /* gone since; not shown */
+    // Gone, replaced, or truncated since — all the same answer: not shown.
+    if (await matches(path.join(dir, fileNameOf(img)), img, hash)) {
+      present.add(img.file);
     }
   }
   const kept = withImagesPresent(read, present).presentation;
