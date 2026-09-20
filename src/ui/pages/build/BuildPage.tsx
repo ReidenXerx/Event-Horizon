@@ -2476,10 +2476,17 @@ function PrerequisitesCard(props: PrerequisitesCardProps): JSX.Element {
  * integrity data, which is the one thing this tool exists to provide.
  *
  * Thorough was only ever expensive because it re-read every byte on every
- * build. Hashes are now reused while a file's path, size and mtime all match,
- * so the cost is paid once. What survives as a choice is the honest one: force
- * a full re-read when you want to catch bytes rewritten in place, which is the
- * single thing a fingerprint cannot see.
+ * build. Hashes are now reused while a file's path, size, mtime AND ctime all
+ * match, so the cost is paid once. What survives as a choice is the honest
+ * one: force a full re-read when you want to catch bytes rewritten in place,
+ * which is the single thing a fingerprint cannot see.
+ *
+ * The copy below says what the fingerprint actually covers, and it narrowed
+ * when ctime joined it. A tool that rewrites a file and puts its modified
+ * time back — archive extraction, `robocopy` — used to slip straight past;
+ * it no longer can, because `utimes` cannot set ctime. What is left is bytes
+ * changing with NO metadata change at all, which is corruption rather than
+ * anything a tool does on purpose.
  */
 function IntegrityLevelCard(props: IntegrityLevelCardProps): JSX.Element {
   const { modCount, reverify, onReverifyChange } = props;
@@ -2501,9 +2508,12 @@ function IntegrityLevelCard(props: IntegrityLevelCardProps): JSX.Element {
         sub={
           <>
             Ignores cached hashes and reads all {modCount} mods from disk again.
-            Only worth it if you suspect a file changed without its size or
-            timestamp changing — disk corruption rather than anything Vortex
-            does. Costs a full pass over your staging folder.
+            A hash is reused only while a file&apos;s size, modified time and
+            created time all match, so a tool that rewrites a file and restores
+            its timestamps is already caught. Worth ticking only if you suspect
+            bytes changed with no trace at all — disk corruption rather than
+            anything Vortex or a mod tool does. Costs a full pass over your
+            staging folder.
           </>
         }
       />
