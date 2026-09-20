@@ -183,7 +183,9 @@ describe("the driver actually asks before it reinstalls", () => {
   // Source assertions: the verify loop needs a live Vortex. That is exactly
   // why classifyVerification — the sibling of this module, written and tested
   // long before today — sat unreferenced by anything but its own test while
-  // the driver reinstalled ~11% of every collection for no reason.
+  // the driver reinstalled ~11% of every collection for no reason. It has
+  // since been deleted: this module is what replaced it, and these
+  // assertions are what stop the replacement going the same way.
   const driver = async (): Promise<string> => {
     const fsm = await import("fs");
     const pathm = await import("path");

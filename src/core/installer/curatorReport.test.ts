@@ -141,7 +141,8 @@ describe("the driver actually produces one, and only at the end of the ladder", 
   // Source assertions: the verify loop needs a live Vortex. The failure this
   // guards is a report generator that exists and is never called — the same
   // shape as classifyVerification, which sat unreferenced while the driver
-  // reinstalled ~11% of every collection for nothing.
+  // reinstalled ~11% of every collection for nothing. (That module is gone
+  // now — judgeReinstall does the job and the driver calls it.)
   const driver = async (): Promise<string> => {
     const fs = await import("fs");
     const path = await import("path");

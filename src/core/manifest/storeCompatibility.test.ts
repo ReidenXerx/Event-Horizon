@@ -179,8 +179,8 @@ describe("what the user is told", () => {
 describe("the wiring, not just the helper", () => {
   /**
    * A helper nothing calls is the failure mode this codebase has shipped six
-   * times — `knownModIds`, `classifyVerification`, `verifyHashes`, and three
-   * more the driver's own preamble documents. The check has to be reachable
+   * times — `knownModIds`, `classifyVerification` (now deleted), `verifyHashes`,
+   * and three more the driver's own preamble documents. The check has to be reachable
    * from a real plan, and the mode has to survive the round trip through the
    * manifest.
    */
