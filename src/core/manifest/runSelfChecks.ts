@@ -49,6 +49,7 @@ import {
 } from "./crcBySha256";
 import { pMap } from "../../utils/pMap";
 import { getDefaultHashConcurrency } from "./stagingFileWalker";
+import { detectStaleArchive, describeStaleArchive } from "./staleArchiveHint";
 import { crc32File } from "./readZip";
 import { resolveSevenZip, sevenZipExtractFull } from "./sevenZip";
 import type { SevenZipApi } from "./sevenZip";
@@ -992,8 +993,11 @@ export async function runSelfChecks(
     return hit;
   };
 
+  /** modId → Vortex's staging folder name, for the stale-archive check below. */
+  const stagingFolderByModId = new Map<string, string | undefined>();
   for (const mod of comparable) {
     if (opts?.signal?.aborted === true) break;
+    stagingFolderByModId.set(mod.id, mod.installationPath);
     done += 1;
     opts?.onProgress?.(done, total, mod.name);
 
@@ -1101,6 +1105,57 @@ export async function runSelfChecks(
       `${withLeads.length - 10} further mod(s) have similar gaps; see the ` +
         `event-horizon log for the full list.`,
     );
+  }
+
+  /**
+   * ─── BEFORE THE DIVERGENCE WARNING, THE CHEAPER EXPLANATION ─────────
+   * Runs only for mods that already diverge, so it costs a handful of stats
+   * and never touches a healthy build. It goes FIRST because when it fires
+   * it usually means the divergence below is not real — the archive on this
+   * machine is simply older than the mod it is being compared to.
+   */
+  for (const report of reports) {
+    if (report.unexplained === 0) continue;
+    const archivePath = archiveByModId.get(report.modId);
+    if (archivePath === undefined) continue;
+    const root = stagingRootFromFolder(
+      installRoot,
+      stagingFolderByModId.get(report.modId),
+    );
+    if (root === undefined) continue;
+    try {
+      const archiveMtimeMs = (await fsp.stat(archivePath)).mtimeMs;
+      const times = [];
+      for (const ex of report.unexplainedExamples) {
+        try {
+          times.push({
+            path: ex.path,
+            mtimeMs: (await fsp.stat(path.join(root, ...ex.path.split("/"))))
+              .mtimeMs,
+          });
+        } catch {
+          // Gone since the check; says nothing either way.
+        }
+      }
+      const hint = detectStaleArchive({
+        archiveMtimeMs,
+        diverging: times,
+        divergingTotal: report.unexplained,
+      });
+      if (hint === undefined) continue;
+      ehLog("info", "selfcheck.archive-looks-stale", {
+        mod: report.modName,
+        archiveMtime: new Date(hint.archiveMtimeMs).toISOString(),
+        newestStagedMtime: new Date(hint.newestStagedMtimeMs).toISOString(),
+        diverging: hint.diverging,
+        sampled: hint.sampled,
+      });
+      // No URL at this layer — the collection config holds it, and the
+      // message says "replace the copy you published" when it has none.
+      warnings.push(describeStaleArchive(report.modName, hint));
+    } catch {
+      // The archive vanished, or the stat failed. Not a finding.
+    }
   }
 
   const divergedWarning = describeDivergedMods(reports);
