@@ -21,12 +21,71 @@ function mod(
     name: over.id,
     shipsAsExternal: false,
     bundled: false,
+    mirrored: false,
     archiveSha256: "a".repeat(64),
     ...over,
   };
 }
 
 describe("externalArchiveRefusal", () => {
+  /**
+   * The case that found this: a LoversLab mod the curator had ALREADY
+   * answered — `mirrored: true`, decided because the archive is unavailable —
+   * and which the previous release shipped correctly. The gate refused the
+   * build anyway, leaving a curator who will not take an author's download
+   * away (NS-5) with no answer at all.
+   *
+   * It is safe because the condition that fires this gate is the proof:
+   * `mirrorFromArchive` can only omit a file the mod's own archive installs,
+   * so with no archive a mirrored mod carries EVERY file. Whatever the player
+   * picks is overwritten, file for file, against recorded hashes.
+   */
+  it("allows an archive-less external mod the curator answered MIRROR for", () => {
+    expect(
+      externalArchiveRefusal([
+        mod({
+          id: "PorcPubesCBBE_esl_03",
+          shipsAsExternal: true,
+          mirrored: true,
+          archiveSha256: undefined,
+        }),
+      ]),
+    ).toBeUndefined();
+  });
+
+  it("still refuses the same mod when mirror is not the answer", () => {
+    // The control: mirroring is doing the exempting, not the missing archive.
+    const refusal = externalArchiveRefusal([
+      mod({
+        id: "PorcPubesCBBE_esl_03",
+        shipsAsExternal: true,
+        mirrored: false,
+        archiveSha256: undefined,
+      }),
+    ]);
+    expect(refusal?.mods.map((m) => m.id)).toEqual(["PorcPubesCBBE_esl_03"]);
+  });
+
+  it("offers mirror as one of the ways out", () => {
+    const refusal = externalArchiveRefusal([
+      mod({ id: "x", shipsAsExternal: true, archiveSha256: undefined }),
+    ]);
+    expect(refusal?.message).toContain("four things");
+    expect(refusal?.message).toContain("mirror");
+    // And says what separates it from bundling, which is the author's download.
+    expect(refusal?.message).toContain("download from the author");
+  });
+
+  it("refuses a mirrored mod that is not external at all only if it is", () => {
+    // A mirrored NEXUS mod never reaches the picker, so it was never an
+    // offender; this pins that the new flag did not widen the gate.
+    expect(
+      externalArchiveRefusal([
+        mod({ id: "nexus", mirrored: true, archiveSha256: undefined }),
+      ]),
+    ).toBeUndefined();
+  });
+
   it("allows a build where every external mod has an archive", () => {
     expect(
       externalArchiveRefusal([

@@ -1775,6 +1775,9 @@ export async function runBuildPipeline(
           collectionConfig.externalMods[m.id],
         ),
         bundled: measuredBundleIds.has(m.id),
+        // The curator's answer is enough here: with no archive there is
+        // nothing a mirror could leave to one, so it carries every file.
+        mirrored: collectionConfig.externalMods[m.id]?.mirrored === true,
       })),
   );
   if (externalGate !== undefined) {

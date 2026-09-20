@@ -35,6 +35,29 @@
  *
  * A BUNDLED external mod is deliberately exempt: the package carries it, so
  * no player is ever prompted, so there is no pick to check.
+ *
+ * ─── AND SO IS A MIRRORED ONE, FOR A REASON THIS GATE PROVES ITSELF ────
+ * `mirrorFromArchive` names the files a mirrored mod's package does NOT
+ * carry, because the mod's own archive installs those exact bytes at those
+ * paths. With no archive on the curator's side, no file can qualify — so a
+ * mirrored mod that reaches this gate necessarily carries EVERY file.
+ * Measured on a real package: `PorcPubesCBBE_esl_03`, 6 staged files, no
+ * archive, `mirrorFromArchive` absent, all 6 carried.
+ *
+ * The player is still prompted, and their pick is still unchecked — but it
+ * cannot change the outcome. Whatever they supply installs and is then
+ * overwritten file for file with the curator's bytes, each checked against
+ * its recorded sha256, with anything extra removed. The harm this gate
+ * exists to stop — "the mismatch surfaces later as failed file checks that
+ * cannot tell them which file to get instead" — has no way to happen.
+ *
+ * Refusing anyway had a real cost, and it is the reason this was found: it
+ * leaves a curator whose mod is hosted off-Nexus with bundling or dropping
+ * the mod, and bundling takes the author's download away (NS-5). A curator
+ * who will not do that to an author was left with no answer at all, for a
+ * mod they had ALREADY answered — `mirrored: true`,
+ * `postProcessingDecidedFor: "archive-unavailable"` — and which the previous
+ * release had shipped correctly.
  * ──────────────────────────────────────────────────────────────────────
  */
 
@@ -57,6 +80,16 @@ export type ExternalArchiveMod = {
    * through here on an intention that did not happen.
    */
   bundled: boolean;
+  /**
+   * Did the curator answer "mirror" for this mod?
+   *
+   * Unlike `bundled` this is the curator's answer rather than a measurement,
+   * and it does not need to be one: the condition that fires this gate —
+   * no archive — is itself the proof that the mirror carries every file,
+   * because a file can only be left to an archive that exists. See the
+   * reasoning at the top of this file.
+   */
+  mirrored: boolean;
 };
 
 export type ExternalArchiveRefusal = {
@@ -81,6 +114,7 @@ export function externalArchiveRefusal(
     (m) =>
       m.shipsAsExternal &&
       !m.bundled &&
+      !m.mirrored &&
       (m.archiveSha256 === undefined || m.archiveSha256 === ""),
   );
   if (offenders.length === 0) return undefined;
@@ -113,11 +147,14 @@ export function externalArchiveRefusal(
       `usual case for anything hosted outside Nexus — the player downloads ` +
       `that one, it installs, and the mismatch only surfaces later as failed ` +
       `file checks that cannot tell them which file to get instead. ` +
-      `Any one of three things fixes ${they}: ` +
+      `Any one of four things fixes ${they}: ` +
       `Import the archive into Vortex (drop the file into Vortex's download ` +
       `folder and let it scan), then build again; ` +
-      `or tick "Bundle" for the mod, so the package carries its files and ` +
-      `nobody is asked for anything — check the author's permissions first; ` +
+      `or answer "mirror" for the mod, so the package carries its files and ` +
+      `writes them over whatever the player supplies, while they still ` +
+      `download from the author's page; ` +
+      `or tick "Bundle", which also carries the files but replaces the ` +
+      `author's download entirely — check their permissions first; ` +
       `or disable the mod in this profile, which leaves it out of the ` +
       `collection entirely.`,
   };
