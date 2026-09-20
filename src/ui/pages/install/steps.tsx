@@ -3551,17 +3551,26 @@ function IntegritySection(props: {
   let levelNoneSkips = 0;
   let totalVerifiedFiles = 0;
   /**
-   * Files a thorough run could only size-check, because the collection
-   * carries no hash for them. Shown rather than folded into "Files verified":
-   * a size match is reproduced exactly by a same-size rewrite, so counting
-   * those as verified says a check ran that did not.
+   * Files checked on SIZE alone, from either of the two ways that happens:
+   * a thorough run over a file the collection records no hash for, and a
+   * whole collection built at `"fast"`, which records sizes and nothing else.
+   *
+   * Counted apart from "Files verified" rather than folded into it, because
+   * a size match is reproduced exactly by a same-size rewrite — putting
+   * those in the verified total says a check ran that did not.
    */
   let totalSizeOnlyFiles = 0;
   for (const v of verifications) {
     if (v.kind === "ok") {
       okCount++;
-      totalVerifiedFiles += v.verifiedFileCount;
-      totalSizeOnlyFiles += v.sizeOnlyFileCount ?? 0;
+      if (v.level === "fast") {
+        // Everything this mod's check could do was compare sizes. Nothing
+        // about it was verified in the sense the other tile means.
+        totalSizeOnlyFiles += v.verifiedFileCount;
+      } else {
+        totalVerifiedFiles += v.verifiedFileCount;
+        totalSizeOnlyFiles += v.sizeOnlyFileCount ?? 0;
+      }
       if (v.retryAttempted === true) recoveredCount++;
     } else if (v.kind === "fail") {
       failCount++;
@@ -3571,17 +3580,37 @@ function IntegritySection(props: {
     }
   }
 
-  // Hide entirely when every entry is a `verification-level-none`
-  // skip — there's nothing to surface and no failure to warn about.
-  // (Mixed-skip receipts where SOME mods carried snapshots still
-  // render so the user sees the partial coverage.)
-  if (
+  /**
+   * ─── A COLLECTION THAT CARRIES NOTHING TO CHECK SAYS SO ────────────────
+   * This used to render nothing at all when every mod was a
+   * `verification-level-none` skip, on the reasoning that there was no
+   * failure to warn about. The screen that results is IDENTICAL to a clean
+   * install of a fully verified collection — so the one case where Event
+   * Horizon cannot promise anything about the files on disk is the case
+   * where it looks most confident.
+   *
+   * Only packages built before the build hard-coded `thorough` reach here,
+   * and installing them is fine. Saying nothing is not.
+   */
+  const nothingToCheck =
     okCount === 0 &&
     recoveredCount === 0 &&
     failCount === 0 &&
-    skipCount === levelNoneSkips
-  ) {
-    return null;
+    skipCount > 0 &&
+    skipCount === levelNoneSkips;
+  if (nothingToCheck) {
+    return (
+      <Section title="Integrity check" size="sm">
+        <p className="eh-note eh-prose">
+          This collection carries no file checksums, so Event Horizon could
+          not check what landed on disk — {skipCount} mod
+          {skipCount === 1 ? "" : "s"} installed unverified. It was built
+          before checksums became standard; every collection built now records
+          them. The mods themselves are fine to use, and the curator can
+          remove the gap by rebuilding.
+        </p>
+      </Section>
+    );
   }
 
   const fails = verifications.filter(

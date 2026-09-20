@@ -23,7 +23,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -269,14 +269,23 @@ const SHOWCASE = {
   images: { "presentation/showcase-shot-1.png": "showcase-shot-1.png" },
 };
 
-const write = (name: string, node: React.ReactElement): void => {
+/**
+ * Returns the markup so a test can assert something about it. Rendering
+ * without falling over is the baseline check every screen here gets; a screen
+ * whose POINT is a particular sentence has to say so out loud, because a Done
+ * card renders plenty either way and the baseline would never notice the
+ * sentence missing.
+ */
+const write = (name: string, node: React.ReactElement): string => {
   const html = renderToStaticMarkup(shell(node));
   // Rendering is the check. The providers always emit the toast host, so an
   // empty-string test could never fire; compare against the host alone.
   if (html === HOST_ONLY) throw new Error(`${name}: rendered nothing`);
-  if (!WRITE) return;
-  fs.mkdirSync(OUT, { recursive: true });
-  fs.writeFileSync(path.join(OUT, `${name}.html`), page(name, html), "utf8");
+  if (WRITE) {
+    fs.mkdirSync(OUT, { recursive: true });
+    fs.writeFileSync(path.join(OUT, `${name}.html`), page(name, html), "utf8");
+  }
+  return html;
 };
 
 // ── data modelled on the real collection ────────────────────────────────
@@ -2269,6 +2278,57 @@ describe("render", () => {
         onCleanUpProfiles: () => undefined,
       } as never),
     );
+  });
+
+  it("done — a collection too old to carry checksums", () => {
+    /**
+     * The screen that used to render NOTHING. Every mod is a
+     * `verification-level-none` skip, the integrity section was hidden on the
+     * reasoning that there was no failure to warn about, and the result was
+     * indistinguishable from a fully verified clean install — the one case
+     * where nothing can be promised looking like the most confident one.
+     *
+     * Only packages built before the build hard-coded `thorough` reach this.
+     * Installing them is fine; saying nothing about it is not.
+     */
+    const result = {
+      kind: "success",
+      profileName: "Ivy 2 v1.0.4",
+      installTargetMode: "fresh-profile",
+      durationMs: 41 * 60_000,
+      installedModIds: Array.from({ length: 963 }, (_, i) => `m${i}`),
+      installedMods: Array.from({ length: 963 }, (_, i) => ({
+        compareKey: `k${i}`,
+        name: `Mod ${i}`,
+        fromDecision: "nexus-download",
+      })),
+      removedMods: [],
+      carriedMods: [],
+      skippedMods: [],
+      verifications: Array.from({ length: 963 }, (_, i) => ({
+        kind: "skip",
+        vortexModId: `v${i}`,
+        compareKey: `k${i}`,
+        name: `Mod ${i}`,
+        reason: "verification-level-none",
+      })),
+      rulesApplication: RULES,
+      userlistApplication: USERLIST,
+    } as never;
+
+    const html = write(
+      "done-unverifiable",
+      React.createElement(DoneStep, {
+        result,
+        bundle,
+        onStartOver: () => undefined,
+        onGoCollections: () => undefined,
+        onSwitchProfile: () => undefined,
+      } as never),
+    );
+    expect(html).toContain("Integrity check");
+    expect(html).toContain("carries no file checksums");
+    expect(html).toContain("963 mods installed unverified");
   });
 
   it("pick — the first step, and the drop zone", () => {
