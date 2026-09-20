@@ -149,20 +149,40 @@ describe("the build side does not turn it into a curator decision", () => {
 });
 
 describe("the tripwire", () => {
-  it("staged refs on the build side still carry no crc", () => {
-    // If this fails, someone added CRCs to the build-side staging refs. That
-    // is a real accuracy improvement AND it makes every curator-flipped ESL
-    // plugin a post-processing decision. Read this file's header before
-    // deleting the assertion: the fix is to match a light-flag-only
-    // difference explicitly, not to leave the panel asking about it.
-    const src = readFileSync(
-      join(__dirname, "runSelfChecks.ts"),
-      "utf8",
+  /**
+   * ─── WHAT THIS PINS NOW, AND WHY IT MOVED ─────────────────────────────
+   * It used to assert that the build side computes NO staged CRCs at all.
+   * That fired, as designed, the day an external-mod content check was added
+   * — and it was right to: without an exclusion, every plugin the curator
+   * flagged light would have become an entry in "N mods need a decision".
+   *
+   * CRCs now exist on the build side, for NON-NEXUS mods, and plugins are
+   * excluded by extension. So the invariant this file protects is unchanged
+   * — a flipped light flag must never reach the curator as a decision — and
+   * only the mechanism that guarantees it has moved. Break the exclusion and
+   * this fails again, for exactly the original reason.
+   */
+  const source = (): string =>
+    readFileSync(join(__dirname, "runSelfChecks.ts"), "utf8");
+
+  it("excludes plugins from the staged checksum pass", () => {
+    const src = source();
+    expect(src).toContain(
+      'const PLUGIN_EXTENSIONS: ReadonlySet<string> = new Set([".esp", ".esm", ".esl"]);',
     );
-    const at = src.indexOf("const staged = (mod.stagingFiles ?? []).map(");
+    const at = src.indexOf("const comparableFiles = plain.filter(");
+    expect(at, "the exclusion must be applied, not merely declared").toBeGreaterThan(-1);
+    expect(src.slice(at, at + 220)).toContain("PLUGIN_EXTENSIONS.has");
+  });
+
+  it("only computes them for mods that are NOT downloaded from Nexus", () => {
+    // A Nexus mod is identified by (modId, fileId, sha256), so a changed
+    // archive is a different file and the resolver already knows. The cost
+    // and the risk are only worth taking where nothing else checks.
+    const at = source().indexOf("const staged = await stagedWithChecksums(");
     expect(at).toBeGreaterThan(-1);
-    const decl = src.slice(at, at + 200);
-    expect(decl).toContain("size: f.size");
-    expect(decl).not.toContain("crc");
+    expect(source().slice(at, at + 420)).toContain(
+      "!opts.downloadedFromNexus.has(mod.id)",
+    );
   });
 });

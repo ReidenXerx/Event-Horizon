@@ -69,12 +69,7 @@ describe("which files the archive provides", () => {
       listing: listing([{ path: "Wrapper/Data/x.esp", data: PLUGIN }]),
       crcOf: onDisk({ "Data/x.esp": PLUGIN }),
     });
-    expect(r).toEqual({
-      provided: ["Data/x.esp"],
-      compared: 1,
-      unreadable: 0,
-      changed: [],
-    });
+    expect(r).toEqual({ provided: ["Data/x.esp"], compared: 1, unreadable: 0 });
   });
 
   it("ships a file the curator edited without changing its size", async () => {
@@ -86,16 +81,6 @@ describe("which files the archive provides", () => {
     });
     expect(r.provided).toEqual([]);
     expect(r.compared).toBe(1);
-    /**
-     * And it is REPORTED as changed, not merely left out of `provided`.
-     *
-     * This is the shape that broke a tester's game: same path, same size,
-     * different checksum. The mirror only needs to know it must carry the
-     * file; an EXTERNAL mod needs someone told, because players download the
-     * archive and get the other bytes. `detectExternalContentDrift` reads
-     * exactly this field.
-     */
-    expect(r.changed).toEqual(["Data/x.esp"]);
   });
 
   it("ships a file whose bytes the archive holds at another path", async () => {
@@ -134,13 +119,7 @@ describe("which files the archive provides", () => {
       listing: listing([{ path: "Data/x.esp", data: PLUGIN }]),
       crcOf: onDisk({}),
     });
-    // Unreadable is NOT changed: we learned nothing about the archive.
-    expect(r).toEqual({
-      provided: [],
-      compared: 1,
-      unreadable: 1,
-      changed: [],
-    });
+    expect(r).toEqual({ provided: [], compared: 1, unreadable: 1 });
   });
 
   it("reads only the files an entry could explain", async () => {
@@ -203,7 +182,6 @@ describe("proving every mirrored mod", () => {
       provided: ["Data/x.esp"],
       compared: 1,
       unreadable: 0,
-      changed: [],
     });
   });
 

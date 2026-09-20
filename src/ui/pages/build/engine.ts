@@ -100,8 +100,6 @@ import type { SelfCheckReport } from "../../../core/manifest/selfCheckMod";
 import { filesNeedingPayload } from "../../../core/installer/mirrorStaging";
 import {
   describeExternalDrift,
-  detectExternalContentDrift,
-  describeExternalContentDrift,
   detectExternalDrift,
   measureBundledMods,
   type MeasuredBundle,
@@ -1652,46 +1650,6 @@ export async function runBuildPipeline(
       ...(signal !== undefined ? { signal } : {}),
     });
     bundleWarnings.push(...describeExternalDrift(drift));
-
-    /**
-     * ─── AND THE DRIFT THAT HAS NO NAME TO SEE ──────────────────────────
-     * `detectExternalDrift` above compares path lists, which is blind to a
-     * regenerated output mod: BodySlide, FaceGen and LOD rewrite files in
-     * place, keeping every name and — measured on the real case — every SIZE
-     * too. A curator regenerated a BodySlide output after uploading its
-     * archive and shipped a collection whose 2,994 recorded files disagreed
-     * with that archive on 1,130 of them. Every check here passed; a
-     * tester's body physics broke instead.
-     *
-     * This reads checksums, so it is budgeted per mod and says how far it
-     * got. See `detectExternalContentDrift`.
-     */
-    const contentDrift = await detectExternalContentDrift({
-      mods,
-      config: collectionConfig,
-      isExternal: (m) =>
-        shipsAsExternal(isNexusMod(m), collectionConfig.externalMods[m.id]),
-      archivePathFor: (m) => resolveModArchivePath(state, m, gameId),
-      stagingRootOf: (m) =>
-        stagingRootFromFolder(installRootFor(state, gameId), m.installationPath),
-      listArchive: async (archivePath) => {
-        const attempt = await listArchiveNativeFirst({
-          archivePath,
-          ...(signal !== undefined ? { signal } : {}),
-        });
-        return attempt.kind === "listed" ? attempt.listing : undefined;
-      },
-      crcFile: (absolutePath) => crc32File(absolutePath, signal),
-      ...(signal !== undefined ? { signal } : {}),
-      onProgress: (checked, total, modName) =>
-        onProgress?.({
-          phase: "resolving-bundles",
-          message: `Checking "${modName}" against its archive (${checked} / ${total})...`,
-          done: checked,
-          total,
-        }),
-    });
-    bundleWarnings.push(...describeExternalContentDrift(contentDrift));
 
   // Anything the curator's own Vortex collection says is needed that this
   // collection neither ships nor mentions. The prerequisite catalogue is a

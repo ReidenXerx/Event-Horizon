@@ -36,10 +36,11 @@ import { findArchiveByHash } from "../findArchiveByHash";
 import type { AuditorMod } from "../getModsListForProfile";
 import { ehLog } from "../logging/ehLog";
 import { detectCaseSensitivity } from "../paths";
-import { installRootFor } from "../stagingPath";
+import { installRootFor, stagingRootFromFolder } from "../stagingPath";
 import type { SelfCheckReport } from "./selfCheckMod";
 import type { UnexplainedFile } from "./unexplainedFiles";
 import { selfCheckMod, summarizeSelfChecks } from "./selfCheckMod";
+import { crc32File } from "./readZip";
 import { resolveSevenZip, sevenZipExtractFull } from "./sevenZip";
 import type { SevenZipApi } from "./sevenZip";
 
@@ -301,6 +302,137 @@ function divergenceFingerprint(r: SelfCheckReport): string | undefined {
       : []),
     ...removed.map((path) => ({ path: `removed:${path}` })),
   ]);
+}
+
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * Bytes read per NON-NEXUS mod before the checksum pass stops.
+ *
+ * The comparison below is the difference between "explained" and "we only
+ * checked the sizes", and it costs a read of the staging folder — which is
+ * exactly the cost `stagingFiles` was shaped to avoid across a 205 GB
+ * profile. So it is spent only where it buys the most: a mod the player
+ * downloads from somewhere other than Nexus.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+const EXTERNAL_CRC_BUDGET_BYTES = 256 * 1024 * 1024;
+
+/**
+ * Bethesda plugins, which are excluded from the checksum pass below.
+ *
+ * Not a general "is this a plugin" helper on purpose: the only thing that
+ * matters here is that a curator-flipped light flag must not become a
+ * decision, and that is decided by these three extensions.
+ */
+const PLUGIN_EXTENSIONS: ReadonlySet<string> = new Set([".esp", ".esm", ".esl"]);
+
+/**
+ * The staged file list the self-check compares, with checksums for a mod
+ * whose archive nobody fetches by hash.
+ *
+ * ─── WHY ONLY NON-NEXUS MODS GET THIS ──────────────────────────────────
+ * `verifyStagingAgainstArchive` has always been able to compare content: a
+ * staged file carrying a `crc` that disagrees with the archive's entry is
+ * `unexplained`, which is what makes a mod a post-processing candidate and
+ * gets mirroring offered. It just never received one — the caller mapped
+ * `stagingFiles` to `{path, size}`, so every file took the `size-only` arm,
+ * documented in that module as weak evidence and counted as explained.
+ *
+ * For a Nexus mod that is tolerable: identity is (modId, fileId, sha256), so
+ * an archive that changed is a DIFFERENT file and the resolver already knows.
+ * For an external mod it is not. The player downloads whatever the curator
+ * hosts, and nothing else checks it — so a curator who regenerates an output
+ * mod after uploading its archive ships a collection that cannot be
+ * reproduced, and every check passes.
+ *
+ * That happened: 2,994 recorded files, 1,130 of them different for the
+ * player, and EVERY ONE at the same path and the same size, because
+ * rebuilding a mesh moves vertices and not the file layout. Sizes alone
+ * could not have caught a single one.
+ *
+ * A file whose CRC cannot be read keeps no `crc` and falls back to exactly
+ * the behaviour it had before — unknown is not divergence.
+ *
+ * ─── AND PLUGINS ARE DELIBERATELY LEFT OUT ─────────────────────────────
+ * `.esp`/`.esm`/`.esl` get NO checksum here, and that exclusion is the whole
+ * reason this is safe. Vortex's "mark as light" writes bit 9 into the TES4
+ * flags field at offset 8 — in place, four bytes, so the size does not move —
+ * and with hardlink deployment the staged copy IS the deployed copy. Measured
+ * on a real Skyrim profile: 3 of 60 light-flagged plugins differed from their
+ * archive by exactly that one bit.
+ *
+ * Give those a crc and every plugin the curator ever flagged becomes
+ * "unexplained", which is a post-processing decision, on a panel whose
+ * caution steers toward "ship my copy" — bundling an entire staging folder to
+ * carry one flipped bit that `applyPluginLightFlags` already records and
+ * replays on the player's side. `lightFlagDivergence.test.ts` pins this and
+ * its tripwire is what stopped it being shipped.
+ *
+ * Nothing is lost for the case this exists for: a regenerated output mod is
+ * meshes and textures, and those are checked.
+ */
+async function stagedWithChecksums(args: {
+  mod: AuditorMod;
+  installRoot: string | undefined;
+  isExternal: boolean;
+  signal?: AbortSignal;
+}): Promise<Array<{ path: string; size: number; crc?: string }>> {
+  const plain = (args.mod.stagingFiles ?? []).map((f) => ({
+    path: f.path,
+    size: f.size,
+  }));
+  if (!args.isExternal || plain.length === 0) return plain;
+
+  const root = stagingRootFromFolder(args.installRoot, args.mod.installationPath);
+  if (root === undefined) return plain;
+
+  // Smallest first, so a fixed budget covers the most FILES rather than the
+  // fewest. Coverage is partial by design; a partial checksum pass still
+  // catches a regeneration, which touches most of a mod at once.
+  // Plugins never get one — see the note above. Filtered before the budget so
+  // their bytes do not crowd out files that CAN be compared.
+  const comparableFiles = plain.filter(
+    (f) => !PLUGIN_EXTENSIONS.has(path.extname(f.path).toLowerCase()),
+  );
+  if (comparableFiles.length === 0) return plain;
+
+  const order = [...comparableFiles].sort((a, b) => a.size - b.size);
+  const budgeted = new Set<string>();
+  let spent = 0;
+  for (const f of order) {
+    if (spent + f.size > EXTERNAL_CRC_BUDGET_BYTES && budgeted.size > 0) break;
+    budgeted.add(f.path);
+    spent += f.size;
+  }
+
+  let read = 0;
+  let failed = 0;
+  const out = await Promise.all(
+    plain.map(async (f) => {
+      if (args.signal?.aborted === true) return f;
+      if (!budgeted.has(f.path)) return f;
+      try {
+        const crc = (
+          await crc32File(path.join(root, ...f.path.split("/")), args.signal)
+        ).toLowerCase();
+        read += 1;
+        return { ...f, crc };
+      } catch {
+        // Locked, vanished, or unreadable. Says nothing about the archive.
+        failed += 1;
+        return f;
+      }
+    }),
+  );
+  ehLog("debug", "self-check.external-crc", {
+    mod: args.mod.name,
+    staged: plain.length,
+    checksummed: read,
+    unreadable: failed,
+    partial: budgeted.size < plain.length,
+  });
+  return out;
 }
 
 export function findPostProcessingCandidates(
@@ -778,7 +910,19 @@ export async function runSelfChecks(
     done += 1;
     opts?.onProgress?.(done, total, mod.name);
 
-    const staged = (mod.stagingFiles ?? []).map((f) => ({ path: f.path, size: f.size }));
+    /**
+     * Checksums for non-Nexus mods only — see `stagedWithChecksums`. Without
+     * them every same-size file scores `size-only`, which this module's own
+     * comparison calls weak evidence and then counts as explained.
+     */
+    const staged = await stagedWithChecksums({
+      mod,
+      installRoot,
+      isExternal:
+        opts?.downloadedFromNexus !== undefined &&
+        !opts.downloadedFromNexus.has(mod.id),
+      ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
+    });
     /**
      * The recorded link first, always. It is cheap, it is what Vortex says,
      * and it is right for the overwhelming majority. The hash index is the
