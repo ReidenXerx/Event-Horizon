@@ -210,6 +210,29 @@ const isHex64 = (value: unknown): value is string =>
  * not a plausible sha256 are dropped individually — one bad line should not
  * discard the other two hundred.
  */
+/**
+ * Is this key one the current code could ever produce a match for?
+ *
+ * Only `file:` keys can go stale, and only by changing shape. When ctime
+ * joined the on-disk fingerprint every existing `file:` key became
+ * unmatchable in one step — 430,675 of them on a real curator's machine,
+ * 134 MB of JSON parsed on every build for entries that could never hit.
+ *
+ * They are dropped on read rather than left to accumulate. This is not a
+ * cache eviction policy and must not become one: an entry is discarded here
+ * only because it is UNREACHABLE, never because it is old or the file is
+ * large. A `nexus:` key is keyed on an immutable file id and never expires.
+ *
+ * If the fingerprint ever gains another field, this is the one place that
+ * needs to know.
+ */
+function isCurrentFileKey(key: string): boolean {
+  if (!key.startsWith("file:")) return true;
+  // `file:<path>|<size>|<mtime>|<ctime>` — and a Windows path can contain no
+  // pipe, so counting separators is exact rather than approximate.
+  return key.split("|").length === 4;
+}
+
 export async function loadArchiveHashCache(
   dataDir: string,
 ): Promise<ArchiveHashCache> {
@@ -241,10 +264,17 @@ export async function loadArchiveHashCache(
 
   const clean: Record<string, CachedArchiveHash> = {};
   let dropped = 0;
+  let staleShape = 0;
   for (const [key, value] of Object.entries(entries as Record<string, unknown>)) {
     const entry = value as Partial<CachedArchiveHash> | undefined;
     if (!isHex64(entry?.sha256)) {
       dropped += 1;
+      continue;
+    }
+    if (!isCurrentFileKey(key)) {
+      // A `file:` key from before ctime joined the fingerprint. It can never
+      // be matched again, so keeping it is pure weight — see below.
+      staleShape += 1;
       continue;
     }
     clean[key] = {
@@ -252,9 +282,21 @@ export async function loadArchiveHashCache(
       ...(typeof entry!.size === "number" ? { size: entry!.size } : {}),
       recoveredAt:
         typeof entry!.recoveredAt === "string" ? entry!.recoveredAt : "unknown",
+      // Kept, not dropped. This is the link between a recovered archive and
+      // the download record it landed in, and the type above says why it
+      // matters: without it the hash outlives the file, so a later build can
+      // identify the mod and not open it. It was written on recovery and then
+      // destroyed by this very loop on the next read, which made it a field
+      // that only ever worked inside the run that created it. Measured on a
+      // real cache before the fix: 990 Nexus-keyed entries, ZERO carrying a
+      // downloadId.
+      ...(typeof entry!.downloadId === "string" && entry!.downloadId.length > 0
+        ? { downloadId: entry!.downloadId }
+        : {}),
     };
   }
   ehLog("info", "hash-cache.load.ok", {
+    staleShape,
     entries: Object.keys(clean).length,
     dropped,
     ms: Date.now() - startedAt,

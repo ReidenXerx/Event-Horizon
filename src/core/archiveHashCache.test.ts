@@ -180,6 +180,71 @@ describe("persistence", () => {
     await expect(loadArchiveHashCache(dir)).resolves.toEqual(emptyArchiveHashCache());
   });
 
+  it("keeps the download id a recovered archive was found under", async () => {
+    /**
+     * The field is written on recovery and was then destroyed by the loader on
+     * the very next read, so it only ever worked inside the run that created
+     * it. Measured on a real curator's cache before this: 990 Nexus-keyed
+     * entries, ZERO carrying a downloadId — the exact failure the type's own
+     * docblock names, "the hash outlives the file".
+     */
+    const cache = rememberArchiveHash(emptyArchiveHashCache(), {
+      nexusModId: 1,
+      nexusFileId: 2,
+      sha256: SHA_A,
+      at: "t",
+      downloadId: "dl-99",
+    });
+    await saveArchiveHashCache(dir, cache);
+    const back = await loadArchiveHashCache(dir);
+    expect(back.entries[archiveHashCacheKey(1, 2)]?.downloadId).toBe("dl-99");
+  });
+
+  it("drops a file key from before ctime joined the fingerprint", async () => {
+    /**
+     * Those keys can never be matched again, and there were 430,675 of them
+     * on one real machine the moment the key changed — 134 MB of JSON parsed
+     * on every build for entries that could not hit. Dropped because they are
+     * UNREACHABLE; nothing here evicts an entry for being old or large, and a
+     * `nexus:` key never expires at all.
+     */
+    fs.writeFileSync(
+      path.join(dir, ARCHIVE_HASH_CACHE_FILE),
+      JSON.stringify({
+        schemaVersion: 1,
+        entries: {
+          "file:C:/dl/old.7z|100|1000": { sha256: SHA_A, recoveredAt: "t" },
+          [archiveFileCacheKey("C:/dl/new.7z", 100, 1000, 2000)]: {
+            sha256: SHA_B,
+            recoveredAt: "t",
+          },
+          [archiveHashCacheKey(7, 8)]: { sha256: SHA_A, recoveredAt: "t" },
+        },
+      }),
+    );
+    const back = await loadArchiveHashCache(dir);
+    expect(Object.keys(back.entries).sort()).toEqual(
+      [archiveFileCacheKey("C:/dl/new.7z", 100, 1000, 2000), archiveHashCacheKey(7, 8)].sort(),
+    );
+  });
+
+  it("keeps a file key whose PATH contains no pipe but is otherwise odd", async () => {
+    // The shape test counts separators, so a long Windows path with spaces
+    // and dots must still read as current rather than being thrown away.
+    const key = archiveFileCacheKey(
+      "C:/Users/x/AppData/Roaming/Vortex/downloads/fallout4/Some Mod - v1.2.3 (final).7z",
+      12345,
+      1_700_000_000_000,
+      1_700_000_000_001,
+    );
+    fs.writeFileSync(
+      path.join(dir, ARCHIVE_HASH_CACHE_FILE),
+      JSON.stringify({ schemaVersion: 1, entries: { [key]: { sha256: SHA_A, recoveredAt: "t" } } }),
+    );
+    const back = await loadArchiveHashCache(dir);
+    expect(back.entries[key]?.sha256).toBe(SHA_A);
+  });
+
   it("drops only the bad entries, keeping the rest", async () => {
     fs.writeFileSync(
       path.join(dir, ARCHIVE_HASH_CACHE_FILE),
