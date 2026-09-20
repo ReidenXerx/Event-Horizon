@@ -150,9 +150,16 @@ export type DriftFinding = {
  * their files changed when what actually happened is that we could not look.
  *
  * The per-file hash cache does the heavy lifting — it keys on
- * `path|size|mtime`, so an untouched file costs a stat and a changed file is
- * the one thing worth reading. The cost is therefore proportional to what
- * actually moved, which for a collection nobody edited is almost nothing.
+ * `path|size|mtime|ctime`, so an untouched file costs a stat and a changed
+ * file is the one thing worth reading. The cost is therefore proportional to
+ * what actually moved, which for a collection nobody edited is almost
+ * nothing.
+ *
+ * `ctime` is in that key for this caller above all. Keyed on mtime alone the
+ * cache could hand back a hash for bytes that had since been rewritten by a
+ * tool that restored the timestamp — and this function would then report
+ * "nothing changed" about a file that had, which is the one answer it exists
+ * to never give.
  */
 export async function findDriftedMods(args: {
   candidates: readonly DriftCandidate[];
@@ -248,6 +255,10 @@ export async function findDriftedMods(args: {
           absolutePath,
           size: stat.size,
           mtimeMs: stat.mtimeMs,
+          // Paired with mtime in the cache key: a tool that rewrites a file
+          // and restores its timestamp cannot restore ctime, and THIS is the
+          // check whose whole job is noticing a rewritten file.
+          ctimeMs: stat.ctimeMs,
         });
       }
 

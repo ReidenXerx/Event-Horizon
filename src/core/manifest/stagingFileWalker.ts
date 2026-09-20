@@ -72,6 +72,17 @@ export type WalkedFile = {
    * instead of re-reading 205GB every time.
    */
   mtimeMs: number;
+  /**
+   * Change time in ms, from the same stat.
+   *
+   * Paired with `mtimeMs` in the hash cache key because mtime ALONE can be
+   * restored: archive extraction applies stored timestamps and `robocopy`
+   * preserves them, so a rewritten file can come back wearing its old
+   * modification time. `utimes` cannot set ctime — the filesystem stamps it
+   * on every write — so the pair is a fingerprint a timestamp-restoring tool
+   * cannot forge. See `archiveFileCacheKey`.
+   */
+  ctimeMs: number;
 };
 
 /**
@@ -187,6 +198,7 @@ export async function walkStagingFolder(
           absolutePath: abs,
           size: lstat.size,
           mtimeMs: lstat.mtimeMs,
+          ctimeMs: lstat.ctimeMs,
         });
         continue;
       }
@@ -206,6 +218,7 @@ export async function walkStagingFolder(
           absolutePath: abs,
           size: lstat.size,
           mtimeMs: lstat.mtimeMs,
+          ctimeMs: lstat.ctimeMs,
         });
       }
     }
@@ -271,7 +284,12 @@ export async function hashStagingFiles(
       // Outside the try because the retry in the catch needs it too.
       const key =
         hashCache !== undefined
-          ? archiveFileCacheKey(file.absolutePath, file.size, file.mtimeMs)
+          ? archiveFileCacheKey(
+              file.absolutePath,
+              file.size,
+              file.mtimeMs,
+              file.ctimeMs,
+            )
           : undefined;
       try {
         const cached = key === undefined ? undefined : hashCache!.get(key);

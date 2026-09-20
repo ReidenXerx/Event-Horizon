@@ -142,7 +142,12 @@ export async function checkArchiveIdentity(args: {
     // on a path|size|mtime fingerprint. On a resumed install this archive was
     // very likely hashed minutes ago; re-reading a 2 GB file to learn the same
     // number is the kind of heavy work that buys nothing.
-    const key = archiveFileCacheKey(args.archivePath, stat.size, stat.mtimeMs);
+    const key = archiveFileCacheKey(
+      args.archivePath,
+      stat.size,
+      stat.mtimeMs,
+      stat.ctimeMs,
+    );
     const cached = args.cache?.entries[key];
     const actual =
       cached?.sha256 ?? (await hashFileSha256(args.archivePath, args.signal));

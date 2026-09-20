@@ -234,7 +234,7 @@ export async function enrichModsWithArchiveHashes(
               // reused only when path, size AND mtime all still match.
               const key =
                 hashCache !== undefined
-                  ? archiveFileCacheKey(archivePath, stat.size, stat.mtimeMs)
+                  ? archiveFileCacheKey(archivePath, stat.size, stat.mtimeMs, stat.ctimeMs)
                   : undefined;
               const cached = key === undefined ? undefined : hashCache!.get(key);
               if (cached !== undefined) {

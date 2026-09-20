@@ -68,26 +68,53 @@ export const emptyArchiveHashCache = (): ArchiveHashCache => ({
 });
 
 /**
- * `file:<path>|<size>|<mtimeMs>` — a fingerprint of the file ON DISK.
+ * `file:<path>|<size>|<mtimeMs>|<ctimeMs>` — a fingerprint of the file ON DISK.
  *
  * The other key answers "what was this Nexus file's hash?" for archives that
  * are gone. This one answers a different question: "have I already hashed
  * exactly these bytes?" — so a build does not re-read 730 archives, ~15 minutes
  * and tens of gigabytes, every single time the Build page is opened.
  *
- * Size AND modification time both have to match. Changing a file's contents
- * without changing either is not something that happens by accident: any write
- * updates mtime, and the pair is the standard fingerprint build tools use for
- * exactly this. A file replaced with different bytes of identical size at an
+ * ─── WHY CTIME IS IN THE KEY, AND WHY IT IS NOT OPTIONAL ───────────────
+ * This used to key on path+size+mtime alone, defended as: "any write updates
+ * mtime… a file replaced with different bytes of identical size at an
  * identical millisecond would be missed — that is a deliberate act, not a
- * failure mode, and the archive-level sha256 is what would catch it anyway.
+ * failure mode, and the archive-level sha256 is what would catch it anyway."
+ *
+ * Both halves of that turned out to be wrong.
+ *
+ * It is not only a deliberate act. Restoring timestamps is ROUTINE: archive
+ * extraction applies the times stored in the archive, and `robocopy`
+ * preserves them by default — which is how this project's own Skyrim mirror
+ * pipeline moves staging between machines. Measured on NTFS: write a file,
+ * rewrite it with different bytes of the SAME size, restore mtime with
+ * `utimes`, and mtime is back to its original value while ctime is not.
+ * `utimes` cannot set ctime; the filesystem stamps it on every write.
+ *
+ * And the "sha256 would catch it anyway" fallback does not exist for an
+ * `external:staging:<hash>` mod, where the staging hash IS the identity —
+ * precisely the regenerated-output case (BodySlide, FaceGen, LOD) that
+ * shipped a broken collection.
+ *
+ * Five consumers rest on this key: a mod's `archiveSha256` identity, the
+ * staged-file hashes players verify against, the resolver's view of a
+ * download, the drift detector, and the pick-time archive check. A stale hit
+ * is a wrong answer in every one of them, so `ctimeMs` is required rather
+ * than optional — a caller that cannot supply it should not be reaching a
+ * cache at all.
+ *
+ * It fails in the safe direction: a metadata-only change (attributes, a
+ * move) moves ctime without moving content, which costs a re-read and never
+ * a wrong hash. Old `file:…` entries written before this simply never match
+ * and age out.
  */
 export function archiveFileCacheKey(
   absolutePath: string,
   size: number,
   mtimeMs: number,
+  ctimeMs: number,
 ): string {
-  return `file:${absolutePath}|${size}|${Math.floor(mtimeMs)}`;
+  return `file:${absolutePath}|${size}|${Math.floor(mtimeMs)}|${Math.floor(ctimeMs)}`;
 }
 
 /**

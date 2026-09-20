@@ -181,7 +181,12 @@ export async function collectAvailableDownloads(args: {
 
     onProgress?.(done, candidates.length, path.basename(localPath));
 
-    const key = archiveFileCacheKey(localPath, stat.size, stat.mtimeMs);
+    const key = archiveFileCacheKey(
+      localPath,
+      stat.size,
+      stat.mtimeMs,
+      stat.ctimeMs,
+    );
     const cached = cache.entries[key];
     if (cached !== undefined) {
       fromCache += 1;

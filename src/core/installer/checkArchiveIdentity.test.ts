@@ -140,7 +140,7 @@ describe("reusing the hash the download scan already computed", () => {
     const cache = emptyArchiveHashCache();
     // A deliberately WRONG hash in the cache: if the result follows it, the
     // cache was consulted; if it follows the file, it was not.
-    cache.entries[archiveFileCacheKey(p, stat.size, stat.mtimeMs)] = {
+    cache.entries[archiveFileCacheKey(p, stat.size, stat.mtimeMs, stat.ctimeMs)] = {
       sha256: sha("something else entirely"),
       recoveredAt: new Date().toISOString(),
     };

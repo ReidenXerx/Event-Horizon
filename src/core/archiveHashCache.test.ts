@@ -50,6 +50,51 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * A restored timestamp must not buy a cache hit.
+ *
+ * The key used to be path+size+mtime, defended as "any write updates mtime".
+ * Restoring timestamps is routine, though — archive extraction applies the
+ * times stored in the archive, and `robocopy` preserves them by default, which
+ * is how this project's own Skyrim staging gets mirrored between machines.
+ *
+ * Measured on NTFS: rewrite a file with different bytes of the SAME size, then
+ * restore mtime with `utimes`, and mtime is back to its original value while
+ * ctime is not. `utimes` cannot set ctime. So the pair is a fingerprint a
+ * timestamp-restoring tool cannot forge, and these tests pin that the key
+ * actually uses it — five consumers read a wrong answer out of a stale hit,
+ * including the drift detector whose entire job is noticing a rewrite.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("the on-disk fingerprint", () => {
+  it("differs when only ctime moved — same path, size and mtime", () => {
+    const a = archiveFileCacheKey("C:/x/a.7z", 1024, 1_700_000_000_000, 1_700_000_000_000);
+    const b = archiveFileCacheKey("C:/x/a.7z", 1024, 1_700_000_000_000, 1_700_000_009_999);
+    expect(a).not.toBe(b);
+  });
+
+  it("is stable for a file nobody touched", () => {
+    expect(archiveFileCacheKey("C:/x/a.7z", 1024, 1_700_000_000_000, 1_700_000_000_500)).toBe(
+      archiveFileCacheKey("C:/x/a.7z", 1024, 1_700_000_000_000, 1_700_000_000_500),
+    );
+  });
+
+  it("still separates on size and mtime", () => {
+    const base = archiveFileCacheKey("C:/x/a.7z", 1024, 1_700_000_000_000, 1_700_000_000_000);
+    expect(archiveFileCacheKey("C:/x/a.7z", 2048, 1_700_000_000_000, 1_700_000_000_000)).not.toBe(base);
+    expect(archiveFileCacheKey("C:/x/a.7z", 1024, 1_700_000_000_001, 1_700_000_000_000)).not.toBe(base);
+  });
+
+  it("cannot collide with an entry written before ctime was in the key", () => {
+    // Old entries are `file:<path>|<size>|<mtime>`. They must simply never
+    // match rather than aliasing onto a new one.
+    expect(
+      archiveFileCacheKey("C:/x/a.7z", 1024, 1_700_000_000_000, 1_700_000_000_000),
+    ).not.toBe("file:C:/x/a.7z|1024|1700000000000");
+  });
+});
+
 describe("applyCachedHashes", () => {
   it("NEVER overrides a hash computed from a real file", () => {
     const cache = rememberArchiveHash(emptyArchiveHashCache(), {
@@ -165,29 +210,29 @@ describe("file fingerprint cache", () => {
   it("reuses a hash only when path, size AND mtime all match", () => {
     const cache = mergeHashes(
       emptyArchiveHashCache(),
-      new Map([[archiveFileCacheKey("C:/dl/a.7z", 100, 1000), SHA_A]]),
+      new Map([[archiveFileCacheKey("C:/dl/a.7z", 100, 1000, 9), SHA_A]]),
       "t",
     );
     const { lookup } = makeHashLookup(cache);
-    expect(lookup.get(archiveFileCacheKey("C:/dl/a.7z", 100, 1000))).toBe(SHA_A);
+    expect(lookup.get(archiveFileCacheKey("C:/dl/a.7z", 100, 1000, 9))).toBe(SHA_A);
     // any one of them differing is a different file as far as this is concerned
-    expect(lookup.get(archiveFileCacheKey("C:/dl/a.7z", 101, 1000))).toBeUndefined();
-    expect(lookup.get(archiveFileCacheKey("C:/dl/a.7z", 100, 1001))).toBeUndefined();
-    expect(lookup.get(archiveFileCacheKey("C:/dl/b.7z", 100, 1000))).toBeUndefined();
+    expect(lookup.get(archiveFileCacheKey("C:/dl/a.7z", 101, 1000, 9))).toBeUndefined();
+    expect(lookup.get(archiveFileCacheKey("C:/dl/a.7z", 100, 1001, 9))).toBeUndefined();
+    expect(lookup.get(archiveFileCacheKey("C:/dl/b.7z", 100, 1000, 9))).toBeUndefined();
   });
 
   it("ignores sub-millisecond mtime jitter", () => {
     // Windows reports fractional mtimeMs; the same file must not miss its own
     // entry because the float came back a hair different.
-    expect(archiveFileCacheKey("a", 1, 1000.4)).toBe(
-      archiveFileCacheKey("a", 1, 1000.9),
+    expect(archiveFileCacheKey("a", 1, 1000.4, 2000.4)).toBe(
+      archiveFileCacheKey("a", 1, 1000.9, 2000.9),
     );
   });
 
   it("records what it computed, and nothing it did not", () => {
     const { lookup, added } = makeHashLookup(emptyArchiveHashCache());
-    lookup.set(archiveFileCacheKey("C:/dl/a.7z", 1, 2), SHA_A);
-    lookup.set(archiveFileCacheKey("C:/dl/b.7z", 1, 2), "not-a-hash");
+    lookup.set(archiveFileCacheKey("C:/dl/a.7z", 1, 2, 9), SHA_A);
+    lookup.set(archiveFileCacheKey("C:/dl/b.7z", 1, 2, 9), "not-a-hash");
     expect(added.size).toBe(1);
   });
 
@@ -199,7 +244,7 @@ describe("file fingerprint cache", () => {
     });
     const merged = mergeHashes(
       withNexus,
-      new Map([[archiveFileCacheKey("C:/dl/a.7z", 1, 2), SHA_B]]),
+      new Map([[archiveFileCacheKey("C:/dl/a.7z", 1, 2, 9), SHA_B]]),
       "t",
     );
     expect(merged.entries[archiveHashCacheKey(1, 2)]!.sha256).toBe(SHA_A);
@@ -210,7 +255,7 @@ describe("file fingerprint cache", () => {
     // Bypassing the cache entirely meant one re-verification cost the curator
     // the fast path forever: everything re-read, nothing written, and the next
     // ordinary build paying the full 26-minute pass again.
-    const key = archiveFileCacheKey("C:/dl/a.7z", 1, 2);
+    const key = archiveFileCacheKey("C:/dl/a.7z", 1, 2, 9);
     const cache = mergeHashes(emptyArchiveHashCache(), new Map([[key, SHA_A]]), "t");
     const { lookup, added, ...rest } = makeHashLookup(cache, { ignoreExisting: true });
 
