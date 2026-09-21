@@ -45,7 +45,11 @@ EXCLUDE_DIRS = {
     "papyrus-stubs",
 }
 # Tooling files that belong to the workspace kit rather than the project.
-EXCLUDE_FILES = re.compile(r"(^|/)(bearing[-_][^/]*|gitnexus[-_][^/]*)$", re.I)
+# The badge's own plumbing is excluded too. Vendoring loc.py and publish-badges.sh
+# into Chemistry raised its count from 770 to 917 - a 19% inflation from the tool
+# counting itself, on the mod whose whole point is being small enough to read.
+EXCLUDE_FILES = re.compile(r"(^|/)(bearing[-_][^/]*|gitnexus[-_][^/]*|loc\.py|"
+                           r"publish-badges\.sh|vitest-badge\.py)$", re.I)
 GENERATED = re.compile(r"\.min\.(js|css)$|\.generated\.|\.d\.ts$", re.I)
 
 C_LIKE = {"C++", "TypeScript", "JavaScript"}
