@@ -116,6 +116,12 @@ export type AuditorMod = {
    */
   mirrorFromArchive?: string[];
   /**
+   * What this mod's script-extender plugins declare about game versions,
+   * read at capture time. Copied into the manifest; see
+   * {@link EhcollNativePlugin}.
+   */
+  nativePlugins?: import("../types/ehcoll").EhcollNativePlugin[];
+  /**
    * The build proved that installing this mod WITHOUT selecting anything
    * reproduces the curator's staging folder.
    *

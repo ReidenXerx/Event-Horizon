@@ -45,6 +45,7 @@ import type {
   EhcollMod,
   EhcollPluginEntry,
   EhcollRule,
+  EhcollNativePlugin,
   EhcollStagingFile,
   EhcollUserlist,
   EhcollUserlistGroup,
@@ -962,6 +963,15 @@ function validateInstallState(
           `${path}.stagingFiles`,
           errors,
         );
+  /**
+   * Read, not validated — and that asymmetry is deliberate. Every other
+   * field here pushes an error when malformed, because it decides what gets
+   * installed. This one only informs a warning, so a bad or unfamiliar entry
+   * is skipped and the package still opens. A future `kind` must not strand
+   * an older Event Horizon: a new enum value does, an optional key does not.
+   */
+  const nativePlugins =
+    obj.nativePlugins === undefined ? undefined : readNativePlugins(obj.nativePlugins);
   const mirrorFromArchive =
     obj.mirrorFromArchive === undefined
       ? undefined
@@ -990,7 +1000,41 @@ function validateInstallState(
     ...(enabledINITweaks !== undefined ? { enabledINITweaks } : {}),
     ...(stagingFiles !== undefined ? { stagingFiles } : {}),
     ...(mirrorFromArchive !== undefined ? { mirrorFromArchive } : {}),
+    ...(nativePlugins !== undefined && nativePlugins.length > 0 ? { nativePlugins } : {}),
   };
+}
+
+const NATIVE_KINDS: ReadonlySet<string> = new Set(["declares", "query-only", "unreadable"]);
+const NATIVE_EXTENDERS: ReadonlySet<string> = new Set(["skse", "f4se"]);
+
+/**
+ * Lenient on purpose — see where it is called. Entries it cannot read are
+ * dropped one at a time; nothing here can make a package unopenable.
+ */
+function readNativePlugins(raw: unknown): EhcollNativePlugin[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: EhcollNativePlugin[] = [];
+  for (const item of raw) {
+    if (item === null || typeof item !== "object") continue;
+    const e = item as Record<string, unknown>;
+    if (typeof e.path !== "string" || e.path.length === 0) continue;
+    if (typeof e.extender !== "string" || !NATIVE_EXTENDERS.has(e.extender)) continue;
+    // An unknown kind is from a newer build. Skipping it is the whole point.
+    if (typeof e.kind !== "string" || !NATIVE_KINDS.has(e.kind)) continue;
+    out.push({
+      path: e.path,
+      extender: e.extender as EhcollNativePlugin["extender"],
+      kind: e.kind as EhcollNativePlugin["kind"],
+      ...(typeof e.versionIndependent === "boolean"
+        ? { versionIndependent: e.versionIndependent }
+        : {}),
+      ...(Array.isArray(e.runtimes) && e.runtimes.every((r) => typeof r === "string")
+        ? { runtimes: e.runtimes as string[] }
+        : {}),
+      ...(typeof e.hasQuery === "boolean" ? { hasQuery: e.hasQuery } : {}),
+    });
+  }
+  return out;
 }
 
 /**

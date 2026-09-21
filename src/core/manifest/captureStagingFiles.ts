@@ -11,11 +11,71 @@ import type { EhcollStagingFile, VerificationLevel } from "../../types/ehcoll";
 import { AbortError } from "../../utils/abortError";
 import { ehLog } from "../logging/ehLog";
 import { installRootFor, installationPathFromState, stagingRootFromFolder } from "../stagingPath";
+import * as fsp from "fs/promises";
+
 import {
   getDefaultHashConcurrency,
   hashStagingFiles,
   walkStagingFolder,
+  type WalkedFile,
 } from "./stagingFileWalker";
+import {
+  extenderForPath,
+  readNativePluginDeclaration,
+} from "../environment/scriptExtenderVersion";
+import type { EhcollNativePlugin } from "../../types/ehcoll";
+
+/**
+ * What each script-extender plugin in one mod declares about game versions.
+ *
+ * Read here because this is where the curator's files are, and the player has
+ * none of them at the moment it matters — the plan step, before anything is
+ * installed. It is what lets a player on another game version be told which
+ * mods to swap instead of all of them.
+ *
+ * ─── DELIBERATELY NOT CACHED ───────────────────────────────────────────
+ * Reading every plugin DLL was measured at 3.6 s for Skyrim's 252 (362 MB)
+ * and 0.7 s for Fallout 4's 104 — noise on a build that takes many minutes.
+ * A content-keyed cache would still be the rule if it could not change an
+ * answer, and it can: the result is a function of the bytes AND of this
+ * parser. When the parser was fixed to read a 1,458-character export name,
+ * every plugin cached as "unreadable" under the old one would have stayed
+ * unreadable, silently, until someone remembered to bump a key. A wrong
+ * answer is reachable, so NS-1 says do not cache, and the cost is 3.6 s.
+ */
+async function readNativePlugins(files: readonly WalkedFile[]): Promise<EhcollNativePlugin[]> {
+  const out: EhcollNativePlugin[] = [];
+  for (const file of files) {
+    const extender = extenderForPath(file.relativePath);
+    if (extender === undefined) continue;
+    let bytes: Buffer;
+    try {
+      bytes = await fsp.readFile(file.absolutePath);
+    } catch {
+      out.push({ path: file.relativePath, extender, kind: "unreadable" });
+      continue;
+    }
+    const d = readNativePluginDeclaration(bytes, extender);
+    if (d === undefined) {
+      // Kept, not dropped: "we could not tell" has to stay distinguishable
+      // from "nothing to tell".
+      out.push({ path: file.relativePath, extender, kind: "unreadable" });
+    } else if (d.kind === "declares") {
+      out.push({
+        path: file.relativePath,
+        extender,
+        kind: "declares",
+        versionIndependent: d.versionIndependent,
+        runtimes: d.runtimes,
+        hasQuery: d.hasQuery,
+      });
+    } else if (d.kind === "query-only") {
+      out.push({ path: file.relativePath, extender, kind: "query-only" });
+    }
+    // "not-a-plugin": a support library in the Plugins folder. Nothing to judge.
+  }
+  return out;
+}
 
 /**
  * Captures the curator's staging-folder file list for each mod, used by
@@ -255,6 +315,8 @@ export async function captureStagingFiles(
         hashCache,
       );
       enriched.stagingFiles = stagingFiles;
+      const nativePlugins = await readNativePlugins(files);
+      if (nativePlugins.length > 0) enriched.nativePlugins = nativePlugins;
       if (unreadable.length > 0) {
         enriched.stagingCaptureIncomplete = true;
         ehLog("warn", "capture.staging.incomplete", {

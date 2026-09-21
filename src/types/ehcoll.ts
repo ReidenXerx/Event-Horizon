@@ -561,6 +561,22 @@ export type ModInstallState = {
    * where they are not.
    */
   mirrorFromArchive?: string[];
+  /**
+   * What each script-extender plugin in this mod declares about the game
+   * versions it runs on, read from the DLL at build time.
+   *
+   * Recorded here because the player has none of these files at the moment
+   * it matters — the plan step, before anything is installed — and the
+   * curator's machine is the only place the answer exists. It is what lets
+   * a player on a different game version be told exactly which mods to swap,
+   * instead of all of them.
+   *
+   * ADVISORY, and parsed leniently on purpose: an entry the reader does not
+   * understand is skipped rather than refusing the package. A new `kind`
+   * would otherwise strand every older client — a new enum value does, an
+   * optional key does not.
+   */
+  nativePlugins?: EhcollNativePlugin[];
   /** INI tweak filenames the curator enabled on this mod. */
   enabledINITweaks?: string[];
   /**
@@ -605,6 +621,34 @@ export type ModInstallState = {
  * build time. `sha256` is only set when the curator built with
  * `verificationLevel = "thorough"`.
  */
+/**
+ * One script-extender plugin, as its DLL describes itself.
+ *
+ * `kind`:
+ *  - `declares`   — exports the version block, so the runtimes are known.
+ *  - `query-only` — exports only the old Query function, which decides at
+ *                   load time and declares nothing a file reader can see.
+ *  - `unreadable` — the file could not be parsed. Recorded rather than
+ *                   dropped, so "we could not tell" stays visible instead of
+ *                   reading as "nothing to tell".
+ *
+ * Whether it LOADS is not recorded, because it depends on the player's
+ * script extender as well as the DLL: old-gen F4SE and SE-era SKSE call Query
+ * and ignore the block; AE SKSE and next-gen F4SE read the block.
+ */
+export type EhcollNativePlugin = {
+  /** "/"-separated, relative to the mod's staging root, as in `stagingFiles`. */
+  path: string;
+  extender: "skse" | "f4se";
+  kind: "declares" | "query-only" | "unreadable";
+  /** `declares` only: runs on any runtime its Address Library or signatures cover. */
+  versionIndependent?: boolean;
+  /** `declares` only: the runtimes it names, e.g. "1.6.1170", "1.6.1179.1". */
+  runtimes?: string[];
+  /** `declares` only: also exports Query, so a Query-calling extender loads it. */
+  hasQuery?: boolean;
+};
+
 export type EhcollStagingFile = {
   /** POSIX-style path, relative to the mod's staging root. */
   path: string;

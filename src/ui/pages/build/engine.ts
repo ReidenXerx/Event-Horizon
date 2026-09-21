@@ -2478,6 +2478,52 @@ export async function runBuildPipeline(
     ...(gameIniCapture.files.length > 0 ? { gameIni: { files: gameIniCapture.files } } : {}),
   });
 
+  // ── 3a. Will its script-extender plugins load on the curator's own game? ──
+  // Judged from what each DLL declared at capture, against the game this very
+  // build is for, counting only the copy that wins each file conflict. Never
+  // fails a build: the finding is the curator's to act on, and a mod that
+  // does nothing is still better shipped with a warning than blocked blind.
+  const nativeWarnings: string[] = [];
+  try {
+    const { describeCuratorNativeFindings, extenderApiFor, judgeCollection, runtimeIdFor } =
+      await import("../../../core/environment/nativePluginCompat");
+    const g = manifest.game;
+    const runtime = runtimeIdFor(g.id, g.version, g.store);
+    const api = extenderApiFor(g.id, g.version);
+    if (runtime !== undefined && api !== undefined) {
+      const judgement = judgeCollection({
+        mods: manifest.mods.map((m) => ({
+          name: m.name,
+          compareKey: m.compareKey,
+          ...(m.state.nativePlugins !== undefined ? { nativePlugins: m.state.nativePlugins } : {}),
+        })),
+        rules: manifest.rules,
+        target: { runtime, api },
+      });
+      ehLog("info", "build.native-plugins.judged", {
+        runtime,
+        api,
+        loads: judgement.loads,
+        unverified: judgement.unverified,
+        cannotLoad: judgement.cannotLoad.length,
+        unknown: judgement.unknown.length,
+        undetermined: judgement.undeterminedConflicts.length,
+        examples: judgement.cannotLoad.slice(0, 5),
+      });
+      nativeWarnings.push(
+        ...describeCuratorNativeFindings(
+          judgement,
+          `${g.version}${g.store !== undefined ? ` ${g.store}` : ""}`,
+        ),
+      );
+    }
+  } catch (err) {
+    ehLog("warn", "build.native-plugins.judge-failed", {
+      err,
+      consequence: "no warning about plugins that cannot load; nothing else is affected",
+    });
+  }
+
   // ── 3b. The changelog ──
   // Written from what changed since the previous version (owner request
   // 2026-09-15); what the curator typed for CHANGELOG becomes this version's
@@ -2737,6 +2783,7 @@ export async function runBuildPipeline(
       ...manifestWarnings,
       ...result.warnings,
       ...selfCheckWarnings,
+      ...nativeWarnings,
       // The only warning here that can mean the collection will not load on
       // ANY machine, the curator's included.
       ...(flagWarning !== undefined ? [flagWarning] : []),
@@ -2759,6 +2806,7 @@ export async function runBuildPipeline(
       ...manifestWarnings,
       ...result.warnings,
       ...selfCheckWarnings,
+      ...nativeWarnings,
       // The only warning here that can mean the collection will not load on
       // ANY machine, the curator's included.
       ...(flagWarning !== undefined ? [flagWarning] : []),
