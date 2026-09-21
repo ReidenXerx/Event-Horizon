@@ -18,6 +18,12 @@ import { crc32 } from "../manifest/readZip";
 export type PeSpec = {
   is64?: boolean;
   exports?: string[];
+  /**
+   * Exports that point at DATA rather than a function stub, by name. How a
+   * script-extender plugin publishes its version block
+   * (`SKSEPlugin_Version`, `F4SEPlugin_Version`).
+   */
+  exportData?: Record<string, Buffer>;
   exportBase?: number;
   imports?: Array<{ dll: string; names?: string[]; ordinals?: number[] }>;
 };
@@ -38,12 +44,20 @@ export function buildPe(spec: PeSpec): Buffer {
     (n, imp) => n + (imp.names?.length ?? 0) + (imp.ordinals?.length ?? 0) + 1,
     0,
   );
+  const allExportNames = [
+    ...(spec.exports ?? []),
+    ...Object.keys(spec.exportData ?? {}),
+  ];
   const sec = Buffer.alloc(
     0x8000 +
       24 * ((spec.imports?.length ?? 0) + 1) +
       64 * (spec.imports?.length ?? 0) +
       32 * entryCount +
-      32 * (spec.exports?.length ?? 0),
+      32 * allExportNames.length +
+      // Real C++ export names run past a thousand characters, and the data
+      // blocks are hundreds of bytes; both have to fit.
+      allExportNames.reduce((n, s) => n + s.length + 16, 0) +
+      Object.values(spec.exportData ?? {}).reduce((n, b) => n + b.length + 16, 0),
   );
   let cursor = 0;
   const alloc = (n: number): number => {
@@ -59,7 +73,7 @@ export function buildPe(spec: PeSpec): Buffer {
   };
 
   let exportRva = 0;
-  const exports = spec.exports ?? [];
+  const exports = allExportNames;
   if (exports.length > 0) {
     const dir = alloc(40);
     const nameRvas = exports.map(cstr);
@@ -68,7 +82,17 @@ export function buildPe(spec: PeSpec): Buffer {
     const ordinals = alloc(2 * exports.length);
     exports.forEach((_, i) => sec.writeUInt16LE(i, ordinals + 2 * i));
     const functions = alloc(4 * exports.length);
-    exports.forEach((_, i) => sec.writeUInt32LE(SECTION_RVA, functions + 4 * i));
+    exports.forEach((name, i) => {
+      // A data export points at its blob; everything else at a stub.
+      const blob = spec.exportData?.[name];
+      let target = SECTION_RVA;
+      if (blob !== undefined) {
+        const at = alloc(blob.length);
+        blob.copy(sec, at);
+        target = rva(at);
+      }
+      sec.writeUInt32LE(target, functions + 4 * i);
+    });
     sec.writeUInt32LE(cstr("fixture.dll"), dir + 12);
     sec.writeUInt32LE(spec.exportBase ?? 1, dir + 16);
     sec.writeUInt32LE(exports.length, dir + 20);

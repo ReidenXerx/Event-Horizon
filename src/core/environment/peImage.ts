@@ -48,19 +48,64 @@ type Section = { va: number; vsize: number; raw: number; rawSize: number };
 /** Hard ceilings, so a corrupt table cannot spin a loop forever. */
 const MAX_DESCRIPTORS = 4096;
 const MAX_THUNKS = 1 << 16;
-const MAX_NAME = 1024;
+/**
+ * The compiler's own ceiling on a decorated name, so no DLL anyone actually
+ * built can exceed it — MSVC truncates beyond 4,096 characters.
+ *
+ * It was 1,024, which is not a real-world bound: Immersive Equipment Displays
+ * exports a C++ symbol of 1,458 characters, and the whole image came back
+ * `undefined`. That is "cannot say" about a perfectly valid DLL — harmless to
+ * the launcher check, which treats "cannot say" as no objection, and a
+ * silent hole in anything that reads a plugin's declared game version.
+ */
+const MAX_NAME = 4096;
 
 class Malformed extends Error {}
 
 export function parsePeImage(buf: Buffer): PeImage | undefined {
   try {
-    return parse(buf);
+    return parse(buf)?.image;
   } catch {
     return undefined;
   }
 }
 
-function parse(buf: Buffer): PeImage | undefined {
+/**
+ * The bytes an export points at, when that export is DATA rather than code.
+ *
+ * A script-extender plugin announces which game runtimes it supports through
+ * an exported data block — `SKSEPlugin_Version` / `F4SEPlugin_Version` — not
+ * through a function anyone has to call. Reading it is therefore pure file
+ * inspection: nothing is loaded and nothing runs, which is the only safe way
+ * to ask a DLL a question from inside Vortex.
+ *
+ * `undefined` when there is no such export, the file is not an image, or the
+ * block would run past the end of the file. Never throws.
+ */
+export function readExportedData(
+  buf: Buffer,
+  symbol: string,
+  byteLength: number,
+): Buffer | undefined {
+  try {
+    const parsed = parse(buf);
+    const rva = parsed?.exportRvas.get(symbol);
+    if (parsed === undefined || rva === undefined) return undefined;
+    const at = parsed.offsetOf(rva);
+    if (at < 0 || at + byteLength > buf.length) return undefined;
+    return buf.subarray(at, at + byteLength);
+  } catch {
+    return undefined;
+  }
+}
+
+type Parsed = {
+  image: PeImage;
+  exportRvas: ReadonlyMap<string, number>;
+  offsetOf: (rva: number) => number;
+};
+
+function parse(buf: Buffer): Parsed | undefined {
   const u16 = (off: number): number => {
     if (off < 0 || off + 2 > buf.length) throw new Malformed();
     return buf.readUInt16LE(off);
@@ -119,19 +164,32 @@ function parse(buf: Buffer): PeImage | undefined {
   // ── exports ──────────────────────────────────────────────────────────
   const exports = new Set<string>();
   const exportOrdinals = new Set<number>();
+  /** Export name -> the RVA it points at. See {@link readExportedData}. */
+  const exportRvas = new Map<string, number>();
   const exportDir = dir(0);
   if (exportDir.rva !== 0) {
     const at = offsetOf(exportDir.rva);
     const base = u32(at + 16);
     const functionCount = u32(at + 20);
     const nameCount = u32(at + 24);
+    const functionsRva = u32(at + 28);
     const namesRva = u32(at + 32);
+    const ordinalsRva = u32(at + 36);
     if (functionCount > MAX_THUNKS || nameCount > MAX_THUNKS) throw new Malformed();
     for (let i = 0; i < functionCount; i += 1) exportOrdinals.add(base + i);
     if (nameCount > 0) {
       const names = offsetOf(namesRva);
+      const ordinals = offsetOf(ordinalsRva);
+      const functions = offsetOf(functionsRva);
       for (let i = 0; i < nameCount; i += 1) {
-        exports.add(cstring(offsetOf(u32(names + i * 4))));
+        const name = cstring(offsetOf(u32(names + i * 4)));
+        exports.add(name);
+        // The name table indexes the ordinal table, which indexes the
+        // function table — an index, not a biased ordinal, so `base` does
+        // not apply here. An index past the table is malformed, not zero.
+        const index = u16(ordinals + i * 2);
+        if (index >= functionCount) throw new Malformed();
+        exportRvas.set(name, u32(functions + index * 4));
       }
     }
   }
@@ -199,7 +257,7 @@ function parse(buf: Buffer): PeImage | undefined {
     if (!descriptorsTerminated) throw new Malformed();
   }
 
-  return { is64, exports, exportOrdinals, imports };
+  return { image: { is64, exports, exportOrdinals, imports }, exportRvas, offsetOf };
 }
 
 /**
