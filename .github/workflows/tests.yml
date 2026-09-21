@@ -1,0 +1,75 @@
+# Run the whole suite in public, and put the result on the Nexus page.
+#
+# Event Horizon installs other people's mods into their games. "It is tested" is a claim a
+# user cannot check; a public run of every test on every push is one they can. This job
+# runs the full vitest suite and publishes the count to the `badges` branch, which the
+# badge on the mod page reads live.
+#
+# THE BADGE AND THE STATUS CANNOT DISAGREE. scripts/vitest-badge.py writes "N passing"
+# only when every test passed and "N failing" otherwise, and the final step fails the job
+# in exactly that case. A missing report counts as a failure: no report is not the same as
+# no failures.
+#
+# WINDOWS, deliberately. The suite passes in full on the author's Windows machine, and many
+# tests exercise Windows path semantics on fixture paths like C:/Users/x/Documents. Running
+# it on Linux would be testing a platform the extension does not run on.
+#
+# Badge JSON goes to the orphan `badges` branch, never to master: committing counts back
+# to master on every push would double the history, and the workspace's index-staleness
+# check counts commits behind HEAD.
+name: tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vitest:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Run the suite
+        id: suite
+        continue-on-error: true
+        shell: bash
+        run: npx vitest run --reporter=default --reporter=json --outputFile=out/vitest.json
+
+      - name: Tests badge
+        id: badge
+        continue-on-error: true
+        shell: bash
+        run: python scripts/vitest-badge.py out/vitest.json out/badges/tests.json
+
+      - name: Count lines of code
+        shell: bash
+        run: python scripts/loc.py . --json out/badges/loc.json
+
+      - name: Publish to the badges branch
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+        shell: bash
+        run: bash scripts/publish-badges.sh out/badges
+
+      - name: Fail the run if the suite failed
+        if: steps.badge.outcome != 'success'
+        shell: bash
+        run: |
+          echo "The suite did not pass - see 'Run the suite' above."
+          exit 1
