@@ -59,6 +59,7 @@ import {
 } from "../../core/installer/installMarker";
 import type { EventHorizonRoute } from "../routes";
 import { useApi } from "../state";
+import { DidItWorkPrompt, type DidItWorkState } from "./collections/DidItWorkPrompt";
 import { useEHRuntime } from "../runtime/useEHRuntime";
 import {
   checkCollectionUpdates,
@@ -234,6 +235,175 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
   const reportError = useErrorReporter();
   const showToast = useToast();
   const api = useApi();
+
+  /**
+   * ─── "DID THIS COLLECTION WORK FOR YOU?" ────────────────────────────
+   * Only ever populated for a collection whose game was actually STARTED
+   * (see `notePlayedCollection`). Vortex asks the moment its own installer
+   * finishes; at that moment nobody has loaded a save, and the vote is
+   * public and permanent.
+   */
+  const [feedback, setFeedback] = React.useState<DidItWorkState>({ kind: "idle" });
+  const [feedbackId, setFeedbackId] = React.useState<string | undefined>(undefined);
+  const [feedbackBusy, setFeedbackBusy] = React.useState(false);
+
+  /** Can Vortex endorse this collection from here at all? */
+  const canEndorseHere = React.useCallback(
+    async (entry: { gameDomain: string; collectionId?: number }): Promise<boolean> => {
+      if (entry.collectionId === undefined) return false;
+      const { findCollectionModId } = await import("../runtime/collectionRating");
+      return findCollectionModId(api, entry.gameDomain, entry.collectionId) !== undefined;
+    },
+    [api],
+  );
+
+  React.useEffect(() => {
+    let alive = true;
+    void (async (): Promise<void> => {
+      try {
+        const [{ loadFeedback, nextToAsk, nextToOfferEndorsement }, { getEventHorizonRoot }] =
+          await Promise.all([
+            import("../../core/feedback/collectionFeedback"),
+            import("../../core/paths/appDataPaths"),
+          ]);
+        const store = await loadFeedback(getEventHorizonRoot());
+        if (!alive) return;
+        const ask = nextToAsk(store);
+        if (ask !== undefined) {
+          setFeedbackId(ask.key);
+          setFeedback({ kind: "asking", entry: ask.entry });
+          return;
+        }
+        const offer = nextToOfferEndorsement(store);
+        if (offer === undefined) return;
+        const endorsableHere = await canEndorseHere(offer.entry);
+        if (!alive) return;
+        setFeedbackId(offer.key);
+        setFeedback({ kind: "offer-endorse", entry: offer.entry, endorsableHere });
+      } catch {
+        // A prompt that cannot load is simply not shown.
+      }
+    })();
+    return (): void => {
+      alive = false;
+    };
+  }, [canEndorseHere]);
+
+  const recordFeedback = React.useCallback(
+    async (outcome: { answer?: "worked" | "did-not-work"; dismissed?: boolean }): Promise<void> => {
+      if (feedbackId === undefined) return;
+      const [{ loadFeedback, noteAnswered, saveFeedback }, { getEventHorizonRoot }] =
+        await Promise.all([
+          import("../../core/feedback/collectionFeedback"),
+          import("../../core/paths/appDataPaths"),
+        ]);
+      const root = getEventHorizonRoot();
+      await saveFeedback(
+        root,
+        noteAnswered(await loadFeedback(root), feedbackId, outcome, new Date().toISOString()),
+      );
+    },
+    [feedbackId],
+  );
+
+  const onFeedbackAnswer = React.useCallback(
+    (answer: "worked" | "did-not-work"): void => {
+      if (feedback.kind !== "asking") return;
+      const entry = feedback.entry;
+      setFeedbackBusy(true);
+      void (async (): Promise<void> => {
+        try {
+          const { rateRevision } = await import("../runtime/collectionRating");
+          const sent = await rateRevision(api, {
+            slug: entry.slug,
+            revisionNumber: entry.revisionNumber,
+            answer,
+          });
+          /**
+           * Recorded whether or not Nexus took the vote. They answered; asking
+           * again because a server was unreachable would punish them for our
+           * network, and the question is theirs to be asked once.
+           */
+          await recordFeedback({ answer });
+          if (sent.kind !== "sent") {
+            showToast({
+              intent: "info",
+              message:
+                sent.kind === "no-revision"
+                  ? "Saved here. Nexus could not be reached, so the vote was not cast — signing in to Nexus in Vortex lets it go next time."
+                  : "Saved here, but Nexus did not accept the vote.",
+            });
+          }
+          if (answer === "worked") {
+            setFeedback({
+              kind: "offer-endorse",
+              entry,
+              endorsableHere: await canEndorseHere(entry),
+            });
+          } else {
+            setFeedback({ kind: "thanks-no", entry });
+          }
+        } finally {
+          setFeedbackBusy(false);
+        }
+      })();
+    },
+    [api, canEndorseHere, feedback, recordFeedback, showToast],
+  );
+
+  const onFeedbackDismiss = React.useCallback((): void => {
+    void recordFeedback({ dismissed: true });
+    setFeedback({ kind: "idle" });
+  }, [recordFeedback]);
+
+  const onFeedbackEndorse = React.useCallback((): void => {
+    if (feedback.kind !== "offer-endorse") return;
+    const entry = feedback.entry;
+    if (entry.collectionId === undefined) return;
+    setFeedbackBusy(true);
+    void (async (): Promise<void> => {
+      try {
+        const { endorseCollection } = await import("../runtime/collectionRating");
+        const out = endorseCollection(api, {
+          gameId: entry.gameDomain,
+          collectionId: entry.collectionId!,
+        });
+        if (out.kind === "endorsed") {
+          const [{ loadFeedback, noteEndorsed, saveFeedback }, { getEventHorizonRoot }] =
+            await Promise.all([
+              import("../../core/feedback/collectionFeedback"),
+              import("../../core/paths/appDataPaths"),
+            ]);
+          const root = getEventHorizonRoot();
+          if (feedbackId !== undefined) {
+            await saveFeedback(
+              root,
+              noteEndorsed(await loadFeedback(root), feedbackId, new Date().toISOString()),
+            );
+          }
+          showToast({ intent: "success", message: "Endorsed. Thank you." });
+        } else {
+          showToast({
+            intent: "info",
+            message: "Vortex could not endorse from here — the collection's page can.",
+          });
+        }
+        setFeedback({ kind: "idle" });
+      } finally {
+        setFeedbackBusy(false);
+      }
+    })();
+  }, [api, feedback, feedbackId, showToast]);
+
+  const onFeedbackOpenPage = React.useCallback((): void => {
+    if (feedback.kind === "idle") return;
+    const entry = feedback.entry;
+    void (async (): Promise<void> => {
+      const { collectionPageUrl } = await import("../runtime/collectionRating");
+      api.events.emit("open-url", collectionPageUrl(entry.gameDomain, entry.slug));
+      setFeedback({ kind: "idle" });
+    })();
+  }, [api, feedback]);
   // Whether an install is running RIGHT NOW — see the interrupted panel below.
   const { installBusy } = useEHRuntime();
 
@@ -503,6 +673,20 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
         `installBusy` is the live answer, and it is already tracked; it simply
         was not consulted here.
       */}
+      <DidItWorkPrompt
+        state={feedback}
+        busy={feedbackBusy}
+        onAnswer={onFeedbackAnswer}
+        onDismiss={onFeedbackDismiss}
+        onEndorse={onFeedbackEndorse}
+        onOpenPage={onFeedbackOpenPage}
+        onSendLogs={(): void => {
+          // The bundle tool already exists on the Doctor page; sending them
+          // there beats a second copy of a flow that works.
+          setFeedback({ kind: "idle" });
+          props.onNavigate("doctor");
+        }}
+      />
       {!installBusy && (
         <InterruptedInstalls
           markers={state.interrupted}

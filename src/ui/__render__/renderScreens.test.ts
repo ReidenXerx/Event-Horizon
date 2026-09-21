@@ -79,6 +79,7 @@ import { planCleanup } from "../../core/curator/cleanupPlan";
 import { buildPluginRows, pluginCapabilityFor, type PluginHeader } from "../../core/curator/pluginView";
 import { readPluginList } from "../../core/curator/pluginPool";
 import { readDownloads } from "../../core/curator/runCleanup";
+import { DidItWorkPrompt } from "../pages/collections/DidItWorkPrompt";
 import { getCuratorSession } from "../pages/curator/curatorSession";
 import { readCuratorMods, readEnabledModIds, readModEnabledTimes } from "../../core/curator/readProfile";
 import {
@@ -2329,6 +2330,69 @@ describe("render", () => {
     expect(html).toContain("Integrity check");
     expect(html).toContain("carries no file checksums");
     expect(html).toContain("963 mods installed unverified");
+  });
+
+  it("did it work — the three states of the post-play question", () => {
+    /**
+     * The question Vortex asks when ITS collection installer finishes, which
+     * an Event Horizon install never sees. It waits for a real launch, and
+     * only offers endorsing after a yes — asking somebody who just said "it
+     * did not work" to endorse it is the wrong question.
+     *
+     * All three states in one shot so the wording can be read side by side;
+     * they never appear together.
+     */
+    const entry = {
+      packageId: "0456490d-525b-49e3-92d2-5c6e617990be",
+      packageName: "Ivy's Panties - Event Horizon",
+      revisionNumber: 4,
+      slug: "dmt85e",
+      gameDomain: "fallout4",
+      collectionId: 510658,
+      firstPlayedAt: "2026-09-21T19:40:00.000Z",
+    } as never;
+    const noop = (): void => undefined;
+    const html = write(
+      "did-it-work",
+      React.createElement(
+        "div",
+        { className: "eh-page eh-stack" },
+        React.createElement(DidItWorkPrompt, {
+          key: "ask",
+          state: { kind: "asking", entry },
+          onAnswer: noop,
+          onDismiss: noop,
+          onEndorse: noop,
+          onOpenPage: noop,
+          onSendLogs: noop,
+        } as never),
+        React.createElement(DidItWorkPrompt, {
+          key: "endorse",
+          state: { kind: "offer-endorse", entry, endorsableHere: true },
+          onAnswer: noop,
+          onDismiss: noop,
+          onEndorse: noop,
+          onOpenPage: noop,
+          onSendLogs: noop,
+        } as never),
+        React.createElement(DidItWorkPrompt, {
+          key: "no",
+          state: { kind: "thanks-no", entry },
+          onAnswer: noop,
+          onDismiss: noop,
+          onEndorse: noop,
+          onOpenPage: noop,
+          onSendLogs: noop,
+        } as never),
+      ),
+    );
+    expect(html).toContain("Did &quot;Ivy&#x27;s Panties - Event Horizon&quot; work for you?");
+    expect(html).toContain("It worked");
+    // The endorsement is offered only on the yes branch, and named as a
+    // different thing from the rating.
+    expect(html).toContain("Endorse it too");
+    // The no branch asks for logs instead of an endorsement.
+    expect(html).toContain("Save a log bundle");
   });
 
   it("pick — the first step, and the drop zone", () => {

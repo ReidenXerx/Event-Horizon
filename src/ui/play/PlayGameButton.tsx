@@ -40,6 +40,19 @@ export function PlayGameButton(props: {
         if (outcome.kind === "started") {
           const exe = basenameOf(outcome.executable);
           toast({ intent: "success", message: `Starting the game through ${exe}.` });
+          /**
+           * The game actually ran, which is the fact "did this collection
+           * work for you?" waits on — Vortex asks at install time, when
+           * nobody has loaded a save yet. Deliberately not awaited and
+           * unable to throw: bookkeeping must never sit between the player
+           * and a game that has already started.
+           */
+          void (async (): Promise<void> => {
+            const { notePlayedCollection } = await import(
+              "../runtime/notePlayedCollection"
+            );
+            await notePlayedCollection(api);
+          })();
         } else if (outcome.kind === "refused") {
           await api.showDialog?.(
             "error",
