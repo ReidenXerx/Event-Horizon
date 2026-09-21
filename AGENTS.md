@@ -67,6 +67,10 @@ The owner of this machine allows agents to drive their **main Brave profile**, w
 
 ## Nexus Mods — always use `nexus-tools`
 
+**Read `nexus-tools/CLAUDE.md` before starting** (`AGENTS.md` there for other agents): the rules
+every Nexus job follows, the badge/diagram generators, and the scars. Private repo:
+https://github.com/ReidenXerx/nexus-tools — clone it next to this project if it is missing.
+
 Anything that touches a Nexus page (description, changelog, version, screenshots) goes through
 **`Projects/nexus-tools`**, never a hand-rolled browser driver.
 
