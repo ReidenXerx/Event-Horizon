@@ -1,6 +1,12 @@
 import * as fs from "fs";
 
-import { detectCaseSensitivity, pathKey, toPosix } from "../paths";
+import {
+  detectCaseSensitivity,
+  isInside,
+  pathKey,
+  toPosix,
+  type CaseMode,
+} from "../paths";
 import { isVolatileFile, volatileReason } from "../volatileFiles";
 import * as path from "path";
 
@@ -484,6 +490,14 @@ async function collectOnDiskFiles(
 
   const stack: string[] = [root];
   const visited = new Set<string>();
+  /**
+   * Resolved once, for the same reason as the capture walker's: `realpath`
+   * returns the long, canonically-cased form, and `root` may arrive as the
+   * 8.3 short form. See `walkStagingFolder` for the full account.
+   */
+  const realRoot = await fs.promises.realpath(root).catch(() => root);
+  const platformCaseMode: CaseMode =
+    process.platform === "win32" ? "insensitive" : "sensitive";
 
   while (stack.length > 0) {
     if (signal?.aborted) throw new AbortError();
@@ -509,11 +523,20 @@ async function collectOnDiskFiles(
         const realPath = await fs.promises
           .realpath(abs)
           .catch(() => undefined);
-        if (
-          realPath === undefined ||
-          !realPath.startsWith(root) ||
-          visited.has(realPath)
-        ) {
+        /**
+         * This was `!realPath.startsWith(root)`. On a machine whose path
+         * reached us in 8.3 short form, every in-mod link read as pointing
+         * outside and was skipped — so the file the curator recorded looked
+         * MISSING, verification failed, and a healthy mod was sent down the
+         * repair path. Canonical on both sides now, and segment-aware, so a
+         * sibling folder no longer passes as inside either.
+         */
+        if (realPath === undefined || visited.has(realPath)) continue;
+        if (!isInside(realRoot, realPath, platformCaseMode)) {
+          ehLog("debug", "verify-install.link-outside-mod", {
+            relativePath: toPosix(path.relative(root, abs)),
+            consequence: "not counted as part of this mod",
+          });
           continue;
         }
         visited.add(realPath);

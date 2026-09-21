@@ -6,7 +6,7 @@ import {
 import * as os from "os";
 import * as path from "path";
 
-import { toPosix } from "../paths";
+import { isInside, toPosix, type CaseMode } from "../paths";
 
 import type { EhcollStagingFile, VerificationLevel } from "../../types/ehcoll";
 import { hashFileSha256 } from "../archiveHashing";
@@ -144,6 +144,22 @@ export async function walkStagingFolder(
   const stack: string[] = [root];
   const visited = new Set<string>();
 
+  /**
+   * The root as the OS spells it, resolved ONCE, so every link target below
+   * is compared against the same canonical form it will come back in.
+   * Falling back to the root as given only loses the short-form repair; it
+   * never widens what counts as inside.
+   */
+  const realRoot = await fs.promises.realpath(root).catch(() => root);
+  /**
+   * From the platform rather than a probe: `detectCaseSensitivity` answers by
+   * WRITING a file into the folder, which a read-only walk over a thousand
+   * mods must not do. Both sides are already canonicalised by `realpath`, so
+   * this is a second guard for the rare path that is not, not the main fix.
+   */
+  const platformCaseMode: CaseMode =
+    process.platform === "win32" ? "insensitive" : "sensitive";
+
   while (stack.length > 0) {
     if (signal?.aborted) throw new AbortError();
     const dir = stack.pop()!;
@@ -182,10 +198,45 @@ export async function walkStagingFolder(
           });
           continue;
         }
-        if (!realPath.startsWith(root)) {
-          // Deliberate and not a gap: a link out of the staging folder is not
-          // part of this mod, and following it would capture someone else's
-          // files. `visited` is loop protection, equally deliberate.
+        /**
+         * ─── INSIDE THE MOD, JUDGED ON CANONICAL PATHS ─────────────────
+         * This was `realPath.startsWith(root)`, and it was wrong three ways,
+         * all of them silent:
+         *
+         *  - `realpath` returns the LONG form while `root` can arrive as the
+         *    8.3 short form (`C:\Users\DUDUPH~1\…`) — GitHub's runners use
+         *    one and so do many real accounts. Every in-mod link then read
+         *    as pointing OUTSIDE and was dropped. Public CI caught it: a
+         *    bundle shipped `a.ini` and quietly lost `linked.ini`.
+         *  - No separator boundary, so `…\ModsExtra\x` passed as inside
+         *    `…\Mods` and captured ANOTHER folder's file into this mod.
+         *  - A case-sensitive compare on a case-insensitive filesystem.
+         *
+         * A dropped file is not merely missing. A path the walk never
+         * records has no entry, so the mirror classes the player's copy as
+         * an extra and deletes it — then certifies the mod as verified (see
+         * the docblock on `UnreadablePath`).
+         *
+         * Both sides now come from `realpath`, which canonicalises the short
+         * form AND the casing (measured on this machine: a short, wrongly
+         * cased root and its link resolve to one identical long prefix), and
+         * containment goes through the one shared `isInside`, which is
+         * segment-aware.
+         */
+        if (!isInside(realRoot, realPath, platformCaseMode)) {
+          /**
+           * Excluded SILENTLY, and that is deliberate rather than the gap it
+           * looks like. `onUnreadable` is for paths that belong to the mod
+           * and could not be read; a link out of the folder does not belong
+           * to it, so the listing without it is complete. Reporting it would
+           * make the mirror refuse to certify a mod that is whole —
+           * `captureCompleteness.test.ts` pins that decision.
+           *
+           * The bug here was never the silence; it was CLASSIFICATION. An
+           * in-mod link read as outside (short form, casing) and a sibling
+           * folder read as inside (no boundary). Both are fixed above, so
+           * what reaches this branch now really is outside.
+           */
           continue;
         }
         if (visited.has(realPath)) continue;
