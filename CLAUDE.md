@@ -509,3 +509,34 @@ surfaces and only one that works:
 
 Also: `/edit/description` is a **404** (it lives on `/edit/general`), and the editor hydrates well
 after `networkidle`. `desc-set` refuses to save unless what the editor holds matches the file.
+
+### Collections are the exception — use the API, not the browser
+
+The rule above is about **mod** pages. A **collection** is the one thing the v3 REST API can edit:
+
+```
+PATCH https://api.nexusmods.com/v3/collections/{id}   -> 204 No Content
+  { name?, summary?, description?, category_id? }     (name 3..36, summary <=255)
+```
+
+Measured 2026-09-21 on Ivy (collection **510658**, slug `dmt85e`): a description PATCH returned
+204 and the page read back byte-identical.
+
+**Reading is the opposite, and this is the trap.** There is **no `GET /collections/{id}`** — it
+404s, as does `/collections/{slug}`, and there is no listing route at all (`/collections`,
+`/users/me/collections`, `/me/collections` all 404). The REST side is write-only here. Read through
+**v2 GraphQL** instead:
+
+```
+POST https://api.nexusmods.com/v2/graphql        header: apikey
+query C($slug:String!){ collection(slug:$slug, viewAdultContent:true){
+  id slug name summary description latestPublishedRevision{ revisionNumber } } }
+```
+
+So: **GraphQL to read, REST to write.** Never PATCH a description without reading the live one first
+— the field is a full replace, and everything not sent is simply gone.
+
+The collection's `id` and `slug` are already in the per-collection config at
+`<Vortex>/event-horizon/collections/.config/<slug>.json` under `nexusCollection`, so neither needs
+looking up by hand.
+
