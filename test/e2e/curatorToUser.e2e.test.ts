@@ -255,7 +255,9 @@ describe("curator profile → package → install plan", () => {
     expect(plan.compatibility.gameVersion.status).toBe("unknown");
   });
 
-  it("still blocks a real game-version mismatch", async () => {
+  // A soft block since the owner poll of 2026-09-22: reported, not an error;
+  // the preview and the driver both hold the install until it is acknowledged.
+  it("still reports a real game-version mismatch, as a soft block", async () => {
     world = makeWorld({
       mods: [{ id: "m", nexus: { modId: 1, fileId: 1 }, archiveSha256: ARCHIVE_A, files: { "a.esp": "a" } }],
     });
@@ -265,6 +267,8 @@ describe("curator profile → package → install plan", () => {
       userState({ gameVersion: "1.10.984.0" }),
       { kind: "fresh-profile" } as never,
     );
-    expect(plan.compatibility.errors.join(" ")).toMatch(/Game version mismatch/);
+    expect(plan.compatibility.errors).toEqual([]);
+    expect(plan.compatibility.gameVersion.status).toBe("mismatch");
+    expect(plan.compatibility.versionMismatch).toMatchObject({ installed: "1.10.984.0" });
   });
 });

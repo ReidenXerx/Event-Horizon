@@ -46,6 +46,7 @@ const TALL_SCREENS = {
   "build-form": 4600,
   "build-done": 4600,
   "preview-whats-new": 4600,
+  "preview-version-mismatch": 4600,
 };
 
 /**

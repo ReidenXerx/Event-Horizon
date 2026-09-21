@@ -273,6 +273,8 @@ function InstallWizard(props: InstallPageProps): JSX.Element {
           {receiptNotice}
           <PreviewStep
             bundle={state.bundle}
+            versionAcknowledged={state.versionAcknowledged === true}
+            onAcknowledgeVersion={(a): void => session.acknowledgeVersion(a)}
             onContinue={(): void => session.openDecisionsFromPreview()}
             onCancel={(): void => session.reset()}
           />

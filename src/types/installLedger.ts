@@ -98,6 +98,15 @@ export type InstallReceipt = {
    */
   fomodReplayMode?: FomodReplayMode;
   /**
+   * Installed on a game version other than the collection's, with the
+   * player's acknowledgement (owner poll, 2026-09-22: a soft block).
+   *
+   * Recorded so a later report, the Doctor, or the player themselves can see
+   * that a problem may be the version rather than the install. Absent means
+   * the versions matched, or the receipt predates the field.
+   */
+  installedOnMismatchedVersion?: { required: string; installed: string };
+  /**
    * Per-mod install records. One entry per mod the driver put on
    * disk for this collection release. The list is the resolver's
    * orphan-detection key set.

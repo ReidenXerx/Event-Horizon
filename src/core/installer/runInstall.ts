@@ -6015,6 +6015,22 @@ export function preflight(
   if (plan.compatibility.gameMatches !== true) {
     return "Plan's game id does not match the active Vortex game. Switch games and try again.";
   }
+  /**
+   * The soft block's second half. A version mismatch no longer makes
+   * `canProceed` false, so without this any route into the driver that
+   * shows no checkbox would install on the wrong version unannounced. The
+   * acknowledgement must name the same pair the plan found.
+   */
+  const mismatch = plan.compatibility.versionMismatch;
+  if (mismatch !== undefined) {
+    const ack = decisions.versionMismatchAcknowledged;
+    if (ack === undefined || ack.required !== mismatch.required || ack.installed !== mismatch.installed) {
+      return (
+        `This collection was built on game version ${mismatch.required} and your game is ` +
+        `${mismatch.installed}. Refusing to install until that is acknowledged in the preview.`
+      );
+    }
+  }
 
   // Hard-blocking decisions: nothing the user can pick fixes these.
   const hardBlockers = collectHardBlockers(plan.modResolutions);
@@ -6686,6 +6702,16 @@ function buildReceipt(args: {
     // which is a weaker and truer claim than defaulting it to silent.
     ...(ctx.decisions.fomodReplayMode !== undefined
       ? { fomodReplayMode: ctx.decisions.fomodReplayMode }
+      : {}),
+    // From the PLAN, not the decision: preflight already refused a run whose
+    // acknowledgement did not match it, so the two agree here.
+    ...(ctx.plan.compatibility.versionMismatch !== undefined
+      ? {
+          installedOnMismatchedVersion: {
+            required: ctx.plan.compatibility.versionMismatch.required,
+            installed: ctx.plan.compatibility.versionMismatch.installed,
+          },
+        }
       : {}),
     mods: modEntries,
     rulesApplication,

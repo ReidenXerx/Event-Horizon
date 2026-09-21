@@ -535,3 +535,11 @@ describe("the whole receipt, not a list of fields somebody remembered", () => {
     expect(out.mods[0]?.suppliedArchive).toBeUndefined();
   });
 });
+
+describe("the game-version soft block", () => {
+  it("keeps the record that the install ran on a mismatched version", () => {
+    const installedOnMismatchedVersion = { required: "1.6.1179.0", installed: "1.6.1170.0" };
+    const out = throughDisk({ ...base(), installedOnMismatchedVersion } as InstallReceipt);
+    expect(out.installedOnMismatchedVersion).toEqual(installedOnMismatchedVersion);
+  });
+});

@@ -21,6 +21,7 @@
 
 import * as React from "react";
 import { EnvironmentCard, summarizeEnvironment } from "./EnvironmentCard";
+import { VersionMismatchPanel } from "./VersionMismatchPanel";
 import { PlayGameCard } from "../../play/PlayGameButton";
 import { util } from "@nexusmods/vortex-api";
 
@@ -662,6 +663,9 @@ export function StaleReceiptStep(
 
 export interface PreviewStepProps {
   bundle: PreviewBundle;
+  /** The "I understand" tick on a game-version mismatch. */
+  versionAcknowledged?: boolean;
+  onAcknowledgeVersion?: (acknowledged: boolean) => void;
   onContinue: () => void;
   onCancel: () => void;
 }
@@ -709,6 +713,7 @@ function WhatsNew(props: {
 
 export function PreviewStep(props: PreviewStepProps): JSX.Element {
   const { bundle, onContinue, onCancel } = props;
+  const versionAcknowledged = props.versionAcknowledged === true;
   const { plan } = bundle;
   const target = plan.installTarget;
   const summary = plan.summary;
@@ -808,6 +813,7 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
       ...(runtimeFixed !== undefined ? [runtimeFixed] : []),
     ],
     environment.blockers,
+    versionAcknowledged,
   );
 
   // Enter = continue to decisions/review. Esc = bail. Off when focus
@@ -860,6 +866,14 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
           </span>
         </div>
       </Callout>
+
+      {plan.compatibility.versionMismatch !== undefined && (
+        <VersionMismatchPanel
+          mismatch={plan.compatibility.versionMismatch}
+          acknowledged={versionAcknowledged}
+          onAcknowledge={(a): void => props.onAcknowledgeVersion?.(a)}
+        />
+      )}
 
       {/* ─── THE ONE THING ON THIS SCREEN THE PLAYER CAN FIX RIGHT NOW ───
           Every other line here describes the collection. This one describes
@@ -1140,6 +1154,8 @@ export function computeVerdict(
   accountLines: readonly string[] = [],
   /** Blocked environment checks, by title. Any one makes the plan uninstallable. */
   environmentBlockers: readonly string[] = [],
+  /** The "I understand" tick on a game-version mismatch. */
+  versionAcknowledged = false,
 ): {
   headline: string;
   lines: string[];
@@ -1187,6 +1203,20 @@ export function computeVerdict(
     };
   }
 
+  /**
+   * A version mismatch is a SOFT block (owner poll, 2026-09-22): it holds
+   * Continue shut until the player ticks "I understand" in the panel below,
+   * and it is never "clean" even once ticked.
+   */
+  const mismatch = compat.versionMismatch;
+  if (mismatch !== undefined) {
+    lines.push(
+      `Built on game version ${mismatch.required}; yours is ${mismatch.installed}. ` +
+        (versionAcknowledged
+          ? "You have acknowledged it — see the version section below."
+          : "Read the version section below and tick the box to continue."),
+    );
+  }
   for (const w of compat.warnings) lines.push(w);
   for (const a of accountLines) lines.push(a);
   if (plan.summary.needsUserConfirmation > 0) {
@@ -1212,7 +1242,18 @@ export function computeVerdict(
   const needsAttention =
     plan.summary.needsUserConfirmation > 0 ||
     plan.summary.orphans > 0 ||
-    accountLines.length > 0;
+    accountLines.length > 0 ||
+    mismatch !== undefined;
+
+  if (mismatch !== undefined && !versionAcknowledged) {
+    return {
+      headline: "Different game version — read before installing",
+      lines,
+      color: "var(--eh-warning)",
+      tone: "warning",
+      canProceed: false,
+    };
+  }
 
   return {
     headline: needsAttention

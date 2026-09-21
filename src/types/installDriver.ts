@@ -89,6 +89,15 @@ export type UserConfirmedDecisions = {
    * `DEFAULT_FOMOD_REPLAY_MODE`.
    */
   fomodReplayMode?: FomodReplayMode;
+  /**
+   * The player ticked "I understand" on a game-version mismatch.
+   *
+   * Carries the exact (required, installed) pair they saw, not a bare
+   * boolean: the driver refuses unless it matches the plan's mismatch, so an
+   * acknowledgement given for one version cannot wave through another — a
+   * game that updated between preview and install is a different question.
+   */
+  versionMismatchAcknowledged?: { required: string; installed: string };
 };
 
 /**

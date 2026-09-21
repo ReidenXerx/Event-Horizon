@@ -413,11 +413,16 @@ class InstallSession {
   openDecisionsFromPreview(): void {
     if (this.state.kind !== "preview") return;
     const bundle = this.state.bundle;
+    // The same gate the Continue button shows; a route around the button
+    // would otherwise reach the driver, which refuses anyway.
+    const acknowledged = this.state.versionAcknowledged === true;
+    if (bundle.plan.compatibility?.versionMismatch !== undefined && !acknowledged) return;
     this.dispatch({
       type: "open-decisions",
       bundle,
       conflictChoices: {},
       orphanChoices: {},
+      ...(acknowledged ? { versionAcknowledged: true as const } : {}),
     });
 
     // Pre-fill the answers this collection was given last time, for the files
@@ -522,6 +527,11 @@ class InstallSession {
     this.dispatch({ type: "set-fomod-mode", mode });
   }
 
+  /** The "I understand" tick on a game-version mismatch. */
+  acknowledgeVersion(acknowledged: boolean): void {
+    this.dispatch({ type: "acknowledge-version", acknowledged });
+  }
+
   backToPreview(): void {
     this.dispatch({ type: "back-to-preview" });
   }
@@ -541,12 +551,23 @@ class InstallSession {
       this.state.bundle,
       this.state.orphanChoices,
     );
+    const mismatch = this.state.bundle.plan.compatibility?.versionMismatch;
     this.dispatch({
       type: "open-confirm",
       decisions: {
         conflictChoices: filledConflicts,
         orphanChoices: filledOrphans,
         fomodReplayMode: this.state.fomodReplayMode,
+        // The pair the player SAW, so the driver can tell it apart from a
+        // game that changed version after the preview.
+        ...(mismatch !== undefined && this.state.versionAcknowledged === true
+          ? {
+              versionMismatchAcknowledged: {
+                required: mismatch.required,
+                installed: mismatch.installed,
+              },
+            }
+          : {}),
       },
     });
   }

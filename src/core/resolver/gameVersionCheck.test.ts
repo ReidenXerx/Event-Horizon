@@ -40,10 +40,37 @@ describe("game version compatibility", () => {
     expect(report.errors).toEqual([]);
   });
 
-  it("still blocks a REAL exact mismatch — the guard must not swallow the check", () => {
+  /**
+   * A real mismatch used to be an error, which stopped the install outright.
+   * It is now a SOFT block (owner poll, 2026-09-22): reported as
+   * `versionMismatch`, and the player must acknowledge it. The guard must
+   * still not swallow the check — the mismatch has to arrive, just not as an
+   * error.
+   */
+  it("reports a REAL exact mismatch as a soft block, not as an error", () => {
     const report = resolveCompatibility(manifest("1.10.163.0"), user("1.10.984.0"));
-    expect(report.errors.join(" ")).toMatch(/Game version mismatch/);
+    expect(report.errors).toEqual([]);
     expect(report.gameVersion.status).toBe("mismatch");
+    expect(report.versionMismatch).toMatchObject({ required: "1.10.163.0", installed: "1.10.984.0", direction: 1 });
+    // Changing the game stays on offer, with the existing guidance.
+    expect(report.versionMismatch?.changeGame.length).toBeGreaterThan(0);
+  });
+
+  it("reports a too-old game under a minimum policy the same way", () => {
+    const report = resolveCompatibility(manifest("1.10.163.0", "minimum"), user("1.10.162.0"));
+    expect(report.errors).toEqual([]);
+    expect(report.versionMismatch).toMatchObject({ policy: "minimum", direction: -1 });
+  });
+
+  it("carries no versionMismatch on a newer game under a minimum policy", () => {
+    const report = resolveCompatibility(manifest("1.10.163.0", "minimum"), user("1.10.984.0"));
+    expect(report.versionMismatch).toBeUndefined();
+  });
+
+  it("keeps a DIFFERENT game a hard error — acknowledging cannot make that installable", () => {
+    const report = resolveCompatibility(manifest("1.10.163.0"), { ...user("1.10.984.0"), gameId: "skyrimse" });
+    expect(report.errors.length).toBeGreaterThan(0);
+    expect(report.versionMismatch).toBeUndefined();
   });
 
   it("still passes a real match", () => {

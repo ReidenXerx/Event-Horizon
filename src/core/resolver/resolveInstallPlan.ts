@@ -52,7 +52,8 @@
  */
 
 import { gameVersionGuidance } from "./gameVersionGuidance";
-import { describeStoreMismatch } from "../manifest/storeCompatibility";
+import { assessVersionMismatch, describeVersionMismatch } from "./versionMismatch";
+import { describeJudgedStoreMismatch, describeStoreMismatch } from "../manifest/storeCompatibility";
 import { looksLikeWine } from "../proton";
 import { bundleFolderInPackage } from "../manifest/bundleLayout";
 import type {
@@ -201,6 +202,24 @@ export function resolveCompatibility(
   const vortexVersion = checkVortexVersion(manifest, userState, warnings);
   const deploymentMethod = checkDeploymentMethod(manifest, userState, warnings, errors);
 
+  // Only for a real mismatch on the RIGHT game: a different game is a hard
+  // error above, and no amount of acknowledging makes it installable.
+  let versionMismatch: CompatibilityReport["versionMismatch"];
+  if (gameMatches && gameVersion.status === "mismatch" && userState.gameVersion !== undefined) {
+    versionMismatch = {
+      ...assessVersionMismatch({
+        manifest,
+        installed: userState.gameVersion,
+        store: userState.store,
+      }),
+      changeGame: gameVersionGuidance({
+        gameId: manifest.game.id,
+        required: manifest.game.version,
+        installed: userState.gameVersion,
+      }),
+    };
+  }
+
   /**
    * ─── THE AXIS THE VERSION CHECK CANNOT SEE ────────────────────────────
    * GOG and Steam ship the same game at the same version numbers with
@@ -215,14 +234,53 @@ export function resolveCompatibility(
    * handful of mods rather than to abandon the install. The message names
    * them, because "which ones do I re-download" is the question that gets
    * asked over and over.
+   *
+   * ─── AND WHICH ONES, PRECISELY ─────────────────────────────────────────
+   * The heuristic names EVERY mod with a script-extender DLL — 245 for a real
+   * Skyrim collection whose true answer is 6. Where the package recorded what
+   * each DLL declares and the store is one the judgement can see, the list is
+   * the judged one instead: from the version panel when the versions differ
+   * too (said there, not twice), or as this warning when only the store does.
+   *
+   * Store-aware only where measured: Skyrim's GOG build has its own runtime id
+   * (`runtimeIdFor`), and Steam and GOG are the stores that was checked on.
+   * Fallout 4 plugins carry no store marker, so a store change there is
+   * invisible to the judgement and the heuristic stays.
    */
-  warnings.push(
-    ...describeStoreMismatch({
-      curatorStore: manifest.game.store,
-      userStore: userState.store,
-      mods: manifest.mods,
-    }),
-  );
+  const measuredStores = new Set(["steam", "gog"]);
+  const curatorStore = (manifest.game.store ?? "").toLowerCase();
+  const userStore = (userState.store ?? "").toLowerCase();
+  const storeJudgeable =
+    gameMatches &&
+    manifest.game.id === "skyrimse" &&
+    curatorStore !== userStore &&
+    measuredStores.has(curatorStore) &&
+    measuredStores.has(userStore) &&
+    userState.gameVersion !== undefined;
+  const sameVersionStore =
+    storeJudgeable && versionMismatch === undefined
+      ? assessVersionMismatch({ manifest, installed: userState.gameVersion!, store: userState.store })
+      : undefined;
+  if (storeJudgeable && versionMismatch?.plugins !== undefined) {
+    // Said by the version panel, store included.
+  } else if (sameVersionStore?.plugins !== undefined) {
+    warnings.push(
+      ...describeJudgedStoreMismatch({
+        curatorStore: manifest.game.store!,
+        userStore: userState.store!,
+        swapLines: describeVersionMismatch(sameVersionStore).swapLines,
+        unjudged: sameVersionStore.plugins.unknown.length,
+      }),
+    );
+  } else {
+    warnings.push(
+      ...describeStoreMismatch({
+        curatorStore: manifest.game.store,
+        userStore: userState.store,
+        mods: manifest.mods,
+      }),
+    );
+  }
 
   return {
     gameMatches,
@@ -232,6 +290,7 @@ export function resolveCompatibility(
     deploymentMethod,
     warnings,
     errors,
+    ...(versionMismatch !== undefined ? { versionMismatch } : {}),
   };
 }
 
@@ -306,15 +365,20 @@ function checkGameVersion(
     return { status: "ok" };
   }
 
-  // Versions differ. Severity depends on policy.
+  /**
+   * ─── A MISMATCH NO LONGER STOPS THE INSTALL ────────────────────────────
+   * Both branches below used to push into `errors`, which forces
+   * `canProceed` false: a player on any other build simply could not install.
+   * Players asked to be let through, and they can be, because almost nothing
+   * in a collection cares about the game version — see `versionMismatch.ts`.
+   *
+   * So the mismatch is REPORTED, as `compatibility.versionMismatch`, built by
+   * the caller from this status. Install still stays shut until the player
+   * acknowledges it (owner poll, 2026-09-22), and the install driver refuses
+   * without that acknowledgement too, so a path with no checkbox cannot
+   * slip through.
+   */
   if (policy === "exact") {
-    errors.push(
-      [
-        `Game version mismatch: this collection needs "${required}" exactly, ` +
-          `you have "${installed}".`,
-        ...gameVersionGuidance({ gameId: manifest.game.id, required, installed }),
-      ].join(" "),
-    );
     return { status: "mismatch", required, installed, policy };
   }
 
@@ -331,13 +395,7 @@ function checkGameVersion(
   if (cmp >= 0) {
     return { status: "ok" };
   }
-  errors.push(
-    [
-      `Game version too old: this collection needs at least "${required}", ` +
-        `you have "${installed}".`,
-      ...gameVersionGuidance({ gameId: manifest.game.id, required, installed }),
-    ].join(" "),
-  );
+  // Too old for a "minimum" policy: the same soft block as above.
   return { status: "mismatch", required, installed, policy };
 }
 

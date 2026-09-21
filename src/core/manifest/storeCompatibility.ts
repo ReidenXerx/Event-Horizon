@@ -150,3 +150,46 @@ export function describeStoreMismatch(args: {
       `plugins and patches work the same on both stores.`,
   ];
 }
+
+/**
+ * The store warning from what each DLL DECLARED, not from where it sits.
+ *
+ * Used when the package recorded plugin data and the judgement can see the
+ * store (`resolveCompatibility` decides). An empty list is said as good news,
+ * not as silence: a player who switched stores is expecting a problem, and
+ * "none of the plugins are store-specific" is the answer to that worry.
+ */
+export function describeJudgedStoreMismatch(args: {
+  curatorStore: string;
+  userStore: string;
+  swapLines: readonly string[];
+  /** Plugins whose DLL could not be read at build time: not judged either way. */
+  unjudged: number;
+}): string[] {
+  const { curatorStore, userStore, swapLines, unjudged } = args;
+  const unjudgedLine =
+    unjudged > 0
+      ? [
+          `${unjudged} plugin${unjudged === 1 ? "" : "s"} could not be checked ahead of time; ` +
+            `the script extender's log will say whether ${unjudged === 1 ? "it" : "they"} loaded.`,
+        ]
+      : [];
+  if (swapLines.length === 0) {
+    return [
+      `This collection was built on the ${curatorStore} version of the game and you are on ` +
+        `${userStore}. None of the script-extender plugins checked is built only for ` +
+        `${curatorStore}, so nothing needs re-downloading for that.`,
+      ...unjudgedLine,
+    ];
+  }
+  return [
+    `This collection was built on the ${curatorStore} version of the game and you are on ` +
+      `${userStore}. The two use different executables, and ${swapLines.length} ` +
+      `${swapLines.length === 1 ? "mod ships a plugin" : "mods ship plugins"} built only for ` +
+      `${curatorStore}. Re-download ${swapLines.length === 1 ? "it" : "each"} from its mod page and ` +
+      `pick the ${userStore} build:`,
+    ...swapLines.map((l) => `  • ${l}`),
+    ...unjudgedLine,
+    `Everything else in the collection is unaffected.`,
+  ];
+}

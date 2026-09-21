@@ -46,6 +46,7 @@ import type {
   VortexDeploymentMethod,
 } from "./ehcoll";
 import type { GameIniApplicationReceipt } from "./installLedger";
+import type { VersionMismatch } from "../core/resolver/versionMismatch";
 
 // ===========================================================================
 // USER-SIDE STATE (resolver input)
@@ -587,6 +588,19 @@ export type CompatibilityReport = {
    * extension X missing" land here.
    */
   errors: string[];
+  /**
+   * The player's game is not the version the collection was built on.
+   *
+   * NOT an error — that used to stop the install outright, and players asked
+   * to be let through. Not a warning either: Install stays shut until the
+   * player acknowledges it (owner poll, 2026-09-22). The UI gates on it, and
+   * so does the install driver, because the Doctor's repair and a resumed
+   * install reach the same check with no checkbox in front of them.
+   *
+   * Carries both roads: `changeGame` — move the game to the collection's
+   * version — and the precise list of mods to swap to keep their own.
+   */
+  versionMismatch?: VersionMismatch & { changeGame: string[] };
 };
 
 export type VersionCheckResult =

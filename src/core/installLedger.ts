@@ -362,6 +362,19 @@ export function parseReceipt(raw: string): InstallReceipt {
   ) {
     out.fomodReplayMode = obj.fomodReplayMode;
   }
+  // Informational: a malformed value is dropped, never a refused receipt.
+  const mismatched = obj.installedOnMismatchedVersion as Record<string, unknown> | undefined;
+  if (
+    mismatched !== null &&
+    typeof mismatched === "object" &&
+    typeof mismatched.required === "string" &&
+    typeof mismatched.installed === "string"
+  ) {
+    out.installedOnMismatchedVersion = {
+      required: mismatched.required,
+      installed: mismatched.installed,
+    };
+  }
   if (verifications !== undefined) out.verifications = verifications;
   if (gameIniApplication !== undefined)
     out.gameIniApplication = gameIniApplication;

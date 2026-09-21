@@ -32,6 +32,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 // utility that overrides a component's spacing won in Vortex and lost here —
 // and a screenshot then showed a layout the user never sees.
 import { COMBINED_CSS } from "../theme/EventHorizonStyles";
+import { assessVersionMismatch } from "../../core/resolver/versionMismatch";
+import { gameVersionGuidance } from "../../core/resolver/gameVersionGuidance";
 import {
   ConfirmStep,
   DecisionsStep,
@@ -1853,6 +1855,56 @@ describe("render", () => {
         onCancel: () => undefined,
       } as never),
     );
+  });
+
+  it("preview — a player on another game version (soft block)", () => {
+    // Built by the real functions, so the panel renders what a player on
+    // Steam 1.6.1170 sees for a GOG 1.6.1179 collection, not a hand-made shape.
+    const gog = (p: string) => ({
+      path: `SKSE/Plugins/${p}`,
+      extender: "skse" as const,
+      kind: "declares" as const,
+      versionIndependent: false,
+      runtimes: ["1.6.1179.1"],
+      hasQuery: false,
+    });
+    const indep = (p: string) => ({ ...gog(p), versionIndependent: true, runtimes: [] });
+    const m = (name: string, i: number, plugins: unknown[]) => ({
+      name,
+      compareKey: `nexus:${i}:${i}`,
+      state: { nativePlugins: plugins },
+    });
+    const skyrim = {
+      game: { id: "skyrimse", version: "1.6.1179.0", versionPolicy: "exact", store: "gog" },
+      mods: [
+        m("JContainers GOG", 1, [gog("JContainersGOG.dll")]),
+        m("PapyrusUtil GOG", 2, [gog("PapyrusUtil.dll")]),
+        m("Racemenu GOG Fix", 3, [gog("skee64.dll")]),
+        ...Array.from({ length: 40 }, (_, i) => m(`Plugin ${i}`, 10 + i, [indep(`p${i}.dll`)])),
+      ],
+      rules: [],
+    } as never;
+    const versionMismatch = {
+      ...assessVersionMismatch({ manifest: skyrim, installed: "1.6.1170.0", store: "steam" }),
+      changeGame: gameVersionGuidance({ gameId: "skyrimse", required: "1.6.1179.0", installed: "1.6.1170.0" }),
+    };
+    const base = bundle as unknown as { plan: Record<string, unknown> & { compatibility: Record<string, unknown> } };
+    const mismatched = {
+      ...(bundle as unknown as Record<string, unknown>),
+      plan: { ...base.plan, compatibility: { ...base.plan.compatibility, versionMismatch } },
+    } as never;
+    const html = write(
+      "preview-version-mismatch",
+      React.createElement(PreviewStep, {
+        bundle: mismatched,
+        versionAcknowledged: false,
+        onContinue: () => undefined,
+        onCancel: () => undefined,
+      } as never),
+    );
+    expect(html).toContain("JContainers GOG");
+    expect(html).not.toContain("Plugin 3 —");
+    expect(html).toContain("Different game version");
   });
 
   it("preview — a collection its curator designed", () => {

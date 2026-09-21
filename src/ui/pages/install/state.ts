@@ -166,6 +166,11 @@ export type WizardState =
   | {
       kind: "preview";
       bundle: PreviewBundle;
+      /**
+       * The player ticked "I understand" on a game-version mismatch. Carried
+       * through decisions and back so stepping around does not untick it.
+       */
+      versionAcknowledged?: true;
     }
   | {
       kind: "decisions";
@@ -177,6 +182,7 @@ export type WizardState =
        * does not silently reset a choice the user made.
        */
       fomodReplayMode: FomodReplayMode;
+      versionAcknowledged?: true;
     }
   | {
       kind: "confirm";
@@ -247,7 +253,9 @@ export type WizardAction =
       bundle: PreviewBundle;
       conflictChoices: Record<string, ConflictChoice>;
       orphanChoices: Record<string, OrphanChoice>;
+      versionAcknowledged?: true;
     }
+  | { type: "acknowledge-version"; acknowledged: boolean }
   | {
       type: "set-conflict-choice";
       compareKey: string;
@@ -362,7 +370,14 @@ export function wizardReducer(
         conflictChoices: action.conflictChoices,
         orphanChoices: action.orphanChoices,
         fomodReplayMode: DEFAULT_FOMOD_REPLAY_MODE,
+        ...(action.versionAcknowledged ? { versionAcknowledged: true as const } : {}),
       };
+    case "acknowledge-version": {
+      if (state.kind !== "preview") return state;
+      return action.acknowledged
+        ? { ...state, versionAcknowledged: true }
+        : { kind: "preview", bundle: state.bundle };
+    }
     case "set-conflict-choice": {
       if (state.kind !== "decisions") return state;
       return {
@@ -397,7 +412,15 @@ export function wizardReducer(
     }
     case "back-to-preview": {
       if (state.kind === "decisions" || state.kind === "confirm") {
-        return { kind: "preview", bundle: state.bundle };
+        const acknowledged =
+          state.kind === "decisions"
+            ? state.versionAcknowledged === true
+            : state.decisions.versionMismatchAcknowledged !== undefined;
+        return {
+          kind: "preview",
+          bundle: state.bundle,
+          ...(acknowledged ? { versionAcknowledged: true as const } : {}),
+        };
       }
       return state;
     }
@@ -418,6 +441,9 @@ export function wizardReducer(
         orphanChoices: state.decisions.orphanChoices ?? {},
         fomodReplayMode:
           state.decisions.fomodReplayMode ?? DEFAULT_FOMOD_REPLAY_MODE,
+        ...(state.decisions.versionMismatchAcknowledged !== undefined
+          ? { versionAcknowledged: true as const }
+          : {}),
       };
     }
     case "ready-to-start": {
