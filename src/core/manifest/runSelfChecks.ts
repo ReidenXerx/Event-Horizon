@@ -379,6 +379,29 @@ async function stagedWithChecksums(args: {
    * touched since the last build costs a lookup instead of a read.
    */
   crcCache: ReturnType<typeof makeCrcLookup>;
+  /**
+   * Called when this pass could NOT checksum files it meant to, so the caller
+   * can say so.
+   *
+   * ─── A SILENT DOWNGRADE INSIDE THE MOST EXPENSIVE CHECK ──────────────
+   * A file that comes back without a `crc` lands on `verifyAgainstArchive`'s
+   * `size-only` arm, which counts into `explainedRatio` and NOT into
+   * `unexplained` — so the mod's `unexplained` drops, it stops being a
+   * PostProcessingCandidate, and mirror/bundle/declare is never offered for
+   * it. The count of unreadable files escaped only to a debug log line.
+   *
+   * What that costs is measured in `crcBySha256.ts`: on a real collection,
+   * 2,994 recorded files, 1,130 of them different for the player, every one
+   * at the same path and the same size. "Sizes alone could not have caught a
+   * single one." A locked file — the game running, an antivirus, a OneDrive
+   * placeholder — is enough to put a regenerated external output back into
+   * exactly that state, and the build reported it as fine.
+   *
+   * This pass costs 42.85 GiB of reads and ~4.9 minutes by deliberate choice
+   * (NS-1). A pass that expensive silently not running is the one outcome it
+   * cannot afford.
+   */
+  onSizeOnly?: (info: { files: number; why: string }) => void;
   signal?: AbortSignal;
 }): Promise<Array<{ path: string; size: number; crc?: string }>> {
   const staging = args.mod.stagingFiles ?? [];
@@ -392,7 +415,13 @@ async function stagedWithChecksums(args: {
   if (!args.isExternal || plain.length === 0) return plain;
 
   const root = stagingRootFromFolder(args.installRoot, args.mod.installationPath);
-  if (root === undefined) return plain;
+  if (root === undefined) {
+    args.onSizeOnly?.({
+      files: plain.length,
+      why: "its staging folder could not be resolved",
+    });
+    return plain;
+  }
 
   // Smallest first, so a fixed budget covers the most FILES rather than the
   // fewest. Coverage is partial by design; a partial checksum pass still
@@ -492,6 +521,12 @@ async function stagedWithChecksums(args: {
     },
     args.signal,
   );
+  if (failed > 0) {
+    args.onSizeOnly?.({
+      files: failed,
+      why: "they could not be read (locked, in use, or a cloud placeholder)",
+    });
+  }
   ehLog("debug", "self-check.external-crc", {
     mod: args.mod.name,
     staged: plain.length,
@@ -863,6 +898,32 @@ function makeReadEntry(sevenZip: SevenZipApi) {
   };
 }
 
+const messageOf = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err);
+
+/**
+ * A report for a mod this pass did not examine.
+ *
+ * `depth: "skipped"` is what `summarizeSelfChecks` counts and what the
+ * existing "N mod(s) could not be checked" warning reads, so an unchecked mod
+ * lands in the number a curator already looks at rather than disappearing
+ * from both sides of it.
+ */
+function unchecked(mod: { id: string; name: string }, why: string): SelfCheckReport {
+  return {
+    modId: mod.id,
+    modName: mod.name,
+    depth: "skipped",
+    notes: [why],
+    missing: [],
+    unexplained: 0,
+    unexplainedExamples: [],
+    omissionLeads: [],
+    stagedCount: 0,
+    expectedCount: 0,
+  };
+}
+
 export async function runSelfChecks(
   state: types.IState,
   gameId: string,
@@ -875,10 +936,31 @@ export async function runSelfChecks(
   } catch (err) {
     // Outside Vortex (tests, smoke runs) there is no SevenZip. Not an error.
     ehLog("warn", "selfcheck.unavailable", { err });
+    /**
+     * ─── "NOTHING WAS CHECKED" IS NOT "NOTHING WAS WRONG" ────────────────
+     * The empty return is right for the no-Vortex case and was returned for
+     * every case: `resolveSevenZip` throws whenever `util.SevenZip` is not a
+     * constructor, which is a runtime condition, not only a test one. The
+     * build then went through packaging with `replayed`, `containment` and
+     * `skipped` all zero and no warnings at all — indistinguishable in the
+     * summary from a collection where every mod checked out clean. For scale:
+     * a real build replays 285 mods and containment-checks 1,446.
+     *
+     * Nothing between here and `packageEhcoll` reconciles report count against
+     * mod count, so one line in `warnings` is what separates the two.
+     */
     return {
       reports: [],
       summary: summarizeSelfChecks([]),
-      warnings: [],
+      warnings:
+        mods.length === 0
+          ? []
+          : [
+              `The self-check did not run at all — 7-Zip was not available, ` +
+                `so 0 of ${mods.length} mod(s) were compared against their ` +
+                `archives. This package ships unverified: nothing here says ` +
+                `its mods match what players will download.`,
+            ],
       postProcessingCandidates: [],
       mirrorable: new Set<string>(),
       archiveByModId: new Map<string, string>(),
@@ -993,6 +1075,12 @@ export async function runSelfChecks(
     return hit;
   };
 
+  /**
+   * Mods whose external-archive comparison fell back to SIZE ALONE, and why.
+   * See `stagedWithChecksums`'s `onSizeOnly` for what that silently costs.
+   */
+  const sizeOnlyMods: { mod: string; files: number; why: string }[] = [];
+
   /** modId → Vortex's staging folder name, for the stale-archive check below. */
   const stagingFolderByModId = new Map<string, string | undefined>();
   for (const mod of comparable) {
@@ -1013,6 +1101,9 @@ export async function runSelfChecks(
         opts?.downloadedFromNexus !== undefined &&
         !opts.downloadedFromNexus.has(mod.id),
       crcCache,
+      onSizeOnly: (info) => {
+        sizeOnlyMods.push({ mod: mod.name, ...info });
+      },
       ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
     });
     /**
@@ -1047,7 +1138,50 @@ export async function runSelfChecks(
       // selfCheckMod contains its own failures; this is belt and braces so one
       // pathological mod can never take a build down.
       ehLog("warn", "selfcheck.mod-threw", { mod: mod.name, err });
+      /**
+       * ─── BELT AND BRACES MUST NOT SHRINK THE DENOMINATOR ──────────────
+       * This logged and moved on, pushing nothing — so a mod that threw was
+       * in NEITHER the reports nor `summary.skipped`, which counts only
+       * reports that exist with `depth: "skipped"`. The curator is warned
+       * "N mod(s) could not be checked" for one failure mode and told nothing
+       * at all for this one. A catch that silently removes a mod from the
+       * accounting is worse than no catch, because the count still reads as
+       * complete.
+       */
+      reports.push(
+        unchecked(mod, `the check threw on this mod: ${messageOf(err)}`),
+      );
     }
+  }
+
+  /**
+   * ─── AND A MOD NEVER REACHED IS NOT A MOD THAT PASSED ─────────────────
+   * The loop `break`s on the abort signal and then returns a normal,
+   * complete-SHAPED result. Everything after this point — the summary, the
+   * warnings, `postProcessingCandidates` — is computed from a partial report
+   * set that nothing distinguishes from a full one. The caller does abort
+   * immediately afterwards today, so nothing ships; that is a property of the
+   * caller, not of what this function returns.
+   */
+  if (reports.length < comparable.length) {
+    const seen = new Set(reports.map((r) => r.modId));
+    for (const mod of comparable) {
+      if (seen.has(mod.id)) continue;
+      reports.push(unchecked(mod, "cancelled before this mod was checked"));
+    }
+  }
+
+  /**
+   * One assertion for the whole class: three separate ways a mod could leave
+   * the accounting (a throw, a cancel, and `reports.length` never being
+   * compared to anything) collapse into "every comparable mod has a report".
+   */
+  if (reports.length !== comparable.length) {
+    ehLog("error", "selfcheck.accounting-mismatch", {
+      reports: reports.length,
+      comparable: comparable.length,
+      why: "a mod left the accounting without a report — see the loop above",
+    });
   }
 
   const summary = summarizeSelfChecks(reports);
@@ -1071,6 +1205,37 @@ export async function runSelfChecks(
   const skippedReports = reports.filter((r) => r.depth === "skipped");
 
   const warnings: string[] = [];
+
+  /**
+   * ─── SAY WHEN THE EXPENSIVE COMPARISON DID NOT ACTUALLY RUN ───────────
+   * A file with no checksum falls to `verifyAgainstArchive`'s `size-only`
+   * arm, which counts as EXPLAINED — so the mod's `unexplained` drops, it
+   * stops being a candidate, and mirror/bundle/declare is never offered for
+   * it. On a real collection the checksum pass found 1,130 files that had
+   * changed at the same path and the same size, so size alone would have
+   * caught none of them.
+   *
+   * It reached a debug log and nothing the curator reads while deciding.
+   * Same sentence shape the master gate uses for its own partial results:
+   * name the mods, say what was not proven.
+   */
+  if (sizeOnlyMods.length > 0) {
+    const total = sizeOnlyMods.reduce((n, m) => n + m.files, 0);
+    const shown = sizeOnlyMods.slice(0, 5);
+    warnings.push(
+      `${total} file(s) across ${sizeOnlyMods.length} mod(s) could not be ` +
+        `checksummed, so they were compared by SIZE ALONE — a regenerated ` +
+        `file of the same size would not be detected: ` +
+        shown.map((m) => `"${m.mod}" (${m.files}, ${m.why})`).join("; ") +
+        `${sizeOnlyMods.length > shown.length ? `, and ${sizeOnlyMods.length - shown.length} more` : ""}.`,
+    );
+    ehLog("warn", "selfcheck.size-only-fallback", {
+      mods: sizeOnlyMods.length,
+      files: total,
+      examples: shown,
+    });
+  }
+
   const withMissing = reports.filter((r) => r.missing.length > 0);
 
   for (const report of withMissing) {

@@ -664,6 +664,38 @@ export async function runInstall(ctx: DriverContext): Promise<InstallResult> {
   try {
     result = await runInstallImpl(ctx);
   } catch (err) {
+    /**
+     * ─── THE USER'S OWN STOP IS NOT A CRASH ─────────────────────────────
+     * `tryRecoverFailedMod` and `tryInstallAlongside` deliberately rethrow on
+     * abort, and their calls in the verify/repair/alongside phase sit in no
+     * `try` — `runInstallImpl` has none around them — so pressing Stop during
+     * "Verifying 979 mods…" while one is being repaired sends an AbortError
+     * straight out of the driver.
+     *
+     * It landed here, where there was no abort arm: recorded
+     * `outcome: "failed", phase: "failed"`, so `describeInstallAttempt` told
+     * the player *"The last install of X failed during 'failed'"*, and
+     * rethrown into `installSession`, whose one catch that does not check
+     * `isAbortError` first showed them "Install driver crashed" with a
+     * copy-out report. Their own Stop, presented as a crash, and logged as
+     * `install.wizard.failed`.
+     *
+     * `buildAbortedResult` is the one way this driver reports an abort, and
+     * `escaped` carries out exactly what it needs — the profile and what
+     * reached disk. The phase is named rather than guessed: the only abort
+     * that reaches this catch instead of a `checkAbort` is the one from that
+     * verification pass.
+     */
+    if (isAbort(err, ctx.abortSignal)) {
+      const aborted = buildAbortedResult({
+        phase: "verifying-mods",
+        reason: "Stopped during verification.",
+        partialProfileId: escaped.profileId,
+        installedMods: escaped.installed.map((vortexModId) => ({ vortexModId })),
+      });
+      await recordAttemptOutcome(ctx, aborted);
+      return aborted;
+    }
     await recordAttemptOutcome(ctx, {
       kind: "failed",
       // Not a lie about where it stopped: an exception carries no phase, and

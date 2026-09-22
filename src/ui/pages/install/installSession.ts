@@ -959,6 +959,32 @@ class InstallSession {
       } catch (err) {
         this.installInFlight = false;
         this.installController = undefined;
+        /**
+         * ─── THE ONE CATCH IN THIS FILE THAT DID NOT ASK ────────────────
+         * Every other async catch here checks `isAbortError` first, for the
+         * reason its own docblock gives: not to "report the user's own Stop as
+         * a failure". This one did not, so an abort escaping the driver — see
+         * `runInstall`'s catch — reached the player as "Install driver
+         * crashed", with a copy-out report, logged as `install.wizard.failed`.
+         *
+         * Belt and braces now that the driver converts that abort into a
+         * proper aborted result: a future rethrow from any phase lands here
+         * and is still not a crash.
+         */
+        if (isAbortError(err)) {
+          this.warnIfLeftUndeployed(api, startState.bundle.plan, "aborted");
+          this.dispatch({
+            type: "install-result",
+            result: {
+              kind: "aborted",
+              phase: "installing-mods",
+              partialProfileId: undefined,
+              reason: "You stopped this install.",
+              installedSoFar: [],
+            },
+          });
+          return;
+        }
         this.warnIfLeftUndeployed(api, startState.bundle.plan, "crashed");
         this.failWith(err, {
           title: "Install driver crashed",
