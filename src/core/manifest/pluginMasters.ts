@@ -148,9 +148,57 @@ export async function readPluginHeader(
      */
     let sawHedr = false;
     let at = 0;
+    /**
+     * ─── A SUBRECORD TOO BIG FOR ITS OWN SIZE FIELD ────────────────────────
+     * A subrecord's size is a uint16, so anything over 65,535 bytes cannot
+     * state its own length. The format's answer is `XXXX`: a 4-byte subrecord
+     * whose data is the uint32 REAL size of the subrecord that follows, and
+     * that next subrecord writes 0 in its own size field.
+     *
+     * This walk did not know that. It read the following subrecord as zero
+     * bytes long and then parsed that subrecord's PAYLOAD as though it were
+     * more subrecords — producing garbage types and, a few hundred kilobytes
+     * later, a size that overruns the buffer. The overrun guard below then
+     * (correctly, for what it could see) refused the whole file.
+     *
+     * What that cost, measured on this machine: `unofficial skyrim special
+     * edition patch.esp` and `Unofficial Fallout 4 Patch.esp` — the single
+     * most-installed plugin of each game, and the cornerstone of both
+     * collections here — were reported as "not a plugin". Every one of their
+     * MAST entries sits BEFORE the XXXX and had already been read correctly;
+     * the refusal threw them away. Downstream that is the masters gate
+     * skipping them as unreadable, the curator's requirements pass losing
+     * their masters, and the ESL flag tool unable to read their header.
+     *
+     * 2,486 real plugins on this machine, and these two were the only files
+     * either this reader or an independent one could not walk.
+     */
+    let oversize: number | undefined;
     while (at + SUBRECORD_HEADER_BYTES <= data.length) {
       const type = data.toString("latin1", at, at + 4);
-      const size = data.readUInt16LE(at + 4);
+      const declared = data.readUInt16LE(at + 4);
+
+      if (type === "XXXX") {
+        // Its own data is the next subrecord's length. Anything else under
+        // this type is a shape we do not understand, and guessing at a length
+        // is how the walk desynchronised in the first place.
+        if (declared !== 4 || at + SUBRECORD_HEADER_BYTES + 4 > data.length) {
+          return {
+            kind: "not-a-plugin",
+            why:
+              `an XXXX subrecord at byte ${at} of the TES4 header declares ` +
+              `${declared} bytes rather than the 4 that hold the next ` +
+              `subrecord's length, so the header could not be read`,
+          };
+        }
+        oversize = data.readUInt32LE(at + SUBRECORD_HEADER_BYTES);
+        at += SUBRECORD_HEADER_BYTES + 4;
+        continue;
+      }
+
+      // `oversize` applies to exactly the one subrecord after its XXXX.
+      const size = oversize ?? declared;
+      oversize = undefined;
       const start = at + SUBRECORD_HEADER_BYTES;
       const end = start + size;
       if (end > data.length) {

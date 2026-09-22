@@ -158,11 +158,19 @@ describe("reading a plugin's masters", () => {
  */
 describe("a header it could not finish reading", () => {
   it("refuses rather than returning the masters it happened to reach", async () => {
-    // Real HEDR, one real master, then a subrecord claiming 400 bytes it
-    // does not have. The old code returned ok with ["Skyrim.esm"] — a list
-    // that is true as far as it goes and wrong as an answer.
+    /**
+     * Real HEDR, one real master, then a subrecord claiming 400 bytes it does
+     * not have. The old code returned ok with ["Skyrim.esm"] — a list that is
+     * true as far as it goes and wrong as an answer.
+     *
+     * The type is `ONAM` and that now matters. This fixture used the four
+     * letters `XXXX` as a stand-in for "some subrecord", and XXXX turns out to
+     * be a REAL tag with its own meaning — the oversized-subrecord marker —
+     * so the file now exercises that path instead of this guard. A neutral
+     * type keeps the test measuring what its name says.
+     */
     const overrun = Buffer.concat([
-      Buffer.from("XXXX", "latin1"),
+      Buffer.from("ONAM", "latin1"),
       (() => {
         const n = Buffer.alloc(2);
         n.writeUInt16LE(400);
@@ -347,5 +355,120 @@ describe("readPluginHeader", () => {
     } finally {
       await fsp.rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * A SUBRECORD TOO BIG FOR ITS OWN SIZE FIELD.
+ *
+ * A subrecord's length is a uint16, so anything over 65,535 bytes cannot state
+ * its own size. The format's answer is `XXXX`: a 4-byte subrecord whose data
+ * is the uint32 real length of the subrecord that follows, and that following
+ * subrecord writes 0 in its own size field.
+ *
+ * The walk did not know that, so it read the next subrecord as zero bytes long
+ * and then parsed its PAYLOAD as more subrecords — garbage types, and a few
+ * hundred kilobytes later a length that overruns the buffer. The overrun guard
+ * then refused the whole file, which was the right call for what it could see
+ * and the wrong answer for the file.
+ *
+ * Measured on this machine, over 2,486 real plugins: exactly two failed, and
+ * they were `unofficial skyrim special edition patch.esp` and `Unofficial
+ * Fallout 4 Patch.esp` — the most-installed plugin of each game and the
+ * cornerstone of both collections here. Their MAST entries all sit BEFORE the
+ * XXXX and had been read correctly; the refusal threw them away. Downstream:
+ * the masters gate counted them unreadable, the curator's requirements pass
+ * lost their masters, and the ESL flag tool could not read their header.
+ *
+ * Found by running the parser against every plugin on disk rather than by
+ * reading it again (GP-1). The fixtures below are synthetic so the regression
+ * is deterministic and does not need a 21 MB file.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("a header carrying an oversized subrecord (XXXX)", () => {
+  /** `XXXX` holding the real length of whatever comes next. */
+  const xxxx = (realSize: number): Buffer => {
+    const data = Buffer.alloc(4);
+    data.writeUInt32LE(realSize, 0);
+    return subrecord("XXXX", data);
+  };
+
+  /** A subrecord whose size field is 0 because an XXXX precedes it. */
+  const oversized = (type: string, bytes: number): Buffer => {
+    const head = Buffer.alloc(6);
+    head.write(type, 0, 4, "latin1");
+    head.writeUInt16LE(0, 4);
+    // Filled with bytes that would look like subrecord types if walked wrongly
+    // — which is exactly how the real failure produced its garbage.
+    return Buffer.concat([head, Buffer.alloc(bytes, 0x41)]);
+  };
+
+  it("reads the masters of a plugin whose ONAM needs XXXX", async () => {
+    // USSEP's real shape: HEDR, the masters, then XXXX + a ~100KB ONAM.
+    const big = 70_000;
+    const p = await write(
+      "ussep-shaped.esp",
+      tes4(
+        Buffer.concat([
+          hedr(),
+          mast("Skyrim.esm"),
+          mast("Update.esm"),
+          xxxx(big),
+          oversized("ONAM", big),
+        ]),
+      ),
+    );
+    expect(await readPluginMasters(p)).toEqual({
+      kind: "ok",
+      masters: ["Skyrim.esm", "Update.esm"],
+    });
+  });
+
+  it("keeps reading subrecords AFTER the oversized one", async () => {
+    // The length applies to exactly one subrecord. If it leaked to the next,
+    // or the walk resumed at the wrong offset, this master would be lost —
+    // and a lost master is the failure this whole file exists to prevent.
+    const big = 70_000;
+    const p = await write(
+      "master-after-onam.esp",
+      tes4(
+        Buffer.concat([
+          hedr(),
+          mast("Skyrim.esm"),
+          xxxx(big),
+          oversized("ONAM", big),
+          mast("Dawnguard.esm"),
+        ]),
+      ),
+    );
+    expect(await readPluginMasters(p)).toEqual({
+      kind: "ok",
+      masters: ["Skyrim.esm", "Dawnguard.esm"],
+    });
+  });
+
+  it("refuses an XXXX that does not hold a 4-byte length", async () => {
+    // Fail closed on a shape we do not understand: guessing at a length is
+    // how the walk desynchronised in the first place.
+    const p = await write(
+      "bad-xxxx.esp",
+      tes4(Buffer.concat([hedr(), mast("Skyrim.esm"), subrecord("XXXX", Buffer.alloc(2))])),
+    );
+    const read = await readPluginMasters(p);
+    expect(read.kind).toBe("not-a-plugin");
+    if (read.kind === "not-a-plugin") expect(read.why).toMatch(/XXXX/);
+  });
+
+  it("still refuses an oversized length that overruns the header", async () => {
+    // The guard that caught the original desync has to keep working: an XXXX
+    // claiming more than the header holds is corruption, not a big ONAM.
+    const p = await write(
+      "xxxx-overruns.esp",
+      tes4(Buffer.concat([hedr(), mast("Skyrim.esm"), xxxx(500_000), oversized("ONAM", 10)])),
+    );
+    const read = await readPluginMasters(p);
+    expect(read.kind).toBe("not-a-plugin");
+    if (read.kind === "not-a-plugin") expect(read.why).toMatch(/runs past/);
   });
 });
