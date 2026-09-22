@@ -710,7 +710,6 @@ export const COMPONENTS_CSS = `
    archives are huge, but the scanner gives immediate visual proof
    that the process isn't frozen. */
 .eh-hashing {
-  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--eh-sp-3);
@@ -719,7 +718,8 @@ export const COMPONENTS_CSS = `
   border: 1px solid var(--eh-border-default);
   border-radius: var(--eh-radius-lg);
   overflow: hidden;
-  animation: eh-card-pulse 3.2s ease-in-out infinite;
+  /* The sweeping scanner below already reports "working"; a card that
+     also breathes is the same message twice, forever. */
 }
 
 .eh-hashing__scanner {

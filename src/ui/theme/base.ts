@@ -92,45 +92,21 @@ export const BASE_CSS = `
 
 /* Decorative starfield: pure-CSS dots via radial-gradient repetition.
    No image asset, no JS; renders crisp at any DPI. */
+/*
+ * The starfield and the nebular wash are gone with the gradient ground
+ * (Ink, 2026-09-22). Both were ambient decoration on the layer furthest
+ * from the content, and one of them ANIMATED — a page whose background
+ * moves forever is a page that never settles. The identity now lives
+ * where it can be read: the mark, and the accretion-disk colours on the
+ * data itself.
+ */
 .eh-app::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: var(--eh-z-base);
-  pointer-events: none;
-  background-image:
-    radial-gradient(1px 1px at 12% 8%,  rgba(255,255,255,0.65), transparent 50%),
-    radial-gradient(1px 1px at 78% 12%, rgba(255,255,255,0.5),  transparent 50%),
-    radial-gradient(1px 1px at 22% 38%, rgba(255,255,255,0.35), transparent 50%),
-    radial-gradient(1px 1px at 53% 22%, rgba(255,255,255,0.55), transparent 50%),
-    radial-gradient(1px 1px at 88% 47%, rgba(255,255,255,0.4),  transparent 50%),
-    radial-gradient(1px 1px at 8%  72%, rgba(255,255,255,0.5),  transparent 50%),
-    radial-gradient(1px 1px at 41% 81%, rgba(255,255,255,0.6),  transparent 50%),
-    radial-gradient(1px 1px at 68% 67%, rgba(255,255,255,0.35), transparent 50%),
-    radial-gradient(1.4px 1.4px at 92% 88%, rgba(255,255,255,0.6), transparent 50%),
-    radial-gradient(1.4px 1.4px at 4% 52%,  rgba(255,255,255,0.5), transparent 50%);
-  animation: eh-twinkle var(--eh-dur-warp) ease-in-out infinite;
-  opacity: 0.7;
+  content: none;
 }
 
 /* Faint nebular wash bottom-left for depth. Not animated. */
 .eh-app::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: var(--eh-z-base);
-  pointer-events: none;
-  background:
-    radial-gradient(
-      circle at 15% 90%,
-      rgba(95, 44, 165, 0.15) 0%,
-      transparent 35%
-    ),
-    radial-gradient(
-      circle at 90% 10%,
-      rgba(76, 201, 240, 0.08) 0%,
-      transparent 40%
-    );
+  content: none;
 }
 
 .eh-app__inner {

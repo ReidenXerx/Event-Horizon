@@ -32,12 +32,12 @@
 export const TOKENS_CSS = `
 :root {
   /* ── Background tiers ─────────────────────────────────────────── */
-  --eh-bg-deep: #07060d;
-  --eh-bg-base: #0c0a18;
-  --eh-bg-raised: #15122b;
-  --eh-bg-elevated: #1f1a3d;
-  --eh-bg-overlay: rgba(7, 6, 13, 0.85);
-  --eh-bg-glass: rgba(21, 18, 43, 0.55);
+  --eh-bg-deep: #08090b;
+  --eh-bg-base: #0c0e11;
+  --eh-bg-raised: #14171c;
+  --eh-bg-elevated: #1b1f26;
+  --eh-bg-overlay: rgba(8, 9, 11, 0.88);
+  --eh-bg-glass: rgba(20, 23, 28, 0.66);
 
   /* ── Accretion disk gradient ──────────────────────────────────── */
   --eh-disk-hot: #ffb15c;
@@ -66,13 +66,14 @@ export const TOKENS_CSS = `
       var(--eh-disk-violet) 80%,
       transparent 100%
     );
-  --eh-gradient-page:
-    radial-gradient(
-      ellipse at top,
-      #1a1338 0%,
-      var(--eh-bg-base) 45%,
-      var(--eh-bg-deep) 100%
-    );
+  /*
+   * Flat, not a gradient. The nebula competed with the content for
+   * attention: on the install preview it sat behind an orange warning
+   * callout, which is the one thing on that screen that has to be seen
+   * first. A neutral ground also makes the accretion-disk colours read
+   * harder, so they can be spent on data and actions alone.
+   */
+  --eh-gradient-page: var(--eh-bg-base);
 
   /* ── Lensing accent (cool, electric) ──────────────────────────── */
   --eh-cyan: #4cc9f0;
@@ -94,11 +95,11 @@ export const TOKENS_CSS = `
   --eh-void-edge: rgba(0, 0, 0, 0.95);
 
   /* ── Text ─────────────────────────────────────────────────────── */
-  --eh-text-primary: #f5f7ff;
-  --eh-text-secondary: #b8b6cf;
-  --eh-text-muted: #7a7898;
-  --eh-text-disabled: #4a4866;
-  --eh-text-inverse: #0c0a18;
+  --eh-text-primary: #eef1f5;
+  --eh-text-secondary: #a7adb8;
+  --eh-text-muted: #6f7681;
+  --eh-text-disabled: #4b515a;
+  --eh-text-inverse: #0c0e11;
 
   /* ── Semantic ─────────────────────────────────────────────────── */
   --eh-success: #3ddc84;
@@ -111,36 +112,44 @@ export const TOKENS_CSS = `
   --eh-info-glow: rgba(76, 201, 240, 0.4);
 
   /* ── Borders ──────────────────────────────────────────────────── */
-  --eh-border-subtle: rgba(255, 255, 255, 0.06);
-  --eh-border-default: rgba(255, 255, 255, 0.12);
-  --eh-border-strong: rgba(255, 255, 255, 0.22);
+  --eh-border-subtle: rgba(255, 255, 255, 0.05);
+  --eh-border-default: rgba(255, 255, 255, 0.09);
+  --eh-border-strong: rgba(255, 255, 255, 0.16);
   --eh-border-disk: rgba(240, 56, 107, 0.4);
 
   /* ── Glows / shadows ──────────────────────────────────────────── */
-  --eh-glow-disk: 0 0 24px rgba(255, 107, 61, 0.45);
-  --eh-glow-cyan: 0 0 16px rgba(76, 201, 240, 0.4);
-  --eh-glow-violet: 0 0 32px rgba(95, 44, 165, 0.4);
-  --eh-shadow-card: 0 8px 32px rgba(0, 0, 0, 0.45);
-  --eh-shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.7);
-  --eh-shadow-button: 0 2px 8px rgba(0, 0, 0, 0.35);
+  /*
+   * Kept as tokens so a component that WANTS a glow still has one to
+   * ask for — the emphasis ring on the health gauge, for instance.
+   * They are simply no longer the default dressing on every surface:
+   * a border, a fill and a shadow each say "separate object", and
+   * stamping all three on every block flattens the hierarchy instead
+   * of building one.
+   */
+  --eh-glow-disk: 0 0 18px rgba(255, 107, 61, 0.28);
+  --eh-glow-cyan: 0 0 14px rgba(76, 201, 240, 0.26);
+  --eh-glow-violet: 0 0 22px rgba(95, 44, 165, 0.26);
+  --eh-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --eh-shadow-modal: 0 20px 48px rgba(0, 0, 0, 0.6);
+  --eh-shadow-button: none;
 
   /* ── Spacing scale (4px base, perceptual ramp) ────────────────── */
   --eh-sp-1: 4px;
   --eh-sp-2: 8px;
   --eh-sp-3: 12px;
   --eh-sp-4: 16px;
-  --eh-sp-5: 24px;
-  --eh-sp-6: 32px;
-  --eh-sp-7: 48px;
+  --eh-sp-5: 18px;
+  --eh-sp-6: 24px;
+  --eh-sp-7: 32px;
   --eh-sp-8: 64px;
   --eh-sp-9: 96px;
 
   /* ── Radius ───────────────────────────────────────────────────── */
   --eh-radius-xs: 4px;
   --eh-radius-sm: 8px;
-  --eh-radius-md: 12px;
-  --eh-radius-lg: 16px;
-  --eh-radius-xl: 24px;
+  --eh-radius-md: 10px;
+  --eh-radius-lg: 12px;
+  --eh-radius-xl: 18px;
   --eh-radius-pill: 9999px;
 
   /* ── Typography ───────────────────────────────────────────────── */
@@ -157,9 +166,9 @@ export const TOKENS_CSS = `
   --eh-text-lg: 18px;
   --eh-text-xl: 22px;
   --eh-text-2xl: 28px;
-  --eh-text-3xl: 36px;
-  --eh-text-4xl: 48px;
-  --eh-text-hero: 64px;
+  --eh-text-3xl: 30px;
+  --eh-text-4xl: 38px;
+  --eh-text-hero: 44px;
 
   --eh-leading-tight: 1.2;
   --eh-leading-snug: 1.35;
