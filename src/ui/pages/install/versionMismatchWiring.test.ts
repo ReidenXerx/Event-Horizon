@@ -6,6 +6,9 @@
  * renders and then gets lost on the way is refused by the driver — which is
  * safe, and from the player's side indistinguishable from a broken button.
  */
+import * as os from "os";
+import * as path from "path";
+
 import { describe, expect, it } from "vitest";
 
 import { computeVerdict } from "./steps";
@@ -24,14 +27,17 @@ const versionMismatch = {
 
 const plan = (withMismatch: boolean): InstallPlan =>
   ({
-    manifest: { mods: [] },
+    manifest: { package: { id: "pkg-version-mismatch", name: "Meridia", version: "1.0.23" }, mods: [] },
     modResolutions: [],
     orphanedMods: [],
     compatibility: { errors: [], warnings: [], ...(withMismatch ? { versionMismatch } : {}) },
     summary: { canProceed: true, needsUserConfirmation: 0, orphans: 0 },
   }) as unknown as InstallPlan;
 
-const bundle = (withMismatch = true): never => ({ plan: plan(withMismatch) }) as never;
+// The session pre-fills remembered local files in the background when decisions open, and
+// reads the package id and app-data folder to do it. A folder with no memory in it answers "none".
+const bundle = (withMismatch = true): never =>
+  ({ plan: plan(withMismatch), appDataPath: path.join(os.tmpdir(), "eh-no-such-appdata") }) as never;
 
 describe("the preview verdict on another game version", () => {
   it("holds Continue shut until the box is ticked", () => {
