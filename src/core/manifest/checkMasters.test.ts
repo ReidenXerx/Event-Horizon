@@ -46,6 +46,86 @@ describe("the RaceCompatibility case, exactly as it shipped", () => {
     ]);
   });
 
+  /**
+   * ─── AND THE HALF THE FIXTURE ABOVE CANNOT REACH ──────────────────────
+   * That fixture leaves the master out of the plugin list entirely, which is
+   * the case that cannot fail (GP-4) — and NOT what the header describes. The
+   * quoted scar is "it worked on the curator's machine because they had the
+   * master from outside the collection's scope", i.e. the master IS in their
+   * plugins.txt, enabled, and no mod in the collection ships it.
+   *
+   * `available` was built from that plugin list, so the gate found it and said
+   * nothing. The caller passes the curator's WHOLE PROFILE, so this was the
+   * live shape, not a corner of it.
+   */
+  it("catches a master the curator has enabled but the package does not ship", () => {
+    const plugins = [
+      p("Skyrim.esm", []),
+      // Present and enabled in the curator's profile — and shipped by nothing.
+      p("RaceCompatibility.esm", ["Skyrim.esm"]),
+      p("MEI - Patch - RaceCompatibility.esp", [
+        "Skyrim.esm",
+        "RaceCompatibility.esm",
+      ]),
+    ];
+
+    // What the gate did before it was told what the package provides.
+    expect(checkMasters(plugins, "skyrimse").missing).toHaveLength(0);
+
+    // The package ships the patch, not the master.
+    const provided = new Set(["skyrim.esm", "mei - patch - racecompatibility.esp"]);
+    const check = checkMasters(plugins, "skyrimse", provided);
+    expect(check.missing).toEqual([
+      {
+        plugin: "MEI - Patch - RaceCompatibility.esp",
+        master: "RaceCompatibility.esm",
+      },
+    ]);
+  });
+
+  it("still says nothing when the package really does ship the master", () => {
+    // The tightening must not turn every collection into a refusal.
+    const provided = new Set([
+      "skyrim.esm",
+      "racecompatibility.esm",
+      "mei - patch - racecompatibility.esp",
+    ]);
+    const check = checkMasters(
+      [
+        p("Skyrim.esm", []),
+        p("RaceCompatibility.esm", ["Skyrim.esm"]),
+        p("MEI - Patch - RaceCompatibility.esp", [
+          "Skyrim.esm",
+          "RaceCompatibility.esm",
+        ]),
+      ],
+      "skyrimse",
+      provided,
+    );
+    expect(check.missing).toHaveLength(0);
+  });
+
+  it("does not turn base-game masters into refusals when a provided set is given", () => {
+    /**
+     * A package never ships Skyrim.esm, so intersecting with "what we ship"
+     * would make every plugin in every collection missing its base masters —
+     * the way to get this tightening catastrophically wrong. `checkMasters`
+     * classifies base-game and Creation Club masters BEFORE it asks whether
+     * the collection has them, which is what keeps that from happening.
+     *
+     * Measured against the real thing rather than argued: 1,586 shipped
+     * Skyrim plugins and 785 Fallout 4 ones, checked against their real Data
+     * folders, produced zero missing masters under this rule.
+     */
+    const check = checkMasters(
+      [p("MyPatch.esp", ["Skyrim.esm", "Dawnguard.esm", "ccBGSSSE001-Fish.esm"])],
+      "skyrimse",
+      new Set(["mypatch.esp"]),
+    );
+    expect(check.missing).toHaveLength(0);
+    expect(check.userOwned.map((m) => m.master)).toEqual(["ccBGSSSE001-Fish.esm"]);
+  });
+
   it("groups the message by MASTER, because one absence breaks several plugins", () => {
     // Six lines that all say "add RaceCompatibility.esm" read as six problems.
     const check = checkMasters(

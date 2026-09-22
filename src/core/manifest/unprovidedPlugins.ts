@@ -38,19 +38,36 @@ const PLUGIN = /\.(esp|esm|esl)$/i;
  * The game's own masters and Creation Club files are excluded: they are
  * supposed to come from the game, not from the collection.
  */
+/**
+ * Every plugin filename the package ships, lowercased.
+ *
+ * Shared with the masters gate, which runs BEFORE the manifest exists and so
+ * takes the mods directly. One derivation, or the two checks disagree about
+ * the same word — and "provided" is the word the whole question turns on.
+ */
+export function pluginsProvidedBy(
+  mods: readonly {
+    state?: { stagingFiles?: readonly { path: string }[] };
+    stagingFiles?: readonly { path: string }[];
+  }[],
+): Set<string> {
+  const provided = new Set<string>();
+  for (const mod of mods) {
+    for (const file of mod.state?.stagingFiles ?? mod.stagingFiles ?? []) {
+      const name = basename(file.path).toLowerCase();
+      if (PLUGIN.test(name)) provided.add(name);
+    }
+  }
+  return provided;
+}
+
 export function unprovidedPlugins(
   manifest: Pick<EhcollManifest, "game" | "mods" | "plugins">,
 ): string[] {
   const order = manifest.plugins?.order ?? [];
   if (order.length === 0) return [];
 
-  const provided = new Set<string>();
-  for (const mod of manifest.mods) {
-    for (const file of mod.state.stagingFiles ?? []) {
-      const name = basename(file.path).toLowerCase();
-      if (PLUGIN.test(name)) provided.add(name);
-    }
-  }
+  const provided = pluginsProvidedBy(manifest.mods);
 
   const out: string[] = [];
   for (const entry of order) {

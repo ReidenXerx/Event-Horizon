@@ -38,6 +38,7 @@ import * as path from "path";
 import { checkMasters, describeMissingMasters, describeUserOwnedMasters } from "./checkMasters";
 import { parsePluginsTxt } from "../comparePlugins";
 import { readPluginMasters } from "./pluginMasters";
+import { pluginsProvidedBy } from "./unprovidedPlugins";
 import { ehLog } from "../logging/ehLog";
 
 /** What the gate decided. */
@@ -72,6 +73,27 @@ export async function gateOnMasters(args: {
   gameId: string;
   gameDir: string | undefined;
   pluginsTxtContent: string | undefined;
+  /**
+   * The mods this build is shipping, so the gate can tell "the collection has
+   * this master" from "the CURATOR has this master".
+   *
+   * ─── THE GATE COULD NOT SEE ITS OWN QUESTION ─────────────────────────
+   * It took no mods at all, so `checkMasters` built "available" from
+   * plugins.txt — the curator's entire profile. A master deployed and enabled
+   * on their machine satisfied the gate whether or not any mod in the
+   * collection shipped it, which is precisely the case the gate exists for
+   * and the one its own closing sentence describes: "It most likely works on
+   * your machine because you have the master installed outside this
+   * collection."
+   *
+   * Optional only so the signature stays compatible; a caller that omits it
+   * gets the weaker question, and the result says so through `checkedNothing`
+   * only for the total case. Every build path passes it.
+   */
+  mods?: readonly {
+    state?: { stagingFiles?: readonly { path: string }[] };
+    stagingFiles?: readonly { path: string }[];
+  }[];
   /** Called once per plugin so a long walk stays cancellable. Optional. */
   checkAbort?: () => void;
 }): Promise<MasterGateResult> {
@@ -106,7 +128,11 @@ export async function gateOnMasters(args: {
     });
   }
 
-  const masterCheck = checkMasters(pluginsWithMasters, gameId);
+  const masterCheck = checkMasters(
+    pluginsWithMasters,
+    gameId,
+    args.mods === undefined ? undefined : pluginsProvidedBy(args.mods),
+  );
   const checkedNothing = masterCheck.checked === 0;
 
   ehLog(

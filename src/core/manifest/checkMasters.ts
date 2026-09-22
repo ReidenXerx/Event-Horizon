@@ -77,6 +77,12 @@ export type MasterCheck = {
 export function checkMasters(
   plugins: readonly PluginWithMasters[],
   gameId: string,
+  /**
+   * Plugin filenames the PACKAGE ships, lowercased — from every mod's
+   * `stagingFiles`. See the note below for why this is not optional in
+   * spirit, only in signature.
+   */
+  providedByPackage?: ReadonlySet<string>,
 ): MasterCheck {
   const enabled = plugins.filter((p) => p.enabled);
   /**
@@ -84,9 +90,31 @@ export function checkMasters(
    *
    * A master that ships but is switched off is exactly as absent as one that
    * does not ship at all — which is precisely what Vortex's dialog says.
+   *
+   * ─── AND "IN THE COLLECTION'S PLUGIN LIST" IS NOT WHAT IT WAS READING ──
+   * The caller passes the CURATOR'S WHOLE PROFILE — `parsePluginsTxt` over
+   * plugins.txt — so a master that is deployed and enabled on their machine
+   * satisfied this check whether or not any mod in the collection ships it.
+   * The gate's whole purpose is to catch "it works here because you have the
+   * master installed outside this collection", and that is the one case it
+   * could not see. Its own closing sentence already says so.
+   *
+   * This is not hypothetical: Meridia 1.0.23 ships a load order naming
+   * `synthesis.esp`, `dynamiccontainerloot.esp` and
+   * `meridia_addn_index_fixes.esp`, provided by zero mods — the curator's own
+   * output, distributed by hand. Any shipped plugin mastered on one of those
+   * is a game that refuses to load, and this gate reported 0 missing.
+   *
+   * So the intersection: enabled in the order AND actually shipped. The
+   * parameter is optional only so the older caller keeps compiling; every
+   * caller that can answer must, and a caller that cannot is answering the
+   * weaker question knowingly.
    */
+  const enabledNames = enabled.map((p) => p.name.trim().toLowerCase());
   const available = new Set(
-    enabled.map((p) => p.name.trim().toLowerCase()),
+    providedByPackage === undefined
+      ? enabledNames
+      : enabledNames.filter((n) => providedByPackage.has(n)),
   );
 
   const missing: MasterProblem[] = [];

@@ -2384,6 +2384,23 @@ export async function runBuildPipeline(
     gameId,
     gameDir: flagGameDir,
     pluginsTxtContent,
+    /**
+     * ─── WHAT THE COLLECTION SHIPS, NOT WHAT THE CURATOR HAS ────────────
+     * Without this the gate built "available" from plugins.txt — the
+     * curator's entire profile — so the one case it exists to catch was the
+     * one it could not see. Its own refusal text says as much: "It most
+     * likely works on your machine because you have the master installed
+     * outside this collection."
+     *
+     * Measured before wiring it, on both shipping collections and their real
+     * Data folders: Meridia 1.0.17, 1,586 shipped plugins checked, 0 missing;
+     * Ivy 1.0.26, 785 checked, 0 missing. So this tightens the gate without
+     * blocking a build that works today — and Meridia's three unprovided
+     * output plugins (synthesis.esp, dynamiccontainerloot.esp,
+     * meridia_addn_index_fixes.esp) are nobody's master, which is the only
+     * reason that package loads.
+     */
+    mods,
     checkAbort,
   });
   if (masterGate.refusal !== undefined) {
