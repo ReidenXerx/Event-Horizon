@@ -558,3 +558,31 @@ describe("the dashboard's script-extender counts", () => {
     expect(out.nativePluginSummary).toBeUndefined();
   });
 });
+
+describe("which game the plugin verdict describes", () => {
+  it("keeps it, so a game update can invalidate the counts", () => {
+    // Without this the verdict cannot be invalidated: a Fallout 4 player who
+    // takes the next-gen update changes which extender generation reads these
+    // plugins, and the counts would keep asserting the old answer forever.
+    const nativePluginSummary = {
+      loads: 55,
+      unverified: 40,
+      cannotLoad: 1,
+      unknown: 0,
+      judgedFor: { version: "1.10.163.0", store: "gog" },
+    };
+    const out = throughDisk({ ...base(), nativePluginSummary } as InstallReceipt);
+    expect(out.nativePluginSummary?.judgedFor).toEqual({ version: "1.10.163.0", store: "gog" });
+  });
+
+  it("keeps the counts when the game it was judged for was not recorded", () => {
+    // Receipts written before the field: the counts are still true of the
+    // install that wrote them, so they are kept and simply not claimed current.
+    const out = throughDisk({
+      ...base(),
+      nativePluginSummary: { loads: 1, unverified: 0, cannotLoad: 0, unknown: 0 },
+    } as InstallReceipt);
+    expect(out.nativePluginSummary?.loads).toBe(1);
+    expect(out.nativePluginSummary?.judgedFor).toBeUndefined();
+  });
+});

@@ -34,6 +34,7 @@
 
 import type {
   EhcollManifest,
+  EhcollNativePlugin,
   EhcollPluginEntry,
   ModInstallSpec,
   ModInstallState,
@@ -159,6 +160,28 @@ export const PLUGIN_ENTRY_FATES: {
   name: { kind: "applied", by: "core/installer/applyPluginOrder.ts" },
   enabled: { kind: "applied", by: "core/installer/applyPluginOrder.ts" },
   light: { kind: "applied", by: "core/installer/applyPluginLightFlags.ts" },
+};
+
+/**
+ * One recorded script-extender plugin.
+ *
+ * A nested shipped type needs its own table for the same reason the top
+ * level does: `MOD_INSTALL_STATE_FATES.nativePlugins` only asserts that
+ * SOMETHING reads the array, and says nothing about its fields. A seventh
+ * field added here — the obvious next one is the plugin's declared `name`,
+ * which the reader already produces and the capture drops — would be
+ * written into every package and destroyed by the parser, with no compile
+ * error and no failing test. That exact shape has shipped three times.
+ */
+export const NATIVE_PLUGIN_FATES: {
+  readonly [K in keyof Required<EhcollNativePlugin>]: FieldFate;
+} = {
+  path: { kind: "applied", by: "core/environment/nativePluginCompat.ts" },
+  extender: { kind: "applied", by: "core/environment/nativePluginCompat.ts" },
+  kind: { kind: "applied", by: "core/environment/nativePluginCompat.ts" },
+  versionIndependent: { kind: "applied", by: "core/environment/nativePluginCompat.ts" },
+  runtimes: { kind: "applied", by: "core/environment/nativePluginCompat.ts" },
+  hasQuery: { kind: "applied", by: "core/environment/nativePluginCompat.ts" },
 };
 
 /**

@@ -22,6 +22,7 @@ import {
   MANIFEST_FATES,
   MOD_INSTALL_STATE_FATES,
   PLUGIN_ENTRY_FATES,
+  NATIVE_PLUGIN_FATES,
   type FieldFate,
 } from "./manifestFieldFates";
 
@@ -34,6 +35,7 @@ const ALL = [
   ...entries(MOD_INSTALL_STATE_FATES),
   ...entries(MANIFEST_FATES),
   ...entries(PLUGIN_ENTRY_FATES),
+  ...entries(NATIVE_PLUGIN_FATES),
 ];
 
 /** Files that act on a mod's install state on the user's machine. */

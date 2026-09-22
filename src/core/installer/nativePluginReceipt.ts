@@ -27,6 +27,8 @@ export interface NativePluginSummary {
   unverified: number;
   cannotLoad: number;
   unknown: number;
+  /** The game the counts describe — see the receipt type. */
+  judgedFor?: { version: string; store?: string };
 }
 
 export function nativePluginSummaryFor(args: {
@@ -54,6 +56,10 @@ export function nativePluginSummaryFor(args: {
     target: { runtime, api },
   });
   return {
+    judgedFor: {
+      version: installedVersion,
+      ...(args.store !== undefined ? { store: args.store } : {}),
+    },
     loads: judged.loads,
     unverified: judged.unverified,
     cannotLoad: judged.cannotLoad.length,

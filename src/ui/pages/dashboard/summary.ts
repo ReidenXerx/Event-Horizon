@@ -85,7 +85,15 @@ export interface CollectionFigures {
   rules: number | undefined;
   userlist: number | undefined;
   /** Script-extender plugins, as judged for THIS player at install time. */
-  nativePlugins: { loads: number; unverified: number; cannotLoad: number; unknown: number } | undefined;
+  nativePlugins:
+    | {
+        loads: number;
+        unverified: number;
+        cannotLoad: number;
+        unknown: number;
+        judgedFor?: { version: string; store?: string };
+      }
+    | undefined;
   /** Set when the install ran on a game version other than the collection's. */
   versionMismatch: { required: string; installed: string } | undefined;
 }

@@ -123,6 +123,18 @@ export type InstallReceipt = {
     unverified: number;
     cannotLoad: number;
     unknown: number;
+    /**
+     * The game these counts were judged against.
+     *
+     * Without it the verdict cannot be invalidated: a Fallout 4 player
+     * installs on 1.10.163, Steam updates them to the next-gen 1.10.984 —
+     * which flips the script extender from asking each plugin to reading
+     * the declared block — and the dashboard keeps asserting the old counts
+     * forever, because nothing can tell that they describe a game that is
+     * no longer installed. Absent on receipts written before this; the
+     * reader then shows the counts without claiming they are current.
+     */
+    judgedFor?: { version: string; store?: string };
   };
   /**
    * Per-mod install records. One entry per mod the driver put on

@@ -119,7 +119,20 @@ const n = (v: number): string => v.toLocaleString("en-US");
 const nativeTotal = (p: NonNullable<CollectionFigures["nativePlugins"]>): number =>
   p.loads + p.unverified + p.cannotLoad + p.unknown;
 
-const describeNativePlugins = (p: NonNullable<CollectionFigures["nativePlugins"]>): string => {
+const describeNativePlugins = (
+  p: NonNullable<CollectionFigures["nativePlugins"]>,
+  gameVersion: string | undefined,
+): string => {
+  /*
+   * A verdict about a game that is no longer installed is not a verdict
+   * about this one. Said plainly rather than silently kept: a Fallout 4
+   * player who took the next-gen update changed which script-extender
+   * generation reads these plugins.
+   */
+  const judged = p.judgedFor?.version;
+  if (judged !== undefined && gameVersion !== undefined && judged !== gameVersion) {
+    return `judged for ${judged}, not your ${gameVersion}`;
+  }
   if (p.cannotLoad > 0) return `${n(p.cannotLoad)} will not load`;
   const unsure = p.unverified + p.unknown;
   if (unsure > 0) return `${n(unsure)} could not be checked`;
@@ -218,7 +231,7 @@ function Hero(props: {
             <Stat
               label="SKSE plugins"
               value={`${n(f.nativePlugins.loads)} / ${n(nativeTotal(f.nativePlugins))}`}
-              sub={describeNativePlugins(f.nativePlugins)}
+              sub={describeNativePlugins(f.nativePlugins, hero.gameVersion)}
             />
           )}
           <Stat

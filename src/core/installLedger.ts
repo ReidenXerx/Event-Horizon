@@ -370,7 +370,23 @@ export function parseReceipt(raw: string): InstallReceipt {
     const cannotLoad = num(nps.cannotLoad), unknown = num(nps.unknown);
     // All four or none: a partial count reads as a complete one.
     if (loads !== undefined && unverified !== undefined && cannotLoad !== undefined && unknown !== undefined) {
-      out.nativePluginSummary = { loads, unverified, cannotLoad, unknown };
+      const judged = nps.judgedFor as Record<string, unknown> | undefined;
+      out.nativePluginSummary = {
+        loads,
+        unverified,
+        cannotLoad,
+        unknown,
+        // Optional, and validated: a malformed value is dropped rather than
+        // carried, because its only job is to say which game was judged.
+        ...(judged !== null && typeof judged === "object" && typeof judged.version === "string"
+          ? {
+              judgedFor: {
+                version: judged.version,
+                ...(typeof judged.store === "string" ? { store: judged.store } : {}),
+              },
+            }
+          : {}),
+      };
     }
   }
   // Informational: a malformed value is dropped, never a refused receipt.
