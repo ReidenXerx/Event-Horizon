@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-runtime
-description: "Skill for the Runtime area of Event-Horizon. 61 symbols across 22 files."
+description: "Skill for the Runtime area of Event-Horizon. 67 symbols across 24 files."
 ---
 
 # Runtime
 
-61 symbols | 22 files | Cohesion: 85%
+67 symbols | 24 files | Cohesion: 84%
 
 ## When to Use
 
@@ -17,7 +17,7 @@ description: "Skill for the Runtime area of Event-Horizon. 61 symbols across 22 
 
 | File | Symbols |
 |------|---------|
-| `src/ui/runtime/collectionUpdates.ts` | openInstall, CollectionUpdateStore, checkCollectionUpdates, getCollectionUpdateStore, notifyUpdate (+2) |
+| `src/ui/runtime/collectionUpdates.ts` | CollectionUpdateStore, checkCollectionUpdates, getCollectionUpdateStore, notifyUpdate, runOneCheck (+6) |
 | `src/ui/pages/install/fetchLink.ts` | fetchFromNexus, gameMismatchMessage, readKnownGames, throwIfAborted, vortexDownloadPath (+1) |
 | `src/ui/runtime/ensurePackage.test.ts` | download, ensure, locate, download, store (+1) |
 | `src/core/runtime/detectRuntimes.ts` | detectRuntimes, probeDirectX9, probeDotNet48, probeDotNetDesktop8, probeVcRedist (+1) |
@@ -53,15 +53,15 @@ Start here when exploring this area:
 | `nexusExtOf` | Function | `src/ui/pages/curator/requirementsIo.ts` | 177 |
 | `fn` | Function | `src/ui/pages/curator/requirementsIo.ts` | 179 |
 | `nexus` | Function | `src/ui/pages/curator/useCuratorActions.ts` | 225 |
-| `waitForVortexDownload` | Function | `src/ui/pages/install/fetchLink.ts` | 364 |
+| `waitForVortexDownload` | Function | `src/ui/pages/install/fetchLink.ts` | 383 |
 | `ensureCollectionPackage` | Function | `src/ui/runtime/ensurePackage.ts` | 96 |
-| `install` | Function | `src/core/installer/collectionIntercept.ts` | 137 |
-| `getRouteRequest` | Function | `src/ui/runtime/routeRequest.ts` | 72 |
+| `findCollectionUpdates` | Function | `src/core/nexus/collectionUpdates.ts` | 81 |
+| `isLoggedInToNexus` | Function | `src/core/nexus/collectionUpload.ts` | 79 |
 | `checkCollectionUpdates` | Function | `src/ui/runtime/collectionUpdates.ts` | 142 |
 | `getCollectionUpdateStore` | Function | `src/ui/runtime/collectionUpdates.ts` | 100 |
-| `detectRuntimes` | Function | `src/core/runtime/detectRuntimes.ts` | 241 |
-| `parseScriptExtenderLog` | Function | `src/core/runtime/scriptExtenderLog.ts` | 76 |
-| `close` | Function | `src/core/runtime/scriptExtenderLog.ts` | 82 |
+| `watchCollectionUpdates` | Function | `src/ui/runtime/collectionUpdates.ts` | 475 |
+| `later` | Function | `src/ui/runtime/collectionUpdates.ts` | 477 |
+| `install` | Function | `src/core/installer/collectionIntercept.ts` | 137 |
 
 ## Execution Flows
 

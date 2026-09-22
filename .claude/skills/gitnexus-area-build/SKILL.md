@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-build
-description: "Skill for the Build area of Event-Horizon. 505 symbols across 110 files."
+description: "Skill for the Build area of Event-Horizon. 513 symbols across 112 files."
 ---
 
 # Build
 
-505 symbols | 110 files | Cohesion: 84%
+513 symbols | 112 files | Cohesion: 84%
 
 ## When to Use
 
@@ -21,9 +21,9 @@ description: "Skill for the Build area of Event-Horizon. 505 symbols across 110 
 | `src/ui/pages/build/buildSession.ts` | cancelLoading, cancelRecovering, getState, subscribe, buildProgress (+30) |
 | `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, checkPickedFile, handlePickFile, DecisionsStep (+22) |
 | `src/ui/pages/build/BuildDashboard.tsx` | BuildDashboard, handleDismissBuilt, handleOpenBuilt, handleOpenDraft, DashboardHeader (+20) |
-| `src/ui/pages/build/engine.ts` | validateCuratorInput, describeMissingArchives, downloadedFromNexus, findUnidentifiedMods, isBundled (+17) |
+| `src/ui/pages/build/engine.ts` | validateCuratorInput, describeMissingArchives, downloadedFromNexus, findUnidentifiedMods, isBundled (+18) |
 | `src/ui/pages/build/buildSessionRegistry.ts` | BuildSessionRegistry, getBuildSessionRegistry, get, notifyStateChanged, emit (+13) |
-| `src/ui/pages/build/NexusCollectionUpload.tsx` | Body, Choose, NexusCollectionUpload, close, Reasons (+12) |
+| `src/ui/pages/build/NexusCollectionUpload.tsx` | Body, Choose, Footer, NexusCollectionUpload, NexusUploadDialog (+12) |
 | `src/ui/pages/build/buildDiff.test.ts` | findPackages, findPackages, findPackages, findPackages, findPackages (+9) |
 | `src/ui/pages/HomePage.tsx` | CuratorPanel, Dashboard, DashboardBody, ErrorPanel, FooterRow (+6) |
 | `src/core/build/nexusAvailability.ts` | checkNexusAvailability, isAbort, categoryOf, classifyFile, currentMainFile (+6) |

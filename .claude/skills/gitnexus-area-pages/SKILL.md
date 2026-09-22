@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-pages
-description: "Skill for the Pages area of Event-Horizon. 27 symbols across 11 files."
+description: "Skill for the Pages area of Event-Horizon. 31 symbols across 11 files."
 ---
 
 # Pages
 
-27 symbols | 11 files | Cohesion: 72%
+31 symbols | 11 files | Cohesion: 74%
 
 ## When to Use
 
@@ -19,10 +19,10 @@ description: "Skill for the Pages area of Event-Horizon. 27 symbols across 11 fi
 |------|---------|
 | `src/ui/pages/ModDiffsPage.tsx` | ModDiffsPage, MatchedModList, ModEntryList, ReportView, SnapshotMeta (+6) |
 | `src/ui/pages/PluginDiffsPage.tsx` | PluginDiffsPage, EnabledMismatchList, PluginEntryList, PluginNameCell, PositionChangedList (+1) |
+| `src/ui/pages/CollectionsPage.tsx` | CollectionsPage, canEndorseHere, onFeedbackAnswer, onFeedbackDismiss, recordFeedback |
 | `src/ui/pages/AboutPage.tsx` | handleClick, openExternal |
 | `src/ui/EventHorizonMainPage.tsx` | RouteOutlet |
 | `src/ui/errors/ErrorContext.tsx` | useErrorReporterFormatted |
-| `src/ui/pages/CollectionsPage.tsx` | CollectionsPage |
 | `src/ui/pages/HomePage.tsx` | HomePage |
 | `src/ui/pages/build/BuildPage.tsx` | BuildPage |
 | `src/ui/pages/install/InstallPage.tsx` | InstallPage |
@@ -33,7 +33,7 @@ description: "Skill for the Pages area of Event-Horizon. 27 symbols across 11 fi
 Start here when exploring this area:
 
 - **`useErrorReporterFormatted`** (Function) — `src/ui/errors/ErrorContext.tsx:65`
-- **`CollectionsPage`** (Function) — `src/ui/pages/CollectionsPage.tsx:117`
+- **`CollectionsPage`** (Function) — `src/ui/pages/CollectionsPage.tsx:118`
 - **`HomePage`** (Function) — `src/ui/pages/HomePage.tsx:55`
 - **`ModDiffsPage`** (Function) — `src/ui/pages/ModDiffsPage.tsx:67`
 - **`PluginDiffsPage`** (Function) — `src/ui/pages/PluginDiffsPage.tsx:53`
@@ -43,7 +43,7 @@ Start here when exploring this area:
 | Symbol | Type | File | Line |
 |--------|------|------|------|
 | `useErrorReporterFormatted` | Function | `src/ui/errors/ErrorContext.tsx` | 65 |
-| `CollectionsPage` | Function | `src/ui/pages/CollectionsPage.tsx` | 117 |
+| `CollectionsPage` | Function | `src/ui/pages/CollectionsPage.tsx` | 118 |
 | `HomePage` | Function | `src/ui/pages/HomePage.tsx` | 55 |
 | `ModDiffsPage` | Function | `src/ui/pages/ModDiffsPage.tsx` | 67 |
 | `PluginDiffsPage` | Function | `src/ui/pages/PluginDiffsPage.tsx` | 53 |

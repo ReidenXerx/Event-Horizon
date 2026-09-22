@@ -5,7 +5,7 @@ description: "Skill for the Components area of Event-Horizon. 35 symbols across 
 
 # Components
 
-35 symbols | 8 files | Cohesion: 85%
+35 symbols | 8 files | Cohesion: 84%
 
 ## When to Use
 
@@ -71,10 +71,10 @@ Start here when exploring this area:
 | `NexusUploadDialog → Opn` | cross_community | 5 |
 | `NexusUploadDialog → Opn` | cross_community | 5 |
 | `NexusUploadDialog → Opn` | cross_community | 5 |
+| `EventHorizonMainPage → Noop` | cross_community | 4 |
 | `EventHorizonMainPage → ToastCard` | cross_community | 4 |
 | `PresentationCard → OpenExternal` | cross_community | 4 |
 | `PresentationCard → LoadShell` | cross_community | 4 |
-| `NexusUploadDialog → Describe` | cross_community | 4 |
 
 ## How to Explore
 

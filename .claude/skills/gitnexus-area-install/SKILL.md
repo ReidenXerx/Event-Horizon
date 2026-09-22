@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-install
-description: "Skill for the Install area of Event-Horizon. 108 symbols across 23 files."
+description: "Skill for the Install area of Event-Horizon. 111 symbols across 24 files."
 ---
 
 # Install
 
-108 symbols | 23 files | Cohesion: 67%
+111 symbols | 24 files | Cohesion: 68%
 
 ## When to Use
 
@@ -17,7 +17,7 @@ description: "Skill for the Install area of Event-Horizon. 108 symbols across 23
 
 | File | Symbols |
 |------|---------|
-| `src/ui/pages/install/installSession.ts` | onProgress, onPhase, onHashProgress, onPhase, onHashProgress (+28) |
+| `src/ui/pages/install/installSession.ts` | onProgress, onPhase, onHashProgress, onPhase, onHashProgress (+29) |
 | `src/ui/pages/install/steps.tsx` | DroppedModNotice, ExternalArchiveNotice, GameIniNotice, IniTweakNotice, InstallNotes (+25) |
 | `src/ui/pages/install/state.ts` | wizardReducer, canProceedFromDecisions, countUndecidedConflicts, defaultConflictChoice, defaultOrphanChoice (+3) |
 | `src/ui/pages/install/engine.ts` | checkEnvironment, checkSystemRuntimes, profileExistsInState, runLoadingPipeline, checkAbort |
@@ -32,35 +32,35 @@ description: "Skill for the Install area of Event-Horizon. 108 symbols across 23
 
 Start here when exploring this area:
 
-- **`wizardReducer`** (Function) — `src/ui/pages/install/state.ts:296`
+- **`wizardReducer`** (Function) — `src/ui/pages/install/state.ts:304`
 - **`describeHeal`** (Function) — `src/core/doctor/heal.ts:104`
 - **`healNeedsConfirmation`** (Function) — `src/core/doctor/heal.ts:79`
-- **`getInstallSession`** (Function) — `src/ui/pages/install/installSession.ts:1506`
+- **`getInstallSession`** (Function) — `src/ui/pages/install/installSession.ts:1527`
 - **`Notice`** (Function) — `src/ui/components/Notice.tsx:21`
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `wizardReducer` | Function | `src/ui/pages/install/state.ts` | 296 |
+| `wizardReducer` | Function | `src/ui/pages/install/state.ts` | 304 |
 | `describeHeal` | Function | `src/core/doctor/heal.ts` | 104 |
 | `healNeedsConfirmation` | Function | `src/core/doctor/heal.ts` | 79 |
-| `getInstallSession` | Function | `src/ui/pages/install/installSession.ts` | 1506 |
+| `getInstallSession` | Function | `src/ui/pages/install/installSession.ts` | 1527 |
 | `Notice` | Function | `src/ui/components/Notice.tsx` | 21 |
-| `reconcileMods` | Function | `src/ui/pages/install/steps.tsx` | 3206 |
+| `reconcileMods` | Function | `src/ui/pages/install/steps.tsx` | 3247 |
 | `blocksInstall` | Function | `src/core/installer/autoDeploy.ts` | 48 |
 | `readsAutoDeploy` | Function | `src/core/installer/autoDeploy.ts` | 33 |
 | `probeDeploymentMethod` | Function | `src/core/installer/probeDeployment.ts` | 60 |
 | `StatGrid` | Function | `src/ui/components/StatTile.tsx` | 60 |
 | `StatTile` | Function | `src/ui/components/StatTile.tsx` | 35 |
 | `AboutPage` | Function | `src/ui/pages/AboutPage.tsx` | 21 |
-| `canProceedFromDecisions` | Function | `src/ui/pages/install/state.ts` | 545 |
-| `countUndecidedConflicts` | Function | `src/ui/pages/install/state.ts` | 572 |
-| `defaultConflictChoice` | Function | `src/ui/pages/install/state.ts` | 503 |
-| `defaultOrphanChoice` | Function | `src/ui/pages/install/state.ts` | 521 |
-| `fillDefaultConflictChoices` | Function | `src/ui/pages/install/state.ts` | 588 |
-| `fillDefaultOrphanChoices` | Function | `src/ui/pages/install/state.ts` | 604 |
-| `selectConflictResolutions` | Function | `src/ui/pages/install/state.ts` | 489 |
+| `canProceedFromDecisions` | Function | `src/ui/pages/install/state.ts` | 571 |
+| `countUndecidedConflicts` | Function | `src/ui/pages/install/state.ts` | 598 |
+| `defaultConflictChoice` | Function | `src/ui/pages/install/state.ts` | 529 |
+| `defaultOrphanChoice` | Function | `src/ui/pages/install/state.ts` | 547 |
+| `fillDefaultConflictChoices` | Function | `src/ui/pages/install/state.ts` | 614 |
+| `fillDefaultOrphanChoices` | Function | `src/ui/pages/install/state.ts` | 630 |
+| `selectConflictResolutions` | Function | `src/ui/pages/install/state.ts` | 515 |
 | `pickInstallTarget` | Function | `src/core/resolver/userState.ts` | 158 |
 
 ## Execution Flows

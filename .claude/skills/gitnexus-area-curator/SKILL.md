@@ -1,16 +1,16 @@
 ---
 name: gitnexus-area-curator
-description: "Skill for the Curator area of Event-Horizon. 401 symbols across 87 files."
+description: "Skill for the Curator area of Event-Horizon. 398 symbols across 86 files."
 ---
 
 # Curator
 
-401 symbols | 87 files | Cohesion: 71%
+398 symbols | 86 files | Cohesion: 71%
 
 ## When to Use
 
 - Working with code in `src/`
-- Understanding how describeRemoveConfirm, resolveInstallFiles, pluginOwners work
+- Understanding how describeRemoveConfirm, resolveInstallFiles, liveStagingShapes work
 - Modifying curator-related functionality
 
 ## Key Files
@@ -19,7 +19,7 @@ description: "Skill for the Curator area of Event-Horizon. 401 symbols across 87
 |------|---------|
 | `src/ui/pages/curator/useCuratorActions.ts` | num, useCuratorActions, askThree, disableWithDependants, enableWithProviders (+37) |
 | `src/core/curator/requirements.ts` | dependantClosure, dependantsOf, describeEnableQuestion, list, losesALine (+28) |
-| `src/ui/pages/curator/CuratorPage.tsx` | confirm, makeConfirmer, applied, dismissFor, pageKeyOf (+26) |
+| `src/ui/pages/curator/CuratorPage.tsx` | confirm, pluginCapability, makeConfirmer, applied, dismissFor (+27) |
 | `src/core/curator/profileActions.ts` | findDuplicates, findEndorsable, findFrozen, findManualUpdates, findUpdatable (+7) |
 | `src/core/curator/requirementDismissals.ts` | applyDismissals, dependentPageKey, dismissRequirement, isDismissible, kindOf (+6) |
 | `src/ui/pages/curator/DiskCleanupView.tsx` | retireCandidates, orphanPlan, retirePlan, orphans, provenRetire (+6) |
@@ -34,9 +34,9 @@ Start here when exploring this area:
 
 - **`describeRemoveConfirm`** (Function) — `src/core/curator/archiveOnDisk.ts:38`
 - **`resolveInstallFiles`** (Function) — `src/core/curator/installPlan.ts:340`
+- **`liveStagingShapes`** (Function) — `src/core/curator/liveStagingShapes.ts:41`
 - **`pluginOwners`** (Function) — `src/core/curator/pluginPool.ts:111`
 - **`lightFlagTargets`** (Function) — `src/core/curator/pluginView.ts:38`
-- **`key`** (Function) — `src/core/curator/pluginView.ts:41`
 
 ## Key Symbols
 
@@ -46,6 +46,7 @@ Start here when exploring this area:
 | `UpdateTimeout` | Class | `src/core/curator/updateOneMod.ts` | 96 |
 | `describeRemoveConfirm` | Function | `src/core/curator/archiveOnDisk.ts` | 38 |
 | `resolveInstallFiles` | Function | `src/core/curator/installPlan.ts` | 340 |
+| `liveStagingShapes` | Function | `src/core/curator/liveStagingShapes.ts` | 41 |
 | `pluginOwners` | Function | `src/core/curator/pluginPool.ts` | 111 |
 | `lightFlagTargets` | Function | `src/core/curator/pluginView.ts` | 38 |
 | `key` | Function | `src/core/curator/pluginView.ts` | 41 |
@@ -53,15 +54,14 @@ Start here when exploring this area:
 | `endIfIdle` | Function | `src/core/curator/requirementStep.ts` | 119 |
 | `onStop` | Function | `src/core/curator/requirementStep.ts` | 132 |
 | `somethingRunning` | Function | `src/core/curator/requirementStep.ts` | 115 |
-| `fallBack` | Function | `src/core/curator/requirementStep.ts` | 186 |
-| `start` | Function | `src/core/curator/requirementStep.ts` | 168 |
+| `fallBack` | Function | `src/core/curator/requirementStep.ts` | 204 |
+| `start` | Function | `src/core/curator/requirementStep.ts` | 186 |
 | `dependantClosure` | Function | `src/core/curator/requirements.ts` | 733 |
 | `dependantsOf` | Function | `src/core/curator/requirements.ts` | 707 |
 | `describeEnableQuestion` | Function | `src/core/curator/requirements.ts` | 909 |
 | `list` | Function | `src/core/curator/requirements.ts` | 913 |
 | `parseGameList` | Function | `src/core/curator/requirements.ts` | 72 |
 | `pickInstallFile` | Function | `src/core/curator/requirements.ts` | 984 |
-| `reusableAnswers` | Function | `src/core/curator/requirements.ts` | 198 |
 
 ## Execution Flows
 

@@ -127,3 +127,68 @@ The collection's `id` and `slug` are already in the per-collection config at
 `<Vortex>/event-horizon/collections/.config/<slug>.json` under `nexusCollection`, so neither needs
 looking up by hand.
 
+<!-- gitnexus:start -->
+# GitNexus — Code Intelligence
+
+This project is indexed by GitNexus as **Event-Horizon** (16516 symbols, 46565 relationships, 593 execution flows).
+
+> Index stale? Run `node .gitnexus/run.cjs analyze --index-only` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? Bootstrap with `npx`, `bunx`, or `pnpm dlx` — e.g. `bunx gitnexus@latest analyze` (npm 11 npx crash; #1939).
+> On query/context/impact/cypher object results, read staleness.status and branch/lastCommit. Re-analyze only for behind or diverged — current is clone HEAD, not main.
+
+## Always Do
+
+- **MUST run impact before editing.** Use `impact({target: "symbolName", direction: "upstream"})` or `node .gitnexus/run.cjs impact "symbolName" --direction upstream --repo .`; report callers, processes, and risk. Never substitute grep for graph analysis.
+- **MUST analyze graph changes before committing.** Use `detect_changes({scope: "all"})` (MCP) or `node .gitnexus/run.cjs detect-changes --scope all --repo .` (CLI fallback). `partial: true` or `truncated: true` is not a clean check — a zero means unseen, not unaffected; re-run it. For regression review: `detect_changes({scope: "compare", base_ref: "master"})` or `node .gitnexus/run.cjs detect-changes --scope compare --base-ref "master" --repo .`.
+- MUST warn on HIGH/CRITICAL `risk` pre-edit; never use `riskSharedAxes` to waive a HIGH/CRITICAL `risk` warning. Compare File/symbol: MCP File omits axes; Graph-RAG expands File.
+- **MUST treat `risk: UNKNOWN` as unresolved, not as low.** An empty caller set is not evidence the symbol is unused — it can also mean the callers are not resolvable by the index (plain-object property access, dynamic dispatch, cross-language calls). `impact` pairs `UNKNOWN` with a `riskNote` saying so. Confirm with a text search before treating the symbol as safe to change or delete; do not proceed on the strength of a zero.
+- **MUST use `query({search_query: "concept"})` for concepts/flows, `context({name: "symbolName"})` for a named symbol, or `impact` for blast radius, on read-only callers, dependencies, imports, or execution flow.** Graph first; text search only for empty/`UNKNOWN`/literals.
+- For security review, `explain({target: "fileOrSymbol"})` lists taint findings (source→sink flows; needs `analyze --pdg`).
+
+## Never Do
+
+- NEVER edit a function, class, or method before MCP/CLI impact analysis.
+- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis, and never read `UNKNOWN` as an all-clear — it means the walk could not answer, which is the one verdict that requires confirming by other means.
+- NEVER rename symbols with find-and-replace — use `rename` which understands the call graph.
+- NEVER commit before MCP/CLI graph change analysis.
+
+## Resources
+
+| Resource | Use for |
+| --- | --- |
+| `gitnexus://repo/Event-Horizon/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/Event-Horizon/clusters` | All functional areas |
+| `gitnexus://repo/Event-Horizon/processes` | All execution flows |
+| `gitnexus://repo/Event-Horizon/process/{name}` | Step-by-step execution trace |
+
+## CLI
+
+| Task | Read this skill file |
+| --- | --- |
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus-exploring/SKILL.md` |
+| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus-debugging/SKILL.md` |
+| Rename / extract / split / refactor | `.claude/skills/gitnexus-refactoring/SKILL.md` |
+| Tools, resources, schema reference | `.claude/skills/gitnexus-guide/SKILL.md` |
+| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus-cli/SKILL.md` |
+| Work in the Manifest area (536 symbols) | `.claude/skills/gitnexus-area-manifest/SKILL.md` |
+| Work in the Build area (513 symbols) | `.claude/skills/gitnexus-area-build/SKILL.md` |
+| Work in the Installer area (493 symbols) | `.claude/skills/gitnexus-area-installer/SKILL.md` |
+| Work in the Curator area (398 symbols) | `.claude/skills/gitnexus-area-curator/SKILL.md` |
+| Work in the Environment area (143 symbols) | `.claude/skills/gitnexus-area-environment/SKILL.md` |
+| Work in the Install area (111 symbols) | `.claude/skills/gitnexus-area-install/SKILL.md` |
+| Work in the Resolver area (88 symbols) | `.claude/skills/gitnexus-area-resolver/SKILL.md` |
+| Work in the Doctor area (76 symbols) | `.claude/skills/gitnexus-area-doctor/SKILL.md` |
+| Work in the Scripts area (72 symbols) | `.claude/skills/gitnexus-area-scripts/SKILL.md` |
+| Work in the Ui area (68 symbols) | `.claude/skills/gitnexus-area-ui/SKILL.md` |
+| Work in the Runtime area (67 symbols) | `.claude/skills/gitnexus-area-runtime/SKILL.md` |
+| Work in the Table area (57 symbols) | `.claude/skills/gitnexus-area-table/SKILL.md` |
+| Work in the Changelog area (49 symbols) | `.claude/skills/gitnexus-area-changelog/SKILL.md` |
+| Work in the Presentation area (46 symbols) | `.claude/skills/gitnexus-area-presentation/SKILL.md` |
+| Work in the Proton area (39 symbols) | `.claude/skills/gitnexus-area-proton/SKILL.md` |
+| Work in the Components area (35 symbols) | `.claude/skills/gitnexus-area-components/SKILL.md` |
+| Work in the Identity area (33 symbols) | `.claude/skills/gitnexus-area-identity/SKILL.md` |
+| Work in the Pages area (31 symbols) | `.claude/skills/gitnexus-area-pages/SKILL.md` |
+| Work in the E2e area (27 symbols) | `.claude/skills/gitnexus-area-e2e/SKILL.md` |
+| Work in the Nexus area (24 symbols) | `.claude/skills/gitnexus-area-nexus/SKILL.md` |
+
+<!-- gitnexus:end -->

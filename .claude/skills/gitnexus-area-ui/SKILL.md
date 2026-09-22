@@ -69,6 +69,7 @@ Start here when exploring this area:
 |------|------|-------|
 | `EventHorizonMainPage → Spinner` | cross_community | 5 |
 | `EditPage → NormalizeText` | cross_community | 4 |
+| `EventHorizonMainPage → Noop` | cross_community | 4 |
 | `EventHorizonMainPage → ToastCard` | cross_community | 4 |
 | `EventHorizonMainPage → Modal` | cross_community | 4 |
 | `EventHorizonMainPage → BuildErrorReport` | cross_community | 4 |
@@ -76,7 +77,6 @@ Start here when exploring this area:
 | `Banner → Stamp` | intra_community | 3 |
 | `Banner → Log` | intra_community | 3 |
 | `EventHorizonMainPage → CreateToastTimers` | cross_community | 3 |
-| `NextSteps → Stamp` | intra_community | 3 |
 
 ## How to Explore
 

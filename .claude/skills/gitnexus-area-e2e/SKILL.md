@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-e2e
-description: "Skill for the E2e area of Event-Horizon. 21 symbols across 12 files."
+description: "Skill for the E2e area of Event-Horizon. 27 symbols across 13 files."
 ---
 
 # E2e
 
-21 symbols | 12 files | Cohesion: 60%
+27 symbols | 13 files | Cohesion: 58%
 
 ## When to Use
 
@@ -17,23 +17,23 @@ description: "Skill for the E2e area of Event-Horizon. 21 symbols across 12 file
 
 | File | Symbols |
 |------|---------|
-| `test/e2e/installDriver.e2e.test.ts` | oneModWorld, mirroredWorld, sha, packageFrom, withCollectionDownload |
+| `test/e2e/installDriver.e2e.test.ts` | oneModWorld, mirroredWorld, sha, packageFrom, install (+2) |
 | `src/core/manifest/collectionScope.ts` | profileFingerprint, normalizeInstallName, scopeCollectionMods |
+| `test/e2e/verification.e2e.test.ts` | packageFrom, install, userState |
 | `test/e2e/fakeVortex.ts` | makeFakeVortex, complete, nexusDownload |
 | `src/ui/pages/build/BuildDashboard.tsx` | currentFingerprint, recentlyBuilt |
+| `src/core/installer/runInstall.ts` | formatError, runInstall |
 | `src/core/curator/profileDrift.ts` | profileDriftSince |
 | `src/core/getModsListForProfile.ts` | getModsForProfile |
 | `test/e2e/world.ts` | makeWorld |
 | `test/makeZip.ts` | makeZip |
-| `src/core/manifest/captureStagingFiles.ts` | captureStagingFiles |
-| `test/e2e/curatorToUser.e2e.test.ts` | buildFromWorld |
 
 ## Entry Points
 
 Start here when exploring this area:
 
 - **`profileDriftSince`** (Function) — `src/core/curator/profileDrift.ts:51`
-- **`getModsForProfile`** (Function) — `src/core/getModsListForProfile.ts:625`
+- **`getModsForProfile`** (Function) — `src/core/getModsListForProfile.ts:631`
 - **`profileFingerprint`** (Function) — `src/core/manifest/collectionScope.ts:289`
 - **`currentFingerprint`** (Function) — `src/ui/pages/build/BuildDashboard.tsx:322`
 - **`recentlyBuilt`** (Function) — `src/ui/pages/build/BuildDashboard.tsx:657`
@@ -43,14 +43,15 @@ Start here when exploring this area:
 | Symbol | Type | File | Line |
 |--------|------|------|------|
 | `profileDriftSince` | Function | `src/core/curator/profileDrift.ts` | 51 |
-| `getModsForProfile` | Function | `src/core/getModsListForProfile.ts` | 625 |
+| `getModsForProfile` | Function | `src/core/getModsListForProfile.ts` | 631 |
 | `profileFingerprint` | Function | `src/core/manifest/collectionScope.ts` | 289 |
 | `currentFingerprint` | Function | `src/ui/pages/build/BuildDashboard.tsx` | 322 |
 | `recentlyBuilt` | Function | `src/ui/pages/build/BuildDashboard.tsx` | 657 |
 | `makeWorld` | Function | `test/e2e/world.ts` | 78 |
 | `makeZip` | Function | `test/makeZip.ts` | 13 |
-| `captureStagingFiles` | Function | `src/core/manifest/captureStagingFiles.ts` | 107 |
+| `captureStagingFiles` | Function | `src/core/manifest/captureStagingFiles.ts` | 167 |
 | `scopeCollectionMods` | Function | `src/core/manifest/collectionScope.ts` | 133 |
+| `runInstall` | Function | `src/core/installer/runInstall.ts` | 630 |
 | `makeFakeVortex` | Function | `test/e2e/fakeVortex.ts` | 53 |
 | `complete` | Function | `test/e2e/fakeVortex.ts` | 138 |
 | `nexusDownload` | Function | `test/e2e/fakeVortex.ts` | 313 |
@@ -61,7 +62,6 @@ Start here when exploring this area:
 | `buildFromWorld` | Function | `test/e2e/curatorToUser.e2e.test.ts` | 35 |
 | `packageFrom` | Function | `test/e2e/installDriver.e2e.test.ts` | 47 |
 | `packageFrom` | Function | `test/e2e/stopAfterDeploy.e2e.test.ts` | 52 |
-| `packageFrom` | Function | `test/e2e/verification.e2e.test.ts` | 60 |
 
 ## Execution Flows
 
