@@ -2247,7 +2247,7 @@ export function PresentationCard(props: {
           {(
             [
               ["accent", "Accent colour", "Borders, highlights and links on the banner and About page.", "#4cc9f0"],
-              ["background", "Background tint", "A wash of colour behind the banner.", "#1f1a3d"],
+              ["background", "Background tint", "A wash of colour behind the banner.", "#1b1f26"],
             ] as const
           ).map(([key, label, hint, fallback]) => (
             <Field key={key} label={label} hint={hint}>

@@ -457,6 +457,7 @@ project rather than this one, it belongs upstream — say so and it can be promo
   "does not match" after a shell edit, `od -c` the line before debugging anything else — and write
   code files with the file-writing tool, not a heredoc. *Scar: two in one session — a toast dedupe
   separator and a test regex — each costing a round of "but the file looks right".*
+- **PP-12** — **This project's CSS lives inside TypeScript template literals, so one ` in a COMMENT ends the stylesheet.** The theme is `export const X_CSS = ```…````, and prose habits — quoting a class as `.eh-hero` or a value as `none` — terminate the literal in the middle of a stylesheet. The error surfaces far below as "Property 'eh' does not exist on type" or a Vite parse failure naming a line that is fine, and `tsc` is the only thing that catches it. Write those comments with plain quotes. *Scar: three times in one session — a token comment, a grid comment and a deletion note — each one a green suite followed by a broken build.*
 
 ## PP-1 — A patch script that prints "ok" before it writes is lying to you
 

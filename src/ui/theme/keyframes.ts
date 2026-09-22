@@ -147,10 +147,6 @@ export const KEYFRAMES_CSS = `
   }
 }
 
-@keyframes eh-twinkle {
-  0%, 100% { opacity: 0.15; }
-  50%      { opacity: 0.85; }
-}
 
 @keyframes eh-progress-indeterminate {
   0%   { transform: translateX(-100%) scaleX(0.4); }
@@ -169,12 +165,6 @@ export const KEYFRAMES_CSS = `
 
 /* Soft pulse used by hashing card to show the panel itself is "alive"
    even when the underlying numbers don't change. */
-@keyframes eh-card-pulse {
-  0%, 100% {
-    box-shadow:
-      0 0 0 0 rgba(76, 201, 240, 0.0),
-      var(--eh-shadow-card);
-  }
   50% {
     box-shadow:
       0 0 0 4px rgba(76, 201, 240, 0.10),

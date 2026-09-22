@@ -530,97 +530,21 @@ export const COMPONENTS_CSS = `
 }
 
 /* ── Hero (used on HomePage) ──────────────────────────────────── */
-.eh-hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: var(--eh-sp-8) var(--eh-sp-5) var(--eh-sp-7);
-  gap: var(--eh-sp-4);
-}
 
 /* The dashboard's hero: a header, not a landing page. It sat this way as an
    inline override for months; the modifier is the same numbers, named. */
-.eh-hero--compact {
-  padding: var(--eh-sp-3) var(--eh-sp-5);
-}
 
-.eh-hero--compact .eh-hero__title {
-  font-size: var(--eh-text-2xl);
-}
 
-.eh-hero__logo {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: var(--eh-sp-4);
-  animation:
-    eh-fade-scale var(--eh-dur-deliberate) var(--eh-easing) both;
-}
 
 /* Outer conic aura — pure CSS, no SVG. Spins continuously to make
-   the dashboard logo *visibly* alive at a glance. The conic
-   gradient is the same Gargantua palette the SVG uses, just
-   rendered as a soft halo instead of the disk itself. */
-.eh-hero__logo::before {
-  content: "";
-  position: absolute;
-  inset: -16%;
-  border-radius: 50%;
-  background: conic-gradient(
-    from 0deg,
-    rgba(255, 177, 92, 0.0) 0%,
-    rgba(255, 107, 61, 0.45) 18%,
-    rgba(240, 56, 107, 0.55) 38%,
-    rgba(169, 50, 137, 0.45) 60%,
-    rgba(95, 44, 165, 0.30) 80%,
-    rgba(255, 177, 92, 0.0) 100%
-  );
-  filter: blur(18px);
-  opacity: 0.55;
-  z-index: -1;
-  animation: eh-rotate-cw var(--eh-dur-orbit) linear infinite;
-  pointer-events: none;
-}
+/*
+ * The home HERO is gone — the dashboard replaced it, and nothing renders
+ * the eh-hero family any more (confirmed by a scoped search over src, since
+ * the class test only catches a class nobody declares, never a rule nobody
+ * uses). Its rules, its two reduced-motion overrides and the keyframes only
+ * it drove are deleted rather than left to ship in every render.
+ */
 
-/* Faint counter-rotating ring on top of the aura for parallax. */
-.eh-hero__logo::after {
-  content: "";
-  position: absolute;
-  inset: -6%;
-  border-radius: 50%;
-  border: 1px solid rgba(118, 228, 247, 0.20);
-  box-shadow:
-    inset 0 0 18px rgba(118, 228, 247, 0.10),
-    0 0 24px rgba(118, 228, 247, 0.08);
-  animation: eh-rotate-ccw var(--eh-dur-orbit) linear infinite;
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .eh-hero__logo::before,
-  .eh-hero__logo::after {
-    animation: none;
-  }
-}
-
-.eh-hero__title {
-  font-size: var(--eh-text-hero);
-  font-weight: 800;
-  letter-spacing: var(--eh-tracking-tight);
-  line-height: var(--eh-leading-tight);
-  animation: eh-text-reveal var(--eh-dur-deliberate) var(--eh-easing) 200ms both;
-}
-
-.eh-hero__tagline {
-  font-size: var(--eh-text-xs);
-  letter-spacing: var(--eh-tracking-widest);
-  text-transform: uppercase;
-  color: var(--eh-cyan);
-  margin-bottom: var(--eh-sp-2);
-  animation: eh-text-reveal var(--eh-dur-deliberate) var(--eh-easing) 80ms both;
-}
 
 /* ── CTA grid (3-up cards on Home) ────────────────────────────── */
 .eh-cta-grid {
@@ -662,7 +586,13 @@ export const COMPONENTS_CSS = `
   width: 100%;
   background: var(--eh-bg-base);
   color: var(--eh-text-primary);
-  border: 1px solid var(--eh-border-subtle);
+  /*
+   * The STRONG border, not the subtle one: an input sits on a card, its fill
+   * is only 1.08:1 against that card, and a hairline at 1.03:1 made the edge
+   * LESS visible than the fill it outlines. A person scanning the build form
+   * could not see where the fields were.
+   */
+  border: 1px solid var(--eh-border-strong);
   border-radius: var(--eh-radius-sm);
   padding: var(--eh-sp-2) var(--eh-sp-3);
   font-size: var(--eh-text-sm);

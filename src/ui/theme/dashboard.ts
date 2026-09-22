@@ -63,9 +63,9 @@ export const DASHBOARD_CSS = `
   position: absolute;
   inset: 0;
   background: linear-gradient(90deg,
-    rgba(10, 6, 20, .94) 0%,
-    rgba(10, 6, 20, .78) 42%,
-    rgba(10, 6, 20, .30) 100%);
+    rgba(8, 9, 11, .94) 0%,
+    rgba(8, 9, 11, .78) 42%,
+    rgba(8, 9, 11, .30) 100%);
 }
 .eh-dash-hero__inner {
   position: relative;
@@ -151,7 +151,7 @@ export const DASHBOARD_CSS = `
 .eh-dash-tile__body {
   position: relative;
   padding: var(--eh-sp-4);
-  background: linear-gradient(0deg, rgba(10, 6, 20, .92), rgba(10, 6, 20, .25));
+  background: linear-gradient(0deg, rgba(8, 9, 11, .92), rgba(8, 9, 11, .25));
 }
 .eh-dash-tile--plain {
   align-items: center;

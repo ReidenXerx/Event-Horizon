@@ -45,7 +45,6 @@ export const TOKENS_CSS = `
   --eh-disk-pink: #f0386b;
   --eh-disk-magenta: #a93289;
   --eh-disk-violet: #5f2ca5;
-  --eh-disk-deep-violet: #2c1a5e;
 
   /* Pre-baked gradients (for backgrounds, borders, text fills) */
   --eh-gradient-disk:
@@ -56,15 +55,6 @@ export const TOKENS_CSS = `
       var(--eh-disk-pink) 48%,
       var(--eh-disk-magenta) 72%,
       var(--eh-disk-violet) 100%
-    );
-  --eh-gradient-disk-radial:
-    radial-gradient(
-      circle at center,
-      var(--eh-disk-hot) 0%,
-      var(--eh-disk-warm) 30%,
-      var(--eh-disk-pink) 55%,
-      var(--eh-disk-violet) 80%,
-      transparent 100%
     );
   /*
    * Flat, not a gradient. The nebula competed with the content for
@@ -87,17 +77,22 @@ export const TOKENS_CSS = `
      the lensing cyan keeps one place to retune the accent. */
   --eh-accent: #4cc9f0;
   --eh-accent-soft: rgba(76, 201, 240, 0.14);
-  /* Tint behind a warning panel. Was hardcoded at two call sites. */
-  --eh-warning-soft: rgba(255, 177, 92, 0.08);
 
   /* ── Singularity / void ───────────────────────────────────────── */
   --eh-void: #050309;
-  --eh-void-edge: rgba(0, 0, 0, 0.95);
 
   /* ── Text ─────────────────────────────────────────────────────── */
   --eh-text-primary: #eef1f5;
   --eh-text-secondary: #a7adb8;
-  --eh-text-muted: #6f7681;
+  /*
+   * Measured, not chosen by eye. At #6f7681 the muted tier scored 4.22 on the
+   * page, 3.92 on a card and 3.39 inside a warning callout — under the 4.5:1
+   * that 11px text needs, and this tier carries every field hint, every
+   * choice description, every table heading and every key in a key/value row.
+   * At #878e99 the same grounds measure 5.85 / 5.44 / 4.70, and it is still
+   * clearly a step below --eh-text-secondary.
+   */
+  --eh-text-muted: #878e99;
   --eh-text-disabled: #4b515a;
   --eh-text-inverse: #0c0e11;
 
@@ -115,7 +110,6 @@ export const TOKENS_CSS = `
   --eh-border-subtle: rgba(255, 255, 255, 0.05);
   --eh-border-default: rgba(255, 255, 255, 0.09);
   --eh-border-strong: rgba(255, 255, 255, 0.16);
-  --eh-border-disk: rgba(240, 56, 107, 0.4);
 
   /* ── Glows / shadows ──────────────────────────────────────────── */
   /*
@@ -128,10 +122,19 @@ export const TOKENS_CSS = `
    */
   --eh-glow-disk: 0 0 18px rgba(255, 107, 61, 0.28);
   --eh-glow-cyan: 0 0 14px rgba(76, 201, 240, 0.26);
-  --eh-glow-violet: 0 0 22px rgba(95, 44, 165, 0.26);
   --eh-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
   --eh-shadow-modal: 0 20px 48px rgba(0, 0, 0, 0.6);
-  --eh-shadow-button: none;
+  /*
+   * A no-op shadow, NOT the keyword "none".
+   *
+   * "box-shadow: none, <shadow>" is a parse error — none is legal only as
+   * the sole value — so the whole declaration is dropped. The primary button
+   * composes this token with the disk glow in one list, which measured as
+   * boxShadow: "none" in the same Chromium the extension renders in: the
+   * button silently lost the glow in both its resting and hover states, and
+   * its shadow transition became dead. This value composes.
+   */
+  --eh-shadow-button: 0 0 0 0 transparent;
 
   /* ── Spacing scale (4px base, perceptual ramp) ────────────────── */
   --eh-sp-1: 4px;

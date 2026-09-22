@@ -31,6 +31,25 @@ let uid = 0;
 const nextId = (): string => `eh-c-${(uid += 1)}`;
 
 /**
+ * Black or white text on a given fill, by WCAG relative luminance.
+ *
+ * Contrast is measurable, so it is measured rather than guessed: the palette
+ * runs from a light amber to a deep violet, and one fixed ink cannot serve
+ * both ends of it.
+ */
+export function inkOn(hex: string): string {
+  const v = hex.replace("#", "");
+  const channel = (i: number): number => {
+    const c = parseInt(v.slice(i * 2, i * 2 + 2), 16) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = 0.2126 * channel(0) + 0.7152 * channel(1) + 0.0722 * channel(2);
+  // The crossover where both candidates are equally readable is ~0.18; the
+  // dark ink is preferred there because these fills are saturated.
+  return luminance > 0.18 ? "#1b0f27" : "#f5f7ff";
+}
+
+/**
  * A ring gauge.
  *
  * `value` is a percentage the caller has already decided is meaningful.
@@ -227,17 +246,30 @@ export function SliceMap(props: {
     <svg viewBox={`0 0 1000 ${h}`} width="100%" height={h} preserveAspectRatio="none">
       {parts.map((p, i) => {
         const w = (p.value / total) * 1000;
+        const fill = CHART_COLORS[i % CHART_COLORS.length];
+        /**
+         * The ink is chosen from the fill, not assumed.
+         *
+         * The labels were a fixed dark violet "on the bright slice fills,
+         * which are light by design" — but the palette ends in violet and
+         * every slice after the first was drawn at a lower opacity, so the
+         * third and fourth blocks measured 1.99:1 and 1.44:1 and could not be
+         * read at all. Those are the blocks the chart exists to name. Full
+         * opacity now, and the ink follows the fill's luminance.
+         */
+        const ink = inkOn(fill);
         const block = (
           <g key={i}>
-            <rect x={x + 3} y={3} width={Math.max(w - 6, 2)} height={h - 6} rx="10"
-              fill={CHART_COLORS[i % CHART_COLORS.length]} opacity={0.86 - i * 0.1} />
+            <rect x={x + 3} y={3} width={Math.max(w - 6, 2)} height={h - 6} rx="10" fill={fill} />
             <clipPath id={clipIds[i]}>
               <rect x={x + 3} y={3} width={Math.max(w - 6, 2)} height={h - 6} />
             </clipPath>
             <g clipPath={`url(#${clipIds[i]})`}>
-              <text x={x + 16} y={30} className="eh-slice-label">{p.label}</text>
-              <text x={x + 16} y={58} className="eh-slice-value">{fmt(p.value)}</text>
-              {p.hint !== undefined && <text x={x + 16} y={80} className="eh-slice-hint">{p.hint}</text>}
+              <text x={x + 16} y={30} className="eh-slice-label" fill={ink}>{p.label}</text>
+              <text x={x + 16} y={58} className="eh-slice-value" fill={ink}>{fmt(p.value)}</text>
+              {p.hint !== undefined && (
+                <text x={x + 16} y={80} className="eh-slice-hint" fill={ink}>{p.hint}</text>
+              )}
             </g>
             <title>{`${p.label}: ${fmt(p.value)}`}</title>
           </g>

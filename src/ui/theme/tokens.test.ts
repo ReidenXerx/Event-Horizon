@@ -81,6 +81,53 @@ describe("theme tokens", () => {
     expect(referencesWithoutFallback().length).toBeGreaterThan(50);
   });
 
+  /**
+   * The mirror of the assertion above, and the half that was missing.
+   *
+   * That one asks "is every token the UI reads declared?", which cannot fail
+   * on a token nobody reads — so a token retuned by a repaint for a consumer
+   * that no longer exists looked exactly like a live one. Two were found that
+   * way (--eh-warning-soft, --eh-text-4xl), both edited in a commit whose
+   * described effect they could not have.
+   */
+  it("declares no token that nothing reads", () => {
+    const declared = declaredTokens();
+    // Any reference at all counts here, fallback or not: the question is
+    // whether the token is live, not whether the reference is safe.
+    const read = new Set<string>();
+    for (const file of sourceFiles(SRC)) {
+      // tokens.ts INCLUDED: a token composed into another token (the disk
+      // gradient is built from five of them) is live, and excluding the file
+      // reported the whole palette as dead.
+      for (const m of readFileSync(file, "utf8").matchAll(/var\(\s*(--eh-[a-z0-9-]+)/g)) {
+        read.add(m[1]);
+      }
+    }
+    /**
+     * A SCALE is exempt: `--eh-sp-*`, the radii, the type sizes, the z-layers,
+     * the easings and the durations are declared as complete ladders, and a
+     * rung nobody stands on today is not a defect. Everything else is a named
+     * thing that exists for a consumer, so no consumer means no reason.
+     */
+    const SCALE = /^--eh-(sp|radius|text|z|easing|dur|leading|tracking|font)-/;
+    const dead = [...declared].filter((t) => !read.has(t) && !SCALE.test(t));
+    expect(dead).toEqual([]);
+  });
+
+  it("declares no shadow token that cannot compose in a list", () => {
+    /*
+     * "box-shadow: none, <shadow>" is a parse error, so a token whose value
+     * is the bare keyword none silently deletes every declaration that
+     * composes it. --eh-shadow-button did exactly that to the primary
+     * button's glow, and both tests above passed.
+     */
+    const text = readFileSync(TOKENS_FILE, "utf8");
+    const offenders = [...text.matchAll(/^\s*(--eh-[a-z0-9-]*(?:shadow|glow)[a-z0-9-]*)\s*:\s*([^;]+);/gm)]
+      .filter((m) => m[2].trim() === "none")
+      .map((m) => m[1]);
+    expect(offenders).toEqual([]);
+  });
+
   it("catches an undeclared token", () => {
     // The check itself must be able to fail, or it proves nothing.
     const declared = declaredTokens();
