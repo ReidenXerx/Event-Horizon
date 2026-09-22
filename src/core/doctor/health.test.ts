@@ -674,3 +674,63 @@ describe("the plugin-order check asks whose order it is", () => {
     expect([c.summary, ...c.detail].join(" ")).not.toMatch(/sort/i);
   });
 });
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * THE DOCTOR CAN BE OPEN ON A COLLECTION FOR A GAME VORTEX IS NOT ON.
+ *
+ * `pickDoctorReceipt` falls back to the newest install when no receipt claims
+ * the active profile, and the page also has an explicit collection picker. So
+ * a Skyrim receipt can be on screen while Vortex manages Fallout 4.
+ *
+ * `obs.activeProfileId` is the ACTIVE GAME's active profile, and the profile
+ * check compared it against the receipt's with no game term at all. It read
+ * "you are on a different profile" — wrong, you are on a different GAME — and
+ * offered "Switch to that profile" in one press, with no dialog. That cure
+ * dispatches a profile switch, which purges every deployed file from the game
+ * folder, while `describeHeal("switch-profile")` tells the player "Nothing is
+ * installed or removed".
+ *
+ * `assessObservedLoadOrder` already models this exactly, returning
+ * `not-active-game` and suppressing its own heal. The standing was sitting on
+ * the observations and this check did not read it.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("a receipt for a game Vortex is not managing", () => {
+  const elsewhere = (): HealthObservations =>
+    healthy({
+      // Vortex is on another game: its active profile is that game's, and
+      // this collection's is simply not a thing you can be "on".
+      activeProfileId: "prof-fo4",
+      loadOrderStanding: { kind: "not-active-game", activeGameId: "fallout4" },
+    });
+
+  it("says so, instead of calling it a different profile", () => {
+    const check = byId(evaluateHealth(receipt(), elsewhere()), "profile");
+    expect(check.summary).toMatch(/another game/i);
+    expect(check.summary).not.toMatch(/different profile/i);
+  });
+
+  it("does not offer the purging switch across games", () => {
+    // The button's own description promises nothing is installed or removed,
+    // and a profile switch purges the game folder.
+    expect(byId(evaluateHealth(receipt(), elsewhere()), "profile").heal).toBeUndefined();
+  });
+
+  it("is not counted as drift, because there is nothing wrong here", () => {
+    const check = byId(evaluateHealth(receipt(), elsewhere()), "profile");
+    expect(check.status).toBe("not-applicable");
+    expect(check.affectedCount).toBe(0);
+  });
+
+  it("still offers the switch for a different profile of the SAME game", () => {
+    // The case the button was written for has to keep working, or this is a
+    // feature removal wearing a bug fix.
+    const check = byId(
+      evaluateHealth(receipt(), healthy({ activeProfileId: "prof-other" })),
+      "profile",
+    );
+    expect(check.status).toBe("drifted");
+    expect(check.heal?.action).toBe("switch-profile");
+  });
+});

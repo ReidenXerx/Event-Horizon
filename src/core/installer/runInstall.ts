@@ -3564,14 +3564,43 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       }
 
       try {
+        /**
+         * ─── A PARTIAL READ OF THE PLAYER'S FOLDER CANNOT CERTIFY IT ──────
+         * Both of the walker's incompleteness channels were discarded: no
+         * `onUnreadable` callback, and `hashStagingFiles`'s warn callback was
+         * `() => undefined`. The DELETION direction is safe either way — a
+         * subtree missing from `current` yields fewer extras, never more — so
+         * this is not data loss.
+         *
+         * It is a false proof. Files under an unreadable subtree are neither
+         * compared nor removed, `plan.remove` never mentions them, no guard
+         * fires, and `mirrorProvesTarget` returns true — writing a drift
+         * reference into the receipt for a folder whose comparison was
+         * admittedly partial, which Doctor then treats as an oracle. This
+         * module's own rule: "a drift reference for a disk nobody proved is
+         * the fiction the receipt rules refuse everywhere else."
+         */
+        const unreadableHere: string[] = [];
         const current = await hashStagingFiles(
           stagingRoot,
-          await walkStagingFolder(stagingRoot, ctx.abortSignal),
+          await walkStagingFolder(stagingRoot, ctx.abortSignal, (entry) =>
+            unreadableHere.push(entry.path),
+          ),
           "thorough",
           undefined,
           ctx.abortSignal,
-          () => undefined,
+          (relPath) => unreadableHere.push(relPath),
         );
+        if (unreadableHere.length > 0) {
+          ehLog("warn", "install.mirror.current-incomplete", {
+            mod: mod.name,
+            unreadable: unreadableHere.length,
+            examples: unreadableHere.slice(0, 5),
+            consequence:
+              "the comparison was partial, so this mod earns no drift " +
+              "reference in the receipt even if every write succeeded",
+          });
+        }
         /**
          * The DETECTED mode, not the default.
          *
@@ -3701,7 +3730,11 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         // those and the disk is merely closer, not identical, and a drift
         // reference for a disk we did not prove is the fiction the receipt
         // rules already refuse elsewhere.
-        if (mirrorProvesTarget(mirrorPlan, outcome)) {
+        //
+        // `unreadableHere` is the fourth disqualifier and the only one that
+        // is about the READ rather than the write: a folder we could not
+        // finish looking at is not a folder we proved.
+        if (unreadableHere.length === 0 && mirrorProvesTarget(mirrorPlan, outcome)) {
           noteVerifiedOk(mod.compareKey, mod.state.stagingFiles);
         }
         if (mirrorPlan.removalWithheld !== undefined) {

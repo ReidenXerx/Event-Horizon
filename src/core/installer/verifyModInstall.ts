@@ -531,7 +531,13 @@ async function collectOnDiskFiles(
          * repair path. Canonical on both sides now, and segment-aware, so a
          * sibling folder no longer passes as inside either.
          */
-        if (realPath === undefined || visited.has(realPath)) continue;
+        /**
+         * Keyed on the LINK, not its target — see the matching note in
+         * `stagingFileWalker`. Two distinct in-mod links to one file are two
+         * real entries, and deduping them here made this side agree with the
+         * capture's short listing, so neither could flag the deletion.
+         */
+        if (realPath === undefined || visited.has(abs)) continue;
         if (!isInside(realRoot, realPath, platformCaseMode)) {
           ehLog("debug", "verify-install.link-outside-mod", {
             relativePath: toPosix(path.relative(root, abs)),
@@ -539,7 +545,7 @@ async function collectOnDiskFiles(
           });
           continue;
         }
-        visited.add(realPath);
+        visited.add(abs);
         const lstat = await fs.promises.stat(realPath).catch(() => undefined);
         if (lstat === undefined || !lstat.isFile()) continue;
         out.push({

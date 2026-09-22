@@ -340,6 +340,22 @@ export function evaluateHealth(
   const profileGone =
     obs.existingProfileIds !== undefined &&
     !obs.existingProfileIds.includes(receipt.vortexProfileId);
+  /**
+   * ─── A DIFFERENT GAME IS NOT A DIFFERENT PROFILE ──────────────────────
+   * `obs.activeProfileId` is the ACTIVE GAME's active profile, and this check
+   * compared it against the receipt's with no game term at all. With Vortex on
+   * Fallout 4 and a Skyrim receipt on screen — which `pickDoctorReceipt`
+   * reaches by its newest-install fallback, and the collection picker reaches
+   * directly — the card read "you are on a different profile" and offered
+   * "Switch to that profile" in one press.
+   *
+   * That cure dispatches a profile switch, which purges every deployed file
+   * from the game folder, while `describeHeal` tells the player "Nothing is
+   * installed or removed". `assessObservedLoadOrder` already models this
+   * exactly, returning `not-active-game` and suppressing its own heal; the
+   * same standing is on the observations and was not read here.
+   */
+  const wrongGame = obs.loadOrderStanding?.kind === "not-active-game";
   checks.push({
     id: "profile",
     title: "Profile",
@@ -347,21 +363,36 @@ export function evaluateHealth(
       ? "unknown"
       : profileGone
         ? "broken"
-        : obs.activeProfileId === receipt.vortexProfileId
-          ? "healthy"
-          : "drifted",
+        : wrongGame
+          ? "not-applicable"
+          : obs.activeProfileId === receipt.vortexProfileId
+            ? "healthy"
+            : "drifted",
     summary: profilesUnreadable
       ? "Vortex's profile list could not be read, so this was not checked."
       : profileGone
         ? "The profile this collection was installed into no longer exists."
-        : obs.activeProfileId === receipt.vortexProfileId
-          ? "You are on the profile this collection was installed into."
-          : "The collection is installed, but you are on a different profile.",
+        : wrongGame
+          ? `This collection is for another game, and Vortex is not managing ` +
+            `it right now — so its profile is not one you can be on. Switch ` +
+            `games in Vortex to check it.`
+          : obs.activeProfileId === receipt.vortexProfileId
+            ? "You are on the profile this collection was installed into."
+            : "The collection is installed, but you are on a different profile.",
     detail: profileGone ? [`Missing profile: ${receipt.vortexProfileId}`] : [],
     affectedCount: profileGone ? 1 : 0,
-    // A profile that is gone cannot be recreated from a receipt — the mods
-    // would have to be reinstalled — so only the survivable case offers a fix.
-    ...(!profileGone && obs.activeProfileId !== receipt.vortexProfileId
+    /**
+     * A profile that is gone cannot be recreated from a receipt — the mods
+     * would have to be reinstalled — so only the survivable case offers a fix.
+     *
+     * And never across games: the cure purges every deployed file from the
+     * game folder while its own description says "Nothing is installed or
+     * removed", so offering it for a collection Vortex is not currently
+     * managing is the wrong button under the wrong sentence.
+     */
+    ...(!profileGone &&
+    !wrongGame &&
+    obs.activeProfileId !== receipt.vortexProfileId
       ? {
           heal: {
             action: "switch-profile" as const,

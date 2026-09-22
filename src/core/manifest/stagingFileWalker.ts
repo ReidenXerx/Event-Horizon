@@ -239,8 +239,27 @@ export async function walkStagingFolder(
            */
           continue;
         }
-        if (visited.has(realPath)) continue;
-        visited.add(realPath);
+        /**
+         * ─── KEYED ON THE LINK, NOT ON WHAT IT POINTS AT ────────────────
+         * This keyed on `realPath`, so a mod containing TWO links to one
+         * target recorded only the first — silently, with no `onUnreadable`
+         * call. That is exactly the "a file we never saw leaves no trace"
+         * failure the header above was written to close, left open on this
+         * one branch: the listing comes back short, `stagingCaptureIncomplete`
+         * stays false, the mod stays mirrorable, and on the player's disk
+         * (where the archive extracted two real files) the unrecorded one is
+         * provably extra and gets deleted.
+         *
+         * Two distinct links to one target are two real entries in the mod,
+         * not a loop. The set is only reached inside this symlink branch and
+         * only for targets already proven inside the root, and a link to a
+         * DIRECTORY is dropped by the `isFile()` test below rather than by
+         * this guard — so keying on the link's own path cannot reintroduce a
+         * cycle. It keeps the guard against readdir handing back the same
+         * entry twice and stops it eating a second distinct file.
+         */
+        if (visited.has(abs)) continue;
+        visited.add(abs);
         const lstat = await fs.promises.stat(realPath).catch(() => undefined);
         if (lstat === undefined || !lstat.isFile()) continue;
 

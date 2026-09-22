@@ -354,6 +354,24 @@ export function startLoadOrderWatcher(api: types.IExtensionApi): void {
 
   api.onStateChange?.(["loadOrder"], () => schedule(SETTLE_MS));
   api.onStateChange?.(["settings", "profiles", "activeProfileId"], () => schedule(SETTLE_MS));
+  /**
+   * ─── HALF OF WHAT THE COMPARISON READS WAS NOT WATCHED ────────────────
+   * Both this watcher and the Home badge end at `currentOrderFromState` →
+   * `readPluginList`, which takes plugin MEMBERSHIP from
+   * `session.plugins.pluginList` and only enabled/position from `loadOrder`.
+   * The badge watches all three paths; this watched two.
+   *
+   * `comparePluginOrder` compares enabled plugins only, so a change in WHICH
+   * plugins are present changes the compared set — and with auto-sort off,
+   * which is the state the install and the Load Order card now push players
+   * into, Vortex can add a `pluginList` entry without a `loadOrder` write. The
+   * visible symptom is two Event Horizon surfaces on one screen disagreeing:
+   * the badge updates and the notification does not, or persists after the
+   * drift is gone.
+   *
+   * The settle timer and `driftSignature` already absorb the extra churn.
+   */
+  api.onStateChange?.(["session", "plugins", "pluginList"], () => schedule(SETTLE_MS));
   // An install that just wrote a receipt changes what "matches" means.
   api.events.on("did-install-mod", () => schedule(SETTLE_MS));
   schedule(FIRST_LOOK_MS);

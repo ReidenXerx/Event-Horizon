@@ -175,4 +175,31 @@ describe("a link out of the mod", () => {
     expect(files).toEqual(["own.ini"]);
     expect(skipped).toEqual([]);
   });
+
+  it("is captured TWICE when the mod holds two links to one file", async (ctx) => {
+    /**
+     * ─── DEDUPING ON THE TARGET ATE A REAL FILE ─────────────────────────
+     * The anti-loop `visited` set keyed on the link's TARGET, so the second
+     * of two links to one file was dropped with a bare `continue` — no
+     * `onUnreadable`, no trace. That is the "a file we never saw leaves no
+     * trace" failure this module's header was written to close, left open on
+     * one branch: the listing comes back short, `stagingCaptureIncomplete`
+     * stays false, the mod stays mirrorable, and on the player's disk — where
+     * the archive extracted two real files — the unrecorded one is provably
+     * extra and gets DELETED, after which the mod is certified.
+     *
+     * Two distinct links to one target are two real entries in the mod, not a
+     * loop. Keying on the link's own path is safe here because a link to a
+     * DIRECTORY is excluded by the `isFile()` test, not by this set.
+     */
+    const mod = path.join(base, "Mod");
+    const real = put(mod, "a.ini", "[a]");
+    if (!linkOrSkip(real, path.join(mod, "first.ini"), () => ctx.skip())) return;
+    if (!linkOrSkip(real, path.join(mod, "second.ini"), () => ctx.skip())) return;
+
+    const { files, skipped } = await walk(mod);
+    expect(files).toEqual(["a.ini", "first.ini", "second.ini"]);
+    // And it is a complete listing, not a reported gap: the mod is whole.
+    expect(skipped).toEqual([]);
+  });
 });
