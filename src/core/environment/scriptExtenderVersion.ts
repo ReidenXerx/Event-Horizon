@@ -69,6 +69,20 @@ export type NativePluginDeclaration =
   /** A DLL with neither export — a support library, not a plugin. */
   | { kind: "not-a-plugin" };
 
+/**
+ * ─── ONE OF THE TWO INDEPENDENCE DWORDS IS NOT MODELLED ────────────────
+ * Both extenders declare two: SKSE has `versionIndependenceEx` at 772 beside
+ * `versionIndependence` at 776, and F4SE has `structureIndependence` at 524
+ * beside `addressIndependence` at 520. Only the second of each pair is read,
+ * because what the extenders do with the first could not be established from
+ * anything available here — no extender source, no documentation, and a
+ * corpus where no plugin sets it.
+ *
+ * So a plugin rejected on STRUCT compatibility while being address
+ * independent would be reported as loading. That is a known unknown rather
+ * than an oversight, and it is written down here so the next person does not
+ * have to rediscover that the field exists.
+ */
 const LAYOUT = {
   skse: {
     symbol: "SKSEPlugin_Version",
