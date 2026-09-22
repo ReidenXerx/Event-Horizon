@@ -24,6 +24,7 @@ import {
   shipsAsExternal,
 } from "../../../core/manifest/shipsAsExternal";
 import { resolveBundles } from "../../../core/manifest/resolveBundles";
+import { isAbort } from "../../../utils/abortError";
 import { leaveOutArchiveFiles } from "../../../core/manifest/leaveOutArchives";
 import * as fsp from "fs/promises";
 
@@ -594,6 +595,91 @@ export function collectMirrorPayload(
     }
   }
   return out;
+}
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * Carry what the self-check MEASURED onto the mods that ship.
+ *
+ * Three facts are discoverable only by reading a mod's archive and its FOMOD
+ * script. The self-check has just done that, and unless they are written onto
+ * the mods here the manifest cannot carry them and the installer cannot act on
+ * them — the fact is computed, logged, and thrown away.
+ *
+ *  - `emptySelectionVerified` — "they picked nothing, and we checked" (NS-8).
+ *    Without it the player is handed a FOMOD dialog they cannot answer.
+ *  - `installerUnexamined` — a mod whose archive could not be opened reaches
+ *    the manifest indistinguishable from one that was read and asks nothing.
+ *  - `readsPluginState` — whose installer asks the game about another mod's
+ *    plugin. Vortex evaluates those conditions against LIVE game state when
+ *    the mod installs, so pre-filling the curator's answers does not suppress
+ *    it: a mod naming a plugin this collection itself provides behaves
+ *    differently depending on where it sits in the install order, and the
+ *    epoch planner needs to know. The measured case is Helios_Obsidian.esp.
+ *
+ * ─── WHY THIS IS A FUNCTION AND NOT THREE BLOCKS IN THE PIPELINE ───────
+ * They WERE three blocks, several hundred lines inside the self-check's
+ * `try`. Any throw between the check and them — a disk error reloading the
+ * config after an unbounded pause on the decision gate, anything in
+ * `findPostProcessingCandidates` — skipped all three while the build carried
+ * on to package, and the summary still showed the check's findings because
+ * `selfCheckWarnings` had been assigned early. It looked like the whole pass
+ * had run.
+ *
+ * Out here it takes the reports and returns the mods, so a failure in the
+ * REPORTING half cannot strip facts out of the PACKAGE. Empty reports (the
+ * check never ran) leave every mod untouched, which is the honest answer.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+export function applySelfCheckFindings(
+  mods: readonly AuditorMod[],
+  reports: readonly SelfCheckReport[],
+): AuditorMod[] {
+  const verifiedEmpty = new Set(
+    reports.filter((r) => r.emptySelectionVerified === true).map((r) => r.modId),
+  );
+  const unexamined = new Set(
+    reports.filter((r) => r.installerUnexamined === true).map((r) => r.modId),
+  );
+  const pluginStateReaders = new Map(
+    reports
+      .filter((r) => (r.readsPluginState?.length ?? 0) > 0)
+      .map((r) => [r.modId, r.readsPluginState!] as const),
+  );
+
+  if (verifiedEmpty.size > 0) {
+    ehLog("info", "build.empty-selection-verified", { mods: verifiedEmpty.size });
+  }
+  if (unexamined.size > 0) {
+    ehLog("info", "build.installer-unexamined", {
+      mods: unexamined.size,
+      names: [...unexamined],
+      why:
+        "their archive could not be read, so the package records that the " +
+        "question was never answered rather than letting it read as 'asks " +
+        "nothing'",
+    });
+  }
+  if (pluginStateReaders.size > 0) {
+    ehLog("info", "build.plugin-state-readers", {
+      mods: pluginStateReaders.size,
+      examples: [...pluginStateReaders.entries()]
+        .slice(0, 10)
+        .map(([id, plugins]) => ({ id, plugins })),
+      why:
+        "these mods' installers ask the game whether a plugin is active, " +
+        "so their result depends on WHEN they install",
+    });
+  }
+
+  return mods.map((m) => ({
+    ...m,
+    ...(verifiedEmpty.has(m.id) ? { emptySelectionVerified: true } : {}),
+    ...(unexamined.has(m.id) ? { installerUnexamined: true } : {}),
+    ...(pluginStateReaders.has(m.id)
+      ? { readsPluginState: pluginStateReaders.get(m.id)! }
+      : {}),
+  }));
 }
 
 export function applyPostProcessedDeclarations(
@@ -2078,87 +2164,6 @@ export async function runBuildPipeline(
      * A tester lost an evening to one of these, and nothing in the build
      * output had mentioned it.
      */
-    /**
-     * Carry the "they picked nothing, and we checked" verdict onto the mods
-     * so the manifest can ship it. Without this the proof is computed, logged
-     * and thrown away, and the user still gets the dialog.
-     */
-    const verifiedEmpty = new Set(
-      selfCheck.reports
-        .filter((r) => r.emptySelectionVerified === true)
-        .map((r) => r.modId),
-    );
-    if (verifiedEmpty.size > 0) {
-      mods = mods.map((m) =>
-        verifiedEmpty.has(m.id) ? { ...m, emptySelectionVerified: true } : m,
-      );
-      ehLog("info", "build.empty-selection-verified", {
-        mods: verifiedEmpty.size,
-      });
-    }
-
-    /**
-     * ─── WHICH MODS ASK THE GAME ABOUT ANOTHER MOD'''S PLUGIN ─────────────
-     * Same shape as the overlay above, and for the same reason: the fact is
-     * only discoverable by reading the archive'''s FOMOD script, the self-check
-     * has just done that, and without carrying it onto the mod the manifest
-     * cannot ship it and the installer cannot act on it.
-     *
-     * Vortex evaluates these conditions against LIVE game state when the mod
-     * installs — pre-filling the curator'''s answers does not suppress it — so
-     * a mod naming a plugin this collection itself provides behaves
-     * differently depending on where it happens to sit in the install order.
-     */
-    const pluginStateReaders = new Map(
-      selfCheck.reports
-        .filter((r) => (r.readsPluginState?.length ?? 0) > 0)
-        .map((r) => [r.modId, r.readsPluginState!] as const),
-    );
-    /**
-     * ─── AND THE MODS NOTHING COULD BE LEARNED ABOUT ──────────────────
-     * This overlay used to carry only the answers, so a mod whose archive
-     * could not be opened reached the manifest indistinguishable from one
-     * that was read and asks nothing. The field existed, was computed, was
-     * logged — and was dropped here, which made it a build-time warning
-     * rather than something the package knows.
-     */
-    const unexaminedInstallers = new Set(
-      selfCheck.reports
-        .filter((r) => r.installerUnexamined === true)
-        .map((r) => r.modId),
-    );
-    if (unexaminedInstallers.size > 0) {
-      mods = mods.map((m) =>
-        unexaminedInstallers.has(m.id)
-          ? { ...m, installerUnexamined: true }
-          : m,
-      );
-      ehLog("info", "build.installer-unexamined", {
-        mods: unexaminedInstallers.size,
-        names: [...unexaminedInstallers],
-        why:
-          "their archive could not be read, so the package records that the " +
-          "question was never answered rather than letting it read as 'asks " +
-          "nothing'",
-      });
-    }
-    if (pluginStateReaders.size > 0) {
-      mods = mods.map((m) =>
-        pluginStateReaders.has(m.id)
-          ? { ...m, readsPluginState: pluginStateReaders.get(m.id)! }
-          : m,
-      );
-      ehLog("info", "build.plugin-state-readers", {
-        mods: pluginStateReaders.size,
-        examples: [...pluginStateReaders.entries()]
-          .slice(0, 10)
-          .map(([id, plugins]) => ({ id, plugins })),
-        why:
-          "these mods''' installers ask the game whether a plugin is active, " +
-          "so their result depends on WHEN they install",
-      });
-    }
-
     const prompting = findModsThatPromptTheUser(selfCheck.reports);
     if (prompting.length > 0) {
       ehLog("warn", "build.mods-that-prompt-the-user", {
@@ -2182,9 +2187,54 @@ export async function runBuildPipeline(
       shipsNothing: prompting.filter((m) => m.shipsNothing).length,
     });
   } catch (err) {
+    /**
+     * ─── A CANCELLED BUILD IS NOT A SELF-CHECK PROBLEM ──────────────────
+     * "A self-check problem is never a build problem" is true of
+     * `runSelfChecks`, which contains every per-mod failure by design. It was
+     * not true of this catch, which spans 270 lines and swallowed EVERY throw
+     * inside them — including the `AbortError` from `checkAbort()`.
+     *
+     * That made the cancellation guard on the decision gate inert. Its own
+     * comment says why it is there: "The next `checkAbort` is on the far side
+     * of a full deployment-manifest capture, so without this a cancelled build
+     * walks a 1,700-mod profile before it rewinds." It threw, this ate it, and
+     * the build walked the profile anyway.
+     *
+     * `packageZip` and `bundleFromStaging` both rethrow on abort; this did
+     * not.
+     */
+    if (isAbort(err) || signal?.aborted === true) {
+      selfCheckOp.fail(err);
+      throw err;
+    }
     // A self-check problem is never a build problem.
     selfCheckOp.fail(err);
   }
+
+  /**
+   * ─── THE OVERLAYS ARE NOT REPORTING, THEY ARE WHAT SHIPS ──────────────
+   * Three facts the self-check MEASURED have to be carried onto the mods, or
+   * the manifest cannot ship them: `emptySelectionVerified` (NS-8 — without
+   * it the player is handed a FOMOD dialog they cannot answer),
+   * `installerUnexamined` (a mod whose archive could not be opened otherwise
+   * reaches the manifest indistinguishable from one that was read and asks
+   * nothing), and `readsPluginState` (the epoch planner installs a
+   * plugin-state-dependent installer in the wrong epoch and the player gets a
+   * different file set, with no error — the measured Helios_Obsidian.esp
+   * case).
+   *
+   * They sat INSIDE the try above, several hundred lines after the check
+   * itself, so any throw between — a disk error in
+   * `loadOrCreateCollectionConfig` after an unbounded pause on the decision
+   * gate, anything in `findPostProcessingCandidates` — skipped all three while
+   * the build carried on to PACKAGE. And because `selfCheckWarnings` was
+   * assigned early, the summary still showed the check's findings: it looked
+   * like the whole pass had run.
+   *
+   * Applied here instead, from the reports the check produced, so a failure in
+   * the reporting half cannot strip facts out of the package.
+   */
+  mods = applySelfCheckFindings(mods, selfCheckReports);
 
   onProgress?.({ phase: "capturing-deployment" });
   const deploymentManifests = await captureDeploymentManifests(

@@ -39,6 +39,7 @@ import {
 } from "../safeRelativePath";
 import * as os from "os";
 import * as path from "path";
+import { randomBytes } from "crypto";
 
 import { existsSync } from "fs";
 
@@ -357,11 +358,23 @@ async function placeFile(
    * missing one but looks present to anything that only lists names.
    *
    * The temp lives in the destination's own directory so the rename is a
-   * same-filesystem metadata operation rather than a second copy, and it
-   * carries the target's name so a leaked one is obvious in a support log.
-   * On any failure the original is still there, untouched.
+   * same-filesystem metadata operation rather than a second copy. On any
+   * failure the original is still there, untouched.
+   *
+   * ─── THE NAME IS SHORT ON PURPOSE ──────────────────────────────────────
+   * It used to be `${dest}.ehcoll-restore-tmp`, nineteen characters longer
+   * than the destination — so a file that fits under Win32 MAX_PATH at
+   * `dest` could fail with ENAMETOOLONG at `dest + 19`, and mods are full of
+   * exactly the deep `textures/`/`meshes/` paths where that bites. This
+   * project already names "a path over MAX_PATH" as a real cause in
+   * stagingFileWalker, and this site had no handling for it. A short sibling
+   * in the same directory keeps the same-filesystem rename and stops the
+   * temp being longer than what it is replacing.
    */
-  const tmp = `${dest}.ehcoll-restore-tmp`;
+  const tmp = path.join(
+    path.dirname(dest),
+    `.eh-${randomBytes(4).toString("hex")}`,
+  );
   try {
     await fsp.copyFile(verified, tmp);
     await replaceFile(tmp, dest);
@@ -677,6 +690,8 @@ export async function replaceFile(
   ops: {
     rename: (from: string, to: string) => Promise<void>;
     rm: (target: string) => Promise<void>;
+    /** The last resort when `dest` has been removed and the retry failed. */
+    copyFile: (from: string, to: string) => Promise<void>;
   } = {
     rename: async (from, to) => {
       await fsp.rename(from, to);
@@ -684,13 +699,50 @@ export async function replaceFile(
     rm: async (target) => {
       await fsp.rm(target, { force: true });
     },
+    copyFile: async (from, to) => {
+      await fsp.copyFile(from, to);
+    },
   },
 ): Promise<void> {
   try {
     await ops.rename(tmp, dest);
   } catch (renameErr) {
     await ops.rm(dest);
-    await ops.rename(tmp, dest);
+    try {
+      await ops.rename(tmp, dest);
+    } catch (retryErr) {
+      /**
+       * ─── THE DESTINATION IS GONE AND THE TEMP IS THE ONLY GOOD COPY ────
+       * The second rename was unguarded, and a failure here is not exotic:
+       * on a Proton/Wine staging folder EVERY restore takes this branch, so
+       * a lock, an AV handle, ENOSPC or the same EPERM under another cause
+       * lands with `dest` already unlinked. The throw then reached
+       * `placeFile`'s catch, which removes `tmp` — and at that instant `tmp`
+       * holds the fully-written, hash-verified bytes. The file was simply
+       * absent afterwards from a mod Event Horizon installed.
+       *
+       * The docblock above defends the window as "strictly safer than the
+       * form this replaced, where a failure part-way left a TRUNCATED file
+       * behind". Absent and truncated are the same loss, and here the good
+       * copy was in hand and thrown away.
+       *
+       * A copy is not atomic, which is why it is not the first choice; with
+       * the destination already gone there is nothing left for it to
+       * endanger. If it also fails, the original error is what gets
+       * reported — `applyMirrorPlan` records the failure, stands the
+       * deletion pass down, and `mirrorProvesTarget` withholds certification.
+       */
+      await ops.copyFile(tmp, dest);
+      ehLog("warn", "mirror.restore.copy-after-rename-failed", {
+        dest,
+        firstWhy: (renameErr as NodeJS.ErrnoException)?.code ?? "unknown",
+        retryWhy: (retryErr as NodeJS.ErrnoException)?.code ?? "unknown",
+        note:
+          "the destination had already been removed for the retry, so the " +
+          "verified temp was copied into place rather than discarded",
+      });
+      return;
+    }
     ehLog("debug", "mirror.restore.rename-fallback", {
       dest,
       why: (renameErr as NodeJS.ErrnoException)?.code ?? "unknown",

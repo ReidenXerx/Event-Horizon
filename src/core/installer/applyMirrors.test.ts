@@ -488,13 +488,46 @@ describe("a filesystem where rename cannot replace an existing file", () => {
       rm: async () => {
         calls.push("rm");
       },
+      copyFile: async () => {
+        calls.push("copy");
+      },
     });
     // The order matters: the destination goes only AFTER the atomic attempt
     // failed, and the file that lands is the already-complete temp.
     expect(calls).toEqual(["rename-refused", "rm", "rename-ok"]);
   });
 
-  it("still throws when the retry also fails, rather than reporting success", async () => {
+  it("copies the verified temp into place when the retry also fails", async () => {
+    /**
+     * ─── THE DESTINATION IS ALREADY GONE AT THIS POINT ──────────────────
+     * The retry was unguarded, and it is not an exotic path: on a
+     * Proton/Wine staging folder EVERY restore takes this branch, so a lock,
+     * an AV handle or ENOSPC lands here with `dest` unlinked. The throw
+     * reached `placeFile`'s catch, which removes the temp — and the temp is
+     * the fully-written, hash-verified copy. The file was then simply absent
+     * from a mod Event Horizon installed.
+     *
+     * A copy is not atomic, which is why it is the last resort rather than
+     * the first; with the destination already removed there is nothing left
+     * for it to endanger.
+     */
+    const calls: string[] = [];
+    await replaceFile("from.tmp", "to.txt", {
+      rename: async () => {
+        calls.push("rename");
+        throw Object.assign(new Error("EPERM"), { code: "EPERM" });
+      },
+      rm: async () => {
+        calls.push("rm");
+      },
+      copyFile: async (from, to) => {
+        calls.push(`copy ${from}->${to}`);
+      },
+    });
+    expect(calls).toEqual(["rename", "rm", "rename", "copy from.tmp->to.txt"]);
+  });
+
+  it("still throws when even the copy fails, rather than reporting success", async () => {
     // A mirror that silently swallowed this would report the mod as matching
     // the curator's copy when it does not.
     await expect(
@@ -503,8 +536,11 @@ describe("a filesystem where rename cannot replace an existing file", () => {
           throw Object.assign(new Error("EPERM"), { code: "EPERM" });
         },
         rm: async () => undefined,
+        copyFile: async () => {
+          throw Object.assign(new Error("ENOSPC"), { code: "ENOSPC" });
+        },
       }),
-    ).rejects.toThrow(/EPERM/);
+    ).rejects.toThrow(/ENOSPC/);
   });
 });
 
