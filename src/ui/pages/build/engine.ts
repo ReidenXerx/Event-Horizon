@@ -532,6 +532,27 @@ export function collectMirrorPayload(
   for (const mod of mods) {
     if (mod.mirrored !== true) continue;
     /**
+     * ─── A TRIPWIRE, NOT A SECOND VETO ─────────────────────────────────
+     * `declarationsFor` already revokes "mirror" for an incomplete capture,
+     * and that veto was unreachable for months because it was applied before
+     * the flag was set. It is load-bearing — a mirror backed by a short file
+     * list DELETES the player's real files — so the last point that can still
+     * see the flag refuses the build rather than trusting the ordering.
+     *
+     * This is the asymmetry `listBundleFolder` gets right and this path did
+     * not: bundling, which only ADDS bytes, throws outright on an incomplete
+     * walk; mirroring, the one operation here that removes files, shipped.
+     */
+    if ((mod as { stagingCaptureIncomplete?: boolean }).stagingCaptureIncomplete === true) {
+      throw new Error(
+        `"${mod.name}" is set to be mirrored, but paths under its staging ` +
+          `folder could not be read, so its file list is incomplete. ` +
+          `Mirroring it would delete files from a user's copy that this ` +
+          `build never saw. Close whatever is holding those paths and ` +
+          `rebuild, or change this mod's answer.`,
+      );
+    }
+    /**
      * A BUNDLED mod already ships its whole staging folder, loose, so
      * collecting it again as mirror blobs writes the same bytes into the
      * package twice — on a 6 GB LOD mod that is 6 GB of nothing.
@@ -1601,6 +1622,25 @@ export async function runBuildPipeline(
       reverified: overrides.reverifyEverything === true,
     });
   }
+
+  /**
+   * ─── THE INCOMPLETE-CAPTURE VETO ONLY EXISTS AFTER THE CAPTURE ────────
+   * `declarationsFor` revokes a stored "mirror" answer for a mod whose staging
+   * walk could not read everything, because a mirror instruction backed by a
+   * file list we KNOW is short deletes the player's real files (see that
+   * function). It reads `mod.stagingCaptureIncomplete` — and the only
+   * unconditional place the declarations were applied is `withFormOverrides`,
+   * which runs BEFORE this capture sets the flag. The veto could therefore
+   * never fire there: the one re-application that follows the capture sits
+   * behind `postProcessingCandidates.some(needsAnswer) && onDecisions`, and a
+   * mod answered "mirror" in an earlier build with an unchanged fingerprint is
+   * settled — never re-asked, never re-declared, shipped mirrored.
+   *
+   * So the answers are applied once more, unconditionally, now that the fact
+   * the veto depends on is known. Idempotent for everything else: dropping is
+   * already done, and the config has not moved since.
+   */
+  mods = applyPostProcessedDeclarations(mods, collectionConfig);
 
   checkAbort();
 

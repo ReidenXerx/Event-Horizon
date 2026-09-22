@@ -215,3 +215,72 @@ describe("and reaches the build that comes after it", () => {
     ]);
   });
 });
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * THE VETO THAT COULD NOT FIRE.
+ *
+ * `declarationsFor` revokes a stored "mirror" answer when the staging walk
+ * could not read everything, because on the player's machine `planMirror` sees
+ * no unverifiable files and a non-empty target, so neither withholding guard
+ * fires and every real file under the subtree the curator's walk missed is
+ * classified as the player's own junk and DELETED — then `mirrorProvesTarget`
+ * certifies the amputated folder as byte-perfect.
+ *
+ * It read a flag `captureStagingFiles` sets, and the only unconditional
+ * application ran sixty lines earlier, before the capture. The one
+ * re-application after it was behind "the curator still has something to
+ * answer" — and a mod answered "mirror" in an earlier build with an unchanged
+ * fingerprint is settled and never re-asked. So the mod shipped mirrored.
+ *
+ * `stagingCaptureIncomplete` appeared in no test in this repository.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("an incomplete staging walk revokes a settled mirror answer", () => {
+  const settled = (over: Partial<AuditorMod> = {}): AuditorMod =>
+    mod("apocalypse", {
+      installationPath: "apocalypse",
+      stagingFiles: [{ path: "Data/a.esp", size: 10, sha256: "a".repeat(64) }],
+      ...over,
+    } as never);
+
+  /** The config as an earlier build settled it: mirror, answered, fingerprinted. */
+  const answeredMirror = {
+    externalMods: { apocalypse: { mirrored: true } },
+  } as unknown as CollectionConfig;
+
+  it("keeps mirroring when the walk read the whole folder", () => {
+    // The case that must still work, or the veto is just a switch-off.
+    const [out] = applyPostProcessedDeclarations([settled()], answeredMirror);
+    expect(out?.mirrored).toBe(true);
+  });
+
+  it("drops `mirrored` when the walk could not read some of it", () => {
+    const [out] = applyPostProcessedDeclarations(
+      [settled({ stagingCaptureIncomplete: true } as never)],
+      answeredMirror,
+    );
+    expect(out?.mirrored).not.toBe(true);
+    // The mod still ships — un-mirrored is the safe direction, dropping it is
+    // not.
+    expect(out?.id).toBe("apocalypse");
+  });
+
+  it("refuses the build outright if a flagged mod still reaches the payload", () => {
+    /**
+     * The tripwire behind the veto. The veto lives in one function and was
+     * re-orderable away once already; this is the last place that can still
+     * see the flag, and mirroring is the one operation here that deletes.
+     * `listBundleFolder` throws on the identical signal, and bundling only
+     * ADDS bytes.
+     */
+    const state = {
+      settings: { mods: { installPath: { skyrimse: dir } } },
+    } as unknown as types.IState;
+    expect(() =>
+      collectMirrorPayload(state, "skyrimse", [
+        settled({ mirrored: true, stagingCaptureIncomplete: true } as never),
+      ]),
+    ).toThrow(/file list is incomplete/);
+  });
+});

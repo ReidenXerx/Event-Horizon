@@ -1965,6 +1965,40 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       ).length,
       total: ownedByUs.size,
     });
+    /**
+     * ─── A MOD WE CREATE MID-RUN IS OURS FOR THE REST OF THE RUN ─────────
+     * `ownedByUs` is built ONCE, above, from the journal as it stood before
+     * the verify pass. Four later sites replace an entry's `vortexModId` with
+     * one this run created — the repair path, the verify loop's alongside
+     * install, the 7e retry, and the mirror's own alongside install — and only
+     * the last of them recorded the new id here. The journal append is not
+     * enough: the journal is re-read on the NEXT run, and every remaining
+     * ownership question in THIS one is asked of this set.
+     *
+     * What that cost, on the two paths that were missing it:
+     *
+     *  - Pass 5a2 asks `ownedByUs.has(theirModId)` before installing the
+     *    curator's copy beside the user's. After the verify loop replaced the
+     *    entry with OUR copy, that lookup missed, so it installed a second
+     *    copy of our own mod beside itself — three copies of one mod — and
+     *    overwrote `displacedModId` with our first copy's id. Uninstall then
+     *    re-enables our own discarded copy and leaves the USER's mod switched
+     *    off for good, with the only record of it destroyed. NS-2's harm,
+     *    arriving through the code written to honour NS-2.
+     *  - `mirrorOneMod` refuses on `!ownedByUs.has(newId)` and tells the user
+     *    "this is your own copy of the mod, and the curator's version of its
+     *    archive could not be obtained on this machine" — about a mod Event
+     *    Horizon installed from the curator's archive seconds earlier. The mod
+     *    then ships the archive's raw output instead of the curator's
+     *    reconciled staging folder (NS-5), with no drift oracle in the
+     *    receipt, under "Install complete."
+     *
+     * One helper so a fifth site cannot be added without it.
+     */
+    const noteOurs = (vortexModId: string): void => {
+      ownedByUs.add(vortexModId);
+    };
+
     // The live pool, not `ownedByUs`: the summary counts installed and adopted
     // entries against it separately, and handing it an installed-only set is
     // what made it report every adopted mod as deleted.
@@ -2432,6 +2466,8 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               decision: retried.installEntry.fromDecision,
               at: new Date().toISOString(),
             });
+            // …and ours for the REST OF THIS RUN. See `noteOurs`.
+            noteOurs(retried.installEntry.vortexModId);
           }
         }
 
@@ -2464,6 +2500,8 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               decision: alongside.fromDecision,
               at: new Date().toISOString(),
             });
+            // Without this, pass 5a2 installs a THIRD copy beside this one.
+            noteOurs(alongside.vortexModId);
             // Re-verify OUR copy: an alongside install is a normal install and
             // earns no exemption from the check this project exists to run.
             const check = await verifyModInstall({
@@ -2882,7 +2920,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         decision: "mirror-alongside",
         at: new Date().toISOString(),
       });
-      ownedByUs.add(ours.vortexModId);
+      noteOurs(ours.vortexModId);
       installedMods[idx] = ours;
 
       mirrorLines.push(
@@ -4580,6 +4618,15 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             decision: entry.fromDecision,
             at: new Date().toISOString(),
           });
+          /**
+           * The retry's OWN mirror pass runs a few lines below and asks
+           * `ownedByUs`. Without this it refused every mod it had just
+           * installed, told the user it was leaving their own copy alone, and
+           * counted them as mirrored anyway.
+           */
+          if (!entry.fromDecision.endsWith("already-installed")) {
+            noteOurs(entry.vortexModId);
+          }
           retriedOk += 1;
           recoveredKeys.push(entry.compareKey);
           /**
@@ -4727,13 +4774,23 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
 
           // ── mirror: the curator answered for these files ───────────────
           let retryMirrored = 0;
+          let retryMirrorSkipped = 0;
           for (const mod of recoveredManifestMods) {
             if (mod.state.mirrored !== true) continue;
             if (stopBeforeWriting("mirroring the retried mods")) break;
+            /**
+             * Counted from what the call DID, not from reaching it: this was
+             * an unconditional `+= 1`, so `install.retry.finished-mods`
+             * reported `mirrored: N` for N mods that had every one of them
+             * been skipped — the one number a support conversation checks
+             * first, saying the opposite of what happened (GP-8).
+             */
+            const skippedBefore = mirrorSkipped.length;
             // No purge: these mods were installed after the last deploy, so
             // nothing of theirs is linked yet for Vortex to compare against.
             await mirrorOneMod(mod, { purgeFirst: false });
-            retryMirrored += 1;
+            if (mirrorSkipped.length > skippedBefore) retryMirrorSkipped += 1;
+            else retryMirrored += 1;
           }
 
           /**
@@ -4756,6 +4813,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             iniTweaksApplied: retryTweaks.enabled.length,
             rulesApplied: retryRulesApplied,
             mirrored: retryMirrored,
+            mirrorSkipped: retryMirrorSkipped,
             why:
               "these mods arrived after every per-mod phase had run, so the " +
               "phases were replayed for exactly them",
