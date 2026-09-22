@@ -21,7 +21,9 @@
  * it's safe to put in `useEffect` dependency arrays.
  */
 
+import { isBenignBrowserNotice } from "./benignNotice";
 import { isForeignError } from "./foreignError";
+import { ehLog } from "../../core/logging/ehLog";
 import * as React from "react";
 
 import { ErrorReportModal } from "./ErrorReportModal";
@@ -128,6 +130,25 @@ export function ErrorProvider(props: ErrorProviderProps): JSX.Element {
     // silent unhandled rejection is worse; no longer claimed.
     const onError = (event: ErrorEvent): void => {
       const err = event.error ?? event.message ?? "Unknown window error";
+      /**
+       * ─── NOT EVERYTHING ON THIS CHANNEL IS A FAILURE ──────────────────
+       * Chromium announces a deferred ResizeObserver delivery through the
+       * error event, with no error object and no source. Reported, it reads
+       * as "Something went wrong", severity error, with a hint asking the
+       * reader to send it to us — which is exactly what one user did. See
+       * `benignNotice` for why it is not a fault and not ours.
+       *
+       * Logged rather than dropped in silence: if one of these ever turns
+       * out to matter, the trail is in the log the user already sends.
+       */
+      if (isBenignBrowserNotice(err)) {
+        ehLog("debug", "ui.window-error.benign-notice", {
+          message: typeof err === "string" ? err : (err as Error)?.message,
+          filename: event.filename,
+          why: "a browser scheduling notice, not a failure; not shown to the user",
+        });
+        return;
+      }
       report(err, {
         context: {
           source: "window.error",
