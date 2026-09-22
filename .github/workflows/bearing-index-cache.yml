@@ -47,7 +47,24 @@ jobs:
       - name: Build index
         id: build
         run: |
-          npx -y gitnexus@latest analyze --embeddings 0
+          # ─── THE RESTORED INDEX IS AN OPTIMISATION, NOT AN INPUT ───────────
+          # An incremental run over a restored index fails intermittently inside
+          # GitNexus's own embedding pipeline: "Found duplicated primary key
+          # value :0 … CREATE (e:CodeEmbedding …)" (measured 2026-09-22, run
+          # 35767392695, on the commit after a clean success). It is upstream,
+          # in the analyzer, not in this repository.
+          #
+          # A cache that cannot be reused is worth nothing and must not turn a
+          # green build red, so a failure here throws the restored index away
+          # and builds from nothing — which is what a person would do, and what
+          # this job would have done on a cold cache anyway. If THAT fails the
+          # job still fails: the recovery is a retry from a known state, not a
+          # mask over a broken analyzer.
+          if ! npx -y gitnexus@latest analyze --embeddings 0; then
+            echo "::warning::incremental analyze failed; discarding the restored index and rebuilding from scratch"
+            rm -rf .gitnexus
+            npx -y gitnexus@latest analyze --embeddings 0
+          fi
           # meta.json is written last, so its presence means the analyzer finished.
           if [ -f .gitnexus/meta.json ]; then
             echo "complete=true" >> "$GITHUB_OUTPUT"
