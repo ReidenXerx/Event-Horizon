@@ -34,7 +34,7 @@ Start here when exploring this area:
 
 - **`useErrorReporterFormatted`** (Function) — `src/ui/errors/ErrorContext.tsx:65`
 - **`CollectionsPage`** (Function) — `src/ui/pages/CollectionsPage.tsx:118`
-- **`HomePage`** (Function) — `src/ui/pages/HomePage.tsx:55`
+- **`HomePage`** (Function) — `src/ui/pages/HomePage.tsx:31`
 - **`ModDiffsPage`** (Function) — `src/ui/pages/ModDiffsPage.tsx:67`
 - **`PluginDiffsPage`** (Function) — `src/ui/pages/PluginDiffsPage.tsx:53`
 
@@ -44,7 +44,7 @@ Start here when exploring this area:
 |--------|------|------|------|
 | `useErrorReporterFormatted` | Function | `src/ui/errors/ErrorContext.tsx` | 65 |
 | `CollectionsPage` | Function | `src/ui/pages/CollectionsPage.tsx` | 118 |
-| `HomePage` | Function | `src/ui/pages/HomePage.tsx` | 55 |
+| `HomePage` | Function | `src/ui/pages/HomePage.tsx` | 31 |
 | `ModDiffsPage` | Function | `src/ui/pages/ModDiffsPage.tsx` | 67 |
 | `PluginDiffsPage` | Function | `src/ui/pages/PluginDiffsPage.tsx` | 53 |
 | `BuildPage` | Function | `src/ui/pages/build/BuildPage.tsx` | 165 |
@@ -70,13 +70,13 @@ Start here when exploring this area:
 | `BuildPage → GetVortexUserDataPath` | cross_community | 10 |
 | `BuildPage → NotifyStateChanged` | cross_community | 6 |
 | `BuildPage → Truncate` | cross_community | 6 |
-| `ReportView → FormatFieldValue` | cross_community | 5 |
-| `ReportView → TierBadge` | cross_community | 4 |
-| `ReportView → PartitionDiffs` | cross_community | 4 |
 | `BuildPage → GetDraftsRoot` | cross_community | 4 |
 | `BuildPage → Ok` | cross_community | 4 |
+| `BuildPage → UseToast` | cross_community | 3 |
+| `BuildPage → UseApi` | cross_community | 3 |
 | `BuildPage → GetState` | cross_community | 3 |
 | `BuildPage → Subscribe` | cross_community | 3 |
+| `BuildDiffView → Pill` | cross_community | 3 |
 
 ## How to Explore
 

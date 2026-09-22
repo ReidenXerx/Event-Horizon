@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-resolver
-description: "Skill for the Resolver area of Event-Horizon. 88 symbols across 24 files."
+description: "Skill for the Resolver area of Event-Horizon. 92 symbols across 26 files."
 ---
 
 # Resolver
 
-88 symbols | 24 files | Cohesion: 70%
+92 symbols | 26 files | Cohesion: 71%
 
 ## When to Use
 
@@ -47,8 +47,8 @@ Start here when exploring this area:
 | `describeStoreMismatch` | Function | `src/core/manifest/storeCompatibility.ts` | 122 |
 | `scriptExtenderMods` | Function | `src/core/manifest/storeCompatibility.ts` | 98 |
 | `resolveCompatibility` | Function | `src/core/resolver/resolveInstallPlan.ts` | 185 |
-| `describeVersionMismatch` | Function | `src/core/resolver/versionMismatch.ts` | 150 |
-| `plural` | Function | `src/core/resolver/versionMismatch.ts` | 180 |
+| `describeVersionMismatch` | Function | `src/core/resolver/versionMismatch.ts` | 187 |
+| `plural` | Function | `src/core/resolver/versionMismatch.ts` | 242 |
 | `resumeCandidates` | Function | `src/core/installer/resumeSources.ts` | 48 |
 | `downloadsDirFor` | Function | `src/core/resolver/scanAvailableDownloads.ts` | 40 |
 | `scanAvailableDownloads` | Function | `src/core/resolver/scanAvailableDownloads.ts` | 57 |
@@ -68,15 +68,15 @@ Start here when exploring this area:
 | Flow | Type | Steps |
 |------|------|-------|
 | `RunLoadingPipelineWithReceipt → GetVortexUserDataPath` | cross_community | 8 |
-| `Dashboard → ProfileId` | cross_community | 5 |
-| `Dashboard → BelongsToGame` | cross_community | 5 |
+| `DashboardPage → ProfileId` | cross_community | 7 |
+| `DashboardPage → BelongsToGame` | cross_community | 7 |
+| `DashboardPage → GetActiveGameId` | cross_community | 6 |
+| `DashboardPage → ResolveProfileName` | cross_community | 6 |
+| `DashboardPage → ResolveVortexVersion` | cross_community | 6 |
 | `RunLoadingPipelineWithReceipt → AbortError` | cross_community | 5 |
 | `RunLoadingPipelineWithReceipt → Cleanup` | cross_community | 5 |
 | `RunLoadingPipelineWithReceipt → SafePackageVersion` | cross_community | 5 |
 | `RunLoadingPipelineWithReceipt → Update` | cross_community | 5 |
-| `EnrichInstalledModsWithStagingSetHashes → BundledArchiveFileName` | cross_community | 4 |
-| `Dashboard → GetActiveGameId` | cross_community | 4 |
-| `Dashboard → ResolveProfileName` | cross_community | 4 |
 
 ## How to Explore
 

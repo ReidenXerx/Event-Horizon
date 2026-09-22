@@ -1,16 +1,16 @@
 ---
 name: gitnexus-area-manifest
-description: "Skill for the Manifest area of Event-Horizon. 536 symbols across 124 files."
+description: "Skill for the Manifest area of Event-Horizon. 533 symbols across 122 files."
 ---
 
 # Manifest
 
-536 symbols | 124 files | Cohesion: 73%
+533 symbols | 122 files | Cohesion: 73%
 
 ## When to Use
 
 - Working with code in `src/`
-- Understanding how parseManifest, archiveFormatOf, archiveFormatOfFile work
+- Understanding how parseManifest, bundleEntryOf, bundleFolderInPackage work
 - Modifying manifest-related functionality
 
 ## Key Files
@@ -33,10 +33,10 @@ description: "Skill for the Manifest area of Event-Horizon. 536 symbols across 1
 Start here when exploring this area:
 
 - **`parseManifest`** (Function) — `src/core/manifest/parseManifest.ts:172`
-- **`archiveFormatOf`** (Function) — `src/core/manifest/archiveInside.ts:57`
-- **`archiveFormatOfFile`** (Function) — `src/core/manifest/archiveInside.ts:69`
 - **`bundleEntryOf`** (Function) — `src/core/manifest/bundleLayout.ts:25`
 - **`bundleFolderInPackage`** (Function) — `src/core/manifest/bundleLayout.ts:10`
+- **`listBundleFolder`** (Function) — `src/core/manifest/bundleZip.ts:87`
+- **`packageEhcoll`** (Function) — `src/core/manifest/packageZip.ts:238`
 
 ## Key Symbols
 
@@ -51,17 +51,17 @@ Start here when exploring this area:
 | `ReadEhcollError` | Class | `src/core/manifest/readEhcoll.ts` | 133 |
 | `CollectionConfigError` | Class | `src/core/manifest/collectionConfig.ts` | 315 |
 | `parseManifest` | Function | `src/core/manifest/parseManifest.ts` | 172 |
-| `archiveFormatOf` | Function | `src/core/manifest/archiveInside.ts` | 57 |
-| `archiveFormatOfFile` | Function | `src/core/manifest/archiveInside.ts` | 69 |
 | `bundleEntryOf` | Function | `src/core/manifest/bundleLayout.ts` | 25 |
 | `bundleFolderInPackage` | Function | `src/core/manifest/bundleLayout.ts` | 10 |
 | `listBundleFolder` | Function | `src/core/manifest/bundleZip.ts` | 87 |
 | `packageEhcoll` | Function | `src/core/manifest/packageZip.ts` | 238 |
-| `repairDecisionFor` | Function | `src/core/resolver/resolveInstallPlan.ts` | 1234 |
+| `repairDecisionFor` | Function | `src/core/resolver/resolveInstallPlan.ts` | 1259 |
 | `isAbort` | Function | `src/utils/abortError.ts` | 54 |
 | `put` | Function | `src/core/diagnostics/zipWriter.ts` | 67 |
 | `buildGogHashdbTable` | Function | `src/core/environment/fixtures.testutil.ts` | 260 |
 | `buildPe` | Function | `src/core/environment/fixtures.testutil.ts` | 30 |
+| `alloc` | Function | `src/core/environment/fixtures.testutil.ts` | 62 |
+| `cstr` | Function | `src/core/environment/fixtures.testutil.ts` | 68 |
 
 ## Execution Flows
 
@@ -72,8 +72,8 @@ Start here when exploring this area:
 | `PublishedDetailsPanel → Truncate` | cross_community | 10 |
 | `LoadPublishedDetails → GetEventHorizonDir` | cross_community | 10 |
 | `RunSelfChecks → GetVortexUserDataPath` | cross_community | 10 |
-| `LoadPublishedDetails → ResolveLogFile` | cross_community | 10 |
 | `NexusUploadModal → GetEventHorizonRoot` | cross_community | 10 |
+| `LoadPublishedDetails → ResolveLogFile` | cross_community | 10 |
 | `RunLoadingPipeline → GetEventHorizonRoot` | cross_community | 10 |
 | `PrepareChangelog → ToPosix` | cross_community | 9 |
 | `WriteEnvironmentSnapshot → GetVortexUserDataPath` | cross_community | 9 |

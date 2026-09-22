@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-build
-description: "Skill for the Build area of Event-Horizon. 513 symbols across 112 files."
+description: "Skill for the Build area of Event-Horizon. 521 symbols across 117 files."
 ---
 
 # Build
 
-513 symbols | 112 files | Cohesion: 84%
+521 symbols | 117 files | Cohesion: 83%
 
 ## When to Use
 
@@ -17,16 +17,16 @@ description: "Skill for the Build area of Event-Horizon. 513 symbols across 112 
 
 | File | Symbols |
 |------|---------|
-| `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildChangelog, BuildDiffCard, BuildWizard, BuildingPanel (+57) |
+| `src/ui/pages/build/BuildPage.tsx` | AvailabilityPanel, BuildChangelog, BuildDiffCard, BuildRulesScopeSummary, BuildWizard (+57) |
 | `src/ui/pages/build/buildSession.ts` | cancelLoading, cancelRecovering, getState, subscribe, buildProgress (+30) |
-| `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, checkPickedFile, handlePickFile, DecisionsStep (+22) |
+| `src/ui/pages/install/steps.tsx` | ConfirmStep, ConflictRow, checkPickedFile, handlePickFile, DecisionsStep (+25) |
 | `src/ui/pages/build/BuildDashboard.tsx` | BuildDashboard, handleDismissBuilt, handleOpenBuilt, handleOpenDraft, DashboardHeader (+20) |
-| `src/ui/pages/build/engine.ts` | validateCuratorInput, describeMissingArchives, downloadedFromNexus, findUnidentifiedMods, isBundled (+18) |
+| `src/ui/pages/build/engine.ts` | validateCuratorInput, describeMissingArchives, downloadedFromNexus, findUnidentifiedMods, isBundled (+17) |
 | `src/ui/pages/build/buildSessionRegistry.ts` | BuildSessionRegistry, getBuildSessionRegistry, get, notifyStateChanged, emit (+13) |
-| `src/ui/pages/build/NexusCollectionUpload.tsx` | Body, Choose, Footer, NexusCollectionUpload, NexusUploadDialog (+12) |
+| `src/ui/pages/build/NexusCollectionUpload.tsx` | Body, Choose, NexusCollectionUpload, close, Reasons (+12) |
 | `src/ui/pages/build/buildDiff.test.ts` | findPackages, findPackages, findPackages, findPackages, findPackages (+9) |
-| `src/ui/pages/HomePage.tsx` | CuratorPanel, Dashboard, DashboardBody, ErrorPanel, FooterRow (+6) |
 | `src/core/build/nexusAvailability.ts` | checkNexusAvailability, isAbort, categoryOf, classifyFile, currentMainFile (+6) |
+| `src/ui/components/Field.tsx` | Checkbox, Chip, ChoiceCard, ChoiceControl, Field (+5) |
 
 ## Entry Points
 
@@ -55,13 +55,13 @@ Start here when exploring this area:
 | `overallHealth` | Function | `src/core/doctor/health.ts` | 873 |
 | `canReapply` | Function | `src/core/doctor/loadOrderStatus.ts` | 254 |
 | `pickDoctorReceipt` | Function | `src/core/doctor/pickReceipt.ts` | 62 |
+| `toHealthView` | Function | `src/core/doctor/receiptView.ts` | 21 |
 | `describeInstallAttempt` | Function | `src/core/installer/attemptRecord.ts` | 231 |
 | `describeFomodModes` | Function | `src/core/installer/fomodReplayMode.ts` | 78 |
 | `s` | Function | `src/core/installer/fomodReplayMode.ts` | 84 |
 | `mustAskReplayMode` | Function | `src/core/installer/fomodReplayMode.ts` | 183 |
 | `countKinds` | Function | `src/core/manifest/unexplainedFiles.ts` | 175 |
 | `describeUnexplainedFile` | Function | `src/core/manifest/unexplainedFiles.ts` | 153 |
-| `formatBytes` | Function | `src/core/manifest/unexplainedFiles.ts` | 139 |
 
 ## Execution Flows
 
@@ -70,10 +70,10 @@ Start here when exploring this area:
 | `PublishedDetailsPanel → ResolveLogFile` | cross_community | 10 |
 | `PublishedDetailsPanel → Truncate` | cross_community | 10 |
 | `LoadPublishedDetails → GetEventHorizonDir` | cross_community | 10 |
-| `Dashboard → GetEventHorizonRoot` | cross_community | 10 |
+| `NexusUploadModal → GetEventHorizonRoot` | cross_community | 10 |
 | `LoadPublishedDetails → ResolveLogFile` | cross_community | 10 |
 | `HandleDeletePublished → GetVortexUserDataPath` | cross_community | 10 |
-| `NexusUploadModal → GetEventHorizonRoot` | cross_community | 10 |
+| `DashboardPage → ResolveLogFile` | cross_community | 10 |
 | `BuildPage → GetVortexUserDataPath` | cross_community | 10 |
 | `BuildWizard → GetVortexUserDataPath` | cross_community | 10 |
 | `OnRecovered → GetVortexUserDataPath` | cross_community | 10 |

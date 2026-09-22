@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-nexus
-description: "Skill for the Nexus area of Event-Horizon. 24 symbols across 10 files."
+description: "Skill for the Nexus area of Event-Horizon. 31 symbols across 11 files."
 ---
 
 # Nexus
 
-24 symbols | 10 files | Cohesion: 74%
+31 symbols | 11 files | Cohesion: 76%
 
 ## When to Use
 
@@ -18,15 +18,15 @@ description: "Skill for the Nexus area of Event-Horizon. 24 symbols across 10 fi
 | File | Symbols |
 |------|---------|
 | `src/core/nexus/collectionUpload.ts` | canUploadCollections, describeUploadError, toOutcome, uploadToNexusCollection, armQuiet (+6) |
+| `src/core/nexus/collectionStats.ts` | first, collectionStats, num, readCollectionStats, str (+1) |
 | `src/core/nexus/collectionRevision.ts` | comparable, nexusCollectionOfDownload, readNexusCollectionRevision |
 | `src/core/nexus/collectionPayload.ts` | countNexusCollectionMods, describeNexusPointer |
 | `src/ui/runtime/collectionUpdates.ts` | downloadRevision, safeFileName |
+| `src/ui/pages/dashboard/DashboardPage.tsx` | loadStats, onRefreshCurator |
 | `src/core/nexus/collectionUpdates.test.ts` | emitAndAwait |
 | `src/core/nexus/collectionUpdates.ts` | latestPublishedRevision |
 | `src/core/nexus/collectionUpload.test.ts` | emitAndAwait |
 | `src/ui/pages/curator/useCuratorActions.ts` | refreshUpdates |
-| `src/core/installer/runInstall.ts` | nexusRevisionOfPackageFile |
-| `src/ui/pages/install/engine.ts` | incomingRevisionOf |
 
 ## Entry Points
 
@@ -57,26 +57,26 @@ Start here when exploring this area:
 | `resolveNexusCollection` | Function | `src/core/nexus/collectionUpload.ts` | 136 |
 | `refreshUpdates` | Function | `src/ui/pages/curator/useCuratorActions.ts` | 698 |
 | `downloadRevision` | Function | `src/ui/runtime/collectionUpdates.ts` | 354 |
-| `nexusCollectionOfDownload` | Function | `src/core/nexus/collectionRevision.ts` | 56 |
-| `readNexusCollectionRevision` | Function | `src/core/nexus/collectionRevision.ts` | 25 |
-| `toOutcome` | Function | `src/core/nexus/collectionUpload.ts` | 296 |
-| `emitAndAwait` | Function | `src/core/nexus/collectionUpdates.test.ts` | 32 |
-| `emitAndAwait` | Function | `src/core/nexus/collectionUpload.test.ts` | 49 |
+| `collectionStats` | Function | `src/core/nexus/collectionStats.ts` | 186 |
+| `readCollectionStats` | Function | `src/core/nexus/collectionStats.ts` | 139 |
+| `toCollectionStats` | Function | `src/core/nexus/collectionStats.ts` | 70 |
+| `loadStats` | Function | `src/ui/pages/dashboard/DashboardPage.tsx` | 56 |
+| `onRefreshCurator` | Function | `src/ui/pages/dashboard/DashboardPage.tsx` | 171 |
 
 ## Execution Flows
 
 | Flow | Type | Steps |
 |------|------|-------|
+| `OnRefreshCurator → GetEventHorizonRoot` | cross_community | 10 |
 | `Upload → GetVortexUserDataPath` | cross_community | 9 |
+| `OnRefreshCurator → Truncate` | cross_community | 7 |
 | `RefreshUpdates → GetVortexUserDataPath` | cross_community | 7 |
+| `OnRefreshCurator → EmitAndAwait` | cross_community | 6 |
+| `OnRefreshCurator → EmitAndAwait` | cross_community | 6 |
+| `OnRefreshCurator → Num` | intra_community | 6 |
 | `Upload → Truncate` | cross_community | 5 |
 | `OnAbort → DescribeNexusPointer` | intra_community | 3 |
 | `OnAbort → IsAbort` | cross_community | 3 |
-| `Upload → EmitAndAwait` | cross_community | 3 |
-| `Upload → EmitAndAwait` | cross_community | 3 |
-| `Upload → CountNexusCollectionMods` | cross_community | 3 |
-| `Upload → Fail` | cross_community | 3 |
-| `RefreshUpdates → Truncate` | cross_community | 3 |
 
 ## How to Explore
 

@@ -61,16 +61,11 @@ Start here when exploring this area:
 
 | Flow | Type | Steps |
 |------|------|-------|
-| `DiffSnapshots → CanonicalSelections` | cross_community | 5 |
-| `DiffSnapshots → SelectionEvidence` | cross_community | 5 |
 | `BuildChangelog → Add` | cross_community | 5 |
 | `PrepareChangelog → PageOf` | cross_community | 5 |
 | `PrepareChangelog → Push` | cross_community | 5 |
-| `DiffSnapshots → CompareState` | cross_community | 4 |
-| `DiffSnapshots → CompareShapes` | cross_community | 4 |
 | `BuildChangelog → Plural` | cross_community | 4 |
 | `PrepareChangelog → EmptyChanges` | cross_community | 4 |
-| `DiffSnapshots → Take` | cross_community | 3 |
 
 ## How to Explore
 

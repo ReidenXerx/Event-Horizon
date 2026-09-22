@@ -68,12 +68,11 @@ Start here when exploring this area:
 |------|------|-------|
 | `PrepareChangelog → ToPosix` | cross_community | 9 |
 | `LoadBuildDiff → ToPosix` | cross_community | 8 |
-| `RunEnvironmentPreflight → ToPosix` | cross_community | 6 |
-| `RunEnvironmentPreflight → ErrorCode` | cross_community | 5 |
 | `ProbeWinePrefix → ReadObject` | cross_community | 5 |
-| `RunEnvironmentPreflight → Fold` | cross_community | 4 |
-| `RunEnvironmentPreflight → IsDirectory` | cross_community | 4 |
-| `ProbeWinePrefix → ErrorCode` | cross_community | 3 |
+| `ProbeWinePrefix → ToPosix` | cross_community | 5 |
+| `ProbeWinePrefix → ErrorCode` | cross_community | 4 |
+| `ProbeWinePrefix → Fold` | intra_community | 3 |
+| `ProbeWinePrefix → IsDirectory` | intra_community | 3 |
 
 ## How to Explore
 

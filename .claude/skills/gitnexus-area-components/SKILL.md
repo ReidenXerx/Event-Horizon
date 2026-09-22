@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-components
-description: "Skill for the Components area of Event-Horizon. 35 symbols across 8 files."
+description: "Skill for the Components area of Event-Horizon. 38 symbols across 10 files."
 ---
 
 # Components
 
-35 symbols | 8 files | Cohesion: 84%
+38 symbols | 10 files | Cohesion: 85%
 
 ## When to Use
 
@@ -20,11 +20,13 @@ description: "Skill for the Components area of Event-Horizon. 35 symbols across 
 | `src/ui/components/Markdown.tsx` | InlineLink, MarkdownView, renderInline, flush, key (+5) |
 | `src/ui/components/toastModel.ts` | findDuplicateToast, nodeToText, toastDedupKey, held, start (+5) |
 | `src/ui/components/Toast.tsx` | commit, dismiss, show, ToastCard, ToastHost (+3) |
-| `src/core/revealPath.ts` | loadShell, openExternalUrl |
+| `src/ui/components/charts.tsx` | ids, clipIds, nextId |
 | `src/ui/components/noInlineStyle.test.ts` | inlineStyles, styleExpression |
 | `src/core/presentation/presentation.ts` | isSafeLink |
 | `src/core/revealPath.test.ts` | openExternal |
+| `src/core/revealPath.ts` | openExternalUrl |
 | `src/ui/pages/build/NexusCollectionUpload.tsx` | action |
+| `src/ui/pages/dashboard/DashboardPage.tsx` | onOpenCollectionPage |
 
 ## Entry Points
 
@@ -55,11 +57,11 @@ Start here when exploring this area:
 | `stop` | Function | `src/ui/components/toastModel.ts` | 65 |
 | `openExternalUrl` | Function | `src/core/revealPath.ts` | 139 |
 | `action` | Function | `src/ui/pages/build/NexusCollectionUpload.tsx` | 273 |
+| `onOpenCollectionPage` | Function | `src/ui/pages/dashboard/DashboardPage.tsx` | 172 |
 | `ToastProvider` | Function | `src/ui/components/Toast.tsx` | 95 |
 | `createToastTimers` | Function | `src/ui/components/toastModel.ts` | 52 |
 | `blocks` | Function | `src/ui/components/Markdown.tsx` | 206 |
 | `parseBlocks` | Function | `src/ui/components/Markdown.tsx` | 40 |
-| `flush` | Function | `src/ui/components/Markdown.tsx` | 45 |
 
 ## Execution Flows
 

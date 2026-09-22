@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-runtime
-description: "Skill for the Runtime area of Event-Horizon. 67 symbols across 24 files."
+description: "Skill for the Runtime area of Event-Horizon. 58 symbols across 20 files."
 ---
 
 # Runtime
 
-67 symbols | 24 files | Cohesion: 84%
+58 symbols | 20 files | Cohesion: 85%
 
 ## When to Use
 
@@ -17,7 +17,7 @@ description: "Skill for the Runtime area of Event-Horizon. 67 symbols across 24 
 
 | File | Symbols |
 |------|---------|
-| `src/ui/runtime/collectionUpdates.ts` | CollectionUpdateStore, checkCollectionUpdates, getCollectionUpdateStore, notifyUpdate, runOneCheck (+6) |
+| `src/ui/runtime/collectionUpdates.ts` | openInstall, CollectionUpdateStore, checkCollectionUpdates, getCollectionUpdateStore, notifyUpdate (+2) |
 | `src/ui/pages/install/fetchLink.ts` | fetchFromNexus, gameMismatchMessage, readKnownGames, throwIfAborted, vortexDownloadPath (+1) |
 | `src/ui/runtime/ensurePackage.test.ts` | download, ensure, locate, download, store (+1) |
 | `src/core/runtime/detectRuntimes.ts` | detectRuntimes, probeDirectX9, probeDotNet48, probeDotNetDesktop8, probeVcRedist (+1) |
@@ -50,30 +50,28 @@ Start here when exploring this area:
 | `summarisePrereqResults` | Function | `src/core/runtime/installPrerequisites.ts` | 217 |
 | `classifyExitCode` | Function | `src/core/runtime/prerequisites.ts` | 230 |
 | `verdictIsGood` | Function | `src/core/runtime/prerequisites.ts` | 262 |
-| `nexusExtOf` | Function | `src/ui/pages/curator/requirementsIo.ts` | 177 |
-| `fn` | Function | `src/ui/pages/curator/requirementsIo.ts` | 179 |
-| `nexus` | Function | `src/ui/pages/curator/useCuratorActions.ts` | 225 |
 | `waitForVortexDownload` | Function | `src/ui/pages/install/fetchLink.ts` | 383 |
 | `ensureCollectionPackage` | Function | `src/ui/runtime/ensurePackage.ts` | 96 |
-| `findCollectionUpdates` | Function | `src/core/nexus/collectionUpdates.ts` | 81 |
-| `isLoggedInToNexus` | Function | `src/core/nexus/collectionUpload.ts` | 79 |
+| `install` | Function | `src/core/installer/collectionIntercept.ts` | 137 |
+| `getRouteRequest` | Function | `src/ui/runtime/routeRequest.ts` | 72 |
 | `checkCollectionUpdates` | Function | `src/ui/runtime/collectionUpdates.ts` | 142 |
 | `getCollectionUpdateStore` | Function | `src/ui/runtime/collectionUpdates.ts` | 100 |
-| `watchCollectionUpdates` | Function | `src/ui/runtime/collectionUpdates.ts` | 475 |
-| `later` | Function | `src/ui/runtime/collectionUpdates.ts` | 477 |
-| `install` | Function | `src/core/installer/collectionIntercept.ts` | 137 |
+| `detectRuntimes` | Function | `src/core/runtime/detectRuntimes.ts` | 241 |
+| `parseScriptExtenderLog` | Function | `src/core/runtime/scriptExtenderLog.ts` | 76 |
+| `close` | Function | `src/core/runtime/scriptExtenderLog.ts` | 82 |
+| `readScriptExtenderLog` | Function | `src/core/runtime/scriptExtenderLog.ts` | 210 |
+| `scriptExtenderLogFor` | Function | `src/core/runtime/scriptExtenderLog.ts` | 189 |
+| `describeRuntimeFindings` | Function | `src/core/runtime/detectRuntimes.ts` | 298 |
 
 ## Execution Flows
 
 | Flow | Type | Steps |
 |------|------|-------|
 | `EnsureCollectionPackage → GetVortexUserDataPath` | cross_community | 7 |
-| `UseCuratorActions → Fn` | cross_community | 5 |
-| `RunPlan → Fn` | cross_community | 5 |
 | `FetchFromNexus → VortexGamesForNexusDomain` | intra_community | 3 |
 | `FetchFromNexus → ReadKnownGames` | intra_community | 3 |
 | `FetchFromNexus → NexusDomainOf` | cross_community | 3 |
-| `FetchFromNexus → Fn` | intra_community | 3 |
+| `FetchFromNexus → Fn` | cross_community | 3 |
 | `EnsureCollectionPackage → Truncate` | cross_community | 3 |
 
 ## How to Explore

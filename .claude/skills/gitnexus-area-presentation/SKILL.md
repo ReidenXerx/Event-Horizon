@@ -67,14 +67,14 @@ Start here when exploring this area:
 |------|------|-------|
 | `PresentationCard → Channel` | cross_community | 7 |
 | `PresentationCard → RgbOf` | cross_community | 7 |
-| `CollectionGallery → Channel` | cross_community | 6 |
-| `CollectionGallery → RgbOf` | cross_community | 6 |
 | `PresentationCard → IsHexColor` | cross_community | 5 |
 | `RunLoadingPipelineWithReceipt → AbortError` | cross_community | 5 |
 | `RunLoadingPipelineWithReceipt → Cleanup` | cross_community | 5 |
 | `RunLoadingPipelineWithReceipt → SafePackageVersion` | cross_community | 5 |
-| `RunLoadingPipelineWithReceipt → Update` | cross_community | 5 |
 | `ReceiptCard → Channel` | cross_community | 5 |
+| `ReceiptCard → RgbOf` | cross_community | 5 |
+| `RunLoadingPipelineWithReceipt → Update` | cross_community | 5 |
+| `PackageEhcoll → IsPresentationFileName` | cross_community | 4 |
 
 ## How to Explore
 

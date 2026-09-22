@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-environment
-description: "Skill for the Environment area of Event-Horizon. 143 symbols across 28 files."
+description: "Skill for the Environment area of Event-Horizon. 140 symbols across 28 files."
 ---
 
 # Environment
 
-143 symbols | 28 files | Cohesion: 77%
+140 symbols | 28 files | Cohesion: 76%
 
 ## When to Use
 
@@ -22,11 +22,11 @@ description: "Skill for the Environment area of Event-Horizon. 143 symbols acros
 | `src/core/environment/quarantine.ts` | countOnDisk, dismissQuarantine, exists, isSafeRelative, listQuarantines (+7) |
 | `src/core/environment/storeFileLists.ts` | Truncated, fields, varint, parseAppManifest, parseDepotManifest (+6) |
 | `src/core/environment/peImage.ts` | Malformed, parse, cstring, dir, offsetOf (+5) |
-| `src/core/environment/nativePluginCompat.ts` | atLeast, extenderApiFor, runtimeIdFor, tuple, conflictWinner (+4) |
+| `src/core/environment/nativePluginCompat.ts` | conflictWinner, deploysAfter, judgeCollection, judgePlugin, refersTo (+4) |
 | `src/core/environment/snapshot.ts` | readText, safe, writeEnvironmentSnapshot, close, field (+4) |
 | `src/core/environment/launchGame.ts` | chooseLaunchTarget, isCancellation, isFile, launchGame, onSpawned (+3) |
-| `src/core/environment/vortexEnvironment.ts` | readDiscovery, str, extensionGame, gameDisplayName, gameExecutable (+1) |
 | `src/core/environment/binaryImports.ts` | probeImportMismatches, load, rootDllOwnership, closure, refs (+1) |
+| `src/core/environment/vortexEnvironment.ts` | readDiscovery, str, extensionGame, gameDisplayName, gameExecutable (+1) |
 
 ## Entry Points
 
@@ -69,14 +69,14 @@ Start here when exploring this area:
 |------|------|-------|
 | `LaunchGame → GetVortexUserDataPath` | cross_community | 10 |
 | `WriteEnvironmentSnapshot → GetVortexUserDataPath` | cross_community | 9 |
-| `Init → GetVortexUserDataPath` | cross_community | 9 |
 | `RestoreQuarantine → GetVortexUserDataPath` | cross_community | 7 |
-| `RunEnvironmentPreflight → ToPosix` | cross_community | 6 |
 | `LaunchGame → Truncate` | cross_community | 6 |
 | `LaunchGame → MyGamesFolderCandidates` | cross_community | 5 |
-| `RunEnvironmentPreflight → ErrorCode` | cross_community | 5 |
 | `ProbeWinePrefix → ReadObject` | cross_community | 5 |
 | `WriteEnvironmentSnapshot → MyGamesFolderCandidates` | cross_community | 5 |
+| `WriteEnvironmentSnapshot → Truncate` | cross_community | 5 |
+| `LaunchGame → GetLocalAppDataPath` | cross_community | 4 |
+| `LaunchGame → PluginsTxtFolderCandidates` | cross_community | 4 |
 
 ## How to Explore
 
