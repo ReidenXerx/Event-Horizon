@@ -178,10 +178,13 @@ function VerdictRing(props: { checks: readonly HealthCheck[] }): JSX.Element {
           <span className="eh-label">
             {applicable.length === 0 ? "checks" : "passing"}
           </span>
-          {unknown > 0 && (
-            // `.eh-label` already carries the muted token.
-            <span className="eh-label">{unknown} not checked</span>
-          )}
+          {/*
+            The "N not checked" count lives in the HEADER sentence, not here.
+            A third line inside a 104px ring overflows its circle — visible in
+            the render harness, which is what that harness is for. The ring
+            keeps the two lines it was sized for; the caveat goes where there
+            is room to read it.
+          */}
         </span>
       }
     />
@@ -288,6 +291,9 @@ function CheckCard(props: {
 export function DoctorPanel(props: DoctorPanelProps): JSX.Element {
   const { checks } = props;
   const overall = overallHealth(checks);
+  // The same tally the ring draws, so the sentence beside it cannot disagree
+  // with the arc.
+  const { of: applicableCount, unknown: unknownCount } = verdictTally(checks);
   // Problems first. A user opening this wants the bad news at the top, not in
   // reading order behind six healthy cards.
   const ordered = [...checks].sort((a, b) => rank(a.status) - rank(b.status));
@@ -311,6 +317,20 @@ export function DoctorPanel(props: DoctorPanelProps): JSX.Element {
             <span className="eh-body">
               {props.packageName} v{props.packageVersion} — measured against the
               last install of this collection on this machine.
+              {/*
+                How much of the verdict was actually established, beside the
+                verdict itself. The ring counts unknowns in its denominator so
+                the arc cannot overstate the result, but an arc cannot say WHY
+                it is short — and `overallHealth` only mentions unchecked
+                checks when nothing else is wrong.
+              */}
+              {unknownCount > 0 && (
+                <span className="eh-muted">
+                  {" "}
+                  {unknownCount} of {applicableCount} check
+                  {applicableCount === 1 ? "" : "s"} could not be run.
+                </span>
+              )}
               {props.checkedAt !== undefined && (
                 <span className="eh-muted">
                   {" "}

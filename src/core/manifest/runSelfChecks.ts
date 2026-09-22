@@ -813,9 +813,9 @@ export function describeUndeclaredPostProcessing(
    * fingerprints existed" and honours it forever — so following the stale
    * advice silences the question permanently.
    *
-   * Still correct for the caller that passes no `onDecisions` (the legacy
-   * dialog path and the render harness), which is why the sentence is
-   * conditional rather than deleted.
+   * Still correct for a caller that passes no `onDecisions` — the render
+   * harness, and any future non-interactive build — which is why the sentence
+   * is conditional rather than deleted.
    */
   asksOnScreen = false,
 ): string | undefined {

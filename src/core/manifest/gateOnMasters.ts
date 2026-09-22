@@ -6,20 +6,31 @@
  * were already shared. What was not shared was the forty lines that turn them
  * into a gate: read plugins.txt, resolve the Data folder, walk the enabled
  * plugins reading headers, log the outcome, refuse on a miss, warn on the
- * rest. That block lived in the build PAGE, and this project has two live
- * build paths — the page and `Event Horizon: Build (legacy dialog)`, which
- * `src/index.ts` registers and which runs the same `buildManifest` →
- * `packageEhcoll` pipeline to produce a real `.ehcoll`.
+ * rest. That block lived in the build PAGE, while a second door — the
+ * `Event Horizon: Build (legacy dialog)` command — ran the same
+ * `buildManifest` → `packageEhcoll` pipeline and produced a real `.ehcoll`.
  *
  * So the gate written to stop an unloadable collection from shipping guarded
- * one of the two doors. The other one shipped the exact package the gate
- * exists to refuse, and could not even catch the refusal — `BuildRefusedError`
- * is declared inside the page module.
+ * one of the two doors. The other shipped the exact package the gate exists to
+ * refuse, and could not even catch the refusal — `BuildRefusedError` is
+ * declared inside the page module.
  *
  * That is not a hypothetical for this codebase: six test files exist purely to
- * assert that these two paths have not diverged on some rule, each named for a
- * rule that diverged once already. Rather than add a seventh, the rule gets
- * one home and both callers get one line.
+ * assert that these two paths had not diverged on some rule, each named for a
+ * rule that diverged once already.
+ *
+ * ─── THE SECOND DOOR IS GONE, AND THIS STILL BELONGS HERE ──────────────────
+ * Verified 2026-09-23, by reading rather than by the graph: `runBuildPipeline`
+ * has exactly one production caller (`buildSession.ts`) and `packageEhcoll`
+ * exactly one (`engine.ts`); every other hit is a test. The legacy dialog no
+ * longer exists, so the "two doors" above is HISTORY — kept because it is why
+ * the rule lives in one place and why the tests that pin it are worth their
+ * upkeep, not as a claim about the code today.
+ *
+ * Said plainly rather than quietly deleted: a docblock asserting a second,
+ * unguarded build path is the kind of stale claim that makes the next person
+ * go looking for a door that is not there, or worse, trust that a rule is
+ * enforced in two places when only one exists to enforce it in.
  *
  * ─── WHAT IT DECIDES ────────────────────────────────────────────────────────
  * A Bethesda plugin declares the masters it was built against, and the game

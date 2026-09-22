@@ -121,8 +121,8 @@ describe("the advice matches the door the curator is standing at", () => {
   });
 
   it("keeps the config instructions for a caller that does NOT ask", () => {
-    // The legacy dialog path and the render harness pass no handler, and for
-    // them editing the config really is the only way through.
+    // The render harness passes no handler, and for it editing the config
+    // really is the only way through.
     const text = describeUndeclaredPostProcessing([report("X", 3)], none, false)!;
     expect(text).toContain('"postProcessed": true');
     expect(text).not.toContain("decisions screen");
