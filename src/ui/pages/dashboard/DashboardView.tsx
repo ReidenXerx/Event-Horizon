@@ -65,6 +65,8 @@ export interface CuratorCollectionView {
 export interface DashboardViewModel {
   mode: DashboardMode;
   gameLabel: string;
+  /** Whether Vortex has a game active at all — a normal state to be without. */
+  hasGame: boolean;
   gameVersion: string | undefined;
   vortexVersion: string;
   profileName: string | undefined;
@@ -393,32 +395,83 @@ function Tiles(props: { vm: DashboardViewModel; actions: DashboardActions }): JS
   );
 }
 
+/**
+ * The screen before there is anything to show.
+ *
+ * It is the first thing a new user sees, so it says what this page becomes
+ * rather than only that it is empty — and it distinguishes the two reasons
+ * it can be empty, because they need different actions. "No game selected"
+ * is a normal Vortex state (every profile switch passes through it), and
+ * telling that user to install a collection is advice they cannot take.
+ */
+function FirstRun(props: { vm: DashboardViewModel; actions: DashboardActions }): JSX.Element {
+  const { vm, actions } = props;
+  // The fact, not the label: a wording change must not silently flip this.
+  const noGame = !vm.hasGame;
+  return (
+    <div className="eh-stack eh-stack--lg">
+      <Callout
+        tone="info"
+        title={noGame ? "Pick a game in Vortex first" : "Nothing installed for this game yet"}
+      >
+        <div className="eh-stack eh-stack--sm">
+          <p className="eh-body eh-prose">
+            {noGame
+              ? "Event Horizon works on the game Vortex has active — it reads that game's mods, " +
+                "plugins and profiles. Choose one in Vortex and this page fills in."
+              : `This is where your ${vm.gameLabel} collection will live: what it is made of, ` +
+                "whether every file still checks out, whether its load order still matches, " +
+                "and one button to play it."}
+          </p>
+          {!noGame && (
+            <div className="eh-row eh-row--sm">
+              <Button intent="primary" onClick={actions.onOpenInstall}>
+                Install a collection
+              </Button>
+              <Button intent="ghost" onClick={actions.onOpenBuild}>
+                Build one from this setup
+              </Button>
+            </div>
+          )}
+        </div>
+      </Callout>
+
+      {/*
+        Shown rather than described: the same three panels this page will
+        have, with what each will answer. An empty screen that only says
+        "empty" teaches nothing about what the tool is for.
+      */}
+      <div className="eh-dash-grid">
+        <Card title="What your game is made of">
+          <p className="eh-note eh-prose">
+            Every mod, where it came from, how many plugins are ESL-flagged, and which
+            script-extender plugins actually load on your build of the game.
+          </p>
+        </Card>
+        <Card title="Whether it is still whole">
+          <p className="eh-note eh-prose">
+            Files checked against what was installed, the load order against the one the curator
+            tested, and a way into the Doctor for anything that has drifted.
+          </p>
+        </Card>
+        <Card title="Disk">
+          <p className="eh-note eh-prose">
+            What modding uses on this machine — staged mods, downloads and built packages —
+            measured when you ask for it.
+          </p>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 function PlayerMode(props: {
   vm: DashboardViewModel;
   actions: DashboardActions;
   slots: DashboardSlots;
 }): JSX.Element {
   const { vm, actions } = props;
-  if (vm.hero === undefined) {
-    return (
-      <Callout tone="info" title="No collection installed yet">
-        <div className="eh-stack eh-stack--sm">
-          <p className="eh-body eh-prose">
-            This is where your collection will live once you install one: what it is made of, whether every
-            file still checks out, and one button to play it.
-          </p>
-          <div className="eh-row eh-row--sm">
-            <Button intent="primary" onClick={actions.onOpenInstall}>
-              Install a collection
-            </Button>
-            <Button intent="ghost" onClick={actions.onOpenBuild}>
-              Build one from this setup
-            </Button>
-          </div>
-        </div>
-      </Callout>
-    );
-  }
+  if (vm.hero === undefined) return <FirstRun vm={vm} actions={actions} />;
   return (
     <div className="eh-stack eh-stack--lg">
       <Hero hero={vm.hero} actions={actions} slots={props.slots} />

@@ -698,6 +698,7 @@ describe("render", () => {
     ({
       mode: "player",
       gameLabel: "Skyrim Special Edition",
+      hasGame: true,
       gameVersion: "1.6.1179",
       vortexVersion: "2.6.0",
       profileName: "Meridia 1.0.23",
@@ -826,6 +827,17 @@ describe("render", () => {
     expect(html).toContain("could not be checked");
     // The disk total is a floor when a folder could not be read.
     expect(html).toContain("at least");
+  });
+
+  it("dashboard — no game selected in Vortex", () => {
+    // Every profile switch passes through this state, and telling that user
+    // to install a collection is advice they cannot take.
+    const html = write(
+      "dashboard-no-game",
+      dashPage(dashVm({ hasGame: false, gameLabel: "No game selected", hero: undefined, tiles: [], disk: undefined })),
+    );
+    expect(html).toContain("Pick a game in Vortex first");
+    expect(html).not.toContain("Install a collection");
   });
 
   it("dashboard — the curator's cockpit", () => {

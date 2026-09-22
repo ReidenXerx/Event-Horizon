@@ -253,6 +253,7 @@ export function toViewModel(args: {
   return {
     mode: args.mode,
     gameLabel: data.status.gameLabel,
+    hasGame: data.status.gameId !== undefined,
     gameVersion: sources.game.version,
     vortexVersion: data.status.vortexVersion,
     profileName: data.status.profileName,
