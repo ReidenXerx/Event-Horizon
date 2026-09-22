@@ -50,7 +50,48 @@ export type StaleArchiveHint = {
   sampled: number;
   /** Total diverging files, so the sample can be read honestly. */
   diverging: number;
+  /**
+   * Every diverging file is one a TOOL rewrites on the curator's own machine
+   * — see {@link toolWrittenConfig}. The timestamps look identical to a stale
+   * archive and the cause is the opposite one, so the message differs.
+   */
+  allToolWritten: boolean;
 };
+
+/**
+ * Files a mod's own tool rewrites on the machine it runs on.
+ *
+ * ─── WHY THIS EXISTS ───────────────────────────────────────────────────
+ * The timestamp signal cannot tell "the author re-uploaded this mod" from
+ * "a program that ships inside this mod rewrote its own settings here". Both
+ * are staged files newer than the archive, on exactly the files that
+ * disagree. Measured on the curator's real Skyrim profile, the hint fired on
+ * two mods for the second reason: `BodySlide and Outfit Studio` differing in
+ * `CalienteTools/BodySlide/Config.xml`, and `Achievement Injector` differing
+ * in `MCM/Config/AchievementInjector/settings.ini`. Nobody re-uploaded
+ * either. Telling the curator to replace those downloads sends them to fix a
+ * file that was never wrong — and the sentence blames the author for it.
+ *
+ * ─── WHY IT IS NOT A VOLATILE FILE ─────────────────────────────────────
+ * These ship inside the archive and are real content, so verification must
+ * keep checking them (NS-1). `volatileFiles.ts` is about what cannot be
+ * verified at all; this is about what a timestamp means.
+ *
+ * Deliberately narrow: two exact shapes that were measured, not a guess at
+ * every configuration file in modding. A broad rule here would silence the
+ * real stale-archive case, which is the one that corrupts a package.
+ */
+export function toolWrittenConfig(relPath: string): string | undefined {
+  const p = relPath.replace(/\\/g, "/").toLowerCase();
+  if (p.endsWith("calientetools/bodyslide/config.xml")) {
+    return "BodySlide rewrites Config.xml every time it runs";
+  }
+  // MCM Helper keeps a mod's live settings beside the mod's own defaults.
+  if (/(^|\/)mcm\/(config\/.+\/settings\.ini|settings\/[^/]+\.ini)$/.test(p)) {
+    return "the Mod Configuration Menu writes these settings in-game";
+  }
+  return undefined;
+}
 
 /**
  * A minute, to absorb filesystem timestamp granularity and a clock that moved
@@ -93,6 +134,14 @@ export function detectStaleArchive(input: {
     newerCount: newer.length,
     sampled: input.diverging.length,
     diverging: input.divergingTotal ?? input.diverging.length,
+    /**
+     * Only when the sample is the WHOLE divergence. On a sampled comparison
+     * the unseen files could be anything, and "these are just settings files"
+     * is exactly the reassurance that must not be given on a guess.
+     */
+    allToolWritten:
+      (input.divergingTotal ?? input.diverging.length) === input.diverging.length &&
+      input.diverging.every((f) => toolWrittenConfig(f.path) !== undefined),
   };
 }
 
@@ -119,6 +168,23 @@ export function describeStaleArchive(
     hint.sampled < hint.diverging
       ? ` (checked ${hint.sampled} of them)`
       : "";
+  /**
+   * The same timestamps, the opposite cause — so the opposite advice. Saying
+   * "regenerated and re-uploaded" about a file BodySlide wrote on this
+   * machine sends the curator to replace a download that is fine, and blames
+   * an author who did nothing.
+   */
+  if (hint.allToolWritten) {
+    return (
+      `"${modName}": the ${hint.diverging} differing file(s) are settings a tool on ` +
+      `this machine rewrites — the archive is dated ${day(hint.archiveMtimeMs)} and ` +
+      `they were written on or after ${day(hint.newestStagedMtimeMs)}. That is not a ` +
+      `re-upload: it is your copy of the mod holding your settings. The archive ` +
+      `players download is almost certainly fine, and shipping your settings over ` +
+      `theirs is usually not what you want — leaving this mod on its archive is the ` +
+      `normal answer. Mirror it only if these settings are part of the collection.`
+    );
+  }
   return (
     `"${modName}": your copy of this archive is dated ${day(hint.archiveMtimeMs)} ` +
     `and every one of the ${hint.diverging} differing file(s) was written on or ` +

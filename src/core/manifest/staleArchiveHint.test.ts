@@ -13,8 +13,7 @@ import { describe, expect, it } from "vitest";
 import {
   describeStaleArchive,
   detectStaleArchive,
-  type StagedFileTime,
-} from "./staleArchiveHint";
+  type StagedFileTime, toolWrittenConfig } from "./staleArchiveHint";
 
 const JULY = Date.parse("2026-07-13T00:16:38Z");
 const SEPT = Date.parse("2026-09-18T20:03:57Z");
@@ -104,5 +103,62 @@ describe("describeStaleArchive", () => {
     // records this file's checksum as the one a player's download is held to.
     const msg = describeStaleArchive("m", hint);
     expect(msg).toMatch(/told it is wrong/);
+  });
+});
+
+/**
+ * The same timestamps, the opposite cause.
+ *
+ * Both of these fired on the curator's real Skyrim profile while building
+ * Meridia 1.0.23, and the message told them a third-party mod had been
+ * "regenerated and re-uploaded". Nobody re-uploaded anything: BodySlide
+ * rewrote its own Config.xml, and MCM wrote a settings file in-game.
+ */
+describe("a settings file a tool on this machine rewrote", () => {
+  const archive = Date.parse("2025-09-28T00:00:00Z");
+  const later = Date.parse("2026-09-21T03:01:00Z");
+
+  it("recognises BodySlide's own config and MCM's settings", () => {
+    expect(toolWrittenConfig("CalienteTools/BodySlide/Config.xml")).toBeDefined();
+    // Windows separators: a staging walk hands these back with backslashes.
+    expect(toolWrittenConfig("calientetools\\bodyslide\\config.xml")).toBeDefined();
+    expect(toolWrittenConfig("MCM/Config/AchievementInjector/settings.ini")).toBeDefined();
+    expect(toolWrittenConfig("MCM/Settings/SomeMod.ini")).toBeDefined();
+    // Narrow on purpose: a broad rule would silence the real stale-archive case.
+    expect(toolWrittenConfig("SKSE/Plugins/EngineFixes.ini")).toBeUndefined();
+    expect(toolWrittenConfig("meshes/armor/body_0.nif")).toBeUndefined();
+  });
+
+  it("says it is your settings, not a re-upload", () => {
+    const hint = detectStaleArchive({
+      archiveMtimeMs: archive,
+      diverging: [{ path: "MCM/Config/AchievementInjector/settings.ini", mtimeMs: later }],
+    });
+    expect(hint?.allToolWritten).toBe(true);
+    const text = describeStaleArchive("Achievement Injector", hint!);
+    expect(text).toMatch(/settings a tool on this machine rewrites/);
+    expect(text).not.toMatch(/regenerated and re-uploaded/);
+  });
+
+  it("still blames the stale archive when one ordinary file diverges too", () => {
+    // A mix is not "just settings" — the real stale case must survive.
+    const hint = detectStaleArchive({
+      archiveMtimeMs: archive,
+      diverging: [
+        { path: "CalienteTools/BodySlide/Config.xml", mtimeMs: later },
+        { path: "meshes/armor/body_0.nif", mtimeMs: later },
+      ],
+    });
+    expect(hint?.allToolWritten).toBe(false);
+    expect(describeStaleArchive("A mod", hint!)).toMatch(/regenerated and re-uploaded/);
+  });
+
+  it("never reassures from a SAMPLE, because the unseen files could be anything", () => {
+    const hint = detectStaleArchive({
+      archiveMtimeMs: archive,
+      diverging: [{ path: "MCM/Settings/X.ini", mtimeMs: later }],
+      divergingTotal: 1176,
+    });
+    expect(hint?.allToolWritten).toBe(false);
   });
 });
