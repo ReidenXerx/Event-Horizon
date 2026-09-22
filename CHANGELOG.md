@@ -10,6 +10,53 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.9] — 2026-09-22
+
+The headline is for players: a collection built on another game version no longer turns you away.
+
+### Installing collections
+- **A different game version is a warning now, not a wall.** A collection built on one version of
+  the game used to refuse every other version outright. Almost nothing in a collection cares: meshes,
+  textures and plugins run on any build. What breaks is script-extender plugins, the `.dll` files
+  compiled against one game executable. So the preview now explains the difference, offers both
+  roads (keep your version and swap the mods that will not load, or change the game to the
+  collection's version), and holds Continue until you tick one "I understand" box.
+- **It names exactly which mods to swap.** Every script-extender plugin says in its own file which
+  game versions it runs on, and Event Horizon checks each one against yours, for the copy that
+  actually deploys when two mods ship the same file. On a real 1,746-mod Skyrim collection built on
+  GOG 1.6.1179, a player on Steam 1.6.1170 is told to swap 6 mods (the GOG-specific builds), and
+  the other 230 plugins are counted as working on any version through Address Library. A plugin
+  that decides for itself when the game starts is counted, never named as a problem.
+- **The Steam-versus-GOG warning got the same treatment for Skyrim.** It used to name every mod that
+  ships a script-extender plugin, 245 on that collection, whose true answer was 6. Where the
+  collection records what each plugin declares, the list is the judged one. Fallout 4 plugins do not
+  say which store they are for, so there the old list stays.
+- **Collections built before this release carry no plugin data.** For those the preview says it
+  cannot name the exact mods, rather than guessing.
+- **The install itself checks the tick too**, and for the same pair of versions you saw. A game that
+  updated between the preview and the install is a different question and gets asked again. The
+  install record notes that it ran on a different version, so a later problem can be traced to it.
+
+### After you play
+- **Event Horizon asks whether the collection worked, once you have actually played it.** Nexus
+  keeps a success rating for every collection revision, and until now an Event Horizon install could
+  never vote. The question waits until the game has started through Event Horizon's Play button,
+  because before that nobody can honestly answer it. Answer "it worked" and you are offered the
+  collection's endorsement as well.
+
+### Building collections
+- **Every build records what each script-extender plugin declares**, which is what makes the swap
+  list above possible. It reads the plugins on every build, never from a cache: the answer depends on
+  the file and on Event Horizon's reader, and a cached one could survive either changing.
+- **A plugin that cannot load on your own game is flagged at build time.** On a real Fallout 4
+  collection that caught a crafting-highlight plugin built only for the next-gen update, shipping to
+  a 1.10.163 game where it silently never loads.
+- **A plugin with a very long exported name no longer reads as damaged.** One real plugin exports a
+  1,458-character name, and the reader stopped at 1,024.
+- **Linked files inside a mod are kept when the staging folder is reached by its short Windows
+  name** (`VORTEX~1`). The build and the install check compared the two spellings of the same folder
+  as text and dropped the links as "outside the mod".
+
 ## [0.2.8] — 2026-09-21
 
 Almost all of this is the curator's side, and most of it was found by building a real collection on
