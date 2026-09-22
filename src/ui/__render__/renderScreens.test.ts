@@ -735,7 +735,8 @@ describe("render", () => {
           { label: "Collection packages", gigabytes: 71.4 },
           { label: "Event Horizon data", gigabytes: 2.2 },
         ],
-        measuredWhen: "just now",
+        measuredAtIso: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
+        unreadable: [],
       },
       diskBusy: false,
       curator: [],
@@ -781,6 +782,50 @@ describe("render", () => {
 
   it("dashboard — nothing installed yet", () => {
     write("dashboard-empty", dashPage(dashVm({ hero: undefined, tiles: [], disk: undefined })));
+  });
+
+  /**
+   * The state the screenshots did NOT have, and the reason a "0%" ring
+   * shipped: the invariant was asserted where the number is COMPUTED and
+   * never where it is DRAWN. This is the health that could not be judged at
+   * all, beside a disk measurement that hit a folder it could not read.
+   */
+  it("dashboard — nothing could be checked", () => {
+    const vm = dashVm();
+    const html = write(
+      "dashboard-unknown",
+      dashPage({
+        ...vm,
+        hero: {
+          ...vm.hero!,
+          health: {
+            percent: undefined,
+            healthy: 0,
+            drifted: 0,
+            broken: 0,
+            unknown: 12,
+            notApplicable: 0,
+            judged: 0,
+            tone: "brand" as const,
+            caption: "nothing could be checked · 12 unknown",
+          },
+          figures: { ...dashFigures, nativePlugins: { loads: 236, unverified: 4, cannotLoad: 0, unknown: 2 } },
+        },
+        disk: {
+          parts: [{ label: "Staged mods", gigabytes: 214.3 }],
+          measuredAtIso: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(),
+          unreadable: ["Downloads"],
+        },
+      } as DashboardViewModel),
+    );
+    // The ring must not print a percentage it does not have.
+    expect(html).not.toContain(">0%<");
+    expect(html).toContain("—");
+    // And the SKSE figure must not claim everything loads.
+    expect(html).not.toContain("all load on your game");
+    expect(html).toContain("could not be checked");
+    // The disk total is a floor when a folder could not be read.
+    expect(html).toContain("at least");
   });
 
   it("dashboard — the curator's cockpit", () => {

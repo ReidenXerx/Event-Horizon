@@ -171,11 +171,22 @@ async function loadReceipts(appDataPath: string): Promise<{
       message: err instanceof Error ? err.message : String(err),
     });
   }
-  // Newest first.
-  receipts.sort(
-    (a, b) =>
-      new Date(b.installedAt).getTime() - new Date(a.installedAt).getTime(),
-  );
+  /**
+   * Newest first — and an undateable receipt sorts LAST rather than
+   * poisoning the comparison.
+   *
+   * `new Date("").getTime()` is NaN, every comparison with it is false, and
+   * a comparator that returns NaN is not an ordering: V8 is then free to
+   * permute the whole array. The dashboard takes the first entry as the
+   * collection it puts a Play button on, so one malformed timestamp could
+   * hand the screen to an arbitrary collection — the `receipts[0]` scar
+   * through a different door.
+   */
+  const installedAtMs = (r: InstallReceipt): number => {
+    const t = Date.parse(r.installedAt);
+    return Number.isFinite(t) ? t : Number.NEGATIVE_INFINITY;
+  };
+  receipts.sort((a, b) => installedAtMs(b) - installedAtMs(a));
   return { receipts, errors };
 }
 

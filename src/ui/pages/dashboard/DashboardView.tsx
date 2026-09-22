@@ -18,6 +18,7 @@ import * as React from "react";
 
 import { Button, Callout, Card, Pill, Section } from "../../components";
 import { Ring, Sparkline, SliceMap, StackBar, CHART_COLORS } from "../../components/charts";
+import { since } from "./summary";
 import type { HealthRollup, CollectionFigures } from "./summary";
 import type { CollectionStats } from "../../../core/nexus/collectionStats";
 
@@ -70,7 +71,15 @@ export interface DashboardViewModel {
   hero: DashboardHeroView | undefined;
   tiles: CollectionTileView[];
   /** Absent until the player asks for it: measuring means walking the disk. */
-  disk: { parts: { label: string; gigabytes: number }[]; measuredWhen: string } | undefined;
+  disk:
+    | {
+        parts: { label: string; gigabytes: number }[];
+        /** When it was measured, so the card can age the label honestly. */
+        measuredAtIso: string;
+        /** Folders the walk could not read: the total is then a floor. */
+        unreadable: string[];
+      }
+    | undefined;
   diskBusy: boolean;
   curator: CuratorCollectionView[];
   curatorBusy: boolean;
@@ -91,6 +100,17 @@ export interface DashboardActions {
 }
 
 const n = (v: number): string => v.toLocaleString("en-US");
+
+/** The four counts are a partition; every figure about them uses the sum. */
+const nativeTotal = (p: NonNullable<CollectionFigures["nativePlugins"]>): number =>
+  p.loads + p.unverified + p.cannotLoad + p.unknown;
+
+const describeNativePlugins = (p: NonNullable<CollectionFigures["nativePlugins"]>): string => {
+  if (p.cannotLoad > 0) return `${n(p.cannotLoad)} will not load`;
+  const unsure = p.unverified + p.unknown;
+  if (unsure > 0) return `${n(unsure)} could not be checked`;
+  return "all load on your game";
+};
 /** A figure that was never established prints as an em dash, never as 0. */
 const orDash = (v: number | undefined): string => (v === undefined ? "—" : n(v));
 
@@ -157,7 +177,7 @@ function Hero(props: { hero: DashboardHeroView; actions: DashboardActions }): JS
             title="Open the Collection Doctor"
           >
             <Ring
-              value={health.percent ?? 0}
+              value={health.percent}
               size={110}
               tone={health.percent === undefined ? "brand" : health.tone}
               label={health.percent === undefined ? "unknown" : "healthy"}
@@ -167,10 +187,20 @@ function Hero(props: { hero: DashboardHeroView; actions: DashboardActions }): JS
           <Stat label="Mods" value={n(f.mods)} {...(f.failed > 0 ? { sub: `${f.failed} failed` } : {})} />
           <Stat label="Plugins" value={orDash(f.plugins)} {...(f.esl !== undefined ? { sub: `${n(f.esl)} ESL` } : {})} />
           {f.nativePlugins !== undefined && (
+            /*
+             * ONE denominator, the whole partition.
+             *
+             * "cannotLoad === 0" is not "all load" — it is "nothing was
+             * PROVEN not to load", and the counts also carry plugins that
+             * decide at startup and plugins nobody could judge. The old
+             * subtitle stated the strong claim, and the card below used the
+             * full partition, so one screen showed "236 / 238" at the top
+             * and "236 of 242" in the middle for the same quantity.
+             */
             <Stat
               label="SKSE plugins"
-              value={`${n(f.nativePlugins.loads)}${f.nativePlugins.cannotLoad > 0 ? ` / ${n(f.nativePlugins.loads + f.nativePlugins.cannotLoad)}` : ""}`}
-              sub={f.nativePlugins.cannotLoad > 0 ? `${f.nativePlugins.cannotLoad} will not load` : "all load on your game"}
+              value={`${n(f.nativePlugins.loads)} / ${n(nativeTotal(f.nativePlugins))}`}
+              sub={describeNativePlugins(f.nativePlugins)}
             />
           )}
           <Stat
@@ -238,20 +268,13 @@ function CompositionCard(props: { figures: CollectionFigures }): JSX.Element {
             <div className="eh-row eh-row--between">
               <span className="eh-secondary">Script-extender plugins that load</span>
               <span className="eh-secondary">
-                {n(f.nativePlugins.loads)} of{" "}
-                {n(f.nativePlugins.loads + f.nativePlugins.cannotLoad + f.nativePlugins.unverified + f.nativePlugins.unknown)}
+                {n(f.nativePlugins.loads)} of {n(nativeTotal(f.nativePlugins))}
               </span>
             </div>
             <div className="eh-meter">
               <i
                 style={{
-                  width: `${Math.round(
-                    (f.nativePlugins.loads /
-                      Math.max(
-                        f.nativePlugins.loads + f.nativePlugins.cannotLoad + f.nativePlugins.unverified + f.nativePlugins.unknown,
-                        1,
-                      )) * 100,
-                  )}%`,
+                  width: `${Math.round((f.nativePlugins.loads / Math.max(nativeTotal(f.nativePlugins), 1)) * 100)}%`,
                 }}
               />
             </div>
@@ -295,6 +318,8 @@ function DiskCard(props: { vm: DashboardViewModel; actions: DashboardActions }):
       ) : (
         <div className="eh-stack eh-stack--sm">
           <div className="eh-stat__value">
+            {/* "at least", when part of the disk could not be read. */}
+            {disk.unreadable.length > 0 ? "at least " : ""}
             {disk.parts.reduce((a, p) => a + p.gigabytes, 0).toFixed(1)} GB{" "}
             <span className="eh-secondary">used by modding</span>
           </div>
@@ -302,7 +327,12 @@ function DiskCard(props: { vm: DashboardViewModel; actions: DashboardActions }):
             parts={disk.parts.map((p) => ({ label: p.label, value: p.gigabytes }))}
             format={(v) => `${v.toFixed(1)} GB`}
           />
-          <span className="eh-note">Measured {disk.measuredWhen}.</span>
+          <span className="eh-note">
+            Measured {since(disk.measuredAtIso) ?? "just now"}.
+            {disk.unreadable.length > 0
+              ? ` ${disk.unreadable.join(", ")} could not be read, so the real figure is higher.`
+              : ""}
+          </span>
         </div>
       )}
     </Card>

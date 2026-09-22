@@ -38,7 +38,19 @@ const nextId = (): string => `eh-c-${(uid += 1)}`;
  * the easiest number in the world to misread.
  */
 export function Ring(props: {
-  value: number;
+  /**
+   * The percentage, or `undefined` when it could not be measured.
+   *
+   * ─── WHY THIS ACCEPTS UNDEFINED ───────────────────────────────────────
+   * It used to take a number, so the one caller wrote `percent ?? 0` and an
+   * unmeasured value rendered as an empty arc with a bold "0%" inside it.
+   * That is the worst reading of "we did not check": 0% does not look like
+   * a missing measurement, it looks like everything is broken — on the
+   * first screen the app opens, beside a Play button. The model layer goes
+   * to real trouble to return `undefined` rather than 0 or 100; the chart
+   * has to be able to say it.
+   */
+  value: number | undefined;
   size?: number;
   stroke?: number;
   label?: string;
@@ -49,7 +61,9 @@ export function Ring(props: {
   const size = props.size ?? 120;
   const stroke = props.stroke ?? Math.max(8, Math.round(size / 11));
   const tone = props.tone ?? "brand";
-  const pct = Math.max(0, Math.min(100, props.value));
+  const given = props.value;
+  const unmeasured = given === undefined;
+  const pct = given === undefined ? 0 : Math.max(0, Math.min(100, given));
   const r = (size - stroke) / 2;
   const circumference = 2 * Math.PI * r;
   const ids = React.useMemo(() => ({ g: nextId(), f: nextId() }), []);
@@ -61,7 +75,9 @@ export function Ring(props: {
       width={size}
       height={size}
       role="img"
-      aria-label={`${props.label ?? "value"}: ${Math.round(pct)}%`}
+      aria-label={
+        unmeasured ? `${props.label ?? "value"}: not measured` : `${props.label ?? "value"}: ${Math.round(pct)}%`
+      }
     >
       <defs>
         <linearGradient id={ids.g} x1="0" y1="0" x2="1" y2="1">
@@ -93,7 +109,7 @@ export function Ring(props: {
         {...(props.glow === true ? { filter: `url(#${ids.f})` } : {})}
       />
       <text x="50%" y={props.label !== undefined ? "47%" : "54%"} textAnchor="middle" className="eh-ring-value">
-        {Math.round(pct)}%
+        {unmeasured ? "—" : `${Math.round(pct)}%`}
       </text>
       {props.label !== undefined && (
         <text x="50%" y="62%" textAnchor="middle" className="eh-ring-label">
@@ -130,9 +146,14 @@ export function Sparkline(props: {
   const values = points.map((p) => p.value);
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const span = max - min || 1;
+  const span = max - min;
   const xs = (i: number): number => (points.length === 1 ? w / 2 : 6 + (i * (w - 12)) / (points.length - 1));
-  const ys = (v: number): number => h - 6 - ((v - min) / span) * (h - 16);
+  /**
+   * An unchanged series is drawn down the MIDDLE, not along the floor.
+   * With every value equal, scaling put every point at the bottom edge, so
+   * four revisions that all shipped 963 mods read as a collapse.
+   */
+  const ys = (v: number): number => (span === 0 ? h / 2 : h - 6 - ((v - min) / span) * (h - 16));
   const dots = points.map((p, i) => <circle key={i} cx={xs(i)} cy={ys(p.value)} r={2.2} fill={color} />);
   if (points.length === 1) {
     return (
@@ -194,6 +215,10 @@ export function SliceMap(props: {
 }): JSX.Element | null {
   const parts = [...props.parts].filter((p) => p.value > 0).sort((a, b) => b.value - a.value);
   const total = parts.reduce((a, p) => a + p.value, 0);
+  // Ids are document-global and this renders inside Vortex, beside Vortex's
+  // own chrome: "clip-0-0" would be claimed by whoever emitted it first, and
+  // a block's text would then be clipped to someone else's rectangle.
+  const clipIds = React.useMemo(() => parts.map(() => nextId()), [parts.length]);
   if (total <= 0) return null;
   const h = props.height ?? 130;
   const fmt = props.format ?? ((v: number) => String(v));
@@ -206,10 +231,10 @@ export function SliceMap(props: {
           <g key={i}>
             <rect x={x + 3} y={3} width={Math.max(w - 6, 2)} height={h - 6} rx="10"
               fill={CHART_COLORS[i % CHART_COLORS.length]} opacity={0.86 - i * 0.1} />
-            <clipPath id={`clip-${i}-${Math.round(x)}`}>
+            <clipPath id={clipIds[i]}>
               <rect x={x + 3} y={3} width={Math.max(w - 6, 2)} height={h - 6} />
             </clipPath>
-            <g clipPath={`url(#clip-${i}-${Math.round(x)})`}>
+            <g clipPath={`url(#${clipIds[i]})`}>
               <text x={x + 16} y={30} className="eh-slice-label">{p.label}</text>
               <text x={x + 16} y={58} className="eh-slice-value">{fmt(p.value)}</text>
               {p.hint !== undefined && <text x={x + 16} y={80} className="eh-slice-hint">{p.hint}</text>}

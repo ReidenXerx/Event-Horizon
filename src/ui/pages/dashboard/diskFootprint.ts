@@ -30,9 +30,17 @@ export interface Footprint {
   unreadable: string[];
 }
 
-/** Recursive size, in bytes. Symlinks are not followed and never counted twice. */
-async function folderSize(root: string): Promise<number> {
+/**
+ * Recursive size, in bytes, AND the directories that could not be read.
+ *
+ * A swallowed `readdir` failure — a permission-denied staging root, a locked
+ * subfolder, a path too long — returned a number that looked like a
+ * measurement and was silently short. The caller needs to know, because the
+ * card's own contract is that a partial answer is reported as partial.
+ */
+async function folderSize(root: string): Promise<{ bytes: number; failed: string[] }> {
   let total = 0;
+  const failed: string[] = [];
   const stack: string[] = [root];
   while (stack.length > 0) {
     const dir = stack.pop()!;
@@ -40,6 +48,7 @@ async function folderSize(root: string): Promise<number> {
     try {
       entries = await fsp.readdir(dir, { withFileTypes: true });
     } catch {
+      failed.push(dir);
       continue;
     }
     for (const entry of entries) {
@@ -59,7 +68,7 @@ async function folderSize(root: string): Promise<number> {
       }
     }
   }
-  return total;
+  return { bytes: total, failed };
 }
 
 const GB = 1024 ** 3;
@@ -72,14 +81,15 @@ const GB = 1024 ** 3;
  * report roughly double what the disk is actually holding.
  */
 export async function measureModdingFootprint(api: types.IExtensionApi): Promise<Footprint> {
-  const [{ getActiveGameId }, { getCollectionsDir, getVortexUserDataPath }] = await Promise.all([
+  const [{ getActiveGameId }, { getCollectionsDir }, { getEventHorizonRoot }] = await Promise.all([
     import("../../../core/getModsListForProfile"),
     import("../../../core/paths"),
+    import("../../../core/paths/appDataPaths"),
   ]);
   const state = api.getState();
   const gameId = getActiveGameId(state);
 
-  const targets: { label: string; dir: string | undefined }[] = [];
+  const targets: { label: string; dir: string | undefined; exclude?: string[] }[] = [];
 
   // Staging: where the mods themselves live.
   if (gameId !== undefined) {
@@ -99,7 +109,16 @@ export async function measureModdingFootprint(api: types.IExtensionApi): Promise
 
   // Event Horizon's own: built packages, and the copies kept for healing.
   targets.push({ label: "Collection packages", dir: getCollectionsDir() });
-  targets.push({ label: "Event Horizon data", dir: path.join(getVortexUserDataPath(), "event-horizon", "install-ledger") });
+  /*
+   * Event Horizon's OWN folder, minus the packages already counted above.
+   * This used to name `install-ledger`, which holds attempts and journals —
+   * kilobytes — while the receipts live in `installs` and the cached
+   * collection artwork in `presentation`. The row therefore measured the one
+   * subfolder that is never big, reported a rounding zero, and was dropped
+   * from the chart entirely. Through the paths helper, not a hand-joined
+   * string: hand-joining is how the wrong segment got in.
+   */
+  targets.push({ label: "Event Horizon data", dir: getEventHorizonRoot(), exclude: [getCollectionsDir()] });
 
   const parts: FootprintPart[] = [];
   const unreadable: string[] = [];
@@ -116,13 +135,24 @@ export async function measureModdingFootprint(api: types.IExtensionApi): Promise
       parts.push({ label: t.label, gigabytes: 0 });
       continue;
     }
-    const bytes = await folderSize(t.dir);
-    parts.push({ label: t.label, gigabytes: Math.round((bytes / GB) * 10) / 10 });
+    const measured = await folderSize(t.dir);
+    let bytes = measured.bytes;
+    for (const skip of t.exclude ?? []) {
+      // Counted under its own label already; counting it twice would make
+      // the total describe a machine that does not exist.
+      const inner = await folderSize(skip).catch(() => ({ bytes: 0, failed: [] }));
+      bytes -= inner.bytes;
+    }
+    if (measured.failed.length > 0) unreadable.push(t.label);
+    parts.push({ label: t.label, gigabytes: Math.max(Math.round((bytes / GB) * 10) / 10, 0) });
   }
 
   ehLog("info", "dashboard.disk.measured", {
     parts: parts.map((p) => `${p.label}:${p.gigabytes}GB`).join(" "),
     unreadable,
   });
+  // Rows that measured 0.0 GB are dropped from the CHART (a slice nobody can
+  // see is noise), but a folder that could not be read is carried out in
+  // `unreadable` so the card can say the total is a floor.
   return { parts: parts.filter((p) => p.gigabytes > 0), unreadable };
 }

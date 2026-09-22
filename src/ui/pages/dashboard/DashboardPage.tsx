@@ -26,6 +26,20 @@ export function DashboardPage(props: DashboardPageProps): JSX.Element {
   const api = useApi();
   const { sources, error, reload } = useDashboardView(api);
 
+  /**
+   * Both callbacks below outlive the page: the disk walk is minutes long by
+   * its own account, and Home unmounts on any navigation. Writing state into
+   * a dead component is a React warning; leaving a walk running while the
+   * user starts an install is a real cost.
+   */
+  const alive = React.useRef(true);
+  React.useEffect(() => {
+    alive.current = true;
+    return (): void => {
+      alive.current = false;
+    };
+  }, []);
+
   const [mode, setMode] = React.useState<DashboardMode>("player");
   const [disk, setDisk] = React.useState<DashboardViewModel["disk"]>(undefined);
   const [diskBusy, setDiskBusy] = React.useState(false);
@@ -47,19 +61,24 @@ export function DashboardPage(props: DashboardPageProps): JSX.Element {
       if (links.length === 0) return;
       setCuratorBusy(true);
       void (async (): Promise<void> => {
-        const found = new Map<string, CollectionStats>();
-        for (const link of links) {
-          const s = await collectionStats({
-            api,
-            slug: link.slug,
-            gameDomain: link.gameDomain,
-            refresh,
-          });
-          if (s !== undefined) found.set(link.slug, s);
+        try {
+          const found = new Map<string, CollectionStats>();
+          for (const link of links) {
+            const s = await collectionStats({
+              api,
+              slug: link.slug,
+              gameDomain: link.gameDomain,
+              refresh,
+            });
+            if (s !== undefined) found.set(link.slug, s);
+          }
+          if (alive.current) setStats(found);
+          ehLog("debug", "dashboard.curator-stats", { asked: links.length, answered: found.size });
+        } finally {
+          // In a `finally`: an unexpected throw used to leave "Refreshing…"
+          // on the button for the rest of the session.
+          if (alive.current) setCuratorBusy(false);
         }
-        setStats(found);
-        setCuratorBusy(false);
-        ehLog("debug", "dashboard.curator-stats", { asked: links.length, answered: found.size });
       })();
     },
     [api, sources],
@@ -75,14 +94,19 @@ export function DashboardPage(props: DashboardPageProps): JSX.Element {
       try {
         const { measureModdingFootprint } = await import("./diskFootprint");
         const measured = await measureModdingFootprint(api);
-        setDisk({
-          parts: measured.parts,
-          measuredWhen: since(new Date().toISOString()) ?? "just now",
-        });
+        if (alive.current) {
+          setDisk({
+            parts: measured.parts,
+            // The instant, not a rendered phrase: "just now" frozen into
+            // state still said "just now" twenty minutes later.
+            measuredAtIso: new Date().toISOString(),
+            unreadable: measured.unreadable,
+          });
+        }
       } catch (err) {
         ehLog("warn", "dashboard.disk-measure-failed", { err });
       } finally {
-        setDiskBusy(false);
+        if (alive.current) setDiskBusy(false);
       }
     })();
   }, [api]);

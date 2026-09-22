@@ -28,6 +28,20 @@ import type {
 import type { InstallReceipt } from "../../../types/installLedger";
 import type { HealthCheck } from "../../../core/doctor/health";
 
+/**
+ * The receipts this screen may speak for: the ACTIVE game's, newest first.
+ *
+ * One function, called by both the loader and the view model, because the
+ * two had the same filter written twice and a copy is how they drift.
+ */
+export function heroCandidates(
+  receipts: readonly InstallReceipt[],
+  gameId: string | undefined,
+): InstallReceipt[] {
+  if (gameId === undefined) return [];
+  return receipts.filter((r) => r.gameId === gameId);
+}
+
 /** Package file name → the collection it belongs to and its version. */
 const buildLabel = (fileName: string): { slug: string; version: string } | undefined => {
   const m = /^(.*)-(\d+\.\d+\.\d+)\.(?:ehcoll|zip)$/i.exec(fileName);
@@ -111,6 +125,15 @@ async function playedFor(): Promise<Map<string, string>> {
 
 export interface DashboardSources {
   data: DashboardData;
+  /**
+   * The game as Vortex reports it right now: version, and store when known.
+   *
+   * The hero always had fields for these and the view model filled them with
+   * `undefined`, so the only place they were ever seen was a test fixture —
+   * a screenshot of a feature that did not exist. They are also what makes
+   * the version line on the hero checkable against a mod page.
+   */
+  game: { version: string | undefined; store: string | undefined };
   health: Map<string, HealthCheck[]>;
   art: Map<string, string>;
   played: Map<string, string>;
@@ -134,10 +157,10 @@ export function toViewModel(args: {
   const { data } = sources;
   const gameId = data.status.gameId;
 
-  // The active game's collections first: this screen is about the game the
-  // player is standing in, and a hero from another game would be a lie about
-  // what pressing Play would start.
-  const mine = data.receipts.filter((r) => gameId === undefined || r.gameId === gameId);
+  // This screen is about the game the player is standing in, and a hero from
+  // another game would be a lie about what pressing Play would start — so no
+  // active game means no hero, rather than the newest receipt of any game.
+  const mine = heroCandidates(data.receipts, gameId);
   const [first, ...rest] = mine;
 
   const heroOf = (r: InstallReceipt): DashboardHeroView => {
@@ -149,8 +172,8 @@ export function toViewModel(args: {
       revision: r.nexusCollection?.revisionNumber,
       artUrl: sources.art.get(r.packageId),
       gameLabel: data.status.gameLabel,
-      gameVersion: undefined,
-      store: undefined,
+      gameVersion: sources.game.version,
+      store: sources.game.store,
       profileName: r.vortexProfileName,
       lastPlayed: since(sources.played.get(r.packageId), now),
       installedWhen: since(r.installedAt, now),
@@ -195,7 +218,7 @@ export function toViewModel(args: {
   return {
     mode: args.mode,
     gameLabel: data.status.gameLabel,
-    gameVersion: undefined,
+    gameVersion: sources.game.version,
     vortexVersion: data.status.vortexVersion,
     profileName: data.status.profileName,
     hero: first === undefined ? undefined : heroOf(first),
@@ -211,10 +234,29 @@ export function toViewModel(args: {
 /** Load every source. Each one fails on its own without taking the rest down. */
 export async function loadDashboardSources(api: types.IExtensionApi): Promise<DashboardSources> {
   const data = await loadDashboardData(api);
-  const gameId = data.status.gameId;
-  const mine = data.receipts.filter((r) => gameId === undefined || r.gameId === gameId);
+  const mine = heroCandidates(data.receipts, data.status.gameId);
 
   const [art, played] = await Promise.all([artFor(mine), playedFor()]);
+
+  // Read once, here, so every figure on the screen describes one moment.
+  const game = await (async (): Promise<DashboardSources["game"]> => {
+    if (data.status.gameId === undefined) return { version: undefined, store: undefined };
+    try {
+      const [{ resolveGameVersion }, { discoveredStore }] = await Promise.all([
+        import("../../../core/resolver/userState"),
+        import("../../../core/comparePlugins"),
+      ]);
+      const state = api.getState();
+      return {
+        version: resolveGameVersion(state, data.status.gameId),
+        store: discoveredStore(state, data.status.gameId),
+      };
+    } catch (err) {
+      // Absent is the honest answer; the hero simply omits the clause.
+      ehLog("debug", "dashboard.game-read-failed", { err });
+      return { version: undefined, store: undefined };
+    }
+  })();
 
   // Health for the collection the hero shows. The others are a tile with a
   // name on it, and checking every collection on open would run the Doctor's
@@ -228,21 +270,27 @@ export async function loadDashboardSources(api: types.IExtensionApi): Promise<Da
 
   const updates = new Map<string, number>();
   try {
-    const { getCollectionUpdateStore } = await import("../../runtime/collectionUpdates");
+    const { getCollectionUpdateStore, pendingUpdateFor } = await import("../../runtime/collectionUpdates");
     for (const [, update] of getCollectionUpdateStore().all()) {
-      // The store already decided an update EXISTS; the comparison here is
-      // only against the receipt this dashboard is showing, which may be an
-      // older install than the one the check ran for.
+      /*
+       * `pendingUpdateFor` is the judgement, and it is stricter than the
+       * comparison this used to make: it requires the receipt to HAVE a
+       * Nexus identity and to name the same collection. Re-deriving it here
+       * defaulted a missing revision to 0, so reinstalling a collection from
+       * a downloaded file — which overwrites the receipt, one file per
+       * package id — advertised an update the player already had.
+       */
       const match = mine.find((r) => r.packageId === update.packageId);
-      if (match !== undefined && update.latestRevision > (match.nexusCollection?.revisionNumber ?? 0)) {
-        updates.set(match.packageId, update.latestRevision);
+      const pending = match === undefined ? undefined : pendingUpdateFor(match, update);
+      if (match !== undefined && pending !== undefined) {
+        updates.set(match.packageId, pending.latestRevision);
       }
     }
   } catch (err) {
     ehLog("debug", "dashboard.updates-unavailable", { err });
   }
 
-  return { data, health, art, played, updates };
+  return { data, game, health, art, played, updates };
 }
 
 /** React state for the dashboard: sources, mode, and the two lazy panels. */

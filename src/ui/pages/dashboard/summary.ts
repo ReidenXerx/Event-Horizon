@@ -12,6 +12,7 @@
  * the percentage and reported beside it.
  */
 
+import { doctorLightFlagBaseline } from "../../../core/doctor/health";
 import type { HealthCheck } from "../../../core/doctor/health";
 import type { InstallReceipt } from "../../../types/installLedger";
 
@@ -92,8 +93,29 @@ export interface CollectionFigures {
 export function collectionFigures(receipt: InstallReceipt): CollectionFigures {
   const mods = receipt.mods ?? [];
   const verifications = receipt.verifications ?? [];
-  const baseline = receipt.rulesApplication?.baselinePluginOrder ?? [];
-  const lightJudgeable = receipt.rulesApplication?.baselineLightFlagBit !== undefined;
+  const recorded = receipt.rulesApplication?.baselinePluginOrder ?? [];
+  /**
+   * The SAME judgement the Doctor makes, not a presence check.
+   *
+   * `baselineLightFlagBit !== undefined` is not the project's test for
+   * usable light flags: a package built before per-game bits recorded
+   * 0x200, which is not Starfield's light bit, and games without ESL
+   * support have no such flag at all. The Doctor calls
+   * `doctorLightFlagBaseline`, is refused, and strips every value — while
+   * this printed a confident "N ESL" from the same receipt. Two screens
+   * disagreeing about one receipt is exactly what `receiptView.ts` was
+   * extracted to prevent.
+   */
+  const { baseline: judged, refused } = doctorLightFlagBaseline(
+    receipt.gameId,
+    recorded,
+    receipt.rulesApplication?.baselineLightFlagBit,
+  );
+  const baseline = recorded;
+  // "Recorded nothing" is not "none are ESL": a baseline with no light
+  // values at all cannot support a count, and 0 would be a claim.
+  const eslJudgeable =
+    refused === undefined && judged !== undefined && judged.some((p) => p.light !== undefined);
   let verifiedFiles = 0, verifiedMods = 0, unverifiedMods = 0;
   for (const v of verifications) {
     if (v.kind === "ok") {
@@ -107,7 +129,7 @@ export function collectionFigures(receipt: InstallReceipt): CollectionFigures {
     supplied: mods.filter((m) => m.source !== "nexus").length,
     failed: (receipt.failedMods ?? []).length,
     plugins: baseline.length > 0 ? baseline.length : undefined,
-    esl: baseline.length > 0 && lightJudgeable ? baseline.filter((p) => p.light === true).length : undefined,
+    esl: eslJudgeable ? (judged ?? []).filter((p) => p.light === true).length : undefined,
     verifiedFiles,
     verifiedMods,
     unverifiedMods,

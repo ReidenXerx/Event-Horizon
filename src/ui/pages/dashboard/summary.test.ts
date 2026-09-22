@@ -49,6 +49,9 @@ describe("the health ring", () => {
 
 describe("a collection's figures", () => {
   const receipt = {
+    // The game is load-bearing: which header bit means "light" is per game,
+    // so a receipt without one cannot have its ESL count judged at all.
+    gameId: "skyrimse",
     mods: [
       { source: "nexus" }, { source: "nexus" }, { source: "external" },
     ],
@@ -77,12 +80,41 @@ describe("a collection's figures", () => {
     expect(f.nativePlugins).toEqual({ loads: 236, unverified: 0, cannotLoad: 0, unknown: 0 });
   });
 
-  it("refuses to report ESL flags the package could not record correctly", () => {
-    // Without `baselineLightFlagBit` the flags came from a bit that is not the
-    // light bit on every game — Doctor will not judge them, and neither will
-    // a dashboard that would otherwise print a confident number.
+  it("accepts a package with no recorded bit ON SKYRIM, where the legacy bit is the light bit", () => {
+    // Not a refusal: 0x200 is what old packages recorded and it IS Skyrim's
+    // light bit, so the Doctor accepts these and the dashboard must agree.
+    // The refusal cases are per game — see the next two.
     const { baselineLightFlagBit: _drop, ...rules } = receipt.rulesApplication!;
     const f = collectionFigures({ ...receipt, rulesApplication: rules } as InstallReceipt);
+    expect(f.esl).toBe(1);
+  });
+
+  it("refuses a bit that is not THIS game's light bit", () => {
+    // The case a presence check cannot see, and the only case
+    // `judgeRecordedLightFlags` exists for: Starfield's light bit is 0x100,
+    // and a package built before per-game bits recorded 0x200.
+    const f = collectionFigures({
+      ...receipt,
+      gameId: "starfield",
+      rulesApplication: { ...receipt.rulesApplication!, baselineLightFlagBit: 0x200 },
+    } as InstallReceipt);
+    expect(f.esl).toBeUndefined();
+  });
+
+  it("says nothing about ESL for a game that has no light plugins", () => {
+    const f = collectionFigures({ ...receipt, gameId: "falloutnv" } as InstallReceipt);
+    expect(f.esl).toBeUndefined();
+  });
+
+  it("refuses when the order was recorded but no flags were", () => {
+    // "Recorded nothing" is not "none are ESL"; 0 of 1,597 would be a claim.
+    const f = collectionFigures({
+      ...receipt,
+      rulesApplication: {
+        ...receipt.rulesApplication!,
+        baselinePluginOrder: [{ name: "a", enabled: true }, { name: "b", enabled: true }],
+      },
+    } as InstallReceipt);
     expect(f.esl).toBeUndefined();
     expect(f.plugins).toBe(2);
   });

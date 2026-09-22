@@ -43,6 +43,8 @@ const sources = (over: Partial<DashboardSources> = {}): DashboardSources => ({
     builtPackages: [],
     ...over.data,
   },
+  // Vortex's answer about the active game, read once by the loader.
+  game: { version: "1.6.1179.0", store: "gog" },
   health: new Map(),
   art: new Map(),
   played: new Map(),
