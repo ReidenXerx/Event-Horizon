@@ -67,26 +67,40 @@ export function healNeedsManifest(action: HealAction): boolean {
  *
  * So the line is drawn at what cannot simply be pressed again:
  *
- *   • order, ESL flags, enabling mods, switching profile — all restore a
- *     recorded state, none removes anything, and every one of them can be
- *     undone by doing the opposite. One press.
- *   • reapply-rules REPLACES the player's own mod rules for this game, and
- *     reinstall-mods REMOVES and rebuilds mod folders and can take an hour.
- *     Both still ask, in the words that say what is lost.
+ *   • order, enabling mods, switching profile — all restore a recorded state,
+ *     none removes anything, and every one of them can be undone by doing the
+ *     opposite. One press.
+ *   • reinstall-mods REMOVES and rebuilds mod folders and can take an hour.
+ *     It asks, in the words that say what is lost.
  *
- * The userlist is the same act as the rules, one layer down (LOOT), so it
- * keeps its confirmation for the same reason.
+ * ─── THE MATRIX WAS INVERTED AGAINST ITS OWN RULE ──────────────────────
+ * Measured against what the code does rather than what these comments said:
+ *
+ *   • `reapply-rules` and `reapply-userlist` were asking on the strength of
+ *     the words "replaces" and "will be lost" — and neither replaces anything
+ *     wholesale. `applyModRules` removes only a user rule on the SAME source
+ *     mod pointing at the SAME target, which it then immediately re-adds the
+ *     collection's version of; `applyUserlist` is purely additive and clears
+ *     nothing at all. Both are near-idempotent and repeatable. A Doctor that
+ *     overstates its own destructiveness gets ignored exactly like one that is
+ *     red on a healthy machine, so they no longer ask.
+ *   • `restore-light-flags` was NOT asking, and it is the one cure here that
+ *     writes bytes into plugin files in the game folder with no inverse —
+ *     `HealAction` has no "undo light flags". Under EH's required hardlink
+ *     deployment those files are the owning mods' staging files. It asks.
+ *
+ * The rule did not change; it is being applied to what the cures do.
  */
 export function healNeedsConfirmation(action: HealAction): boolean {
   switch (action) {
-    case "reapply-rules":
-    case "reapply-userlist":
+    case "restore-light-flags":
     case "reinstall-mods":
       return true;
+    case "reapply-rules":
+    case "reapply-userlist":
     case "switch-profile":
     case "enable-mods":
     case "repin-plugin-order":
-    case "restore-light-flags":
       return false;
   }
 }
@@ -157,17 +171,20 @@ export function describeHeal(action: HealAction): {
       return {
         title: "Re-apply the collection's mod rules?",
         body:
-          "The collection's conflict rules replace the rules currently set " +
-          "for this game — the same thing the install did. Rules you added " +
-          "yourself will be lost.",
+          "The collection's conflict rules are set again, exactly as the " +
+          "install did. A rule of your own is replaced only where it " +
+          "contradicts the collection's on the same pair of mods — every " +
+          "other rule you added is left alone.",
         confirm: "Re-apply rules",
       };
     case "reapply-userlist":
       return {
         title: "Re-apply the collection's LOOT rules?",
         body:
-          "The collection's LOOT userlist replaces what is set now, exactly " +
-          "as the install did. LOOT rules you added yourself will be lost.",
+          "The collection's LOOT groups and rules are added back, exactly as " +
+          "the install did. Nothing already in your userlist is removed — a " +
+          "plugin's group assignment is the one thing that can be changed, " +
+          "where the collection sets a different one.",
         confirm: "Re-apply LOOT rules",
       };
     case "reinstall-mods":
@@ -181,52 +198,6 @@ export function describeHeal(action: HealAction): {
         confirm: "Reinstall",
       };
   }
-}
-
-/**
- * Rebuild the plugin order to re-pin, from the receipt's names and the
- * machine's current enable flags.
- *
- * Matching is case-insensitive because plugins.txt casing is not stable across
- * machines or Vortex versions — the same reason the order COMPARISON ignores
- * it. A case-sensitive lookup here would silently treat every plugin as
- * unknown and disable the lot.
- *
- * Plugins present now but absent from the receipt are kept, at the end. They
- * are almost always the user's own additions, and dropping a plugin from
- * plugins.txt is how you disable it — a repair that quietly uninstalls
- * someone's extra plugin while claiming to fix an ordering is not a repair.
- */
-export function rebuildPluginOrder(
-  /** Recorded plugin NAMES, in order. The receipt's enabled flags are
-   * deliberately not passed — see the header. */
-  recordedOrder: readonly string[],
-  currentlyPresent: readonly { name: string; enabled: boolean }[],
-): EhcollPluginEntry[] {
-  const enabledByLowerName = new Map<string, boolean>();
-  for (const p of currentlyPresent) {
-    enabledByLowerName.set(p.name.toLowerCase(), p.enabled);
-  }
-
-  const out: EhcollPluginEntry[] = [];
-  const placed = new Set<string>();
-  for (const name of recordedOrder) {
-    const key = name.toLowerCase();
-    placed.add(key);
-    out.push({
-      name,
-      // Absent from the machine entirely: it cannot be enabled, and claiming
-      // it is would ask Vortex to enable a plugin that is not there.
-      enabled: enabledByLowerName.get(key) ?? false,
-    });
-  }
-
-  for (const p of currentlyPresent) {
-    if (placed.has(p.name.toLowerCase())) continue;
-    out.push({ name: p.name, enabled: p.enabled });
-  }
-
-  return out;
 }
 
 /**

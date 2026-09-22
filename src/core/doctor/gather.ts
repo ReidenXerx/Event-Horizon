@@ -23,23 +23,54 @@ import { beginOp, ehLog } from "../logging/ehLog";
 import type { HealthObservations } from "./health";
 import type { OrderReceipt, OrderStanding } from "./loadOrderStatus";
 
-/** Profiles that exist for a game, by id. */
-function readProfileIds(state: unknown, gameId: string): string[] {
+/**
+ * Profiles that exist for a game, by id — or `undefined` when Vortex's
+ * profile table could not be read at all.
+ *
+ * ─── AN UNREADABLE TABLE IS NOT AN EMPTY ONE ───────────────────────────
+ * This returned `[]` for both, and the header above says every field is
+ * `| undefined` precisely so "could not read this" renders as `unknown`
+ * rather than as a verdict. An `[]` here makes `profileGone` true and the
+ * Doctor states, as a finding, that the profile the collection was installed
+ * into no longer exists — a zero rendered as knowledge.
+ *
+ * A table that IS readable and holds no profile for this game is a real
+ * answer and stays `[]`.
+ */
+function readProfileIds(state: unknown, gameId: string): string[] | undefined {
   const profiles = (
     state as {
       persistent?: { profiles?: Record<string, { gameId?: string }> };
     }
   )?.persistent?.profiles;
-  if (profiles === null || typeof profiles !== "object") return [];
+  if (profiles === null || profiles === undefined || typeof profiles !== "object") {
+    return undefined;
+  }
   return Object.entries(profiles)
     .filter(([, p]) => p?.gameId === gameId)
     .map(([id]) => id);
 }
 
-function readInstalledModIds(state: unknown, gameId: string): string[] {
-  const mods = (
+/**
+ * Mods Vortex holds for this game — or `undefined` when the mod table itself
+ * could not be read.
+ *
+ * Same split as `readProfileIds`, and the stakes are higher: an `[]` here
+ * makes every mod in the receipt "missing", so the Doctor reports "978 of 978
+ * mods are missing" and offers an hour-long reinstall. A readable table with
+ * no entry for this game is a real, if grim, answer and stays `[]`.
+ */
+function readInstalledModIds(
+  state: unknown,
+  gameId: string,
+): string[] | undefined {
+  const table = (
     state as { persistent?: { mods?: Record<string, Record<string, unknown>> } }
-  )?.persistent?.mods?.[gameId];
+  )?.persistent?.mods;
+  if (table === null || table === undefined || typeof table !== "object") {
+    return undefined;
+  }
+  const mods = table[gameId];
   if (mods === null || typeof mods !== "object" || mods === undefined) return [];
   return Object.keys(mods);
 }
@@ -52,14 +83,23 @@ function readInstalledModIds(state: unknown, gameId: string): string[] {
  * looking at a different profile — that is a separate check, and conflating
  * them would report every mod as disabled the moment someone switched away.
  */
-function readEnabledModIds(state: unknown, profileId: string): string[] {
-  const modState = (
+function readEnabledModIds(
+  state: unknown,
+  profileId: string,
+): string[] | undefined {
+  const profiles = (
     state as {
       persistent?: {
         profiles?: Record<string, { modState?: Record<string, { enabled?: boolean }> }>;
       };
     }
-  )?.persistent?.profiles?.[profileId]?.modState;
+  )?.persistent?.profiles;
+  // Unreadable table vs. a profile with nothing switched on: the first is
+  // `unknown`, the second is a finding. See readProfileIds.
+  if (profiles === null || profiles === undefined || typeof profiles !== "object") {
+    return undefined;
+  }
+  const modState = profiles[profileId]?.modState;
   if (modState === null || typeof modState !== "object" || modState === undefined) {
     return [];
   }
@@ -307,9 +347,11 @@ export async function gatherObservations(
       : {}),
   };
   op.ok({
-    profiles: observations.existingProfileIds.length,
-    installedMods: observations.installedModIds.length,
-    enabledMods: observations.enabledModIds.length,
+    // `undefined` here means the table was unreadable, not that it was empty
+    // — the distinction the checks now render as `unknown`.
+    profiles: observations.existingProfileIds?.length,
+    installedMods: observations.installedModIds?.length,
+    enabledMods: observations.enabledModIds?.length,
     driftedCompareKeys: observations.driftedCompareKeys?.length,
     pluginOrderEntries: observations.currentPluginOrder?.length,
     modRules: observations.currentModRuleCount,

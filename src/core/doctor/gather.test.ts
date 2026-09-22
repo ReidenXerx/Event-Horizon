@@ -146,15 +146,25 @@ describe("gatherObservations", () => {
   });
 
   it("survives a state shape it does not recognise", async () => {
-    // The property that stops one unfamiliar field taking the feature down.
+    /**
+     * The property that stops one unfamiliar field taking the feature down —
+     * and the three lists say "could not read" rather than "empty".
+     *
+     * These three used to assert `[]`, one line above a comment making the
+     * opposite argument for the rule count. `[]` is not a gap in these
+     * fields, it is a FINDING: it makes `profileGone` true and every receipt
+     * mod missing, so an unreadable state produced "the profile no longer
+     * exists" and "978 of 978 mods are missing", with an hour-long reinstall
+     * offered under it. The checks render `undefined` as `unknown`.
+     */
     const obs = await gatherObservations({
       api: api({ persistent: null }),
       gameId: "fallout4",
       receiptProfileId: "prof-1",
     });
-    expect(obs.existingProfileIds).toEqual([]);
-    expect(obs.installedModIds).toEqual([]);
-    expect(obs.enabledModIds).toEqual([]);
+    expect(obs.existingProfileIds).toBeUndefined();
+    expect(obs.installedModIds).toBeUndefined();
+    expect(obs.enabledModIds).toBeUndefined();
     // undefined rather than 0: "could not read" is not "they are all gone".
     expect(obs.currentModRuleCount).toBeUndefined();
   });
@@ -166,7 +176,24 @@ describe("gatherObservations", () => {
       receiptProfileId: "nope",
     });
     expect(obs.currentModRuleCount).toBeUndefined();
+    expect(obs.existingProfileIds).toBeUndefined();
+  });
+
+  it("still says [] for a readable state that genuinely holds nothing", async () => {
+    /**
+     * The other half of the split, and the reason it is not simply "return
+     * undefined when the list is empty": a profile table Vortex HAS, holding
+     * no profile for this game, is a real answer and must still read as a
+     * finding rather than as an unchecked box.
+     */
+    const obs = await gatherObservations({
+      api: api({ persistent: { profiles: {}, mods: {} } }),
+      gameId: "fallout4",
+      receiptProfileId: "prof-1",
+    });
     expect(obs.existingProfileIds).toEqual([]);
+    expect(obs.installedModIds).toEqual([]);
+    expect(obs.enabledModIds).toEqual([]);
   });
 
   it("records whether the receipt's load order may be judged, and the natives to drop", async () => {

@@ -28,7 +28,6 @@ import { ehLog } from "../logging/ehLog";
 
 import type { EhcollManifest } from "../../types/ehcoll";
 import type { InstallReceipt } from "../../types/installLedger";
-import { rebuildPluginOrder } from "./heal";
 import type { HealAction } from "./health";
 import { nexusModIdOfCompareKey } from "../identity/compareKey";
 
@@ -131,11 +130,123 @@ export async function runHeal(
   }
 }
 
+/**
+ * ─── A CURE THAT WRITES INTO THE GAME FOLDER MUST BE POINTED AT IT ─────
+ * Two cures write outside Vortex's own state: `repin-plugin-order` writes
+ * plugins.txt through Vortex's one `loadOrder`, and `restore-light-flags`
+ * rewrites a header bit inside `<game>/Data/*.esp`. Neither call takes a game
+ * or a profile — they both act on whatever is active RIGHT NOW.
+ *
+ * So the receipt on screen and the machine being written to are two different
+ * facts, and `pickDoctorReceipt` deliberately falls back to the newest install
+ * when no receipt claims the active profile: the Doctor can therefore be open
+ * on a Skyrim receipt while Vortex is managing Fallout 4, or on the "Meridia"
+ * profile's receipt while the player is on their own "Vanilla+".
+ *
+ * Under EH's required hardlink deployment `<game>/Data/X.esp` IS the owning
+ * mod's staging file, so writing the curator's light bits there lands inside a
+ * third-party mod's folder and is inherited by every profile on the machine —
+ * NS-2's exact class of harm, permanent, and with no inverse cure. Plugin-name
+ * overlap between two profiles of one game (USSEP, the unofficial patches, any
+ * common ESP) makes it likely rather than exotic.
+ *
+ * Refused, and logged with both sides, rather than written. This used to guard
+ * only the plugin ORDER; the flag write was the one that touched bytes.
+ */
+async function refuseUnlessReceiptIsActive(args: {
+  api: types.IExtensionApi;
+  gameId: string;
+  receipt: InstallReceipt;
+  /** For the log line, and for naming the act in the refusal. */
+  what: "repin" | "light-flags";
+  /** What would have been written, in the player's words. */
+  wouldWrite: string;
+}): Promise<{ kind: "blocked"; reason: string } | undefined> {
+  const { activeContextFromState } = await import("./loadOrderStatus");
+  const active = activeContextFromState(args.api.getState());
+  const { receipt } = args;
+
+  if (receipt.gameId !== active.gameId || args.gameId !== receipt.gameId) {
+    ehLog("warn", `doctor.heal.${args.what}.refused`, {
+      why: "not-active-game",
+      receiptGame: receipt.gameId,
+      healGame: args.gameId,
+      activeGame: active.gameId,
+    });
+    return {
+      kind: "blocked",
+      reason:
+        `This collection is for ${receipt.gameId}, but Vortex is managing ` +
+        `${active.gameId ?? "no game"} right now. Switch to ${receipt.gameId} first — ` +
+        `${args.wouldWrite}`,
+    };
+  }
+  if (receipt.vortexProfileId !== active.profileId) {
+    ehLog("warn", `doctor.heal.${args.what}.refused`, {
+      why: "other-profile",
+      receiptProfile: receipt.vortexProfileId,
+      receiptProfileName: receipt.vortexProfileName,
+      activeProfile: active.profileId,
+      activeProfileName: active.profileName,
+    });
+    return {
+      kind: "blocked",
+      reason:
+        `This collection was installed into the profile "${receipt.vortexProfileName}", ` +
+        `and you are on "${active.profileName ?? active.profileId ?? "another profile"}". ` +
+        `Switch profiles first — ${args.wouldWrite}`,
+    };
+  }
+  return undefined;
+}
+
+/**
+ * ─── THE TWO-WRITERS GATE, AT THE WRITE RATHER THAN AT THE RENDER ──────
+ * `healingBlockedReason` exists because two things rewriting staging at once
+ * "is how a collection gets corrupted in a way no verification would catch
+ * afterwards". The Doctor page evaluated it once in its render body, never
+ * subscribed to the session, and then never consulted it again — so for the
+ * three cures that await a confirmation dialog, the gate was read an unbounded
+ * time before the write, and for the rest it was whatever it had been at mount.
+ *
+ * It also read the weaker of the two sources. `installBusy` is raised by the
+ * CURATOR session as well ("the rest of the app has no other way to know
+ * staging is being rewritten"), so during a bulk update every cure stayed
+ * enabled while the Home badge and the drift notification — which read the
+ * runtime flag — correctly refused.
+ *
+ * Checked here, in core, immediately before the switch: the UI's disabled
+ * button is now a courtesy rather than the safety.
+ */
+async function refuseWhileSomethingElseWrites(): Promise<
+  { kind: "blocked"; reason: string } | undefined
+> {
+  const [{ healingBlockedReason }, { getEHRuntime }, { getInstallSession }] =
+    await Promise.all([
+      import("./health"),
+      import("../../ui/runtime/ehRuntime"),
+      import("../../ui/pages/install/installSession"),
+    ]);
+
+  if (getEHRuntime().getSnapshot().installBusy) {
+    const reason = healingBlockedReason({ kind: "installing" });
+    if (reason !== undefined) return { kind: "blocked", reason };
+  }
+  const reason = healingBlockedReason(getInstallSession().getSnapshot().state);
+  return reason === undefined ? undefined : { kind: "blocked", reason };
+}
+
 async function healImpl(
   action: HealAction,
   deps: RunHealDeps,
 ): Promise<HealOutcome> {
   const { api, gameId, receipt } = deps;
+
+  const busy = await refuseWhileSomethingElseWrites();
+  if (busy !== undefined) {
+    ehLog("warn", "doctor.heal.refused", { action, why: busy.reason });
+    return busy;
+  }
 
   switch (action) {
     case "switch-profile": {
@@ -148,15 +259,66 @@ async function healImpl(
     }
 
     case "enable-mods": {
+      /**
+       * ─── ENABLE WHAT THE CHECK FOUND, AND COUNT WHAT WAS DONE ─────────
+       * This enabled every mod in the receipt and reported that number, so a
+       * button reading "Enable 3 mods" produced a toast reading "Re-enabled
+       * 978 mods" (GP-8: every line you print is a claim). It also dispatched
+       * `setModEnabled` for mods the sibling `mods-present` check had just
+       * reported as MISSING — writing profile entries for mod ids Vortex does
+       * not have — and, when the receipt's profile had been deleted, wrote 978
+       * enables into a profile the `profile` check was simultaneously
+       * reporting as gone, then called that a success.
+       *
+       * The check's own predicate is "installed AND not enabled"; recomputed
+       * here from current state rather than trusted from the diagnosis, since
+       * the two are separated by however long the card sat on screen.
+       */
+      const state = api.getState() as unknown as {
+        persistent?: { mods?: Record<string, Record<string, unknown>> };
+        settings?: { profiles?: Record<string, unknown> };
+      };
+      const profiles = state.settings?.profiles;
+      if (
+        profiles !== undefined &&
+        typeof profiles === "object" &&
+        !Object.prototype.hasOwnProperty.call(profiles, receipt.vortexProfileId)
+      ) {
+        ehLog("warn", "doctor.heal.enable-mods.refused", {
+          why: "profile-gone",
+          receiptProfile: receipt.vortexProfileId,
+        });
+        return {
+          kind: "blocked",
+          reason:
+            `The profile "${receipt.vortexProfileName}" no longer exists in ` +
+            `Vortex, so there is nothing to enable mods in. Reinstalling the ` +
+            `collection would recreate it.`,
+        };
+      }
+
+      const installed = new Set(
+        Object.keys(state.persistent?.mods?.[gameId] ?? {}),
+      );
       const { enableModInProfile } = await import("../installer/profile");
       let enabled = 0;
+      let absent = 0;
       for (const mod of receipt.mods) {
+        if (!installed.has(mod.vortexModId)) {
+          absent += 1;
+          continue;
+        }
         enableModInProfile(api, receipt.vortexProfileId, mod.vortexModId);
         enabled += 1;
       }
       return {
         kind: "done",
-        summary: `Re-enabled ${enabled} mod${enabled === 1 ? "" : "s"} in ${receipt.vortexProfileName}.`,
+        summary:
+          `Re-enabled ${enabled} mod${enabled === 1 ? "" : "s"} in ${receipt.vortexProfileName}.` +
+          (absent > 0
+            ? ` ${absent} more are not installed any more, so they could not ` +
+              `be enabled — reinstalling the collection restores those.`
+            : ""),
       };
     }
 
@@ -181,6 +343,23 @@ async function healImpl(
             "healed this way — reinstalling the collection would fix it.",
         };
       }
+
+      /**
+       * Before the write, not after: `applyPluginLightFlags` opens the files
+       * in the ACTIVE game's Data folder, which under hardlink deployment are
+       * the owning mods' staging files. See the helper for what that costs
+       * when the receipt on screen is not the machine in front of us.
+       */
+      const wrongTarget = await refuseUnlessReceiptIsActive({
+        api,
+        gameId,
+        receipt,
+        what: "light-flags",
+        wouldWrite:
+          "restoring flags now would rewrite plugin files that belong to " +
+          "another setup, and that cannot be undone.",
+      });
+      if (wrongTarget !== undefined) return wrongTarget;
 
       const [{ applyPluginLightFlags, describePluginFlagRepair }, { getGameDirectory }] =
         await Promise.all([
@@ -233,17 +412,31 @@ async function healImpl(
                 "elsewhere. Re-run the check.",
         };
       }
+      /**
+       * ─── THE OVER-LIMIT LINE BELONGS ON THE SUCCESS PATH TOO ──────────
+       * `describePluginFlagRepair` computes the one sentence that answers "will
+       * my game start" — regular plugins against the 254 limit — and it fires
+       * precisely when some flags were restored and others failed, i.e. HERE.
+       * It was read only in the `corrected === 0` branch, so a repair that
+       * restored 900 flags and missed 300 reported success while the setup was
+       * still 86 plugins over the limit and the game still would not launch.
+       *
+       * The re-diagnose does not recover it either: `evaluateHealth` compares
+       * recorded flags against disk and never reads `regularAfter`.
+       */
       return {
         kind: "done",
-        summary:
+        summary: [
           `Restored ${repair.corrected} ESL flag(s)` +
-          (repair.failures.length > 0
-            ? `, and ${repair.failures.length} could not be changed.`
-            : ".") +
-          (repair.unreadable.length > 0
-            ? ` ${repair.unreadable.length} plugin(s) were locked — close the ` +
-              `game and any xEdit/LOOT windows, then run this again.`
-            : ""),
+            (repair.failures.length > 0
+              ? `, and ${repair.failures.length} could not be changed.`
+              : ".") +
+            (repair.unreadable.length > 0
+              ? ` ${repair.unreadable.length} plugin(s) were locked — close the ` +
+                `game and any xEdit/LOOT windows, then run this again.`
+              : ""),
+          ...lines,
+        ].join(" "),
       };
     }
 
@@ -272,39 +465,16 @@ async function healImpl(
        * plugins.txt — an order Event Horizon never installed (NS-2's class of
        * harm). Refused, and logged, rather than written.
        */
-      const { activeContextFromState } = await import("./loadOrderStatus");
-      const active = activeContextFromState(api.getState());
-      if (receipt.gameId !== active.gameId || gameId !== receipt.gameId) {
-        ehLog("warn", "doctor.heal.repin.refused", {
-          why: "not-active-game",
-          receiptGame: receipt.gameId,
-          healGame: gameId,
-          activeGame: active.gameId,
-        });
-        return {
-          kind: "blocked",
-          reason:
-            `This collection is for ${receipt.gameId}, but Vortex is managing ` +
-            `${active.gameId ?? "no game"} right now. Switch to ${receipt.gameId} first — ` +
-            `re-applying now would write into the other game's load order.`,
-        };
-      }
-      if (receipt.vortexProfileId !== active.profileId) {
-        ehLog("warn", "doctor.heal.repin.refused", {
-          why: "other-profile",
-          receiptProfile: receipt.vortexProfileId,
-          receiptProfileName: receipt.vortexProfileName,
-          activeProfile: active.profileId,
-          activeProfileName: active.profileName,
-        });
-        return {
-          kind: "blocked",
-          reason:
-            `This collection was installed into the profile "${receipt.vortexProfileName}", ` +
-            `and you are on "${active.profileName ?? active.profileId ?? "another profile"}". ` +
-            `Switch profiles first — re-applying now would reorder a profile it was never installed into.`,
-        };
-      }
+      const wrongTarget = await refuseUnlessReceiptIsActive({
+        api,
+        gameId,
+        receipt,
+        what: "repin",
+        wouldWrite:
+          "re-applying now would reorder a load order this collection was " +
+          "never installed into.",
+      });
+      if (wrongTarget !== undefined) return wrongTarget;
       const [{ applyPluginOrder }, { buildRepinOrder, currentOrderFromState }] =
         await Promise.all([
           import("../installer/applyPluginOrder"),
@@ -417,8 +587,24 @@ async function healImpl(
       if (deps.manifest === undefined) {
         return { kind: "blocked", reason: MISSING_PACKAGE };
       }
-      const { applyModRules } = await import("../installer/applyModRules");
+      const { applyModRules, collectExistingRules } = await import(
+        "../installer/applyModRules"
+      );
       const maps = resolveModMaps(receipt);
+      /**
+       * ─── THE SAME ARGUMENTS, OR IT IS NOT THE SAME FUNCTION ───────────
+       * This file's promise is that healing re-runs the install's own step.
+       * It called the install's own function with one argument missing, and
+       * `existingRulesBySourceModId` is the one that drives the collection-wins
+       * conflict pass: without it `applyModRules` reads `?? []` for every mod
+       * and removes nothing.
+       *
+       * So the curator's rule was added while the player's contradicting rule
+       * stayed beside it — the case applyModRules' own warning describes as
+       * showing up "much later as a conflict order that will not stick" — and
+       * the cure reported "Re-applied 412 of 412". The count check then stayed
+       * red, so the player pressed it again, forever.
+       */
       const result = applyModRules({
         api,
         gameId,
@@ -426,12 +612,22 @@ async function healImpl(
         modIdByCompareKey: maps.modIdByCompareKey,
         modIdByNexusModId: maps.modIdByNexusModId,
         ambiguousNexusModIds: maps.ambiguousNexusModIds,
+        existingRulesBySourceModId: collectExistingRules(
+          api,
+          gameId,
+          maps.modIdByCompareKey,
+        ),
       });
       return {
         kind: "done",
-        summary: `Re-applied ${result.applied} of ${
-          deps.manifest.rules?.length ?? 0
-        } collection rules.`,
+        summary:
+          `Re-applied ${result.applied} of ${
+            deps.manifest.rules?.length ?? 0
+          } collection rules.` +
+          (result.overwrittenUserRules > 0
+            ? ` ${result.overwrittenUserRules} rule(s) of your own that ` +
+              `contradicted them on the same mods were replaced.`
+            : ""),
       };
     }
 

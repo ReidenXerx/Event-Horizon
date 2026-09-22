@@ -148,11 +148,13 @@ function VerdictRing(props: { checks: readonly HealthCheck[] }): JSX.Element {
 function CheckCard(props: {
   check: HealthCheck;
   busy: boolean;
+  /** Another cure is running — this one waits, even though it is not it. */
+  othersBusy: boolean;
   blocked: boolean;
   unavailableHeal?: (action: HealAction) => string | undefined;
   onHeal?: (action: HealAction, checkId: string) => void;
 }): JSX.Element {
-  const { check, busy, blocked } = props;
+  const { check, busy, othersBusy, blocked } = props;
   const unavailable =
     check.heal !== undefined
       ? props.unavailableHeal?.(check.heal.action)
@@ -221,14 +223,18 @@ function CheckCard(props: {
           <Button
             intent="ghost"
             size="sm"
-            disabled={busy || blocked || unavailable !== undefined}
+            disabled={
+              busy || othersBusy || blocked || unavailable !== undefined
+            }
             onClick={() => props.onHeal?.(check.heal!.action, check.id)}
           >
             {busy
               ? "Working…"
-              : blocked
-                ? "Install in progress"
-                : (unavailable ?? check.heal.label)}
+              : othersBusy
+                ? "Another repair is running"
+                : blocked
+                  ? "Install in progress"
+                  : (unavailable ?? check.heal.label)}
           </Button>
         )}
       </div>
@@ -320,6 +326,22 @@ export function DoctorPanel(props: DoctorPanelProps): JSX.Element {
             key={c.id}
             check={c}
             busy={props.busyCheckId === c.id}
+            /**
+             * ─── ONE CURE AT A TIME, NOT ONE CARD AT A TIME ─────────────
+             * `busy` disabled only the card being healed, so every OTHER
+             * cure's button stayed live: a player could start the plugin
+             * order, then the ESL flags, then the mod enables, and have all
+             * three running at once — `enable-mods` changing the plugin list
+             * `applyPluginOrder` is writing into, while `restore-light-flags`
+             * opens those same plugin files for write.
+             *
+             * `busyCheckId` is also ONE slot, so a second press overwrote the
+             * first and whichever `finally` landed first re-enabled a button
+             * whose cure was still running.
+             */
+            othersBusy={
+              props.busyCheckId !== undefined && props.busyCheckId !== c.id
+            }
             blocked={props.healingBlocked !== undefined}
             {...(props.unavailableHeal !== undefined
               ? { unavailableHeal: props.unavailableHeal }

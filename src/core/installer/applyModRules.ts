@@ -346,3 +346,86 @@ function refMatchesModId(
   // type precedence).
   return false;
 }
+
+/**
+ * Walk Vortex's mod-rules state for every source mod in the rule
+ * targets and return an `ExistingRule[]` projection keyed by source
+ * vortex modId. This is what `applyModRules` consumes for the
+ * collection-wins conflict pass.
+ *
+ * We only collect rules for mods we're *about* to add a rule on
+ * (i.e. mods present in `modIdByCompareKey`). Pulling the entire
+ * mod table would be wasteful for large profiles.
+ */
+export function collectExistingRules(
+  api: types.IExtensionApi,
+  gameId: string,
+  modIdByCompareKey: ReadonlyMap<string, string>,
+): Map<string, ExistingRule[]> {
+  const out = new Map<string, ExistingRule[]>();
+  const state = api.getState();
+  const modsForGame = (
+    state as unknown as {
+      persistent?: {
+        mods?: Record<
+          string,
+          Record<
+            string,
+            {
+              rules?: Array<{
+                type?: unknown;
+                reference?: {
+                  id?: unknown;
+                  repo?: { modId?: unknown; fileId?: unknown };
+                  archiveId?: unknown;
+                };
+              }>;
+            }
+          >
+        >;
+      };
+    }
+  ).persistent?.mods?.[gameId];
+  if (!modsForGame) return out;
+
+  const sourceModIds = new Set(modIdByCompareKey.values());
+  for (const sourceModId of sourceModIds) {
+    const record = modsForGame[sourceModId];
+    const rawRules = record?.rules ?? [];
+    if (rawRules.length === 0) continue;
+
+    const projected: ExistingRule[] = [];
+    for (const r of rawRules) {
+      if (typeof r.type !== "string") continue;
+      const ref = r.reference ?? {};
+      projected.push({
+        type: r.type,
+        reference: {
+          id: typeof ref.id === "string" ? ref.id : undefined,
+          repo:
+            ref.repo &&
+            typeof ref.repo === "object" &&
+            ref.repo !== null
+              ? {
+                  modId:
+                    typeof ref.repo.modId === "string"
+                      ? ref.repo.modId
+                      : undefined,
+                  fileId:
+                    typeof ref.repo.fileId === "string"
+                      ? ref.repo.fileId
+                      : undefined,
+                }
+              : undefined,
+          archiveId:
+            typeof ref.archiveId === "string" ? ref.archiveId : undefined,
+        },
+      });
+    }
+    if (projected.length > 0) {
+      out.set(sourceModId, projected);
+    }
+  }
+
+  return out;
+}

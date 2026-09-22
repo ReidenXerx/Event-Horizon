@@ -114,14 +114,27 @@ export interface HealthCheck {
 
 /** Everything the checks need, gathered from Vortex by the caller. */
 export interface HealthObservations {
-  /** Profile ids that currently exist for this game. */
-  existingProfileIds: readonly string[];
+  /**
+   * Profile ids that currently exist for this game — `undefined` when
+   * Vortex's profile table could not be read at all.
+   *
+   * ─── THESE THREE WERE THE ONLY NON-OPTIONAL FIELDS HERE ───────────────
+   * `gather`'s header states that every field is `| undefined` and that
+   * `undefined` means "could not read this", which the checks render as
+   * `unknown` rather than as a pass or a failure. These three could not keep
+   * that promise, because the type forbade it: their readers returned `[]`
+   * for an unreadable state, and `[]` is not a gap here, it is a FINDING —
+   * "the profile no longer exists", "978 of 978 mods are missing", with an
+   * hour-long reinstall offered under it. A zero rendered as knowledge, which
+   * is the one verdict this project refuses everywhere else.
+   */
+  existingProfileIds: readonly string[] | undefined;
   /** The profile Vortex is on right now, if any. */
   activeProfileId: string | undefined;
-  /** Vortex mod ids currently installed for this game. */
-  installedModIds: readonly string[];
-  /** Vortex mod ids enabled in the receipt's profile. */
-  enabledModIds: readonly string[];
+  /** Vortex mod ids currently installed for this game, or `undefined`. */
+  installedModIds: readonly string[] | undefined;
+  /** Vortex mod ids enabled in the receipt's profile, or `undefined`. */
+  enabledModIds: readonly string[] | undefined;
   /**
    * Mods whose staging folder no longer matches what we installed, by
    * compareKey. Empty when nothing drifted; `undefined` when not checked
@@ -323,20 +336,27 @@ export function evaluateHealth(
   const checks: HealthCheck[] = [];
 
   // ── profile ──────────────────────────────────────────────────────────
-  const profileGone = !obs.existingProfileIds.includes(receipt.vortexProfileId);
+  const profilesUnreadable = obs.existingProfileIds === undefined;
+  const profileGone =
+    obs.existingProfileIds !== undefined &&
+    !obs.existingProfileIds.includes(receipt.vortexProfileId);
   checks.push({
     id: "profile",
     title: "Profile",
-    status: profileGone
-      ? "broken"
-      : obs.activeProfileId === receipt.vortexProfileId
-        ? "healthy"
-        : "drifted",
-    summary: profileGone
-      ? "The profile this collection was installed into no longer exists."
-      : obs.activeProfileId === receipt.vortexProfileId
-        ? "You are on the profile this collection was installed into."
-        : "The collection is installed, but you are on a different profile.",
+    status: profilesUnreadable
+      ? "unknown"
+      : profileGone
+        ? "broken"
+        : obs.activeProfileId === receipt.vortexProfileId
+          ? "healthy"
+          : "drifted",
+    summary: profilesUnreadable
+      ? "Vortex's profile list could not be read, so this was not checked."
+      : profileGone
+        ? "The profile this collection was installed into no longer exists."
+        : obs.activeProfileId === receipt.vortexProfileId
+          ? "You are on the profile this collection was installed into."
+          : "The collection is installed, but you are on a different profile.",
     detail: profileGone ? [`Missing profile: ${receipt.vortexProfileId}`] : [],
     affectedCount: profileGone ? 1 : 0,
     // A profile that is gone cannot be recreated from a receipt — the mods
@@ -388,14 +408,23 @@ export function evaluateHealth(
   }
 
   // ── mods present ─────────────────────────────────────────────────────
-  const installed = new Set(obs.installedModIds);
-  const missing = receipt.mods.filter((m) => !installed.has(m.vortexModId));
+  // An unreadable mod table would make every mod "missing"; see the field.
+  const modsUnreadable = obs.installedModIds === undefined;
+  const installed = new Set(obs.installedModIds ?? []);
+  const missing = modsUnreadable
+    ? []
+    : receipt.mods.filter((m) => !installed.has(m.vortexModId));
   checks.push({
     id: "mods-present",
     title: "Mods installed",
-    status: missing.length === 0 ? "healthy" : "broken",
-    summary:
-      missing.length === 0
+    status: modsUnreadable
+      ? "unknown"
+      : missing.length === 0
+        ? "healthy"
+        : "broken",
+    summary: modsUnreadable
+      ? "Vortex's mod list could not be read, so this was not checked."
+      : missing.length === 0
         ? // Says "the ones it installed", not "all of them", when the run is
           // known to have left some out. The old wording read as a clean bill
           // of health for a collection that is short a mod.
@@ -419,18 +448,28 @@ export function evaluateHealth(
   // ── mods enabled ─────────────────────────────────────────────────────
   // Only meaningful for mods that are actually present; a missing mod being
   // disabled is the same finding twice.
-  const enabled = new Set(obs.enabledModIds);
-  const disabled = receipt.mods.filter(
-    (m) => installed.has(m.vortexModId) && !enabled.has(m.vortexModId),
-  );
+  const enabledUnreadable = obs.enabledModIds === undefined || modsUnreadable;
+  const enabled = new Set(obs.enabledModIds ?? []);
+  const disabled = enabledUnreadable
+    ? []
+    : receipt.mods.filter(
+        (m) => installed.has(m.vortexModId) && !enabled.has(m.vortexModId),
+      );
   checks.push({
     id: "mods-enabled",
     title: "Mods enabled",
-    status: disabled.length === 0 ? "healthy" : "drifted",
-    summary:
-      disabled.length === 0
+    status: enabledUnreadable
+      ? "unknown"
+      : disabled.length === 0
+        ? "healthy"
+        : "drifted",
+    summary: enabledUnreadable
+      ? "The profile's mod state could not be read, so this was not checked."
+      : disabled.length === 0
         ? "Every installed mod is enabled in the profile."
-        : `${disabled.length} installed mod${disabled.length === 1 ? " is" : "s are"} disabled.`,
+        : `${disabled.length} installed mod${disabled.length === 1 ? " is" : "s are"} disabled. ` +
+          `Switching a mod off is usually deliberate — enabling them again ` +
+          `restores the collection's set.`,
     detail: detailList(disabled.map((m) => m.name)),
     affectedCount: disabled.length,
     ...(disabled.length > 0

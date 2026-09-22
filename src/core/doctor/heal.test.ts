@@ -12,9 +12,7 @@ import {
   describeHeal,
   healNeedsConfirmation,
   healNeedsManifest,
-  matchEhcollFile,
-  rebuildPluginOrder,
-} from "./heal";
+  matchEhcollFile,} from "./heal";
 import type { HealAction } from "./health";
 
 /**
@@ -67,20 +65,27 @@ describe("healNeedsConfirmation", () => {
      * should fix it with ONE press. A dialog in front of a reversible repair
      * protects nothing and reads as the tool hesitating.
      *
-     * Rules and the LOOT userlist REPLACE what the player set for this game;
-     * reinstalling REMOVES and rebuilds mod folders and can take an hour.
-     * Those three still say what is lost before they do it.
+     * The rule is unchanged; which cures it selects was corrected once each
+     * cure was measured against what it actually does:
+     *
+     *  - `reapply-rules` / `reapply-userlist` do NOT replace what the player
+     *    set. `applyModRules` removes only a user rule on the same source mod
+     *    pointing at the same target — which it then re-adds as the
+     *    collection's — and `applyUserlist` clears nothing whatsoever. Both
+     *    are repeatable, so both stopped asking.
+     *  - `restore-light-flags` writes bytes into plugin files in the game
+     *    folder and `HealAction` has no inverse for it. It asks.
      */
     expect(ALL.filter((a) => !healNeedsConfirmation(a)).sort()).toEqual([
       "enable-mods",
+      "reapply-rules",
+      "reapply-userlist",
       "repin-plugin-order",
-      "restore-light-flags",
       "switch-profile",
     ]);
     expect(ALL.filter(healNeedsConfirmation).sort()).toEqual([
-      "reapply-rules",
-      "reapply-userlist",
       "reinstall-mods",
+      "restore-light-flags",
     ]);
   });
 
@@ -112,16 +117,23 @@ describe("describeHeal", () => {
     }
   });
 
-  it("warns that re-applying rules destroys the user's own", () => {
-    // It replaces rather than merges — the collection's mandate. Someone who
-    // spent an evening on their own conflict rules deserves to know before,
-    // not after.
-    expect(describeHeal("reapply-rules").body.toLowerCase()).toContain(
-      "will be lost",
-    );
-    expect(describeHeal("reapply-userlist").body.toLowerCase()).toContain(
-      "will be lost",
-    );
+  it("scopes the rule replacement to what actually gets replaced", () => {
+    /**
+     * These two said "rules you added yourself will be lost", and neither
+     * cure does that: `applyModRules` removes a user rule only when it sits on
+     * the same source mod AND references the same target as the collection's,
+     * and `applyUserlist` removes nothing at all. Overstating destruction is
+     * not the safe direction — it scares a player off a cheap, repeatable
+     * repair, and it was the stated premise for a confirmation dialog that
+     * therefore should not have existed.
+     */
+    const rules = describeHeal("reapply-rules").body.toLowerCase();
+    expect(rules).not.toContain("will be lost");
+    expect(rules).toContain("contradicts");
+
+    const userlist = describeHeal("reapply-userlist").body.toLowerCase();
+    expect(userlist).not.toContain("will be lost");
+    expect(userlist).toContain("nothing already in your userlist is removed");
   });
 
   it("warns that reinstalling restores the curator's installer answers", () => {
@@ -143,56 +155,6 @@ describe("describeHeal", () => {
     const body = describeHeal("switch-profile").body.toLowerCase();
     expect(body).toContain("nothing is installed or removed");
     expect(body).not.toContain("will be lost");
-  });
-});
-
-describe("rebuildPluginOrder", () => {
-  const current = [
-    { name: "B.esp", enabled: true },
-    { name: "A.esp", enabled: false },
-    { name: "C.esp", enabled: true },
-  ];
-
-  it("restores the recorded order", () => {
-    const out = rebuildPluginOrder(["A.esp", "B.esp", "C.esp"], current);
-    expect(out.map((p) => p.name)).toEqual(["A.esp", "B.esp", "C.esp"]);
-  });
-
-  it("keeps each plugin's CURRENT enabled state, not a guess", () => {
-    // The whole point. Enablement is a separate check with its own cure; a
-    // repair that silently re-enables A.esp while claiming to fix ordering is
-    // the surprise that makes people stop trusting heal buttons.
-    const out = rebuildPluginOrder(["A.esp", "B.esp", "C.esp"], current);
-    expect(out.find((p) => p.name === "A.esp")?.enabled).toBe(false);
-    expect(out.find((p) => p.name === "B.esp")?.enabled).toBe(true);
-  });
-
-  it("matches case-insensitively, because plugins.txt casing is not stable", () => {
-    // A case-sensitive lookup finds nothing and disables every plugin — the
-    // single most destructive way this function could be wrong.
-    const out = rebuildPluginOrder(["a.ESP", "b.esp"], [
-      { name: "A.esp", enabled: true },
-      { name: "B.ESP", enabled: true },
-    ]);
-    expect(out.every((p) => p.enabled)).toBe(true);
-  });
-
-  it("keeps plugins the user added, at the end", () => {
-    // Dropping a plugin from plugins.txt is how you disable it. A repair that
-    // quietly removes someone's own plugin is not a repair.
-    const out = rebuildPluginOrder(["A.esp"], [
-      { name: "A.esp", enabled: true },
-      { name: "Mine.esp", enabled: true },
-    ]);
-    expect(out.map((p) => p.name)).toEqual(["A.esp", "Mine.esp"]);
-    expect(out[1]!.enabled).toBe(true);
-  });
-
-  it("does not claim a plugin is enabled when it is not there at all", () => {
-    // Asking Vortex to enable a plugin that does not exist is a different
-    // failure from restoring an order.
-    const out = rebuildPluginOrder(["Gone.esp"], []);
-    expect(out).toEqual([{ name: "Gone.esp", enabled: false }]);
   });
 });
 
