@@ -10,6 +10,33 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.11] — 2026-09-23
+
+Two fixes, both found by someone looking rather than by something failing.
+
+### Using Event Horizon
+- **"Something went wrong" no longer appears on every deployment.** A user reported an error dialog
+  that fired every time Vortex deployed, and that had never broken anything they could point at.
+  They were right: the message — `ResizeObserver loop completed with undelivered notifications` — is
+  not a fault. It is the browser saying it could not fit every layout notification into one frame
+  and delivered the rest in the next one, which is exactly what a deployment's constant redrawing
+  provokes. Event Horizon watches the whole application's errors on purpose, because a silent
+  failure is worse than a noisy one, and it already tells its own errors apart from Vortex's — but
+  that only ever distinguished two things, and this is a third: not an error at all. It is now
+  recognised and left alone. Real errors are untouched, including any genuine fault that happens to
+  mention the same browser feature.
+
+### Building collections
+- **The two most-installed plugins in modding are readable again.** A plugin's header can carry a
+  block too large to state its own size — the unofficial patches for Skyrim and Fallout 4 both do —
+  and the format handles that with a marker that gives the real size separately. Event Horizon's
+  reader did not know about the marker, lost its place a few hundred kilobytes in, and gave up on
+  the whole file. Measured across 2,486 plugins on one machine, those two were the only ones
+  affected, and they are the cornerstone of most collections: the Unofficial Skyrim Special Edition
+  Patch and the Unofficial Fallout 4 Patch. The build's missing-master check counted them as
+  unreadable instead of checking them, the requirements pass lost the mods they depend on, and the
+  ESL flag tool could not read them. All three work now.
+
 ## [0.2.10] — 2026-09-23
 
 The headline is that Event Horizon looks like one piece of software now — and that a long audit of
