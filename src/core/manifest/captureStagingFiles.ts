@@ -319,6 +319,9 @@ export async function captureStagingFiles(
       if (nativePlugins.length > 0) enriched.nativePlugins = nativePlugins;
       if (unreadable.length > 0) {
         enriched.stagingCaptureIncomplete = true;
+        // Shipped, unlike the line above: the plugin list this walk produced
+        // may be short, and only the package can carry that to the player.
+        if (nativePlugins.length > 0) enriched.nativePluginsIncomplete = true;
         ehLog("warn", "capture.staging.incomplete", {
           mod: mod.name,
           unreadable: unreadable.length,

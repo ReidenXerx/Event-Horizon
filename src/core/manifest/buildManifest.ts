@@ -749,7 +749,11 @@ function buildModInstallState(
     // Only when the mod has script-extender plugins — most do not, and an
     // empty list on 1,500 mods says nothing.
     ...((mod.nativePlugins?.length ?? 0) > 0
-      ? { nativePlugins: mod.nativePlugins }
+      ? {
+          nativePlugins: mod.nativePlugins,
+          // Travels with the list, because it describes the list.
+          ...(mod.nativePluginsIncomplete === true ? { nativePluginsIncomplete: true as const } : {}),
+        }
       : {}),
   };
 }

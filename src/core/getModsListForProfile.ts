@@ -121,6 +121,8 @@ export type AuditorMod = {
    * {@link EhcollNativePlugin}.
    */
   nativePlugins?: import("../types/ehcoll").EhcollNativePlugin[];
+  /** The walk behind `nativePlugins` could not read part of the folder. */
+  nativePluginsIncomplete?: true;
   /**
    * The build proved that installing this mod WITHOUT selecting anything
    * reproduces the curator's staging folder.

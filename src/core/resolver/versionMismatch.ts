@@ -78,6 +78,12 @@ export type VersionMismatch = {
      * the one surface that never mentioned them.
      */
     undetermined: { path: string; mods: string[] }[];
+    /**
+     * Mods whose plugin list may be SHORT, because the build could not read
+     * part of their folder. Counted, never named as problems: nothing is
+     * known to be wrong with them, only unchecked.
+     */
+    partlyChecked: number;
   };
   /**
    * Why there is no precise list, when there is not.
@@ -158,6 +164,7 @@ export function assessVersionMismatch(args: {
       loads: j.loads,
       unverified: j.unverified,
       undetermined: j.undeterminedConflicts,
+      partlyChecked: manifest.mods.filter((m) => m.state.nativePluginsIncomplete === true).length,
     },
   };
 }
@@ -288,6 +295,20 @@ export function describeVersionMismatch(m: VersionMismatch): {
         `ahead of time (${shown.join(", ")}` +
         (p.unknown.length > shown.length ? `, and ${p.unknown.length - shown.length} more` : "") +
         `) — the script extender's log will say whether they loaded.`,
+    );
+  }
+  if (p.partlyChecked > 0) {
+    /*
+     * The list above is exact about what it saw, and this says what it did
+     * not see. Without it the four counts read as a total for the whole
+     * collection, and a mod whose folder could not be read provably cannot
+     * appear in the swap list — precision about an incomplete sample.
+     */
+    summary.push(
+      `${p.partlyChecked} ${plural(p.partlyChecked, "mod", "mods")} could only be checked in ` +
+        `part, because the build could not read all of ${plural(p.partlyChecked, "its", "their")} ` +
+        `files. Nothing is known to be wrong with ${plural(p.partlyChecked, "it", "them")}; ` +
+        `${plural(p.partlyChecked, "it is", "they are")} simply not covered by the list above.`,
     );
   }
   if (p.undetermined.length > 0) {

@@ -225,3 +225,43 @@ describe("a file two mods ship with no rule deciding", () => {
     expect(describeVersionMismatch(m).summary.join(" ")).toMatch(/no rule deciding which wins/);
   });
 });
+
+/**
+ * The swap list is exact about what the build SAW. A mod whose folder could
+ * not be fully read has a plugin list that may be short, so it provably
+ * cannot appear in that list — and four counts presented as a total would be
+ * precision about an incomplete sample.
+ */
+describe("a mod the build could only read in part", () => {
+  it("is counted and explained, never named as a problem", () => {
+    const manifest = meridiaLike([
+      mod("Readable", "nexus:1:1", [gogOnly("SKSE/Plugins/a.dll")]),
+      {
+        name: "Partly read",
+        compareKey: "nexus:2:2",
+        state: {
+          enabled: true,
+          nativePlugins: [addressLibrary("SKSE/Plugins/b.dll")],
+          nativePluginsIncomplete: true,
+        },
+      } as unknown as ReturnType<typeof mod>,
+    ]);
+    const m = assessVersionMismatch({ manifest, installed: "1.6.1170.0", store: "steam" });
+    expect(m.plugins?.partlyChecked).toBe(1);
+    const text = describeVersionMismatch(m).summary.join(" ");
+    expect(text).toMatch(/1 mod could only be checked in part/);
+    expect(text).toMatch(/Nothing is known to be wrong with it/);
+    // And it is not in the swap list, which is the point.
+    expect(describeVersionMismatch(m).swapLines.join(" ")).not.toContain("Partly read");
+  });
+
+  it("says nothing when every mod was read in full", () => {
+    const m = assessVersionMismatch({
+      manifest: meridiaLike([mod("A", "nexus:1:1", [gogOnly("SKSE/Plugins/a.dll")])]),
+      installed: "1.6.1170.0",
+      store: "steam",
+    });
+    expect(m.plugins?.partlyChecked).toBe(0);
+    expect(describeVersionMismatch(m).summary.join(" ")).not.toMatch(/checked in part/);
+  });
+});

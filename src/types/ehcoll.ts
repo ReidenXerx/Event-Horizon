@@ -577,6 +577,17 @@ export type ModInstallState = {
    * optional key does not.
    */
   nativePlugins?: EhcollNativePlugin[];
+  /**
+   * The walk that produced {@link nativePlugins} could not read part of this
+   * mod's folder, so the list may be SHORT.
+   *
+   * An absent entry and an unreadable one look identical downstream: the
+   * judgement counts what it was given and presents four counts as a total.
+   * A player then gets a precise-looking "swap these mods" list that provably
+   * cannot mention this mod. The build already warns the curator; this is how
+   * the fact reaches the person installing.
+   */
+  nativePluginsIncomplete?: true;
   /** INI tweak filenames the curator enabled on this mod. */
   enabledINITweaks?: string[];
   /**

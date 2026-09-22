@@ -1001,6 +1001,8 @@ function validateInstallState(
     ...(stagingFiles !== undefined ? { stagingFiles } : {}),
     ...(mirrorFromArchive !== undefined ? { mirrorFromArchive } : {}),
     ...(nativePlugins !== undefined && nativePlugins.length > 0 ? { nativePlugins } : {}),
+    // Advisory, like the list itself: anything but an explicit true is ignored.
+    ...(obj.nativePluginsIncomplete === true ? { nativePluginsIncomplete: true as const } : {}),
   };
 }
 

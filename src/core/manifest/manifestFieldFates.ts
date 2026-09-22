@@ -69,6 +69,7 @@ export const MOD_INSTALL_STATE_FATES: {
   mirrored: { kind: "applied", by: "core/installer/runInstall.ts" },
   mirrorFromArchive: { kind: "applied", by: "core/installer/runInstall.ts" },
   nativePlugins: { kind: "applied", by: "core/environment/nativePluginCompat.ts" },
+  nativePluginsIncomplete: { kind: "applied", by: "core/resolver/versionMismatch.ts" },
   enabledINITweaks: { kind: "applied", by: "core/installer/applyIniTweaks.ts" },
   postProcessed: { kind: "applied", by: "core/installer/judgeReinstall.ts" },
   /**
