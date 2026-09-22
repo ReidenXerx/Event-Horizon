@@ -86,6 +86,41 @@ describe("detectExternalDrift", () => {
     expect(drift!.added).toEqual(["pc_readme.md"]);
   });
 
+  it("does not let a root-level file explain away one at depth", async () => {
+    /**
+     * ─── A SUFFIX OF ONE SEGMENT IS A BASENAME, NOT A WRAPPER ──────────
+     * The tail match allowed the shorter side to be a single segment, so a
+     * root `readme.txt` in the archive matched a staged `docs/readme.txt` at
+     * any depth and both dropped out of the comparison. Root-level
+     * readme/licence/changelog alongside a `docs/` folder is an ordinary
+     * mod-archive shape.
+     *
+     * Under-reporting is the silent direction: `describeExternalDrift` stays
+     * quiet, the curator is never told their hand-maintained mod diverged,
+     * and the collection ships the ARCHIVE — "whoever installs it gets the
+     * original, not your version", which is the harm this module opens with.
+     */
+    const [drift] = await detectExternalDrift({
+      ...base,
+      mods: [
+        mod({
+          id: "docs",
+          installationPath: "docs",
+          stagingFiles: [
+            { path: "a.esp", size: 1 },
+            { path: "docs/readme.txt", size: 1 },
+          ] as never,
+        }),
+      ],
+      config: config({}),
+      listArchive: listing(["a.esp", "readme.txt"]),
+    });
+    // Both directions: the staged one is genuinely new, the archived one
+    // genuinely gone.
+    expect(drift!.added).toEqual(["docs/readme.txt"]);
+    expect(drift!.removed).toEqual(["readme.txt"]);
+  });
+
   it("says nothing when staging still matches the archive", async () => {
     const drift = await detectExternalDrift({
       ...base,

@@ -598,10 +598,33 @@ export async function detectExternalDrift(args: {
     const archivedSet = new Set(archived);
     // Vortex strips a leading wrapper directory, so compare on tails the same
     // way omissionLeads does rather than demanding identical prefixes.
+    /**
+     * ─── A SUFFIX OF ONE SEGMENT IS A BASENAME, NOT A WRAPPER ───────────
+     * The second clause handles a wrapper directory in the other direction,
+     * and when `h` is a single-segment archive entry — `readme.txt`,
+     * `settings.ini`, `changelog.txt`, a loose `.pex` — it degenerates into
+     * basename equality against every staged path at any depth. A staged
+     * `docs/readme.txt` was then "in the archive" because the archive has a
+     * root `readme.txt`, and it dropped out of `added`; symmetrically a real
+     * archive file dropped out of `removed`.
+     *
+     * Under-reported drift is the silent direction: `describeExternalDrift`
+     * stays quiet, the curator is never told their hand-maintained mod
+     * diverged, and the collection ships the ARCHIVE — "whoever installs it
+     * gets the original, not your version", which is the harm this module's
+     * header opens with. Root-level readme/licence/changelog alongside a
+     * `docs/` folder is an ordinary mod-archive shape.
+     *
+     * A wrapper prefix is at least one whole directory, so the shorter side
+     * must be a proper suffix of two segments or more to count as one.
+     */
+    const segments = (p: string): number => p.split("/").length;
+    const properTail = (shorter: string, longer: string): boolean =>
+      segments(shorter) >= 2 && longer.endsWith(`/${shorter}`);
     const tailMatch = (needle: string, hay: Set<string>): boolean => {
       if (hay.has(needle)) return true;
       for (const h of hay) {
-        if (h.endsWith(`/${needle}`) || needle.endsWith(`/${h}`)) return true;
+        if (properTail(needle, h) || properTail(h, needle)) return true;
       }
       return false;
     };

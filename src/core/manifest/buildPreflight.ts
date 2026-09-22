@@ -73,10 +73,48 @@ export function preflightRefusal(args: {
   gameId: string;
   usesPluginsTxt: boolean;
   plugins: readonly PreflightPlugin[];
+  /**
+   * Whether plugins.txt was actually FOUND and read.
+   *
+   * ─── THE REFUSAL NAMED A CAUSE IT HAD NOT MEASURED ──────────────────
+   * The caller collapses both outcomes into `[]` — `pluginsTxtContent ===
+   * undefined ? [] : parsePluginsTxt(...)` — so this could not tell "the file
+   * was not found" from "the file was found and lists nothing", and stated
+   * the first as fact: "an empty result means the file could not be found or
+   * read", followed by "Launch the game once so it writes the file".
+   *
+   * A Bethesda plugins.txt does not list the base masters, so a legitimate
+   * texture/mesh/ENB-only collection produces a found, readable, EMPTY file.
+   * That curator was refused with an instruction that fixes nothing and
+   * pointed at a `plugins-txt.not-found` log line that does not exist.
+   *
+   * The refusal itself is right — it is the guard that makes the next cause
+   * of an empty order impossible to ship quietly — and this repo's own
+   * standard is that an absence meaning two things gets its own field rather
+   * than one sentence covering both.
+   *
+   * Optional so older callers compile; absent keeps the original wording,
+   * which is the one that was always correct for the store-path bug.
+   */
+  pluginsTxtFound?: boolean;
 }): PreflightRefusal | undefined {
   const { gameId, usesPluginsTxt, plugins } = args;
 
   if (usesPluginsTxt && plugins.length === 0) {
+    if (args.pluginsTxtFound === true) {
+      return {
+        code: "no-plugin-order",
+        message:
+          `${gameId}'s plugins.txt was read and lists no plugins, so the ` +
+          `package would ship without a load order, without ESL flags and ` +
+          `without LOOT rules — and nothing on the player's side could tell.` +
+          ` If this collection genuinely ships no plugins (textures, meshes ` +
+          `or an ENB preset only), there is nothing here to record and ` +
+          `nothing to fix. Otherwise your plugins are not reaching Vortex's ` +
+          `list: check that the right install of ${gameId} is the one Vortex ` +
+          `has discovered, and that the mods are deployed.`,
+      };
+    }
     return {
       code: "no-plugin-order",
       message:

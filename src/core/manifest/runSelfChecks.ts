@@ -56,6 +56,17 @@ import type { SevenZipApi } from "./sevenZip";
 
 export type RunSelfChecksOptions = {
   signal?: AbortSignal;
+  /**
+   * The caller stops and ASKS about the post-processing candidates rather
+   * than leaving the curator to hand-edit the config.
+   *
+   * Only steers the wording of one warning — see
+   * `describeUndeclaredPostProcessing`, whose advice the decision gate
+   * superseded and which was still telling curators to write
+   * `"postProcessed": true` into a JSON file by hand. A hand-written flag
+   * carries no fingerprint, and `isSettled` honours a missing one forever.
+   */
+  asksOnScreen?: boolean;
   onProgress?: (done: number, total: number, modName: string) => void;
   /**
    * Mods whose shipped archive IS their staging folder.
@@ -786,6 +797,27 @@ export function describeUndeclaredPostProcessing(
   reports: readonly SelfCheckReport[],
   /** Same map as `findPostProcessingCandidates`: any answer closes this. */
   decided: ReadonlyMap<string, PostProcessingAnswer>,
+  /**
+   * Whether this build stops and ASKS about these mods.
+   *
+   * ─── ONE SCREEN SUPERSEDED THE OTHER'S ADVICE ───────────────────────
+   * Since the decision gate landed, the same mods are presented as cards with
+   * mirror / bundle / declare / drop and a fingerprint — computed from the
+   * very `isSettled` predicate below, so this warning fires on exactly the
+   * population the gate just asked about. The curator answered on the gate
+   * and was then told, in the build summary, to go and hand-edit a config
+   * file.
+   *
+   * Worse than redundant: a hand-written `postProcessed` carries no
+   * fingerprint, and `isSettled` reads a missing one as "answered before
+   * fingerprints existed" and honours it forever — so following the stale
+   * advice silences the question permanently.
+   *
+   * Still correct for the caller that passes no `onDecisions` (the legacy
+   * dialog path and the render harness), which is why the sentence is
+   * conditional rather than deleted.
+   */
+  asksOnScreen = false,
 ): string | undefined {
   const undeclared = reports
     .filter((r) => r.unexplained > 0 && !isSettled(r, decided))
@@ -801,9 +833,12 @@ export function describeUndeclaredPostProcessing(
     `produce and are NOT declared post-processed — ${names}. A user ` +
     `installing from those archives can never have those files, so each mod ` +
     `will fail its integrity check, be reinstalled once, fail again and be ` +
-    `recorded as broken. Set "postProcessed": true on them in the collection ` +
-    `config if the edits are deliberate, or mark them Bundled to ship your ` +
-    `copy instead.`
+    `recorded as broken. ` +
+    (asksOnScreen
+      ? `Answer them on the decisions screen — this build stops and asks ` +
+        `before it packs.`
+      : `Set "postProcessed": true on them in the collection config if the ` +
+        `edits are deliberate, or mark them Bundled to ship your copy instead.`)
   );
 }
 
@@ -1353,7 +1388,11 @@ export async function runSelfChecks(
             ] as const,
         ),
     );
-  const undeclaredWarning = describeUndeclaredPostProcessing(reports, decided);
+  const undeclaredWarning = describeUndeclaredPostProcessing(
+    reports,
+    decided,
+    opts?.asksOnScreen === true,
+  );
   if (undeclaredWarning !== undefined) warnings.push(undeclaredWarning);
   /**
    * A mod can only be mirrored when its file list is BOTH fully hashed and

@@ -2014,6 +2014,9 @@ export async function runBuildPipeline(
       decided: decidedPostProcessing(collectionConfig),
       // Where users get each mod, so its decision card can say so.
       downloadedFromNexus: downloadedFromNexus(mods, collectionConfig),
+      // This build opens the decisions screen, so the summary must not send
+      // the curator off to hand-edit the config for the same mods.
+      asksOnScreen: onDecisions !== undefined,
       ...(signal !== undefined ? { signal } : {}),
       onProgress: (done, total, modName) => {
         onProgress?.({
@@ -2340,6 +2343,9 @@ export async function runBuildPipeline(
   const refusal = preflightRefusal({
     gameId,
     usesPluginsTxt: supportsPluginsTxt(gameId),
+    // Found-and-empty is a different fact from never-found, and only one of
+    // them is fixed by launching the game. See preflightRefusal.
+    pluginsTxtFound: pluginsTxtContent !== undefined,
     plugins:
       pluginsTxtContent === undefined
         ? []

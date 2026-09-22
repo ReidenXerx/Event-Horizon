@@ -94,8 +94,27 @@ describe("describeStaleArchive", () => {
     expect(msg).toContain("https://pixeldrain.com/api/file/C7dYdpsV?download");
   });
 
-  it("says it is a sample when it only looked at some", () => {
-    expect(describeStaleArchive("m", hint)).toContain("checked 6 of them");
+  it("makes the sample the CLAIM, not a parenthetical after a universal one", () => {
+    /**
+     * The main clause read "every one of the 1,176 differing file(s)", with
+     * the sample size appended after it — and the gate that makes this hint
+     * mean anything insists on EVERY sampled file precisely because "a mix is
+     * a curator who edited some files by hand". The sample is not random: it
+     * is the first N in verdict order, i.e. the alphabetically-earliest paths
+     * (GP-4), so a regeneration that touched `textures/` and not `meshes/`
+     * reads as total — under a recommendation of "there is nothing to
+     * decide".
+     */
+    const msg = describeStaleArchive("m", hint);
+    expect(msg).toContain("all 6 of the 1176 differing file(s) we checked");
+    expect(msg).not.toContain("every one of the");
+  });
+
+  it("still says `every one` when the sample WAS the whole divergence", () => {
+    // Hedging a complete measurement is its own kind of wrong.
+    const whole = describeStaleArchive("m", { ...hint, sampled: 1176 });
+    expect(whole).toContain("every one of the 1176 differing file(s)");
+    expect(whole).not.toContain("we checked");
   });
 
   it("says why it is worth checking BEFORE answering the decision", () => {

@@ -96,3 +96,43 @@ describe("naming the mods that cannot verify", () => {
     expect(text).toMatch(/recorded as broken/i);
   });
 });
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * ONE SCREEN SUPERSEDED THE OTHER'S ADVICE.
+ *
+ * Since the decision gate landed, these same mods are shown as cards with
+ * mirror / bundle / declare / drop — computed from the same `isSettled`
+ * predicate this warning uses, so it fires on exactly the population the gate
+ * just asked about. The curator answered on the gate and was then told, in the
+ * build summary, to go and hand-edit a config file.
+ *
+ * Not merely redundant. A hand-written `postProcessed` carries no fingerprint,
+ * and `isSettled` reads a missing one as "answered before fingerprints
+ * existed" and honours it forever — so following the stale advice silences the
+ * question permanently.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("the advice matches the door the curator is standing at", () => {
+  it("points at the decisions screen when this build asks", () => {
+    const text = describeUndeclaredPostProcessing([report("X", 3)], none, true)!;
+    expect(text).toContain("decisions screen");
+    expect(text).not.toContain("postProcessed");
+  });
+
+  it("keeps the config instructions for a caller that does NOT ask", () => {
+    // The legacy dialog path and the render harness pass no handler, and for
+    // them editing the config really is the only way through.
+    const text = describeUndeclaredPostProcessing([report("X", 3)], none, false)!;
+    expect(text).toContain('"postProcessed": true');
+    expect(text).not.toContain("decisions screen");
+  });
+
+  it("still leads with the consequence either way", () => {
+    // The wording that changes is the REMEDY, not the finding.
+    for (const asks of [true, false]) {
+      const text = describeUndeclaredPostProcessing([report("X", 3)], none, asks)!;
+      expect(text).toContain("recorded as broken");
+    }
+  });
+});

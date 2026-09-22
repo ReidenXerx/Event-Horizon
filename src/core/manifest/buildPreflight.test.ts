@@ -179,3 +179,52 @@ describe("the refusal reaches the curator as guidance, not as a crash", () => {
     expect(src).toMatch(/validationError: \(err as Error\)\.message/);
   });
 });
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * THE REFUSAL NAMED A CAUSE IT HAD NOT MEASURED.
+ *
+ * The caller collapses both outcomes into `[]` — `pluginsTxtContent ===
+ * undefined ? [] : parsePluginsTxt(...)` — so this could not tell "the file
+ * was not found" from "the file was found and lists nothing", and stated the
+ * first as fact: "an empty result means the file could not be found or read",
+ * followed by "Launch the game once so it writes the file".
+ *
+ * A Bethesda plugins.txt does not list the base masters, so a legitimate
+ * texture / mesh / ENB-only collection produces a found, readable, EMPTY file.
+ * That curator was refused with an instruction that fixes nothing and pointed
+ * at a `plugins-txt.not-found` log line that does not exist.
+ *
+ * The refusal is right either way — it is the guard that makes the next cause
+ * of an empty order impossible to ship quietly. It is the DIAGNOSIS that was
+ * a claim the code had not earned.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("an empty plugin order, and which empty it was", () => {
+  const args = { gameId: "skyrimse", usesPluginsTxt: true, plugins: [] };
+
+  it("still refuses when the file was never found, in the original words", () => {
+    const refusal = preflightRefusal({ ...args, pluginsTxtFound: false });
+    expect(refusal?.code).toBe("no-plugin-order");
+    expect(refusal?.message).toContain("could not be found or read");
+    expect(refusal?.message).toContain("Launch the game once");
+  });
+
+  it("refuses differently when the file was read and lists nothing", () => {
+    const refusal = preflightRefusal({ ...args, pluginsTxtFound: true });
+    expect(refusal?.code).toBe("no-plugin-order");
+    // The cause it did not measure is no longer asserted…
+    expect(refusal?.message).not.toContain("could not be found or read");
+    expect(refusal?.message).not.toContain("Launch the game once");
+    // …and the legitimate case is named, so the curator can recognise it.
+    expect(refusal?.message).toContain("was read and lists no plugins");
+    expect(refusal?.message).toMatch(/textures, meshes or an ENB preset only/i);
+  });
+
+  it("keeps the original wording when the caller cannot say which", () => {
+    // Absent is the older callers' shape, and the not-found text is the one
+    // that was always right for the store-path bug this guard was born from.
+    const refusal = preflightRefusal(args);
+    expect(refusal?.message).toContain("could not be found or read");
+  });
+});

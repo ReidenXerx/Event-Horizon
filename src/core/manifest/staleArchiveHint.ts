@@ -185,10 +185,29 @@ export function describeStaleArchive(
       `normal answer. Mirror it only if these settings are part of the collection.`
     );
   }
+  /**
+   * ─── SAY "THE ONES WE CHECKED" WHEN THAT IS WHAT WE CHECKED ───────────
+   * The main clause read "every one of the 1,176 differing file(s)" with the
+   * sample size in a parenthetical after it. The gate that makes the hint
+   * mean anything — `newer.length !== diverging.length → undefined`, whose
+   * comment insists on "EVERY sampled file, not merely most" because "a mix
+   * is a curator who edited some files by hand" — is evaluated over a sample
+   * that is not random: it is the first N in verdict order, i.e. the
+   * alphabetically-earliest paths (GP-4). A regeneration that touched
+   * `textures/` and not `meshes/` reads as total, and the recommended action
+   * is "there is nothing to decide".
+   *
+   * The parenthetical was already honest; the sentence it qualified was not.
+   */
+  const sampled = hint.sampled < hint.diverging;
+  const claim = sampled
+    ? `all ${hint.sampled} of the ${hint.diverging} differing file(s) we checked were`
+    : `every one of the ${hint.diverging} differing file(s) was`;
   return (
     `"${modName}": your copy of this archive is dated ${day(hint.archiveMtimeMs)} ` +
-    `and every one of the ${hint.diverging} differing file(s) was written on or ` +
-    `after ${day(hint.newestStagedMtimeMs)}${sample}. That is what it looks like ` +
+    `and ${claim} written on or ` +
+    // The parenthetical would repeat the count the clause now carries.
+    `after ${day(hint.newestStagedMtimeMs)}${sampled ? "" : sample}. That is what it looks like ` +
     `when a mod was regenerated and re-uploaded but the copy on THIS machine was ` +
     `never replaced — in which case the archive players download already matches ` +
     `your staging and there is nothing to decide. ${where}, then build again. ` +
