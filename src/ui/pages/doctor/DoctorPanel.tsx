@@ -117,13 +117,52 @@ function textToneClass(status: HealthStatus): string | undefined {
   return tone === undefined ? undefined : `eh-tone--${tone}`;
 }
 
-/** A ring is worth more than a number here: it reads at a glance. */
+/**
+ * A ring is worth more than a number here: it reads at a glance.
+ *
+ * ─── A SHRINKING DENOMINATOR IS NOT A HEALTH SCORE ─────────────────────
+ * The fill was `good / graded`, and `graded` drops `unknown` — so the ring got
+ * FULLER as the Doctor learned less, and read a complete 100% on a panel where
+ * most checks had not run. That is the common case, not a corner: `staging` is
+ * `unknown` on every visit until the opt-in deep scan, and a receipt from an
+ * older Event Horizon adds five more.
+ *
+ * `overallHealth` is already honest about it — "Healthy so far — some checks
+ * have not run", in a neutral tone rather than green — but the ring is the
+ * largest element on the card, and a full ring is the strongest pass this UI
+ * can draw. The project law is that `unknown` must never be rendered as a
+ * pass.
+ *
+ * Unknowns stay out of the NUMERATOR and out of the tone (colouring them red
+ * would be the false-alarm mistake this codebase keeps correcting), and they
+ * count in the denominator so the arc shows how much was actually established.
+ * The second line says how many were not checked, because an arc alone cannot.
+ */
+export function verdictTally(checks: readonly HealthCheck[]): {
+  /** Checks that could apply at all — the denominator. */
+  of: number;
+  /** Passing. Never includes an `unknown`. */
+  good: number;
+  /** Applicable but not established. Shown, never counted as passing. */
+  unknown: number;
+  /** Ring fill, 0–1. */
+  fill: number;
+} {
+  const applicable = checks.filter((c) => c.status !== "not-applicable");
+  const good = applicable.filter((c) => c.status === "healthy").length;
+  const unknown = applicable.filter((c) => c.status === "unknown").length;
+  return {
+    of: applicable.length,
+    good,
+    unknown,
+    fill: applicable.length === 0 ? 0 : good / applicable.length,
+  };
+}
+
 function VerdictRing(props: { checks: readonly HealthCheck[] }): JSX.Element {
-  const graded = props.checks.filter(
-    (c) => c.status !== "not-applicable" && c.status !== "unknown",
-  );
-  const good = graded.filter((c) => c.status === "healthy").length;
-  const pct = graded.length === 0 ? 0 : Math.round((good / graded.length) * 100);
+  const { of: applicableCount, good, unknown, fill } = verdictTally(props.checks);
+  const applicable = { length: applicableCount };
+  const pct = Math.round(fill * 100);
   const overall = overallHealth(props.checks);
   // ProgressRing already centres a `label`, so no absolute overlay is needed.
   return (
@@ -133,12 +172,16 @@ function VerdictRing(props: { checks: readonly HealthCheck[] }): JSX.Element {
       label={
         <span className="eh-stack eh-stack--xs eh-stack--center">
           <span className={`eh-figure ${textToneClass(overall.status)}`.trim()}>
-            {graded.length === 0 ? "—" : `${good}/${graded.length}`}
+            {applicable.length === 0 ? "—" : `${good}/${applicable.length}`}
           </span>
           {/* "1/7" alone is a fraction of an unnamed thing. Name it. */}
           <span className="eh-label">
-            {graded.length === 0 ? "checks" : "passing"}
+            {applicable.length === 0 ? "checks" : "passing"}
           </span>
+          {unknown > 0 && (
+            // `.eh-label` already carries the muted token.
+            <span className="eh-label">{unknown} not checked</span>
+          )}
         </span>
       }
     />
