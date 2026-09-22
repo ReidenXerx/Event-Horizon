@@ -10,6 +10,94 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.10] — 2026-09-23
+
+The headline is that Event Horizon looks like one piece of software now — and that a long audit of
+the repair and packaging code found real damage before anybody hit it.
+
+### A new look
+- **The home screen is a dashboard, not a menu.** It opens on what your setup actually is: the
+  collection you installed and its health, your load order, disk use, and the mods you have, with
+  live figures instead of a list of buttons. There are two modes behind a toggle, so you can have
+  the quiet version or the full one.
+- **The whole app is repainted in near-black.** One palette, applied everywhere, with the decorative
+  starfield and nebula removed — colour now means "act on this" rather than "this is a screen".
+  Several things were unreadable against the old background and are not any more.
+- **The first screen you see says what this page becomes** rather than showing an empty frame before
+  a game is picked.
+
+### The Collection Doctor
+- **Its repairs now check which game and profile you are on.** "Restore the collection's ESL flags"
+  rewrites bytes inside plugin files in the game folder, and it did that wherever Vortex happened to
+  be pointing — so with the Doctor open on one collection while Vortex managed another game, one
+  press wrote one setup's flags into another's, permanently, with no way to undo it. It refuses now,
+  and says why. It also asks before it runs, which it never did.
+- **Re-applying the collection's mod rules actually replaces the rules that contradict it.** It was
+  calling the installer's own function with an argument missing, so your conflicting rule stayed
+  beside the collection's, the toast said it had applied all of them, and the check stayed red —
+  which is why pressing it again never helped.
+- **Two repair dialogs no longer claim to destroy things they do not touch.** Re-applying mod rules
+  and LOOT rules said "rules you added yourself will be lost". Neither wipes anything: only a rule of
+  yours that contradicts the collection's on the same pair of mods is replaced, and the LOOT one
+  removes nothing at all. They stopped asking; the flag repair started.
+- **"Enable N mods" enables the N mods it found**, and says so. It used to enable every mod in the
+  collection — 978 of them under a button that said 3 — including mods that are not installed any
+  more, and reported success against a profile that no longer existed.
+- **Restoring ESL flags tells you when your game still will not start.** The sentence about being
+  over the 254-plugin limit was being worked out and then thrown away on exactly the runs where it
+  matters: hundreds restored, hundreds locked, still over the limit, reported as a success.
+- **One repair at a time.** Every other repair's button stayed live while one was running, so three
+  could overlap — one changing the plugin list another was writing.
+- **A collection for a game Vortex is not managing says so**, instead of "you are on a different
+  profile" with a one-press button that would have purged the game folder.
+- **An unreadable Vortex state reads as "not checked", not as catastrophe.** If the mod list could
+  not be read at all, the Doctor reported every mod in the collection as missing and offered an
+  hour-long reinstall.
+- **The health ring stops filling up as the Doctor learns less.** Checks that could not run were
+  dropped from the total, so a panel where most checks never ran drew a full circle at 100%. They
+  count now, and the header says how many could not be run.
+
+### Installing collections
+- **Pressing Stop is no longer reported as a crash.** Stopping during verification left the driver
+  by a route that recorded it as a failure and showed "Install driver crashed" with a report to copy
+  out. It was your own Stop, in both the record and the message.
+- **A mod Event Horizon installs mid-run is recognised as its own.** In a few repair and retry
+  paths it was not, which meant a second copy of our own mod could be installed beside the first —
+  and the record that switches your original mod back on afterwards was overwritten by it.
+- **Mods recovered by the retry pass are reconciled like every other mod.** They were being skipped
+  with a message saying the curator's archive could not be found, about mods installed from that
+  archive seconds earlier — and counted as reconciled anyway.
+- **A file restore that cannot be finished atomically keeps the good copy.** On Proton and Wine
+  every restore takes that path, and a failure there deleted the destination and then discarded the
+  verified replacement, leaving the file simply absent.
+- **A mod whose folder could only be read in part is no longer certified as an exact match.**
+
+### Building collections
+- **The missing-master check asks what the collection ships, not what you have.** It was reading
+  your whole plugin list, so the one case it exists for — "it works on your machine because you have
+  that master from outside the collection" — was the case it could not see. Measured on both
+  published collections before the change: 1,586 and 785 plugins checked, nothing missing, so this
+  tightens the check without refusing a build that works.
+- **A mod whose folder could not be fully read is never mirrored.** The guard that stops that was
+  reading the result sixty lines before it existed, so a mod answered "reproduce my version" in an
+  earlier build shipped with a file list known to be short — and on the player's machine every file
+  under the part that could not be read would have been deleted as theirs, then reported as perfect.
+  The build now refuses outright rather than trusting the ordering.
+- **The self-check counts what it checked.** A mod whose check threw, a run you cancelled, and a
+  7-Zip that could not be found each produced a result that looked complete: zero findings, zero
+  warnings, and nothing saying nothing had run.
+- **Files that could not be checksummed are named.** They fall back to a size-only comparison, which
+  counts as "explained" — on a real collection that comparison found 1,130 files that had changed at
+  the same path and the same size, so size alone would have caught none of them.
+- **A cancelled build stops at the decision screen** instead of walking the whole profile first.
+- **Warnings say what was measured.** The stale-archive hint claimed a property of all 1,176
+  differing files after looking at ten of them; the empty-plugin-order refusal told you to launch
+  the game when the file had in fact been read and was simply empty; and the undeclared-changes
+  warning told you to hand-edit a config file for the same mods the build had just asked you about
+  on screen.
+- **Drift detection stops matching a file at the top of an archive against one in a subfolder** —
+  a `readme.txt` beside a `docs/readme.txt` hid a real difference in both directions.
+
 ## [0.2.9] — 2026-09-22
 
 The headline is for players: a collection built on another game version no longer turns you away.
