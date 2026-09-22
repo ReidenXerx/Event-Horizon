@@ -543,3 +543,18 @@ describe("the game-version soft block", () => {
     expect(out.installedOnMismatchedVersion).toEqual(installedOnMismatchedVersion);
   });
 });
+
+describe("the dashboard's script-extender counts", () => {
+  it("keeps the summary, which the dashboard cannot recompute", () => {
+    // The package may be a 65 GB file, and may be deleted. If this is dropped
+    // on write, the dashboard silently loses the number for every install.
+    const nativePluginSummary = { loads: 236, unverified: 0, cannotLoad: 0, unknown: 2 };
+    const out = throughDisk({ ...base(), nativePluginSummary } as InstallReceipt);
+    expect(out.nativePluginSummary).toEqual(nativePluginSummary);
+  });
+
+  it("drops a partial count rather than reporting it as a whole one", () => {
+    const out = throughDisk({ ...base(), nativePluginSummary: { loads: 5 } } as unknown as InstallReceipt);
+    expect(out.nativePluginSummary).toBeUndefined();
+  });
+});

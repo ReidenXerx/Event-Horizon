@@ -131,6 +131,8 @@ import type {
 } from "../../types/installPlan";
 import type { SupportedGameId } from "../../types/ehcoll";
 import { countMods, deployBudgetMs } from "./timeBudgets";
+import { nativePluginSummaryFor } from "./nativePluginReceipt";
+import { resolveGameVersion } from "../resolver/userState";
 import {
   clearInstallAttempt,
   writeInstallAttempt,
@@ -6688,6 +6690,18 @@ function buildReceipt(args: {
     });
   }
 
+  /**
+   * The script-extender verdict for THIS machine, as counts. Recorded because
+   * the dashboard cannot open the package to recompute it — it may be a 65 GB
+   * file, and it may be deleted by then.
+   */
+  const driverState = ctx.api.getState();
+  const nativePluginSummary = nativePluginSummaryFor({
+    manifest,
+    installedVersion: resolveGameVersion(driverState, manifest.game.id),
+    store: discoveredStore(driverState, manifest.game.id),
+  });
+
   return {
     schemaVersion: INSTALL_LEDGER_SCHEMA_VERSION,
     packageId: manifest.package.id,
@@ -6703,6 +6717,7 @@ function buildReceipt(args: {
     ...(ctx.decisions.fomodReplayMode !== undefined
       ? { fomodReplayMode: ctx.decisions.fomodReplayMode }
       : {}),
+    ...(nativePluginSummary !== undefined ? { nativePluginSummary } : {}),
     // From the PLAN, not the decision: preflight already refused a run whose
     // acknowledgement did not match it, so the two agree here.
     ...(ctx.plan.compatibility.versionMismatch !== undefined

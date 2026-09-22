@@ -62,7 +62,8 @@ import { NexusCollectionUpload, NexusUploadDialog } from "../pages/build/NexusCo
 import { Card } from "../components";
 import { summarizeAvailability } from "../../core/build/nexusAvailability";
 import { DraftCard, PublishedCard, RecentlyBuiltCard } from "../pages/build/BuildDashboard";
-import { DashboardBody, Hero } from "../pages/HomePage";
+import { DashboardView } from "../pages/dashboard/DashboardView";
+import type { DashboardViewModel } from "../pages/dashboard/DashboardView";
 import {
   FailedAttempts,
   InterruptedInstalls,
@@ -658,23 +659,185 @@ describe("render", () => {
     );
   });
 
-  it("main dashboard — the first screen anyone sees", () => {
+  /**
+   * The home dashboard, in the four states that differ in LAYOUT rather than
+   * in numbers: with the curator's artwork, without it, with nothing
+   * installed at all, and the curator's own cockpit.
+   *
+   * The figures are a real collection's (Meridia, 1,746 mods) so the screen is
+   * photographed at the size it actually has to work at — a dashboard laid out
+   * around three-digit numbers falls apart the first time it meets six.
+   */
+  const dashFigures = {
+    mods: 1746,
+    fromNexus: 1703,
+    supplied: 29,
+    failed: 0,
+    plugins: 1597,
+    esl: 991,
+    verifiedFiles: 356678,
+    verifiedMods: 1746,
+    unverifiedMods: 0,
+    rules: 543,
+    userlist: 500,
+    nativePlugins: { loads: 236, unverified: 0, cannotLoad: 0, unknown: 0 },
+    versionMismatch: undefined,
+  };
+  const dashHealth = {
+    percent: 92,
+    healthy: 11,
+    drifted: 1,
+    broken: 0,
+    unknown: 2,
+    notApplicable: 0,
+    judged: 12,
+    tone: "warn" as const,
+    caption: "1 drifted · 2 not checked",
+  };
+  const dashVm = (over: Partial<DashboardViewModel> = {}): DashboardViewModel =>
+    ({
+      mode: "player",
+      gameLabel: "Skyrim Special Edition",
+      gameVersion: "1.6.1179",
+      vortexVersion: "2.6.0",
+      profileName: "Meridia 1.0.23",
+      hero: {
+        packageId: "pkg-meridia",
+        name: "Meridia's Panties",
+        version: "1.0.23",
+        revision: 5,
+        artUrl: "showcase-header.png",
+        gameLabel: "Skyrim Special Edition",
+        gameVersion: "1.6.1179",
+        store: "GOG",
+        profileName: "Meridia 1.0.23",
+        lastPlayed: "2 days ago",
+        installedWhen: "3 days ago",
+        health: dashHealth,
+        figures: dashFigures,
+        updateToRevision: undefined,
+      },
+      tiles: [
+        {
+          packageId: "pkg-ivy",
+          name: "Ivy's Panties",
+          version: "1.0.33",
+          gameLabel: "Fallout 4",
+          artUrl: "showcase-tile.png",
+          lastPlayed: "3 weeks ago",
+          updateToRevision: 4,
+        },
+      ],
+      disk: {
+        parts: [
+          { label: "Staged mods", gigabytes: 214.3 },
+          { label: "Downloads", gigabytes: 96.1 },
+          { label: "Collection packages", gigabytes: 71.4 },
+          { label: "Event Horizon data", gigabytes: 2.2 },
+        ],
+        measuredWhen: "just now",
+      },
+      diskBusy: false,
+      curator: [],
+      curatorBusy: false,
+      curatorEmpty: true,
+      ...over,
+    }) as DashboardViewModel;
+
+  const dashActions = {
+    onMode: () => undefined,
+    onPlay: () => undefined,
+    onOpenDoctor: () => undefined,
+    onOpenCollections: () => undefined,
+    onOpenInstall: () => undefined,
+    onOpenBuild: () => undefined,
+    onMeasureDisk: () => undefined,
+    onRefreshCurator: () => undefined,
+    onOpenCollectionPage: () => undefined,
+  };
+
+  const dashPage = (vm: DashboardViewModel): React.ReactElement =>
+    React.createElement(
+      "div",
+      { className: "eh-page" },
+      React.createElement(DashboardView, { vm, actions: dashActions } as never),
+    );
+
+  it("dashboard — a collection with its own artwork", () => {
+    const html = write("dashboard-home", dashPage(dashVm()));
+    expect(html).toContain("Meridia");
+    expect(html).toContain("1,746");
+  });
+
+  it("dashboard — a collection that shipped no artwork", () => {
+    // The layout must not depend on the picture: same rows, same figures, the
+    // ring and the gradient carrying the screen instead.
+    const vm = dashVm();
     write(
-      "dashboard-home",
-      // The real tree is .eh-page > Hero + DashboardBody (see Dashboard).
-      React.createElement(
-        "div",
-        { className: "eh-page" },
-        React.createElement(Hero, null),
-        React.createElement(DashboardBody, {
-        data: dashboardData,
-        onNavigate: () => undefined,
-          onRefresh: () => undefined,
-        } as never),
-      ),
+      "dashboard-no-art",
+      dashPage({ ...vm, hero: { ...vm.hero!, artUrl: undefined }, tiles: [] } as DashboardViewModel),
     );
   });
 
+  it("dashboard — nothing installed yet", () => {
+    write("dashboard-empty", dashPage(dashVm({ hero: undefined, tiles: [], disk: undefined })));
+  });
+
+  it("dashboard — the curator's cockpit", () => {
+    const vm = dashVm({
+      mode: "curator",
+      curatorEmpty: false,
+      curator: [
+        {
+          slug: "ecb76c",
+          name: "Meridia's Panties - Event Horizon",
+          gameLabel: "skyrimspecialedition",
+          stats: {
+            slug: "ecb76c",
+            name: "Meridia's Panties - Event Horizon",
+            endorsements: 0,
+            ratingPercent: 33.3,
+            ratingCount: 3,
+            latestRevision: 5,
+            totalDownloads: 303,
+            revisions: [
+              { revisionNumber: 1, modCount: 1746, ratingAverage: 0, createdAt: "2026-09-16T00:00:00Z" },
+              { revisionNumber: 2, modCount: 1746, ratingAverage: 33.3, createdAt: "2026-09-17T00:00:00Z" },
+              { revisionNumber: 3, modCount: 1745, ratingAverage: 0, createdAt: "2026-09-18T00:00:00Z" },
+              { revisionNumber: 4, modCount: 1746, ratingAverage: 0, createdAt: "2026-09-21T00:00:00Z" },
+              { revisionNumber: 5, modCount: 1746, ratingAverage: 0, createdAt: "2026-09-22T00:00:00Z" },
+            ],
+            tileUrl: undefined,
+            fetchedAt: Date.parse("2026-09-22T12:00:00Z"),
+          },
+          builds: [
+            { label: "1.0.18", megabytes: 1483 },
+            { label: "1.0.19", megabytes: 1665 },
+            { label: "1.0.20", megabytes: 1665 },
+            { label: "1.0.21", megabytes: 1665 },
+            { label: "1.0.22", megabytes: 1730 },
+            { label: "1.0.23", megabytes: 1730 },
+          ],
+        },
+        {
+          slug: "dmt85e",
+          name: "Ivy's Panties - Event Horizon",
+          gameLabel: "fallout4",
+          // Nothing read back yet: every figure shows as unknown, never as 0.
+          stats: undefined,
+          builds: [
+            { label: "1.0.31", megabytes: 827 },
+            { label: "1.0.32", megabytes: 832 },
+            { label: "1.0.33", megabytes: 832 },
+            { label: "1.0.34", megabytes: 832 },
+          ],
+        },
+      ],
+    });
+    const html = write("dashboard-curator", dashPage(vm));
+    // The unanswered collection must read as unknown, not as zero downloads.
+    expect(html).toContain("—");
+  });
 
   it("build dashboard — the cards that ARE its content", () => {
     // The dashboard mounts loading and fills in from an effect, which static

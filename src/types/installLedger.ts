@@ -107,6 +107,24 @@ export type InstallReceipt = {
    */
   installedOnMismatchedVersion?: { required: string; installed: string };
   /**
+   * How this collection's script-extender plugins were judged for THIS
+   * machine's game, at install time.
+   *
+   * The same judgement the version check makes, recorded because the package
+   * may be gone later: the dashboard reads it to say "236 of 236 plugins load
+   * on your game" without opening a 65 GB archive. Counts only — the names
+   * live in the package, and a stale name list would be worse than none.
+   *
+   * Absent on receipts written before this, and on packages that carry no
+   * plugin data. Absent is "not recorded", never "none".
+   */
+  nativePluginSummary?: {
+    loads: number;
+    unverified: number;
+    cannotLoad: number;
+    unknown: number;
+  };
+  /**
    * Per-mod install records. One entry per mod the driver put on
    * disk for this collection release. The list is the resolver's
    * orphan-detection key set.

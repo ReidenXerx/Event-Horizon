@@ -362,6 +362,17 @@ export function parseReceipt(raw: string): InstallReceipt {
   ) {
     out.fomodReplayMode = obj.fomodReplayMode;
   }
+  const nps = obj.nativePluginSummary as Record<string, unknown> | undefined;
+  if (nps !== null && typeof nps === "object") {
+    const num = (v: unknown): number | undefined =>
+      typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : undefined;
+    const loads = num(nps.loads), unverified = num(nps.unverified);
+    const cannotLoad = num(nps.cannotLoad), unknown = num(nps.unknown);
+    // All four or none: a partial count reads as a complete one.
+    if (loads !== undefined && unverified !== undefined && cannotLoad !== undefined && unknown !== undefined) {
+      out.nativePluginSummary = { loads, unverified, cannotLoad, unknown };
+    }
+  }
   // Informational: a malformed value is dropped, never a refused receipt.
   const mismatched = obj.installedOnMismatchedVersion as Record<string, unknown> | undefined;
   if (

@@ -26,6 +26,7 @@ import { COMPONENTS_CSS } from "./components";
 import { PRIMITIVES_CSS } from "./primitives";
 import { UTILITIES_CSS } from "./utilities";
 import { LOGO_CSS } from "./logo";
+import { DASHBOARD_CSS } from "./dashboard";
 
 const STYLE_ID = "eh-styles";
 
@@ -43,6 +44,7 @@ export const COMBINED_CSS = [
   // default spacing at a call site, which is the whole point of having them.
   UTILITIES_CSS,
   LOGO_CSS,
+  DASHBOARD_CSS,
 ].join("\n\n");
 
 export function EventHorizonStyles(): JSX.Element {

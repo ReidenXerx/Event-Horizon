@@ -1,0 +1,470 @@
+/**
+ * The home dashboard.
+ *
+ * Presentational on purpose: every Vortex read, every file read and every
+ * Nexus call happens in the container, and this takes a finished view model.
+ * That is what lets the render harness photograph each state — a collection
+ * with art, one without, a machine with nothing installed, a curator's
+ * cockpit — without a running Vortex.
+ *
+ * ─── WHAT IT REFUSES TO DO ──────────────────────────────────────────────
+ * Every figure here is read off a record, never estimated, and a number that
+ * could not be established renders as "—" rather than as 0. A dashboard is
+ * the most believable surface in the app: it is large, it is the first thing
+ * opened, and nobody cross-checks it. A zero that means "not measured" would
+ * be taken as a measurement.
+ */
+import * as React from "react";
+
+import { Button, Callout, Card, Pill, Section } from "../../components";
+import { Ring, Sparkline, SliceMap, StackBar, CHART_COLORS } from "../../components/charts";
+import type { HealthRollup, CollectionFigures } from "./summary";
+import type { CollectionStats } from "../../../core/nexus/collectionStats";
+
+export type DashboardMode = "player" | "curator";
+
+export interface DashboardHeroView {
+  packageId: string;
+  name: string;
+  version: string;
+  revision: number | undefined;
+  /** The curator's header image, as a URL the page can load. */
+  artUrl: string | undefined;
+  gameLabel: string;
+  gameVersion: string | undefined;
+  store: string | undefined;
+  profileName: string | undefined;
+  lastPlayed: string | undefined;
+  installedWhen: string | undefined;
+  health: HealthRollup;
+  figures: CollectionFigures;
+  /** The revision Nexus has, when it is newer than the installed one. */
+  updateToRevision: number | undefined;
+}
+
+export interface CollectionTileView {
+  packageId: string;
+  name: string;
+  version: string;
+  gameLabel: string;
+  artUrl: string | undefined;
+  lastPlayed: string | undefined;
+  updateToRevision: number | undefined;
+}
+
+export interface CuratorCollectionView {
+  slug: string;
+  name: string;
+  gameLabel: string;
+  stats: CollectionStats | undefined;
+  /** Built packages for this collection, oldest first. */
+  builds: { label: string; megabytes: number }[];
+}
+
+export interface DashboardViewModel {
+  mode: DashboardMode;
+  gameLabel: string;
+  gameVersion: string | undefined;
+  vortexVersion: string;
+  profileName: string | undefined;
+  hero: DashboardHeroView | undefined;
+  tiles: CollectionTileView[];
+  /** Absent until the player asks for it: measuring means walking the disk. */
+  disk: { parts: { label: string; gigabytes: number }[]; measuredWhen: string } | undefined;
+  diskBusy: boolean;
+  curator: CuratorCollectionView[];
+  curatorBusy: boolean;
+  /** Set when this machine has curated nothing, so the tab explains itself. */
+  curatorEmpty: boolean;
+}
+
+export interface DashboardActions {
+  onMode: (mode: DashboardMode) => void;
+  onPlay: () => void;
+  onOpenDoctor: () => void;
+  onOpenCollections: () => void;
+  onOpenInstall: () => void;
+  onOpenBuild: () => void;
+  onMeasureDisk: () => void;
+  onRefreshCurator: () => void;
+  onOpenCollectionPage: (slug: string) => void;
+}
+
+const n = (v: number): string => v.toLocaleString("en-US");
+/** A figure that was never established prints as an em dash, never as 0. */
+const orDash = (v: number | undefined): string => (v === undefined ? "—" : n(v));
+
+function Stat(props: { label: string; value: string; sub?: string; small?: boolean }): JSX.Element {
+  return (
+    <div className="eh-stat">
+      <div className="eh-stat__key">{props.label}</div>
+      <div className={props.small === true ? "eh-stat__value eh-stat__value--sm" : "eh-stat__value"}>
+        {props.value}
+      </div>
+      {props.sub !== undefined && <div className="eh-stat__sub">{props.sub}</div>}
+    </div>
+  );
+}
+
+function ModeSwitch(props: { mode: DashboardMode; onMode: (m: DashboardMode) => void; curatorEmpty: boolean }): JSX.Element {
+  return (
+    <div className="eh-modes" role="tablist" aria-label="Dashboard mode">
+      {(["player", "curator"] as const).map((m) => (
+        <button
+          key={m}
+          type="button"
+          role="tab"
+          aria-selected={props.mode === m}
+          className={props.mode === m ? "eh-mode eh-mode--on" : "eh-mode"}
+          onClick={(): void => props.onMode(m)}
+        >
+          {m === "player" ? "Player" : "Curator"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The hero. With the curator's art behind it when there is art, and the ring
+ * carrying the screen when there is not — the layout is identical either way.
+ */
+function Hero(props: { hero: DashboardHeroView; actions: DashboardActions }): JSX.Element {
+  const { hero } = props;
+  const f = hero.figures;
+  const health = hero.health;
+  return (
+    <div className="eh-dash-hero">
+      {hero.artUrl !== undefined && <img className="eh-dash-hero__art" src={hero.artUrl} alt="" />}
+      {hero.artUrl !== undefined && <div className="eh-dash-hero__scrim" />}
+      <div className="eh-dash-hero__inner">
+        <div className="eh-stat__key">{hero.lastPlayed !== undefined ? "Continue playing" : "Ready to play"}</div>
+        <h2 className="eh-dash-hero__title">{hero.name}</h2>
+        <div className="eh-secondary">
+          v{hero.version}
+          {hero.revision !== undefined ? ` · revision ${hero.revision}` : ""} · {hero.gameLabel}
+          {hero.store !== undefined ? ` ${hero.store}` : ""}
+          {hero.gameVersion !== undefined ? ` ${hero.gameVersion}` : ""}
+          {hero.profileName !== undefined ? ` · profile “${hero.profileName}”` : ""}
+          {hero.lastPlayed !== undefined ? ` · last played ${hero.lastPlayed}` : ""}
+        </div>
+
+        <div className="eh-dash-hero__stats">
+          <button
+            type="button"
+            className="eh-plain-button"
+            onClick={props.actions.onOpenDoctor}
+            title="Open the Collection Doctor"
+          >
+            <Ring
+              value={health.percent ?? 0}
+              size={110}
+              tone={health.percent === undefined ? "brand" : health.tone}
+              label={health.percent === undefined ? "unknown" : "healthy"}
+              glow
+            />
+          </button>
+          <Stat label="Mods" value={n(f.mods)} {...(f.failed > 0 ? { sub: `${f.failed} failed` } : {})} />
+          <Stat label="Plugins" value={orDash(f.plugins)} {...(f.esl !== undefined ? { sub: `${n(f.esl)} ESL` } : {})} />
+          {f.nativePlugins !== undefined && (
+            <Stat
+              label="SKSE plugins"
+              value={`${n(f.nativePlugins.loads)}${f.nativePlugins.cannotLoad > 0 ? ` / ${n(f.nativePlugins.loads + f.nativePlugins.cannotLoad)}` : ""}`}
+              sub={f.nativePlugins.cannotLoad > 0 ? `${f.nativePlugins.cannotLoad} will not load` : "all load on your game"}
+            />
+          )}
+          <Stat
+            label="Verified"
+            value={f.verifiedFiles > 0 ? n(f.verifiedFiles) : "—"}
+            sub={f.verifiedFiles > 0 ? `files in ${n(f.verifiedMods)} mods` : "not verified"}
+          />
+        </div>
+
+        <div className="eh-row eh-row--sm">
+          <Button intent="primary" onClick={props.actions.onPlay}>
+            ▶ Play
+          </Button>
+          <span className="eh-note">{health.caption}</span>
+          {hero.updateToRevision !== undefined && (
+            <Pill intent="warning">Update available: revision {hero.updateToRevision}</Pill>
+          )}
+          {f.versionMismatch !== undefined && (
+            <Pill intent="warning">
+              Installed on {f.versionMismatch.installed}, built on {f.versionMismatch.required}
+            </Pill>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CompositionCard(props: { figures: CollectionFigures }): JSX.Element {
+  const f = props.figures;
+  const parts = [
+    { label: "From Nexus", value: f.fromNexus },
+    { label: "You supplied", value: f.supplied },
+  ];
+  return (
+    <Card title="What your game is made of">
+      <div className="eh-stack eh-stack--sm">
+        <div className="eh-stat__value">
+          {n(f.mods)} <span className="eh-secondary">mods</span>
+        </div>
+        <StackBar parts={parts} />
+        <div className="eh-legend">
+          {parts.map((p, i) => (
+            <span key={p.label} className="eh-legend__item">
+              <i className="eh-legend__dot" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
+              {p.label} {n(p.value)}
+            </span>
+          ))}
+        </div>
+        {f.plugins !== undefined && f.esl !== undefined && (
+          <>
+            <div className="eh-row eh-row--between">
+              <span className="eh-secondary">ESL-flagged plugins</span>
+              <span className="eh-secondary">
+                {n(f.esl)} of {n(f.plugins)}
+              </span>
+            </div>
+            <div className="eh-meter">
+              <i style={{ width: `${Math.round((f.esl / Math.max(f.plugins, 1)) * 100)}%` }} />
+            </div>
+          </>
+        )}
+        {f.nativePlugins !== undefined && (
+          <>
+            <div className="eh-row eh-row--between">
+              <span className="eh-secondary">Script-extender plugins that load</span>
+              <span className="eh-secondary">
+                {n(f.nativePlugins.loads)} of{" "}
+                {n(f.nativePlugins.loads + f.nativePlugins.cannotLoad + f.nativePlugins.unverified + f.nativePlugins.unknown)}
+              </span>
+            </div>
+            <div className="eh-meter">
+              <i
+                style={{
+                  width: `${Math.round(
+                    (f.nativePlugins.loads /
+                      Math.max(
+                        f.nativePlugins.loads + f.nativePlugins.cannotLoad + f.nativePlugins.unverified + f.nativePlugins.unknown,
+                        1,
+                      )) * 100,
+                  )}%`,
+                }}
+              />
+            </div>
+            {f.nativePlugins.unverified > 0 && (
+              <span className="eh-note">
+                {n(f.nativePlugins.unverified)} decide at startup — the script extender's log names any that refuse.
+              </span>
+            )}
+          </>
+        )}
+        <div className="eh-row eh-row--between">
+          <span className="eh-secondary">Mod rules applied</span>
+          <span className="eh-secondary">{orDash(f.rules)}</span>
+        </div>
+        <div className="eh-row eh-row--between">
+          <span className="eh-secondary">LOOT rules applied</span>
+          <span className="eh-secondary">{orDash(f.userlist)}</span>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function DiskCard(props: { vm: DashboardViewModel; actions: DashboardActions }): JSX.Element {
+  const { disk } = props.vm;
+  return (
+    <Card
+      title="Disk"
+      actions={
+        <Button size="sm" intent="ghost" disabled={props.vm.diskBusy} onClick={props.actions.onMeasureDisk}>
+          {props.vm.diskBusy ? "Measuring…" : disk === undefined ? "Measure" : "Measure again"}
+        </Button>
+      }
+    >
+      {disk === undefined ? (
+        <p className="eh-note eh-prose">
+          Nothing here is measured yet. Working out what modding uses means walking every staged file —
+          hundreds of thousands of them on a large collection — so Event Horizon does it when you ask,
+          not every time this page opens.
+        </p>
+      ) : (
+        <div className="eh-stack eh-stack--sm">
+          <div className="eh-stat__value">
+            {disk.parts.reduce((a, p) => a + p.gigabytes, 0).toFixed(1)} GB{" "}
+            <span className="eh-secondary">used by modding</span>
+          </div>
+          <SliceMap
+            parts={disk.parts.map((p) => ({ label: p.label, value: p.gigabytes }))}
+            format={(v) => `${v.toFixed(1)} GB`}
+          />
+          <span className="eh-note">Measured {disk.measuredWhen}.</span>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function Tiles(props: { vm: DashboardViewModel; actions: DashboardActions }): JSX.Element | null {
+  const { tiles } = props.vm;
+  if (tiles.length === 0) return null;
+  return (
+    <div className="eh-dash-tiles">
+      {tiles.map((t) => (
+        <button key={t.packageId} type="button" className="eh-dash-tile" onClick={props.actions.onOpenCollections}>
+          {t.artUrl !== undefined && <img className="eh-dash-tile__art" src={t.artUrl} alt="" />}
+          <div className="eh-dash-tile__body">
+            <div className="eh-strong">{t.name}</div>
+            <div className="eh-note">
+              v{t.version} · {t.gameLabel}
+              {t.lastPlayed !== undefined ? ` · ${t.lastPlayed}` : ""}
+            </div>
+            {t.updateToRevision !== undefined && <Pill intent="warning">Revision {t.updateToRevision} available</Pill>}
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PlayerMode(props: { vm: DashboardViewModel; actions: DashboardActions }): JSX.Element {
+  const { vm, actions } = props;
+  if (vm.hero === undefined) {
+    return (
+      <Callout tone="info" title="No collection installed yet">
+        <div className="eh-stack eh-stack--sm">
+          <p className="eh-body eh-prose">
+            This is where your collection will live once you install one: what it is made of, whether every
+            file still checks out, and one button to play it.
+          </p>
+          <div className="eh-row eh-row--sm">
+            <Button intent="primary" onClick={actions.onOpenInstall}>
+              Install a collection
+            </Button>
+            <Button intent="ghost" onClick={actions.onOpenBuild}>
+              Build one from this setup
+            </Button>
+          </div>
+        </div>
+      </Callout>
+    );
+  }
+  return (
+    <div className="eh-stack eh-stack--lg">
+      <Hero hero={vm.hero} actions={actions} />
+      <Tiles vm={vm} actions={actions} />
+      <div className="eh-dash-grid">
+        <CompositionCard figures={vm.hero.figures} />
+        <DiskCard vm={vm} actions={actions} />
+      </div>
+    </div>
+  );
+}
+
+function CuratorMode(props: { vm: DashboardViewModel; actions: DashboardActions }): JSX.Element {
+  const { vm, actions } = props;
+  if (vm.curatorEmpty) {
+    return (
+      <Callout tone="info" title="You have not built a collection here">
+        <div className="eh-stack eh-stack--sm">
+          <p className="eh-body eh-prose">
+            Build one and this becomes its cockpit: how each revision was received on Nexus, how the package
+            has grown, and what changed between builds.
+          </p>
+          <Button intent="primary" onClick={actions.onOpenBuild}>
+            Build a collection
+          </Button>
+        </div>
+      </Callout>
+    );
+  }
+  return (
+    <Section
+      title="Your collections on Nexus"
+      actions={
+        <Button size="sm" intent="ghost" disabled={vm.curatorBusy} onClick={actions.onRefreshCurator}>
+          {vm.curatorBusy ? "Refreshing…" : "Refresh"}
+        </Button>
+      }
+    >
+      <div className="eh-cockpit">
+        {vm.curator.map((c) => (
+          <Card key={c.slug} title={c.name}>
+            <div className="eh-stack eh-stack--sm">
+              <div className="eh-cockpit__stats">
+                <Stat
+                  label="Downloads"
+                  value={orDash(c.stats?.totalDownloads)}
+                  sub={c.stats?.totalDownloads === undefined ? "Vortex does not report this" : undefined}
+                />
+                <Stat label="Endorsements" value={orDash(c.stats?.endorsements)} />
+                <Stat
+                  label="Success"
+                  value={c.stats?.ratingPercent === undefined ? "—" : `${Math.round(c.stats.ratingPercent)}%`}
+                  sub={
+                    c.stats === undefined
+                      ? undefined
+                      : c.stats.ratingCount === 0
+                        ? "nobody has rated it yet"
+                        : `${n(c.stats.ratingCount)} rating${c.stats.ratingCount === 1 ? "" : "s"}`
+                  }
+                />
+                <Stat label="Revision" value={orDash(c.stats?.latestRevision)} />
+              </div>
+
+              {c.builds.length > 0 && (
+                <>
+                  <div className="eh-spark-row">
+                    <span className="eh-stat__key">Package size per build</span>
+                    <span className="eh-note">
+                      {c.builds[0].label} → {c.builds[c.builds.length - 1].label}
+                    </span>
+                  </div>
+                  <Sparkline points={c.builds.map((b) => ({ label: b.label, value: b.megabytes }))} />
+                </>
+              )}
+
+              {c.stats !== undefined && c.stats.revisions.length > 0 && (
+                <>
+                  <div className="eh-spark-row">
+                    <span className="eh-stat__key">Mods per revision</span>
+                    <span className="eh-note">
+                      #{c.stats.revisions[0].revisionNumber} → #{c.stats.revisions[c.stats.revisions.length - 1].revisionNumber}
+                    </span>
+                  </div>
+                  <Sparkline
+                    points={c.stats.revisions
+                      .filter((r) => r.modCount !== undefined)
+                      .map((r) => ({ label: `#${r.revisionNumber}`, value: r.modCount ?? 0 }))}
+                    color={CHART_COLORS[2]}
+                  />
+                </>
+              )}
+
+              <div className="eh-row eh-row--sm">
+                <Button size="sm" intent="ghost" onClick={(): void => actions.onOpenCollectionPage(c.slug)}>
+                  Open on Nexus
+                </Button>
+                <span className="eh-note">{c.gameLabel}</span>
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+export function DashboardView(props: { vm: DashboardViewModel; actions: DashboardActions }): JSX.Element {
+  const { vm, actions } = props;
+  return (
+    <div className="eh-stack eh-stack--lg">
+      <ModeSwitch mode={vm.mode} onMode={actions.onMode} curatorEmpty={vm.curatorEmpty} />
+      {vm.mode === "player" ? <PlayerMode vm={vm} actions={actions} /> : <CuratorMode vm={vm} actions={actions} />}
+    </div>
+  );
+}
