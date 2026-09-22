@@ -15,6 +15,7 @@ import { openExternalUrl } from "../../../core/revealPath";
 import { DashboardView, type DashboardMode, type DashboardViewModel } from "./DashboardView";
 import { toViewModel, useDashboardView } from "./useDashboardView";
 import { collectionStats, type CollectionStats } from "../../../core/nexus/collectionStats";
+import { LoadOrderBadge } from "../doctor/LoadOrderBadge";
 import { since } from "./summary";
 import type { EventHorizonRoute } from "../../routes";
 
@@ -143,11 +144,23 @@ export function DashboardPage(props: DashboardPageProps): JSX.Element {
   }
 
   const vm = toViewModel({ sources, mode, disk, diskBusy, curatorBusy, curatorStats: stats });
+  /*
+   * The badge needs the receipt itself, which the view model deliberately
+   * does not carry (it is a presentational model). Resolved here and handed
+   * in as a slot, so the harness can still photograph the screen.
+   */
+  const heroReceipt = sources.data.receipts.find((r) => r.packageId === vm.hero?.packageId);
 
   return (
     <div className="eh-page">
       <DashboardView
         vm={vm}
+        slots={{
+          loadOrder:
+            heroReceipt === undefined ? undefined : (
+              <LoadOrderBadge receipt={heroReceipt} receipts={sources.data.receipts} />
+            ),
+        }}
         actions={{
           onMode: setMode,
           onPlay: (): void => props.onNavigate("collections"),

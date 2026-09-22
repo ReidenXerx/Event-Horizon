@@ -87,6 +87,20 @@ export interface DashboardViewModel {
   curatorEmpty: boolean;
 }
 
+export interface DashboardSlots {
+  /**
+   * Rendered in the hero, beside Play.
+   *
+   * The load-order badge lives here: it watches Vortex's own state, works
+   * out whether THIS receipt's order is even the one to judge, and offers a
+   * one-click re-apply. LOOT silently re-sorting between install and launch
+   * is how a curated order drifts, and this is the moment a player can act
+   * on it. It is a slot rather than a field on the view model because it is
+   * a live component — the harness photographs the screen without it.
+   */
+  loadOrder?: React.ReactNode;
+}
+
 export interface DashboardActions {
   onMode: (mode: DashboardMode) => void;
   onPlay: () => void;
@@ -149,7 +163,11 @@ function ModeSwitch(props: { mode: DashboardMode; onMode: (m: DashboardMode) => 
  * The hero. With the curator's art behind it when there is art, and the ring
  * carrying the screen when there is not — the layout is identical either way.
  */
-function Hero(props: { hero: DashboardHeroView; actions: DashboardActions }): JSX.Element {
+function Hero(props: {
+  hero: DashboardHeroView;
+  actions: DashboardActions;
+  slots: DashboardSlots;
+}): JSX.Element {
   const { hero } = props;
   const f = hero.figures;
   const health = hero.health;
@@ -214,6 +232,7 @@ function Hero(props: { hero: DashboardHeroView; actions: DashboardActions }): JS
           <Button intent="primary" onClick={props.actions.onPlay}>
             ▶ Play
           </Button>
+          {props.slots.loadOrder}
           <span className="eh-note">{health.caption}</span>
           {hero.updateToRevision !== undefined && (
             <Pill intent="warning">Update available: revision {hero.updateToRevision}</Pill>
@@ -361,7 +380,11 @@ function Tiles(props: { vm: DashboardViewModel; actions: DashboardActions }): JS
   );
 }
 
-function PlayerMode(props: { vm: DashboardViewModel; actions: DashboardActions }): JSX.Element {
+function PlayerMode(props: {
+  vm: DashboardViewModel;
+  actions: DashboardActions;
+  slots: DashboardSlots;
+}): JSX.Element {
   const { vm, actions } = props;
   if (vm.hero === undefined) {
     return (
@@ -385,7 +408,7 @@ function PlayerMode(props: { vm: DashboardViewModel; actions: DashboardActions }
   }
   return (
     <div className="eh-stack eh-stack--lg">
-      <Hero hero={vm.hero} actions={actions} />
+      <Hero hero={vm.hero} actions={actions} slots={props.slots} />
       <Tiles vm={vm} actions={actions} />
       <div className="eh-dash-grid">
         <CompositionCard figures={vm.hero.figures} />
@@ -489,12 +512,21 @@ function CuratorMode(props: { vm: DashboardViewModel; actions: DashboardActions 
   );
 }
 
-export function DashboardView(props: { vm: DashboardViewModel; actions: DashboardActions }): JSX.Element {
+export function DashboardView(props: {
+  vm: DashboardViewModel;
+  actions: DashboardActions;
+  slots?: DashboardSlots;
+}): JSX.Element {
   const { vm, actions } = props;
+  const slots = props.slots ?? {};
   return (
     <div className="eh-stack eh-stack--lg">
       <ModeSwitch mode={vm.mode} onMode={actions.onMode} curatorEmpty={vm.curatorEmpty} />
-      {vm.mode === "player" ? <PlayerMode vm={vm} actions={actions} /> : <CuratorMode vm={vm} actions={actions} />}
+      {vm.mode === "player" ? (
+        <PlayerMode vm={vm} actions={actions} slots={slots} />
+      ) : (
+        <CuratorMode vm={vm} actions={actions} />
+      )}
     </div>
   );
 }

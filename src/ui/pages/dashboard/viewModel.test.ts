@@ -7,9 +7,9 @@
  * diagnosing a three-week-old collection and offering a profile switch that
  * undid a fresh install.
  */
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
-import { toViewModel, type DashboardSources } from "./useDashboardView";
+import { __clearHealthCache, healthOf, toViewModel, type DashboardSources } from "./useDashboardView";
 import type { InstallReceipt } from "../../../types/installLedger";
 
 const receipt = (over: Partial<InstallReceipt>): InstallReceipt =>
@@ -137,5 +137,46 @@ describe("the curator's side", () => {
     // Another collection's package must not appear in this one's trend.
     expect(vm.curator[0].builds.map((b) => b.label)).toEqual(["1.0.21", "1.0.22"]);
     expect(vm.curator[0].builds.map((b) => b.megabytes)).toEqual([1665, 1730]);
+  });
+});
+
+/**
+ * The health gather opens one plugin header per recorded plugin — 1,597 on
+ * the reference collection, serially — and Home remounts on every
+ * navigation. The answer is cached for a minute, keyed on the INSTALL, so a
+ * reinstall is never answered from the previous install's measurement.
+ */
+describe("the health measurement is not repeated on every visit", () => {
+  beforeEach(() => __clearHealthCache());
+
+  /** Counts every read of Vortex state, which is what the gather costs. */
+  const fakeApi = (count: { reads: number }) =>
+    ({
+      getState: () => {
+        count.reads += 1;
+        return { persistent: { profiles: {}, mods: {} }, settings: { profiles: {} }, session: {} };
+      },
+    }) as never;
+
+  it("asks once for the same install, then serves the memo", async () => {
+    const count = { reads: 0 };
+    const r = receipt({ packageId: "p", installedAt: "2026-09-20T00:00:00Z" });
+    await healthOf(fakeApi(count), r, [r]);
+    const afterFirst = count.reads;
+    expect(afterFirst).toBeGreaterThan(0);
+    await healthOf(fakeApi(count), r, [r]);
+    expect(count.reads).toBe(afterFirst);
+  });
+
+  it("measures again once the collection has been reinstalled", async () => {
+    // Keyed on the install, not the package: answering a fresh install from
+    // the previous one's measurement would be worse than no cache at all.
+    const count = { reads: 0 };
+    const first = receipt({ packageId: "p", installedAt: "2026-09-20T00:00:00Z" });
+    await healthOf(fakeApi(count), first, [first]);
+    const afterFirst = count.reads;
+    const again = receipt({ packageId: "p", installedAt: "2026-09-22T00:00:00Z" });
+    await healthOf(fakeApi(count), again, [again]);
+    expect(count.reads).toBeGreaterThan(afterFirst);
   });
 });

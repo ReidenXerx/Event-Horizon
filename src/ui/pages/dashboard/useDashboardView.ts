@@ -48,12 +48,45 @@ const buildLabel = (fileName: string): { slug: string; version: string } | undef
   return m === null ? undefined : { slug: m[1], version: m[2] };
 };
 
-/** The health of one installed collection, from the Doctor's own cheap pass. */
-async function healthOf(
+/**
+ * The last health answer, per collection, with the moment it was taken.
+ *
+ * ─── WHY A CACHE, ON THE SCREEN THAT REFUSED ONE ──────────────────────
+ * The disk card next door is behind a button precisely so the page does not
+ * walk the filesystem on open — and this ran the Doctor's gather on every
+ * mount, which opens one plugin header per recorded plugin: 1,597 of them on
+ * the project's own reference collection, serially, in the game folder. Home
+ * is the default route and remounts on every back-navigation, so that was
+ * the price of looking at the dashboard.
+ *
+ * Sixty seconds, keyed on the receipt's identity AND its install time, so a
+ * reinstall is never answered from the previous install's cache. It is a
+ * cache of a MEASUREMENT, not of a decision, and the window is short enough
+ * that a repair made in the Doctor shows up on the next visit.
+ */
+const healthCache = new Map<string, { at: number; checks: HealthCheck[] }>();
+const HEALTH_TTL_MS = 60_000;
+
+/** Exported so a test can prove the cache is per install, not per package. */
+export function __clearHealthCache(): void {
+  healthCache.clear();
+}
+
+/**
+ * The health of one installed collection, from the Doctor's own cheap pass.
+ *
+ * Exported for the test that proves the memo above is keyed on the INSTALL:
+ * a cache that answered a reinstall from the previous install's measurement
+ * would be worse than no cache at all.
+ */
+export async function healthOf(
   api: types.IExtensionApi,
   receipt: InstallReceipt,
   receipts: readonly InstallReceipt[],
 ): Promise<HealthCheck[] | undefined> {
+  const key = `${receipt.packageId}@${receipt.packageVersion}@${receipt.installedAt}`;
+  const hit = healthCache.get(key);
+  if (hit !== undefined && Date.now() - hit.at < HEALTH_TTL_MS) return hit.checks;
   try {
     const [{ gatherObservations }, { evaluateHealth, doctorLightFlagBaseline }, { toHealthView }] =
       await Promise.all([
@@ -74,7 +107,9 @@ async function healthOf(
       receipts: receipts as InstallReceipt[],
       ...(baseline !== undefined ? { recordedPlugins: baseline } : {}),
     });
-    return evaluateHealth(toHealthView(receipt), obs);
+    const checks = evaluateHealth(toHealthView(receipt), obs);
+    healthCache.set(key, { at: Date.now(), checks });
+    return checks;
   } catch (err) {
     // A dashboard that cannot check health still shows every other number;
     // `undefined` renders as "unknown", which is the honest word for it.
