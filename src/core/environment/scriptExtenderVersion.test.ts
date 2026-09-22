@@ -195,3 +195,36 @@ describe("extenderForPath", () => {
     expect(extenderForPath("SKSE/Plugins/fiss.ini")).toBeUndefined();
   });
 });
+
+/**
+ * Version independence short-circuits BEFORE the runtime list is read, so a
+ * bit this reader does not recognise must never be taken as "runs anywhere":
+ * the plugin would drop out of the swap list and do nothing in the player's
+ * game, which is the worst direction to be wrong in.
+ */
+describe("an independence dword with an unrecognised bit", () => {
+  it("does not read a pinned F4SE plugin as version-independent", () => {
+    const dll = buildPe({
+      exportData: {
+        F4SEPlugin_Version: f4seBlock({ name: "Pinned", independence: 0b100, runtimes: [pack(1, 10, 984)] }),
+      },
+      exports: ["F4SEPlugin_Query"],
+    });
+    const read = readNativePluginDeclaration(dll, "f4se");
+    expect(read?.kind).toBe("declares");
+    if (read?.kind !== "declares") return;
+    expect(read.versionIndependent).toBe(false);
+    expect(read.runtimes).toEqual(["1.10.984"]);
+  });
+
+  it("reads the two address-independence bits as before", () => {
+    for (const bit of [0b01, 0b10, 0b11]) {
+      const dll = buildPe({
+        exportData: { F4SEPlugin_Version: f4seBlock({ name: "Indep", independence: bit, runtimes: [] }) },
+        exports: ["F4SEPlugin_Query"],
+      });
+      const read = readNativePluginDeclaration(dll, "f4se");
+      expect(read?.kind === "declares" && read.versionIndependent).toBe(true);
+    }
+  });
+});

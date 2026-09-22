@@ -100,8 +100,30 @@ export function runtimeIdFor(
   const v = tuple(version);
   if (v === undefined) return undefined;
   const base = v.join(".");
-  if (gameId === "skyrimse" && store?.toLowerCase() === "gog") return `${base}.1`;
-  if (gameId === "skyrimse" || gameId === "fallout4") return base;
+  if (gameId === "skyrimse") {
+    /**
+     * ─── AN UNKNOWN STORE IS NOT "STEAM" ──────────────────────────────
+     * The store decides the id here, so not knowing it means not knowing
+     * the id. Returning `base` for an unrecorded store answered as though
+     * Steam had been established, and every GOG-only plugin — which lists
+     * `1.6.1179.1` — then read as "cannot load" against `1.6.1179`. The
+     * two strings differ by one character a person will not notice.
+     *
+     * Vortex leaves the store undefined whenever the player added the game
+     * path by hand, so this is an ordinary machine, not a corner case. The
+     * player would have been handed a swap list naming the mods that are
+     * RIGHT for their install, and a GOG curator would have been told their
+     * own working DLLs cannot load.
+     *
+     * Every caller already handles `undefined` as "no verdict".
+     */
+    const s = store?.toLowerCase();
+    if (s === "gog") return `${base}.1`;
+    return s === "steam" ? base : undefined;
+  }
+  // Fallout 4 plugins carry no store marker, so the store cannot change the
+  // answer and not knowing it costs nothing.
+  if (gameId === "fallout4") return base;
   return undefined;
 }
 
@@ -154,8 +176,18 @@ const refersTo = (reference: string, compareKey: string): boolean =>
  * Which of several mods shipping one path deploys last, and so wins.
  *
  * `before` and `after` only. A mod wins when every other mod in the group is
- * ordered before it by some rule. Anything short of a single such mod is
- * reported as undetermined rather than guessed.
+ * ordered before it — DIRECTLY OR THROUGH A CHAIN. Anything short of a single
+ * such mod is reported as undetermined rather than guessed.
+ *
+ * ─── WHY THE CHAIN MATTERS ─────────────────────────────────────────────
+ * Vortex asks about one conflict at a time, so three mods shipping one DLL
+ * end up with the rules a person actually clicked: C after B, B after A. The
+ * redundant C after A is never created. Comparing only direct rules reported
+ * that as "no rule decides this", which is false — the order IS decided — and
+ * worse, an undetermined path is skipped entirely, so the DLL that really
+ * deploys was never judged and a broken winner produced no warning at all.
+ * A base mod plus its "AE Support" and "GOG Fix" updates is exactly this
+ * shape, and one real collection had ten such stacks.
  */
 function conflictWinner(
   keys: readonly string[],
@@ -168,7 +200,24 @@ function conflictWinner(
         ((r.type === "after" && r.source === a && refersTo(r.reference, b)) ||
           (r.type === "before" && r.source === b && refersTo(r.reference, a))),
     );
-  const winners = keys.filter((k) => keys.every((o) => o === k || deploysAfter(k, o)));
+  /**
+   * Transitive closure over the handful of mods contesting one path —
+   * Floyd-Warshall on at most a few keys, so the cost is nothing and a
+   * cycle stays a cycle (two winners, hence undetermined).
+   */
+  const after = new Map<string, Set<string>>();
+  for (const a of keys) {
+    after.set(a, new Set(keys.filter((b) => b !== a && deploysAfter(a, b))));
+  }
+  for (const mid of keys) {
+    for (const a of keys) {
+      if (!after.get(a)!.has(mid)) continue;
+      for (const b of after.get(mid)!) {
+        if (b !== a) after.get(a)!.add(b);
+      }
+    }
+  }
+  const winners = keys.filter((k) => keys.every((o) => o === k || after.get(k)!.has(o)));
   return winners.length === 1 ? winners[0] : undefined;
 }
 

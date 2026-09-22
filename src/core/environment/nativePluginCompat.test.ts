@@ -238,3 +238,105 @@ describe("what the curator is told about their own build", () => {
     expect(msg).toMatch(/before\/after rule/);
   });
 });
+
+/**
+ * ─── AN UNKNOWN STORE IS NOT "STEAM" ──────────────────────────────────
+ * Vortex leaves the store undefined whenever the player added the game path
+ * by hand. Reading that as Steam gave a GOG player a confident "cannot load"
+ * for every GOG-only plugin — the mods that are RIGHT for their machine —
+ * because the two runtime ids differ by one character.
+ */
+describe("a store Vortex never recorded", () => {
+  it("refuses to guess the Skyrim runtime id", () => {
+    expect(runtimeIdFor("skyrimse", "1.6.1179.0", undefined)).toBeUndefined();
+    expect(runtimeIdFor("skyrimse", "1.6.1179.0", "")).toBeUndefined();
+    // Epic and any other unmeasured store: also not an answer.
+    expect(runtimeIdFor("skyrimse", "1.6.1179.0", "epic")).toBeUndefined();
+  });
+
+  it("still answers for the two stores that were measured", () => {
+    expect(runtimeIdFor("skyrimse", "1.6.1179.0", "gog")).toBe("1.6.1179.1");
+    expect(runtimeIdFor("skyrimse", "1.6.1170.0", "steam")).toBe("1.6.1170");
+    expect(runtimeIdFor("skyrimse", "1.6.1170.0", "GOG")).toBe("1.6.1170.1");
+  });
+
+  it("costs nothing on Fallout 4, whose plugins carry no store marker", () => {
+    expect(runtimeIdFor("fallout4", "1.10.163.0", undefined)).toBe("1.10.163");
+    expect(runtimeIdFor("fallout4", "1.10.984.0", "gog")).toBe("1.10.984");
+  });
+});
+
+/**
+ * Vortex asks about one conflict at a time, so three mods sharing a DLL carry
+ * the rules a person actually clicked — C after B, B after A — and never the
+ * redundant C after A. Reading only direct rules called that undecided, and an
+ * undecided path is SKIPPED, so the DLL that really deploys was never judged.
+ */
+describe("a conflict decided by a chain of rules", () => {
+  const chained = (extraRules = []) =>
+    judgeCollection({
+      mods: [
+        { name: "Base", compareKey: "nexus:1:1", nativePlugins: [declares({ path: "SKSE/Plugins/fiss.dll" })] },
+        { name: "AE Support", compareKey: "nexus:2:2", nativePlugins: [declares({ path: "SKSE/Plugins/fiss.dll" })] },
+        {
+          name: "GOG Fix",
+          compareKey: "nexus:3:3",
+          nativePlugins: [declares({ path: "SKSE/Plugins/fiss.dll", runtimes: ["1.6.1179.1"] })],
+        },
+      ],
+      rules: [
+        { type: "after", source: "nexus:3:3", reference: "nexus:2:2" },
+        { type: "after", source: "nexus:2:2", reference: "nexus:1:1" },
+        ...extraRules,
+      ],
+      target: AE_GOG,
+    });
+
+  it("follows the chain to the mod that deploys last", () => {
+    const j = chained();
+    expect(j.undeterminedConflicts).toEqual([]);
+    expect(j.loads).toBe(1);
+  });
+
+  it("agrees with the redundant rule being present", () => {
+    // Same answer whether or not the curator also clicked C-after-A.
+    const j = chained([{ type: "after", source: "nexus:3:3", reference: "nexus:1:1" }]);
+    expect(j.undeterminedConflicts).toEqual([]);
+    expect(j.loads).toBe(1);
+  });
+
+  it("judges the winner of a chain, so a broken one is still reported", () => {
+    const j = judgeCollection({
+      mods: [
+        { name: "Base", compareKey: "nexus:1:1", nativePlugins: [declares({ path: "SKSE/Plugins/x.dll" })] },
+        { name: "Middle", compareKey: "nexus:2:2", nativePlugins: [declares({ path: "SKSE/Plugins/x.dll" })] },
+        {
+          name: "Last",
+          compareKey: "nexus:3:3",
+          nativePlugins: [declares({ path: "SKSE/Plugins/x.dll", runtimes: ["1.5.97"] })],
+        },
+      ],
+      rules: [
+        { type: "after", source: "nexus:3:3", reference: "nexus:2:2" },
+        { type: "after", source: "nexus:2:2", reference: "nexus:1:1" },
+      ],
+      target: AE_GOG,
+    });
+    expect(j.cannotLoad.map((f) => f.mod)).toEqual(["Last"]);
+  });
+
+  it("still reports a cycle as undecided rather than picking one", () => {
+    const j = judgeCollection({
+      mods: [
+        { name: "A", compareKey: "nexus:1:1", nativePlugins: [declares({ path: "SKSE/Plugins/y.dll" })] },
+        { name: "B", compareKey: "nexus:2:2", nativePlugins: [declares({ path: "SKSE/Plugins/y.dll" })] },
+      ],
+      rules: [
+        { type: "after", source: "nexus:1:1", reference: "nexus:2:2" },
+        { type: "after", source: "nexus:2:2", reference: "nexus:1:1" },
+      ],
+      target: AE_GOG,
+    });
+    expect(j.undeterminedConflicts).toHaveLength(1);
+  });
+});

@@ -86,8 +86,21 @@ const LAYOUT = {
     /** Through `seVersionRequired` at 592. */
     size: 596,
     independence: 520,
-    /** Any addressIndependence flag: signatures or an Address Library. */
-    independentMask: 0xffffffff,
+    /**
+     * The two ADDRESS-independence flags only — signatures (1<<0) and an
+     * Address Library (1<<1) — matching SKSE's mask rather than accepting
+     * any bit.
+     *
+     * `0xffffffff` took a bit this reader does not recognise as proof that
+     * the plugin runs anywhere, and version independence short-circuits
+     * BEFORE the runtime list is consulted. So a plugin that declared a
+     * struct flag and pinned itself to one runtime read as "loads on any
+     * version", which is the worst direction to be wrong in: it is then
+     * absent from the swap list and silently does nothing in the player's
+     * game. No measured plugin sets a bit above 1, so this narrows what is
+     * accepted without changing any known answer.
+     */
+    independentMask: 0b11,
     runtimes: 528,
   },
 } as const;
