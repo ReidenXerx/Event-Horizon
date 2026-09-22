@@ -2524,6 +2524,27 @@ export async function runBuildPipeline(
     });
   }
 
+  /**
+   * ─── PLUGINS THE ORDER NAMES AND THE PACKAGE DOES NOT CARRY ───────────
+   * Found on a real published package: three entries — a Synthesis output,
+   * a Dynamic Container Loot output and the curator's own index patch — that
+   * no mod in the collection ships. The curator hands those out through links
+   * on the collection page, which is a real workflow; what was missing is
+   * that nobody was ever told, so a player who skipped the links got a load
+   * order with holes in it and no message anywhere.
+   *
+   * Warns, never refuses (owner poll): refusing would have blocked every
+   * build of a collection that works.
+   */
+  const { describeUnprovidedPlugins, unprovidedPlugins } = await import(
+    "../../../core/manifest/unprovidedPlugins"
+  );
+  const unprovided = unprovidedPlugins(manifest);
+  if (unprovided.length > 0) {
+    ehLog("info", "build.plugins.unprovided", { count: unprovided.length, examples: unprovided.slice(0, 8) });
+    nativeWarnings.push(...describeUnprovidedPlugins(unprovided));
+  }
+
   // ── 3b. The changelog ──
   // Written from what changed since the previous version (owner request
   // 2026-09-15); what the curator typed for CHANGELOG becomes this version's

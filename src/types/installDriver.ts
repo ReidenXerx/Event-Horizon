@@ -450,6 +450,17 @@ export type InstallSuccess = {
    */
   stagingDriftNotice?: string[];
   /**
+   * Plugins the collection's load order names that the package does not
+   * carry — the curator's own generated output (a Synthesis patch, merges),
+   * handed out through their collection page.
+   *
+   * Said on the Done screen, where a player reads what is left to do (owner
+   * poll, 2026-09-22): their load order has a place for each of these, and
+   * until they fetch them those places are empty. Measured on a real
+   * published package, which named three.
+   */
+  unprovidedPluginNotice?: string[];
+  /**
    * Mods the PREVIOUS revision of this collection had and this one does not.
    *
    * A fact, never an action. A version-changing update installs into a fresh
@@ -652,6 +663,13 @@ export type InstallFailed = {
   iniTweakNotice?: string[];
   /** Mods that changed on disk since a previous install of this collection. */
   stagingDriftNotice?: string[];
+  /**
+   * Plugins the collection's load order names that the package does not
+   * carry — the curator's own generated output, handed out through their
+   * page. The player's order has a place for each; until they fetch them,
+   * those places are empty (owner poll, 2026-09-22).
+   */
+  unprovidedPluginNotice?: string[];
   /** Archives supplied from outside Nexus, and what was done with them. */
   externalArchiveNotice?: string[];
   /** Mods the previous revision had and this one does not — see above. */

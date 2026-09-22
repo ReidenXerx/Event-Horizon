@@ -3168,6 +3168,26 @@ function StagingDriftNotice(props: {
 }
 
 /**
+ * Plugins the collection's order names that the package does not carry.
+ *
+ * A warning tone, not info: the player's load order has a place for each of
+ * these and it is empty until they go and fetch them. Measured on a real
+ * published package, which named three — a Synthesis output among them —
+ * with nothing anywhere in the install saying so.
+ */
+function UnprovidedPluginNotice(props: {
+  lines: readonly string[];
+}): JSX.Element | null {
+  if (props.lines.length === 0) return null;
+  const [summary, ...rest] = props.lines;
+  return (
+    <Notice label="Not in this package" intent="warning" summary={summary ?? ""}>
+      <NoticeLines lines={rest} />
+    </Notice>
+  );
+}
+
+/**
  * Mods that could not be reproduced, with the report ready to send.
  *
  * Every softer explanation has already been ruled out by the time one of
@@ -3452,6 +3472,7 @@ function SuccessBody(props: {
       <PluginOrderNotice lines={result.pluginOrderNotice ?? []} />
       <MirrorNotice lines={result.mirrorNotice ?? []} />
       <StagingDriftNotice lines={result.stagingDriftNotice ?? []} />
+      <UnprovidedPluginNotice lines={result.unprovidedPluginNotice ?? []} />
       <CuratorReportsNotice reports={result.curatorReports ?? []} />
       <PlayGameCard gameId={props.bundle.plan.manifest.game.id} />
       <StatGrid min={160}>

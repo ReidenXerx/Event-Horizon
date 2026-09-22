@@ -145,3 +145,83 @@ describe("the message stays readable", () => {
     expect(d.swapLines[0]).toContain("b.dll");
   });
 });
+
+/**
+ * The second compatibility axis. Steam and GOG both ship Skyrim 1.6.1179, so
+ * a store difference can arrive with or without a version difference — and it
+ * was being carried inside a script-extender runtime id, where the player
+ * could not see it and the advice could not fix it.
+ */
+describe("when the STORE is what differs", () => {
+  const gogManifest = meridiaLike([
+    mod("JContainers GOG", "nexus:1:1", [gogOnly("SKSE/Plugins/JContainersGOG.dll")]),
+    mod("Engine Fixes", "nexus:2:2", [addressLibrary("SKSE/Plugins/EngineFixes.dll")]),
+  ]);
+
+  it("names the store in words, and says changing the version will not fix it", () => {
+    const d = describeVersionMismatch(
+      assessVersionMismatch({ manifest: gogManifest, installed: "1.6.1170.0", store: "steam" }),
+    );
+    expect(d.headline).toContain("gog");
+    expect(d.headline).toContain("steam");
+    expect(d.summary.join(" ")).toMatch(/different executables/);
+    expect(d.summary.join(" ")).toMatch(/changing the version alone will not/);
+  });
+
+  it("never prints the script extender's runtime id at the player", () => {
+    // "1.6.1179.1" is how SKSE spells the GOG build; no Nexus file, no
+    // changelog and no executable ever shows it, so a player sent to look
+    // for it finds nothing.
+    const d = describeVersionMismatch(
+      assessVersionMismatch({ manifest: gogManifest, installed: "1.6.1170.0", store: "steam" }),
+    );
+    expect(d.summary.join(" ")).not.toMatch(/1\.6\.1170\.1/);
+    // The version Vortex reports, spelled as Vortex spells it.
+    expect(d.summary.join(" ")).toContain("1.6.1170.0 (steam)");
+  });
+});
+
+describe("the sentence the player ticks", () => {
+  it("counts the mods when there are mods to count", () => {
+    const m = assessVersionMismatch({
+      manifest: meridiaLike([mod("GOG build", "nexus:1:1", [gogOnly("SKSE/Plugins/a.dll")])]),
+      installed: "1.6.1170.0",
+      store: "steam",
+    });
+    expect(describeVersionMismatch(m).acknowledgement).toMatch(/1 mod will not load on 1\.6\.1170\.0/);
+  });
+
+  it("says what it could not check when it could not check", () => {
+    const m = assessVersionMismatch({
+      manifest: meridiaLike([mod("Old", "nexus:1:1")]),
+      installed: "1.6.1170.0",
+      store: "steam",
+    });
+    expect(describeVersionMismatch(m).acknowledgement).toMatch(/could not check/);
+  });
+});
+
+describe("a game nobody has measured", () => {
+  it("says so, instead of blaming the player's install", () => {
+    const starfield = {
+      game: { id: "starfield", version: "1.14.70.0", versionPolicy: "exact" } as EhcollManifest["game"],
+      mods: [mod("A", "nexus:1:1", [gogOnly("SFSE/Plugins/a.dll")])],
+      rules: [],
+    };
+    const m = assessVersionMismatch({ manifest: starfield, installed: "1.15.216.0", store: "steam" });
+    expect(m.noListReason).toBe("game-not-measured");
+    expect(describeVersionMismatch(m).summary.join(" ")).toMatch(/has not measured/);
+  });
+});
+
+describe("a file two mods ship with no rule deciding", () => {
+  it("is said on the panel, not only counted in the receipt", () => {
+    const manifest = meridiaLike([
+      mod("A", "nexus:1:1", [gogOnly("SKSE/Plugins/fiss.dll")]),
+      mod("B", "nexus:2:2", [gogOnly("SKSE/Plugins/fiss.dll")]),
+    ]);
+    const m = assessVersionMismatch({ manifest, installed: "1.6.1170.0", store: "steam" });
+    expect(m.plugins?.undetermined).toHaveLength(1);
+    expect(describeVersionMismatch(m).summary.join(" ")).toMatch(/no rule deciding which wins/);
+  });
+});

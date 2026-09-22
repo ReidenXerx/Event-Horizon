@@ -51,7 +51,7 @@ describe("game version compatibility", () => {
     const report = resolveCompatibility(manifest("1.10.163.0"), user("1.10.984.0"));
     expect(report.errors).toEqual([]);
     expect(report.gameVersion.status).toBe("mismatch");
-    expect(report.versionMismatch).toMatchObject({ required: "1.10.163.0", installed: "1.10.984.0", direction: 1 });
+    expect(report.versionMismatch).toMatchObject({ required: "1.10.163.0", installed: "1.10.984.0" });
     // Changing the game stays on offer, with the existing guidance.
     expect(report.versionMismatch?.changeGame.length).toBeGreaterThan(0);
   });
@@ -59,7 +59,7 @@ describe("game version compatibility", () => {
   it("reports a too-old game under a minimum policy the same way", () => {
     const report = resolveCompatibility(manifest("1.10.163.0", "minimum"), user("1.10.162.0"));
     expect(report.errors).toEqual([]);
-    expect(report.versionMismatch).toMatchObject({ policy: "minimum", direction: -1 });
+    expect(report.versionMismatch).toMatchObject({ policy: "minimum", installed: "1.10.162.0" });
   });
 
   it("carries no versionMismatch on a newer game under a minimum policy", () => {

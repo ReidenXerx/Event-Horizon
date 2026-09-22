@@ -261,8 +261,22 @@ export function resolveCompatibility(
     storeJudgeable && versionMismatch === undefined
       ? assessVersionMismatch({ manifest, installed: userState.gameVersion!, store: userState.store })
       : undefined;
-  if (storeJudgeable && versionMismatch?.plugins !== undefined) {
-    // Said by the version panel, store included.
+  if (versionMismatch !== undefined) {
+    /**
+     * ─── ONE SCREEN, ONE ANSWER ──────────────────────────────────────────
+     * The version panel is already on this screen and already names the
+     * store (it carries `stores` when they differ), so the heuristic must
+     * not speak beside it. Measured before this branch existed: a Fallout 4
+     * player on the wrong version AND the wrong store saw the panel say
+     * "1 mod will not load" while the warning below it said "2 mod(s) …
+     * re-download each", naming a mod the panel had just counted as
+     * working — and then closed with "Everything else in the collection is
+     * unaffected", which the panel directly above had contradicted.
+     *
+     * Where the panel cannot name mods (a package with no plugin data), it
+     * says so itself; a second, louder list naming every mod with a DLL is
+     * the 245-vs-6 failure this feature exists to end.
+     */
   } else if (sameVersionStore?.plugins !== undefined) {
     warnings.push(
       ...describeJudgedStoreMismatch({
@@ -361,7 +375,18 @@ function checkGameVersion(
     return { status: "unknown", required };
   }
 
-  if (installed === required) {
+  /**
+   * NUMERIC equality, not byte equality.
+   *
+   * `1.6.1179` and `1.6.1179.0` are the same build spelled two ways, and the
+   * required half is written on the curator's machine and travels inside the
+   * package — so the two halves can be spelled differently for reasons that
+   * have nothing to do with the player. Compared as text, that produced a
+   * full soft block whose own panel then said every plugin would load and
+   * whose "change your game" road had no action line, because there is
+   * nothing to change.
+   */
+  if (installed === required || compareSemverLike(installed, required) === 0) {
     return { status: "ok" };
   }
 

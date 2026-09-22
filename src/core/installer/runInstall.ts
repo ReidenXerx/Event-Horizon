@@ -131,6 +131,7 @@ import type {
 } from "../../types/installPlan";
 import type { SupportedGameId } from "../../types/ehcoll";
 import { countMods, deployBudgetMs } from "./timeBudgets";
+import { describeMissingFromPackage, unprovidedPlugins } from "../manifest/unprovidedPlugins";
 import { nativePluginSummaryFor } from "./nativePluginReceipt";
 import { resolveGameVersion } from "../resolver/userState";
 import {
@@ -4420,6 +4421,13 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     const driftNotice = driftNoticeEarly;
 
     /**
+     * The collection's order names plugins the package does not ship. Said
+     * once, here, at the end — the only moment the player is looking at a
+     * list of what still needs doing.
+     */
+    const unprovidedNotice = describeMissingFromPackage(unprovidedPlugins(plan.manifest));
+
+    /**
      * ─── WHAT THE PREVIOUS REVISION HAD AND THIS ONE DOES NOT ───────────
      * Said, never done. A version-changing update installs into a fresh
      * profile, so a mod the curator dropped is not removed and not disabled:
@@ -4974,6 +4982,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           ? { iniTweakNotice: describeIniTweaks(iniTweakApplication) }
           : {}),
         ...(driftNotice !== undefined ? { stagingDriftNotice: driftNotice } : {}),
+      ...(unprovidedNotice.length > 0 ? { unprovidedPluginNotice: unprovidedNotice } : {}),
       ...(droppedModNotice.length > 0 ? { droppedModNotice } : {}),
       ...(describeIniTweakRemovals(iniTweaksTurnedOff).length > 0
         ? { iniTweakRemovedNotice: describeIniTweakRemovals(iniTweaksTurnedOff) }
@@ -5148,6 +5157,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           }
         : {}),
       ...(driftNotice !== undefined ? { stagingDriftNotice: driftNotice } : {}),
+      ...(unprovidedNotice.length > 0 ? { unprovidedPluginNotice: unprovidedNotice } : {}),
       ...(droppedModNotice.length > 0 ? { droppedModNotice } : {}),
       ...(describeIniTweakRemovals(iniTweaksTurnedOff).length > 0
         ? { iniTweakRemovedNotice: describeIniTweakRemovals(iniTweaksTurnedOff) }

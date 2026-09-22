@@ -62,15 +62,17 @@ export function VersionMismatchPanel(props: {
           </>
         )}
 
+        {/*
+          The label says what was FOUND, not a generic sentence.
+          It read identically whether the answer was "six mods" or "nothing
+          could be checked" — a tick that carries no information is a tick
+          people learn to click, and in one case it asserted the opposite of
+          the paragraph above it.
+        */}
         <Checkbox
           checked={acknowledged}
           onChange={(e): void => onAcknowledge(e.target.checked)}
-          label={
-            <span>
-              I understand this collection was made for {mismatch.required}, and some mods may
-              not work on {mismatch.installed} until I swap them.
-            </span>
-          }
+          label={<span>{d.acknowledgement}</span>}
         />
       </div>
     </Callout>
