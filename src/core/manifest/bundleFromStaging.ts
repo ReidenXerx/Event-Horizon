@@ -558,8 +558,6 @@ export type MisplacedFiles = {
   count: number;
   /** The extra folder in front, as players get it, e.g. `Grass_Cache_Default/Data/`. */
   under: string;
-  /** What Vortex strips from the front of the archive's paths — `""` for nothing. */
-  stripped: string;
   /** One file: where the curator has it, and where every player gets it. */
   example: { staged: string; installed: string };
 };
@@ -769,7 +767,6 @@ function compareWithPlacement(
     misplaced: {
       count: pairs.length,
       under,
-      stripped: placement.prefix,
       example: { staged: example.staged, installed: example.installed },
     },
   };
@@ -788,15 +785,12 @@ function compareWithPlacement(
 export function describeExternalDrift(drift: ExternalDrift[]): string[] {
   // Both answers ship the curator's own files; only an UNANSWERED mod is
   // still shipping the archive, which is the only thing this warns about.
-  const unanswered = drift.filter((d) => !d.bundled && !d.mirrored);
-  // A misplaced mod gets its own entry, ahead of the rest: it is not a
-  // curator's edit shipping as the original, it is the whole mod landing
-  // where the game never reads, and re-packing the archive fixes both.
-  const out = unanswered.flatMap((d) =>
-    d.misplaced !== undefined ? [describeMisplaced(d.modName, d.misplaced)] : [],
-  );
-  const unbundled = unanswered.filter((d) => d.misplaced === undefined);
-  if (unbundled.length === 0) return out;
+  // A misplaced mod is not a curator's edit shipping as the original: the
+  // whole mod lands where the game never reads, and `misplacedArchiveGate`
+  // refuses the build over it by name. Listing it here as well would bury
+  // that under "files have been added or removed".
+  const unbundled = drift.filter((d) => !d.bundled && !d.mirrored && d.misplaced === undefined);
+  if (unbundled.length === 0) return [];
 
   const worst = [...unbundled].sort(
     (a, b) => b.removed.length + b.added.length - (a.removed.length + a.added.length),
@@ -833,26 +827,7 @@ export function describeExternalDrift(drift: ExternalDrift[]): string[] {
   if (worst.length > 5) {
     lines.push(`  • and ${worst.length - 5} more; see the event-horizon log.`);
   }
-  return [...out, lines.join("\n")];
-}
-
-function describeMisplaced(modName: string, m: MisplacedFiles): string {
-  const why =
-    m.stripped === ""
-      ? `Vortex removes a wrapper folder only when something inside it looks like ` +
-        `game data to it (a plugin, or a folder such as textures, meshes or ` +
-        `scripts), and nothing in this archive does`
-      : `Vortex removes only "${m.stripped.replace(/\/?$/, "/")}" from the front ` +
-        `of this archive's paths`;
-  return (
-    `"${modName}" installs into the wrong folder for everyone but you: its ` +
-    `archive keeps ${m.count} of your staged file(s) inside "${m.under}". ${why}, ` +
-    `so players get ${m.example.installed} where you have ${m.example.staged}, ` +
-    `and the game never looks there. Re-pack the archive with your staging ` +
-    `folder's layout at its root, put it in Vortex's download folder over the ` +
-    `old one, publish that same file where players download it, and build ` +
-    `again — or answer "mirror" or "bundle" on it.`
-  );
+  return [lines.join("\n")];
 }
 
 

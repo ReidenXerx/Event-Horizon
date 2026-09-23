@@ -105,6 +105,7 @@ import {
   measureBundledMods,
   type MeasuredBundle,
   type BundleFailure,
+  type ExternalDrift,
   mergeMeasuredBundles,
   restoreArchiveHashes,
 } from "../../../core/manifest/bundleFromStaging";
@@ -1736,6 +1737,11 @@ export async function runBuildPipeline(
   // collection and gets the original archive instead. So it is said out loud,
   // and bundling packs the staging folder rather than the stale archive.
   const driftOp = beginOp("build.external-drift", {});
+  /**
+   * Mods whose archive Vortex would install into the wrong folder, for the gate
+   * after this block; `undefined` when the drift check did not finish.
+   */
+  let misplacedDrift: ExternalDrift[] | undefined;
   let measuredBundles: MeasuredBundle[] = [];
   /**
    * Mods flagged for bundling that could not be packed, and why.
@@ -1797,6 +1803,7 @@ export async function runBuildPipeline(
       listArchive: (p) => listArchiveContents(sevenZip, p),
       ...(signal !== undefined ? { signal } : {}),
     });
+    misplacedDrift = drift.filter((d) => d.misplaced !== undefined);
     bundleWarnings.push(...describeExternalDrift(drift));
 
   // Anything the curator's own Vortex collection says is needed that this
@@ -1939,6 +1946,48 @@ export async function runBuildPipeline(
       detail: externalGate.mods.slice(0, 20),
     });
     throw new BuildRefusedError(externalGate.code, externalGate.message);
+  }
+
+  /**
+   * ─── AN ARCHIVE VORTEX WOULD INSTALL INTO THE WRONG FOLDER ────────────
+   * Same moment and same exemptions as the gate above: bundling is measured,
+   * a mirror answer is known, and nothing has been written. Meridia shipped
+   * its grass cache one folder deep from 1.0.17 to 1.0.23 while every byte
+   * check called it identical; `misplacedArchiveGate.ts` has the reasoning.
+   *
+   * A drift check that did not finish cannot clear anything, so it is said.
+   */
+  if (misplacedDrift === undefined) {
+    bundleWarnings.push(
+      `The check for external archives that Vortex would install into the ` +
+        `wrong folder did not finish (see the event-horizon log), so this build ` +
+        `could not rule that out.`,
+    );
+  } else {
+    const { misplacedArchiveRefusal } = await import(
+      "../../../core/manifest/misplacedArchiveGate"
+    );
+    const misplacedGate = misplacedArchiveRefusal(
+      misplacedDrift
+        // A failed repack is refused by name when the bundles are resolved.
+        .filter((d) => !bundleFailures.has(d.modId))
+        .map((d) => ({
+          id: d.modId,
+          name: d.modName,
+          misplaced: d.misplaced!,
+          bundled: measuredBundleIds.has(d.modId),
+          mirrored: collectionConfig.externalMods[d.modId]?.mirrored === true,
+        })),
+    );
+    if (misplacedGate !== undefined) {
+      ehLog("error", "build.refused", {
+        gameId,
+        code: misplacedGate.code,
+        mods: misplacedGate.mods.length,
+        detail: misplacedGate.mods.slice(0, 20),
+      });
+      throw new BuildRefusedError(misplacedGate.code, misplacedGate.message);
+    }
   }
 
   // ── Prerequisites that are NOT Vortex mods ───────────────────────────

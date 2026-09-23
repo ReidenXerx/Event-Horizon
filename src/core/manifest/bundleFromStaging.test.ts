@@ -187,7 +187,6 @@ describe("detectExternalDrift", () => {
     expect(drift!.misplaced).toEqual({
       count: 2,
       under: "Grass_Cache_Default/Data/",
-      stripped: "",
       example: { staged: "Grass/A.cgid", installed: "Grass_Cache_Default/Data/Grass/A.cgid" },
     });
     // Nothing was added: the files ARE in the archive, just not where the
@@ -403,45 +402,24 @@ describe("describeExternalDrift", () => {
     expect(describeExternalDrift([])).toEqual([]);
   });
 
-  const grass = {
-    count: 9087,
-    under: "Grass_Cache_Default/Data/",
-    stripped: "",
-    example: { staged: "Grass/A.cgid", installed: "Grass_Cache_Default/Data/Grass/A.cgid" },
-  };
-
-  it("names a misplaced mod on its own: where players get it, why, and the fix", () => {
-    const out = describeExternalDrift([
-      drifted({
-        modName: "Grass_Cache_Default_LOD",
-        added: [],
-        removed: ["grass_cache_default/readme.txt"],
-        misplaced: grass,
-      }),
-    ]);
-    expect(out).toHaveLength(1);
-    expect(out[0]).toMatch(/installs into the wrong folder for everyone but you/);
-    expect(out[0]).toMatch(/9087 of your staged file\(s\) inside "Grass_Cache_Default\/Data\/"/);
-    expect(out[0]).toMatch(/players get Grass_Cache_Default\/Data\/Grass\/A\.cgid where you have Grass\/A\.cgid/);
-    expect(out[0]).toMatch(/nothing in this archive does/);
-    expect(out[0]).toMatch(/Re-pack the archive/);
-    // Not ALSO reported as a curator's edit shipping as the original: the
-    // readme it dropped is noise next to a mod the game cannot see.
-    expect(out[0]).not.toMatch(/ships the ARCHIVE/);
-  });
-
-  it("says what Vortex does strip when a stop pattern matched elsewhere in the archive", () => {
+  it("leaves a misplaced mod to the build gate instead of calling it drift", () => {
+    // `misplacedArchiveGate` refuses the build over it by name; listing it here
+    // too would bury that under "files have been added or removed".
+    const misplaced = {
+      count: 9087,
+      under: "Grass_Cache_Default/Data/",
+      example: { staged: "Grass/A.cgid", installed: "Grass_Cache_Default/Data/Grass/A.cgid" },
+    };
+    expect(
+      describeExternalDrift([drifted({ removed: ["grass_cache_default/readme.txt"], misplaced })]),
+    ).toEqual([]);
     const [line] = describeExternalDrift([
-      drifted({ misplaced: { ...grass, stripped: "Main", under: "Extra/" } }),
+      drifted({ modId: "g", modName: "Grass", misplaced }),
+      drifted({ modId: "s", modName: "Settings" }),
     ]);
-    expect(line).toMatch(/Vortex removes only "Main\/" from the front/);
-    expect(line).not.toMatch(/nothing in this archive does/);
-  });
-
-  it("stays quiet about a misplaced mod already answered mirror or bundle", () => {
-    // Both answers ship the curator's staging folder, so the layout is theirs.
-    expect(describeExternalDrift([drifted({ misplaced: grass, mirrored: true })])).toEqual([]);
-    expect(describeExternalDrift([drifted({ misplaced: grass, bundled: true })])).toEqual([]);
+    expect(line).toMatch(/^1 external mod no longer match/);
+    expect(line).toMatch(/"Settings"/);
+    expect(line).not.toMatch(/"Grass"/);
   });
 });
 
