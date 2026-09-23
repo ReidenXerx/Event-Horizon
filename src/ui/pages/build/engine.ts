@@ -2617,6 +2617,11 @@ export async function runBuildPipeline(
       ...(discoveredStore(state, gameId) !== undefined
         ? { store: discoveredStore(state, gameId)! }
         : {}),
+      // What the install checks the player's Data folder for — the Creation
+      // Club files a player without them crashes on at startup.
+      ...(masterGate.userOwnedMasters !== undefined
+        ? { userOwnedMasters: masterGate.userOwnedMasters }
+        : {}),
     },
     vortex: {
       version: resolveVortexVersion(state),

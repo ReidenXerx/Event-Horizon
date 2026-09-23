@@ -99,6 +99,8 @@ export function gatherPreflightFacts(args: {
   gameId: string;
   externalDependencies?: readonly EhcollExternalDependency[];
   gameIni?: EhcollGameIni;
+  /** An install's collection: `{ recorded: manifest.game.userOwnedMasters }`. */
+  ownedMasters?: { recorded: readonly string[] | undefined };
 }): PreflightFacts {
   const { state, gameId } = args;
   const discovery = readDiscovery(state, gameId);
@@ -154,6 +156,7 @@ export function gatherPreflightFacts(args: {
     ),
     syncedRoots,
     ...(stagingDir !== undefined ? { stagingDir } : {}),
+    ...(args.ownedMasters !== undefined ? { ownedMasters: args.ownedMasters } : {}),
     wine,
     ...(userProfileDir.length > 0 ? { userProfileDir } : {}),
     ...(wineHost !== undefined ? { wineHost } : {}),
@@ -172,6 +175,8 @@ export function gatherPreflightFacts(args: {
     protectedRoots: facts.protectedRoots,
     syncedRoots,
     stagingDir,
+    // How many Creation Club files the collection records; null when it predates the list.
+    ownedMasters: args.ownedMasters === undefined ? undefined : (args.ownedMasters.recorded?.length ?? null),
     wine: facts.wine,
     userProfileDir,
     wineHost,

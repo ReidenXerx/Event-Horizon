@@ -193,6 +193,22 @@ export function describeMissingMasters(check: MasterCheck): string {
   return lines.join("\n");
 }
 
+/**
+ * The files behind `userOwned`, one per file, for the manifest.
+ *
+ * The game ignores letter case in a plugin name, so two plugins spelling one
+ * master two ways need one file, named the way the first plugin spells it.
+ * Sorted, so the same collection always writes the same manifest.
+ */
+export function userOwnedMasterFiles(check: MasterCheck): string[] {
+  const byFile = new Map<string, string>();
+  for (const { master } of check.userOwned) {
+    const name = master.trim();
+    if (!byFile.has(name.toLowerCase())) byFile.set(name.toLowerCase(), name);
+  }
+  return [...byFile.keys()].sort().map((key) => byFile.get(key)!);
+}
+
 /** The non-fatal note about content the user has to own themselves. */
 export function describeUserOwnedMasters(check: MasterCheck): string[] {
   if (check.userOwned.length === 0) return [];

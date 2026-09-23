@@ -84,6 +84,25 @@ describe("runEnvironmentPreflight", () => {
     });
   });
 
+  it("blocks an install whose collection needs a Creation Club file the Data folder lacks", async () => {
+    write(path.join(game, "Data", "ccBGSFO4001-PipBoy(Black).esl"));
+    const report = await runEnvironmentPreflight(
+      facts({ ownedMasters: { recorded: ["ccbgsfo4001-pipboy(black).esl", "ccFSVFO4001-ModularMilitary.esl"] } }),
+      { scanFolder: false, context: "test" },
+    );
+    const check = report.checks.find((c) => c.id === "owned-masters");
+    expect(check?.status).toBe("blocked");
+    expect(check?.lines[0]).toBe("Missing: ccFSVFO4001-ModularMilitary.esl.");
+    expect(check?.lines).toContain(`Looked in: ${path.join(game, "Data")}`);
+  });
+
+  it("runs the Creation Club check only for an install, which has a collection to ask", async () => {
+    const play = await runEnvironmentPreflight(facts(), { scanFolder: false, context: "test" });
+    expect(play.checks.some((c) => c.id === "owned-masters")).toBe(false);
+    const old = await runEnvironmentPreflight(facts({ ownedMasters: { recorded: undefined } }), { scanFolder: false, context: "test" });
+    expect(old.checks.find((c) => c.id === "owned-masters")?.status).toBe("unknown");
+  });
+
   it("blocks a game inside the OneDrive folder, and names the mods folder's drive as the place to move it", async () => {
     const report = await runEnvironmentPreflight(
       facts({ syncedRoots: [{ service: "OneDrive", path: tmp }], stagingDir: "E:\\Vortex Mods\\fallout4", store: "gog" }),

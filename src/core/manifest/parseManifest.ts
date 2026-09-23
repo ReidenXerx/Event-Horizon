@@ -405,11 +405,26 @@ function validateGame(
       ? undefined
       : expectString(obj.store, "game.store", errors);
 
+  /**
+   * Optional, and absence is preserved the same way: a package built before
+   * Creation Club masters were recorded was never asked, which is not "needs
+   * none". Present and empty IS "needs none".
+   *
+   * Read leniently, never an error: a later build that changes the shape must
+   * not make its package unopenable here. A shape this version does not know
+   * reads as "not recorded", and an entry it does not know is skipped — both
+   * can only make the install check less, never refuse a player.
+   */
+  const userOwnedMasters = Array.isArray(obj.userOwnedMasters)
+    ? obj.userOwnedMasters.filter((m): m is string => typeof m === "string" && m.trim().length > 0)
+    : undefined;
+
   return {
     id,
     version,
     versionPolicy,
     ...(store !== undefined && store.length > 0 ? { store } : {}),
+    ...(userOwnedMasters !== undefined ? { userOwnedMasters } : {}),
   };
 }
 

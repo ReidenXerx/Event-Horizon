@@ -20,6 +20,9 @@
  *                        administrator rights are refused writes
  *  - synced-folder       game moved into OneDrive to get it out of Program
  *                        Files — OneDrive then uploads every file Vortex links in
+ *  - owned-masters       installed all 1,746 mods of a collection, then crashed
+ *                        at startup: the game had no Anniversary Upgrade, and
+ *                        the plugins need its Creation Club files as masters
  *  - game-folder         leftovers from earlier setups (gameFolderScan.ts)
  *  - ini-leftovers       archive-loading INI settings from earlier setups
  *
@@ -39,6 +42,7 @@ export type EnvironmentCheckId =
   | "wine-prefix"
   | "protected-location"
   | "synced-folder"
+  | "owned-masters"
   | "launcher-ran"
   | "binary-imports"
   | "game-folder"
@@ -347,6 +351,87 @@ export function decideSyncedFolder(input: {
       `${service} uploads everything in its folder, and Vortex links every file of every mod into the game folder — hundreds of thousands of files for a large collection. While it uploads, ${service} can lock files Vortex and the game need, and to free space it can replace files with online-only placeholders that have to download again before the game can read them.`,
     ],
     steps: moveSteps(input.gameName, input.store, input.stagingDir),
+  };
+}
+
+// ── 2c. The Creation Club files the collection needs are in the game ────
+
+const NAMES_SHOWN = 12;
+
+/** Where the missing files come from, per game — Skyrim's are almost all in one upgrade. */
+function ownedMasterSteps(gameId: string, gameName: string, store: string | undefined): string[] {
+  const s = (store ?? "").toLowerCase();
+  if (gameId === "skyrimse") {
+    const upgrade =
+      s === "gog"
+        ? `GOG Galaxy → ${gameName} → Manage installation → Configure: tick the Anniversary Upgrade under DLC. If it is not listed, it is not on your GOG account, which sells it as a DLC for ${gameName}.`
+        : s === "steam"
+          ? `On Steam, buy the Skyrim Anniversary Upgrade. Then start the game and download its content from the Creations menu.`
+          : `Install the Anniversary Upgrade from the store you bought ${gameName} from.`;
+    return [
+      `Most Creation Club files come with the Anniversary Upgrade. ${upgrade}`,
+      "Anything still missing after that is a separate Creation: buy and download it in the game's Creations menu.",
+      "Then load the collection again.",
+    ];
+  }
+  return [
+    "Creation Club content is owned per account: download it in the game's Creations menu (the Creation Club, in older versions of the game), or install it from your store if the store sells it.",
+    "Then load the collection again.",
+  ];
+}
+
+/**
+ * Does the game have every Creation Club file the collection's plugins need?
+ * Blocked when one is missing (owner poll, 2026-09-23): the game closes at
+ * startup without it, after an install of every mod has already run.
+ *
+ * `recorded` undefined is a package built before the list existed. It says so
+ * and never blocks: an old package was never asked, and refusing it on a check
+ * it predates would be the check's fault, not the player's.
+ */
+export function decideOwnedMasters(input: {
+  gameId: string;
+  gameName: string;
+  store: string | undefined;
+  /** `manifest.game.userOwnedMasters`. */
+  recorded: readonly string[] | undefined;
+  dataDir: string | undefined;
+  /** Lower-case names in the Data folder; undefined when it could not be read. */
+  present: ReadonlySet<string> | undefined;
+}): EnvironmentCheck {
+  const { gameName } = input;
+  if (input.recorded === undefined) {
+    return unknownCheck(
+      "owned-masters",
+      "This collection was built before Event Horizon recorded which Creation Club files it needs, so they were not checked.",
+    );
+  }
+  const needed = input.recorded.filter((f) => f.trim().length > 0);
+  if (needed.length === 0) return ok("owned-masters", "This collection needs no Creation Club files.");
+  const files = `${needed.length} Creation Club file${needed.length === 1 ? "" : "s"}`;
+  if (input.present === undefined) {
+    return unknownCheck("owned-masters", `Could not read ${gameName}'s Data folder, so the ${files} this collection needs were not checked.`, [
+      ...(input.dataDir !== undefined ? [`Folder: ${input.dataDir}`] : []),
+    ]);
+  }
+  const present = input.present;
+  const missing = needed.filter((f) => !present.has(f.trim().toLowerCase()));
+  if (missing.length === 0) {
+    return ok("owned-masters", `${gameName} has all ${files} this collection needs.`, [
+      ...(input.dataDir !== undefined ? [`Folder: ${input.dataDir}`] : []),
+    ]);
+  }
+  const more = missing.length > NAMES_SHOWN ? `, and ${missing.length - NAMES_SHOWN} more` : "";
+  return {
+    id: "owned-masters",
+    status: "blocked",
+    title: `${gameName} is missing ${missing.length} of the ${files} this collection needs.`,
+    lines: [
+      `Missing: ${missing.slice(0, NAMES_SHOWN).join(", ")}${more}.`,
+      "The collection's plugins need them as masters. Without them the game closes while it loads, with no error message.",
+      ...(input.dataDir !== undefined ? [`Looked in: ${input.dataDir}`] : []),
+    ],
+    steps: ownedMasterSteps(input.gameId, gameName, input.store),
   };
 }
 

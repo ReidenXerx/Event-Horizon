@@ -189,6 +189,8 @@ export type BuildManifestInput = {
     versionPolicy?: GameVersionPolicy;
     /** Vortex's discovered store for this game, when it knows one. */
     store?: string;
+    /** From the master gate; absent when it could read no plugin. See GameMetadata. */
+    userOwnedMasters?: string[];
   };
 
   vortex: {
@@ -439,6 +441,10 @@ export function buildManifest(input: BuildManifestInput): BuildManifestResult {
       // unknown store as "say nothing", and an empty string is not unknown.
       ...(input.game.store !== undefined && input.game.store.length > 0
         ? { store: input.game.store }
+        : {}),
+      // Written even when empty: [] is "needs none", absent is "never recorded".
+      ...(input.game.userOwnedMasters !== undefined
+        ? { userOwnedMasters: [...input.game.userOwnedMasters] }
         : {}),
     },
     vortex: {

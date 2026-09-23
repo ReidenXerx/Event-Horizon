@@ -46,7 +46,7 @@
 
 import * as path from "path";
 
-import { checkMasters, describeMissingMasters, describeUserOwnedMasters } from "./checkMasters";
+import { checkMasters, describeMissingMasters, describeUserOwnedMasters, userOwnedMasterFiles } from "./checkMasters";
 import { parsePluginsTxt } from "../comparePlugins";
 import { readPluginMasters } from "./pluginMasters";
 import { pluginsProvidedBy } from "./unprovidedPlugins";
@@ -71,6 +71,16 @@ export type MasterGateResult = {
    * nobody verified.
    */
   checkedNothing: boolean;
+  /**
+   * The Creation Club files the collection's plugins need as masters, for
+   * `manifest.game.userOwnedMasters`: the install refuses a game missing one.
+   *
+   * Absent when no plugin could be read. Then the check learned nothing, and an
+   * empty list would tell every player "needs none". A list from a partly
+   * readable profile is kept: it is short of the truth, so it can only miss a
+   * file, never refuse a player who has everything.
+   */
+  userOwnedMasters?: string[];
 };
 
 /**
@@ -145,6 +155,8 @@ export async function gateOnMasters(args: {
     args.mods === undefined ? undefined : pluginsProvidedBy(args.mods),
   );
   const checkedNothing = masterCheck.checked === 0;
+  const learnedNothing = checkedNothing || masterCheck.unreadable.length >= masterCheck.checked;
+  const userOwnedMasters = learnedNothing ? undefined : userOwnedMasterFiles(masterCheck);
 
   ehLog(
     masterCheck.missing.length > 0 ? "error" : "info",
@@ -156,6 +168,8 @@ export async function gateOnMasters(args: {
       dataDir: dataDir !== undefined,
       missing: masterCheck.missing.length,
       userOwned: masterCheck.userOwned.length,
+      // The files the manifest records for the install's check; absent when nothing could be read.
+      userOwnedFiles: userOwnedMasters?.length,
       unreadable: masterCheck.unreadable.length,
       examples: masterCheck.missing.slice(0, 5),
     },
@@ -201,5 +215,6 @@ export async function gateOnMasters(args: {
       : {}),
     warnings,
     checkedNothing,
+    ...(userOwnedMasters !== undefined ? { userOwnedMasters } : {}),
   };
 }

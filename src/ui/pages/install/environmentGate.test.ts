@@ -18,6 +18,7 @@ const env = vi.hoisted(() => ({
   cleanOutcome: { kind: "cleaned", purged: true, moved: 3 } as Record<string, unknown>,
   cleanCalls: 0,
   purgeCalls: 0,
+  factsArgs: undefined as Record<string, unknown> | undefined,
 }));
 
 vi.mock("../../../core/installer/probeDeployment", () => ({
@@ -31,7 +32,10 @@ vi.mock("../../../core/installer/runInstall", () => ({
 }));
 
 vi.mock("../../../core/environment/vortexEnvironment", () => ({
-  gatherPreflightFacts: () => ({ gameId: "fallout4", gameName: "Fallout 4", declared: new Set(), protectedRoots: [], syncedRoots: [], wine: false }),
+  gatherPreflightFacts: (args: Record<string, unknown>) => {
+    env.factsArgs = args;
+    return { gameId: "fallout4", gameName: "Fallout 4", declared: new Set(), protectedRoots: [], syncedRoots: [], wine: false };
+  },
   purgeGameDeployment: async () => {
     env.purgeCalls += 1;
   },
@@ -113,6 +117,7 @@ beforeEach(() => {
   env.cleanOutcome = { kind: "cleaned", purged: true, moved: 3 };
   env.cleanCalls = 0;
   env.purgeCalls = 0;
+  env.factsArgs = undefined;
 });
 
 describe("startInstall — environment gate", () => {
@@ -120,6 +125,20 @@ describe("startInstall — environment gate", () => {
     const s = confirmSession();
     s.startInstall(fakeApi().api);
     expect(kindOf(s)).toBe("confirm");
+  });
+
+  // The Creation Club check needs the collection's list; without it the gate would check nothing and say so.
+  it("hands the check the Creation Club files the collection records", async () => {
+    const game = plan.manifest.game as Record<string, unknown>;
+    game.userOwnedMasters = ["ccBGSFO4001-PipBoy(Black).esl"];
+    try {
+      const s = confirmSession();
+      s.startInstall(fakeApi().api);
+      await settle(s);
+      expect(env.factsArgs?.["ownedMasters"]).toEqual({ recorded: ["ccBGSFO4001-PipBoy(Black).esl"] });
+    } finally {
+      delete game.userOwnedMasters;
+    }
   });
 
   it("refuses a blocked check with its steps, and never reaches the folder", async () => {

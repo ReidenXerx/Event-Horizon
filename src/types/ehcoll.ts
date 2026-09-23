@@ -192,6 +192,19 @@ export type GameMetadata = {
    * ignore the one case that matters.
    */
   store?: string;
+  /**
+   * Masters this collection's plugins need that no collection can ship:
+   * Creation Club files (and Anniversary Edition's `_ResourcePack.esl`), owned
+   * per account. The install refuses a game whose Data folder lacks one (owner
+   * poll, 2026-09-23): a player whose GOG Skyrim had no Anniversary Upgrade
+   * installed all 1,746 mods of a collection, then crashed at startup with no
+   * message, warned by nothing.
+   *
+   * Optional, and absent means NOT RECORDED, never "needs none": a package built
+   * before this existed was never asked. A build that read the plugins always
+   * writes it, empty or not. Sorted file names, as the plugins spell them.
+   */
+  userOwnedMasters?: string[];
 };
 
 /**

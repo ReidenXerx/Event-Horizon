@@ -9,7 +9,24 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { gameExecutable, purgeGameDeployment, readDiscovery } from "./vortexEnvironment";
+import { gameExecutable, gatherPreflightFacts, purgeGameDeployment, readDiscovery } from "./vortexEnvironment";
+
+describe("gatherPreflightFacts", () => {
+  // The install's Creation Club check reads the list from the facts; dropped here, it would check nothing.
+  it("carries an install's Creation Club list, and Vortex's mods folder for the move advice", () => {
+    const facts = gatherPreflightFacts({ state: {}, gameId: "skyrimse", ownedMasters: { recorded: ["ccBGSSSE001-Fish.esm"] } });
+    expect(facts.ownedMasters).toEqual({ recorded: ["ccBGSSSE001-Fish.esm"] });
+    expect(facts.stagingDir).toBe("/stub/install");
+    expect(Array.isArray(facts.syncedRoots)).toBe(true);
+  });
+
+  it("keeps 'the package predates the list' apart from 'not an install'", () => {
+    expect(gatherPreflightFacts({ state: {}, gameId: "skyrimse", ownedMasters: { recorded: undefined } }).ownedMasters).toEqual({
+      recorded: undefined,
+    });
+    expect("ownedMasters" in gatherPreflightFacts({ state: {}, gameId: "skyrimse" })).toBe(false);
+  });
+});
 
 function vortexLikeEvents(outcome: Error | null) {
   const emits: unknown[][] = [];

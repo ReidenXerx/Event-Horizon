@@ -1096,6 +1096,7 @@ class InstallSession {
         gameId,
         externalDependencies: manifest.externalDependencies,
         ...(manifest.gameIni !== undefined ? { gameIni: manifest.gameIni } : {}),
+        ownedMasters: { recorded: manifest.game.userOwnedMasters },
       });
       const report = await runEnvironmentPreflight(facts, { scanFolder: false, context: "install-gate" });
       const blocked = blockingChecks(report.checks);

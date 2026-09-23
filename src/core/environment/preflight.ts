@@ -31,6 +31,7 @@ import {
   decideGameManaged,
   decideIniLeftovers,
   decideLauncherRan,
+  decideOwnedMasters,
   decideProtectedLocation,
   decideSyncedFolder,
   decideWinePrefix,
@@ -71,6 +72,12 @@ export type PreflightFacts = {
   syncedRoots: SyncedRoot[];
   /** Vortex's mods (staging) folder for this game. Move advice names its drive. */
   stagingDir?: string;
+  /**
+   * The Creation Club files the collection needs (`manifest.game.userOwnedMasters`). Only an install has a
+   * collection to ask, so absent means "not an install" and the check does not run; `recorded` undefined means the
+   * package predates the list.
+   */
+  ownedMasters?: { recorded: readonly string[] | undefined };
   wine: boolean;
   /** Vortex's user folder (C:\users\<name> under Wine) — the settings paths above live inside it. */
   userProfileDir?: string;
@@ -132,6 +139,27 @@ async function isFile(p: string): Promise<boolean> {
     return (await fsp.stat(p)).isFile();
   } catch {
     return false;
+  }
+}
+
+/**
+ * The game's Data folder and the lower-case names in it. A game folder with no
+ * Data folder has none of its files; one that cannot be listed is unknown.
+ */
+async function dataFolderNames(gameDir: string): Promise<{ dir: string; names?: Set<string> }> {
+  let entries: string[];
+  try {
+    entries = await fsp.readdir(gameDir);
+  } catch {
+    return { dir: path.join(gameDir, "Data") };
+  }
+  const data = entries.find((e) => e.toLowerCase() === "data");
+  if (data === undefined) return { dir: path.join(gameDir, "Data"), names: new Set() };
+  const dir = path.join(gameDir, data);
+  try {
+    return { dir, names: new Set((await fsp.readdir(dir)).map((n) => n.toLowerCase())) };
+  } catch {
+    return { dir };
   }
 }
 
@@ -292,6 +320,20 @@ export async function runEnvironmentPreflight(
       stagingDir: facts.stagingDir,
     }),
   );
+  if (facts.ownedMasters !== undefined) {
+    const recorded = facts.ownedMasters.recorded;
+    const data = recorded !== undefined && recorded.length > 0 ? await dataFolderNames(gameDir) : undefined;
+    report.checks.push(
+      decideOwnedMasters({
+        gameId: facts.gameId,
+        gameName: facts.gameName,
+        store: facts.store,
+        recorded,
+        dataDir: data?.dir,
+        present: data?.names,
+      }),
+    );
+  }
 
   const vanilla = await loadVanillaList(gameDir, facts.executable !== undefined ? { executable: facts.executable } : {});
   const vanillaRootNames = new Set(

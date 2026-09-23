@@ -637,6 +637,7 @@ async function checkEnvironment(
       gameId,
       externalDependencies: manifest.externalDependencies,
       ...(manifest.gameIni !== undefined ? { gameIni: manifest.gameIni } : {}),
+      ownedMasters: { recorded: manifest.game.userOwnedMasters },
     });
     return await runEnvironmentPreflight(facts, {
       scanFolder: true,

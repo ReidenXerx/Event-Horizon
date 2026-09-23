@@ -13,6 +13,7 @@ import {
   decideGameManaged,
   decideIniLeftovers,
   decideLauncherRan,
+  decideOwnedMasters,
   decideProtectedLocation,
   decideSyncedFolder,
   decideWinePrefix,
@@ -162,6 +163,58 @@ describe("decideSyncedFolder", () => {
         "ok",
       );
     }
+  });
+});
+
+describe("decideOwnedMasters", () => {
+  const S = "Skyrim Special Edition";
+  // The tester's game: GOG's base product only, so the 4 free Creation Club plugins and none of the upgrade's.
+  const recorded = ["ccBGSSSE001-Fish.esm", "ccBGSSSE002-ExoticArrows.esl", "ccBGSSSE003-Zombies.esl", "_ResourcePack.esl"];
+  const base = { gameId: "skyrimse", gameName: S, store: "gog", recorded, dataDir: "C:\\Games\\Skyrim\\Data" };
+
+  it("blocks when the Data folder lacks one, naming the missing files and the Anniversary Upgrade", () => {
+    const c = decideOwnedMasters({ ...base, present: new Set(["skyrim.esm", "ccbgssse001-fish.esm"]) });
+    expect(c.status).toBe("blocked");
+    expect(c.title).toBe("Skyrim Special Edition is missing 3 of the 4 Creation Club files this collection needs.");
+    expect(c.lines[0]).toBe("Missing: ccBGSSSE002-ExoticArrows.esl, ccBGSSSE003-Zombies.esl, _ResourcePack.esl.");
+    expect(c.lines).toContain("Looked in: C:\\Games\\Skyrim\\Data");
+    expect(c.steps[0]).toMatch(/Anniversary Upgrade\. GOG Galaxy → Skyrim Special Edition → Manage installation → Configure/);
+  });
+
+  it("matches file names regardless of case, and passes a game that has them all", () => {
+    const c = decideOwnedMasters({ ...base, present: new Set(recorded.map((f) => f.toLowerCase())) });
+    expect(c.status).toBe("ok");
+    expect(c.title).toBe("Skyrim Special Edition has all 4 Creation Club files this collection needs.");
+  });
+
+  it("names the first twelve and counts the rest", () => {
+    const many = Array.from({ length: 20 }, (_, i) => `ccABCSSE${String(i).padStart(3, "0")}-X.esl`);
+    const c = decideOwnedMasters({ ...base, recorded: many, present: new Set() });
+    expect(c.lines[0]).toMatch(/ccABCSSE011-X\.esl, and 8 more\.$/);
+    expect(c.lines[0]).not.toMatch(/ccABCSSE012/);
+  });
+
+  it("gives Steam and Fallout 4 players their own way to get the files", () => {
+    expect(decideOwnedMasters({ ...base, store: "steam", present: new Set() }).steps[0]).toMatch(
+      /On Steam, buy the Skyrim Anniversary Upgrade\. Then start the game and download its content from the Creations menu\./,
+    );
+    const fo4 = decideOwnedMasters({ ...base, gameId: "fallout4", gameName: G, recorded: ["ccBGSFO4001-PipBoy(Black).esl"], present: new Set() });
+    expect(fo4.status).toBe("blocked");
+    expect(fo4.steps.join(" ")).not.toMatch(/Anniversary/);
+    expect(fo4.steps[0]).toMatch(/Creations menu/);
+  });
+
+  // An old package was never asked; refusing it on a check it predates would be the check's fault.
+  it("never blocks a package built before the list existed, and says it did not check", () => {
+    const c = decideOwnedMasters({ ...base, recorded: undefined, present: new Set() });
+    expect(c.status).toBe("unknown");
+    expect(c.title).toMatch(/built before Event Horizon recorded which Creation Club files it needs/);
+  });
+
+  it("passes a collection that needs none, and says unknown when the Data folder cannot be read", () => {
+    expect(decideOwnedMasters({ ...base, recorded: [], present: undefined }).status).toBe("ok");
+    expect(decideOwnedMasters({ ...base, recorded: [" "], present: new Set() }).status).toBe("ok");
+    expect(decideOwnedMasters({ ...base, present: undefined }).status).toBe("unknown");
   });
 });
 

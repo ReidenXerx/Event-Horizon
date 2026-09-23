@@ -6,7 +6,26 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { describeUserOwnedMasters } from "./checkMasters";
+import { describeUserOwnedMasters, userOwnedMasterFiles } from "./checkMasters";
+
+describe("userOwnedMasterFiles", () => {
+  // What the manifest records for the install's check: one entry per file, so the player is not told to find
+  // "ccotmfo4001-remnants.esl" twice, and sorted, so the same collection always writes the same manifest.
+  it("lists each file once, spelled as its first plugin spells it, in a stable order", () => {
+    const files = userOwnedMasterFiles({
+      missing: [],
+      userOwned: [
+        { plugin: "a.esp", master: "ccQDRSSE001-SurvivalMode.esl" },
+        { plugin: "b.esp", master: "ccOTMFO4001-Remnants.esl" },
+        { plugin: "c.esp", master: "ccotmfo4001-remnants.esl " },
+        { plugin: "d.esp", master: "_ResourcePack.esl" },
+      ],
+      unreadable: [],
+      checked: 4,
+    });
+    expect(files).toEqual(["_ResourcePack.esl", "ccOTMFO4001-Remnants.esl", "ccQDRSSE001-SurvivalMode.esl"]);
+  });
+});
 
 describe("describeUserOwnedMasters", () => {
   it("names each Creation Club file once, whatever case its plugins spell it in", () => {
