@@ -56,7 +56,7 @@ Start here when exploring this area:
 | `standingOf` | Function | `src/core/doctor/loadOrderStatus.ts` | 159 |
 | `assessActiveOrder` | Function | `src/core/doctor/loadOrderWatcher.ts` | 102 |
 | `status` | Function | `src/ui/pages/doctor/LoadOrderBadge.tsx` | 105 |
-| `healingBlockedReason` | Function | `src/core/doctor/health.ts` | 1015 |
+| `healingBlockedReason` | Function | `src/core/doctor/health.ts` | 1062 |
 | `reapplyBlockedReason` | Function | `src/core/doctor/loadOrderWatcher.ts` | 138 |
 | `reapplyCuratorOrder` | Function | `src/core/doctor/loadOrderWatcher.ts` | 150 |
 | `startLoadOrderWatcher` | Function | `src/core/doctor/loadOrderWatcher.ts` | 205 |
