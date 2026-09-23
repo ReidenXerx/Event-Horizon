@@ -277,6 +277,7 @@ import {
 } from "./bundledPrefetch";
 import { logInstallCallShapes } from "./probeInstallerApi";
 import { installAlongside } from "./installAlongside";
+import { bundledTargetName } from "./bundledTargetName";
 import {
   appendJournalEntry,
   clearJournal,
@@ -5385,7 +5386,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
  */
 function collectBundledZipEntriesForPrefetch(
   plan: DriverContext["plan"],
-  _ctx: DriverContext,
+  ctx: DriverContext,
 ): PrefetchRequest[] {
   const out: PrefetchRequest[] = [];
   const seen = new Set<string>();
@@ -5394,11 +5395,61 @@ function collectBundledZipEntriesForPrefetch(
     if (dec.kind !== "external-use-bundled") continue;
     if (seen.has(dec.bundleFolder)) continue;
     seen.add(dec.bundleFolder);
-    // The resolution's name is the curator's mod name, which is what the
-    // extracted archive — and so the user's staging folder — gets called.
-    out.push({ bundleFolder: dec.bundleFolder, preferredName: res.name });
+    // The extracted archive's name is what the user's staging folder — and
+    // Vortex's mod — gets called. The pool fixes it here, at priming, so this
+    // is the decision the install makes for every mod the pool extracts.
+    out.push({ bundleFolder: dec.bundleFolder, preferredName: bundledInstallName(ctx, res) });
   }
   return out;
+}
+
+/** The prefetch list, exposed so the naming it fixes can be tested without a Vortex. */
+export function collectBundledZipEntriesForPrefetchForTest(
+  ctx: DriverContext,
+): PrefetchRequest[] {
+  return collectBundledZipEntriesForPrefetch(ctx.plan, ctx);
+}
+
+/**
+ * What a bundled mod is installed as: the curator's mod name, or — when
+ * Vortex's pool already holds a DIFFERENT mod under that name — the same
+ * per-release name a mirrored mod gets, so Vortex never stops to ask whether
+ * to replace it. See `bundledTargetName.ts` for the run that waited three
+ * hours on that question.
+ *
+ * Reaching `external-use-bundled` already means the resolver did not recognise
+ * a same-named installed mod as this one — but that alone does not make it
+ * someone else's. Only a FRESH profile proves it: nothing in the pool is
+ * enabled there unless this run installed or adopted it, and a mod with
+ * different bytes is never adopted, so the taken name belongs to another
+ * profile — the previous revision's, or the player's own. In place, the same
+ * name can be this release's own copy with files missing, enabled in the very
+ * profile being repaired; a second copy beside it would put two enabled mods
+ * on the same files. That case keeps the old behaviour and its replace prompt.
+ */
+function bundledInstallName(ctx: DriverContext, res: ModResolution): string {
+  if (ctx.plan.installTarget.kind !== "fresh-profile") return res.name;
+  const manifest = ctx.plan.manifest;
+  const entry = manifest.mods.find((m) => m.compareKey === res.compareKey);
+  const pool = ctx.api.getState().persistent.mods?.[manifest.game.id] ?? {};
+  const taken = new Set(Object.keys(pool).map((id) => id.toLowerCase()));
+  const name = bundledTargetName({
+    modName: res.name,
+    sha256: entry?.source.kind === "external" ? entry.source.sha256 : undefined,
+    isTaken: (id) => taken.has(id.toLowerCase()),
+    collectionName: manifest.package.name,
+    collectionVersion: manifest.package.version,
+    packageId: manifest.package.id,
+    compareKey: res.compareKey,
+  });
+  if (name !== res.name) {
+    ehLog("info", "install.bundled.beside", {
+      mod: res.name,
+      installName: name,
+      why: "Vortex already holds a different mod under this name; installing beside it instead of asking to replace it",
+    });
+  }
+  return name;
 }
 
 /**
@@ -5599,8 +5650,11 @@ async function executeDecision(args: {
     }
 
     case "external-use-bundled": {
+      // Only used when the pool did not prime this entry: a primed archive
+      // already carries the name `collectBundledZipEntriesForPrefetch` gave it.
+      const installName = bundledInstallName(ctx, resolution);
       const preExtracted = bundledPool
-        ? await bundledPool.take(decision.bundleFolder, resolution.name)
+        ? await bundledPool.take(decision.bundleFolder, installName)
         : undefined;
       const result = await installFromBundledArchive(ctx.api, {
         gameId: manifest.game.id,
@@ -5608,7 +5662,7 @@ async function executeDecision(args: {
         bundleFolder: decision.bundleFolder,
         signal: ctx.abortSignal,
         preExtracted,
-        preferredName: resolution.name,
+        preferredName: installName,
         // Bundling a mod must not cost it the curator's installer answers.
         ...replayArgs(manifestEntry, ctx.decisions.fomodReplayMode),
       });

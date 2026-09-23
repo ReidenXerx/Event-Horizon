@@ -9,6 +9,7 @@ import { ehLog } from "../logging/ehLog";
 import { AbortError } from "../../utils/abortError";
 import { computeStagingSetHash } from "../manifest/stagingSetHash";
 import { bundledArchiveFileName } from "../installer/modInstall";
+import { alongsideInstallName } from "../installer/installAlongside";
 import {
   installRootFor,
   installationPathFromState,
@@ -402,9 +403,30 @@ function collectExternalStagingSetHashTargets(
        * the match independent of what the sanitiser does now or later,
        * instead of depending on it being the identity function.
        */
+      /**
+       * ─── AND THE NAME IT GETS WHEN ANOTHER MOD HELD ITS OWN ────────────
+       * A bundled mod whose name is already taken in Vortex's pool installs
+       * beside that mod under its per-release name (`bundledTargetName.ts`).
+       * Without this spelling, resuming that install could not find the copy
+       * it had just made, and would install it again.
+       */
+      const beside =
+        manifest.package !== undefined
+          ? bundledInstallName(
+              alongsideInstallName({
+                modName: mod.name,
+                collectionName: manifest.package.name,
+                collectionVersion: manifest.package.version,
+                packageId: manifest.package.id,
+                compareKey: mod.compareKey,
+              }),
+              mod.source.sha256,
+            )
+          : "";
       for (const candidate of [
         mod.name,
         bundledInstallName(mod.name, mod.source.sha256),
+        beside,
       ]) {
         const normalized = normalizeName(candidate);
         if (normalized.length > 0) {

@@ -22,6 +22,7 @@
 import { describe, expect, it } from "vitest";
 
 import { bundledArchiveFileName } from "../installer/modInstall";
+import { bundledTargetName } from "../installer/bundledTargetName";
 import { collectStagingSetHashTargetsForTest } from "./enrichStagingSetHashes";
 import type { EhcollManifest } from "../../types/ehcoll";
 
@@ -76,6 +77,30 @@ describe("a bundled mod is recognisable after Vortex renames it", () => {
     expect(
       targets.has(installed.trim().toLowerCase().replace(/\s+/g, " ")),
     ).toBe(true);
+  });
+
+  it.each(HOSTILE)("survives the round trip when it went in BESIDE another mod: %s", (name) => {
+    /**
+     * A bundled mod whose name was taken installs under its per-release name
+     * (`bundledTargetName.ts`). A resume must find that copy too, or it
+     * installs it again — into the same taken name, and Vortex asks again.
+     */
+    const manifest = {
+      ...manifestWith([name]),
+      package: { id: "5448963d-2ec5-4eb2-8f99-a25a4153fcb6", name: "Meridia's Panties", version: "1.0.23" },
+    } as unknown as EhcollManifest;
+    const targets = collectStagingSetHashTargetsForTest(manifest);
+    const besideName = bundledTargetName({
+      modName: name,
+      sha256: "a".repeat(64),
+      isTaken: () => true,
+      collectionName: "Meridia's Panties",
+      collectionVersion: "1.0.23",
+      packageId: "5448963d-2ec5-4eb2-8f99-a25a4153fcb6",
+      compareKey: manifest.mods[0]!.compareKey,
+    });
+    const installed = vortexModName(bundledArchiveFileName("a".repeat(64), besideName));
+    expect(targets.has(installed.trim().toLowerCase().replace(/\s+/g, " "))).toBe(true);
   });
 
   it("still matches a mod the user installed under the curator's raw name", () => {
