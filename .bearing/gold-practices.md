@@ -516,3 +516,26 @@ because prettier moves code, not only whitespace.
 
 *Scar: 2026-09-19, a two-file format that had to be unpicked edit by edit before it could be
 committed.*
+
+## PP-13 — A backslash before a letter in a string literal is DROPPED, silently
+
+In a JS/TS string or template literal, `\S`, `\W`, `\s`, `\d` and `\.` are not escapes: the
+backslash vanishes and the letter stays. No compile error, no runtime error, just a different
+string. Here it has always read as a finding rather than a bug:
+
+- `${WINDIR ?? "C:\Windows"}\System32` built `C:\WINDOWSSystem32`. The Doctor reported DirectX 9
+  missing on every machine and re-offered its own install forever (69a8df6).
+- `\s` in a template-built RegExp matched nothing, so a registry value that was there read as
+  "runtime not installed" (nodePrereqDeps.ts).
+- Three test fixtures spelled Windows paths with single backslashes. An f4se.log fixture and the
+  assertion checking it lost their separators the same way, so the test passed on text no real
+  log contains (GP-4).
+
+- `src/core/noUselessEscapes.test.ts` fails the suite on any of these. Fix the literal; never
+  whitelist it.
+- Build Windows paths with `path.win32.join`, or write `\\`. Use `String.raw` for regex source.
+- The guard cannot see a VALID escape used by mistake: `${hive}\${key}` escapes the dollar and
+  builds the literal text `HKLM${key}`. Sibling of PP-12 (a backtick ends a CSS-in-TS template).
+
+*Scar: 2026-09-23. Found reading EnvironmentTools.tsx during an audit; three earlier occurrences
+had each been fixed one at a time.*
