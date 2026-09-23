@@ -921,21 +921,68 @@ function countCheck(args: {
       affectedCount: 0,
     };
   }
+
+  /**
+   * ─── MORE THAN THE COLLECTION SET IS NOT THE COLLECTION DRIFTING ──────
+   * This returned `drifted` for any difference, so a player who added
+   * rules of their own on top of the collection's saw the check go orange —
+   * "34 mod rules have been added since installing" — with a Re-apply button
+   * under it. Reported from the community, 2026-09-22: "make it so
+   * additional mod rules don't flag in EH unless they mess with the
+   * collection … it just likes to yell at me for adding extra".
+   *
+   * The button could never clear it, either: re-applying replaces only a
+   * player rule that contradicts the collection's on the same pair of mods,
+   * and never removes an addition. So the player pressed it, still had 34
+   * extra rules, and still saw red — the same endless press the rules cure
+   * had before it learned to replace contradictions at all.
+   *
+   * ─── WHY THIS LOSES NO DETECTION ──────────────────────────────────────
+   * The check counts, and it already calls an EQUAL count healthy while
+   * admitting a rule replaced by another would look unchanged. A higher
+   * count is the same kind of evidence: nothing in it shows a loss. And the
+   * one thing that might hide under it — ours removed, more of theirs added
+   * — was invisible before this change too; it was simply mislabelled as
+   * "added". Only a DROP is evidence that a collection rule went away, so a
+   * drop is the only thing flagged.
+   *
+   * Whether an added rule CONTRADICTS the collection is the question the
+   * player actually asked, and counts cannot answer it — that needs the
+   * rules themselves. Said plainly in the detail rather than implied.
+   */
+  if (current > applied) {
+    const added = current - applied;
+    return {
+      id: args.id,
+      title: args.title,
+      status: "healthy",
+      summary:
+        `All ${applied} ${args.noun}s the collection applied are still ` +
+        `counted, plus ${added} of your own.`,
+      detail: [
+        `Applied at install: ${applied}`,
+        `Set right now: ${current}`,
+        `Adding ${args.noun}s of your own does not change the collection. ` +
+          `This check counts ${args.noun}s, so it cannot tell whether one of ` +
+          `yours overrides one of the collection's — only a drop in the count ` +
+          `shows that one went away.`,
+      ],
+      affectedCount: 0,
+    };
+  }
+
   const lost = applied - current;
   return {
     id: args.id,
     title: args.title,
     status: "drifted",
-    summary:
-      lost > 0
-        ? `${lost} of ${applied} ${args.noun}s are gone.`
-        : `${-lost} ${args.noun}s have been added since installing.`,
+    summary: `${lost} of ${applied} ${args.noun}s are gone.`,
     detail: [
       `Applied at install: ${applied}`,
       `Set right now: ${current}`,
       "Counts only — a rule replaced by a different rule would look unchanged.",
     ],
-    affectedCount: Math.abs(lost),
+    affectedCount: lost,
     heal: { action: args.healAction, label: args.healLabel },
   };
 }

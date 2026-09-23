@@ -734,3 +734,97 @@ describe("a receipt for a game Vortex is not managing", () => {
     expect(check.heal?.action).toBe("switch-profile");
   });
 });
+
+/**
+ * ──────────────────────────────────────────────────────────────────────
+ * A PLAYER'S OWN RULES ON TOP OF THE COLLECTION'S ARE NOT DRIFT.
+ *
+ * Reported from the community on 2026-09-22, about a collection that worked
+ * fine: "make it so additional mod rules don't flag in EH unless they mess
+ * with the collection … Pay no mind to the red, it all works fine … it just
+ * likes to yell at me for adding extra". Thirty-four rules of their own, and
+ * the Mod rules check went orange with a Re-apply button under it.
+ *
+ * The button could not clear it. Re-applying replaces only a player rule that
+ * contradicts the collection's on the same pair, and never removes an
+ * addition — so it was pressed, changed nothing, and stayed red.
+ *
+ * No test pinned this case in either direction before. The whole suite passed
+ * with the old behaviour and passes with the new one; that is the gap.
+ * ──────────────────────────────────────────────────────────────────────
+ */
+describe("rules the player added on top of the collection's", () => {
+  it("does not flag 34 extra mod rules as drift, and offers no cure that cannot cure it", () => {
+    const check = byId(
+      evaluateHealth(receipt(), healthy({ currentModRuleCount: 291 + 34 })),
+      "mod-rules",
+    );
+    expect(check.status).toBe("healthy");
+    expect(check.affectedCount).toBe(0);
+    // The Re-apply button never removed an addition, so offering it was a
+    // cure that could not change the thing it was offered for.
+    expect(check.heal).toBeUndefined();
+    expect(check.summary).toContain("291");
+    expect(check.summary).toContain("34 of your own");
+  });
+
+  it("says plainly what a count cannot see, rather than implying it checked", () => {
+    // The player asked about rules that "mess with the collection". A count
+    // cannot answer that; the detail line has to say so instead of letting a
+    // green check read as "none of yours conflict".
+    const check = byId(
+      evaluateHealth(receipt(), healthy({ currentModRuleCount: 325 })),
+      "mod-rules",
+    );
+    expect(check.detail.join(" ")).toMatch(/cannot tell whether one of yours overrides/);
+  });
+
+  it("treats the LOOT counters the same way", () => {
+    // Same logic one layer down: rules and group assignments for the
+    // player's own plugins raise the count without touching the collection's.
+    const checks = evaluateHealth(
+      receipt(),
+      healthy({ currentUserlistRuleCount: 29 + 5, currentUserlistGroupAssignmentCount: 84 + 12 }),
+    );
+    for (const id of ["userlist", "userlist-groups"]) {
+      const check = byId(checks, id);
+      expect(check.status, id).toBe("healthy");
+      expect(check.heal, id).toBeUndefined();
+      expect(check.affectedCount, id).toBe(0);
+    }
+  });
+
+  it("does not drag the whole collection to 'drifted' over additions alone", () => {
+    const overall = overallHealth(
+      evaluateHealth(receipt(), healthy({ currentModRuleCount: 400 })),
+    );
+    expect(overall.status).toBe("healthy");
+  });
+});
+
+describe("rules that are GONE are still flagged", () => {
+  /**
+   * The other half, and the one that matters: relaxing additions must not
+   * relax losses. A drop in the count is the only evidence this check has that
+   * a collection rule went away, so it stays drifted, with the cure.
+   */
+  it("flags a drop, with the count and the cure", () => {
+    const check = byId(
+      evaluateHealth(receipt(), healthy({ currentModRuleCount: 280 })),
+      "mod-rules",
+    );
+    expect(check.status).toBe("drifted");
+    expect(check.summary).toBe("11 of 291 mod rules are gone.");
+    expect(check.affectedCount).toBe(11);
+    expect(check.heal?.action).toBe("reapply-rules");
+  });
+
+  it("still flags a drop in the LOOT counters", () => {
+    const check = byId(
+      evaluateHealth(receipt(), healthy({ currentUserlistRuleCount: 20 })),
+      "userlist",
+    );
+    expect(check.status).toBe("drifted");
+    expect(check.affectedCount).toBe(9);
+  });
+});
