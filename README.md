@@ -101,6 +101,22 @@ When something goes wrong, open the **Doctor** and press **Save logs…**: Vorte
 When two mods ship the same file, the winner comes from the collection's mod rules, which the install applies. Measured on a 1,753-mod collection, the rules reproduce the curator's winner for 17,159 of 17,161 contested files; the other two are a `Readme.txt` and a `FOMod/info.xml`, which the game never loads.
 </details>
 
+## Tech deep dive: vanilla Vortex vs Event Horizon
+
+The Vortex side is read from Vortex 2.7's own source.
+
+| | Vanilla Vortex collections | Event Horizon |
+|---|---|---|
+| **Identity** | Nexus file id plus the archive's MD5; a mod set to "latest" installs whatever is newest. | The curator's exact file, with a SHA-256 of the archive and of every file it installs. |
+| **Installing** | Up to five mods at once. | One at a time, then every one checked. |
+| **Checking** | Trusts what the installer extracted. | Re-hashes every installed file against the curator's record, repairs what differs, and names what it can't. |
+| **The curator's edits** | Opt-in per mod (Replicate, binary patches). | Finds every edited mod and ships it bundled (the exact folder, the same content hash on every build) or mirrored (the author's archive from Nexus plus the changed files, so the author keeps the download). |
+| **Load order** | Which plugins are enabled, plus LOOT rules; LOOT sorts on your machine. | The curator's exact order and ESL flags, pinned; LOOT only places plugins of your own. |
+| **INI** | Tweaks the curator writes by hand. | The curator's real game INI values, captured at build, minus the ones that describe their hardware. |
+| **Game version** | Warns when yours differs. | Reads which versions each script-extender plugin declares, and names the mods that won't load on yours. |
+| **Updates** | In place, in your current profile. | Each revision builds its own profile; the one you play stays switchable until the new one works. |
+| **Around the install** | Installs into the game folder as it is. | Checks the store build, runtimes and protected folders first, quarantines stray game files (restorable, never deleted), and keeps a receipt the Doctor diffs your setup against and heals from. |
+
 ## Four things to know before you install
 
 1. **It replaces your mod rules and LOOT userlist for that game; it does not merge them.** Everything is backed up first, and the backup reaching disk is a hard interlock. Merging would produce a rule set that exists on nobody else's machine, and it fails invisibly: every file verifies and the game still loads something different.

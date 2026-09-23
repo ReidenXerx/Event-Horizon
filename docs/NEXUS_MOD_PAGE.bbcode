@@ -96,6 +96,22 @@ If something goes wrong, open the [b]Doctor[/b] and press [b]Save logs…[/b]: i
 
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/divider.png[/img][/center]
 
+[size=5][b][color=#ffb15c]Tech deep dive: vanilla Vortex vs Event Horizon[/color][/b][/size]
+[i]The Vortex side is read from Vortex 2.7's own source.[/i]
+[list]
+[*][b]Identity.[/b] Vortex: Nexus file id plus the archive's MD5; a mod set to "latest" installs whatever is newest. [color=#ffb15c]Event Horizon:[/color] the curator's exact file, with a SHA-256 of the archive and of every file it installs.[/*]
+[*][b]Installing.[/b] Vortex: up to five mods at once. [color=#ffb15c]Event Horizon:[/color] one at a time, then every one checked.[/*]
+[*][b]Checking.[/b] Vortex: trusts what the installer extracted. [color=#ffb15c]Event Horizon:[/color] re-hashes every installed file against the curator's record, repairs what differs, and names what it can't.[/*]
+[*][b]The curator's edits.[/b] Vortex: opt-in per mod (Replicate, binary patches). [color=#ffb15c]Event Horizon:[/color] finds every edited mod and ships it bundled (the exact folder, the same content hash on every build) or mirrored (the author's archive from Nexus plus the changed files, so the author keeps the download).[/*]
+[*][b]Load order.[/b] Vortex: which plugins are enabled, plus LOOT rules; LOOT sorts on your machine. [color=#ffb15c]Event Horizon:[/color] the curator's exact order and ESL flags, pinned; LOOT only places plugins of your own.[/*]
+[*][b]INI.[/b] Vortex: tweaks the curator writes by hand. [color=#ffb15c]Event Horizon:[/color] the curator's real game INI values, captured at build, minus the ones that describe their hardware.[/*]
+[*][b]Game version.[/b] Vortex: warns when yours differs. [color=#ffb15c]Event Horizon:[/color] reads which versions each script-extender plugin declares, and names the mods that won't load on yours.[/*]
+[*][b]Updates.[/b] Vortex: in place, in your current profile. [color=#ffb15c]Event Horizon:[/color] each revision builds its own profile; the one you play stays switchable until the new one works.[/*]
+[*][b]Around the install.[/b] Vortex: installs into the game folder as it is. [color=#ffb15c]Event Horizon:[/color] checks the store build, runtimes and protected folders first, quarantines stray game files (restorable, never deleted), and keeps a receipt the Doctor diffs your setup against and heals from.[/*]
+[/list]
+
+[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/divider.png[/img][/center]
+
 [size=5][b][color=#ffb15c]Four things to know before you install[/color][/b][/size]
 [list=1]
 [*][b]It replaces your mod rules and LOOT userlist for that game; it does not merge them.[/b] Everything is backed up first, and the backup reaching disk is a hard interlock — nothing is cleared without it. Merging would produce a rule set that exists on nobody else's machine, and it fails invisibly: every file verifies and the game still loads something different.[/*]
