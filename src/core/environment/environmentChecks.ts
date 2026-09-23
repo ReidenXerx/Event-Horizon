@@ -18,6 +18,8 @@
  *                        — a GOG steam_api64.dll inside a Steam install
  *  - protected-location  game under Program Files, where tools running without
  *                        administrator rights are refused writes
+ *  - synced-folder       game moved into OneDrive to get it out of Program
+ *                        Files — OneDrive then uploads every file Vortex links in
  *  - game-folder         leftovers from earlier setups (gameFolderScan.ts)
  *  - ini-leftovers       archive-loading INI settings from earlier setups
  *
@@ -36,6 +38,7 @@ export type EnvironmentCheckId =
   | "game-managed"
   | "wine-prefix"
   | "protected-location"
+  | "synced-folder"
   | "launcher-ran"
   | "binary-imports"
   | "game-folder"
@@ -229,16 +232,46 @@ export function decideWinePrefix(input: { gameName: string; probe: WinePrefixPro
 
 // ── 2. Not under Program Files ───────────────────────────────────────────
 
+const normFolder = (p: string): string => p.replace(/[\\/]+/g, "\\").replace(/\\$/, "").toLowerCase();
+
+/** Is `dir` the folder `root` or inside it? Case-insensitive, separator-agnostic; a sibling sharing a prefix is not inside. */
+function isInsideFolder(dir: string, root: string): boolean {
+  if (root.trim().length === 0) return false;
+  const d = normFolder(dir);
+  const r = normFolder(root);
+  return d === r || d.startsWith(`${r}\\`);
+}
+
 /** The protected root `gameDir` sits under, if any. Case-insensitive, separator-agnostic. */
 export function protectedRootOf(gameDir: string, roots: readonly string[]): string | undefined {
-  const norm = (p: string): string => p.replace(/[\\/]+/g, "\\").replace(/\\$/, "").toLowerCase();
-  const dir = norm(gameDir);
-  for (const root of roots) {
-    if (root.trim().length === 0) continue;
-    const r = norm(root);
-    if (dir === r || dir.startsWith(`${r}\\`)) return root;
-  }
-  return undefined;
+  return roots.find((root) => isInsideFolder(gameDir, root));
+}
+
+/**
+ * How to move a game out of a folder Event Horizon refuses.
+ *
+ * The new folder has to be on the drive Vortex's mods folder is on: Vortex
+ * deploys by linking each mod file into the game folder, and a link cannot reach
+ * another drive, so a game moved anywhere else cannot be deployed to at all.
+ * These steps used to suggest D:\Games to everyone, a dead end for a player
+ * whose mods are on C:.
+ */
+function moveSteps(gameName: string, store: string | undefined, stagingDir: string | undefined): string[] {
+  const letter = /^([a-z]):/i.exec(stagingDir ?? "")?.[1];
+  const drive = letter !== undefined ? `${letter.toUpperCase()}:` : undefined;
+  const target = (folder: string): string => (drive !== undefined ? `a folder such as ${drive}\\${folder}` : "a normal folder");
+  const s = (store ?? "").toLowerCase();
+  const move =
+    s === "steam"
+      ? `Steam → Settings → Storage: add a library in ${target("SteamLibrary")}, select ${gameName} and click Move.`
+      : s === "gog"
+        ? `GOG Galaxy → ${gameName} → Manage installation → Move, to ${target("Games")}.`
+        : `Move or reinstall ${gameName} to ${target("Games")} — your store's library settings can do this without re-downloading.`;
+  const keep =
+    drive !== undefined
+      ? `Keep it on ${drive}, where your Vortex mods folder is: Vortex links mod files into the game folder, and a link cannot cross drives.`
+      : "Keep it on the drive your Vortex mods folder is on (Vortex → Settings → Mods shows where that is): Vortex links mod files into the game folder, and a link cannot cross drives.";
+  return [`${move} ${keep}`, `In Vortex → Games → ${gameName}, point it at the new folder, then load the collection again.`];
 }
 
 export function decideProtectedLocation(input: {
@@ -247,6 +280,8 @@ export function decideProtectedLocation(input: {
   protectedRoots: readonly string[];
   wine: boolean;
   store: string | undefined;
+  /** Vortex's mods folder for this game; the steps name its drive. */
+  stagingDir?: string | undefined;
 }): EnvironmentCheck {
   if (input.wine) {
     return ok("protected-location", "Running under Wine/Proton — Windows folder protection does not apply.");
@@ -260,13 +295,6 @@ export function decideProtectedLocation(input: {
       `Folder: ${input.gameDir}`,
     ]);
   }
-  const store = (input.store ?? "").toLowerCase();
-  const moveSteps =
-    store === "steam"
-      ? [`Steam → Settings → Storage: add a library on a normal folder (for example D:\\SteamLibrary), select ${input.gameName} and click Move.`]
-      : store === "gog"
-        ? [`GOG Galaxy → ${input.gameName} → Manage installation → Move, to a normal folder such as D:\\Games.`]
-        : [`Move or reinstall ${input.gameName} to a normal folder such as D:\\Games — your store's library settings can do this without re-downloading.`];
   return {
     id: "protected-location",
     status: "blocked",
@@ -275,10 +303,50 @@ export function decideProtectedLocation(input: {
       `Folder: ${input.gameDir}`,
       "Windows only lets programs running as administrator write there. Vortex, xEdit, BodySlide and script-extender plugins normally do not run as administrator, so some of their writes into the game folder are refused — and which ones depends on how each tool was started, so the setup cannot be reproduced.",
     ],
-    steps: [
-      ...moveSteps,
-      `In Vortex → Games → ${input.gameName}, point it at the new folder, then load the collection again.`,
+    steps: moveSteps(input.gameName, input.store, input.stagingDir),
+  };
+}
+
+// ── 2b. Not inside a folder a cloud client uploads ──────────────────────
+
+/** A folder a cloud client uploads everything from, as this machine reports it. */
+export type SyncedRoot = { service: "OneDrive" | "Dropbox"; path: string };
+
+/**
+ * Is the game inside OneDrive or Dropbox? Blocked, like Program Files (owner
+ * poll, 2026-09-23): a player refused under Program Files moved the game into
+ * the OneDrive folder, and Vortex then linked about 339,000 mod files into a
+ * folder OneDrive uploads. Their crash turned out to have another cause, but
+ * the upload, the locks and the online-only placeholders are real either way.
+ */
+export function decideSyncedFolder(input: {
+  gameName: string;
+  gameDir: string;
+  syncedRoots: readonly SyncedRoot[];
+  store: string | undefined;
+  /** Vortex's mods folder for this game; the steps name its drive. */
+  stagingDir?: string | undefined;
+}): EnvironmentCheck {
+  const root = input.syncedRoots.find((r) => isInsideFolder(input.gameDir, r.path));
+  if (root === undefined) {
+    return ok("synced-folder", `${input.gameName} is not inside a OneDrive or Dropbox folder.`, [
+      `Folder: ${input.gameDir}`,
+      ...(input.syncedRoots.length > 0
+        ? input.syncedRoots.map((r) => `${r.service} folder: ${r.path}`)
+        : ["This machine reports no OneDrive or Dropbox folder."]),
+    ]);
+  }
+  const service = root.service;
+  return {
+    id: "synced-folder",
+    status: "blocked",
+    title: `${input.gameName} is inside your ${service} folder.`,
+    lines: [
+      `Folder: ${input.gameDir}`,
+      `${service} folder: ${root.path}`,
+      `${service} uploads everything in its folder, and Vortex links every file of every mod into the game folder — hundreds of thousands of files for a large collection. While it uploads, ${service} can lock files Vortex and the game need, and to free space it can replace files with online-only placeholders that have to download again before the game can read them.`,
     ],
+    steps: moveSteps(input.gameName, input.store, input.stagingDir),
   };
 }
 

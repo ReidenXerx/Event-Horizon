@@ -37,6 +37,7 @@ const facts = (over: Partial<PreflightFacts> = {}): PreflightFacts => ({
   collectionIniKeys: new Set(),
   declared: new Set(),
   protectedRoots: ["C:\\Program Files", "C:\\Program Files (x86)"],
+  syncedRoots: [],
   wine: false,
   ...over,
 });
@@ -76,10 +77,22 @@ describe("runEnvironmentPreflight", () => {
       "game-managed": "ok",
       "launcher-ran": "ok",
       "protected-location": "ok",
+      "synced-folder": "ok",
       "binary-imports": "ok",
       "ini-leftovers": "ok",
       "game-folder": "ok",
     });
+  });
+
+  it("blocks a game inside the OneDrive folder, and names the mods folder's drive as the place to move it", async () => {
+    const report = await runEnvironmentPreflight(
+      facts({ syncedRoots: [{ service: "OneDrive", path: tmp }], stagingDir: "E:\\Vortex Mods\\fallout4", store: "gog" }),
+      { scanFolder: false, context: "test" },
+    );
+    const check = report.checks.find((c) => c.id === "synced-folder");
+    expect(check?.status).toBe("blocked");
+    expect(check?.title).toBe("Fallout 4 is inside your OneDrive folder.");
+    expect(check?.steps[0]).toMatch(/^GOG Galaxy → Fallout 4 → Manage installation → Move, to a folder such as E:\\Games\. Keep it on E:/);
   });
 
   // The rule changed on 2026-09-17 (owner poll): only what Event Horizon starts can block. A Steam game moved back
@@ -211,6 +224,7 @@ describe("runEnvironmentPreflight — under Wine, with the game in Heroic's pref
       ["wine-prefix", "blocked"],
       ["launcher-ran", "ok"],
       ["protected-location", "ok"],
+      ["synced-folder", "ok"],
       ["binary-imports", "ok"],
       ["ini-leftovers", "ok"],
     ]);

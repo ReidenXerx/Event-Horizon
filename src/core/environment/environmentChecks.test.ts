@@ -14,6 +14,7 @@ import {
   decideIniLeftovers,
   decideLauncherRan,
   decideProtectedLocation,
+  decideSyncedFolder,
   decideWinePrefix,
   describeBlockedChecks,
   protectedRootOf,
@@ -86,6 +87,81 @@ describe("protectedRootOf / decideProtectedLocation", () => {
 
   it("ignores empty roots rather than matching everything", () => {
     expect(protectedRootOf("E:\\Games\\Fallout 4", ["", "  "])).toBeUndefined();
+  });
+
+  // Vortex links mod files into the game folder, and a link cannot cross drives: "D:\Games" was a dead end for a
+  // player whose mods are on C:.
+  it("sends the game to the drive Vortex's mods folder is on", () => {
+    const c = decideProtectedLocation({
+      gameName: G,
+      gameDir: "C:/Program Files (x86)/Steam/steamapps/common/Fallout 4",
+      protectedRoots: roots,
+      wine: false,
+      store: "steam",
+      stagingDir: "c:\\Users\\x\\AppData\\Roaming\\Vortex\\fallout4\\mods",
+    });
+    expect(c.steps[0]).toBe(
+      "Steam → Settings → Storage: add a library in a folder such as C:\\SteamLibrary, select Fallout 4 and click Move. Keep it on C:, where your Vortex mods folder is: Vortex links mod files into the game folder, and a link cannot cross drives.",
+    );
+    expect(c.steps.join(" ")).not.toMatch(/D:\\/);
+  });
+
+  it("without the mods folder, says which drive to keep it on instead of guessing one", () => {
+    const c = decideProtectedLocation({
+      gameName: G,
+      gameDir: "C:/Program Files/Bethesda/Fallout 4",
+      protectedRoots: roots,
+      wine: false,
+      store: "epic",
+    });
+    expect(c.steps[0]).toMatch(/^Move or reinstall Fallout 4 to a normal folder — /);
+    expect(c.steps[0]).toMatch(/Keep it on the drive your Vortex mods folder is on/);
+    expect(c.steps.join(" ")).not.toMatch(/[A-Z]:\\/);
+  });
+});
+
+describe("decideSyncedFolder", () => {
+  const onedrive = { service: "OneDrive" as const, path: "C:\\Users\\x\\OneDrive" };
+  const dropbox = { service: "Dropbox" as const, path: "D:\\Dropbox" };
+  const base = { gameName: G, syncedRoots: [onedrive, dropbox], store: "gog", stagingDir: "C:\\Vortex\\fallout4" };
+
+  // The tester's machine: Documents moved into OneDrive, and the game into Documents to get it out of Program Files.
+  it("blocks a game inside OneDrive, naming the folder it syncs from", () => {
+    const c = decideSyncedFolder({ ...base, gameDir: "c:/users/x/onedrive/Personal/My Games/Fallout 4" });
+    expect(c.status).toBe("blocked");
+    expect(c.title).toBe("Fallout 4 is inside your OneDrive folder.");
+    expect(c.lines).toContain("OneDrive folder: C:\\Users\\x\\OneDrive");
+    expect(c.steps[0]).toMatch(/^GOG Galaxy → Fallout 4 → Manage installation → Move, to a folder such as C:\\Games\. Keep it on C:/);
+  });
+
+  it("blocks a game inside Dropbox, and one that IS the synced folder", () => {
+    expect(decideSyncedFolder({ ...base, gameDir: "D:\\Dropbox\\Games\\Fallout 4" }).title).toBe(
+      "Fallout 4 is inside your Dropbox folder.",
+    );
+    expect(decideSyncedFolder({ ...base, gameDir: "D:\\Dropbox\\" }).status).toBe("blocked");
+  });
+
+  it("does not treat a sibling with the same prefix as inside", () => {
+    expect(decideSyncedFolder({ ...base, gameDir: "C:\\Users\\x\\OneDriveBackup\\Fallout 4" }).status).toBe("ok");
+    expect(decideSyncedFolder({ ...base, gameDir: "D:\\Dropbox Games\\Fallout 4" }).status).toBe("ok");
+  });
+
+  it("passes a game outside every synced folder, and says which ones it knows", () => {
+    const c = decideSyncedFolder({ ...base, gameDir: "C:\\Games\\Fallout 4" });
+    expect(c.status).toBe("ok");
+    expect(c.lines).toEqual(["Folder: C:\\Games\\Fallout 4", "OneDrive folder: C:\\Users\\x\\OneDrive", "Dropbox folder: D:\\Dropbox"]);
+    expect(decideSyncedFolder({ ...base, syncedRoots: [], gameDir: "C:\\Games\\Fallout 4" }).lines[1]).toBe(
+      "This machine reports no OneDrive or Dropbox folder.",
+    );
+  });
+
+  // An empty root normalises to "", and every network-share path starts with the separator that would follow it.
+  it("ignores an empty root rather than matching everything", () => {
+    for (const path of ["", " "]) {
+      expect(decideSyncedFolder({ ...base, syncedRoots: [{ service: "OneDrive", path }], gameDir: "\\\\nas\\games\\Fallout 4" }).status).toBe(
+        "ok",
+      );
+    }
   });
 });
 

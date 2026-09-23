@@ -4,17 +4,21 @@
  * decision stays in modules that run without Vortex.
  */
 
+import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
 import { util } from "@nexusmods/vortex-api";
+import type { types } from "@nexusmods/vortex-api";
 
 import { discoveredStore, getCurrentPluginsTxtPath } from "../comparePlugins";
 import { ehLog } from "../logging/ehLog";
 import { iniLocationFor, launcherWritesPrefsFor, prefsIniPathFor } from "../manifest/gameIni";
 import { looksLikeWine, readWineHost } from "../proton";
+import { installRootFor } from "../stagingPath";
 import type { EhcollExternalDependency, EhcollGameIni } from "../../types/ehcoll";
 import { declaredPrerequisitePaths, type PreflightFacts } from "./preflight";
+import { syncedFolderRoots } from "./syncedFolders";
 
 export type DiscoveryView = {
   path?: string;
@@ -125,6 +129,14 @@ export function gatherPreflightFacts(args: {
   if (userProfileDir === undefined || userProfileDir.length === 0) userProfileDir = os.homedir();
   const wine = looksLikeWine();
   const wineHost = wine ? readWineHost(process.env) : undefined;
+  const stagingDir = installRootFor(state as types.IState, gameId);
+  const syncedRoots = syncedFolderRoots(process.env, (file) => {
+    try {
+      return fs.readFileSync(file, "utf8");
+    } catch {
+      return undefined;
+    }
+  });
   const facts: PreflightFacts = {
     gameId,
     gameName: gameDisplayName(state, gameId),
@@ -140,6 +152,8 @@ export function gatherPreflightFacts(args: {
     protectedRoots: [process.env["ProgramFiles"], process.env["ProgramFiles(x86)"], process.env["ProgramW6432"]].filter(
       (p): p is string => typeof p === "string" && p.length > 0,
     ),
+    syncedRoots,
+    ...(stagingDir !== undefined ? { stagingDir } : {}),
     wine,
     ...(userProfileDir.length > 0 ? { userProfileDir } : {}),
     ...(wineHost !== undefined ? { wineHost } : {}),
@@ -156,6 +170,8 @@ export function gatherPreflightFacts(args: {
     documentsPath,
     declared: [...facts.declared],
     protectedRoots: facts.protectedRoots,
+    syncedRoots,
+    stagingDir,
     wine: facts.wine,
     userProfileDir,
     wineHost,

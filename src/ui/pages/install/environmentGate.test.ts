@@ -31,7 +31,7 @@ vi.mock("../../../core/installer/runInstall", () => ({
 }));
 
 vi.mock("../../../core/environment/vortexEnvironment", () => ({
-  gatherPreflightFacts: () => ({ gameId: "fallout4", gameName: "Fallout 4", declared: new Set(), protectedRoots: [], wine: false }),
+  gatherPreflightFacts: () => ({ gameId: "fallout4", gameName: "Fallout 4", declared: new Set(), protectedRoots: [], syncedRoots: [], wine: false }),
   purgeGameDeployment: async () => {
     env.purgeCalls += 1;
   },

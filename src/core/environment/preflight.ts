@@ -32,9 +32,11 @@ import {
   decideIniLeftovers,
   decideLauncherRan,
   decideProtectedLocation,
+  decideSyncedFolder,
   decideWinePrefix,
   type EnvironmentCheck,
   type IniLeftover,
+  type SyncedRoot,
 } from "./environmentChecks";
 import {
   groupEntries,
@@ -65,6 +67,10 @@ export type PreflightFacts = {
   /** Lower-case paths, relative to the game root, of the collection's declared prerequisites. */
   declared: ReadonlySet<string>;
   protectedRoots: string[];
+  /** Folders OneDrive and Dropbox upload from, as this machine reports them (syncedFolders.ts). */
+  syncedRoots: SyncedRoot[];
+  /** Vortex's mods (staging) folder for this game. Move advice names its drive. */
+  stagingDir?: string;
   wine: boolean;
   /** Vortex's user folder (C:\users\<name> under Wine) — the settings paths above live inside it. */
   userProfileDir?: string;
@@ -276,6 +282,14 @@ export async function runEnvironmentPreflight(
       protectedRoots: facts.protectedRoots,
       wine: facts.wine,
       store: facts.store,
+      stagingDir: facts.stagingDir,
+    }),
+    decideSyncedFolder({
+      gameName: facts.gameName,
+      gameDir,
+      syncedRoots: facts.syncedRoots,
+      store: facts.store,
+      stagingDir: facts.stagingDir,
     }),
   );
 
