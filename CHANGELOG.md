@@ -10,6 +10,29 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.12] — 2026-09-23
+
+Three fixes to the Doctor, each one a thing it said that was not true.
+
+### When something goes wrong
+- **Your own mod rules and LOOT rules are no longer "drift".** The Doctor compares the rules a
+  collection applied with the rules set right now, and it flagged any difference, including rules
+  a player had added on top. Adding your own does not change the collection, so that now stays
+  healthy and says so: everything the collection applied is still there, plus yours. Only a drop is
+  flagged, because a count can prove exactly one thing: a rule the collection set has gone. This
+  covers mod rules, LOOT ordering rules and LOOT group assignments. A player asked for this, and they
+  were right.
+- **DirectX 9 is no longer reported missing on every PC.** The **System runtimes** check looked for
+  the legacy DirectX DLL in a folder that does not exist, `C:\WINDOWSSystem32`, its separator lost
+  to a one-character slip. So it said MISSING whether you had it or not, offered to install it, and
+  after the install checked the same wrong folder and said missing again. Saved log bundles carried
+  the same false line. It now looks in System32, and the same slip cannot come back unnoticed: a
+  test now fails on it anywhere in the code.
+- **.NET Desktop Runtime 8 is found when it is installed.** The check read an installer record in a
+  shape that record never has, so it reported .NET 8 missing on machines that have it. It now reads
+  the folder .NET itself uses to find a runtime. A folder it cannot read is reported as "could not
+  check", never as missing.
+
 ## [0.2.11] — 2026-09-23
 
 Two fixes, both found by someone looking rather than by something failing.
