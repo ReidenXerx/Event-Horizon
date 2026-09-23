@@ -402,16 +402,11 @@ async function showPresentation(
  */
 async function checkSystemRuntimes(): Promise<RuntimeFinding[]> {
   try {
-    const [{ detectRuntimes }, { readRegistryValue, fileExists }] =
-      await Promise.all([
-        import("../../../core/runtime/detectRuntimes"),
-        import("../../../core/runtime/nodePrereqDeps"),
-      ]);
-    const findings = await detectRuntimes({
-      readRegistryValue,
-      fileExists,
-      systemDir: `${process.env.SystemRoot ?? "C:\\Windows"}\\System32`,
-    });
+    const [{ detectRuntimes }, { nodeRuntimeProbeDeps }] = await Promise.all([
+      import("../../../core/runtime/detectRuntimes"),
+      import("../../../core/runtime/nodePrereqDeps"),
+    ]);
+    const findings = await detectRuntimes(nodeRuntimeProbeDeps());
     ehLog("info", "preflight.runtimes", {
       findings: findings.map((f) => `${f.id}=${f.status}`),
     });

@@ -92,17 +92,15 @@ export async function repairRuntimes(args: {
 
   const [
     { installPrerequisites, summarisePrereqResults },
-    { nodePrereqDeps },
+    { nodePrereqDeps, nodeRuntimeProbeDeps },
     { PREREQUISITES },
     { detectRuntimes },
-    { readRegistryValue, fileExists },
     proton,
   ] = await Promise.all([
     import("../../core/runtime/installPrerequisites"),
     import("../../core/runtime/nodePrereqDeps"),
     import("../../core/runtime/prerequisites"),
     import("../../core/runtime/detectRuntimes"),
-    import("../../core/runtime/nodePrereqDeps"),
     import("../../core/proton"),
   ]);
 
@@ -110,14 +108,7 @@ export async function repairRuntimes(args: {
   const wanted = PREREQUISITES.filter((p) => ids.includes(p.id));
 
   const probe = async (): Promise<RuntimeFinding[]> =>
-    detectRuntimes(
-      {
-        readRegistryValue,
-        fileExists,
-        systemDir: `${process.env.WINDIR ?? "C:\\Windows"}\\System32`,
-      },
-      ids,
-    );
+    detectRuntimes(nodeRuntimeProbeDeps(), ids);
 
   ehLog("info", "runtime.repair.start", { ids, onWine });
   args.onStep?.("Downloading…");

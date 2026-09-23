@@ -191,7 +191,7 @@ export function EnvironmentTools(): JSX.Element {
           { scriptExtenderLogFor },
           { iniLocationFor },
           { detectRuntimes },
-          { readRegistryValue, fileExists },
+          { nodeRuntimeProbeDeps },
           { util },
         ] = await Promise.all([
           import("../../../core/diagnostics/logBundle"),
@@ -273,11 +273,7 @@ export function EnvironmentTools(): JSX.Element {
               ? { suppliedArchivesThatDiffer: divergedExternals }
               : {}),
             runtimes: await detectRuntimes(
-              {
-                readRegistryValue,
-                fileExists,
-                systemDir: `${process.env.WINDIR ?? "C:\Windows"}\System32`,
-              },
+              nodeRuntimeProbeDeps(),
               [
                 "vcredist-x64",
                 "vcredist-x86",
@@ -400,16 +396,12 @@ export function EnvironmentTools(): JSX.Element {
     setRuntimeBusy("Checking…");
     void (async (): Promise<void> => {
       try {
-        const [{ detectRuntimes }, { readRegistryValue, fileExists }] = await Promise.all([
+        const [{ detectRuntimes }, { nodeRuntimeProbeDeps }] = await Promise.all([
           import("../../../core/runtime/detectRuntimes"),
           import("../../../core/runtime/nodePrereqDeps"),
         ]);
         const findings = await detectRuntimes(
-          {
-            readRegistryValue,
-            fileExists,
-            systemDir: `${process.env.WINDIR ?? "C:\Windows"}\System32`,
-          },
+          nodeRuntimeProbeDeps(),
           [
             "vcredist-x64",
             "vcredist-x86",

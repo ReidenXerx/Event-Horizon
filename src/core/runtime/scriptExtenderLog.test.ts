@@ -25,21 +25,21 @@ import {
 const F4SE = [
   "F4SE runtime: initialize (version = 0.6.23 010A0A30 01DD47A97F85B1D0, os = 6.2 (9200))",
   "imagebase = 00007FF69B170000",
-  "plugin directory = D:\GOGGames\Fallout 4 GOTY\Data\F4SE\Plugins\\",
-  "checking plugin D:\GOGGames\Fallout 4 GOTY\Data\F4SE\Plugins\\AAF_1_10_163.DLL",
+  "plugin directory = D:\\GOGGames\\Fallout 4 GOTY\\Data\\F4SE\\Plugins\\",
+  "checking plugin D:\\GOGGames\\Fallout 4 GOTY\\Data\\F4SE\\Plugins\\AAF_1_10_163.DLL",
   "registering plugin listener for F4SE at 1 of 2",
-  "plugin D:\GOGGames\Fallout 4 GOTY\Data\F4SE\Plugins\\AAF_1_10_163.DLL (00000001 AAF_1_10_163 00000001) loaded correctly",
-  "checking plugin D:\GOGGames\Fallout 4 GOTY\Data\F4SE\Plugins\\cbp.dll",
-  "plugin D:\GOGGames\Fallout 4 GOTY\Data\F4SE\Plugins\\cbp.dll (00000001 CBP 00000001) loaded correctly",
-  "checking plugin D:\GOGGames\Fallout 4 GOTY\Data\F4SE\Plugins\\msdia140.dll",
-  "plugin D:\GOGGames\Fallout 4 GOTY\Data\F4SE\Plugins\\msdia140.dll does not appear to be an F4SE plugin",
+  "plugin D:\\GOGGames\\Fallout 4 GOTY\\Data\\F4SE\\Plugins\\AAF_1_10_163.DLL (00000001 AAF_1_10_163 00000001) loaded correctly",
+  "checking plugin D:\\GOGGames\\Fallout 4 GOTY\\Data\\F4SE\\Plugins\\cbp.dll",
+  "plugin D:\\GOGGames\\Fallout 4 GOTY\\Data\\F4SE\\Plugins\\cbp.dll (00000001 CBP 00000001) loaded correctly",
+  "checking plugin D:\\GOGGames\\Fallout 4 GOTY\\Data\\F4SE\\Plugins\\msdia140.dll",
+  "plugin D:\\GOGGames\\Fallout 4 GOTY\\Data\\F4SE\\Plugins\\msdia140.dll does not appear to be an F4SE plugin",
 ].join("\n");
 
 describe("an F4SE log", () => {
   it("reads the runtime banner and the plugin folder", () => {
     const log = parseScriptExtenderLog(F4SE);
     expect(log.runtime).toContain("version = 0.6.23");
-    expect(log.pluginDir).toContain("F4SE\Plugins");
+    expect(log.pluginDir).toContain("F4SE\\Plugins");
   });
 
   it("reports what loaded, with the plugin's own name and version", () => {

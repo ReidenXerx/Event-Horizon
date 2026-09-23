@@ -45,6 +45,6 @@ describe("urlProblem", () => {
   });
 
   it("rejects a bare Windows path", () => {
-    expect(urlProblem("C:\Users\me\Downloads\mod.7z")).toBeDefined();
+    expect(urlProblem("C:\\Users\\me\\Downloads\\mod.7z")).toBeDefined();
   });
 });

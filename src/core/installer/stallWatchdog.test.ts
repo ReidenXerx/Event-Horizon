@@ -300,7 +300,7 @@ describe("a completion waiter that lost the race", () => {
 
     const out = await installFromLocalArchive(promptVortex(), {
       gameId: "fallout4",
-      archivePath: "C:\dl\a.7z",
+      archivePath: "C:\\dl\\a.7z",
     } as never);
     expect(out.vortexModId).toBe("mod-7");
 

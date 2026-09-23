@@ -22,6 +22,7 @@ import * as https from "https";
 import * as os from "os";
 import * as path from "path";
 
+import type { DetectRuntimeDeps } from "./detectRuntimes";
 import type { InstallPrereqDeps } from "./installPrerequisites";
 
 /** Anything smaller than this is not a Microsoft redistributable. */
@@ -280,4 +281,30 @@ export async function fileExists(absolutePath: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * ─── ONE PLACE SPELLS THE SYSTEM DIRECTORY ────────────────────────────
+ * Four call sites used to build `${WINDIR}\System32` inline, and two of them
+ * wrote it with single backslashes inside a template literal. `\S` and `\W`
+ * are not escapes there, so they evaluate to plain letters and the path came
+ * out as `C:\WINDOWSSystem32`. The DirectX 9 probe then looked for
+ * d3dx9_43.dll in a folder that does not exist: the Doctor reported the
+ * runtime missing on every machine, offered to install it, and after the
+ * install re-checked the same wrong folder and said missing again.
+ *
+ * `SystemRoot` is the canonical variable and `WINDIR` its older alias. One
+ * that is set but empty counts as unset, rather than producing the relative
+ * path `System32`.
+ */
+export function windowsSystemDir(env: NodeJS.ProcessEnv = process.env): string {
+  const root =
+    [env.SystemRoot, env.WINDIR].find((v) => v !== undefined && v.trim() !== "") ??
+    "C:\\Windows";
+  return path.win32.join(root, "System32");
+}
+
+/** The real {@link DetectRuntimeDeps}. Every runtime probe takes exactly this. */
+export function nodeRuntimeProbeDeps(): DetectRuntimeDeps {
+  return { readRegistryValue, fileExists, systemDir: windowsSystemDir() };
 }
