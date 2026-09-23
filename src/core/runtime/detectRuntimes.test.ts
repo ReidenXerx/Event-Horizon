@@ -23,6 +23,10 @@ const deps = (over: {
   registry?: Record<string, string>;
   throwOn?: string;
   files?: string[];
+  /** Folder -> entries. A folder not listed does not exist. */
+  dirs?: Record<string, string[]>;
+  throwOnDir?: string;
+  dotnetRoots?: string[];
 }): DetectRuntimeDeps => ({
   readRegistryValue: async (hive, key, value) => {
     const at = `${hive}\\${key}\\${value}`;
@@ -32,8 +36,17 @@ const deps = (over: {
     return over.registry?.[at];
   },
   fileExists: async (p) => (over.files ?? []).includes(p),
+  listDirectory: async (p) => {
+    if (over.throwOnDir !== undefined && p.includes(over.throwOnDir)) {
+      throw new Error("EPERM: operation not permitted");
+    }
+    return over.dirs?.[p];
+  },
   systemDir: "C:\\Windows\\System32",
+  dotnetRoots: over.dotnetRoots ?? ["C:\\Program Files\\dotnet"],
 });
+
+const DESKTOP = "C:\\Program Files\\dotnet\\shared\\Microsoft.WindowsDesktop.App";
 
 const VC64 =
   "HKLM\\SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64";
@@ -142,6 +155,69 @@ describe(".NET Framework", () => {
   });
 });
 
+describe(".NET Desktop Runtime 8", () => {
+  it("is present when the host's own framework folder holds an 8.x", async () => {
+    // The real listing on the curator's machine, which the old registry probe
+    // called "absent": every major from 6 to 10 side by side.
+    const f = await only(
+      deps({ dirs: { [DESKTOP]: ["10.0.12", "10.0.8", "10.0.9", "6.0.36", "7.0.20", "8.0.31", "9.0.20"] } }),
+      "dotnet8-desktop-x64",
+    );
+    expect(f.status).toBe("present");
+    expect(f.version).toBe("8.0.31");
+  });
+
+  it("reports the newest 8.x in numeric order, not string order", async () => {
+    const f = await only(deps({ dirs: { [DESKTOP]: ["8.0.8", "8.0.31", "8.0.11"] } }), "dotnet8-desktop-x64");
+    expect(f.version).toBe("8.0.31");
+  });
+
+  it("is absent when only other majors are installed", async () => {
+    // .NET 9 and 10 do not run a .NET 8 app without a roll-forward setting.
+    const f = await only(deps({ dirs: { [DESKTOP]: ["9.0.20", "10.0.12"] } }), "dotnet8-desktop-x64");
+    expect(f.status).toBe("absent");
+  });
+
+  it("does not count a prerelease build", async () => {
+    const f = await only(deps({ dirs: { [DESKTOP]: ["8.0.0-rc.2.23479.6"] } }), "dotnet8-desktop-x64");
+    expect(f.status).toBe("absent");
+  });
+
+  it("is absent when .NET was never installed there", async () => {
+    const f = await only(deps({}), "dotnet8-desktop-x64");
+    expect(f.status).toBe("absent");
+  });
+
+  it("finds it under a DOTNET_ROOT as well as the global install", async () => {
+    const f = await only(
+      deps({
+        dotnetRoots: ["D:\\sdk\\dotnet", "C:\\Program Files\\dotnet"],
+        dirs: { [DESKTOP]: ["8.0.31"] },
+      }),
+      "dotnet8-desktop-x64",
+    );
+    expect(f.status).toBe("present");
+  });
+
+  it("says it could not check, not absent, when a folder cannot be read", async () => {
+    const f = await only(deps({ throwOnDir: "WindowsDesktop" }), "dotnet8-desktop-x64");
+    expect(f.status).toBe("unknown");
+    expect(f.detail).toMatch(/EPERM/);
+  });
+
+  it("lets a readable folder that HAS it win over one that could not be read", async () => {
+    const f = await only(
+      deps({
+        dotnetRoots: ["D:\\locked\\dotnet", "C:\\Program Files\\dotnet"],
+        throwOnDir: "D:\\locked",
+        dirs: { [DESKTOP]: ["8.0.31"] },
+      }),
+      "dotnet8-desktop-x64",
+    );
+    expect(f.status).toBe("present");
+  });
+});
+
 describe("what the player is told", () => {
   it("says nothing at all when everything is present", async () => {
     // A readiness check that speaks on a ready machine is one people stop
@@ -153,8 +229,6 @@ describe("what the player is told", () => {
           "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x86\\Installed":
             "1",
           [`${NDP}\\Release`]: "533320",
-          "HKLM\\SOFTWARE\\dotnet\\Setup\\InstalledVersions\\x64\\sharedfx\\Microsoft.WindowsDesktop.App\\Version":
-            "8.0.11",
         },
       }),
     );

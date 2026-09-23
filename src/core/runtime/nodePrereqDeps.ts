@@ -298,13 +298,44 @@ export async function fileExists(absolutePath: string): Promise<boolean> {
  * path `System32`.
  */
 export function windowsSystemDir(env: NodeJS.ProcessEnv = process.env): string {
-  const root =
-    [env.SystemRoot, env.WINDIR].find((v) => v !== undefined && v.trim() !== "") ??
-    "C:\\Windows";
+  const root = [env.SystemRoot, env.WINDIR].find(isSet) ?? "C:\\Windows";
   return path.win32.join(root, "System32");
+}
+
+/**
+ * Where x64 .NET lives, in the order its app host looks: `DOTNET_ROOT_X64`,
+ * `DOTNET_ROOT`, then the global install. `ProgramW6432` is the 64-bit
+ * Program Files even from a 32-bit process.
+ */
+export function dotnetRootsX64(env: NodeJS.ProcessEnv = process.env): string[] {
+  const programFiles = [env.ProgramW6432, env.ProgramFiles].find(isSet) ?? "C:\\Program Files";
+  const roots = [env.DOTNET_ROOT_X64, env.DOTNET_ROOT].filter(isSet);
+  roots.push(path.win32.join(programFiles, "dotnet"));
+  return [...new Set(roots)];
+}
+
+/** Set, and not blank: an empty variable must not become a relative path. */
+function isSet(v: string | undefined): v is string {
+  return v !== undefined && v.trim() !== "";
+}
+
+/** A folder's entries; `undefined` when it is not there, and any other failure throws. */
+export async function listDirectory(absolutePath: string): Promise<string[] | undefined> {
+  try {
+    return await fsp.readdir(absolutePath);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw err;
+  }
 }
 
 /** The real {@link DetectRuntimeDeps}. Every runtime probe takes exactly this. */
 export function nodeRuntimeProbeDeps(): DetectRuntimeDeps {
-  return { readRegistryValue, fileExists, systemDir: windowsSystemDir() };
+  return {
+    readRegistryValue,
+    fileExists,
+    listDirectory,
+    systemDir: windowsSystemDir(),
+    dotnetRoots: dotnetRootsX64(),
+  };
 }

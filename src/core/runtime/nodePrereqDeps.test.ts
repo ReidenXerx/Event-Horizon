@@ -1,8 +1,10 @@
 import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 
 import { describe, expect, it } from "vitest";
 
-import { nodeRuntimeProbeDeps, windowsSystemDir } from "./nodePrereqDeps";
+import { dotnetRootsX64, listDirectory, nodeRuntimeProbeDeps, windowsSystemDir } from "./nodePrereqDeps";
 
 describe("windowsSystemDir", () => {
   it("joins with a real backslash, not a dropped one", () => {
@@ -32,5 +34,43 @@ describe("windowsSystemDir", () => {
 
   it("is what the real probe deps carry", () => {
     expect(nodeRuntimeProbeDeps().systemDir).toBe(windowsSystemDir());
+  });
+});
+
+describe("dotnetRootsX64", () => {
+  it("looks where the app host looks, in its order", () => {
+    expect(
+      dotnetRootsX64({ DOTNET_ROOT_X64: "D:\\a", DOTNET_ROOT: "D:\\b", ProgramW6432: "C:\\Program Files" }),
+    ).toEqual(["D:\\a", "D:\\b", "C:\\Program Files\\dotnet"]);
+  });
+
+  it("uses the 64-bit Program Files even from a 32-bit process", () => {
+    expect(
+      dotnetRootsX64({ ProgramW6432: "C:\\Program Files", ProgramFiles: "C:\\Program Files (x86)" }),
+    ).toEqual(["C:\\Program Files\\dotnet"]);
+  });
+
+  it("ignores blank variables and has a default", () => {
+    expect(dotnetRootsX64({ DOTNET_ROOT: " " })).toEqual(["C:\\Program Files\\dotnet"]);
+  });
+
+  it("is what the real probe deps carry", () => {
+    expect(nodeRuntimeProbeDeps().dotnetRoots).toEqual(dotnetRootsX64());
+  });
+});
+
+describe("listDirectory", () => {
+  it("tells 'not there' from 'could not read'", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eh-listdir-"));
+    try {
+      fs.writeFileSync(path.join(dir, "8.0.31"), "");
+      expect(await listDirectory(dir)).toEqual(["8.0.31"]);
+      // Missing is an answer: the runtime is not there.
+      expect(await listDirectory(path.join(dir, "absent"))).toBeUndefined();
+      // A file where a folder should be is a failure, which must not read as "absent".
+      await expect(listDirectory(path.join(dir, "8.0.31"))).rejects.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

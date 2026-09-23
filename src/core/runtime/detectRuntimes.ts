@@ -62,11 +62,17 @@ export type ReadRegistryValue = (
 /** Does this file exist? Used where a runtime has no reliable registry key. */
 export type FileExists = (absolutePath: string) => Promise<boolean>;
 
+/** A folder's entries, or `undefined` when it does not exist. Throws when it cannot be read. */
+export type ListDirectory = (absolutePath: string) => Promise<string[] | undefined>;
+
 export type DetectRuntimeDeps = {
   readRegistryValue: ReadRegistryValue;
   fileExists: FileExists;
+  listDirectory: ListDirectory;
   /** System directory, so the DirectX probe is not hardcoded to C:. */
   systemDir: string;
+  /** Where x64 .NET is installed, in the order its app host looks. */
+  dotnetRoots: readonly string[];
 };
 
 /**
@@ -180,25 +186,56 @@ async function probeDotNet48(
   }
 }
 
+/**
+ * ─── ASK THE FOLDER THE .NET HOST READS, NOT THE INSTALLER'S NOTE ─────
+ * This used to read a `Version` value under
+ * `HKLM\SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App`.
+ * No such value exists: the installer records each version as a value NAME
+ * (`8.0.31` = 1), and writes them into the 32-bit registry view, which the
+ * 64-bit `reg.exe` does not read. So the probe said "absent" everywhere. On
+ * the curator's machine, with 8.0.31 installed, the Doctor reported .NET 8
+ * missing and offered to install it.
+ *
+ * The .NET host resolves a framework by folder,
+ * `<root>\shared\Microsoft.WindowsDesktop.App\<version>`, so that folder is
+ * the answer to "will a .NET 8 tool start". A prerelease build does not count:
+ * a released app does not roll forward onto one.
+ */
 async function probeDotNetDesktop8(
   deps: DetectRuntimeDeps,
 ): Promise<{ status: RuntimeStatus; version?: string; detail?: string }> {
-  try {
-    const v = await deps.readRegistryValue(
-      "HKLM",
-      "SOFTWARE\\dotnet\\Setup\\InstalledVersions\\x64\\sharedfx\\Microsoft.WindowsDesktop.App",
-      "Version",
-    );
-    if (v === undefined) return { status: "absent" };
-    return { status: "present", version: v };
-  } catch (err) {
-    return {
-      status: "unknown",
-      detail: `the registry could not be read: ${
-        err instanceof Error ? err.message : String(err)
-      }`,
-    };
+  const found: string[] = [];
+  const unreadable: string[] = [];
+  for (const root of deps.dotnetRoots) {
+    const folder = `${root}\\shared\\Microsoft.WindowsDesktop.App`;
+    try {
+      for (const entry of (await deps.listDirectory(folder)) ?? []) {
+        if (/^8\.\d+\.\d+$/.test(entry)) found.push(entry);
+      }
+    } catch (err) {
+      unreadable.push(`${folder}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
+  if (found.length > 0) {
+    const newest = found.sort(compareVersions)[found.length - 1]!;
+    return { status: "present", version: newest };
+  }
+  // One folder that could not be read is not proof the runtime is missing.
+  if (unreadable.length > 0) {
+    return { status: "unknown", detail: `could not read ${unreadable.join("; ")}` };
+  }
+  return { status: "absent" };
+}
+
+/** Numeric order for dotted versions: `8.0.31` after `8.0.8`. */
+function compareVersions(a: string, b: string): number {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
 }
 
 async function probeDirectX9(
