@@ -539,3 +539,19 @@ string. Here it has always read as a finding rather than a bug:
 
 *Scar: 2026-09-23. Found reading EnvironmentTools.tsx during an audit; three earlier occurrences
 had each been fixed one at a time.*
+
+## PP-14 — A path comparison that forgives a wrapper folder must prove the installer strips it
+
+Tail matching ("`Wrap/Grass/a.cgid` is `Grass/a.cgid`, Vortex drops the wrapper") answers what the
+files ARE, not where they LAND. Vortex strips a prefix only when a path matches the game's stop
+patterns (a plugin, a BSA, a folder like `textures` or `skse`). An archive with nothing like that
+installs verbatim, one folder deep, while every by-path, by-size and by-CRC check reports it clean.
+
+- Predict placement with `src/core/manifest/vortexPlacement.ts` (Vortex's own rule, copied from
+  fomod-installer's `FindPathPrefix` + `BasicModInstall`); never infer it from a tail.
+- A content match (size + CRC) cannot see placement at all. It proves the bytes, not the folder.
+- Check the stop list before assuming: `grass` and `data` are NOT stop patterns.
+
+*Scar: 2026-09-15, Meridia's grass cache left the package for a download after a check read
+"identical cache files plus a readme and meta.ini". Every player from 1.0.17 to 1.0.23 got the cache
+in `Data\Grass_Cache_Default\Data\Grass\` and no grass. Found 2026-09-23 from a player's log bundle.*
