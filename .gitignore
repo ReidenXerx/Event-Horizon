@@ -23,3 +23,6 @@ docs/ARCHITECTURE.gitnexus.md
 !.claude/skills/gitnexus-area-*/
 # --- end bearing ---
 .scratch-render/
+# A local Discord MCP server logs to a relative ./target/ when launched from
+# here, and those logs carry other people's messages. Never commit them.
+target/
