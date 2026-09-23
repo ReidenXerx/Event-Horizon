@@ -138,8 +138,9 @@ describe("detectExternalDrift", () => {
   });
 
   it("sees through a stripped wrapper directory rather than crying drift", async () => {
-    // Vortex drops a leading folder on install; identical content must not
-    // read as "every file added and every file removed".
+    // Vortex drops this leading folder on install because `Textures/` is one of
+    // its stop patterns; identical content must not read as "every file added
+    // and every file removed".
     const drift = await detectExternalDrift({
       ...base,
       mods: [
@@ -151,6 +152,93 @@ describe("detectExternalDrift", () => {
       ],
       config: config({}),
       listArchive: listing(["01 Main/Textures/a.dds"]),
+    });
+    expect(drift).toEqual([]);
+  });
+
+  it("catches an archive Vortex installs into the wrong folder — Meridia's grass cache", async () => {
+    /**
+     * Shipped in Meridia 1.0.23 and reached every player. The tail match read
+     * this as two stray readme files, because it assumed Vortex strips every
+     * wrapper; it strips none here, since nothing inside is a stop pattern.
+     */
+    const [drift] = await detectExternalDrift({
+      ...base,
+      gameId: "skyrimse",
+      mods: [
+        mod({
+          id: "grass",
+          name: "Grass_Cache_Default_LOD",
+          installationPath: "grass",
+          stagingFiles: [
+            { path: "Grass/A.cgid", size: 1 },
+            { path: "Grass/B.cgid", size: 1 },
+          ] as never,
+        }),
+      ],
+      config: config({}),
+      listArchive: listing([
+        "Grass_Cache_Default/README.txt",
+        "Grass_Cache_Default/meta.ini",
+        "Grass_Cache_Default/Data/Grass/A.cgid",
+        "Grass_Cache_Default/Data/Grass/B.cgid",
+      ]),
+    });
+    expect(drift!.misplaced).toEqual({
+      count: 2,
+      under: "Grass_Cache_Default/Data/",
+      stripped: "",
+      example: { staged: "Grass/A.cgid", installed: "Grass_Cache_Default/Data/Grass/A.cgid" },
+    });
+    // Nothing was added: the files ARE in the archive, just not where the
+    // game reads them.
+    expect(drift!.added).toEqual([]);
+    expect(drift!.removed).toEqual([
+      "grass_cache_default/readme.txt",
+      "grass_cache_default/meta.ini",
+    ]);
+  });
+
+  it("does not call a shared basename a wrapper folder", async () => {
+    // A root `readme.txt` against the archive's `docs/readme.txt` is two
+    // files that happen to share a name — reported as drift both ways, never
+    // as the whole mod landing in the wrong folder.
+    const [drift] = await detectExternalDrift({
+      ...base,
+      mods: [
+        mod({
+          id: "docs",
+          installationPath: "docs",
+          stagingFiles: [
+            { path: "a.esp", size: 1 },
+            { path: "readme.txt", size: 1 },
+          ] as never,
+        }),
+      ],
+      config: config({}),
+      listArchive: listing(["a.esp", "docs/readme.txt"]),
+    });
+    expect(drift!.misplaced).toBeUndefined();
+    expect(drift!.added).toEqual(["readme.txt"]);
+    expect(drift!.removed).toEqual(["docs/readme.txt"]);
+  });
+
+  it("stays quiet about that same wrapper once a plugin inside lets Vortex strip it", async () => {
+    const drift = await detectExternalDrift({
+      ...base,
+      gameId: "skyrimse",
+      mods: [
+        mod({
+          id: "grass",
+          installationPath: "grass",
+          stagingFiles: [
+            { path: "Grass/A.cgid", size: 1 },
+            { path: "Patch.esp", size: 1 },
+          ] as never,
+        }),
+      ],
+      config: config({}),
+      listArchive: listing(["Wrap/Data/Grass/A.cgid", "Wrap/Data/Patch.esp"]),
     });
     expect(drift).toEqual([]);
   });
@@ -313,6 +401,47 @@ describe("describeExternalDrift", () => {
 
   it("says nothing at all when nothing drifted", () => {
     expect(describeExternalDrift([])).toEqual([]);
+  });
+
+  const grass = {
+    count: 9087,
+    under: "Grass_Cache_Default/Data/",
+    stripped: "",
+    example: { staged: "Grass/A.cgid", installed: "Grass_Cache_Default/Data/Grass/A.cgid" },
+  };
+
+  it("names a misplaced mod on its own: where players get it, why, and the fix", () => {
+    const out = describeExternalDrift([
+      drifted({
+        modName: "Grass_Cache_Default_LOD",
+        added: [],
+        removed: ["grass_cache_default/readme.txt"],
+        misplaced: grass,
+      }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatch(/installs into the wrong folder for everyone but you/);
+    expect(out[0]).toMatch(/9087 of your staged file\(s\) inside "Grass_Cache_Default\/Data\/"/);
+    expect(out[0]).toMatch(/players get Grass_Cache_Default\/Data\/Grass\/A\.cgid where you have Grass\/A\.cgid/);
+    expect(out[0]).toMatch(/nothing in this archive does/);
+    expect(out[0]).toMatch(/Re-pack the archive/);
+    // Not ALSO reported as a curator's edit shipping as the original: the
+    // readme it dropped is noise next to a mod the game cannot see.
+    expect(out[0]).not.toMatch(/ships the ARCHIVE/);
+  });
+
+  it("says what Vortex does strip when a stop pattern matched elsewhere in the archive", () => {
+    const [line] = describeExternalDrift([
+      drifted({ misplaced: { ...grass, stripped: "Main", under: "Extra/" } }),
+    ]);
+    expect(line).toMatch(/Vortex removes only "Main\/" from the front/);
+    expect(line).not.toMatch(/nothing in this archive does/);
+  });
+
+  it("stays quiet about a misplaced mod already answered mirror or bundle", () => {
+    // Both answers ship the curator's staging folder, so the layout is theirs.
+    expect(describeExternalDrift([drifted({ misplaced: grass, mirrored: true })])).toEqual([]);
+    expect(describeExternalDrift([drifted({ misplaced: grass, bundled: true })])).toEqual([]);
   });
 });
 

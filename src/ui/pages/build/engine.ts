@@ -1852,6 +1852,9 @@ export async function runBuildPipeline(
         removed: d.removed.length,
         added: d.added.length,
         bundled: d.bundled,
+        ...(d.misplaced !== undefined
+          ? { misplaced: d.misplaced.count, under: d.misplaced.under }
+          : {}),
       })),
     });
   } catch (err) {

@@ -66,6 +66,8 @@ import {
 import { computeStagingSetHash } from "./stagingSetHash";
 import { declaresAlternatives } from "./omissionLeads";
 import type { SevenZipApi } from "./sevenZip";
+import { hasInstallerScript, predictBasicPlacement } from "./vortexPlacement";
+import type { BasicPlacement } from "./vortexPlacement";
 import type { AuditorMod } from "../getModsListForProfile";
 import type { CollectionConfig } from "./collectionConfig";
 import { installRootFor, stagingRootFromFolder } from "../stagingPath";
@@ -543,6 +545,23 @@ export type ExternalDrift = {
    * a mod is listed on one direction only.
    */
   declaredAlternatives: boolean;
+  /**
+   * Staged files the archive DOES contain, which Vortex installs inside an
+   * extra folder instead — see `vortexPlacement.ts`. They are counted out of
+   * `added` and `removed`: nothing was added or removed, the files land where
+   * the game never looks.
+   */
+  misplaced?: MisplacedFiles;
+};
+
+export type MisplacedFiles = {
+  count: number;
+  /** The extra folder in front, as players get it, e.g. `Grass_Cache_Default/Data/`. */
+  under: string;
+  /** What Vortex strips from the front of the archive's paths — `""` for nothing. */
+  stripped: string;
+  /** One file: where the curator has it, and where every player gets it. */
+  example: { staged: string; installed: string };
 };
 
 /**
@@ -593,11 +612,63 @@ export async function detectExternalDrift(args: {
       continue;
     }
 
+    // A FOMOD archive holds every option, and the curator installed one of
+    // them. Measured on a real profile: 5 of 9 "drifted" mods were exactly
+    // this — 391 unselected files in the Unofficial AAF Patch alone — and the
+    // advice that followed (tick bundle) would have shipped one curator's
+    // selections as a flat archive and skipped the installer for everybody
+    // else. Absence proves nothing here, so only additions are read.
+    const menu = declaresAlternatives({ entries: entries.map((e) => ({ path: e.path })) });
+    const drifted = (
+      removed: string[],
+      added: string[],
+      misplaced?: MisplacedFiles,
+    ): ExternalDrift => ({
+      modId: mod.id,
+      modName: mod.name,
+      removed,
+      added,
+      bundled: args.config.externalMods[mod.id]?.bundled === true,
+      mirrored: args.config.externalMods[mod.id]?.mirrored === true,
+      declaredAlternatives: menu,
+      ...(misplaced !== undefined ? { misplaced } : {}),
+    });
+
+    /**
+     * ─── WHERE VORTEX PUTS THE FILES, NOT WHERE THEIR TAILS SUGGEST ─────
+     * An archive with no installer script is placed by a fixed rule, so it
+     * is compared file by file against where that rule puts each entry. The
+     * tail match below guessed instead, and guessed that every wrapper folder
+     * is stripped: Meridia 1.0.23's grass cache read as two stray readme
+     * files while every player got all 9,087 of its files inside an extra
+     * `Grass_Cache_Default/Data/` the game never reads.
+     */
+    const listed = entries.map((e) => e.path);
+    const placement =
+      menu || hasInstallerScript(listed)
+        ? undefined
+        : predictBasicPlacement(listed, args.gameId);
+    if (placement !== undefined && !placement.orderDependent) {
+      const compared = compareWithPlacement(
+        placement,
+        (mod.stagingFiles ?? []).map((f) => f.path),
+      );
+      if (
+        compared.removed.length > 0 ||
+        compared.added.length > 0 ||
+        compared.misplaced !== undefined
+      ) {
+        out.push(drifted(compared.removed, compared.added, compared.misplaced));
+      }
+      continue;
+    }
+
     const archived = entries.map((e) => e.path.toLowerCase());
     const stagedSet = new Set(staged);
     const archivedSet = new Set(archived);
-    // Vortex strips a leading wrapper directory, so compare on tails the same
-    // way omissionLeads does rather than demanding identical prefixes.
+    // Scripted archives and games without known stop patterns: compare on
+    // tails the same way omissionLeads does rather than demanding identical
+    // prefixes.
     /**
      * ─── A SUFFIX OF ONE SEGMENT IS A BASENAME, NOT A WRAPPER ───────────
      * The second clause handles a wrapper directory in the other direction,
@@ -629,29 +700,79 @@ export async function detectExternalDrift(args: {
       return false;
     };
 
-    // A FOMOD archive holds every option, and the curator installed one of
-    // them. Measured on a real profile: 5 of 9 "drifted" mods were exactly
-    // this — 391 unselected files in the Unofficial AAF Patch alone — and the
-    // advice that followed (tick bundle) would have shipped one curator's
-    // selections as a flat archive and skipped the installer for everybody
-    // else. Absence proves nothing here, so only additions are read.
-    const menu = declaresAlternatives({ entries: entries.map((e) => ({ path: e.path })) });
     const removed = menu ? [] : archived.filter((a) => !tailMatch(a, stagedSet));
     const added = staged.filter((sPath) => !tailMatch(sPath, archivedSet));
     if (removed.length === 0 && added.length === 0) continue;
 
-    out.push({
-      modId: mod.id,
-      modName: mod.name,
-      removed,
-      added,
-      bundled: args.config.externalMods[mod.id]?.bundled === true,
-      mirrored: args.config.externalMods[mod.id]?.mirrored === true,
-      declaredAlternatives: menu,
-    });
+    out.push(drifted(removed, added));
   }
-  op.ok({ drifted: out.length });
+  op.ok({
+    drifted: out.length,
+    misplaced: out.filter((d) => d.misplaced !== undefined).map((d) => d.modName),
+  });
   return out;
+}
+
+/**
+ * Staging against where Vortex puts each archive entry, both lowercased.
+ *
+ * A staged file the archive holds one or more folders deeper is MISPLACED,
+ * not added: the bytes ship, in the wrong place. Only paths with a folder in
+ * them qualify — a bare `readme.txt` matching `docs/readme.txt` is a shared
+ * basename, not evidence of a wrapper, and stays in `added`/`removed` where
+ * it is still reported.
+ */
+function compareWithPlacement(
+  placement: BasicPlacement,
+  stagedPaths: readonly string[],
+): { removed: string[]; added: string[]; misplaced?: MisplacedFiles } {
+  const installed = new Map<string, string>();
+  for (const destination of placement.destinations.values()) {
+    installed.set(destination.toLowerCase(), destination);
+  }
+  const stagedSet = new Set(stagedPaths.map((p) => p.toLowerCase()));
+  const byBase = new Map<string, string[]>();
+  for (const lower of installed.keys()) {
+    const base = lower.slice(lower.lastIndexOf("/") + 1);
+    const bucket = byBase.get(base);
+    if (bucket === undefined) byBase.set(base, [lower]);
+    else bucket.push(lower);
+  }
+
+  const added: string[] = [];
+  const pairs: Array<{ staged: string; installed: string; under: string }> = [];
+  for (const staged of stagedPaths) {
+    const lower = staged.toLowerCase();
+    if (installed.has(lower)) continue;
+    const base = lower.slice(lower.lastIndexOf("/") + 1);
+    const deeper = lower.includes("/")
+      ? (byBase.get(base) ?? []).find((i) => i.endsWith(`/${lower}`) && !stagedSet.has(i))
+      : undefined;
+    if (deeper === undefined) {
+      added.push(lower);
+      continue;
+    }
+    const where = installed.get(deeper)!;
+    pairs.push({ staged, installed: where, under: where.slice(0, where.length - staged.length) });
+  }
+  const moved = new Set(pairs.map((p) => p.installed.toLowerCase()));
+  const removed = [...installed.keys()].filter((i) => !stagedSet.has(i) && !moved.has(i));
+  if (pairs.length === 0) return { removed, added };
+
+  const counts = new Map<string, number>();
+  for (const p of pairs) counts.set(p.under, (counts.get(p.under) ?? 0) + 1);
+  const under = [...counts].sort((a, b) => b[1] - a[1])[0][0];
+  const example = pairs.find((p) => p.under === under)!;
+  return {
+    removed,
+    added,
+    misplaced: {
+      count: pairs.length,
+      under,
+      stripped: placement.prefix,
+      example: { staged: example.staged, installed: example.installed },
+    },
+  };
 }
 
 /**
@@ -667,8 +788,15 @@ export async function detectExternalDrift(args: {
 export function describeExternalDrift(drift: ExternalDrift[]): string[] {
   // Both answers ship the curator's own files; only an UNANSWERED mod is
   // still shipping the archive, which is the only thing this warns about.
-  const unbundled = drift.filter((d) => !d.bundled && !d.mirrored);
-  if (unbundled.length === 0) return [];
+  const unanswered = drift.filter((d) => !d.bundled && !d.mirrored);
+  // A misplaced mod gets its own entry, ahead of the rest: it is not a
+  // curator's edit shipping as the original, it is the whole mod landing
+  // where the game never reads, and re-packing the archive fixes both.
+  const out = unanswered.flatMap((d) =>
+    d.misplaced !== undefined ? [describeMisplaced(d.modName, d.misplaced)] : [],
+  );
+  const unbundled = unanswered.filter((d) => d.misplaced === undefined);
+  if (unbundled.length === 0) return out;
 
   const worst = [...unbundled].sort(
     (a, b) => b.removed.length + b.added.length - (a.removed.length + a.added.length),
@@ -705,7 +833,26 @@ export function describeExternalDrift(drift: ExternalDrift[]): string[] {
   if (worst.length > 5) {
     lines.push(`  • and ${worst.length - 5} more; see the event-horizon log.`);
   }
-  return [lines.join("\n")];
+  return [...out, lines.join("\n")];
+}
+
+function describeMisplaced(modName: string, m: MisplacedFiles): string {
+  const why =
+    m.stripped === ""
+      ? `Vortex removes a wrapper folder only when something inside it looks like ` +
+        `game data to it (a plugin, or a folder such as textures, meshes or ` +
+        `scripts), and nothing in this archive does`
+      : `Vortex removes only "${m.stripped.replace(/\/?$/, "/")}" from the front ` +
+        `of this archive's paths`;
+  return (
+    `"${modName}" installs into the wrong folder for everyone but you: its ` +
+    `archive keeps ${m.count} of your staged file(s) inside "${m.under}". ${why}, ` +
+    `so players get ${m.example.installed} where you have ${m.example.staged}, ` +
+    `and the game never looks there. Re-pack the archive with your staging ` +
+    `folder's layout at its root, put it in Vortex's download folder over the ` +
+    `old one, publish that same file where players download it, and build ` +
+    `again — or answer "mirror" or "bundle" on it.`
+  );
 }
 
 
