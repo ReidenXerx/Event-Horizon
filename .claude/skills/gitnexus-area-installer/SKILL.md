@@ -1,42 +1,42 @@
 ---
 name: gitnexus-area-installer
-description: "Skill for the Installer area of Event-Horizon. 486 symbols across 120 files."
+description: "Skill for the Installer area of Event-Horizon. 505 symbols across 121 files."
 ---
 
 # Installer
 
-486 symbols | 120 files | Cohesion: 71%
+505 symbols | 121 files | Cohesion: 72%
 
 ## When to Use
 
 - Working with code in `src/`
-- Understanding how purgeGameDeployment, readReceipt, describeGameIniApplication work
+- Understanding how purgeGameDeployment, describeGameIniApplication, shouldApplyGameIni work
 - Modifying installer-related functionality
 
 ## Key Files
 
 | File | Symbols |
 |------|---------|
-| `src/core/installer/runInstall.ts` | buildAbortedResult, buildDisplayNameByModId, buildFailReceipt, buildManifestIndex, buildNexusModIdMap (+70) |
+| `src/core/installer/runInstall.ts` | buildAbortedResult, buildDisplayNameByModId, buildFailReceipt, buildManifestIndex, buildNexusModIdMap (+69) |
 | `src/core/installer/modInstall.ts` | uninstallMod, delayRespectingAbort, downloadFolderFor, downloadNexusArchiveOnly, installFromBundledArchive (+19) |
 | `src/core/installer/downloadDirect.ts` | discardPart, download, formatDuration, formatSize, hostOf (+19) |
+| `src/core/installLedger.ts` | InstallLedgerError, expectString, getInstallLedgerDir, getReceiptPath, isIso8601 (+15) |
 | `src/core/installer/installLink.ts` | dispositionParams, fileNameFromContentDisposition, safeDownloadName, sanitizeFileName, categoryOf (+10) |
 | `src/core/installer/applyUserlist.ts` | applyGroupDefinition, applyGroupRule, applyPluginEntry, applyPluginGroup, applyPluginRuleWithCollectionWins (+8) |
 | `src/core/installer/applyMirrors.ts` | batchesOf, extractWithSevenZip, forEvery, listZipIfNamesCertain, messageOf (+7) |
 | `src/core/installer/checkNexusAccount.ts` | describeSelectorAvailability, hasNexusSlice, nexusSlice, probeNexusAccount, readNexusAccount (+4) |
 | `src/core/installer/installMarker.ts` | clearInstallMarker, getMarkerDir, listInterruptedInstalls, markerPath, parseMarker (+4) |
 | `src/core/installer/bundledPrefetch.ts` | BundledPrefetchPool, dispose, prime, pump, runExtraction (+3) |
-| `src/core/installer/linkCarrier.ts` | baseName, decodeText, parseJsonEntry, parseLinkCarrier, crc32 (+3) |
 
 ## Entry Points
 
 Start here when exploring this area:
 
 - **`purgeGameDeployment`** (Function) — `src/core/environment/vortexEnvironment.ts:175`
-- **`readReceipt`** (Function) — `src/core/installLedger.ts:490`
 - **`describeGameIniApplication`** (Function) — `src/core/installer/applyGameIni.ts:340`
 - **`shouldApplyGameIni`** (Function) — `src/core/installer/applyGameIni.ts:315`
 - **`applyIniTweakRemovals`** (Function) — `src/core/installer/applyIniTweaks.ts:211`
+- **`applyIniTweaks`** (Function) — `src/core/installer/applyIniTweaks.ts:74`
 
 ## Key Symbols
 
@@ -44,24 +44,24 @@ Start here when exploring this area:
 |--------|------|------|------|
 | `BundledPrefetchPool` | Class | `src/core/installer/bundledPrefetch.ts` | 117 |
 | `InstallStreaks` | Class | `src/core/installer/installStreaks.ts` | 59 |
+| `InstallLedgerError` | Class | `src/core/installLedger.ts` | 74 |
 | `AbortError` | Class | `src/utils/abortError.ts` | 22 |
 | `DiskSpaceError` | Class | `src/utils/diskSpace.ts` | 112 |
 | `ChecksumMismatchError` | Class | `src/core/installer/downloadDirect.ts` | 70 |
 | `purgeGameDeployment` | Function | `src/core/environment/vortexEnvironment.ts` | 175 |
-| `readReceipt` | Function | `src/core/installLedger.ts` | 490 |
 | `describeGameIniApplication` | Function | `src/core/installer/applyGameIni.ts` | 340 |
 | `shouldApplyGameIni` | Function | `src/core/installer/applyGameIni.ts` | 315 |
 | `applyIniTweakRemovals` | Function | `src/core/installer/applyIniTweaks.ts` | 211 |
 | `applyIniTweaks` | Function | `src/core/installer/applyIniTweaks.ts` | 74 |
 | `emptyIniTweakApplication` | Function | `src/core/installer/applyIniTweaks.ts` | 62 |
 | `planIniTweakRemovals` | Function | `src/core/installer/applyIniTweaks.ts` | 177 |
+| `collectExistingRules` | Function | `src/core/installer/applyModRules.ts` | 359 |
 | `describeModTypeChanges` | Function | `src/core/installer/applyModTypes.ts` | 159 |
 | `label` | Function | `src/core/installer/applyModTypes.ts` | 163 |
 | `planModTypeChanges` | Function | `src/core/installer/applyModTypes.ts` | 63 |
 | `readCurrentModTypes` | Function | `src/core/installer/applyModTypes.ts` | 106 |
 | `describeModTypeMismatches` | Function | `src/core/installer/checkModTypes.ts` | 83 |
 | `label` | Function | `src/core/installer/checkModTypes.ts` | 88 |
-| `findModTypeMismatches` | Function | `src/core/installer/checkModTypes.ts` | 41 |
 
 ## Execution Flows
 

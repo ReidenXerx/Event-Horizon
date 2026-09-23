@@ -32,7 +32,7 @@ description: "Skill for the Pages area of Event-Horizon. 31 symbols across 11 fi
 
 Start here when exploring this area:
 
-- **`useErrorReporterFormatted`** (Function) — `src/ui/errors/ErrorContext.tsx:65`
+- **`useErrorReporterFormatted`** (Function) — `src/ui/errors/ErrorContext.tsx:67`
 - **`CollectionsPage`** (Function) — `src/ui/pages/CollectionsPage.tsx:118`
 - **`HomePage`** (Function) — `src/ui/pages/HomePage.tsx:31`
 - **`ModDiffsPage`** (Function) — `src/ui/pages/ModDiffsPage.tsx:67`
@@ -42,7 +42,7 @@ Start here when exploring this area:
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `useErrorReporterFormatted` | Function | `src/ui/errors/ErrorContext.tsx` | 65 |
+| `useErrorReporterFormatted` | Function | `src/ui/errors/ErrorContext.tsx` | 67 |
 | `CollectionsPage` | Function | `src/ui/pages/CollectionsPage.tsx` | 118 |
 | `HomePage` | Function | `src/ui/pages/HomePage.tsx` | 31 |
 | `ModDiffsPage` | Function | `src/ui/pages/ModDiffsPage.tsx` | 67 |

@@ -33,7 +33,7 @@ Start here when exploring this area:
 - **`packageFormatOf`** (Function) — `src/core/manifest/packageFileName.ts:49`
 - **`getCollectionsConfigDir`** (Function) — `src/core/paths/appDataPaths.ts:71`
 - **`getCollectionsDir`** (Function) — `src/core/paths/appDataPaths.ts:66`
-- **`recordPostProcessingDecision`** (Function) — `src/ui/pages/build/engine.ts:390`
+- **`recordPostProcessingDecision`** (Function) — `src/ui/pages/build/engine.ts:391`
 - **`loadDashboardData`** (Function) — `src/ui/pages/dashboard/data.ts:109`
 
 ## Key Symbols
@@ -43,7 +43,7 @@ Start here when exploring this area:
 | `packageFormatOf` | Function | `src/core/manifest/packageFileName.ts` | 49 |
 | `getCollectionsConfigDir` | Function | `src/core/paths/appDataPaths.ts` | 71 |
 | `getCollectionsDir` | Function | `src/core/paths/appDataPaths.ts` | 66 |
-| `recordPostProcessingDecision` | Function | `src/ui/pages/build/engine.ts` | 390 |
+| `recordPostProcessingDecision` | Function | `src/ui/pages/build/engine.ts` | 391 |
 | `loadDashboardData` | Function | `src/ui/pages/dashboard/data.ts` | 109 |
 | `Ring` | Function | `src/ui/components/charts.tsx` | 58 |
 | `StackBar` | Function | `src/ui/components/charts.tsx` | 196 |

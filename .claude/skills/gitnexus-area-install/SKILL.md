@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-install
-description: "Skill for the Install area of Event-Horizon. 104 symbols across 21 files."
+description: "Skill for the Install area of Event-Horizon. 103 symbols across 19 files."
 ---
 
 # Install
 
-104 symbols | 21 files | Cohesion: 76%
+103 symbols | 19 files | Cohesion: 76%
 
 ## When to Use
 
@@ -17,16 +17,16 @@ description: "Skill for the Install area of Event-Horizon. 104 symbols across 21
 
 | File | Symbols |
 |------|---------|
-| `src/ui/pages/install/installSession.ts` | onProgress, onPhase, onHashProgress, onPhase, onHashProgress (+29) |
+| `src/ui/pages/install/installSession.ts` | onProgress, onPhase, onHashProgress, onPhase, onHashProgress (+31) |
 | `src/ui/pages/install/steps.tsx` | BucketList, CuratorReportsNotice, DamagedArchiveNotice, DroppedModNotice, ExternalArchiveNotice (+23) |
 | `src/ui/pages/install/state.ts` | wizardReducer, canProceedFromDecisions, countUndecidedConflicts, defaultConflictChoice, defaultOrphanChoice (+3) |
 | `src/ui/pages/install/engine.ts` | checkEnvironment, checkSystemRuntimes, profileExistsInState, runLoadingPipeline, checkAbort |
 | `src/ui/pages/install/installProgress.ts` | describeElapsed, describeQuiet, estimateRemainingMs, formatDuration, trackPhase |
 | `src/ui/pages/install/startWarning.test.ts` | bundle, confirmSession, confirm |
-| `src/core/doctor/heal.ts` | describeHeal, healNeedsConfirmation |
 | `src/ui/pages/install/autoSortGate.test.ts` | bundle, confirmSession |
 | `src/ui/pages/install/deploymentGate.test.ts` | bundle, confirmSession |
 | `src/core/installer/autoDeploy.ts` | blocksInstall, readsAutoDeploy |
+| `src/core/resolver/userState.ts` | buildSuggestedProfileName, pickInstallTarget |
 
 ## Entry Points
 
@@ -35,8 +35,8 @@ Start here when exploring this area:
 - **`Notice`** (Function) — `src/ui/components/Notice.tsx:21`
 - **`reconcileMods`** (Function) — `src/ui/pages/install/steps.tsx:3267`
 - **`wizardReducer`** (Function) — `src/ui/pages/install/state.ts:304`
-- **`describeHeal`** (Function) — `src/core/doctor/heal.ts:104`
-- **`healNeedsConfirmation`** (Function) — `src/core/doctor/heal.ts:79`
+- **`getInstallSession`** (Function) — `src/ui/pages/install/installSession.ts:1553`
+- **`blocksInstall`** (Function) — `src/core/installer/autoDeploy.ts:48`
 
 ## Key Symbols
 
@@ -45,12 +45,11 @@ Start here when exploring this area:
 | `Notice` | Function | `src/ui/components/Notice.tsx` | 21 |
 | `reconcileMods` | Function | `src/ui/pages/install/steps.tsx` | 3267 |
 | `wizardReducer` | Function | `src/ui/pages/install/state.ts` | 304 |
-| `describeHeal` | Function | `src/core/doctor/heal.ts` | 104 |
-| `healNeedsConfirmation` | Function | `src/core/doctor/heal.ts` | 79 |
-| `getInstallSession` | Function | `src/ui/pages/install/installSession.ts` | 1527 |
+| `getInstallSession` | Function | `src/ui/pages/install/installSession.ts` | 1553 |
 | `blocksInstall` | Function | `src/core/installer/autoDeploy.ts` | 48 |
 | `readsAutoDeploy` | Function | `src/core/installer/autoDeploy.ts` | 33 |
 | `probeDeploymentMethod` | Function | `src/core/installer/probeDeployment.ts` | 60 |
+| `isAbortError` | Function | `src/ui/pages/install/installSession.ts` | 1566 |
 | `canProceedFromDecisions` | Function | `src/ui/pages/install/state.ts` | 571 |
 | `countUndecidedConflicts` | Function | `src/ui/pages/install/state.ts` | 598 |
 | `defaultConflictChoice` | Function | `src/ui/pages/install/state.ts` | 529 |
@@ -62,6 +61,7 @@ Start here when exploring this area:
 | `runLoadingPipeline` | Function | `src/ui/pages/install/engine.ts` | 142 |
 | `checkAbort` | Function | `src/ui/pages/install/engine.ts` | 149 |
 | `describeElapsed` | Function | `src/ui/pages/install/installProgress.ts` | 147 |
+| `describeQuiet` | Function | `src/ui/pages/install/installProgress.ts` | 114 |
 
 ## Execution Flows
 
@@ -74,9 +74,9 @@ Start here when exploring this area:
 | `InstallFromLink → ToPosix` | cross_community | 7 |
 | `RunLoadingPipeline → Truncate` | cross_community | 7 |
 | `BeginInstall → GetSnapshot` | cross_community | 6 |
+| `Heal → EHRuntime` | cross_community | 6 |
+| `Heal → Notify` | cross_community | 6 |
 | `InstallFromLink → GuessGenericHints` | cross_community | 6 |
-| `InstallFromLink → GuessGenericTitle` | cross_community | 6 |
-| `InstallFromLink → CountProblems` | cross_community | 6 |
 
 ## How to Explore
 

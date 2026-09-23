@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-nexus
-description: "Skill for the Nexus area of Event-Horizon. 31 symbols across 11 files."
+description: "Skill for the Nexus area of Event-Horizon. 32 symbols across 12 files."
 ---
 
 # Nexus
 
-31 symbols | 11 files | Cohesion: 76%
+32 symbols | 12 files | Cohesion: 75%
 
 ## When to Use
 

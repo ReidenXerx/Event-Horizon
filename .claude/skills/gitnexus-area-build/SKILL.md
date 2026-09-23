@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-build
-description: "Skill for the Build area of Event-Horizon. 521 symbols across 117 files."
+description: "Skill for the Build area of Event-Horizon. 518 symbols across 118 files."
 ---
 
 # Build
 
-521 symbols | 117 files | Cohesion: 83%
+518 symbols | 118 files | Cohesion: 82%
 
 ## When to Use
 
@@ -51,8 +51,7 @@ Start here when exploring this area:
 | `describeProfileDrift` | Function | `src/core/curator/profileDrift.ts` | 106 |
 | `isProfileUnmoved` | Function | `src/core/curator/profileDrift.ts` | 90 |
 | `profilesEnabling` | Function | `src/core/curator/profilesEnabling.ts` | 44 |
-| `doctorLightFlagBaseline` | Function | `src/core/doctor/health.ts` | 188 |
-| `overallHealth` | Function | `src/core/doctor/health.ts` | 873 |
+| `doctorLightFlagBaseline` | Function | `src/core/doctor/health.ts` | 201 |
 | `canReapply` | Function | `src/core/doctor/loadOrderStatus.ts` | 254 |
 | `pickDoctorReceipt` | Function | `src/core/doctor/pickReceipt.ts` | 62 |
 | `toHealthView` | Function | `src/core/doctor/receiptView.ts` | 21 |
@@ -62,6 +61,7 @@ Start here when exploring this area:
 | `mustAskReplayMode` | Function | `src/core/installer/fomodReplayMode.ts` | 183 |
 | `countKinds` | Function | `src/core/manifest/unexplainedFiles.ts` | 175 |
 | `describeUnexplainedFile` | Function | `src/core/manifest/unexplainedFiles.ts` | 153 |
+| `formatBytes` | Function | `src/core/manifest/unexplainedFiles.ts` | 139 |
 
 ## Execution Flows
 

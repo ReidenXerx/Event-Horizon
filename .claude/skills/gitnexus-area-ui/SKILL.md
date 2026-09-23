@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-ui
-description: "Skill for the Ui area of Event-Horizon. 63 symbols across 13 files."
+description: "Skill for the Ui area of Event-Horizon. 68 symbols across 14 files."
 ---
 
 # Ui
 
-63 symbols | 13 files | Cohesion: 88%
+68 symbols | 14 files | Cohesion: 89%
 
 ## When to Use
 
@@ -18,15 +18,15 @@ description: "Skill for the Ui area of Event-Horizon. 63 symbols across 13 files
 | File | Symbols |
 |------|---------|
 | `scripts/ui/fingerprint-screens.mjs` | CliError, accept, check, compare, contentBounds (+12) |
-| `scripts/ui/fingerprint-screens.test.mjs` | set, run, background, base, chunk (+9) |
+| `scripts/ui/fingerprint-screens.test.mjs` | set, workspace, run, write, background (+11) |
 | `scripts/nexus-page.mjs` | connect, editPage, evalJs, readPage, send (+6) |
 | `scripts/lib/setup-ui.mjs` | banner, info, nextSteps, ok, step (+2) |
+| `scripts/bearing-teaching/merge-package-scripts.mjs` | isStealth, main, resolveGitnexusCmd |
 | `src/ui/EventHorizonMainPage.tsx` | AppShell, NavBar, EventHorizonMainPage |
 | `scripts/nexus-collection-file.mjs` | log, stamp |
 | `scripts/release-nexus.mjs` | info, step |
 | `src/ui/runtime/routeRequest.ts` | subscribe, take |
 | `scripts/bearing-verify.mjs` | main |
-| `scripts/nexus-collection-file.test.mjs` | log |
 
 ## Entry Points
 
@@ -61,7 +61,7 @@ Start here when exploring this area:
 | `log` | Function | `scripts/ui/fingerprint-screens.mjs` | 394 |
 | `serialise` | Function | `scripts/ui/fingerprint-screens.mjs` | 238 |
 | `EventHorizonMainPage` | Function | `src/ui/EventHorizonMainPage.tsx` | 66 |
-| `ErrorProvider` | Function | `src/ui/errors/ErrorContext.tsx` | 85 |
+| `ErrorProvider` | Function | `src/ui/errors/ErrorContext.tsx` | 87 |
 
 ## Execution Flows
 

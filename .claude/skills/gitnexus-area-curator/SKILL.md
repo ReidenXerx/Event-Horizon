@@ -1,11 +1,11 @@
 ---
 name: gitnexus-area-curator
-description: "Skill for the Curator area of Event-Horizon. 413 symbols across 91 files."
+description: "Skill for the Curator area of Event-Horizon. 394 symbols across 85 files."
 ---
 
 # Curator
 
-413 symbols | 91 files | Cohesion: 70%
+394 symbols | 85 files | Cohesion: 71%
 
 ## When to Use
 
@@ -56,12 +56,12 @@ Start here when exploring this area:
 | `updateOneAndWait` | Function | `src/core/curator/updateOneMod.ts` | 106 |
 | `arm` | Function | `src/core/curator/updateOneMod.ts` | 171 |
 | `widen` | Function | `src/core/curator/updateOneMod.ts` | 192 |
-| `runHeal` | Function | `src/core/doctor/runHeal.ts` | 98 |
 | `cleanGameFolder` | Function | `src/core/environment/cleanGameFolder.ts` | 44 |
 | `onExit` | Function | `src/core/environment/launchGame.ts` | 233 |
 | `saveFeedback` | Function | `src/core/feedback/collectionFeedback.ts` | 219 |
-| `nexusModIdOfCompareKey` | Function | `src/core/identity/compareKey.ts` | 96 |
-| `parseCompareKey` | Function | `src/core/identity/compareKey.ts` | 79 |
+| `testSupported` | Function | `src/core/installer/collectionIntercept.ts` | 87 |
+| `findDriftedMods` | Function | `src/core/installer/detectStagingDrift.ts` | 163 |
+| `finalize` | Function | `src/core/installer/profile.ts` | 153 |
 
 ## Execution Flows
 
