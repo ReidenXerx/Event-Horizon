@@ -10,6 +10,62 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.13] — 2026-09-24
+
+Two players lost an evening each to something Event Horizon could have told them first. Now it does. And
+an update that waited three hours on a question nobody could see now goes through.
+
+### Installing collections
+- **A game without the Creation Club content a collection needs is stopped before anything
+  downloads.** A player whose GOG Skyrim had no Anniversary Upgrade installed all 1,746 mods of a
+  collection, then watched the game close a few seconds after starting, with no message. The
+  collection's plugins list 70 of that upgrade's files as masters, and the game cannot start without
+  a master. The build always knew this and told only the curator. A collection built on 0.2.13 now
+  carries the list of Creation Club files its plugins need, and the install preview checks your
+  game's Data folder for every one of them before a single mod downloads. If any are missing, it
+  names them and says where they come from. For Skyrim that is the Anniversary Upgrade, which on GOG
+  is a DLC you tick in GOG Galaxy under Manage installation → Configure. A collection built before
+  this cannot say what it needs, so its preview says the files were not checked, and nothing is
+  refused on that account.
+- **A game inside OneDrive or Dropbox is refused, like one under Program Files.** Vortex links every
+  file of every mod into the game folder, hundreds of thousands of files for a large collection. A
+  synced folder tries to upload every one of them, can lock files while it works, and can swap files
+  for online-only placeholders that have to download again before the game can read them. Install
+  and Play now refuse a game folder inside OneDrive or Dropbox and say how to move it. If your game
+  is in OneDrive today, Play will ask you to move it first. Google Drive is not recognised, because it
+  keeps its folder in a database Event Horizon does not read.
+- **"Move the game" now says where to.** The advice for a game under Program Files suggested D:\Games
+  to everyone. Vortex's links cannot cross drives, so a player whose mods live on C: followed it into
+  a game Vortex could no longer deploy to. The steps now name the drive your Vortex mods folder is on.
+
+### Updating collections
+- **An update no longer stops on a question nobody sees.** When a curator changes one of their own
+  bundled mods, the previous revision's copy still holds that mod's name, and Vortex stops the
+  install to ask whether to replace it or install a variant. That is one prompt per mod, and Event
+  Horizon cannot answer it for you. One player's update stopped at mod 1,106 of 1,746 and waited
+  three hours, and the half-built profile then started the game without Address Library. Replacing
+  would change the mod in every profile, including the one you are playing, and a new revision
+  builds into its own profile so that one stays intact. So the new copy now goes in beside the old
+  one, and a resumed update finds it instead of installing it twice.
+
+### Building collections
+- **An archive that installs into the wrong folder is caught, and the build refuses it.** Vortex
+  strips an archive's outer folder only when something inside matches what it expects for the game:
+  a plugin, a BSA or BA2, a folder like textures or scripts. Meridia's grass cache matched none of
+  those, so from 1.0.17 to 1.0.23 every player got it in a folder the game never reads. The build
+  compared file names by their endings and let the extra folder through. It now works out where
+  Vortex will put each file of a plain archive, using Vortex's own rule, and refuses a build whose
+  archive would land anywhere else. The message names the mod and gives three ways out: re-pack the
+  archive, mirror the mod, or bundle it.
+- **Rebuild to protect your players.** Only a collection built on 0.2.13 or later carries the list of
+  Creation Club files for the install check above. Older revisions install as before, with a
+  "not checked" note.
+
+### Elsewhere
+- **A tech deep dive on the Nexus page and in the README**: a short side-by-side of how vanilla
+  Vortex collections and Event Horizon differ, for readers who want the approach rather than the
+  pitch. Every Vortex claim in it was read from Vortex 2.7's own code.
+
 ## [0.2.12] — 2026-09-23
 
 Three fixes to the Doctor, each one a thing it said that was not true.
