@@ -354,6 +354,24 @@ export function describeUploadError(err: unknown, info: NexusCollectionInfo, sig
 
   if (e?.name === "V3ApiError") {
     const status = typeof e.status === "number" ? e.status : undefined;
+    /**
+     * ─── A 5xx IS NEXUS FAILING, NOT NEXUS SAYING NO ────────────────────
+     * A curator got "Nexus rejected the upload: HTTP 504" and read it as a
+     * verdict on their collection. A 504 is Nexus's gateway giving up on a slow
+     * request, and the work behind it may still finish: the file can be accepted
+     * and the draft created after the answer was lost. Uploading again blind can
+     * leave two drafts, so the message sends them to look first.
+     */
+    if (status !== undefined && status >= 500) {
+      return {
+        kind: "failed",
+        title: `Nexus had a server problem (HTTP ${status}), not a problem with your collection.`,
+        details: [
+          "The upload may still have gone through. Open your collection's Revisions tab on Nexus and look for a new draft before uploading again, so you do not end up with two.",
+          "If there is no new draft, wait a while and upload again. The package is fine as it is.",
+        ],
+      };
+    }
     const detail = typeof e.detail === "string" && e.detail !== "" ? e.detail : message;
     const items = Array.isArray(e.validationErrors) ? e.validationErrors : [];
     const details = items.map((item) => {

@@ -184,6 +184,23 @@ describe("a failed upload", () => {
     expect(failure.details.join(" ")).toMatch(/account that owns it/);
   });
 
+  // A curator read "Nexus rejected the upload: HTTP 504" as a verdict on their collection.
+  it("calls a 5xx Nexus's own failure, not a rejection, and sends the curator to look for the draft first", () => {
+    for (const status of [502, 503, 504]) {
+      const failure = describeUploadError(
+        Object.assign(new Error("Gateway Timeout"), { name: "V3ApiError", status, detail: `HTTP ${status}` }),
+        INFO,
+      );
+      expect(failure.kind).toBe("failed");
+      expect(failure.title).toBe(`Nexus had a server problem (HTTP ${status}), not a problem with your collection.`);
+      expect(failure.title).not.toMatch(/rejected/);
+      expect(failure.details.join(" ")).toMatch(/Revisions tab/);
+    }
+    // A 4xx is still Nexus saying no.
+    const no = describeUploadError(Object.assign(new Error("x"), { name: "V3ApiError", status: 422, detail: "invalid" }), INFO);
+    expect(no.kind).toBe("rejected");
+  });
+
   it("treats a stopped transfer as cancelled, not failed", async () => {
     const controller = new AbortController();
     const api = fakeApi({
