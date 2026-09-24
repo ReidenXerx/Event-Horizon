@@ -8,7 +8,7 @@
  * same function, from Vortex's state — not from a plugins.txt that can lag
  * or differ.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   applyPluginOrder: vi.fn(async (_input: { order: readonly { name: string; enabled: boolean }[] }) => ({
@@ -88,6 +88,15 @@ const apiOver = (state: unknown): never =>
     store: { dispatch: () => undefined },
   }) as never;
 
+/**
+ * Every heal first asks whether an install is running, and asking imports the install session: most of the
+ * UI's module graph. Cold, that import took 3-5 s of whichever test in this file ran first, and under the full
+ * suite's load it crossed the 5 s timeout and stopped a release dry run. Loaded here, the time is the hook's,
+ * and each test measures only its own work.
+ */
+beforeAll(async () => {
+  await Promise.all([import("./health"), import("../../ui/runtime/ehRuntime"), import("../../ui/pages/install/installSession")]);
+}, 60_000);
 beforeEach(() => h.applyPluginOrder.mockClear());
 
 describe("repin-plugin-order refuses an order it was not pinned into", () => {
