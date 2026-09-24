@@ -115,7 +115,7 @@ The Vortex side is read from Vortex 2.7's own source.
 | **INI** | Tweaks the curator writes by hand. | The curator's real game INI values, captured at build, minus the ones that describe their hardware. |
 | **Game version** | Warns when yours differs. | Reads which versions each script-extender plugin declares, and names the mods that won't load on yours. |
 | **Updates** | In place, in your current profile. | Each revision builds its own profile; the one you play stays switchable until the new one works. |
-| **Around the install** | Installs into the game folder as it is. | Checks the store build, runtimes and protected folders first, quarantines stray game files (restorable, never deleted), and keeps a receipt the Doctor diffs your setup against and heals from. |
+| **Around the install** | Installs into the game folder as it is. | Before any download, checks the store build, runtimes, protected and cloud-synced folders, and the Creation Club files your plugins need; quarantines stray game files (restorable, never deleted), and keeps a receipt the Doctor diffs your setup against and heals from. |
 
 ## Four things to know before you install
 
