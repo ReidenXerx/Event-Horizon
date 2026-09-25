@@ -14,6 +14,7 @@ import {
 } from "./core/installer/probeInstallerApi";
 import { probeNexusAccount } from "./core/installer/checkNexusAccount";
 import { EXTENSION_VERSION } from "./ui/version";
+import { claimSingleInstance, duplicateNotice } from "./core/singleInstance";
 
 /**
  * Symbol id of the Event Horizon glyph inside our SVG sprite.
@@ -57,6 +58,23 @@ function installEventHorizonIconSet(): void {
 }
 
 function init(context: types.IExtensionContext): boolean {
+  // A second copy of Event Horizon (one installed by hand beside the one from
+  // Nexus) registers nothing and says so; see singleInstance.
+  const me = { version: EXTENSION_VERSION, folder: path.basename(path.dirname(__dirname)) };
+  const claim = claimSingleInstance(globalThis as unknown as Record<string, unknown>, me);
+  if (claim.kind === "duplicate") {
+    ehLog("warn", "extension.duplicate-copy", { running: claim.running, notLoaded: me });
+    context.once(() => {
+      context.api.sendNotification?.({
+        id: "event-horizon-duplicate-copy",
+        type: "warning",
+        title: "Event Horizon is installed twice",
+        message: duplicateNotice(claim.running, me),
+      });
+    });
+    return true;
+  }
+
   const exportModsAction = createExportModsAction(context);
   const compareModsAction = createCompareModsAction(context);
   const comparePluginsAction = createComparePluginsAction(context);
