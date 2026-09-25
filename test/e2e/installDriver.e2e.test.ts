@@ -262,6 +262,48 @@ describe("install driver, end to end", () => {
     expect(await listInstallAttempts(world.appDataPath)).toEqual([]);
   });
 
+  /**
+   * The receipt is one file per collection, rewritten on every update. A mod
+   * the next revision drops used to fall out of it, and with it the only proof
+   * that we installed it, so uninstall could never reach it again.
+   */
+  it("remembers a mod the next revision dropped, so uninstall can still reach it", async () => {
+    world = makeWorld({
+      mods: [
+        { id: "keeps", nexus: { modId: 11, fileId: 11 }, archiveSha256: "a".repeat(64), files: { "Data/k.esp": "k" } },
+        { id: "dropped", nexus: { modId: 12, fileId: 12 }, archiveSha256: "b".repeat(64), files: { "Data/d.esp": "d" } },
+      ],
+    });
+    const manifest = await packageFrom(world);
+    const fake = makeFakeVortex({ gameId: "fallout4" });
+    expect(((await install(manifest, fake)) as { kind: string }).kind).toBe("success");
+
+    const { readReceipt } = await import("../../src/core/installLedger");
+    const first = await readReceipt(world.appDataPath, manifest.package.id);
+    const droppedEntry = first?.mods.find((m) => m.compareKey === "nexus:12:12");
+    expect(droppedEntry?.ownership).toBe("installed");
+
+    const next = {
+      ...manifest,
+      package: { ...manifest.package, version: "1.0.1" },
+      mods: manifest.mods.filter((m) => m.compareKey !== "nexus:12:12"),
+    } as EhcollManifest;
+    expect(((await install(next, fake)) as { kind: string }).kind).toBe("success");
+
+    const second = await readReceipt(world.appDataPath, manifest.package.id);
+    expect(second?.mods.some((m) => m.compareKey === "nexus:12:12")).toBe(false);
+    expect(second?.retiredMods).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ vortexModId: droppedEntry!.vortexModId, compareKey: "nexus:12:12", retiredInVersion: "1.0.1" }),
+      ]),
+    );
+    // Never both: a mod the new revision ships is not retired. (This double does not tell the
+    // resolver what is installed, so the kept mod is installed again under a new id, and its old
+    // copy, ours and no longer in the receipt, is retired too. That is correct.)
+    const current = new Set(second!.mods.map((m) => m.vortexModId));
+    expect(second!.retiredMods!.every((r) => !current.has(r.vortexModId))).toBe(true);
+  });
+
   describe("which Nexus collection revision the receipt records", () => {
     /**
      * Updates are offered only for installs that came from a Nexus collection

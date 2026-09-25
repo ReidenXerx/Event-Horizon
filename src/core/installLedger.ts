@@ -57,6 +57,7 @@ import type {
   InstallReceipt,
   InstallReceiptGameVersion,
   InstallReceiptMod,
+  InstallReceiptRetiredMod,
   InstallTargetMode,
   ModVerificationReceipt,
   GameIniApplicationReceipt,
@@ -326,6 +327,29 @@ export function parseReceipt(raw: string): InstallReceipt {
         (x as { compareKey: string }).compareKey.length > 0 &&
         typeof (x as { tweak?: unknown }).tweak === "string" &&
         (x as { tweak: string }).tweak.length > 0,
+    );
+  }
+  /**
+   * Mods an earlier revision installed and this one dropped. A malformed entry
+   * is dropped, never guessed at: an entry here is permission to uninstall a
+   * mod, so a wrong one could delete something that is not ours (NS-2).
+   */
+  if (Array.isArray(obj.retiredMods)) {
+    out.retiredMods = obj.retiredMods.filter(
+      (x: unknown): x is InstallReceiptRetiredMod => {
+        const r = x as Partial<Record<keyof InstallReceiptRetiredMod, unknown>> | null;
+        return (
+          typeof r === "object" &&
+          r !== null &&
+          typeof r.vortexModId === "string" &&
+          r.vortexModId.length > 0 &&
+          typeof r.compareKey === "string" &&
+          r.compareKey.length > 0 &&
+          typeof r.name === "string" &&
+          typeof r.retiredInVersion === "string" &&
+          (r.installTime === undefined || typeof r.installTime === "string")
+        );
+      },
     );
   }
   if (Array.isArray(obj.pluginFlagChanges)) {

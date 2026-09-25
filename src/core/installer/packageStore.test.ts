@@ -156,21 +156,23 @@ describe("the kept package does not outlive the collection", () => {
    * ever show — so the wiring is pinned in source, the way `locatePackage`'s
    * callers are.
    */
-  const page = path.join(__dirname, "..", "..", "ui", "pages", "CollectionsPage.tsx");
+  // The uninstall moved into its executor (runCollectionUninstall.ts), which runCollectionUninstall.test.ts
+  // also checks by behaviour; this keeps the source-level pin on the file that now holds the wiring.
+  const page = path.join(__dirname, "runCollectionUninstall.ts");
   const text = (): string => require("fs").readFileSync(page, "utf8") as string;
 
   it("has the anchors it looks for, so this cannot go vacuous", () => {
     const s = text();
     expect(s.length).toBeGreaterThan(0);
-    expect(s).toContain("deleteReceipt(");
+    expect(s).toContain("deps.deleteReceipt(");
   });
 
   it("clears the kept package in the same branch that deletes the receipt", () => {
     const s = text();
-    const del = s.indexOf("deleteReceipt(");
-    const clear = s.indexOf("clearStoredPackage(");
+    const del = s.indexOf("deps.deleteReceipt(");
+    const clear = s.indexOf("deps.clearStoredPackage(");
     expect(clear).toBeGreaterThan(-1);
-    // Right after the delete, inside the same `notOurs === 0 && failed === 0`
+    // Right after the delete, inside the same `failed.length === 0`
     // branch — never in the path that KEEPS the receipt because mods survive.
     expect(clear).toBeGreaterThan(del);
     expect(s.slice(del, clear)).not.toContain("receipt-kept");

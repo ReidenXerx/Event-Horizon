@@ -296,6 +296,25 @@ export type InstallReceipt = {
    */
   iniTweaks?: { compareKey: string; tweak: string }[];
   /**
+   * Mods Event Horizon installed for an EARLIER revision of this collection
+   * that the current revision no longer ships.
+   *
+   * The receipt is one file per collection, rewritten on every update, and
+   * `mods` describes only the revision just installed. A mod the curator
+   * dropped therefore fell out of the only record that could prove Event
+   * Horizon put it there. It stayed in the player's mod pool (an update never
+   * deletes, NS-2) with no provenance left, so "Uninstall this collection" could
+   * remove only the latest revision's mods, and a player who had followed the
+   * collection for twenty revisions kept every mod ever dropped.
+   *
+   * Carried forward from receipt to receipt, so a mod dropped five revisions
+   * ago is still known to be ours. Only mods PROVEN ours (`ownership:
+   * "installed"`) are ever carried. Absent on receipts written before this
+   * existed, and absent means "not recorded": nothing is removed on the
+   * strength of it.
+   */
+  retiredMods?: InstallReceiptRetiredMod[];
+  /**
    * The game version this release was built for, and how strictly it holds.
    *
    * Read by Play, which stops before starting a game that no longer matches.
@@ -306,6 +325,24 @@ export type InstallReceipt = {
    * detect a version; Play checks nothing then.
    */
   gameVersion?: InstallReceiptGameVersion;
+};
+
+/** One mod in `InstallReceipt.retiredMods`: installed by us, dropped by the curator since. */
+export type InstallReceiptRetiredMod = {
+  /** Vortex's id for the mod in the pool. */
+  vortexModId: string;
+  /** Its identity in the revision that last shipped it. */
+  compareKey: string;
+  /** Display name, for the uninstall list. */
+  name: string;
+  /** The collection version whose update dropped it. */
+  retiredInVersion: string;
+  /**
+   * The mod's Vortex `installTime` when it retired, as ISO text. Vortex reuses
+   * mod ids, so the uninstall removes the mod only while this still matches;
+   * absent means the installation cannot be told apart, and it is left alone.
+   */
+  installTime?: string;
 };
 
 /** What `InstallReceipt.gameVersion` records: the manifest's requirement at install time. */

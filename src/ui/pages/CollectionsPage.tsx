@@ -8,7 +8,8 @@
  *   - See "what did Event Horizon install on this machine?"
  *   - Switch to the Vortex profile that holds a given collection.
  *   - Inspect the per-mod records the receipt holds.
- *   - Uninstall (remove all recorded mods + delete the receipt).
+ *   - Uninstall: every mod Event Horizon installed for it, in any revision
+ *     (collections/CollectionUninstallModal.tsx).
  *
  * The page never edits a receipt directly — it only reads, deletes,
  * and acts on profiles. Receipts are written exclusively by the
@@ -19,13 +20,8 @@ import * as React from "react";
 import { util } from "@nexusmods/vortex-api";
 import type { types } from "@nexusmods/vortex-api";
 
-import {
-  deleteReceipt,
-  listReceipts,
-} from "../../core/installLedger";
+import { listReceipts } from "../../core/installLedger";
 import { ehLog } from "../../core/logging/ehLog";
-import { uninstallMod } from "../../core/installer/modInstall";
-import { enableModInProfile } from "../../core/installer/profile";
 import { switchToProfile } from "../../core/installer/profile";
 import type { InstallReceipt } from "../../types/installLedger";
 import { installModeLabel } from "./installModeLabel";
@@ -60,6 +56,7 @@ import {
 import type { EventHorizonRoute } from "../routes";
 import { useApi } from "../state";
 import { DidItWorkPrompt, type DidItWorkState } from "./collections/DidItWorkPrompt";
+import { CollectionUninstallModal } from "./collections/CollectionUninstallModal";
 import { useEHRuntime } from "../runtime/useEHRuntime";
 import {
   checkCollectionUpdates,
@@ -408,6 +405,7 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
   const { installBusy } = useEHRuntime();
 
   const [state, setState] = React.useState<PageState>({ kind: "loading" });
+  const [uninstalling, setUninstalling] = React.useState<InstallReceipt | undefined>(undefined);
   const [selected, setSelected] = React.useState<InstallReceipt | undefined>(
     undefined,
   );
@@ -787,6 +785,7 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
                 receipt={receipt}
                 isActive={receipt.vortexProfileId === activeProfileId}
                 onOpen={(): void => setSelected(receipt)}
+                onUninstall={(): void => setUninstalling(receipt)}
                 presentation={presentations.get(receipt.packageId)}
                 update={pendingUpdateFor(receipt, updates.get(receipt.packageId))}
                 onUpdate={(update): void => {
@@ -805,11 +804,23 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
           void handleContinueInstall(receipt);
         }}
         onClose={(): void => setSelected(undefined)}
-        onUninstalled={(): void => {
+        onUninstall={(receipt): void => {
           setSelected(undefined);
+          setUninstalling(receipt);
+        }}
+      />
+
+      <CollectionUninstallModal
+        receipt={uninstalling}
+        onClose={(): void => setUninstalling(undefined)}
+        onFinished={(outcome): void => {
+          setUninstalling(undefined);
           showToast({
-            intent: "success",
-            message: "Collection uninstalled. Receipt deleted.",
+            intent: outcome.failed.length > 0 ? "warning" : "success",
+            message:
+              outcome.failed.length > 0
+                ? `Removed ${outcome.removed.length} mod(s); ${outcome.failed.length} could not be removed.`
+                : `Collection uninstalled: ${outcome.removed.length} mod(s) removed.`,
           });
           refresh();
         }}
@@ -832,6 +843,8 @@ export function ReceiptCard(props: {
   /** A newer revision on Nexus, when the last check found one. */
   update?: CollectionUpdate | undefined;
   onUpdate?: (update: CollectionUpdate) => void;
+  /** Uninstall straight from the card, without opening the details. */
+  onUninstall?: () => void;
 }): JSX.Element {
   const { receipt, isActive, onOpen, presentation, update } = props;
   const tile = presentation?.tile;
@@ -910,8 +923,9 @@ export function ReceiptCard(props: {
             </span>
           )}
         </div>
-        {update !== undefined && props.onUpdate !== undefined && (
+        {((update !== undefined && props.onUpdate !== undefined) || props.onUninstall !== undefined) && (
           <div className="eh-row">
+            {update !== undefined && props.onUpdate !== undefined && (
             <Button
               intent="primary"
               size="sm"
@@ -923,6 +937,20 @@ export function ReceiptCard(props: {
             >
               Update to revision {update.latestRevision}
             </Button>
+            )}
+            {props.onUninstall !== undefined && (
+              <Button
+                intent="ghost"
+                size="sm"
+                onClick={(event): void => {
+                  // The whole card opens the details; this button must not.
+                  event.stopPropagation();
+                  props.onUninstall?.();
+                }}
+              >
+                Uninstall
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -938,23 +966,19 @@ export function ReceiptCard(props: {
 function ReceiptDetailModal(props: {
   receipt: InstallReceipt | undefined;
   onClose: () => void;
-  onUninstalled: () => void;
+  /** Open the uninstall dialog for this collection. */
+  onUninstall: (receipt: InstallReceipt) => void;
   /** Hand this package back to the installer and go there. */
   onContinueInstall: (receipt: InstallReceipt) => void;
   /** How the collection presents itself, when this machine has it. */
   presentation?: ShownPresentation | undefined;
 }): JSX.Element {
-  const { receipt, onClose, onUninstalled, presentation } = props;
+  const { receipt, onClose, presentation } = props;
   const api = useApi();
   const reportError = useErrorReporter();
   const showToast = useToast();
 
   const [busy, setBusy] = React.useState(false);
-  const [confirmingUninstall, setConfirmingUninstall] = React.useState(false);
-  const [progress, setProgress] = React.useState<{
-    current: number;
-    total: number;
-  } | null>(null);
 
   const handleExportDiagnostic = async (): Promise<void> => {
     if (receipt === undefined) return;
@@ -1003,195 +1027,6 @@ function ReceiptDetailModal(props: {
     }
   };
 
-  const handleUninstall = async (): Promise<void> => {
-    if (receipt === undefined) return;
-    /**
-     * ─── ONLY MODS WE PUT HERE (NS-2) ──────────────────────────────────────
-     * This loop used to walk `receipt.mods` whole. But the receipt describes
-     * what the collection CONTROLS, not what it created: an
-     * `*-already-installed` decision records the USER'S own Vortex mod id, so
-     * on a real 1,755-mod install 1,591 of those rows were mods Event Horizon
-     * never installed. "Uninstall this collection" would have deleted every
-     * one of them.
-     *
-     * `ownership` is absent on receipts written before it existed, and absent
-     * means UNKNOWN — which is treated as theirs. That leaves an old receipt
-     * uninstalling nothing, and that is the right way round: the remedy for
-     * being too careful is a message, and the remedy for deleting someone's
-     * 1,591 mods is nothing at all.
-     */
-    const ours = receipt.mods.filter((m) => m.ownership === "installed");
-    const notOurs = receipt.mods.length - ours.length;
-    ehLog("info", "collection.uninstall.start", {
-      packageId: receipt.packageId,
-      total: receipt.mods.length,
-      willRemove: ours.length,
-      leftAlone: notOurs,
-      unknownOwnership: receipt.mods.filter((m) => m.ownership === undefined)
-        .length,
-    });
-    /**
-     * ─── NOTHING TO REMOVE IS AN ANSWER, NOT A NO-OP ────────────────────
-     * `ownership` is absent on every receipt written before alpha.111, and
-     * absent means UNKNOWN, which this correctly treats as theirs (NS-2). So
-     * on a legacy receipt `ours` is empty — and the handler used to run an
-     * empty loop, DELETE THE RECEIPT anyway, and close the modal. The user
-     * had just been told 1,755 mods would be removed; nothing was; the
-     * collection vanished from the list; and the receipt — the only record
-     * linking those 1,755 mods to this collection, and after the ownership
-     * fix the only surviving provenance — was gone.
-     *
-     * The docblock above already said "the remedy for being too careful is a
-     * message". This is that message.
-     */
-    if (ours.length === 0) {
-      ehLog("warn", "collection.uninstall.refused-nothing-ours", {
-        packageId: receipt.packageId,
-        total: receipt.mods.length,
-      });
-      reportError(
-        new Error(
-          `This receipt records ${receipt.mods.length} mod(s) but does not say ` +
-            `which of them Event Horizon installed, so none can be safely ` +
-            `removed — every one of them may be a mod you already had. ` +
-            `Receipts written before this tracking existed are in that state. ` +
-            `Re-installing the collection produces a receipt that records it, ` +
-            `and the receipt has been LEFT IN PLACE so nothing is lost.`,
-        ),
-        {
-          title: "Nothing can be safely uninstalled",
-          context: { step: "uninstall", packageId: receipt.packageId },
-        },
-      );
-      setBusy(false);
-      return;
-    }
-
-    setBusy(true);
-    setProgress({ current: 0, total: ours.length });
-    try {
-      let i = 0;
-      /**
-       * Counted, not swallowed. Every failure used to be logged and forgotten,
-       * and the receipt was deleted anyway on the `notOurs === 0` branch — so
-       * a staging drive going offline mid-uninstall left hundreds of mods on
-       * disk with the only record of where they came from gone. The refusal
-       * above exists precisely so losing provenance is never silent.
-       */
-      let failed = 0;
-      let restored = 0;
-      for (const mod of ours) {
-        i += 1;
-        setProgress({ current: i, total: ours.length });
-        try {
-          await uninstallMod(api, {
-            gameId: receipt.gameId,
-            modId: mod.vortexModId,
-          });
-          /**
-           * ─── GIVE THE USER THEIR OWN MOD BACK ─────────────────────────
-           * When a mirrored mod was one the user already owned, the install
-           * put the curator's copy beside theirs and switched theirs OFF in
-           * this profile. Removing our copy without undoing that leaves them
-           * with NEITHER active: their mod still installed, still listed, and
-           * silently disabled in the profile they play.
-           *
-           * Only after the removal succeeded — re-enabling a mod while ours
-           * is still there would put two copies of the same mod in one
-           * profile, which is the conflict the swap exists to avoid.
-           */
-          if (mod.displacedModId !== undefined) {
-            enableModInProfile(
-              api,
-              receipt.vortexProfileId,
-              mod.displacedModId,
-            );
-            restored += 1;
-          }
-        } catch (err) {
-          // Continue removing the rest — record per-mod failures, finalize
-          // by reporting once at the end.
-          failed += 1;
-          ehLog("warn", "collection.uninstall.mod-failed", {
-            name: mod.name,
-            vortexModId: mod.vortexModId,
-            err,
-          });
-        }
-      }
-      if (restored > 0) {
-        ehLog("info", "collection.uninstall.displaced-restored", {
-          restored,
-          profileId: receipt.vortexProfileId,
-          why:
-            "these mods were the user's own copies, switched off when the " +
-            "collection installed its own beside them",
-        });
-      }
-      const appData = getVortexUserDataPath();
-      /**
-       * Only when the receipt no longer describes anything on disk.
-       *
-       * Mods left alone are mods the user still has, and this file is the one
-       * thing that can identify them as belonging to this collection later.
-       * Deleting it while any of them survive throws away the ability to
-       * answer "where did these come from" for good.
-       */
-      if (notOurs === 0 && failed === 0) {
-        await deleteReceipt(appData, receipt.packageId);
-        /**
-         * And the copy of the collection kept for repairs. It is a full
-         * package — gigabytes when the curator bundles mods — and it exists
-         * only to serve the receipt that has just been deleted. Leaving it
-         * would be a silent, permanent disk leak per uninstalled collection.
-         */
-        const { clearStoredPackage } = await import(
-          "../../core/installer/packageStore"
-        );
-        await clearStoredPackage(appData, receipt.packageId);
-      } else {
-        ehLog("info", "collection.uninstall.receipt-kept", {
-          packageId: receipt.packageId,
-          removed: ours.length - failed,
-          leftAlone: notOurs,
-          failed,
-          why:
-            failed > 0
-              ? "some mods could not be removed and are still on disk; this " +
-                "receipt is the only record of where they came from"
-              : "mods this receipt covers are still installed, and it is the " +
-                "only record of where they came from",
-        });
-      }
-      if (failed > 0) {
-        // The outer catch never fires for these — each one was caught in the
-        // loop — so without this the user sees a clean finish for an
-        // uninstall that left mods behind.
-        reportError(
-          new Error(
-            `${failed} of ${ours.length} mod(s) could not be removed. They ` +
-              `are still installed, and this collection has been kept in the ` +
-              `list so you can try again.`,
-          ),
-          { title: "Uninstall incomplete" },
-        );
-      }
-      onUninstalled();
-    } catch (err) {
-      reportError(err, {
-        title: "Uninstall partially failed",
-        context: {
-          step: "uninstall",
-          packageId: receipt.packageId,
-        },
-      });
-    } finally {
-      setBusy(false);
-      setProgress(null);
-      setConfirmingUninstall(false);
-    }
-  };
-
   return (
     <Modal
       open={receipt !== undefined}
@@ -1213,7 +1048,7 @@ function ReceiptDetailModal(props: {
             <Button
               intent="danger"
               disabled={busy}
-              onClick={(): void => setConfirmingUninstall(true)}
+              onClick={(): void => props.onUninstall(receipt)}
             >
               Uninstall
             </Button>
@@ -1301,90 +1136,9 @@ function ReceiptDetailModal(props: {
             </ul>
           </Section>
 
-          {progress !== null && (
-            <div className="eh-inset eh-body">
-              Uninstalling... {progress.current} / {progress.total}
-            </div>
-          )}
         </div>
       )}
 
-      <UninstallConfirmModal
-        open={confirmingUninstall}
-        receipt={receipt}
-        onCancel={(): void => setConfirmingUninstall(false)}
-        onConfirm={(): void => {
-          void handleUninstall();
-        }}
-        busy={busy}
-      />
-    </Modal>
-  );
-}
-
-function UninstallConfirmModal(props: {
-  open: boolean;
-  receipt: InstallReceipt | undefined;
-  onCancel: () => void;
-  onConfirm: () => void;
-  busy: boolean;
-}): JSX.Element {
-  return (
-    <Modal
-      open={props.open && props.receipt !== undefined}
-      onClose={props.onCancel}
-      size="sm"
-      title="Uninstall this collection?"
-      footer={
-        <>
-          <Button intent="ghost" onClick={props.onCancel} disabled={props.busy}>
-            Cancel
-          </Button>
-          <Button
-            intent="danger"
-            onClick={props.onConfirm}
-            disabled={props.busy}
-          >
-            Yes, uninstall
-          </Button>
-        </>
-      }
-    >
-      <p className="eh-body">
-        {(() => {
-          /**
-           * The number that used to be here was `receipt.mods.length` — every
-           * mod in the receipt — while the handler removes only the ones
-           * Event Horizon actually INSTALLED. On a real 1,755-mod install
-           * that is 1,755 promised against 164 removed, and on a receipt
-           * written before ownership was tracked it is 1,755 against none.
-           *
-           * A confirmation dialog is a promise about what the button does.
-           */
-          const mods = props.receipt?.mods ?? [];
-          const ours = mods.filter((m) => m.ownership === "installed").length;
-          const theirs = mods.length - ours;
-          if (mods.length === 0) return "This receipt records no mods.";
-          if (ours === 0) {
-            return (
-              `This receipt records ${mods.length} mod(s) but does not say which ` +
-              `of them Event Horizon installed, so NONE will be removed — each ` +
-              `one may be a mod you already had. The receipt will be kept.`
-            );
-          }
-          return (
-            `Event Horizon will remove the ${ours} mod(s) it installed for this ` +
-            `collection.` +
-            (theirs > 0
-              ? ` The other ${theirs} were already on your machine and will be ` +
-                `left exactly as they are, along with the receipt that records ` +
-                `them.`
-              : ` The receipt file will be deleted.`) +
-            ` The Vortex profile itself is NOT deleted — switch to it manually ` +
-            `if you want to inspect what survives.`
-          );
-        })()}
-      </p>
     </Modal>
   );
 }

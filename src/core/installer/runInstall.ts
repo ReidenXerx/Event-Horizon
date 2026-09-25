@@ -96,6 +96,7 @@ import {
   type GameIniApplicationReceipt,
   type InstallReceipt,
   type InstallReceiptMod,
+  type InstallReceiptRetiredMod,
   type InstallReceiptNexusCollection,
   type ModVerificationFailExample,
   type ModVerificationReceipt,
@@ -133,6 +134,7 @@ import type { SupportedGameId } from "../../types/ehcoll";
 import { countMods, deployBudgetMs } from "./timeBudgets";
 import { describeMissingFromPackage, unprovidedPlugins } from "../manifest/unprovidedPlugins";
 import { nativePluginSummaryFor } from "./nativePluginReceipt";
+import { carryRetiredMods, installTimeMs } from "./retiredMods";
 import { resolveGameVersion } from "../resolver/userState";
 import {
   clearInstallAttempt,
@@ -5139,6 +5141,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       suppliedArchiveMismatches,
       iniTweaks: iniTweakApplication.enabledKeys,
       previousMods: previousReceiptMods,
+      previousRetired: previousReceipt?.retiredMods ?? [],
     });
 
     let receiptPath: string;
@@ -6733,6 +6736,8 @@ function buildReceipt(args: {
    * Today only `suppliedArchive` — see `suppliedArchiveFor`.
    */
   previousMods?: readonly InstallReceiptMod[];
+  /** The previous receipt's `retiredMods`, carried forward (see retiredMods.ts). */
+  previousRetired?: readonly InstallReceiptRetiredMod[];
 }): InstallReceipt {
   const {
     ctx,
@@ -6884,6 +6889,28 @@ function buildReceipt(args: {
    * file, and it may be deleted by then.
    */
   const driverState = ctx.api.getState();
+  /**
+   * Mods the previous receipt proved ours that this revision no longer ships.
+   * See retiredMods.ts: without this, a dropped mod lost its provenance on the
+   * next update and uninstall could never reach it.
+   */
+  const livePool =
+    (driverState as unknown as {
+      persistent?: { mods?: Record<string, Record<string, { attributes?: { installTime?: unknown } }>> };
+    }).persistent?.mods?.[manifest.game.id] ?? {};
+  const retiredMods = carryRetiredMods({
+    previousMods: args.previousMods ?? [],
+    previousRetired: args.previousRetired ?? [],
+    currentModIds: new Set(modEntries.map((e) => e.vortexModId)),
+    newVersion: manifest.package.version,
+    liveInstallTime: (id) => {
+      const mod = livePool[id];
+      if (mod === undefined) return undefined;
+      // A live mod with no readable install time is still carried, but with no time to match on,
+      // so the uninstall leaves it alone.
+      return installTimeMs(mod.attributes?.installTime) ?? Number.NaN;
+    },
+  });
   const nativePluginSummary = nativePluginSummaryFor({
     manifest,
     installedVersion: resolveGameVersion(driverState, manifest.game.id),
@@ -6952,6 +6979,8 @@ function buildReceipt(args: {
     ...(manifest.game.version.trim() !== "" && manifest.game.version !== "unknown"
       ? { gameVersion: { required: manifest.game.version, policy: manifest.game.versionPolicy } }
       : {}),
+    // Ours from earlier revisions and dropped since, so uninstall can reach them.
+    ...(retiredMods.length > 0 ? { retiredMods } : {}),
   };
 }
 

@@ -85,6 +85,11 @@ function nameMatcher(packageName: string): RegExp {
   );
 }
 
+/** Is this a profile name an Event Horizon install of `packageName` created? Same anchored rule as the cleanup offer. */
+export function isCollectionProfileName(packageName: string, profileName: string): boolean {
+  return nameMatcher(packageName).test(profileName);
+}
+
 /**
  * Every profile an earlier install of THIS collection created, minus the
  * three that must not be offered.

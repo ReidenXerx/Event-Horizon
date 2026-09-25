@@ -83,6 +83,8 @@ import { buildPluginRows, pluginCapabilityFor, type PluginHeader } from "../../c
 import { readPluginList } from "../../core/curator/pluginPool";
 import { readDownloads } from "../../core/curator/runCleanup";
 import { DidItWorkPrompt } from "../pages/collections/DidItWorkPrompt";
+import { UninstallPlanView, UninstallResult } from "../pages/collections/CollectionUninstallModal";
+import { planCollectionUninstall } from "../../core/installer/collectionUninstall";
 import { getCuratorSession } from "../pages/curator/curatorSession";
 import { readCuratorMods, readEnabledModIds, readModEnabledTimes } from "../../core/curator/readProfile";
 import {
@@ -2208,6 +2210,7 @@ describe("render", () => {
             latestRevision: 13,
           },
           onUpdate: () => undefined,
+          onUninstall: () => undefined,
         } as never),
         React.createElement(ReceiptCard, {
           receipt: {
@@ -2221,6 +2224,59 @@ describe("render", () => {
         } as never),
       ),
     );
+  });
+
+  it("collections — uninstall: the plan before anything happens, then what happened", () => {
+    const plan = planCollectionUninstall({
+      receipt: {
+        schemaVersion: 1,
+        packageId: "ivy",
+        packageVersion: "1.0.34",
+        packageName: "Ivy's Panties",
+        gameId: "fallout4",
+        installedAt: "2026-09-21T10:00:00.000Z",
+        vortexProfileId: "p34",
+        vortexProfileName: "Ivy's Panties (Event Horizon v1.0.34)",
+        installTargetMode: "fresh-profile",
+        mods: [
+          { vortexModId: "a", compareKey: "nexus:1:1", source: "nexus", name: "Advanced Needs 76", installedAt: "", ownership: "installed" },
+          { vortexModId: "b", compareKey: "nexus:2:2", source: "nexus", name: "Immersive Animation Framework", installedAt: "", ownership: "installed" },
+          { vortexModId: "c", compareKey: "nexus:3:3", source: "nexus", name: "Unofficial Fallout 4 Patch", installedAt: "", ownership: "adopted" },
+        ],
+        retiredMods: [
+          { vortexModId: "f4se-menu", compareKey: "nexus:105090:1", name: "F4SE Menu Framework", retiredInVersion: "1.0.34", installTime: "2026-09-01T10:00:00.000Z" },
+        ],
+      } as never,
+      otherReceipts: [],
+      pool: { a: {}, b: {}, c: {}, "f4se-menu": { installTime: "2026-09-01T10:00:00.000Z" } },
+      profiles: [
+        { id: "p34", name: "Ivy's Panties (Event Horizon v1.0.34)", gameId: "fallout4", enabled: new Set(["a", "b"]) },
+        { id: "p33", name: "Ivy's Panties (Event Horizon v1.0.33)", gameId: "fallout4", enabled: new Set(["a", "f4se-menu"]) },
+        { id: "mine", name: "My Playthrough", gameId: "fallout4", enabled: new Set(["b"]) },
+      ],
+      activeProfileId: "p34",
+    });
+    write(
+      "collections-uninstall-plan",
+      React.createElement(UninstallPlanView, { plan, deleteProfileIds: new Set(["p33"]), onToggleProfile: () => undefined }),
+    );
+    write(
+      "collections-uninstall-result",
+      React.createElement(UninstallResult, {
+        outcome: {
+          removed: plan.remove,
+          failed: [{ mod: { vortexModId: "x", name: "Locked Mod", from: "current" }, error: "EBUSY: resource busy or locked" }],
+          restored: 0,
+          profilesRemoved: ["p33"],
+          profilesFailed: [],
+          receiptDeleted: false,
+        },
+      }),
+    );
+    // The rule the screen has to show: F4SE Menu Framework, dropped a revision ago, is removed; a
+    // mod the player enabled in their own profile is kept and says why.
+    expect(plan.remove.map((m) => m.name)).toEqual(["Advanced Needs 76", "F4SE Menu Framework"]);
+    expect(plan.keep.map((k) => k.name)).toEqual(["Immersive Animation Framework"]);
   });
 
   it("decisions — the mods needing a human answer", () => {

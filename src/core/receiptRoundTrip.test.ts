@@ -185,6 +185,17 @@ describe("install receipt round-trip", () => {
     ]);
   });
 
+  // The only record that a dropped mod is ours; without it uninstall can never reach it.
+  it("keeps retiredMods, and drops a malformed entry rather than guessing", () => {
+    const good = { vortexModId: "old", compareKey: "nexus:1:2", name: "Old", retiredInVersion: "1.0.2", installTime: "2026-09-01T10:00:00.000Z" };
+    const out = throughDisk({
+      ...base(),
+      retiredMods: [good, { vortexModId: "", compareKey: "x", name: "Bad", retiredInVersion: "1" }, { vortexModId: "y" }],
+    } as unknown as InstallReceipt);
+    expect(out.retiredMods).toEqual([good]);
+    expect("retiredMods" in throughDisk(base())).toBe(false);
+  });
+
   it("keeps stagingSetPaths — WHICH files that hash covered", () => {
     // Without it the drift check cannot tell "the folder changed" from "the
     // collection now records a different set of files for this mod", and
@@ -405,6 +416,15 @@ describe("the whole receipt, not a list of fields somebody remembered", () => {
       finishingSkipped: ["plugin order"],
       failedMods: [{ compareKey: "external:abc", name: "B Mod", reason: "why" }],
       pluginFlagChanges: [{ plugin: "Foo.esp", wasLight: false }],
+      retiredMods: [
+        {
+          vortexModId: "dropped-1",
+          compareKey: "nexus:3:4",
+          name: "Dropped Mod",
+          retiredInVersion: "1.0.1",
+          installTime: "2026-09-01T10:00:00.000Z",
+        },
+      ],
     }) as unknown as InstallReceipt;
 
   it("carries EVERY field it was given to disk, by key set", () => {
