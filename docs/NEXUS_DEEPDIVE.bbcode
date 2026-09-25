@@ -1,0 +1,63 @@
+=== STICKY: How Event Horizon works inside (1 of 2): the build and the install ===
+[b]How Event Horizon works inside, part 1: the build and the install[/b]
+For players, curators and modders who want the mechanism. The page has the features and a comparison with vanilla Vortex; this is what happens underneath. The source is on GitHub.
+
+[b]What a build records[/b]
+For every mod: its Nexus file, the SHA-256 of its archive, and the SHA-256 of every file in the curator's staging folder. Around them: the installer answers, mod rules, the LOOT userlist and groups, plugin order and ESL flags, and the game's INI values minus the ones that describe the curator's hardware. The build also asks Nexus about every mod and tells [i]file gone[/i] from [i]page gone[/i]. It warns and never bundles behind the curator's back.
+
+[b]The curator's own edits: four answers, the curator's choice[/b]
+[list]
+[*][b]Mirror.[/b] The player downloads the author's archive from Nexus, so the author keeps the download, updates and endorsements. After it installs, its folder is compared with the curator's record: a missing or different file is restored as a full copy from the package, an extra one is removed.
+[*][b]Bundle.[/b] The curator's exact folder ships in the package. No installer runs, so this is the answer for a mod whose installer cannot be replayed. The author loses the download.
+[*][b]Declare.[/b] Only files a player is no worse off without: logs, backups, caches, an INI tuned to one machine. Never LOD output or a cleaned plugin: nobody can regenerate those on install.
+[*][b]Leave it out.[/b]
+[/list]
+The tool never picks for the curator: the four mean different things for the mod's author and for the player.
+
+[b]Installer answers[/b]
+An installer with no recorded answers is ambiguous: it can mean "picked nothing", or a Vortex variant that dropped the answers. The build replays the script with no choices and compares the result with the staging folder both ways, instead of guessing.
+
+[b]The install, phase by phase[/b]
+[list]
+[*][b]Checks[/b]: an unmanaged or never-started game, a file from another store's copy, Program Files, a cloud-synced folder, missing runtimes, missing Creation Club masters. The install stops here, not an hour in.
+[*][b]Profile, Switch[/b]: a new version installs into its own new profile. The one you play is not touched and stays one switch away.
+[*][b]Remove[/b]: only what you confirmed, and never a mod Event Horizon did not install. That comes from its own install journal, not from Vortex's mod list.
+[*][b]Install[/b]: one mod at a time, because Vortex can lose files when many install at once. Each download must match the curator's SHA-256. "Do you already have it?" is asked of Vortex's per-game mod pool, never of a profile.
+[*][b]Verify[/b]: every installed file is re-hashed against the curator's record, including mods skipped as already present. "Is this the same mod?" and "did the right bytes land?" are separate passes on purpose. Files a program writes at run time (logs, Thumbs.db) are left out; shipped backups are checked like anything else.
+[*][b]Rules, LOOT[/b]: the curator's mod rules, then the LOOT userlist and groups.
+[*][b]Mirror, Deploy[/b]: mirrored mods are brought to the curator's state, then Vortex deploys.
+[*][b]Order[/b]: the curator's plugin order is pinned, LOOT places only your own plugins, and the collection's plugins go back into the curator's sequence.
+[*][b]Receipt[/b]: what was actually installed, for the Doctor.
+[/list]
+An interrupted install, even one where Vortex was killed, continues in the same profile.
+
+=== STICKY: How Event Horizon works inside (2 of 2): the Doctor and what it refuses to guess ===
+[b]How Event Horizon works inside, part 2: the Doctor and what it refuses to guess[/b]
+
+[b]Two references, on purpose[/b]
+The Doctor diagnoses against the [b]receipt[/b] (what was actually installed on this machine) and heals from the [b]manifest[/b] (what the curator recorded). They differ only when you chose to watch the installers and answered one differently from the curator. What you chose then counts as healthy, and a reinstall offered for that mod says first that it may undo answers you changed on purpose.
+
+[b]What it checks[/b]
+[list]
+[*]Whether the install finished (listed first, because an unfinished run changes what everything else means).
+[*]The profile, which mods are present, which are enabled, and the files in their folders.
+[*]Plugin order and ESL flags.
+[*]Mod rules, LOOT ordering rules and LOOT group assignments, as separate cards.
+[/list]
+Each card has five states, not two: healthy, drifted, broken, unknown, not applicable. [b]Unknown is never shown as fine[/b]: a receipt written before a check existed cannot vouch for it. A repair runs the same pipeline step the install used: reinstall, enable, re-apply the rules or the userlist, re-pin the order, restore the ESL flags, switch profile. What you add yourself is counted, not flagged.
+
+[b]The load order afterwards[/b]
+Vortex's automatic sort, on by default, re-sorts on every deploy, and the Sort button does it by hand. Both replace the curator's order silently: every file still verifies. Event Horizon watches the order and, when it drifts, shows a notification with the re-apply on it. It stays quiet while an install is running.
+
+[b]Which mod wins a file[/b]
+No per-file winners are shipped. Contested files are decided by the collection's mod rules, which reproduce the curator's winner for 17,159 of 17,161 files on a 1,753-mod collection. The other two are a Readme and a FOMOD info file.
+
+[b]Precision over time and size[/b]
+A build may take longer and a package may be bigger; a wrong collection costs every player and cannot be repaired by hand. Caches are allowed only when a hit proves the bytes (keyed by content, never by a timestamp).
+
+[b]What it will not guess[/b]
+[list]
+[*]An empty installer answer is measured, not replayed as "nothing" (part 1).
+[*]A mod whose page or file is gone is a warning to the curator, never an automatic bundle.
+[*]A different game version is a warning with the mods that care about it named; you decide.
+[/list]
