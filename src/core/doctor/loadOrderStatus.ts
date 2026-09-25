@@ -43,7 +43,7 @@
 
 import { readPluginList } from "../curator/pluginPool";
 import { comparePluginOrder, type PluginOrderDrift, type PluginOrderEntry } from "../installer/checkPluginOrder";
-import { repinCuratorOrder } from "../installer/repinPluginOrder";
+import { repinCuratorOrder, type UserPluginMasters } from "../installer/repinPluginOrder";
 
 const key = (name: string): string => name.trim().toLowerCase();
 
@@ -383,14 +383,19 @@ export function curatorPluginsOff(n: number): string {
  *
  * `current` is Vortex's state (currentOrderFromState): the order the Doctor
  * compares, the watcher reads, and the re-apply asks Vortex to persist.
+ *
+ * `userMasters` (readUserPluginMasters) keeps a user's patch for a collection
+ * plugin below that plugin; the preview and the heal must pass the same map.
  */
 export function buildRepinOrder(
   baseline: readonly PluginOrderEntry[],
   current: readonly PluginOrderEntry[],
+  userMasters?: UserPluginMasters,
 ): PluginOrderEntry[] {
   const merged = repinCuratorOrder(
     baseline.map((p) => p.name),
     current.map((p) => p.name),
+    userMasters,
   );
   const enabled = new Map(current.map((p) => [key(p.name), p.enabled] as const));
   // `merged` holds exactly current's members, so every lookup hits; the
@@ -406,9 +411,10 @@ export function buildRepinOrder(
 export function previewRepin(
   baseline: readonly PluginOrderEntry[],
   current: readonly PluginOrderEntry[],
+  userMasters?: UserPluginMasters,
 ): { moves: Array<{ name: string; from: number; to: number }>; total: number } {
   const currentNames = current.map((p) => p.name);
-  const merged = buildRepinOrder(baseline, current).map((p) => p.name);
+  const merged = buildRepinOrder(baseline, current, userMasters).map((p) => p.name);
   const before = new Map(currentNames.map((n, i) => [key(n), i]));
   const moves: Array<{ name: string; from: number; to: number }> = [];
   merged.forEach((name, to) => {

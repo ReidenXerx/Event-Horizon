@@ -287,7 +287,8 @@ export function startLoadOrderWatcher(api: types.IExtensionApi): void {
         title: "Your load order no longer matches the curator's",
         message:
           `${receipt.packageName}: ${said.headline}. Vortex's sort (automatic on deploy, or the Sort button) replaced ` +
-          `the collection's pinned order. Your own plugins keep their places either way.`,
+          `the collection's pinned order. Re-applying reorders only the collection's plugins; ` +
+          `a plugin of your own that patches one of them stays below it.`,
         displayMS: undefined,
         actions: [
           {

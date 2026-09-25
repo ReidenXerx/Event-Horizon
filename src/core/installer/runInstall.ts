@@ -187,6 +187,7 @@ import {
   orderDiffers,
   repinCuratorOrder,
 } from "./repinPluginOrder";
+import { readUserPluginMasters } from "./userPluginMasters";
 import { compareSelections } from "../curator/fomodSelectionDiff";
 import {
   getActiveGameId,
@@ -4240,9 +4241,15 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           const enabledByName = new Map(
             actual.map((pl) => [pl.name.toLowerCase(), pl.enabled] as const),
           );
+          // A patch of the user's own for a collection plugin stays below it
+          // (keepMastersAbove), so the refill cannot carry its master past it.
           const merged = repinCuratorOrder(
             plan.manifest.plugins.order.map((pl) => pl.name),
             actualNames,
+            await readUserPluginMasters(
+              api.getState(),
+              plan.manifest.plugins.order.map((pl) => pl.name),
+            ),
           );
           if (orderDiffers(merged, actualNames)) {
             const repin = await applyPluginOrder({
@@ -4915,6 +4922,10 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             const mergedAfter = repinCuratorOrder(
               plan.manifest.plugins.order.map((pl) => pl.name),
               afterNames,
+              await readUserPluginMasters(
+                api.getState(),
+                plan.manifest.plugins.order.map((pl) => pl.name),
+              ),
             );
             if (orderDiffers(mergedAfter, afterNames)) {
               const rePin = await applyPluginOrder({

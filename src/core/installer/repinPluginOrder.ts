@@ -69,9 +69,17 @@ function distinct(names: readonly string[]): string[] {
   return out;
 }
 
+/**
+ * The masters of the plugins the collection does NOT own, keyed by lowercased
+ * name. Only those are needed: the curator's own plugins are placed in the
+ * curator's tested order and never move for a user's plugin.
+ */
+export type UserPluginMasters = Readonly<Record<string, readonly string[]>>;
+
 export function repinCuratorOrder(
   curatorOrder: readonly string[],
   actualOrder: readonly string[],
+  userMasters?: UserPluginMasters,
 ): string[] {
   // Deduped, so slot count and queue length are the same number by
   // construction and the fallback below is provably unreachable. See distinct.
@@ -106,6 +114,51 @@ export function repinCuratorOrder(
     } else {
       out.push(name);
     }
+  }
+  return userMasters === undefined ? out : keepMastersAbove(out, owned, userMasters);
+}
+
+/**
+ * ─── A USER'S PATCH MUST STILL LOAD AFTER ITS MASTER ────────────────────────
+ * Refilling the collection's slots moves collection plugins, and LOOT placed
+ * the user's plugins relative to where those USED to be. A user's patch for a
+ * collection plugin sits one slot under it after the sort; if the curator's
+ * order puts that plugin later among the collection's own, the refill carries
+ * it past the patch. The patch then loads BEFORE its master, and the game
+ * applies the master's records over the patch's, which silently undoes it.
+ *
+ * Measured 2026-09-25 on a tester's Ivy install: a one-record patch for
+ * llamaCompanionHeatherv2.esp sorted to 310 with Heather at 309, and every
+ * "Re-apply curator's order" put it at 290 with Heather at 291.
+ *
+ * So after the refill, each of the user's plugins that now sits above one of
+ * its masters moves down to just below the last of them. Only the user's
+ * plugins move: the collection's keep the curator's order, which is the whole
+ * point of the re-pin. A plugin whose masters we could not read keeps LOOT's
+ * slot, as before.
+ */
+function keepMastersAbove(
+  order: readonly string[],
+  owned: ReadonlySet<string>,
+  userMasters: UserPluginMasters,
+): string[] {
+  const out = [...order];
+  // Each move lands a plugin strictly lower, so a master chain settles within
+  // one move per plugin; the cap only stops a master CYCLE (A needs B, B needs
+  // A), which no order satisfies and the game refuses anyway.
+  for (let moves = 0; moves < out.length; moves++) {
+    const at = new Map(out.map((n, i) => [key(n), i] as const));
+    const late = out.findIndex((name, i) => {
+      if (owned.has(key(name))) return false;
+      return (userMasters[key(name)] ?? []).some((m) => (at.get(key(m)) ?? -1) > i);
+    });
+    if (late === -1) return out;
+    const name = out[late]!;
+    const lastMaster = Math.max(...(userMasters[key(name)] ?? []).map((m) => at.get(key(m)) ?? -1));
+    out.splice(late, 1);
+    // The removal shifted the master up one, so its old index is now the slot
+    // right below it.
+    out.splice(lastMaster, 0, name);
   }
   return out;
 }

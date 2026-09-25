@@ -27,6 +27,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import type { UserPluginMasters } from "../installer/repinPluginOrder";
 /** Which aspect of the collection a check covers. */
 import type { FomodReplayMode } from "../installer/fomodReplayMode";
 import {
@@ -164,6 +165,12 @@ export interface HealthObservations {
    * reported every native as a missing plugin.
    */
   nativePluginNames?: readonly string[];
+  /**
+   * Masters of the user's own plugins (lowercased name → masters), for the
+   * re-apply preview: the heal keeps a user's patch below the collection
+   * plugin it patches, and the preview must show the same moves.
+   */
+  userPluginMasters?: UserPluginMasters;
   /**
    * Whether this receipt's order is the one Vortex has active: its game, its
    * profile, and not superseded by a newer install into that profile.

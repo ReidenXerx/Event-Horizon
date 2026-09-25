@@ -125,3 +125,61 @@ describe("orderDiffers", () => {
     expect(orderDiffers(["a.esp"], ["a.esp", "b.esp"])).toBe(true);
   });
 });
+
+describe("a user's patch for a collection plugin", () => {
+  /**
+   * The tester's case, 2026-09-25: LOOT put a one-record patch right under
+   * llamaCompanionHeatherv2.esp; the refill then moved Heather to a LATER
+   * collection slot, and the patch loaded before its own master, so Heather's
+   * record won and the patch did nothing.
+   */
+  const curator = ["a.esp", "b.esp", "heather.esp"];
+  const afterLoot = ["a.esp", "heather.esp", "patch.esp", "b.esp"];
+
+  it("used to land above its master (the bug, without masters)", () => {
+    expect(repinCuratorOrder(curator, afterLoot)).toEqual(["a.esp", "b.esp", "patch.esp", "heather.esp"]);
+  });
+
+  it("moves below its master when its masters are known", () => {
+    const out = repinCuratorOrder(curator, afterLoot, { "patch.esp": ["Fallout4.esm", "Heather.esp"] });
+    expect(out).toEqual(["a.esp", "b.esp", "heather.esp", "patch.esp"]);
+  });
+
+  it("never moves the collection's own plugins to make room", () => {
+    const out = repinCuratorOrder(curator, afterLoot, { "patch.esp": ["heather.esp"] });
+    expect(out.filter((n) => curator.includes(n))).toEqual(curator);
+  });
+
+  it("lands under the LAST of several masters", () => {
+    const actual = ["heather.esp", "patch.esp", "a.esp", "b.esp"];
+    const out = repinCuratorOrder(curator, actual, { "patch.esp": ["heather.esp", "b.esp"] });
+    // Curator refill: a, b, heather into slots 0, 2, 3 → [a, patch, b, heather]; patch needs both.
+    expect(out).toEqual(["a.esp", "b.esp", "heather.esp", "patch.esp"]);
+  });
+
+  it("settles a chain: a patch of the user's patch follows it down", () => {
+    const out = repinCuratorOrder(curator, ["a.esp", "heather.esp", "patch.esp", "patch2.esp", "b.esp"], {
+      "patch.esp": ["heather.esp"],
+      "patch2.esp": ["patch.esp"],
+    });
+    const at = (n: string) => out.indexOf(n);
+    expect(at("patch.esp")).toBeGreaterThan(at("heather.esp"));
+    expect(at("patch2.esp")).toBeGreaterThan(at("patch.esp"));
+    expect([...out].sort()).toEqual(["a.esp", "b.esp", "heather.esp", "patch.esp", "patch2.esp"]);
+  });
+
+  it("leaves a plugin whose masters are already above it exactly where LOOT put it", () => {
+    const actual = ["a.esp", "b.esp", "heather.esp", "patch.esp"];
+    expect(repinCuratorOrder(curator, actual, { "patch.esp": ["heather.esp"] })).toEqual(actual);
+  });
+
+  it("ignores a master that is not in the load order at all", () => {
+    const out = repinCuratorOrder(curator, afterLoot, { "patch.esp": ["notinstalled.esp"] });
+    expect(out).toEqual(repinCuratorOrder(curator, afterLoot));
+  });
+
+  it("terminates on a master cycle and loses nobody", () => {
+    const out = repinCuratorOrder(curator, ["x.esp", "y.esp", ...curator], { "x.esp": ["y.esp"], "y.esp": ["x.esp"] });
+    expect([...out].sort()).toEqual(["a.esp", "b.esp", "heather.esp", "x.esp", "y.esp"]);
+  });
+});

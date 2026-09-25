@@ -21,6 +21,7 @@ import type { types } from "@nexusmods/vortex-api";
 
 import { beginOp, ehLog } from "../logging/ehLog";
 import type { HealthObservations } from "./health";
+import type { UserPluginMasters } from "../installer/repinPluginOrder";
 import type { OrderReceipt, OrderStanding } from "./loadOrderStatus";
 
 /**
@@ -320,6 +321,26 @@ export async function gatherObservations(
     currentPluginOrderFromState = undefined;
   }
 
+  // The masters of the user's own plugins, so the card's re-apply preview
+  // keeps a user's patch below the collection plugin it patches, exactly as
+  // the heal will (runHeal reads the same map the same way).
+  let userPluginMasters: UserPluginMasters | undefined;
+  if (opts.orderReceipt !== undefined && currentPluginOrderFromState !== undefined) {
+    try {
+      const [{ readUserPluginMasters }, { baselineOf }] = await Promise.all([
+        import("../installer/userPluginMasters"),
+        import("./loadOrderStatus"),
+      ]);
+      userPluginMasters = await readUserPluginMasters(
+        state,
+        baselineOf(opts.orderReceipt).map((p) => p.name),
+      );
+    } catch (err) {
+      ehLog("debug", "doctor.gather.user-plugin-masters-unreadable", { err });
+      userPluginMasters = undefined;
+    }
+  }
+
   let activeProfileId: string | undefined;
   try {
     activeProfileId = getActiveProfileId(state);
@@ -339,6 +360,7 @@ export async function gatherObservations(
     ...(pluginsTxtMismatch !== undefined ? { pluginsTxtMismatch } : {}),
     ...(nativePluginNames !== undefined ? { nativePluginNames } : {}),
     ...(loadOrderStanding !== undefined ? { loadOrderStanding } : {}),
+    ...(userPluginMasters !== undefined ? { userPluginMasters } : {}),
     currentModRuleCount: countModRules(state, gameId),
     currentUserlistRuleCount,
     currentUserlistGroupAssignmentCount,

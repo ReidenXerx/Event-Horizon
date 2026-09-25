@@ -538,7 +538,14 @@ async function healImpl(
        * `buildRepinOrder` wraps that rule, and the card's preview calls it
        * with the same `current`.
        */
-      const order = buildRepinOrder(recorded, current);
+      // A patch of the user's own for a collection plugin must stay below it
+      // (keepMastersAbove); the card's preview reads the same map in gather.
+      const { readUserPluginMasters } = await import("../installer/userPluginMasters");
+      const userMasters = await readUserPluginMasters(
+        api.getState(),
+        recorded.map((p) => p.name),
+      );
+      const order = buildRepinOrder(recorded, current, userMasters);
       const result = await applyPluginOrder({
         api,
         gameId,

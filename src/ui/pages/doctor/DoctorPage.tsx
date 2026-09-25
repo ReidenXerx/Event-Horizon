@@ -491,7 +491,7 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
           // Vortex's state, which the re-apply reads too — never the file —
           // so the moves listed are the moves the button makes.
           {...(obs.currentPluginOrderFromState !== undefined
-            ? { preview: previewRepin(baselineOf(loaded.selected), obs.currentPluginOrderFromState) }
+            ? { preview: previewRepin(baselineOf(loaded.selected), obs.currentPluginOrderFromState, obs.userPluginMasters) }
             : {})}
           {...(obs.pluginsTxtMismatch === true ? { fileMismatch: true } : {})}
           {...(readsAutoSort(api.getState()) !== undefined ? { autoSortOn: readsAutoSort(api.getState()) } : {})}
