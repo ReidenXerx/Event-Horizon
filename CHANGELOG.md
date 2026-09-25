@@ -10,6 +10,25 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.15] — 2026-09-25
+
+A patch of your own for one of the collection's plugins now stays below that plugin when Event
+Horizon puts the curator's load order back.
+
+### Using Event Horizon
+- **"Re-apply curator's order" no longer moves your patch above the plugin it patches.** Re-applying
+  puts the collection's plugins back in the curator's order, in the slots LOOT gave them. LOOT had
+  placed your own plugins relative to where those plugins used to be, so a patch of yours sitting
+  right under a collection plugin could end up above it. A patch that loads before its master does
+  nothing: the master's records win. A tester's one-record patch for a companion sorted correctly
+  under LOOT and landed one slot above the companion after every re-apply. Event Horizon now reads
+  the masters of your own plugins and moves any that ended up above a master to just below it. The
+  collection's plugins still load exactly in the curator's order. This applies to the install, to
+  the Doctor's Re-apply button and to its preview.
+- **The load-order notification says what re-applying does.** It used to say your own plugins "keep
+  their places either way". Their slot numbers did, but the collection's plugins were reordered
+  around them.
+
 ## [0.2.14] — 2026-09-25
 
 Uninstalling a collection now removes all of it, not only its latest revision. A player asked how to
