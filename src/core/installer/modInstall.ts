@@ -710,6 +710,18 @@ export async function uninstallMod(
   api: types.IExtensionApi,
   args: { gameId: string; modId: string },
 ): Promise<void> {
+  await uninstallMods(api, { gameId: args.gameId, modIds: [args.modId] });
+}
+
+/**
+ * Several mods in one call. Vortex's `removeMods` undeploys the whole list in one pass and then removes the
+ * folders, so a list costs one undeploy where one-by-one costs one per mod. Ids Vortex no longer holds are
+ * skipped by Vortex itself.
+ */
+export async function uninstallMods(
+  api: types.IExtensionApi,
+  args: { gameId: string; modIds: readonly string[] },
+): Promise<void> {
   const removeMods = (util as unknown as {
     removeMods?: (
       api: types.IExtensionApi,
@@ -725,7 +737,7 @@ export async function uninstallMod(
     );
   }
 
-  await removeMods(api, args.gameId, [args.modId]);
+  await removeMods(api, args.gameId, [...args.modIds]);
 }
 
 /**

@@ -24,6 +24,12 @@ import type { ModToRemove, ProfileChoice, UninstallPlan } from "./collectionUnin
 
 export type UninstallDeps = {
   uninstallMod: (vortexModId: string) => Promise<void>;
+  /**
+   * Several at once, when the host can. Vortex's `removeMods` undeploys the whole list in ONE pass and then
+   * deletes the folders; called once per mod it paid that undeploy a thousand times on a thousand-mod collection
+   * ("slow and one at a time", a Nexus report on 0.2.13).
+   */
+  uninstallMods?: (vortexModIds: readonly string[]) => Promise<void>;
   enableModInProfile: (profileId: string, vortexModId: string) => void;
   removeProfiles: (
     profiles: readonly ProfileChoice[],
@@ -32,6 +38,9 @@ export type UninstallDeps = {
   clearStoredPackage: () => Promise<void>;
   onProgress?: (done: number, total: number) => void;
 };
+
+/** Mods per removeMods call: one undeploy for fifty, and a failed chunk replays only fifty. */
+export const UNINSTALL_CHUNK = 50;
 
 export type UninstallOutcome = {
   removed: ModToRemove[];
@@ -79,23 +88,55 @@ export async function runCollectionUninstall(args: {
   };
 
   let done = 0;
-  for (const mod of plan.remove) {
+  const removed = (mod: ModToRemove): void => {
+    outcome.removed.push(mod);
+    // Only after ours is gone: two copies of one mod enabled in a profile is the conflict the
+    // swap existed to avoid.
+    if (mod.displacedModId !== undefined && collectionProfileSurvives) {
+      deps.enableModInProfile(args.collectionProfileId, mod.displacedModId);
+      outcome.restored += 1;
+    }
+  };
+  const one = async (mod: ModToRemove): Promise<void> => {
     try {
       await deps.uninstallMod(mod.vortexModId);
-      outcome.removed.push(mod);
-      // Only after ours is gone: two copies of one mod enabled in a profile is the conflict the
-      // swap existed to avoid.
-      if (mod.displacedModId !== undefined && collectionProfileSurvives) {
-        deps.enableModInProfile(args.collectionProfileId, mod.displacedModId);
-        outcome.restored += 1;
-      }
+      removed(mod);
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       outcome.failed.push({ mod, error });
       ehLog("warn", "collection.uninstall.mod-failed", { name: mod.name, vortexModId: mod.vortexModId, error });
     }
-    done += 1;
-    deps.onProgress?.(done, plan.remove.length);
+  };
+  // Chunks, so a failure costs one chunk's retry and never the whole run's attribution: a chunk that throws is
+  // replayed one mod at a time, which names the mod that failed. Replaying one that the chunk had already removed
+  // is harmless, because Vortex's removeMods skips ids it no longer holds.
+  for (let at = 0; at < plan.remove.length; at += UNINSTALL_CHUNK) {
+    const chunk = plan.remove.slice(at, at + UNINSTALL_CHUNK);
+    let batched = false;
+    if (deps.uninstallMods !== undefined && chunk.length > 1) {
+      try {
+        await deps.uninstallMods(chunk.map((m) => m.vortexModId));
+        chunk.forEach(removed);
+        batched = true;
+      } catch (err) {
+        ehLog("warn", "collection.uninstall.chunk-failed", {
+          size: chunk.length,
+          error: err instanceof Error ? err.message : String(err),
+          then: "retrying these one at a time",
+        });
+      }
+    }
+    if (batched) {
+      done += chunk.length;
+      deps.onProgress?.(done, plan.remove.length);
+    } else {
+      // One at a time, the counter moves one at a time.
+      for (const mod of chunk) {
+        await one(mod);
+        done += 1;
+        deps.onProgress?.(done, plan.remove.length);
+      }
+    }
   }
 
   if (profilesToDelete.length > 0) {

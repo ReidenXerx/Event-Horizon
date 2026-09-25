@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { UninstallPlan } from "./collectionUninstall";
-import { runCollectionUninstall, type UninstallDeps } from "./runCollectionUninstall";
+import { runCollectionUninstall, UNINSTALL_CHUNK, type UninstallDeps } from "./runCollectionUninstall";
 
 const plan = (over: Partial<UninstallPlan> = {}): UninstallPlan => ({
   packageId: "pkg",
@@ -91,5 +91,53 @@ describe("runCollectionUninstall", () => {
     const { d } = deps({ onProgress: (done, total) => seen.push(`${done}/${total}`) });
     await runCollectionUninstall({ plan: plan(), collectionProfileId: "p34", deleteProfileIds: new Set(), deps: d });
     expect(seen).toEqual(["1/2", "2/2"]);
+  });
+});
+
+describe("runCollectionUninstall, removing in chunks", () => {
+  // A Nexus report on 0.2.13: uninstalling a whole collection was "slow and one at a time". Vortex's removeMods
+  // undeploys its whole list in one pass, so one call per mod paid that undeploy once per mod.
+  const many = (n: number): UninstallPlan =>
+    plan({ remove: Array.from({ length: n }, (_, i) => ({ vortexModId: `m${i}`, name: `M${i}`, from: "current" as const })) });
+
+  it("removes in chunks of UNINSTALL_CHUNK when the host can take a list", async () => {
+    const lists: string[][] = [];
+    const { d } = deps({ uninstallMods: vi.fn(async (ids: readonly string[]) => void lists.push([...ids])) });
+    const progress: number[] = [];
+    const out = await runCollectionUninstall({
+      plan: many(UNINSTALL_CHUNK * 2 + 3),
+      collectionProfileId: "p34",
+      deleteProfileIds: new Set(),
+      deps: { ...d, onProgress: (done) => progress.push(done) },
+    });
+    expect(lists.map((l) => l.length)).toEqual([UNINSTALL_CHUNK, UNINSTALL_CHUNK, 3]);
+    expect(d.uninstallMod).not.toHaveBeenCalled();
+    expect(out.removed).toHaveLength(UNINSTALL_CHUNK * 2 + 3);
+    expect(out.failed).toEqual([]);
+    expect(out.receiptDeleted).toBe(true);
+    expect(progress).toEqual([UNINSTALL_CHUNK, UNINSTALL_CHUNK * 2, UNINSTALL_CHUNK * 2 + 3]);
+  });
+
+  it("replays a failed chunk one mod at a time, so the failure is named and the rest still go", async () => {
+    const { d } = deps({
+      uninstallMods: vi.fn(async () => {
+        throw new Error("EBUSY somewhere in the chunk");
+      }),
+      uninstallMod: vi.fn(async (id: string) => {
+        if (id === "m2") throw new Error("EBUSY: m2 is open");
+      }),
+    });
+    const out = await runCollectionUninstall({ plan: many(4), collectionProfileId: "p34", deleteProfileIds: new Set(), deps: d });
+    expect(out.removed.map((m) => m.vortexModId)).toEqual(["m0", "m1", "m3"]);
+    expect(out.failed).toEqual([{ mod: expect.objectContaining({ vortexModId: "m2" }), error: "EBUSY: m2 is open" }]);
+    // A mod still on disk keeps the receipt: it is the only record that the mod is ours.
+    expect(out.receiptDeleted).toBe(false);
+  });
+
+  it("still switches the player's displaced copy back on after a chunk removes ours", async () => {
+    const { d, calls } = deps({ uninstallMods: vi.fn(async () => undefined) });
+    const out = await runCollectionUninstall({ plan: plan(), collectionProfileId: "p34", deleteProfileIds: new Set(), deps: d });
+    expect(out.restored).toBe(1);
+    expect(calls).toContain("enable:p34:users-a");
   });
 });

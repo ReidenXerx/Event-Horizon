@@ -14,7 +14,7 @@ import type { types } from "@nexusmods/vortex-api";
 import { listReceipts, deleteReceipt } from "../../../core/installLedger";
 import { planCollectionUninstall, type UninstallPlan, type UninstallProfileView } from "../../../core/installer/collectionUninstall";
 import { runCollectionUninstall, type UninstallOutcome } from "../../../core/installer/runCollectionUninstall";
-import { uninstallMod } from "../../../core/installer/modInstall";
+import { uninstallMod, uninstallMods } from "../../../core/installer/modInstall";
 import { enableModInProfile } from "../../../core/installer/profile";
 import { deploymentInProgress, removeSupersededProfiles } from "../../../core/installer/profileCleanup";
 import { ehLog } from "../../../core/logging/ehLog";
@@ -198,6 +198,7 @@ export function CollectionUninstallModal(props: {
         deleteProfileIds,
         deps: {
           uninstallMod: (modId) => uninstallMod(api, { gameId: receipt.gameId, modId }),
+          uninstallMods: (modIds) => uninstallMods(api, { gameId: receipt.gameId, modIds }),
           enableModInProfile: (profileId, modId) => enableModInProfile(api, profileId, modId),
           removeProfiles: (profiles) =>
             removeSupersededProfiles({
