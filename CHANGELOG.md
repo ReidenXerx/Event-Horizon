@@ -10,6 +10,32 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.14] — 2026-09-25
+
+Uninstalling a collection now removes all of it, not only its latest revision. A player asked how to
+uninstall a collection, and the honest answer was: partly, from a button most people never found.
+
+### Using Event Horizon
+- **Uninstall removes every revision's mods, and shows its plan first.** A collection is uninstalled
+  from its card now, not only from inside its details. Before anything happens you see the whole
+  plan: the mods Event Horizon installed for the collection, in any revision, which are removed; the
+  ones it keeps and why (another installed collection still uses them, or you enabled them in one of
+  your own profiles); and the collection's profiles as a tick list. Mods you already had before the
+  collection are never touched. The profile Vortex is on right now cannot be deleted from here, and
+  the dialog says so. Game INI settings, light flags set on plugins, and files moved to quarantine
+  are not changed back, and the dialog says that too.
+- **Mods a collection dropped between revisions are remembered.** Until now, every update rewrote
+  the collection's record with the new revision's mods only, so a mod the curator dropped lost the
+  only proof that Event Horizon had installed it, and stayed on your disk for good. The record now
+  keeps those mods from update to update, so uninstall can reach them. This starts with your next
+  update: mods dropped before it left no record to find.
+
+### Building collections
+- **A Nexus server error during upload no longer reads as a rejection.** "Nexus rejected the upload:
+  HTTP 504" was Nexus's server timing out, not a verdict on the collection, and the upload may still
+  have gone through. The message now says so, and asks you to look for a new draft on the
+  collection's Revisions tab before uploading again, so you do not end up with two.
+
 ## [0.2.13] — 2026-09-24
 
 Two players lost an evening each to something Event Horizon could have told them first. Now it does. And
