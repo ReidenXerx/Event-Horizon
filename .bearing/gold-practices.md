@@ -555,3 +555,25 @@ installs verbatim, one folder deep, while every by-path, by-size and by-CRC chec
 *Scar: 2026-09-15, Meridia's grass cache left the package for a download after a check read
 "identical cache files plus a readme and meta.ini". Every player from 1.0.17 to 1.0.23 got the cache
 in `Data\Grass_Cache_Default\Data\Grass\` and no grass. Found 2026-09-23 from a player's log bundle.*
+
+## PP-15 — A release is correct only if it reproduces what was TESTED, not what its own pipeline expects
+
+Tests that check a release pipeline against itself stay green while the release drifts from the artifact
+the owner actually played. Two directions, one root (what was tested and what ships came from different
+sources, and nothing compared them):
+
+- **Recomputed from changed inputs.** A generator refits or regenerates a value from inputs that changed
+  on purpose after the owner's test; the dev copy keeps the old, tested value, every fresh build gets
+  the new one.
+- **Machine-local state leaks in.** A release packs files generated on the developer's machine (their
+  presets, their load order), so players receive state nobody decided to ship.
+
+Before a release ships, diff the tested dev instance against the release archive file by file, and
+explain every difference as intended or a regression; for generated files, compare VALUES, not just
+names. Fix through the release pipeline, never by hand-copying the tested file in.
+
+*Scar: 2026-09-26. Anatomy's public builder 1.0.0-1.0.2 refitted the inner-lip weights against the
+collision sphere A-35 had enlarged (1.2 → 1.7) on purpose: players got 0.61 instead of the tested
+0.77, an entrance about 20% tighter; fixed in builder 1.0.3 (A-41). Found only when the collection
+check disabled the dev instance. Same day, Silhouette's release zip carried 68 third-party presets
+generated on the owner's machine (S-74).*
