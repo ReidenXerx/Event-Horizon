@@ -687,6 +687,104 @@ describe("mods.rules with a list", () => {
   });
 });
 
+describe("FOMOD wizard", () => {
+  /**
+   * A wizard shaped the way Vortex's installer_fomod_native keeps it, answering
+   * the same three events its view emits. Step 3 is invisible, so Next on step 2
+   * is Finish.
+   */
+  const openWizard = (): void => {
+    const opt = (id: number, name: string, selected = false) => ({ id, name, selected, type: "Optional" });
+    const state = {
+      installSteps: [
+        { id: 0, name: "Main", visible: true, optionalFileGroups: { group: [{ id: 0, name: "Main", type: "SelectExactlyOne", options: [opt(0, "Base", true), opt(1, "PRP")] }] } },
+        { id: 1, name: "F4SE", visible: true, optionalFileGroups: { group: [{ id: 0, name: "F4SE", type: "SelectExactlyOne", options: [opt(0, "None", true), opt(1, "OG"), opt(2, "AE")] }] } },
+        { id: 2, name: "Hidden", visible: false, optionalFileGroups: { group: [] } },
+      ],
+      currentStep: 0,
+    };
+    v.state.session = {
+      notifications: { notifications: [], dialogs: [] },
+      fomod: { installer: { dialog: { activeInstanceId: "inst1", instances: { inst1: { info: { moduleName: "Necessity" }, state } } } } },
+    };
+    v.api.events.emit = (ev: string, ...args: unknown[]) => {
+      const dlg = v.state.session.fomod.installer.dialog;
+      const st = dlg.instances.inst1.state;
+      if (ev === "fomod-installer-select-inst1") {
+        const [stepId, groupId, ids] = args as [number, number, number[]];
+        const step = st.installSteps.find((s: any) => s.id === stepId);
+        for (const o of step.optionalFileGroups.group.find((g: any) => g.id === groupId).options) o.selected = ids.includes(o.id);
+        v.state.session = { ...v.state.session }; // a new state object, as Redux makes
+      }
+      if (ev === "fomod-installer-continue-inst1") {
+        if (args[0] === "finish") dlg.activeInstanceId = null;
+        else st.currentStep += args[0] === "back" ? -1 : 1;
+      }
+      if (ev === "fomod-installer-cancel-inst1") dlg.activeInstanceId = null;
+    };
+  };
+
+  it("reads the open wizard: module, steps, groups, options, selection", async () => {
+    openWizard();
+    const r = (await run("fomod")) as any;
+    expect(r).toMatchObject({ open: true, moduleName: "Necessity", currentStep: 0 });
+    expect(r.steps[1].groups[0].options.map((o: any) => o.name)).toEqual(["None", "OG", "AE"]);
+    expect(((await run("vortex.notifications")) as any).openInstaller).toMatchObject({ moduleName: "Necessity", step: "Main" });
+  });
+
+  it("answers by name across steps and finishes on the last VISIBLE step", async () => {
+    openWizard();
+    const r = (await run("fomod.answer", { picks: [{ group: "Main", options: ["PRP"] }, { group: "f4se", options: ["AE"] }] })) as any;
+    expect(r).toMatchObject({ moduleName: "Necessity", finished: true, verified: { selections: 2, closed: true } });
+    const steps = v.state.session.fomod.installer.dialog.instances.inst1.state.installSteps;
+    expect(steps[0].optionalFileGroups.group[0].options.find((o: any) => o.selected).name).toBe("PRP");
+    expect(steps[1].optionalFileGroups.group[0].options.find((o: any) => o.selected).name).toBe("AE");
+  });
+
+  it("refuses a name that is not there, listing what is, without moving the wizard", async () => {
+    openWizard();
+    await expect(run("fomod.answer", { picks: [{ group: "Main", options: ["PRP 81"] }] })).rejects.toMatchObject({
+      code: "bad-pick",
+      message: expect.stringContaining('Options: "Base", "PRP"'),
+    });
+    expect(v.state.session.fomod.installer.dialog.instances.inst1.state.currentStep).toBe(0);
+  });
+
+  it("refuses two options in a pick-exactly-one group", async () => {
+    openWizard();
+    await expect(run("fomod.answer", { picks: [{ group: "Main", options: ["Base", "PRP"] }] })).rejects.toMatchObject({ code: "bad-pick" });
+  });
+
+  it("finish:false stops once the picks run out, leaving the wizard open", async () => {
+    openWizard();
+    const r = (await run("fomod.answer", { picks: [{ group: "Main", options: ["PRP"] }], finish: false })) as any;
+    expect(r).toMatchObject({ finished: false, wizard: { currentStep: 0 } });
+  });
+
+  it("cancels the wizard", async () => {
+    openWizard();
+    await expect(run("fomod.cancel")).resolves.toMatchObject({ cancelled: true });
+    expect(v.state.session.fomod.installer.dialog.activeInstanceId).toBeNull();
+  });
+
+  it("a command that opens a wizard reports it, so an agent knows the install waits on it", async () => {
+    v.state.session = { notifications: { notifications: [], dialogs: [] }, fomod: { installer: { dialog: { activeInstanceId: null, instances: {} } } } };
+    const emit = v.api.events.emit;
+    v.api.events.emit = (ev: string, ...args: unknown[]) => {
+      if (ev === "deploy-mods") {
+        v.state.session = {
+          ...v.state.session,
+          fomod: { installer: { dialog: { activeInstanceId: "i9", instances: { i9: { info: { moduleName: "Patch Hub" }, state: { installSteps: [{ id: 0, name: "Patches", visible: true }], currentStep: 0 } } } } } },
+        };
+        (v.api.store as any).notifyForTest?.();
+      }
+      emit(ev, ...args);
+    };
+    const r = (await runVerb(v.api as any, "deploy", {})) as any;
+    expect(r.vortex.openInstaller).toMatchObject({ moduleName: "Patch Hub", step: "Patches" });
+  });
+});
+
 describe("state: deployment.needed", () => {
   it("says a deploy is needed when mods are enabled but nothing is deployed, whatever Vortex's flag says", async () => {
     v.deployed.n = 0;

@@ -81,7 +81,12 @@ function boundVerbs(api: types.IExtensionApi): Record<string, ControlVerb> {
   return Object.fromEntries(
     Object.entries(VERBS).map(([name, v]) => [
       name,
-      { mutates: v.mutates, run: (body) => runVerb(api, name, body), ...(v.describe ? { describe: v.describe } : {}) },
+      {
+        mutates: v.mutates,
+        ...(v.queue !== undefined ? { queue: v.queue } : {}),
+        run: (body) => runVerb(api, name, body),
+        ...(v.describe ? { describe: v.describe } : {}),
+      },
     ]),
   );
 }

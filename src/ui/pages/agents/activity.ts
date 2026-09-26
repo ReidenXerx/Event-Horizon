@@ -43,6 +43,12 @@ const META: Record<string, Meta> = {
   downloads: { badge: "READ", doing: () => "Reading downloads", read: true },
   conflicts: { badge: "READ", doing: () => "Checking file conflicts", read: true },
   "vortex.notifications": { badge: "READ", doing: () => "Reading Vortex's notifications", read: true },
+  fomod: { badge: "READ", doing: () => "Reading the open installer", read: true },
+  "fomod.answer": {
+    badge: "FOMOD",
+    doing: (b) => `Answering the installer (${Array.isArray(b["picks"]) ? (b["picks"] as unknown[]).length : 0} choice(s))`,
+  },
+  "fomod.cancel": { badge: "FOMOD", doing: () => "Cancelling the installer" },
   install: {
     badge: "INSTALL",
     doing: (b) => {
@@ -99,6 +105,9 @@ function vortexChips(vortex: unknown): Chip[] {
     notifications?: Array<{ type?: string; title?: string; message?: string }>;
   };
   const out: Chip[] = [];
+  for (const w of (vortex as { installersSeen?: Array<{ moduleName?: string }> } | undefined)?.installersSeen ?? []) {
+    out.push({ text: `Installer opened: ${w.moduleName ?? "FOMOD"}`, tone: "warn" });
+  }
   for (const d of v.dialogsSeen ?? []) {
     out.push(
       d.answer !== undefined

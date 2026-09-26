@@ -30,6 +30,11 @@ import { envelope, MAX_OPS, OpLog, type OpStatus } from "./ops";
 
 export type ControlVerb = {
   mutates: boolean;
+  /**
+   * false: a change that must NOT wait in the queue, because it answers the
+   * command at the head of it (a FOMOD wizard an install opened).
+   */
+  queue?: boolean;
   run: (body: Record<string, unknown>) => Promise<Record<string, unknown>>;
   describe?: (body: Record<string, unknown>, result: Record<string, unknown>) => string;
 };
@@ -207,7 +212,7 @@ export async function startControlServer(opts: ControlServerOptions): Promise<Co
       // Changes run one at a time: the next starts when the previous settles.
       // Reads do not wait behind them, so an agent can watch a long deploy.
       let run: Promise<void>;
-      if (verb.mutates) {
+      if (verb.mutates && verb.queue !== false) {
         run = queue.then(execute);
         queue = run.catch(() => undefined);
       } else {

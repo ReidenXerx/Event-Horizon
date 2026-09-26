@@ -55,6 +55,9 @@ fetch(c.url + "state", { headers: { authorization: "Bearer " + c.token } }).then
 - **`vortex`** is attached to every changing command, on success (in `result`) and on failure (in `details`):
   - `notifications`: what Vortex raised while the command ran. An `error` one means something failed that no
     callback reported.
+  - `installersSeen` / `openInstaller`: FOMOD wizards that opened during the command, and the one still waiting.
+    FOMOD wizards are not Vortex dialogs, so they never appear in `openDialogs`. Answer them with `fomod.answer`
+    (send the install with `async: true`, watch `ops.get` or `vortex.notifications`, then answer).
   - `dialogsSeen`: every dialog that opened during the command, even one answered and gone by the time it ended.
     Each one carries `answer` + `answeredBy: "ifExisting"` when the channel answered it.
   - `openDialogs`: dialogs waiting for the user. This is how you learn a FOMOD installer or a confirmation is
@@ -90,7 +93,8 @@ All of them act on Vortex's **active game**.
 | `plugins.lastGood` | `profileId?` (default active) | The last good plugin list Event Horizon's wipe guard saved for that profile: `order: [{name, enabled}]` plus `savedAt` and `active`, ready to feed to `plugins.apply`. `no-snapshot` (404) until one has been saved. |
 | `plugins.rules` | `name?` | LOOT's userlist as Vortex holds it: each plugin's `group`, `after`, `requires`, `incompatible`, plus the user's `groups` and whether autosort is on. `name` narrows to rules that mention that plugin on either side. |
 | `mods.rules` | `id`, or `modIds[]` | Every mod rule on a mod (with the mod each one `resolvesTo`), and the rules other mods hold on it (`heldByOthers`). |
-| `vortex.notifications` | none | Every current Vortex notification and open dialog. |
+| `vortex.notifications` | none | Every current Vortex notification and open dialog, plus `openInstaller` when a FOMOD wizard is waiting. |
+| `fomod` | none | The FOMOD wizard open right now: `moduleName`, `currentStep` (an index), and every step with its groups (`type`: SelectExactlyOne, SelectAtMostOne, SelectAny, ...) and options (`id`, `name`, `selected`, `description`). `{open: false}` when none is. |
 
 ### Changes
 
@@ -107,6 +111,8 @@ All of them act on Vortex's **active game**.
 | `plugins.setGroup` | `name`, `group` | Puts a plugin in a LOOT group (which must exist in LOOT's masterlist or the user's groups). Verified in the userlist. |
 | `plugins.sort` | none | Runs LOOT now (the Sort button's event), waits for Vortex to go quiet, and reports `moved: [{name, from, to}]`. |
 | `plugins.setAutoSort` | `enabled` | Turns Vortex's plugin autosort on or off, verified in `settings.plugins.autoSort`. `state.plugins.autoSort` reports it. |
+| `fomod.answer` | `picks: [{group, options: [name|id], step?}]`, `finish?` (default true), `expectModule?` | Answers the open wizard: on each step it applies the picks meant for it (by group and option **name**, case-insensitive, or id), then presses Next, or Finish on the last visible step, until the wizard closes. Groups nobody picked keep the wizard's defaults. A name that is not there fails with `bad-pick` listing the real options; nothing is guessed. Each pick is verified in the wizard's state, and the close is verified. **Runs beside the queue**, since the install that opened the wizard is what the queue is waiting on. |
+| `fomod.cancel` | none | Cancels the open wizard; the install that opened it then fails as cancelled. |
 | `profile.switch` | `profileId`, `assumeGameClosed?` | Switches profile (which may auto-deploy) and verifies it is the active profile. |
 | `game.setPath` | `path`, `store?`, `assumeGameClosed?` | Repoints the active game and verifies the path and store Vortex now reports. |
 | `game.switchInstall` | `path`, `profileId`, `store?`, `assumeGameClosed?` | Purge, then set path, switch profile and deploy, each step verified. It stops at the first failure with `failedStep` and `completedSteps`. |

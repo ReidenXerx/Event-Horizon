@@ -58,6 +58,7 @@ import { readPluginList } from "../curator/pluginPool";
 import { collectDistinctModTypes } from "../deploymentManifest";
 import { isProcessRunning } from "./gameProcess";
 import { guardGameClosed, guardKnownMods, guardSetGamePath, type GuardResult } from "./guards";
+import { continueDirection, fomodSummary, pickAppliesTo, readFomod, resolvePick, type FomodPick } from "./fomod";
 
 export class ControlError extends Error {
   constructor(
@@ -75,6 +76,8 @@ export type VerbBody = Record<string, unknown>;
 export type Verb = {
   /** Changes the owner's setup: queued, and shown as a Vortex notification. */
   mutates: boolean;
+  /** false: runs at once, beside the queue (it answers the command the queue is waiting on). */
+  queue?: boolean;
   run: (api: types.IExtensionApi, body: VerbBody) => Promise<Record<string, unknown>>;
   /** One line for the notification, from the body and the result. */
   describe?: (body: VerbBody, result: Record<string, unknown>) => string;
@@ -331,10 +334,27 @@ type SeenDialog = { type?: string; title?: string; text: string; answer?: string
  * (one answered mid-command otherwise leaves no trace) and answers the
  * older-version dialog when the caller said how.
  */
-function watchDialogs(api: types.IExtensionApi, policy: AnswerPolicy): { seen: SeenDialog[]; stop: () => void } {
+type SeenInstaller = { moduleName?: string; steps: number; firstStep?: string };
+
+function watchDialogs(
+  api: types.IExtensionApi,
+  policy: AnswerPolicy,
+): { seen: SeenDialog[]; installers: SeenInstaller[]; stop: () => void } {
   const handled = new Set(rawDialogs(api).map((d) => d.id)); // already open before the command: not ours
   const seen: SeenDialog[] = [];
+  // FOMOD wizards are not Vortex dialogs (they live in session.fomod), so they are watched on their own.
+  const installersHandled = new Set<string>([readFomod(api.getState())?.instanceId ?? ""]);
+  const installers: SeenInstaller[] = [];
   const check = (): void => {
+    const wizard = readFomod(api.getState());
+    if (wizard !== undefined && !installersHandled.has(wizard.instanceId)) {
+      installersHandled.add(wizard.instanceId);
+      installers.push({
+        ...(wizard.moduleName !== undefined ? { moduleName: wizard.moduleName } : {}),
+        steps: wizard.steps.length,
+        ...(wizard.steps[0] !== undefined ? { firstStep: wizard.steps[0].name } : {}),
+      });
+    }
     for (const d of rawDialogs(api)) {
       if (handled.has(d.id)) continue;
       handled.add(d.id);
@@ -351,7 +371,7 @@ function watchDialogs(api: types.IExtensionApi, policy: AnswerPolicy): { seen: S
   };
   // A Redux store; the typings trim ThunkStore to dispatch/getState.
   const unsubscribe = (api.store as unknown as { subscribe?: (fn: () => void) => () => void } | undefined)?.subscribe?.(check);
-  return { seen, stop: () => unsubscribe?.() };
+  return { seen, installers, stop: () => unsubscribe?.() };
 }
 
 /**
@@ -379,7 +399,9 @@ export async function runVerb(api: types.IExtensionApi, name: string, body: Verb
       .filter((n) => !before.has(n.id) && n.type !== "activity")
       .map(({ type, title, message }) => ({ type, title, message })),
     dialogsSeen: watch?.seen ?? [],
+    installersSeen: watch?.installers ?? [],
     openDialogs: openDialogs(api).map(({ type, title, text }) => ({ type, title, text })),
+    ...(readFomod(api.getState()) !== undefined ? { openInstaller: fomodSummary(readFomod(api.getState())) } : {}),
   });
   try {
     const result = await verb.run(api, body);
@@ -392,6 +414,16 @@ export async function runVerb(api: types.IExtensionApi, name: string, body: Verb
   } finally {
     watch?.stop();
   }
+}
+
+/** Polls `test` until it holds or `ms` pass (a tenth of that under the test settle window). */
+async function settle(test: () => boolean, ms = 3000): Promise<boolean> {
+  const limit = Math.min(ms, Math.max(PLUGIN_SETTLE_MS * 4, 200));
+  for (let waited = 0; waited <= limit; waited += 50) {
+    if (test()) return true;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return test();
 }
 
 // ─── the actions, each verified ────────────────────────────────────────────
@@ -952,6 +984,7 @@ export const VERBS: Record<string, Verb> = {
             .filter((n) => n.type !== "activity")
             .map(({ type, title, message }) => ({ type, title, message })),
           openDialogs: openDialogs(api).map(({ type, title, text }) => ({ type, title, text })),
+          openInstaller: fomodSummary(readFomod(state)) ?? null,
         },
       };
       if (include.has("mods")) {
@@ -1148,12 +1181,112 @@ export const VERBS: Record<string, Verb> = {
     },
   },
 
+  /** The FOMOD wizard open right now: module, steps, groups, options and what is selected. `{open: false}` when none is. */
+  fomod: {
+    mutates: false,
+    run: async (api) => {
+      const view = readFomod(api.getState());
+      return view === undefined ? { open: false } : { open: true, ...view };
+    },
+  },
+
+  /**
+   * Answers the open FOMOD wizard and walks it: on each step, applies the
+   * picks meant for it, then Next (or Finish on the last visible step), until
+   * the wizard closes or `finish: false` stops it after the picks run out.
+   * Groups nobody picked keep the wizard's own defaults.
+   *
+   *   { picks: [{ group, options: [name|id, ...], step?: name|index }], finish?: true, expectModule? }
+   *
+   * Runs beside the queue: the install that opened the wizard is the command
+   * the queue is waiting on.
+   */
+  "fomod.answer": {
+    mutates: true,
+    queue: false,
+    run: async (api, body) => {
+      const picks = body["picks"];
+      if (!Array.isArray(picks)) throw new ControlError("bad-request", `"picks" must be an array of {group, options, step?}.`);
+      const want = picks as FomodPick[];
+      const finish = body["finish"] !== false;
+      let view = readFomod(api.getState());
+      if (view === undefined) throw new ControlError("no-installer", "No FOMOD wizard is open.", 409);
+      const expect = str(body["expectModule"]);
+      if (expect !== undefined && view.moduleName !== undefined && view.moduleName.toLowerCase() !== expect.toLowerCase()) {
+        throw new ControlError("wrong-installer", `The open wizard is "${view.moduleName}", not "${expect}".`, 409, { wizard: view });
+      }
+      const instance = view.instanceId;
+      const moduleName = view.moduleName;
+      const used = new Set<number>();
+      const applied: Array<Record<string, unknown>> = [];
+      for (let guard = 0; guard < 64; guard += 1) {
+        view = readFomod(api.getState());
+        if (view === undefined || view.instanceId !== instance) break; // finished (or cancelled by the user)
+        const step = view.steps[view.currentStep];
+        if (step === undefined) break;
+        for (let i = 0; i < want.length; i += 1) {
+          if (used.has(i) || !pickAppliesTo(want[i]!, step)) continue;
+          const r = resolvePick(step, want[i]!);
+          if (!r.ok) throw new ControlError("bad-pick", r.reason, 400, { wizard: view, applied });
+          api.events.emit(`fomod-installer-select-${instance}`, step.id, r.groupId, r.optionIds);
+          const took = await settle(() => {
+            const g = readFomod(api.getState())?.steps[step.index]?.groups.find((x) => x.id === r.groupId);
+            return g !== undefined && r.optionIds.every((id) => g.options.find((o) => o.id === id)?.selected === true);
+          });
+          if (!took) throw new ControlError("pick-unverified", `The wizard did not take the selection in "${String(want[i]!.group)}".`, 500, { wizard: readFomod(api.getState()), applied });
+          used.add(i);
+          applied.push({ step: step.name, group: want[i]!.group, options: want[i]!.options });
+        }
+        const picksLeft = want.some((_, i) => !used.has(i));
+        if (!finish && !picksLeft) break;
+        const direction = continueDirection(view);
+        const from = view.currentStep;
+        api.events.emit(`fomod-installer-continue-${instance}`, direction, from);
+        const moved = await settle(() => {
+          const now = readFomod(api.getState());
+          return now === undefined || now.instanceId !== instance || now.currentStep !== from;
+        }, 15000);
+        if (!moved) throw new ControlError("step-unverified", `The wizard did not move past step "${step.name}".`, 500, { wizard: readFomod(api.getState()), applied });
+      }
+      const still = readFomod(api.getState());
+      const open = still !== undefined && still.instanceId === instance;
+      const unused = want.filter((_, i) => !used.has(i));
+      if (finish && open) throw new ControlError("not-finished", "The wizard is still open.", 500, { wizard: still, applied, unused });
+      return {
+        moduleName,
+        finished: !open,
+        applied,
+        unused,
+        ...(open ? { wizard: still } : {}),
+        verified: { selections: applied.length, closed: !open },
+      };
+    },
+    describe: (_b, r) => `answered the ${String(r["moduleName"] ?? "FOMOD")} installer`,
+  },
+
+  /** Cancels the open FOMOD wizard (the install that opened it then fails as cancelled). */
+  "fomod.cancel": {
+    mutates: true,
+    queue: false,
+    run: async (api) => {
+      const view = readFomod(api.getState());
+      if (view === undefined) throw new ControlError("no-installer", "No FOMOD wizard is open.", 409);
+      api.events.emit(`fomod-installer-cancel-${view.instanceId}`);
+      const gone = await settle(() => readFomod(api.getState())?.instanceId !== view.instanceId);
+      if (!gone) throw new ControlError("cancel-unverified", "The wizard is still open.", 500);
+      return { moduleName: view.moduleName, cancelled: true, verified: { closed: true } };
+    },
+    describe: (_b, r) => `cancelled the ${String(r["moduleName"] ?? "FOMOD")} installer`,
+  },
+
   /** What Vortex is showing right now: notifications, and dialogs waiting for the user. */
   "vortex.notifications": {
     mutates: false,
     run: async (api) => ({
       notifications: notices(api).map(({ type, title, message }) => ({ type, title, message })),
       openDialogs: openDialogs(api).map(({ type, title, text }) => ({ type, title, text })),
+      // A FOMOD wizard waiting for answers: read it in full with `fomod`, answer it with `fomod.answer`.
+      openInstaller: fomodSummary(readFomod(api.getState())) ?? null,
     }),
   },
 
