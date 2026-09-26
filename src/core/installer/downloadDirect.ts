@@ -780,7 +780,8 @@ export async function sha256OfFile(filePath: string, signal?: AbortSignal): Prom
 
 async function hashFile(filePath: string, signal?: AbortSignal): Promise<string> {
   const hash = createHash("sha256");
-  const stream = fs.createReadStream(filePath);
+  // 8 MB reads: every chunk is a trip through Vortex's event loop, which crawled in Vortex 2.7 (see readZip.ts).
+  const stream = fs.createReadStream(filePath, { highWaterMark: 8 * 1024 * 1024 });
   const onAbort = (): void => {
     stream.destroy(new AbortError("download cancelled"));
   };

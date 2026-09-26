@@ -101,3 +101,21 @@ describe("files nothing installs", () => {
     expect(volatileReason("meshes/")).toBeUndefined();
   });
 });
+
+describe("script-extender runtime traces", () => {
+  // The two failures in a tester's Ivy 1.0.35 install (2026-09-26): address-resolution dumps the F4SE plugins
+  // rewrite at every game start, captured from the curator's staging after a session.
+  it("skips a .trace directly in F4SE/SKSE Plugins, either separator", () => {
+    expect(volatileReason("F4SE/Plugins/BastionRD.trace")).toBe("runtime-trace");
+    expect(volatileReason("F4SE\\Plugins\\AdaptiveNPCAimRD.trace")).toBe("runtime-trace");
+    expect(volatileReason("skse/plugins/Something.trace")).toBe("runtime-trace");
+    expect(volatileReason("Data/F4SE/Plugins/BastionRD.trace")).toBe("runtime-trace");
+  });
+
+  it("still verifies a .trace anywhere else, and anything else in Plugins", () => {
+    expect(volatileReason("meshes/debug/shape.trace")).toBeUndefined();
+    expect(volatileReason("F4SE/Plugins/Sub/deep.trace")).toBeUndefined();
+    expect(volatileReason("F4SE/Plugins/BastionRD.dll")).toBeUndefined();
+    expect(volatileReason("F4SE/Plugins/BastionRD.ini")).toBeUndefined();
+  });
+});

@@ -73,7 +73,16 @@ export type VolatileReason =
    * would capture it into the manifest and ship a file no archive can ever
    * produce, giving every user a permanent `missingFiles` entry.
    */
-  | "eh-case-probe";
+  | "eh-case-probe"
+  /**
+   * An address-resolution trace a script-extender plugin writes beside itself
+   * each time the game starts (`F4SE/Plugins/BastionRD.trace`: lines like
+   * `1546751 0xD60440 offset=0x921 result=0xD60D61 slot=og source=variant`).
+   * Measured 2026-09-26: the only two `.trace` files in every staging folder on
+   * the curator's machine, both last written during a game session, both
+   * failing a tester's Ivy 1.0.35 verification.
+   */
+  | "runtime-trace";
 
 /** Filenames that are written by the OS, never by a mod. Compared lowercased. */
 const OS_ARTIFACTS: ReadonlyMap<string, VolatileReason> = new Map([
@@ -90,6 +99,9 @@ const OS_ARTIFACTS: ReadonlyMap<string, VolatileReason> = new Map([
  */
 /** Ours, by construction, and never content. See `eh-case-probe`. */
 const EH_PROBE = /^ehcaseprobe-[a-z0-9]+\.tmp$/;
+
+/** A file directly inside SKSE/F4SE/NVSE/FOSE/OBSE `Plugins`, from the mod's root. */
+const SCRIPT_EXTENDER_PLUGINS = /^(?:data\/)?(?:skse|f4se|nvse|fose|obse)\/plugins\/[^/]+$/i;
 
 export function volatileReason(relPath: string): VolatileReason | undefined {
   // Separator-agnostic: staging paths arrive with "/" from the manifest and
@@ -119,6 +131,12 @@ export function volatileReason(relPath: string): VolatileReason | undefined {
    * 354,819, every one of them a runtime log.
    */
   if (name.endsWith(".log")) return "runtime-log";
+  /**
+   * `.trace` only where the evidence is: directly in a script extender's
+   * `Plugins` folder. Narrower than `.log` on purpose (NS-1): nothing else here
+   * has shown a runtime `.trace`, so nothing else gives up verification.
+   */
+  if (name.endsWith(".trace") && SCRIPT_EXTENDER_PLUGINS.test(relPath.replace(/\\/g, "/"))) return "runtime-trace";
 
   if (EH_PROBE.test(name)) return "eh-case-probe";
 
