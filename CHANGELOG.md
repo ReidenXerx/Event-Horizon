@@ -10,6 +10,25 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.16] — 2026-09-26
+
+Faster where it was slow for no good reason, and safe when Event Horizon is installed twice.
+
+### Using Event Horizon
+- **Reading a package no longer crawls in Vortex 2.7.** Inside the new Vortex, opening a collection package
+  to upload it sat on "Reading the package…" for about nine minutes: its 15.5 MB manifest came out of the
+  zip at around 30 KB/s, against a fraction of a second outside Vortex. Small entries are now read in one go,
+  and big bundled archives stream in 8 MB pieces instead of 64 KB. The same change applies when a collection is
+  installed and when a build hashes its files.
+- **Uninstalling a collection removes mods in batches.** Vortex undeploys a whole list of mods in one pass, and
+  the uninstall used to hand it one mod at a time, paying that pass for every mod of a thousand-mod collection.
+  It now removes fifty at a time. If a batch fails, it is retried one mod at a time, so every failure is still
+  named and the rest still go.
+- **Two copies of Event Horizon no longer both run.** A copy installed by hand and the copy installed from Nexus
+  live in different folders, so Vortex loaded both, and both claimed collection archives and watched the load
+  order. The first copy now runs, and the second loads nothing and tells you which two are installed, so you
+  can remove one. Keep the one installed from Nexus: it updates itself.
+
 ## [0.2.15] — 2026-09-25
 
 A patch of your own for one of the collection's plugins now stays below that plugin when Event
