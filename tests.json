@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "label": "tests",
-  "message": "4,219 passing",
+  "message": "4,226 passing",
   "color": "brightgreen",
   "isError": false,
-  "_total": 4219,
-  "_passed": 4219,
+  "_total": 4226,
+  "_passed": 4226,
   "_failed": 0,
   "_skipped": 0
 }
