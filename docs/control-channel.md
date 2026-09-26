@@ -99,7 +99,7 @@ All of them act on Vortex's **active game**.
 | `profile.switch` | `profileId`, `assumeGameClosed?` | Switches profile (which may auto-deploy) and verifies it is the active profile. |
 | `game.setPath` | `path`, `store?`, `assumeGameClosed?` | Repoints the active game and verifies the path and store Vortex now reports. |
 | `game.switchInstall` | `path`, `profileId`, `store?`, `assumeGameClosed?` | Purge, then set path, switch profile and deploy, each step verified. It stops at the first failure with `failedStep` and `completedSteps`. |
-| `install` | `nexus: {modId, fileId}` **or** `archiveId`; `choices?`, `unattended?`, `enable?` (default true), `ifExisting?` | Installs and verifies the mod is in the pool as `installed`, and enabled when asked. It does not deploy. |
+| `install` | `nexus: {modId, fileId}` **or** `archiveId`; `choices?`, `unattended?`, `enable?` (default true), `ifExisting?`, `variantName?`, `asCopy?` | Installs and verifies the mod is in the pool as `installed`, and enabled when asked. It does not deploy. |
 
 `owner` is `"eh-installed"` when an Event Horizon receipt proves Event Horizon installed the mod, and `"not-eh"`
 otherwise. Adopted mods count as `"not-eh"`: they are the user's own.
@@ -156,6 +156,20 @@ the channel answers it when it appears:
 
 Only that dialog is answered, and only while its buttons carry those exact labels. A Vortex that renamed them gets
 no answer rather than a wrong one. The choice shows in `vortex.dialogsSeen`.
+
+### Reinstalling an archive that is already installed
+
+Installing the **same archive** again (for example with different FOMOD choices) raises Vortex's other dialog,
+"Install options": Replace (every profile) or Install as variant, then "Name mod variant". With `ifExisting`:
+`"alongside"` picks the variant and names it `variantName` (default: Vortex's pre-filled name), and `"replace"`
+picks Replace. When you send `choices`, the old mod's choices are not copied over. A variant becomes mod
+`<oldId>+<name>`, and Vortex disables the old one in the **current** profile only.
+
+**`unattended: true` on such a reinstall is refused** (`would-replace-everywhere`): Vortex treats it as a
+dependency reinstall and, outside a collection session, **replaces the mod in every profile without asking**.
+The way to reinstall with no dialogs at all is `"asCopy": "<label>"`: the archive is copied as
+`<name> (<label>).<ext>` and registered as a new download, so it installs as a separate mod while the original
+stays untouched everywhere. Pass `ifExisting: "replace"` only when replacing everywhere is the intent.
 
 ### `state.deployment.needed`
 

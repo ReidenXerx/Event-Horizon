@@ -7,7 +7,7 @@ import { util, __testGame } from "@nexusmods/vortex-api";
 vi.mock("./gameProcess", () => ({ isProcessRunning: vi.fn(async () => false) }));
 
 import { isProcessRunning } from "./gameProcess";
-import { runVerb, VERBS } from "./verbs";
+import { answerFor, runVerb, VERBS } from "./verbs";
 
 const running = isProcessRunning as unknown as ReturnType<typeof vi.fn>;
 
@@ -425,6 +425,46 @@ describe("conflicts + mods.rule", () => {
   it("uses the mod's version for exact and compatible matches", async () => {
     await run("mods.rule", { source: "b", type: "requires", reference: "a", versionMatch: "compatible" });
     expect(v.state.persistent.mods.fallout4.b.rules).toEqual([{ type: "requires", reference: { id: "a", versionMatch: "^1.0" } }]);
+  });
+});
+
+describe("reinstalling an archive already in the pool", () => {
+  const REINSTALL = {
+    id: "r1",
+    title: "Install options",
+    text: '"AAF" is already installed on your system.[br][/br][br][/br]Would you like to:',
+    actions: ["Cancel", "Continue"],
+  };
+  const NAME = { id: "n1", title: "Install options - Name mod variant", text: 'Enter a variant name for "AAF"', actions: ["Cancel", "Continue"], inputDefault: "2" };
+
+  it("refuses an unattended reinstall, which Vortex would turn into a silent replace everywhere", async () => {
+    v.state.persistent.mods.fallout4.a.archiveId = "arc1";
+    await expect(run("install", { archiveId: "arc1", unattended: true, choices: { type: "fomod", options: [] } })).rejects.toMatchObject({
+      code: "would-replace-everywhere",
+      details: { existing: ["a"] },
+    });
+  });
+
+  it("alongside answers Install as variant, without pre-filling the old choices when new ones were sent", () => {
+    expect(answerFor({ ifExisting: "alongside", ownChoices: true }, REINSTALL)).toEqual({
+      label: "Continue",
+      input: { replace: false, variant: true, remember: false, preserveChoices: false },
+    });
+  });
+
+  it("replace answers Replace", () => {
+    expect(answerFor({ ifExisting: "replace" }, REINSTALL)?.input).toMatchObject({ replace: true, variant: false, preserveChoices: true });
+  });
+
+  it("names the variant from variantName, else keeps Vortex's pre-filled name", () => {
+    expect(answerFor({ ifExisting: "alongside", variantName: "AE" }, NAME)).toEqual({ label: "Continue", input: { variant: "AE", remember: false } });
+    expect(answerFor({ ifExisting: "alongside" }, NAME)?.input).toEqual({ variant: "2", remember: false });
+    expect(answerFor({ ifExisting: "replace" }, NAME)).toBeUndefined();
+  });
+
+  it("ask, or a dialog without a Continue button, gets no answer", () => {
+    expect(answerFor({ ifExisting: "ask" }, REINSTALL)).toBeUndefined();
+    expect(answerFor({ ifExisting: "alongside" }, { ...REINSTALL, actions: ["Cancel", "Next"] })).toBeUndefined();
   });
 });
 

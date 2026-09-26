@@ -25,8 +25,9 @@
  */
 
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
-import { actions, util } from "@nexusmods/vortex-api";
+import { actions, selectors, util } from "@nexusmods/vortex-api";
 import type { types } from "@nexusmods/vortex-api";
 
 import { gameExecutable, purgeGameDeployment, readDiscovery } from "../environment/vortexEnvironment";
@@ -35,6 +36,7 @@ import { deployAndWait } from "../installer/runInstall";
 import { switchToProfile } from "../installer/profile";
 import { installFromExistingDownload, installNexusViaApi, uninstallMods } from "../installer/modInstall";
 import type { VortexInstallerChoices } from "../installer/installerChoices";
+import { adoptLocalArchive } from "../installer/adoptLocalArchive";
 import { countMods, deployBudgetMs } from "../installer/timeBudgets";
 import { looksLikeWine } from "../proton/detect";
 import { listReceipts } from "../installLedger";
@@ -227,7 +229,29 @@ export const IF_EXISTING_ACTION: Record<string, string> = {
   replace: "Update all profiles",
 };
 
-type RawDialog = { id: string; type?: string; title?: string; text: string; actions: string[] };
+/**
+ * The OTHER replace dialog: installing an archive whose mod is already in
+ * the pool (InstallManager.queryUserReplace). "Install options" asks
+ * Replace (every profile) or Install as variant; a variant then asks for a
+ * name ("Install options - Name mod variant", input id "variant"). A variant
+ * becomes mod `<oldId>+<name>`; Vortex disables the old variant in the
+ * CURRENT profile only and leaves every other profile on it.
+ */
+export const REINSTALL_TITLE = "Install options";
+export const REINSTALL_TEXT = "is already installed on your system";
+export const VARIANT_NAME_TITLE = "Install options - Name mod variant";
+
+type RawDialog = {
+  id: string;
+  type?: string;
+  title?: string;
+  text: string;
+  actions: string[];
+  /** The first text input's current value (the variant-name dialog pre-fills one). */
+  inputDefault?: string;
+};
+
+export type DialogAnswer = { label: string; input?: Record<string, unknown> };
 
 function rawDialogs(api: types.IExtensionApi): RawDialog[] {
   const list = (api.getState() as { session?: { notifications?: { dialogs?: unknown[] } } }).session?.notifications
@@ -236,23 +260,53 @@ function rawDialogs(api: types.IExtensionApi): RawDialog[] {
     const x = d as Record<string, unknown>;
     const c = (x["content"] ?? {}) as Record<string, unknown>;
     const actions = Array.isArray(x["actions"]) ? (x["actions"] as Array<{ label?: unknown }>) : [];
+    const inputs = Array.isArray(c["input"]) ? (c["input"] as Array<{ value?: unknown }>) : [];
     return {
       id: String(x["id"]),
       type: str(x["type"]),
       title: str(x["title"]),
       text: str(c["text"]) ?? str(c["message"]) ?? str(c["bbcode"]) ?? "",
       actions: actions.map((a) => String(a?.label ?? "")),
+      ...(inputs[0]?.value !== undefined ? { inputDefault: String(inputs[0].value) } : {}),
     };
   });
 }
 
-/** The button to press for this dialog under the caller's `ifExisting`, or undefined to leave it to the user. */
-export function answerFor(ifExisting: string | undefined, d: RawDialog): string | undefined {
+export type AnswerPolicy = {
+  ifExisting?: string;
+  /** Name for a new variant (the variant-name dialog); its own pre-filled value when absent. */
+  variantName?: string;
+  /** The caller sent its own installer choices: do not let the old mod's pre-fill them. */
+  ownChoices?: boolean;
+};
+
+/** What to press for this dialog under the caller's policy, or undefined to leave it to the user. */
+export function answerFor(policy: AnswerPolicy, d: RawDialog): DialogAnswer | undefined {
+  const ifExisting = policy.ifExisting;
   if (ifExisting === undefined || ifExisting === "ask") return undefined;
-  if (!d.text.startsWith(OLDER_VERSION_TEXT)) return undefined;
-  const label = IF_EXISTING_ACTION[ifExisting];
   // A Vortex that renamed its buttons gets no answer rather than a wrong one.
-  return label !== undefined && d.actions.includes(label) ? label : undefined;
+  const press = (label: string, input?: Record<string, unknown>): DialogAnswer | undefined =>
+    d.actions.includes(label) ? { label, ...(input !== undefined ? { input } : {}) } : undefined;
+
+  if (d.text.startsWith(OLDER_VERSION_TEXT)) {
+    const label = IF_EXISTING_ACTION[ifExisting];
+    return label === undefined ? undefined : press(label, { remember: false });
+  }
+  if (d.title === REINSTALL_TITLE && d.text.includes(REINSTALL_TEXT)) {
+    const variant = ifExisting === "alongside";
+    return press("Continue", {
+      replace: !variant,
+      variant,
+      remember: false,
+      // Vortex copies the OLD mod's installer choices onto the new one unless told not to.
+      preserveChoices: policy.ownChoices !== true,
+    });
+  }
+  if (d.title === VARIANT_NAME_TITLE && ifExisting === "alongside") {
+    const name = policy.variantName ?? d.inputDefault;
+    return name === undefined || name === "" ? undefined : press("Continue", { variant: name, remember: false });
+  }
+  return undefined;
 }
 
 type SeenDialog = { type?: string; title?: string; text: string; answer?: string; answeredBy?: "ifExisting" };
@@ -262,7 +316,7 @@ type SeenDialog = { type?: string; title?: string; text: string; answer?: string
  * (one answered mid-command otherwise leaves no trace) and answers the
  * older-version dialog when the caller said how.
  */
-function watchDialogs(api: types.IExtensionApi, ifExisting: string | undefined): { seen: SeenDialog[]; stop: () => void } {
+function watchDialogs(api: types.IExtensionApi, policy: AnswerPolicy): { seen: SeenDialog[]; stop: () => void } {
   const handled = new Set(rawDialogs(api).map((d) => d.id)); // already open before the command: not ours
   const seen: SeenDialog[] = [];
   const check = (): void => {
@@ -271,12 +325,12 @@ function watchDialogs(api: types.IExtensionApi, ifExisting: string | undefined):
       handled.add(d.id);
       const entry: SeenDialog = { type: d.type, title: d.title, text: d.text.slice(0, 500) };
       seen.push(entry);
-      const label = answerFor(ifExisting, d);
-      if (label !== undefined) {
-        entry.answer = label;
+      const answer = answerFor(policy, d);
+      if (answer !== undefined) {
+        entry.answer = answer.label + (answer.input?.["variant"] === true ? " (variant)" : answer.input?.["replace"] === true ? " (replace)" : typeof answer.input?.["variant"] === "string" ? ` (${String(answer.input["variant"])})` : "");
         entry.answeredBy = "ifExisting";
         // Not from inside the store listener: dispatching there re-enters it.
-        setTimeout(() => api.closeDialog?.(d.id, label, { remember: false }), 0);
+        setTimeout(() => api.closeDialog?.(d.id, answer.label, answer.input ?? {}), 0);
       }
     }
   };
@@ -299,7 +353,12 @@ export async function runVerb(api: types.IExtensionApi, name: string, body: Verb
     throw new ControlError("bad-request", `"ifExisting" must be "alongside", "replace" or "ask".`);
   }
   const before = new Set(notices(api).map((n) => n.id));
-  const watch = verb.mutates ? watchDialogs(api, ifExisting) : undefined;
+  const policy: AnswerPolicy = {
+    ...(ifExisting !== undefined ? { ifExisting } : {}),
+    ...(str(body["variantName"]) !== undefined ? { variantName: str(body["variantName"])! } : {}),
+    ownChoices: body["choices"] !== undefined,
+  };
+  const watch = verb.mutates ? watchDialogs(api, policy) : undefined;
   const activity = (): Record<string, unknown> => ({
     notifications: notices(api)
       .filter((n) => !before.has(n.id) && n.type !== "activity")
@@ -414,6 +473,52 @@ async function setGamePath(
     store: after.store,
     verified: { path: after.path, store: after.store },
   };
+}
+
+/**
+ * Installs a download a second time as a SEPARATE mod: the archive is copied
+ * under a new name and registered as a new download, so Vortex sees neither
+ * the same archive (the replace/variant dialog) nor the same install name.
+ * EH's own installAlongside technique; the original mod is untouched in
+ * every profile.
+ */
+async function installFromCopy(
+  api: types.IExtensionApi,
+  gameId: string,
+  archiveId: string,
+  label: string,
+  choices: VortexInstallerChoices | undefined,
+  unattended: boolean,
+): Promise<{ vortexModId: string }> {
+  const state = api.getState() as unknown as {
+    persistent?: { downloads?: { files?: Record<string, { localPath?: string }> } };
+  };
+  const localPath = state.persistent?.downloads?.files?.[archiveId]?.localPath;
+  const folder = (selectors as unknown as { downloadPathForGame?: (s: unknown, g: string) => string }).downloadPathForGame?.(
+    api.getState(),
+    gameId,
+  );
+  if (localPath === undefined || folder === undefined) {
+    throw new ControlError("no-such-download", `No local file for download ${archiveId}.`, 404);
+  }
+  const source = path.join(folder, localPath);
+  if (!fs.existsSync(source)) throw new ControlError("no-such-download", `The download's file is missing: ${source}.`, 404);
+  const safeLabel = label.replace(/[<>:"/\\|?*]/g, "_").slice(0, 40);
+  const ext = path.extname(source);
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "eh-control-copy-"));
+  try {
+    const staged = path.join(tempDir, `${path.basename(source, ext)} (${safeLabel})${ext}`);
+    fs.copyFileSync(source, staged);
+    const adopted = await adoptLocalArchive(api, { gameId, archivePath: staged });
+    return await installFromExistingDownload(api, {
+      gameId,
+      archiveId: adopted.archiveId,
+      ...(choices !== undefined ? { choices } : {}),
+      unattended,
+    });
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 }
 
 function modSummary(m: ModRecord, enabled: boolean, owner?: string): Record<string, unknown> {
@@ -1018,12 +1123,40 @@ export const VERBS: Record<string, Verb> = {
         }));
       } else {
         const archiveId = need(body, "archiveId");
-        ({ vortexModId } = await installFromExistingDownload(api, {
-          gameId,
-          archiveId,
-          ...(choices !== undefined ? { choices } : {}),
-          unattended,
-        }));
+        const asCopy = str(body["asCopy"]);
+        const fromThisArchive = Object.values(modPool(api, gameId)).filter(
+          (m) => m.archiveId === archiveId && m.state === "installed",
+        );
+        /**
+         * ─── THE SILENT REPLACE ─────────────────────────────────────────────
+         * Reinstalling an archive whose mod is already in the pool, unattended
+         * and with different choices, is what Vortex's queryUserReplace calls a
+         * DEPENDENCY reinstall: outside a collection session it picks
+         * "replace" with no dialog at all (read in app.asar), and replace
+         * swaps the mod in EVERY profile. Refused unless that is what the
+         * caller asked for; `asCopy` is the way to get a second copy.
+         */
+        if (fromThisArchive.length > 0 && unattended && asCopy === undefined && body["ifExisting"] !== "replace") {
+          throw new ControlError(
+            "would-replace-everywhere",
+            `Mod ${fromThisArchive.map((m) => m.id).join(", ")} is already installed from this archive. An unattended ` +
+              `reinstall makes Vortex REPLACE it in every profile, silently. Send "asCopy": "<label>" to install a ` +
+              `separate copy (no dialogs), drop "unattended" to be asked, or send "ifExisting": "replace" if replacing ` +
+              `everywhere is the intent.`,
+            409,
+            { existing: fromThisArchive.map((m) => m.id) },
+          );
+        }
+        if (asCopy !== undefined) {
+          ({ vortexModId } = await installFromCopy(api, gameId, archiveId, asCopy, choices, unattended));
+        } else {
+          ({ vortexModId } = await installFromExistingDownload(api, {
+            gameId,
+            archiveId,
+            ...(choices !== undefined ? { choices } : {}),
+            unattended,
+          }));
+        }
       }
       const m = modPool(api, gameId)[vortexModId];
       if (m === undefined || m.state !== "installed") {
