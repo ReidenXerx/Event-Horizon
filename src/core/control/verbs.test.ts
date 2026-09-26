@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { util, __testGame } from "@nexusmods/vortex-api";
+import { util, __testGame, __testPaths } from "@nexusmods/vortex-api";
 
 vi.mock("./gameProcess", () => ({ isProcessRunning: vi.fn(async () => false) }));
 // plugins.txt on disk: the machine running the tests may have a real one.
@@ -642,6 +642,48 @@ describe("deploy: Vortex's flag lags the callback", () => {
     v.state.persistent.deployment = { needToDeploy: { fallout4: true } };
     setTimeout(() => (v.state.persistent.deployment.needToDeploy.fallout4 = false), 20);
     await expect(run("deploy")).resolves.toMatchObject({ verified: { deploymentNeeded: false } });
+  });
+});
+
+describe("conflicts: identical files", () => {
+  const stage = (a: string, b: string | undefined): void => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "eh-stage-"));
+    __testPaths.installPath = root;
+    for (const [id, text] of [["a", a], ["b", b]] as const) {
+      fs.mkdirSync(path.join(root, id, "meshes"), { recursive: true });
+      if (text !== undefined) fs.writeFileSync(path.join(root, id, "meshes", "x.nif"), text);
+      v.state.persistent.mods.fallout4[id].installationPath = id;
+    }
+    v.state.session = {
+      notifications: { notifications: [], dialogs: [] },
+      dependencies: { conflicts: { a: [{ otherMod: { id: "b" }, files: ["meshes/x.nif"] }] } },
+    };
+  };
+
+  it("flags a pair whose contested files are byte-identical", async () => {
+    stage("same bytes", "same bytes");
+    const r = (await run("conflicts", { unresolvedOnly: true })) as any;
+    expect(r.pairs[0]).toMatchObject({ modId: "a", otherId: "b", identical: true });
+    expect(r.unresolvedDifferent).toBe(0);
+    expect(r.pairs[0].allFiles).toBeUndefined();
+  });
+
+  it("says different when the bytes differ", async () => {
+    stage("one", "two");
+    expect(((await run("conflicts")) as any).pairs[0].identical).toBe(false);
+  });
+
+  it("leaves it unknown when a file cannot be read, never identical", async () => {
+    stage("one", undefined);
+    expect(((await run("conflicts")) as any).pairs[0].identical).toBeUndefined();
+  });
+});
+
+describe("mods.rules with a list", () => {
+  it("takes modIds like mods.setEnabled and answers per mod", async () => {
+    const r = (await run("mods.rules", { modIds: ["a", "b"] })) as any;
+    expect(r.mods.map((m: any) => m.id)).toEqual(["a", "b"]);
+    await expect(run("mods.rules", { modIds: ["a", "zz"] })).rejects.toMatchObject({ code: "unknown-mods" });
   });
 });
 

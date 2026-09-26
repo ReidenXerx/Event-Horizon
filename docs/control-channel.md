@@ -86,10 +86,10 @@ All of them act on Vortex's **active game**.
 | `mod.get` | `id` | Everything Vortex holds about one mod: attributes, rules, installationPath, which profiles enable it, and its plugins. |
 | `plugins` | `name?`, `enabled?`, `limit?` (2000) | Plugins in load order. |
 | `downloads` | `name?`, `state?`, `limit?` (500) | The active game's downloads, with Nexus ids. |
-| `conflicts` | `modId?`, `unresolvedOnly?`, `limit?` (500) | Vortex's own computed file conflicts for the enabled mods, one entry per pair: both mods, the file count plus a sample, and `resolved` with the settling `rule` (a before/after/conflicts rule on either side, by Vortex's own test). `calculated: false` means Vortex has not computed them yet, which is not the same as having none. |
+| `conflicts` | `modId?`, `unresolvedOnly?`, `limit?` (500) | Vortex's own computed file conflicts for the enabled mods, one entry per pair: both mods, the file count plus a sample, and `resolved` with the settling `rule` (a before/after/conflicts rule on either side, by Vortex's own test). `calculated: false` means Vortex has not computed them yet, which is not the same as having none. Unresolved pairs get `identical`: `true` when every contested file is byte-identical in both mods' staging (nothing to settle), `false` when not, and absent when it cannot be told. `unresolvedDifferent` counts the ones that actually need a rule. |
 | `plugins.lastGood` | `profileId?` (default active) | The last good plugin list Event Horizon's wipe guard saved for that profile: `order: [{name, enabled}]` plus `savedAt` and `active`, ready to feed to `plugins.apply`. `no-snapshot` (404) until one has been saved. |
 | `plugins.rules` | `name?` | LOOT's userlist as Vortex holds it: each plugin's `group`, `after`, `requires`, `incompatible`, plus the user's `groups` and whether autosort is on. `name` narrows to rules that mention that plugin on either side. |
-| `mods.rules` | `id` | Every mod rule on a mod (with the mod each one `resolvesTo`), and the rules other mods hold on it (`heldByOthers`). |
+| `mods.rules` | `id`, or `modIds[]` | Every mod rule on a mod (with the mod each one `resolvesTo`), and the rules other mods hold on it (`heldByOthers`). |
 | `vortex.notifications` | none | Every current Vortex notification and open dialog. |
 
 ### Changes

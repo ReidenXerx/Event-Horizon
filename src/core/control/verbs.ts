@@ -669,6 +669,10 @@ type ConflictPair = {
   sampleFiles: string[];
   resolved: boolean;
   rule?: { on: string; type: string };
+  /** Every contested file; kept for the identical check, not sent. */
+  allFiles: string[];
+  /** Byte-identical in both mods' staging: a conflict nothing needs to settle. */
+  identical?: boolean;
 };
 
 /** Vortex's computed file conflicts, one entry per pair. `undefined` when Vortex has not computed them. */
@@ -696,6 +700,7 @@ function conflictPairs(api: types.IExtensionApi, gameId: string): ConflictPair[]
         otherName: pool[otherId] ? modName(pool[otherId]!) : otherId,
         files: files.length,
         sampleFiles: files.slice(0, 10),
+        allFiles: files,
         resolved: rule !== undefined,
         ...(rule !== undefined ? { rule } : {}),
       });
@@ -703,6 +708,50 @@ function conflictPairs(api: types.IExtensionApi, gameId: string): ConflictPair[]
   }
   return out;
 }
+
+/**
+ * Are the files these two mods fight over byte-identical in staging? Then the
+ * conflict is Vortex's to report and nobody's to fix: whichever wins, the game
+ * gets the same bytes (live: an Anatomy build and its dev copy, 6 files, same
+ * md5). `undefined` when it cannot be told: a file missing, one too big to
+ * hash in a reply, too many files, or no staging folder. Unknown is never
+ * reported as identical.
+ */
+async function identicalInStaging(
+  api: types.IExtensionApi,
+  gameId: string,
+  pair: ConflictPair,
+  files: readonly string[],
+): Promise<boolean | undefined> {
+  const root = (selectors as unknown as { installPathForGame?: (s: unknown, g: string) => string }).installPathForGame?.(
+    api.getState(),
+    gameId,
+  );
+  const pool = modPool(api, gameId);
+  const a = pool[pair.modId]?.installationPath;
+  const b = pool[pair.otherId]?.installationPath;
+  if (root === undefined || a === undefined || b === undefined || files.length === 0 || files.length > IDENTICAL_MAX_FILES) {
+    return undefined;
+  }
+  const { hashFileSha256 } = await import("../archiveHashing");
+  for (const f of files) {
+    const pa = path.join(root, a, f);
+    const pb = path.join(root, b, f);
+    let sa: fs.Stats;
+    let sb: fs.Stats;
+    try {
+      [sa, sb] = [fs.statSync(pa), fs.statSync(pb)];
+    } catch {
+      return undefined;
+    }
+    if (sa.size !== sb.size) return false;
+    if (sa.size > IDENTICAL_MAX_BYTES) return undefined;
+    if ((await hashFileSha256(pa)) !== (await hashFileSha256(pb))) return false;
+  }
+  return true;
+}
+const IDENTICAL_MAX_FILES = 200;
+const IDENTICAL_MAX_BYTES = 256 * 1024 * 1024;
 
 function versionMatchFor(mod: ModRecord, match: unknown): string {
   const version = str(mod.attributes?.["version"]);
@@ -975,26 +1024,35 @@ export const VERBS: Record<string, Verb> = {
   /** Every mod rule on a mod, and every rule other mods hold on it. */
   "mods.rules": {
     mutates: false,
+    // `{id}` for one mod, or `{modIds: [...]}` for several (the shape mods.setEnabled takes).
     run: async (api, body) => {
       const gameId = activeGame(api);
-      const id = need(body, "id");
       const pool = modPool(api, gameId);
-      const mod = pool[id];
-      if (mod === undefined) throw new ControlError("no-such-mod", `No mod ${id} in ${gameId}.`, 404);
       const refName = (ref: Record<string, unknown> | undefined): string | undefined => {
         const target = Object.values(pool).find((m) => refersTo(m, ref));
         return target !== undefined ? target.id : undefined;
       };
-      return {
-        id,
-        name: modName(mod),
-        rules: ((mod.rules ?? []) as ModRule[]).map((r) => ({ type: r.type, reference: r.reference, resolvesTo: refName(r.reference) })),
-        heldByOthers: Object.values(pool)
-          .filter((m) => m.id !== id)
-          .flatMap((m) =>
-            ((m.rules ?? []) as ModRule[]).filter((r) => refersTo(mod, r.reference)).map((r) => ({ from: m.id, fromName: modName(m), type: r.type })),
-          ),
+      const one = (id: string): Record<string, unknown> => {
+        const mod = pool[id]!;
+        return {
+          id,
+          name: modName(mod),
+          rules: ((mod.rules ?? []) as ModRule[]).map((r) => ({ type: r.type, reference: r.reference, resolvesTo: refName(r.reference) })),
+          heldByOthers: Object.values(pool)
+            .filter((m) => m.id !== id)
+            .flatMap((m) =>
+              ((m.rules ?? []) as ModRule[]).filter((r) => refersTo(mod, r.reference)).map((r) => ({ from: m.id, fromName: modName(m), type: r.type })),
+            ),
+        };
       };
+      if (body["modIds"] !== undefined) {
+        const ids = needIds(body);
+        enforce(guardKnownMods({ requested: ids, pool: new Set(Object.keys(pool)) }));
+        return { gameId, mods: ids.map(one) };
+      }
+      const id = need(body, "id");
+      if (pool[id] === undefined) throw new ControlError("no-such-mod", `No mod ${id} in ${gameId}.`, 404);
+      return one(id);
     },
   },
 
@@ -1051,12 +1109,22 @@ export const VERBS: Record<string, Verb> = {
         (p) => (modId === undefined || p.modId === modId || p.otherId === modId) && (!unresolvedOnly || !p.resolved),
       );
       const limit = limitOf(body, 500);
+      const shown = list.slice(0, limit);
+      // Unresolved pairs get the identical check (capped): those are the ones an agent would otherwise go and fix.
+      let checked = 0;
+      for (const p of shown) {
+        if (p.resolved || checked >= 100) continue;
+        checked += 1;
+        const same = await identicalInStaging(api, gameId, p, p.allFiles);
+        if (same !== undefined) p.identical = same;
+      }
       return {
         gameId,
         calculated: true,
         total: list.length,
         unresolved: pairs.filter((p) => !p.resolved).length,
-        pairs: list.slice(0, limit),
+        unresolvedDifferent: shown.filter((p) => !p.resolved && p.identical !== true).length,
+        pairs: shown.map(({ allFiles: _all, ...p }) => p),
         truncated: list.length > limit,
       };
     },
