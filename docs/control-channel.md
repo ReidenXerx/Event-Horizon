@@ -53,6 +53,8 @@ fetch(c.url + "state", { headers: { authorization: "Bearer " + c.token } }).then
 - **`vortex`** is attached to every changing command, on success (in `result`) and on failure (in `details`):
   - `notifications`: what Vortex raised while the command ran. An `error` one means something failed that no
     callback reported.
+  - `dialogsSeen`: every dialog that opened during the command, even one answered and gone by the time it ended.
+    Each one carries `answer` + `answeredBy: "ifExisting"` when the channel answered it.
   - `openDialogs`: dialogs waiting for the user. This is how you learn a FOMOD installer or a confirmation is
     blocking.
 
@@ -95,7 +97,7 @@ All of them act on Vortex's **active game**.
 | `profile.switch` | `profileId`, `assumeGameClosed?` | Switches profile (which may auto-deploy) and verifies it is the active profile. |
 | `game.setPath` | `path`, `store?`, `assumeGameClosed?` | Repoints the active game and verifies the path and store Vortex now reports. |
 | `game.switchInstall` | `path`, `profileId`, `store?`, `assumeGameClosed?` | Purge, then set path, switch profile and deploy, each step verified. It stops at the first failure with `failedStep` and `completedSteps`. |
-| `install` | `nexus: {modId, fileId}` **or** `archiveId`; `choices?`, `unattended?`, `enable?` (default true) | Installs and verifies the mod is in the pool as `installed`, and enabled when asked. It does not deploy. |
+| `install` | `nexus: {modId, fileId}` **or** `archiveId`; `choices?`, `unattended?`, `enable?` (default true), `ifExisting?` | Installs and verifies the mod is in the pool as `installed`, and enabled when asked. It does not deploy. |
 
 `owner` is `"eh-installed"` when an Event Horizon receipt proves Event Horizon installed the mod, and `"not-eh"`
 otherwise. Adopted mods count as `"not-eh"`: they are the user's own.
@@ -135,6 +137,28 @@ then switch profile, then deploy.
 `store` is what Vortex records for the folder (`steam`, `gog`, `xbox`, `epic`, ...). Pass it when you know better
 than detection: a standalone or modified executable may detect as no store, or the wrong one. Without it, Vortex's
 own `GameStoreHelper.identifyStore` decides. The reply always echoes what Vortex recorded.
+
+### `ifExisting`: Vortex's "older version already installed" dialog
+
+Installing a different file of a mod that is already in the pool makes Vortex ask whether to update **all**
+profiles (replace) or only the current one (install alongside). Replace moves every profile to the new file,
+including the profiles of another install of the same game. The dialog cannot be pre-answered from an extension, so
+the channel answers it when it appears:
+
+| `ifExisting` | Button pressed |
+|---|---|
+| `"ask"` (default) | none: the user answers it in Vortex |
+| `"alongside"` | "Update current profile": both versions stay, and only the active profile switches |
+| `"replace"` | "Update all profiles" |
+
+Only that dialog is answered, and only while its buttons carry those exact labels. A Vortex that renamed them gets
+no answer rather than a wrong one. The choice shows in `vortex.dialogsSeen`.
+
+### `state.deployment.needed`
+
+`needed` is Vortex's own flag (`vortexFlag`) **or** "mods are enabled but nothing is deployed". After a game
+folder is repointed by hand, Vortex's flag reads false with nothing deployed. When the two disagree, `reason` says
+so.
 
 ### FOMOD installers
 

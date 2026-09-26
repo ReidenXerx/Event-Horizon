@@ -49,8 +49,27 @@ function fakeVortex() {
     },
   };
   const fire = (ev: string, ...args: unknown[]): void => handlers.get(ev)?.forEach((fn) => fn(...args));
+  const listeners = new Set<() => void>();
+  const notify = (): void => listeners.forEach((l) => l());
+  const closed: Array<{ id: string; action: string }> = [];
+  /** Opens a Vortex dialog; resolves with the button pressed (by the watcher, or by "the user" in a test). */
+  const openDialog = (d: { id: string; title: string; text: string; actions: string[] }): Promise<string> => {
+    state.session ??= { notifications: { notifications: [], dialogs: [] } };
+    state.session.notifications.dialogs.push({ id: d.id, type: "question", title: d.title, content: { text: d.text }, actions: d.actions.map((label) => ({ label })) });
+    return new Promise((resolve) => {
+      pending.set(d.id, resolve);
+      notify();
+    });
+  };
+  const pending = new Map<string, (action: string) => void>();
   const api = {
     getState: () => state,
+    closeDialog: (id: string, action: string) => {
+      closed.push({ id, action });
+      state.session.notifications.dialogs = state.session.notifications.dialogs.filter((x: any) => x.id !== id);
+      pending.get(id)?.(action);
+      notify();
+    },
     sendNotification: vi.fn(),
     events: {
       on: (ev: string, fn: (...a: unknown[]) => void) => {
@@ -76,6 +95,10 @@ function fakeVortex() {
       },
     },
     store: {
+      subscribe: (l: () => void) => {
+        listeners.add(l);
+        return () => listeners.delete(l);
+      },
       dispatch: (a: { type: string; payload: any }) => {
         if (a.type === "STUB_SET_MOD_ENABLED") {
           state.persistent.profiles[a.payload.profileId].modState[a.payload.modId] = { enabled: a.payload.enabled };
@@ -93,7 +116,7 @@ function fakeVortex() {
       },
     },
   };
-  return { api, state, log, deployed };
+  return { api, state, log, deployed, openDialog, closed };
 }
 
 let v: ReturnType<typeof fakeVortex>;
@@ -255,6 +278,93 @@ describe("runVerb: what Vortex said while a command ran", () => {
       code: "not-purged",
       details: { vortex: { notifications: [], openDialogs: [] } },
     });
+  });
+});
+
+describe("ifExisting: Vortex's older-version dialog", () => {
+  const OLDER = {
+    id: "dlg1",
+    title: "F4SE",
+    text: "An older version of this mod is already installed. You can replace the existing one - which will update all profiles - or install this one alongside it.",
+    actions: ["Cancel", "Update all profiles", "Update current profile"],
+  };
+  // A deploy stands in for any changing command that raises the dialog mid-way
+  // and waits for its answer, which is what Vortex's installer does.
+  const deployRaising = (dialog: typeof OLDER, onAnswer: (a: string) => void = () => undefined) => {
+    v.api.events.emit = (ev: string, ...args: unknown[]) => {
+      if (ev === "deploy-mods") {
+        void v.openDialog(dialog).then((answer) => {
+          onAnswer(answer);
+          (args[0] as (e: unknown) => void)(null);
+        });
+      }
+    };
+  };
+
+  it("answers alongside with 'Update current profile', and records it", async () => {
+    let answered = "";
+    deployRaising(OLDER, (a) => (answered = a));
+    const r = (await runVerb(v.api as any, "deploy", { ifExisting: "alongside" })) as any;
+    expect(answered).toBe("Update current profile");
+    expect(r.vortex.dialogsSeen).toEqual([
+      expect.objectContaining({ title: "F4SE", answer: "Update current profile", answeredBy: "ifExisting" }),
+    ]);
+    expect(r.vortex.openDialogs).toEqual([]);
+  });
+
+  it("answers replace with 'Update all profiles'", async () => {
+    let answered = "";
+    deployRaising(OLDER, (a) => (answered = a));
+    await runVerb(v.api as any, "deploy", { ifExisting: "replace" });
+    expect(answered).toBe("Update all profiles");
+  });
+
+  it("leaves the dialog to the user when not told, and still records that it opened", async () => {
+    deployRaising(OLDER);
+    const p = runVerb(v.api as any, "deploy", {});
+    await new Promise((r) => setTimeout(r, 20));
+    expect(v.closed).toEqual([]);
+    v.api.closeDialog("dlg1", "Update current profile"); // the owner clicks
+    const r = (await p) as any;
+    expect(r.vortex.dialogsSeen).toEqual([expect.objectContaining({ title: "F4SE" })]);
+    expect(r.vortex.dialogsSeen[0].answer).toBeUndefined();
+  });
+
+  it("does not press a button Vortex no longer has", async () => {
+    deployRaising({ ...OLDER, actions: ["Cancel", "Replace", "Keep both"] });
+    const p = runVerb(v.api as any, "deploy", { ifExisting: "alongside" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(v.closed).toEqual([]);
+    v.api.closeDialog("dlg1", "Keep both");
+    await p;
+  });
+
+  it("does not answer other dialogs", async () => {
+    deployRaising({ ...OLDER, text: "Updating may break dependencies", actions: ["Cancel", "Ignore"] });
+    const p = runVerb(v.api as any, "deploy", { ifExisting: "replace" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(v.closed).toEqual([]);
+    v.api.closeDialog("dlg1", "Cancel");
+    await p;
+  });
+
+  it("rejects an unknown ifExisting before doing anything", async () => {
+    await expect(runVerb(v.api as any, "deploy", { ifExisting: "both" })).rejects.toMatchObject({ code: "bad-request" });
+    expect(v.log).toEqual([]);
+  });
+});
+
+describe("state: deployment.needed", () => {
+  it("says a deploy is needed when mods are enabled but nothing is deployed, whatever Vortex's flag says", async () => {
+    v.deployed.n = 0;
+    const s = (await run("state")) as any;
+    expect(s.deployment).toMatchObject({ needed: true, vortexFlag: false, deployedFiles: 0 });
+    expect(s.deployment.reason).toMatch(/1 mods are enabled but nothing is deployed/);
+  });
+
+  it("follows Vortex's flag otherwise", async () => {
+    const s = (await run("state")) as any;
+    expect(s.deployment).toEqual({ needed: false, vortexFlag: false, deployedFiles: 5 });
   });
 });
 

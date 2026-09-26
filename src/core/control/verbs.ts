@@ -211,19 +211,100 @@ function openDialogs(api: types.IExtensionApi): VortexDialog[] {
 }
 
 /**
+ * Vortex's "An older version of this mod is already installed" dialog
+ * (InstallManager.userVersionChoice, read out of app.asar). Its buttons are
+ * "Cancel", "Update all profiles" (REPLACE: every profile moves to the new
+ * file, including ones for another install of the game) and "Update current
+ * profile" (alongside: both versions stay, only the active profile switches).
+ *
+ * It cannot be pre-answered from an extension (the batch context that would
+ * remember a choice is not exported), so it is answered when it appears,
+ * through the same `closeDialog` the button calls.
+ */
+export const OLDER_VERSION_TEXT = "An older version of this mod is already installed";
+export const IF_EXISTING_ACTION: Record<string, string> = {
+  alongside: "Update current profile",
+  replace: "Update all profiles",
+};
+
+type RawDialog = { id: string; type?: string; title?: string; text: string; actions: string[] };
+
+function rawDialogs(api: types.IExtensionApi): RawDialog[] {
+  const list = (api.getState() as { session?: { notifications?: { dialogs?: unknown[] } } }).session?.notifications
+    ?.dialogs;
+  return (Array.isArray(list) ? list : []).map((d) => {
+    const x = d as Record<string, unknown>;
+    const c = (x["content"] ?? {}) as Record<string, unknown>;
+    const actions = Array.isArray(x["actions"]) ? (x["actions"] as Array<{ label?: unknown }>) : [];
+    return {
+      id: String(x["id"]),
+      type: str(x["type"]),
+      title: str(x["title"]),
+      text: str(c["text"]) ?? str(c["message"]) ?? str(c["bbcode"]) ?? "",
+      actions: actions.map((a) => String(a?.label ?? "")),
+    };
+  });
+}
+
+/** The button to press for this dialog under the caller's `ifExisting`, or undefined to leave it to the user. */
+export function answerFor(ifExisting: string | undefined, d: RawDialog): string | undefined {
+  if (ifExisting === undefined || ifExisting === "ask") return undefined;
+  if (!d.text.startsWith(OLDER_VERSION_TEXT)) return undefined;
+  const label = IF_EXISTING_ACTION[ifExisting];
+  // A Vortex that renamed its buttons gets no answer rather than a wrong one.
+  return label !== undefined && d.actions.includes(label) ? label : undefined;
+}
+
+type SeenDialog = { type?: string; title?: string; text: string; answer?: string; answeredBy?: "ifExisting" };
+
+/**
+ * Watches the store while a command runs: records every dialog that opens
+ * (one answered mid-command otherwise leaves no trace) and answers the
+ * older-version dialog when the caller said how.
+ */
+function watchDialogs(api: types.IExtensionApi, ifExisting: string | undefined): { seen: SeenDialog[]; stop: () => void } {
+  const handled = new Set(rawDialogs(api).map((d) => d.id)); // already open before the command: not ours
+  const seen: SeenDialog[] = [];
+  const check = (): void => {
+    for (const d of rawDialogs(api)) {
+      if (handled.has(d.id)) continue;
+      handled.add(d.id);
+      const entry: SeenDialog = { type: d.type, title: d.title, text: d.text.slice(0, 500) };
+      seen.push(entry);
+      const label = answerFor(ifExisting, d);
+      if (label !== undefined) {
+        entry.answer = label;
+        entry.answeredBy = "ifExisting";
+        // Not from inside the store listener: dispatching there re-enters it.
+        setTimeout(() => api.closeDialog?.(d.id, label, { remember: false }), 0);
+      }
+    }
+  };
+  // A Redux store; the typings trim ThunkStore to dispatch/getState.
+  const unsubscribe = (api.store as unknown as { subscribe?: (fn: () => void) => () => void } | undefined)?.subscribe?.(check);
+  return { seen, stop: () => unsubscribe?.() };
+}
+
+/**
  * Runs a verb and attaches what Vortex said while it ran: new notifications
- * (an "error" one means something failed that no callback reported) and any
- * dialog still open, which is how an agent learns a FOMOD installer or a
- * confirmation is waiting for the user.
+ * (an "error" one means something failed that no callback reported), every
+ * dialog that opened (and how it was answered), and any dialog still open,
+ * which is how an agent learns a FOMOD installer is waiting for the user.
  */
 export async function runVerb(api: types.IExtensionApi, name: string, body: VerbBody): Promise<Record<string, unknown>> {
   const verb = VERBS[name];
   if (verb === undefined) throw new ControlError("no-such-verb", `Unknown verb ${name}.`, 404);
+  const ifExisting = body["ifExisting"] === undefined ? undefined : String(body["ifExisting"]);
+  if (ifExisting !== undefined && ifExisting !== "ask" && IF_EXISTING_ACTION[ifExisting] === undefined) {
+    throw new ControlError("bad-request", `"ifExisting" must be "alongside", "replace" or "ask".`);
+  }
   const before = new Set(notices(api).map((n) => n.id));
+  const watch = verb.mutates ? watchDialogs(api, ifExisting) : undefined;
   const activity = (): Record<string, unknown> => ({
     notifications: notices(api)
       .filter((n) => !before.has(n.id) && n.type !== "activity")
       .map(({ type, title, message }) => ({ type, title, message })),
+    dialogsSeen: watch?.seen ?? [],
     openDialogs: openDialogs(api).map(({ type, title, text }) => ({ type, title, text })),
   });
   try {
@@ -234,6 +315,8 @@ export async function runVerb(api: types.IExtensionApi, name: string, body: Verb
       throw new ControlError(err.code, err.message, err.status, { ...(err.details ?? {}), vortex: activity() });
     }
     throw new ControlError("vortex-error", String((err as Error)?.message ?? err), 500, { vortex: activity() });
+  } finally {
+    watch?.stop();
   }
 }
 
@@ -393,6 +476,17 @@ export const VERBS: Record<string, Verb> = {
       const running = await gameRunning(api, gameId);
       const plugins = readPluginList(state);
       const downloads = downloadsFor(api, gameId);
+      const enabledMods = Object.keys(pool).filter((id) => modState[id]?.enabled === true).length;
+      const deployedFiles = await deployedFileCount(api, gameId);
+      const vortexFlag = needToDeploy(api, gameId);
+      /**
+       * Vortex's own flag is not the whole answer: after a game folder is
+       * repointed by hand it reads false while nothing at all is deployed
+       * (measured on the owner's AE switch: 961 enabled mods, 0 files, flag
+       * false). Enabled mods with zero deployed files need a deploy whatever
+       * the flag says.
+       */
+      const emptyButEnabled = deployedFiles === 0 && enabledMods > 0;
       const out: Record<string, unknown> = {
         gameId,
         game: { path: discovery.path, store: discovery.store, executable: running.exe, running: running.running },
@@ -400,10 +494,17 @@ export const VERBS: Record<string, Verb> = {
         profiles: Object.values(prof)
           .filter((p) => p.gameId === gameId)
           .map((p) => ({ id: p.id, name: p.name })),
-        deployment: { needed: needToDeploy(api, gameId), deployedFiles: await deployedFileCount(api, gameId) },
+        deployment: {
+          needed: vortexFlag || emptyButEnabled,
+          vortexFlag,
+          deployedFiles,
+          ...(emptyButEnabled && !vortexFlag
+            ? { reason: `${enabledMods} mods are enabled but nothing is deployed; Vortex's own flag says otherwise` }
+            : {}),
+        },
         counts: {
           mods: Object.keys(pool).length,
-          enabledMods: Object.keys(pool).filter((id) => modState[id]?.enabled === true).length,
+          enabledMods,
           plugins: plugins.length,
           enabledPlugins: plugins.filter((p) => p.enabled).length,
           downloads: downloads.length,
