@@ -267,14 +267,16 @@ function rawDialogs(api: types.IExtensionApi): RawDialog[] {
   return (Array.isArray(list) ? list : []).map((d) => {
     const x = d as Record<string, unknown>;
     const c = (x["content"] ?? {}) as Record<string, unknown>;
-    const actions = Array.isArray(x["actions"]) ? (x["actions"] as Array<{ label?: unknown }>) : [];
+    // Vortex keeps a dialog's buttons in state as their LABELS, plain strings
+    // (showDialog: `actions.map(action => action.label)`). Objects are read too.
+    const actions = Array.isArray(x["actions"]) ? (x["actions"] as unknown[]) : [];
     const inputs = Array.isArray(c["input"]) ? (c["input"] as Array<{ value?: unknown }>) : [];
     return {
       id: String(x["id"]),
       type: str(x["type"]),
       title: str(x["title"]),
       text: str(c["text"]) ?? str(c["message"]) ?? str(c["bbcode"]) ?? "",
-      actions: actions.map((a) => String(a?.label ?? "")),
+      actions: actions.map((a) => (typeof a === "string" ? a : String((a as { label?: unknown } | null)?.label ?? ""))),
       ...(inputs[0]?.value !== undefined ? { inputDefault: String(inputs[0].value) } : {}),
     };
   });

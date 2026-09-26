@@ -64,7 +64,7 @@ function fakeVortex() {
   /** Opens a Vortex dialog; resolves with the button pressed (by the watcher, or by "the user" in a test). */
   const openDialog = (d: { id: string; title: string; text: string; actions: string[] }): Promise<string> => {
     state.session ??= { notifications: { notifications: [], dialogs: [] } };
-    state.session.notifications.dialogs.push({ id: d.id, type: "question", title: d.title, content: { text: d.text }, actions: d.actions.map((label) => ({ label })) });
+    state.session.notifications.dialogs.push({ id: d.id, type: "question", title: d.title, content: { text: d.text }, actions: [...d.actions] }); // as Vortex stores them: label strings
     return new Promise((resolve) => {
       pending.set(d.id, resolve);
       notify();
