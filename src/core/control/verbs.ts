@@ -59,6 +59,15 @@ import { collectDistinctModTypes } from "../deploymentManifest";
 import { isProcessRunning } from "./gameProcess";
 import { guardGameClosed, guardKnownMods, guardSetGamePath, type GuardResult } from "./guards";
 import { continueDirection, fomodSummary, pickAppliesTo, readFomod, resolvePick, type FomodPick } from "./fomod";
+import {
+  allPluginEntries,
+  annotateMasters,
+  describeBasic,
+  describeModuleConfig,
+  publicDescription,
+  type BasicDescription,
+  type FomodDescription,
+} from "./installerDescribe";
 
 export class ControlError extends Error {
   constructor(
@@ -923,6 +932,192 @@ async function pluginsTxtOnDisk(api: types.IExtensionApi, gameId: string, wants:
 const lc = (v: unknown): string => String(v ?? "").toLowerCase();
 const limitOf = (body: VerbBody, dflt: number): number => Math.max(1, Math.min(Number(body["limit"]) || dflt, 5000));
 
+/** A download's file on disk. */
+function archivePathFor(api: types.IExtensionApi, gameId: string, archiveId: string): string {
+  const dl = (api.getState() as unknown as { persistent?: { downloads?: { files?: Record<string, { localPath?: string }> } } })
+    .persistent?.downloads?.files?.[archiveId];
+  const folder = (selectors as unknown as { downloadPathForGame?: (s: unknown, g: string) => string }).downloadPathForGame?.(
+    api.getState(),
+    gameId,
+  );
+  if (dl?.localPath === undefined || folder === undefined) throw new ControlError("no-such-download", `No local file for download ${archiveId}.`, 404);
+  const p = path.join(folder, dl.localPath);
+  if (!fs.existsSync(p)) throw new ControlError("no-such-download", `The download's file is missing: ${p}.`, 404);
+  return p;
+}
+
+/** The download to act on: `archiveId`, or a Nexus file downloaded (not installed) first. */
+async function downloadFor(api: types.IExtensionApi, gameId: string, body: VerbBody): Promise<string> {
+  const nexus = body["nexus"] as { modId?: unknown; fileId?: unknown } | undefined;
+  if (nexus !== undefined) {
+    if (typeof nexus.modId !== "number" || typeof nexus.fileId !== "number") {
+      throw new ControlError("bad-request", `"nexus" needs numeric modId and fileId.`);
+    }
+    const id = await nexusDownloadOnly(api, gameId, nexus.modId, nexus.fileId);
+    if (id === undefined) throw new ControlError("download-failed", `Vortex could not download ${nexus.modId}:${nexus.fileId}.`, 500);
+    return id;
+  }
+  return need(body, "archiveId");
+}
+
+type Described = { description: FomodDescription | BasicDescription; mastersChecked: boolean };
+
+/**
+ * Reads an archive's installer without installing: its FOMOD tree, or what
+ * the basic installer will see. `checkMasters` extracts the plugins the
+ * installer can add, reads their masters, and marks options that would add a
+ * plugin whose master nothing provides.
+ */
+async function readInstaller(api: types.IExtensionApi, archivePath: string, checkMasters: boolean): Promise<Described> {
+  const [{ resolveSevenZip, sevenZipExtractFull }, { listArchiveContents }, { findModuleConfigEntry }, { makeReadEntry }, { decodeModuleConfig }] =
+    await Promise.all([
+      import("../manifest/sevenZip"),
+      import("../manifest/archiveContents"),
+      import("../manifest/selfCheckMod"),
+      import("../manifest/runSelfChecks"),
+      import("../manifest/parseModuleConfig"),
+    ]);
+  const sevenZip = resolveSevenZip();
+  const listing = await listArchiveContents(sevenZip, archivePath);
+  const paths = listing.entries.map((e) => e.path);
+  const configEntry = findModuleConfigEntry(listing);
+  if (configEntry === undefined) return { description: describeBasic(paths), mastersChecked: false };
+  const raw = await makeReadEntry(sevenZip)(archivePath, configEntry);
+  if (raw === undefined) throw new ControlError("installer-unreadable", `Could not read ${configEntry} from the archive.`, 500);
+  const d = describeModuleConfig(decodeModuleConfig(raw), configEntry, paths);
+  if (!checkMasters) return { description: d, mastersChecked: false };
+
+  const entries = allPluginEntries(d).slice(0, 300);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "eh-installer-"));
+  try {
+    if (entries.length > 0) await sevenZipExtractFull(sevenZip, archivePath, tmp, { raw: entries });
+    const { readPluginMasters } = await import("../manifest/pluginMasters");
+    const masters = new Map<string, string[]>();
+    for (const e of entries) {
+      const r = await readPluginMasters(path.join(tmp, ...e.split("/")));
+      if (r.kind === "ok") masters.set(e, r.masters);
+    }
+    const installed = new Set(readPluginList(api.getState()).map((p) => p.name.toLowerCase()));
+    return { description: annotateMasters(d, masters, installed), mastersChecked: true };
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Runs an install, and if it opens a FOMOD wizard, answers it with `picks`
+ * (the same verified routine as fomod.answer). A pick that does not fit the
+ * wizard cancels it, so the install ends instead of waiting on a wizard
+ * nobody will finish; the pick's error is what the caller gets.
+ */
+async function withPicks<T>(
+  api: types.IExtensionApi,
+  picks: FomodPick[] | undefined,
+  run: () => Promise<T>,
+): Promise<{ result: T; answered?: Record<string, unknown> }> {
+  if (picks === undefined) return { result: await run() };
+  const before = readFomod(api.getState())?.instanceId;
+  let done = false;
+  let answerError: unknown;
+  const installing = run().finally(() => {
+    done = true;
+  });
+  const answering = (async (): Promise<Record<string, unknown> | undefined> => {
+    while (!done) {
+      const w = readFomod(api.getState());
+      if (w !== undefined && w.instanceId !== before) {
+        try {
+          return await answerWizard(api, { picks, finish: true });
+        } catch (err) {
+          answerError = err;
+          api.events.emit(`fomod-installer-cancel-${w.instanceId}`);
+          return undefined;
+        }
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return undefined;
+  })();
+  let result: T;
+  try {
+    result = await installing;
+  } catch (err) {
+    await answering;
+    throw answerError ?? err;
+  }
+  const answered = await answering;
+  if (answerError !== undefined) throw answerError;
+  return { result, ...(answered !== undefined ? { answered } : {}) };
+}
+
+/** Does this FOMOD ask anything? (A script whose steps hold no groups installs without a question.) */
+function asksQuestions(d: FomodDescription | BasicDescription): d is FomodDescription {
+  return d.kind === "fomod" && d.steps.some((s) => s.groups.some((g) => g.options.length > 0));
+}
+
+/**
+ * Answers the open FOMOD wizard: applies each pick on its step, then Next or
+ * Finish, until the wizard closes (or stops once the picks run out when
+ * `finish` is false). Every pick and the close are verified.
+ */
+async function answerWizard(api: types.IExtensionApi, body: VerbBody): Promise<Record<string, unknown>> {
+      const picks = body["picks"];
+      if (!Array.isArray(picks)) throw new ControlError("bad-request", `"picks" must be an array of {group, options, step?}.`);
+      const want = picks as FomodPick[];
+      const finish = body["finish"] !== false;
+      let view = readFomod(api.getState());
+      if (view === undefined) throw new ControlError("no-installer", "No FOMOD wizard is open.", 409);
+      const expect = str(body["expectModule"]);
+      if (expect !== undefined && view.moduleName !== undefined && view.moduleName.toLowerCase() !== expect.toLowerCase()) {
+        throw new ControlError("wrong-installer", `The open wizard is "${view.moduleName}", not "${expect}".`, 409, { wizard: view });
+      }
+      const instance = view.instanceId;
+      const moduleName = view.moduleName;
+      const used = new Set<number>();
+      const applied: Array<Record<string, unknown>> = [];
+      for (let guard = 0; guard < 64; guard += 1) {
+        view = readFomod(api.getState());
+        if (view === undefined || view.instanceId !== instance) break; // finished (or cancelled by the user)
+        const step = view.steps[view.currentStep];
+        if (step === undefined) break;
+        for (let i = 0; i < want.length; i += 1) {
+          if (used.has(i) || !pickAppliesTo(want[i]!, step)) continue;
+          const r = resolvePick(step, want[i]!);
+          if (!r.ok) throw new ControlError("bad-pick", r.reason, 400, { wizard: view, applied });
+          api.events.emit(`fomod-installer-select-${instance}`, step.id, r.groupId, r.optionIds);
+          const took = await settle(() => {
+            const g = readFomod(api.getState())?.steps[step.index]?.groups.find((x) => x.id === r.groupId);
+            return g !== undefined && r.optionIds.every((id) => g.options.find((o) => o.id === id)?.selected === true);
+          });
+          if (!took) throw new ControlError("pick-unverified", `The wizard did not take the selection in "${String(want[i]!.group)}".`, 500, { wizard: readFomod(api.getState()), applied });
+          used.add(i);
+          applied.push({ step: step.name, group: want[i]!.group, options: want[i]!.options });
+        }
+        const picksLeft = want.some((_, i) => !used.has(i));
+        if (!finish && !picksLeft) break;
+        const direction = continueDirection(view);
+        const from = view.currentStep;
+        api.events.emit(`fomod-installer-continue-${instance}`, direction, from);
+        const moved = await settle(() => {
+          const now = readFomod(api.getState());
+          return now === undefined || now.instanceId !== instance || now.currentStep !== from;
+        }, 15000);
+        if (!moved) throw new ControlError("step-unverified", `The wizard did not move past step "${step.name}".`, 500, { wizard: readFomod(api.getState()), applied });
+      }
+      const still = readFomod(api.getState());
+      const open = still !== undefined && still.instanceId === instance;
+      const unused = want.filter((_, i) => !used.has(i));
+      if (finish && open) throw new ControlError("not-finished", "The wizard is still open.", 500, { wizard: still, applied, unused });
+      return {
+        moduleName,
+        finished: !open,
+        applied,
+        unused,
+        ...(open ? { wizard: still } : {}),
+        verified: { selections: applied.length, closed: !open },
+      };
+}
+
 // ─── the verbs ─────────────────────────────────────────────────────────────
 
 export const VERBS: Record<string, Verb> = {
@@ -1181,6 +1376,33 @@ export const VERBS: Record<string, Verb> = {
     },
   },
 
+  /**
+   * An installer's whole tree BEFORE installing it: every step (and when it
+   * shows), group (and its type), option (description, type and the
+   * conditions that change it, flags it sets, files, the plugins it adds),
+   * plus required files and conditional installs. A package with no FOMOD
+   * reports what Vortex's basic installer sees. `checkMasters: true` reads the
+   * plugins' masters and marks options that would add a plugin whose master
+   * nothing provides. A Nexus file is downloaded, not installed.
+   *
+   *   { archiveId } | { nexus: { modId, fileId } }, checkMasters?
+   */
+  "installer.describe": {
+    mutates: false,
+    run: async (api, body) => {
+      const gameId = activeGame(api);
+      const archiveId = await downloadFor(api, gameId, body);
+      const archivePath = archivePathFor(api, gameId, archiveId);
+      const r = await readInstaller(api, archivePath, body["checkMasters"] === true);
+      return {
+        archiveId,
+        file: path.basename(archivePath),
+        mastersChecked: r.mastersChecked,
+        installer: r.description.kind === "fomod" ? publicDescription(r.description) : r.description,
+      };
+    },
+  },
+
   /** The FOMOD wizard open right now: module, steps, groups, options and what is selected. `{open: false}` when none is. */
   fomod: {
     mutates: false,
@@ -1205,61 +1427,7 @@ export const VERBS: Record<string, Verb> = {
     mutates: true,
     queue: false,
     run: async (api, body) => {
-      const picks = body["picks"];
-      if (!Array.isArray(picks)) throw new ControlError("bad-request", `"picks" must be an array of {group, options, step?}.`);
-      const want = picks as FomodPick[];
-      const finish = body["finish"] !== false;
-      let view = readFomod(api.getState());
-      if (view === undefined) throw new ControlError("no-installer", "No FOMOD wizard is open.", 409);
-      const expect = str(body["expectModule"]);
-      if (expect !== undefined && view.moduleName !== undefined && view.moduleName.toLowerCase() !== expect.toLowerCase()) {
-        throw new ControlError("wrong-installer", `The open wizard is "${view.moduleName}", not "${expect}".`, 409, { wizard: view });
-      }
-      const instance = view.instanceId;
-      const moduleName = view.moduleName;
-      const used = new Set<number>();
-      const applied: Array<Record<string, unknown>> = [];
-      for (let guard = 0; guard < 64; guard += 1) {
-        view = readFomod(api.getState());
-        if (view === undefined || view.instanceId !== instance) break; // finished (or cancelled by the user)
-        const step = view.steps[view.currentStep];
-        if (step === undefined) break;
-        for (let i = 0; i < want.length; i += 1) {
-          if (used.has(i) || !pickAppliesTo(want[i]!, step)) continue;
-          const r = resolvePick(step, want[i]!);
-          if (!r.ok) throw new ControlError("bad-pick", r.reason, 400, { wizard: view, applied });
-          api.events.emit(`fomod-installer-select-${instance}`, step.id, r.groupId, r.optionIds);
-          const took = await settle(() => {
-            const g = readFomod(api.getState())?.steps[step.index]?.groups.find((x) => x.id === r.groupId);
-            return g !== undefined && r.optionIds.every((id) => g.options.find((o) => o.id === id)?.selected === true);
-          });
-          if (!took) throw new ControlError("pick-unverified", `The wizard did not take the selection in "${String(want[i]!.group)}".`, 500, { wizard: readFomod(api.getState()), applied });
-          used.add(i);
-          applied.push({ step: step.name, group: want[i]!.group, options: want[i]!.options });
-        }
-        const picksLeft = want.some((_, i) => !used.has(i));
-        if (!finish && !picksLeft) break;
-        const direction = continueDirection(view);
-        const from = view.currentStep;
-        api.events.emit(`fomod-installer-continue-${instance}`, direction, from);
-        const moved = await settle(() => {
-          const now = readFomod(api.getState());
-          return now === undefined || now.instanceId !== instance || now.currentStep !== from;
-        }, 15000);
-        if (!moved) throw new ControlError("step-unverified", `The wizard did not move past step "${step.name}".`, 500, { wizard: readFomod(api.getState()), applied });
-      }
-      const still = readFomod(api.getState());
-      const open = still !== undefined && still.instanceId === instance;
-      const unused = want.filter((_, i) => !used.has(i));
-      if (finish && open) throw new ControlError("not-finished", "The wizard is still open.", 500, { wizard: still, applied, unused });
-      return {
-        moduleName,
-        finished: !open,
-        applied,
-        unused,
-        ...(open ? { wizard: still } : {}),
-        verified: { selections: applied.length, closed: !open },
-      };
+      return answerWizard(api, body);
     },
     describe: (_b, r) => `answered the ${String(r["moduleName"] ?? "FOMOD")} installer`,
   },
@@ -1857,20 +2025,37 @@ export const VERBS: Record<string, Verb> = {
       const nexus = body["nexus"] as { modId?: unknown; fileId?: unknown } | undefined;
       let vortexModId!: string;
       const asCopy = str(body["asCopy"]);
+      const picks = body["picks"] as FomodPick[] | undefined;
+      if (picks !== undefined && !Array.isArray(picks)) throw new ControlError("bad-request", `"picks" must be an array of {group, options, step?}.`);
+      if (picks !== undefined && (choices !== undefined || unattended)) {
+        throw new ControlError("bad-request", `"picks" answers the live wizard; send it without "choices" and "unattended".`);
+      }
+      /**
+       * Nobody said how to answer a FOMOD (no choices, no picks, not
+       * unattended) and nobody asked for the wizard (interactive): look at the
+       * archive first, and refuse with its tree rather than open a wizard the
+       * agent cannot see. Live, 2026-09-27: two wizards waited on the owner.
+       */
+      const mustLook = choices === undefined && picks === undefined && !unattended && body["interactive"] !== true;
+      let answered: Record<string, unknown> | undefined;
       let archiveId: string | undefined;
       if (nexus !== undefined) {
         if (typeof nexus.modId !== "number" || typeof nexus.fileId !== "number") {
           throw new ControlError("bad-request", `"nexus" needs numeric modId and fileId.`);
         }
-        if (!unattended && asCopy === undefined) {
+        if (!unattended && asCopy === undefined && !mustLook) {
           // Attended: Vortex asks about anything already installed, and ifExisting answers it.
-          ({ vortexModId } = await installNexusViaApi(api, {
-            gameId,
-            nexusModId: nexus.modId,
-            nexusFileId: nexus.fileId,
-            ...(choices !== undefined ? { choices } : {}),
-            unattended,
-          }));
+          const r = await withPicks(api, picks, () =>
+            installNexusViaApi(api, {
+              gameId,
+              nexusModId: nexus.modId as number,
+              nexusFileId: nexus.fileId as number,
+              ...(choices !== undefined ? { choices } : {}),
+              unattended,
+            }),
+          );
+          ({ vortexModId } = r.result);
+          answered = r.answered;
         } else {
           // Unattended or a copy: download first, so the silent-replace check below
           // sees the archive BEFORE Vortex decides anything about it.
@@ -1905,16 +2090,32 @@ export const VERBS: Record<string, Verb> = {
             { existing: collides, archiveId },
           );
         }
-        if (asCopy !== undefined) {
-          ({ vortexModId } = await installFromCopy(api, gameId, archiveId, asCopy, choices, unattended));
-        } else {
-          ({ vortexModId } = await installFromExistingDownload(api, {
-            gameId,
-            archiveId,
-            ...(choices !== undefined ? { choices } : {}),
-            unattended,
-          }));
+        if (mustLook) {
+          const looked = await readInstaller(api, archivePathFor(api, gameId, archiveId), body["checkMasters"] === true);
+          if (asksQuestions(looked.description)) {
+            throw new ControlError(
+              "needs-choices",
+              `This mod has a FOMOD installer and nothing says how to answer it. Re-send with "archiveId": "${archiveId}" and ` +
+                `"picks" (answered live: [{group, options, step?}], names from details.installer), or "choices" + "unattended" ` +
+                `(Vortex's recorded format), or "interactive": true to let the wizard open (answer it with fomod.answer).`,
+              409,
+              { archiveId, installer: publicDescription(looked.description), mastersChecked: looked.mastersChecked },
+            );
+          }
         }
+        const archive = archiveId;
+        const r = await withPicks(api, picks, () =>
+          asCopy !== undefined
+            ? installFromCopy(api, gameId, archive, asCopy, choices, unattended)
+            : installFromExistingDownload(api, {
+                gameId,
+                archiveId: archive,
+                ...(choices !== undefined ? { choices } : {}),
+                unattended,
+              }),
+        );
+        ({ vortexModId } = r.result);
+        answered = r.answered;
       }
       const m = modPool(api, gameId)[vortexModId];
       if (m === undefined || m.state !== "installed") {
@@ -1943,6 +2144,7 @@ export const VERBS: Record<string, Verb> = {
         version: str(m.attributes?.["version"]),
         enabled: enable,
         deployNeeded: true,
+        ...(picks !== undefined ? { installer: answered ?? { note: "no FOMOD wizard opened; the picks were not needed" } } : {}),
         verified: { inPool: true, state: m.state, enabledIn: enable ? profileId : undefined },
       };
     },

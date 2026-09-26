@@ -213,7 +213,7 @@ export type SelfCheckInput = {
 /** Where a FOMOD script lives. Case varies in the wild (`fomod`, `FOMod`). */
 const MODULE_CONFIG_CANDIDATES = ["fomod/ModuleConfig.xml", "FOMod/ModuleConfig.xml"];
 
-function findModuleConfigEntry(listing: ArchiveListing): string | undefined {
+export function findModuleConfigEntry(listing: ArchiveListing): string | undefined {
   const wanted = MODULE_CONFIG_CANDIDATES.map((c) => c.toLowerCase());
   const hit = listing.entries.find((e) => {
     const p = e.path.toLowerCase();

@@ -94,6 +94,7 @@ All of them act on Vortex's **active game**.
 | `plugins.rules` | `name?` | LOOT's userlist as Vortex holds it: each plugin's `group`, `after`, `requires`, `incompatible`, plus the user's `groups` and whether autosort is on. `name` narrows to rules that mention that plugin on either side. |
 | `mods.rules` | `id`, or `modIds[]` | Every mod rule on a mod (with the mod each one `resolvesTo`), and the rules other mods hold on it (`heldByOthers`). |
 | `vortex.notifications` | none | Every current Vortex notification and open dialog, plus `openInstaller` when a FOMOD wizard is waiting. |
+| `installer.describe` | `archiveId` or `nexus: {modId, fileId}`, `checkMasters?` | An installer's whole tree **before installing** (a Nexus file is downloaded, not installed). For a FOMOD: `moduleName`, `root`, `requiredFiles` (files and plugins), `moduleDependencies`, and `steps[]` (with `visibleWhen`), each with `groups[]` (with `type`), each with `options[]`: `description`, `type` (Required/Optional/Recommended/NotUsable), `typeWhen` (conditions that change the type), the `flags` it sets, `files`, and the `plugins` it installs. Also `conditionalInstalls[]` (`when` plus plugins). `checkMasters: true` reads those plugins' masters and adds `missingMasters` (nothing installed or in the installer provides them) and `mastersFromOtherOptions` to each option. A package with no FOMOD reports `kind: "basic"` with its `topLevel` folders and root `plugins`. |
 | `fomod` | none | The FOMOD wizard open right now: `moduleName`, `currentStep` (an index), and every step with its groups (`type`: SelectExactlyOne, SelectAtMostOne, SelectAny, ...) and options (`id`, `name`, `selected`, `description`). `{open: false}` when none is. |
 
 ### Changes
@@ -116,7 +117,7 @@ All of them act on Vortex's **active game**.
 | `profile.switch` | `profileId`, `assumeGameClosed?` | Switches profile (which may auto-deploy) and verifies it is the active profile. |
 | `game.setPath` | `path`, `store?`, `assumeGameClosed?` | Repoints the active game and verifies the path and store Vortex now reports. |
 | `game.switchInstall` | `path`, `profileId`, `store?`, `assumeGameClosed?` | Purge, then set path, switch profile and deploy, each step verified. It stops at the first failure with `failedStep` and `completedSteps`. |
-| `install` | `nexus: {modId, fileId}` **or** `archiveId`; `choices?`, `unattended?`, `enable?` (default true), `ifExisting?`, `variantName?`, `asCopy?` | Installs and verifies the mod is in the pool as `installed`, and enabled when asked. It does not deploy. |
+| `install` | `nexus: {modId, fileId}` **or** `archiveId`; `picks?` **or** `choices?` + `unattended?`, or `interactive?`; `checkMasters?`, `enable?` (default true), `ifExisting?`, `variantName?`, `asCopy?` | Installs and verifies the mod is in the pool as `installed`, and enabled when asked. It does not deploy. |
 
 `owner` is `"eh-installed"` when an Event Horizon receipt proves Event Horizon installed the mod, and `"not-eh"`
 otherwise. Adopted mods count as `"not-eh"`: they are the user's own.
@@ -197,7 +198,24 @@ stays untouched everywhere. Pass `ifExisting: "replace"` only when replacing eve
 folder is repointed by hand, Vortex's flag reads false with nothing deployed. When the two disagree, `reason` says
 so.
 
-### FOMOD installers
+### FOMOD installers: describe, then answer
+
+An `install` that says nothing about a FOMOD (no `picks`, no `choices`, not `unattended`, not `interactive`) looks
+into the archive first. If it has questions, it is refused with **`needs-choices`**: `details.installer` holds the
+same tree as `installer.describe`, and `details.archiveId` the download to re-send. The usual flow:
+
+1. `installer.describe {nexus, checkMasters: true}`, or just `install` and read `needs-choices`.
+2. Choose: skip options with `missingMasters`, prefer `type: Recommended`, and follow `visibleWhen` and `typeWhen`.
+3. `install {archiveId, picks: [{group: "Main", options: ["PRP"]}, {group: "F4SE", options: ["AE"]}]}`. The
+   install runs Vortex's real wizard and answers it as it opens, step by step, with the same verified routine as
+   `fomod.answer`, so steps that show or hide on earlier flags are handled the way the wizard handles them. Groups
+   you do not name keep the wizard's defaults. A pick that does not fit cancels the wizard, and the install fails
+   with that `bad-pick`. It never hangs. The reply's `installer` says what was chosen, and Vortex records the
+   answers as the mod's `installerChoices`, as usual.
+
+`interactive: true` lets the wizard open for the user, or for `fomod.answer` (`fomod` reads it).
+
+### FOMOD installers (recorded choices)
 
 `install` without `choices` lets Vortex show its installer dialog, and the op waits until the user answers it. Send it
 with `async: true`; the dialog then shows up in `vortex.notifications` → `openDialogs`, and in the op record once it ends.

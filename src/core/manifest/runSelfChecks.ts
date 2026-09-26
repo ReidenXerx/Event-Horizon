@@ -905,7 +905,7 @@ export type SelfCheckRunResult = {
  * Vortex exposes — so the temp dir is created and removed per call. The files
  * involved are FOMOD scripts, a few KB.
  */
-function makeReadEntry(sevenZip: SevenZipApi) {
+export function makeReadEntry(sevenZip: SevenZipApi) {
   return async (archivePath: string, entryPath: string): Promise<Buffer | undefined> => {
     const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "eh-selfcheck-"));
     try {

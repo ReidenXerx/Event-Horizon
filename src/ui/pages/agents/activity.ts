@@ -44,6 +44,7 @@ const META: Record<string, Meta> = {
   conflicts: { badge: "READ", doing: () => "Checking file conflicts", read: true },
   "vortex.notifications": { badge: "READ", doing: () => "Reading Vortex's notifications", read: true },
   fomod: { badge: "READ", doing: () => "Reading the open installer", read: true },
+  "installer.describe": { badge: "READ", doing: () => "Reading an installer before installing", read: true },
   "fomod.answer": {
     badge: "FOMOD",
     doing: (b) => `Answering the installer (${Array.isArray(b["picks"]) ? (b["picks"] as unknown[]).length : 0} choice(s))`,

@@ -8,6 +8,13 @@ vi.mock("./gameProcess", () => ({ isProcessRunning: vi.fn(async () => false) }))
 // plugins.txt on disk: the machine running the tests may have a real one.
 const disk = vi.hoisted(() => ({ entries: undefined as undefined | Array<{ name: string; enabled: boolean }> }));
 vi.mock("../installer/checkPluginOrder", () => ({ readUserPluginsTxt: vi.fn(async () => disk.entries) }));
+// The archive an install looks into: a FOMOD with one question.
+const HUB_XML = `<config><moduleName>Necessity</moduleName><installSteps><installStep name="Main"><optionalFileGroups><group name="Main" type="SelectExactlyOne"><plugins><plugin name="Base"><files><file source="Base.esp"/></files><typeDescriptor><type name="Optional"/></typeDescriptor></plugin><plugin name="PRP"><files><file source="PRP.esp"/></files><typeDescriptor><type name="Optional"/></typeDescriptor></plugin></plugins></group></optionalFileGroups></installStep></installSteps></config>`;
+vi.mock("../manifest/sevenZip", () => ({ resolveSevenZip: () => ({}), sevenZipExtractFull: async () => ({}) }));
+vi.mock("../manifest/archiveContents", () => ({
+  listArchiveContents: async () => ({ entries: [{ path: "fomod/ModuleConfig.xml" }, { path: "Base.esp" }, { path: "PRP.esp" }], withCrc: 0 }),
+}));
+vi.mock("../manifest/runSelfChecks", () => ({ makeReadEntry: () => async () => Buffer.from(HUB_XML, "utf8") }));
 
 import { isProcessRunning } from "./gameProcess";
 import { answerFor, runVerb, setSettleWindowsForTests, VERBS } from "./verbs";
@@ -782,6 +789,70 @@ describe("FOMOD wizard", () => {
     };
     const r = (await runVerb(v.api as any, "deploy", {})) as any;
     expect(r.vortex.openInstaller).toMatchObject({ moduleName: "Patch Hub", step: "Patches" });
+  });
+});
+
+describe("install and the FOMOD question", () => {
+  const withDownload = (): void => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eh-dl-"));
+    __testPaths.downloadPath = dir;
+    fs.writeFileSync(path.join(dir, "necessity.7z"), "x");
+    v.state.persistent.downloads.files.nec = { localPath: "necessity.7z", state: "finished", game: ["fallout4"] };
+  };
+
+  it("refuses with needs-choices and the whole tree, instead of opening a wizard nobody told it how to answer", async () => {
+    withDownload();
+    const started = vi.fn();
+    v.api.events.emit = (ev: string) => (ev === "start-install-download" ? started() : undefined);
+    await expect(run("install", { archiveId: "nec" })).rejects.toMatchObject({
+      code: "needs-choices",
+      details: { archiveId: "nec", installer: { moduleName: "Necessity", steps: [{ name: "Main" }] } },
+    });
+    expect(started).not.toHaveBeenCalled();
+  });
+
+  it("installer.describe returns the same tree without installing", async () => {
+    withDownload();
+    const r = (await run("installer.describe", { archiveId: "nec" })) as any;
+    expect(r.installer.steps[0].groups[0].options.map((o: any) => o.plugins)).toEqual([["Base.esp"], ["PRP.esp"]]);
+  });
+
+  it("install with picks answers the real wizard when it opens, and says what it chose", async () => {
+    withDownload();
+    const handlers = new Map<string, (...a: unknown[]) => void>();
+    const on = v.api.events.on;
+    v.api.events.on = (ev: string, fn: (...a: unknown[]) => void) => {
+      handlers.set(ev, fn);
+      on(ev, fn);
+    };
+    v.api.events.emit = (ev: string, ...args: unknown[]) => {
+      if (ev === "start-install-download") {
+        v.state.session = {
+          notifications: { notifications: [], dialogs: [] },
+          fomod: { installer: { dialog: { activeInstanceId: "w1", instances: { w1: { info: { moduleName: "Necessity" }, state: {
+            currentStep: 0,
+            installSteps: [{ id: 0, name: "Main", visible: true, optionalFileGroups: { group: [{ id: 0, name: "Main", type: "SelectExactlyOne",
+              options: [{ id: 0, name: "Base", selected: true }, { id: 1, name: "PRP", selected: false }] }] } }],
+          } } } } } },
+        };
+      }
+      const dlg = v.state.session?.fomod?.installer?.dialog;
+      if (ev === "fomod-installer-select-w1") {
+        for (const o of dlg.instances.w1.state.installSteps[0].optionalFileGroups.group[0].options) o.selected = (args[2] as number[]).includes(o.id);
+      }
+      if (ev === "fomod-installer-continue-w1" && args[0] === "finish") {
+        dlg.activeInstanceId = null;
+        v.state.persistent.mods.fallout4.nec = { id: "nec", state: "installed", attributes: { name: "Necessity" } };
+        setTimeout(() => handlers.get("did-install-mod")?.("fallout4", "nec", "nec"), 5);
+      }
+    };
+    const r = (await run("install", { archiveId: "nec", picks: [{ group: "Main", options: ["PRP"] }] })) as any;
+    expect(r).toMatchObject({ vortexModId: "nec", installer: { moduleName: "Necessity", finished: true } });
+    expect(r.installer.applied).toEqual([{ step: "Main", group: "Main", options: ["PRP"] }]);
+  });
+
+  it("refuses picks together with recorded choices", async () => {
+    await expect(run("install", { archiveId: "nec", picks: [], choices: { type: "fomod", options: [] } })).rejects.toMatchObject({ code: "bad-request" });
   });
 });
 

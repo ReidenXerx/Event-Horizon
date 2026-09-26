@@ -39,7 +39,8 @@ const VERBS: VerbRow[] = [
   { verb: "profile.switch", what: "Switch to another profile." },
   { verb: "game.setPath", what: "Point the game at another install folder (only when nothing is deployed)." },
   { verb: "game.switchInstall", what: "Purge, repoint, switch profile and deploy, in that order." },
-  { verb: "install", what: "Install a Nexus file or an existing download, with optional FOMOD choices." },
+  { verb: "install", what: "Install a Nexus file or an existing download; a FOMOD is answered by option name, never left waiting on you." },
+  { verb: "installer.describe · fomod · fomod.answer", what: "Read any installer before installing (options, plugins, missing masters), and drive the wizard live." },
 ];
 
 const GUARDS = [
