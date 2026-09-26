@@ -5,9 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { util, __testGame } from "@nexusmods/vortex-api";
 
 vi.mock("./gameProcess", () => ({ isProcessRunning: vi.fn(async () => false) }));
+// plugins.txt on disk: the machine running the tests may have a real one.
+const disk = vi.hoisted(() => ({ entries: undefined as undefined | Array<{ name: string; enabled: boolean }> }));
+vi.mock("../installer/checkPluginOrder", () => ({ readUserPluginsTxt: vi.fn(async () => disk.entries) }));
 
 import { isProcessRunning } from "./gameProcess";
-import { answerFor, runVerb, VERBS } from "./verbs";
+import { answerFor, runVerb, setSettleWindowsForTests, VERBS } from "./verbs";
 
 const running = isProcessRunning as unknown as ReturnType<typeof vi.fn>;
 
@@ -48,6 +51,12 @@ function fakeVortex() {
       },
     },
   };
+  state.session = { plugins: { pluginList: { "fallout4.esm": { isNative: true }, "a.esp": {}, "b.esp": {}, "c.esl": {} } }, notifications: { notifications: [], dialogs: [] } };
+  state.loadOrder = {
+    "a.esp": { enabled: true, loadOrder: 1, name: "A.esp" },
+    "b.esp": { enabled: true, loadOrder: 2, name: "B.esp" },
+    "c.esl": { enabled: false, loadOrder: 3, name: "C.esl" },
+  };
   const fire = (ev: string, ...args: unknown[]): void => handlers.get(ev)?.forEach((fn) => fn(...args));
   const listeners = new Set<() => void>();
   const notify = (): void => listeners.forEach((l) => l());
@@ -78,6 +87,13 @@ function fakeVortex() {
       },
       removeListener: (ev: string, fn: (...a: unknown[]) => void) => handlers.get(ev)?.delete(fn),
       emit: (ev: string, ...args: unknown[]) => {
+        if (ev === "set-plugin-list") {
+          const names = args[0] as string[];
+          names.forEach((n, i) => {
+            const id = n.toLowerCase();
+            if (state.loadOrder[id] !== undefined) state.loadOrder[id].loadOrder = i;
+          });
+        }
         if (ev === "purge-mods") {
           log.push("purge");
           setTimeout(() => {
@@ -108,6 +124,10 @@ function fakeVortex() {
           state.settings.profiles.activeProfileId = a.payload;
           setTimeout(() => fire("profile-did-change", a.payload));
         }
+        if (a.type === "SET_PLUGIN_ENABLED") {
+          const id = String(a.payload.pluginName).toLowerCase();
+          if (state.loadOrder[id] !== undefined) state.loadOrder[id].enabled = a.payload.enabled;
+        }
         if (a.type === "STUB_ADD_MOD_RULE") {
           const m = state.persistent.mods[a.payload.gameId][a.payload.modId];
           m.rules = [...(m.rules ?? []), a.payload.rule];
@@ -131,6 +151,8 @@ let v: ReturnType<typeof fakeVortex>;
 const run = (verb: string, body: Record<string, unknown> = {}, api: Api = v.api) => VERBS[verb]!.run(api as any, body);
 
 beforeEach(() => {
+  setSettleWindowsForTests(40);
+  disk.entries = undefined;
   v = fakeVortex();
   running.mockResolvedValue(false);
   __testGame.current = { requiredFiles: ["Fallout4.exe"], executable: () => "Fallout4.exe" };
@@ -465,6 +487,64 @@ describe("reinstalling an archive already in the pool", () => {
   it("ask, or a dialog without a Continue button, gets no answer", () => {
     expect(answerFor({ ifExisting: "ask" }, REINSTALL)).toBeUndefined();
     expect(answerFor({ ifExisting: "alongside" }, { ...REINSTALL, actions: ["Cancel", "Next"] })).toBeUndefined();
+  });
+});
+
+describe("plugins.setEnabled / plugins.apply", () => {
+  it("disables and enables by name, reports unknown names, and reads the state back", async () => {
+    const r = (await run("plugins.setEnabled", { names: ["A.esp", "nope.esp"], enabled: false })) as any;
+    expect(v.state.loadOrder["a.esp"].enabled).toBe(false);
+    expect(r).toMatchObject({ changed: 1, unknown: ["nope.esp"], verified: { state: "matches" } });
+  });
+
+  it("refuses a profile that is not the active one: plugin state lives there only", async () => {
+    await expect(run("plugins.setEnabled", { names: ["A.esp"], enabled: false, profileId: "ae" })).rejects.toMatchObject({
+      code: "not-active-profile",
+    });
+  });
+
+  it("replays a list: order and enabled state, unknown names reported", async () => {
+    const r = (await run("plugins.apply", {
+      order: [
+        { name: "C.esl", enabled: true },
+        { name: "B.esp", enabled: false },
+        { name: "Missing.esp", enabled: true },
+        { name: "A.esp", enabled: true },
+      ],
+    })) as any;
+    expect(v.state.loadOrder["c.esl"]).toMatchObject({ enabled: true, loadOrder: 0 });
+    expect(v.state.loadOrder["b.esp"]).toMatchObject({ enabled: false, loadOrder: 1 });
+    expect(v.state.loadOrder["a.esp"].loadOrder).toBe(3);
+    expect(r).toMatchObject({ entries: 4, unknown: ["Missing.esp"], verified: { state: "matches", order: "as given" } });
+  });
+
+  it("fails as unverified when Vortex does not take the enabled state", async () => {
+    const dispatch = v.api.store.dispatch;
+    v.api.store.dispatch = (a: any) => (a.type === "SET_PLUGIN_ENABLED" ? undefined : dispatch(a));
+    await expect(run("plugins.apply", { order: [{ name: "C.esl", enabled: true }] })).rejects.toMatchObject({
+      code: "plugins-unverified",
+      details: { wrongEnabled: ["C.esl"] },
+    });
+  });
+
+  it("checks plugins.txt on disk and says which active plugins it lacks", async () => {
+    disk.entries = [{ name: "A.esp", enabled: true }];
+    const r = (await run("plugins.apply", { order: [{ name: "A.esp", enabled: true }, { name: "C.esl", enabled: true }] })) as any;
+    expect(r.pluginsTxt).toMatchObject({ read: true, active: 1, missingActiveCount: 1, missingActive: ["C.esl"] });
+    expect(r.verified.pluginsTxt).toBe(false);
+  });
+
+  it("rejects a malformed list before touching anything", async () => {
+    await expect(run("plugins.apply", { order: [{ name: "A.esp" }] })).rejects.toMatchObject({ code: "bad-request" });
+    expect(v.state.loadOrder["a.esp"]).toMatchObject({ enabled: true, loadOrder: 1 });
+  });
+});
+
+describe("deploy: Vortex's flag lags the callback", () => {
+  it("waits for needToDeploy to clear instead of calling the deploy unverified", async () => {
+    v.state.persistent.deployment = { needToDeploy: { fallout4: true } };
+    setTimeout(() => (v.state.persistent.deployment.needToDeploy.fallout4 = false), 20);
+    await expect(run("deploy")).resolves.toMatchObject({ verified: { deploymentNeeded: false } });
   });
 });
 

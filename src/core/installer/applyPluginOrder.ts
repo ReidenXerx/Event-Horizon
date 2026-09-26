@@ -54,7 +54,7 @@ import { ehLog, beginOp } from "../logging/ehLog";
 import type { EhcollPluginEntry } from "../../types/ehcoll";
 
 /** Redux action from gamebryo-plugin-management: `(pluginName, enabled)`. */
-const ACTION_SET_PLUGIN_ENABLED = "SET_PLUGIN_ENABLED";
+export const ACTION_SET_PLUGIN_ENABLED = "SET_PLUGIN_ENABLED";
 
 /**
  * How long to wait for LOOT before giving up and keeping the pinned order.
@@ -332,13 +332,13 @@ function runLootSort(
  * the diff below think nothing matches — i.e. silently restore the
  * dispatch-everything behaviour this replaces.
  */
-function toPluginId(name: string): string {
+export function toPluginId(name: string): string {
   const lower = name.toLowerCase();
   return lower.endsWith(".ghost") ? lower.slice(0, -".ghost".length) : lower;
 }
 
 /** Current enabled state per plugin id, or `{}` when unreadable. */
-function readEnabledState(api: types.IExtensionApi): Record<string, boolean> {
+export function readEnabledState(api: types.IExtensionApi): Record<string, boolean> {
   try {
     const state = api.getState() as unknown as {
       loadOrder?: Record<string, { enabled?: boolean }>;
@@ -360,7 +360,7 @@ function readEnabledState(api: types.IExtensionApi): Record<string, boolean> {
  * registered by another extension, so there is no typed action creator to
  * import, and the runtime is an ordinary Redux store.
  */
-function dispatchRaw(
+export function dispatchRaw(
   api: types.IExtensionApi,
   type: string,
   payload: Record<string, unknown>,

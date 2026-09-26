@@ -37,6 +37,14 @@ import { switchToProfile } from "../installer/profile";
 import { installFromExistingDownload, installNexusViaApi, uninstallMods } from "../installer/modInstall";
 import type { VortexInstallerChoices } from "../installer/installerChoices";
 import { adoptLocalArchive } from "../installer/adoptLocalArchive";
+import {
+  ACTION_SET_PLUGIN_ENABLED,
+  applyPluginOrder,
+  dispatchRaw,
+  readEnabledState,
+  toPluginId,
+} from "../installer/applyPluginOrder";
+import { readUserPluginsTxt } from "../installer/checkPluginOrder";
 import { countMods, deployBudgetMs } from "../installer/timeBudgets";
 import { looksLikeWine } from "../proton/detect";
 import { listReceipts } from "../installLedger";
@@ -398,12 +406,29 @@ async function purge(api: types.IExtensionApi, gameId: string): Promise<number> 
   return left;
 }
 
+/** How long Vortex's needToDeploy flag may lag the deploy callback before it counts. */
+export let DEPLOY_FLAG_SETTLE_MS = 20000;
+/** Tests shorten the settle windows. */
+export function setSettleWindowsForTests(ms: number): void {
+  DEPLOY_FLAG_SETTLE_MS = ms;
+  PLUGIN_SETTLE_MS = ms;
+}
+/** How long Vortex may take to reflect plugin changes in its state. */
+export let PLUGIN_SETTLE_MS = 5000;
+
 async function deploy(api: types.IExtensionApi, gameId: string): Promise<Record<string, unknown>> {
   const profileId = activeProfileId(api);
   if (profileId === undefined) throw new ControlError("no-profile", "Vortex has no active profile.", 409);
   await deployAndWait(api, profileId);
   const files = await deployedFileCount(api, gameId);
-  const stillNeeded = needToDeploy(api, gameId);
+  // Vortex clears its "needs deploying" flag a few seconds AFTER the deploy
+  // callback (measured live: failed at the callback, false 6 s later), so
+  // the flag is given time to settle before it counts against the deploy.
+  let stillNeeded = needToDeploy(api, gameId);
+  for (let waited = 0; stillNeeded && waited < DEPLOY_FLAG_SETTLE_MS; waited += 250) {
+    await new Promise((r) => setTimeout(r, 250));
+    stillNeeded = needToDeploy(api, gameId);
+  }
   if (files === undefined || stillNeeded) {
     throw new ControlError(
       "deploy-unverified",
@@ -647,6 +672,93 @@ function versionMatchFor(mod: ModRecord, match: unknown): string {
   if (match === "compatible") return `^${version}`;
   if (match === "exact") return version;
   throw new ControlError("bad-request", `"versionMatch" must be "any", "compatible" or "exact".`);
+}
+
+// ─── plugins (gamebryo-plugin-management's state, through EH's own writer) ──
+
+type PluginWant = { name: string; enabled: boolean };
+
+function parsePluginWants(raw: unknown, key: string): PluginWant[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw new ControlError("bad-request", `"${key}" must be a non-empty array of {name, enabled}.`);
+  }
+  return raw.map((x, i) => {
+    const e = x as { name?: unknown; enabled?: unknown };
+    if (typeof e?.name !== "string" || e.name === "" || typeof e.enabled !== "boolean") {
+      throw new ControlError("bad-request", `"${key}[${i}]" needs a string name and a boolean enabled.`);
+    }
+    return { name: e.name, enabled: e.enabled };
+  });
+}
+
+/** Plugins act on the ACTIVE profile only: it is the one whose list lives in Vortex's state. */
+function pluginProfile(api: types.IExtensionApi, body: VerbBody): string {
+  const active = activeProfileId(api);
+  const asked = str(body["profileId"]);
+  if (active === undefined) throw new ControlError("no-profile", "Vortex has no active profile.", 409);
+  if (asked !== undefined && asked !== active) {
+    throw new ControlError(
+      "not-active-profile",
+      `Plugin state lives in the ACTIVE profile (${active}). Switch to ${asked} first (game.switchInstall when it belongs to another install).`,
+      409,
+    );
+  }
+  return active;
+}
+
+type PluginCheck = { unknown: string[]; wrongEnabled: string[]; outOfOrder: number };
+
+/** Compares Vortex's plugin state with what was asked. `checkOrder` compares the relative order of known plugins. */
+function checkPlugins(api: types.IExtensionApi, wants: readonly PluginWant[], checkOrder: boolean): PluginCheck {
+  const known = new Map(readPluginList(api.getState()).map((p) => [toPluginId(p.name), p]));
+  const unknown: string[] = [];
+  const wrongEnabled: string[] = [];
+  let outOfOrder = 0;
+  let last = -Infinity;
+  for (const w of wants) {
+    const p = known.get(toPluginId(w.name));
+    if (p === undefined) {
+      unknown.push(w.name);
+      continue;
+    }
+    // A game's own master is always enabled and never in loadOrder: asking to disable it is not a mismatch Vortex can fix.
+    if (!p.isNative && p.enabled !== w.enabled) wrongEnabled.push(w.name);
+    if (checkOrder && typeof p.loadOrder === "number") {
+      if (p.loadOrder < last) outOfOrder += 1;
+      last = p.loadOrder;
+    }
+  }
+  return { unknown, wrongEnabled, outOfOrder };
+}
+
+async function settlePlugins(
+  api: types.IExtensionApi,
+  wants: readonly PluginWant[],
+  checkOrder: boolean,
+): Promise<PluginCheck> {
+  let c = checkPlugins(api, wants, checkOrder);
+  for (let waited = 0; (c.wrongEnabled.length > 0 || c.outOfOrder > 0) && waited < PLUGIN_SETTLE_MS; waited += 250) {
+    await new Promise((r) => setTimeout(r, 250));
+    c = checkPlugins(api, wants, checkOrder);
+  }
+  return c;
+}
+
+/** What plugins.txt on DISK says, after Vortex has had a moment to flush it. The game reads this file, not Vortex's state. */
+async function pluginsTxtOnDisk(api: types.IExtensionApi, gameId: string, wants: readonly PluginWant[]): Promise<Record<string, unknown>> {
+  const store = readDiscovery(api.getState(), gameId).store;
+  const expectActive = new Set(wants.filter((w) => w.enabled).map((w) => toPluginId(w.name)));
+  let file = await readUserPluginsTxt(gameId, store);
+  for (let waited = 0; waited < PLUGIN_SETTLE_MS; waited += 500) {
+    const active = new Set((file ?? []).filter((e) => e.enabled).map((e) => toPluginId(e.name)));
+    if (file !== undefined && [...expectActive].every((id) => active.has(id))) break;
+    await new Promise((r) => setTimeout(r, 500));
+    file = await readUserPluginsTxt(gameId, store);
+  }
+  if (file === undefined) return { read: false };
+  const active = new Set(file.filter((e) => e.enabled).map((e) => toPluginId(e.name)));
+  const missingActive = wants.filter((w) => w.enabled && !active.has(toPluginId(w.name))).map((w) => w.name);
+  return { read: true, entries: file.length, active: active.size, missingActive: missingActive.slice(0, 50), missingActiveCount: missingActive.length };
 }
 
 const lc = (v: unknown): string => String(v ?? "").toLowerCase();
@@ -1009,6 +1121,112 @@ export const VERBS: Record<string, Verb> = {
       b["remove"] === true
         ? `removed a rule ${String(b["source"])} -> ${String(b["reference"])}`
         : `rule: ${String(b["source"])} ${String(b["type"])} ${String(b["reference"])}`,
+  },
+
+  /**
+   * Enable or disable plugins by name in the ACTIVE profile. Names Vortex
+   * does not list are reported, not failed. Read back from Vortex's state,
+   * and plugins.txt on disk is checked once Vortex has flushed it.
+   *
+   *   { names: [...], enabled, profileId? }
+   */
+  "plugins.setEnabled": {
+    mutates: true,
+    run: async (api, body) => {
+      const gameId = activeGame(api);
+      const profileId = pluginProfile(api, body);
+      const names = body["names"];
+      if (!Array.isArray(names) || names.length === 0 || names.some((n) => typeof n !== "string" || n === "")) {
+        throw new ControlError("bad-request", `"names" must be a non-empty array of plugin file names.`);
+      }
+      if (typeof body["enabled"] !== "boolean") throw new ControlError("bad-request", `"enabled" (boolean) is required.`);
+      const wants = (names as string[]).map((name) => ({ name, enabled: body["enabled"] as boolean }));
+      const current = readEnabledState(api);
+      let changed = 0;
+      for (const w of wants) {
+        const id = toPluginId(w.name);
+        if (current[id] === undefined || current[id] === w.enabled) continue;
+        dispatchRaw(api, ACTION_SET_PLUGIN_ENABLED, { pluginName: w.name, enabled: w.enabled });
+        changed += 1;
+      }
+      api.events.emit("collection-postprocess-complete", gameId, "event-horizon-control");
+      const check = await settlePlugins(api, wants, false);
+      if (check.wrongEnabled.length > 0) {
+        throw new ControlError("plugins-unverified", `${check.wrongEnabled.length} plugins did not take the new state.`, 500, {
+          wrongEnabled: check.wrongEnabled,
+          unknown: check.unknown,
+        });
+      }
+      const disk = await pluginsTxtOnDisk(api, gameId, wants);
+      return {
+        gameId,
+        profileId,
+        changed,
+        unknown: check.unknown,
+        pluginsTxt: disk,
+        verified: { state: "matches", pluginsTxt: disk["read"] === true && disk["missingActiveCount"] === 0 },
+      };
+    },
+    describe: (b, r) => `${b["enabled"] ? "enabled" : "disabled"} ${String(r["changed"])} plugin(s)`,
+  },
+
+  /**
+   * Replays a known plugin list into the ACTIVE profile: order AND enabled
+   * state, through the same writer EH's installer uses (pin via
+   * set-plugin-list without disabling the user's own plugins, correct only
+   * the enabled states that differ, flush plugins.txt). `sort: true` lets
+   * LOOT place plugins the list does not mention afterwards; default off, so
+   * the list is kept exactly.
+   *
+   *   { order: [{name, enabled}, ...], profileId?, sort? }
+   */
+  "plugins.apply": {
+    mutates: true,
+    run: async (api, body) => {
+      const gameId = activeGame(api);
+      const profileId = pluginProfile(api, body);
+      const wants = parsePluginWants(body["order"], "order");
+      const sort = body["sort"] === true;
+      const applied = await applyPluginOrder({
+        api,
+        gameId,
+        collectionId: "event-horizon-control",
+        order: wants.map((w) => ({ name: w.name, enabled: w.enabled })),
+        skipSort: !sort,
+      });
+      if (!applied.pinned) {
+        throw new ControlError("plugins-not-applied", applied.notes.join("; ") || "Vortex did not take the order.", 500, {
+          notes: applied.notes,
+        });
+      }
+      // A LOOT sort may legitimately move plugins, so order is only checked when the list is meant to be kept exactly.
+      const check = await settlePlugins(api, wants, !sort);
+      if (check.wrongEnabled.length > 0 || check.outOfOrder > 0) {
+        throw new ControlError(
+          "plugins-unverified",
+          `${check.wrongEnabled.length} plugins have the wrong enabled state and ${check.outOfOrder} are out of order.`,
+          500,
+          { wrongEnabled: check.wrongEnabled.slice(0, 100), outOfOrder: check.outOfOrder, unknown: check.unknown, notes: applied.notes },
+        );
+      }
+      const disk = await pluginsTxtOnDisk(api, gameId, wants);
+      return {
+        gameId,
+        profileId,
+        entries: wants.length,
+        enabledCorrections: applied.enabledCorrections,
+        sorted: applied.sorted,
+        unknown: check.unknown,
+        notes: applied.notes,
+        pluginsTxt: disk,
+        verified: {
+          state: "matches",
+          order: sort ? "sorted by LOOT" : "as given",
+          pluginsTxt: disk["read"] === true && disk["missingActiveCount"] === 0,
+        },
+      };
+    },
+    describe: (_b, r) => `applied a ${String(r["entries"])}-plugin list`,
   },
 
   "profile.switch": {
