@@ -206,6 +206,9 @@ function init(context: types.IExtensionContext): boolean {
     void import("./ui/runtime/collectionUpdates").then(({ watchCollectionUpdates }) =>
       watchCollectionUpdates(context.api),
     );
+    // A plugins.txt rewritten outside Vortex (Fallout 4 AE's own load-order
+    // manager wiped the owner's) is caught and offered back.
+    void import("./core/doctor/pluginWipeGuard").then(({ startPluginWipeGuard }) => startPluginWipeGuard(context.api));
     // The agents' control channel: only if the user turned it on. The
     // one-time offer waits for Vortex's own startup dialogs to settle.
     void import("./core/control/controlService").then(({ startControlChannelIfEnabled, showControlPromoOnce }) => {

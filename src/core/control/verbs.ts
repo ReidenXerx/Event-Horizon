@@ -957,6 +957,24 @@ export const VERBS: Record<string, Verb> = {
     },
   },
 
+  /**
+   * The last GOOD plugin list Event Horizon's wipe guard saved for a profile
+   * (default: the active one): names, order, enabled. Feed its entries to
+   * plugins.apply to restore it.
+   */
+  "plugins.lastGood": {
+    mutates: false,
+    run: async (api, body) => {
+      const profileId = str(body["profileId"]) ?? activeProfileId(api);
+      if (profileId === undefined) throw new ControlError("no-profile", "No profile given and none active.", 409);
+      const { loadSnapshot } = await import("../doctor/pluginWipeGuard");
+      const s = loadSnapshot(profileId);
+      if (s === undefined) throw new ControlError("no-snapshot", `No saved plugin list for profile ${profileId} yet.`, 404);
+      const order = [...s.entries].sort((a, b) => (a.loadOrder ?? 1e9) - (b.loadOrder ?? 1e9));
+      return { profileId, gameId: s.gameId, savedAt: s.savedAt, active: s.active, order: order.map((e) => ({ name: e.name, enabled: e.enabled })) };
+    },
+  },
+
   /** What Vortex is showing right now: notifications, and dialogs waiting for the user. */
   "vortex.notifications": {
     mutates: false,
@@ -1094,7 +1112,7 @@ export const VERBS: Record<string, Verb> = {
           (!ORDER_RULES.includes(type!) || now.filter((r) => ORDER_RULES.includes(String(r.type))).length === 1);
       if (!ok) {
         throw new ControlError("rule-unverified", `Vortex's rules for ${source} -> ${reference} are not what was asked.`, 500, {
-          rulesNow: now,
+          rulesOnPair: now,
         });
       }
       // The other mod may carry its own order rule on this one; say so, since two
@@ -1110,11 +1128,14 @@ export const VERBS: Record<string, Verb> = {
         source,
         reference,
         ...(remove ? { removed: toRemove.length } : { type, replaced: toRemove.map((r) => r.type) }),
-        rulesNow: now.map((r) => ({ type: r.type, reference: r.reference })),
+        /** Only the rules between these two mods. */
+        rulesOnPair: now.map((r) => ({ type: r.type, reference: r.reference })),
+        /** Every rule the source mod holds, on any mod. */
+        sourceRules: ((after[source]?.rules ?? []) as ModRule[]).map((r) => ({ type: r.type, reference: r.reference })),
         otherSideRules: otherSide,
         conflict: pair === undefined ? null : { files: pair.files, resolved: pair.resolved },
         deployNeeded: true,
-        verified: { rulesNow: now.map((r) => r.type) },
+        verified: { rulesOnPair: now.map((r) => r.type) },
       };
     },
     describe: (b) =>

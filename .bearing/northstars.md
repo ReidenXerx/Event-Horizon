@@ -100,6 +100,13 @@ proposed and never checked is not a fixed point, it is a guess with a number on 
   id. Provenance now comes from the install journal, and any new path that removes, overwrites or
   uninstalls must consult it. `installPlan.ts` promises "Old profile is byte-untouched" — that
   sentence is load-bearing.
+  **Scope (owner, 2026-09-26: "we overgrew this abstract rule"):** NS-2 governs what Event
+  Horizon DECIDES on its own: install, repair, mirror, update and uninstall paths that pick their
+  targets themselves. It does not forbid the owner acting on their own setup through Event
+  Horizon. A removal the owner (or an agent acting for them) names by exact mod id through the
+  control channel (`mods.remove`) is the owner's act, like clicking Remove in Vortex. It is still
+  exact-id only, all-or-nothing on unknown ids, and every reply states which of the mods Event
+  Horizon installed.
 
 - **NS-3** — **"Do you already have this mod?" is a question about Vortex's per-game mod POOL,
   never about a profile.** In Vortex a mod lives in one pool per game; a profile only records which

@@ -87,6 +87,7 @@ All of them act on Vortex's **active game**.
 | `plugins` | `name?`, `enabled?`, `limit?` (2000) | Plugins in load order. |
 | `downloads` | `name?`, `state?`, `limit?` (500) | The active game's downloads, with Nexus ids. |
 | `conflicts` | `modId?`, `unresolvedOnly?`, `limit?` (500) | Vortex's own computed file conflicts for the enabled mods, one entry per pair: both mods, the file count plus a sample, and `resolved` with the settling `rule` (a before/after/conflicts rule on either side, by Vortex's own test). `calculated: false` means Vortex has not computed them yet, which is not the same as having none. |
+| `plugins.lastGood` | `profileId?` (default active) | The last good plugin list Event Horizon's wipe guard saved for that profile: `order: [{name, enabled}]` plus `savedAt` and `active`, ready to feed to `plugins.apply`. `no-snapshot` (404) until one has been saved. |
 | `vortex.notifications` | none | Every current Vortex notification and open dialog. |
 
 ### Changes
@@ -97,7 +98,7 @@ All of them act on Vortex's **active game**.
 | `purge` | `assumeGameClosed?` | Purges the game folder. Verifies zero files are left deployed. |
 | `mods.setEnabled` | `modIds[]`, `enabled`, `profileId?` | Enables or disables by exact id and verifies each change in the profile. It does not deploy. |
 | `mods.remove` | `modIds[]`, `assumeGameClosed?` | Uninstalls by exact id and verifies each mod is gone from the pool. `removed` lists them with `owner`. |
-| `mods.rule` | `source`, `type` (before/after/conflicts/requires/recommends), `reference`, `versionMatch?` (any/compatible/exact, default any); or `source`, `reference`, `remove: true`, `type?` | Adds or removes a rule, like Vortex's conflict editor: an order rule replaces any before/after/conflicts rule the source already has on that mod. Verified by reading the rules back. Reports `otherSideRules` (an order rule the other mod holds on this one, which could make a cycle) and whether the pair's conflict is now `resolved`. |
+| `mods.rule` | `source`, `type` (before/after/conflicts/requires/recommends), `reference`, `versionMatch?` (any/compatible/exact, default any); or `source`, `reference`, `remove: true`, `type?` | Adds or removes a rule, like Vortex's conflict editor: an order rule replaces any before/after/conflicts rule the source already has on that mod. Verified by reading the rules back. The reply has `rulesOnPair` (only the rules between the two) and `sourceRules` (everything the source holds). Reports `otherSideRules` (an order rule the other mod holds on this one, which could make a cycle) and whether the pair's conflict is now `resolved`. |
 | `plugins.setEnabled` | `names[]`, `enabled`, `profileId?` (must be the active profile) | Enables or disables plugins by file name. Names Vortex does not list come back in `unknown`. Verified in Vortex's state, and `pluginsTxt` reports what plugins.txt on disk holds once flushed. |
 | `plugins.apply` | `order: [{name, enabled}]`, `profileId?` (active only), `sort?` (default false) | Replays a known list, order and enabled state, through EH's installer writer: pins without disabling the user's other plugins, corrects only the states that differ, and flushes plugins.txt. The order is kept exactly unless `sort: true` lets LOOT place the rest. Verified in state (enabled, relative order) and on disk (`pluginsTxt.missingActive`). |
 | `profile.switch` | `profileId`, `assumeGameClosed?` | Switches profile (which may auto-deploy) and verifies it is the active profile. |
@@ -118,7 +119,7 @@ otherwise. Adopted mods count as `"not-eh"`: they are the user's own.
 | `remove-incomplete` | Some mods are still in the pool. `details` lists which were removed and which were not. |
 | `plugins-unverified` / `plugins-not-applied` | Vortex does not show the enabled state or order that was asked for. `details` lists the plugins. |
 | `not-active-profile` | Plugin state lives in the active profile only. Switch first (`game.switchInstall` for another install). |
-| `rule-unverified` | The rules Vortex now holds for the pair are not what was asked. `details.rulesNow` shows them. |
+| `rule-unverified` | The rules Vortex now holds for the pair are not what was asked. `details.rulesOnPair` shows them. |
 | `switch-unverified` / `set-path-failed` | Vortex does not report the profile or path that was asked for. |
 | `vortex-error` | Vortex threw. The message is Vortex's own. |
 

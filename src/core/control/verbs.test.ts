@@ -413,7 +413,7 @@ describe("conflicts + mods.rule", () => {
     withConflict();
     const r = (await run("mods.rule", { source: "a", type: "after", reference: "b" })) as any;
     expect(v.state.persistent.mods.fallout4.a.rules).toEqual([{ type: "after", reference: { id: "b", versionMatch: "*" } }]);
-    expect(r).toMatchObject({ type: "after", replaced: [], conflict: { files: 2, resolved: true }, verified: { rulesNow: ["after"] } });
+    expect(r).toMatchObject({ type: "after", replaced: [], conflict: { files: 2, resolved: true }, verified: { rulesOnPair: ["after"] } });
     expect(((await run("conflicts", { unresolvedOnly: true })) as any).pairs).toEqual([]);
   });
 
