@@ -603,6 +603,40 @@ describe("plugin rules, groups, sort, autosort", () => {
     expect(v.state.userlist.plugins[0].after).toEqual([]);
   });
 
+  it("plugins.rule sort: gives LOOT another sort when the first ran before the rule reached it (the live false negative)", async () => {
+    let sorts = 0;
+    const emit = v.api.events.emit;
+    v.api.events.emit = (ev: string, ...args: unknown[]) => {
+      if (ev === "autosort-plugins") {
+        sorts += 1;
+        // First sort: LOOT has not seen the rule yet. Second: it has.
+        if (sorts >= 2) v.state.loadOrder = { ...v.state.loadOrder, "a.esp": { ...v.state.loadOrder["a.esp"], loadOrder: 9 } };
+        (args[1] as (e: unknown) => void)(null);
+        return;
+      }
+      emit(ev, ...args);
+    };
+    const r = (await run("plugins.rule", { name: "A.esp", type: "after", reference: "B.esp", sort: true })) as any;
+    expect(r.sortedNow).toMatchObject({ ordered: true, attempts: 2 });
+  });
+
+  it("plugins.rule sort: says so after three sorts that do not honour the rule", async () => {
+    v.api.events.emit = (ev: string, ...args: unknown[]) => {
+      if (ev === "autosort-plugins") (args[1] as (e: unknown) => void)(null);
+    };
+    await expect(run("plugins.rule", { name: "A.esp", type: "after", reference: "B.esp", sort: true })).rejects.toMatchObject({
+      code: "plugin-rule-not-effective",
+      details: { attempts: 3 },
+    });
+  });
+
+  it("plugins.rules filters by a names list too", async () => {
+    await run("plugins.rule", { name: "A.esp", type: "after", reference: "B.esp" });
+    await run("plugins.rule", { name: "C.esl", type: "after", reference: "Z.esp" });
+    const r = (await run("plugins.rules", { names: ["z.esp"] })) as any;
+    expect(r.plugins.map((p: any) => p.name)).toEqual(["C.esl"]);
+  });
+
   it("plugins.setGroup: read back from the userlist", async () => {
     await expect(run("plugins.setGroup", { name: "A.esp", group: "Late Loaders" })).resolves.toMatchObject({
       verified: { group: "Late Loaders" },

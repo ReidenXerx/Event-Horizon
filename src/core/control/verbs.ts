@@ -1815,20 +1815,41 @@ export const VERBS: Record<string, Verb> = {
         verified: { inUserlist: true },
       };
       if (body["sort"] === true && kind === "after") {
-        await new Promise<void>((resolve, reject) =>
-          api.events.emit("autosort-plugins", true, (err: Error | null | undefined) => (err ? reject(err) : resolve())),
-        );
-        await waitForQuietPlugins(api);
-        const pos = new Map(readPluginList(api.getState()).map((p) => [toPluginId(p.name), p.loadOrder]));
-        const a = pos.get(toPluginId(owner));
-        const b = pos.get(toPluginId(target));
-        const ordered = typeof a === "number" && typeof b === "number" ? a > b : undefined;
-        if (ordered === false) {
-          throw new ControlError("plugin-rule-not-effective", `After LOOT's sort ${owner} still loads before ${target}.`, 500, {
-            positions: { [owner]: a, [target]: b },
-          });
+        /**
+         * The rule and a just-installed plugin reach LOOT a moment after the
+         * dispatch: live, a sort run at once left a plugin installed seconds
+         * earlier at 245 vs prp.esp at 753, and a plain sort just after put it
+         * at 765. So wait for Vortex to go quiet first, and give LOOT up to
+         * three sorts, each after a longer pause, before calling the rule
+         * ineffective.
+         */
+        let a: number | undefined;
+        let b: number | undefined;
+        let ordered: boolean | undefined;
+        let attempts = 0;
+        for (; attempts < 3; ) {
+          attempts += 1;
+          await waitForQuietPlugins(api);
+          await new Promise((r) => setTimeout(r, PLUGIN_QUIET_MS * (attempts - 1)));
+          await new Promise<void>((resolve, reject) =>
+            api.events.emit("autosort-plugins", true, (err: Error | null | undefined) => (err ? reject(err) : resolve())),
+          );
+          await waitForQuietPlugins(api);
+          const pos = new Map(readPluginList(api.getState()).map((p) => [toPluginId(p.name), p.loadOrder]));
+          a = pos.get(toPluginId(owner));
+          b = pos.get(toPluginId(target));
+          ordered = typeof a === "number" && typeof b === "number" ? a > b : undefined;
+          if (ordered !== false) break;
         }
-        out["sortedNow"] = { positions: { [owner]: a, [target]: b }, ordered };
+        if (ordered === false) {
+          throw new ControlError(
+            "plugin-rule-not-effective",
+            `After ${attempts} LOOT sorts ${owner} still loads before ${target}. The rule is stored; another rule or group may outrank it.`,
+            500,
+            { positions: { [owner]: a, [target]: b }, attempts },
+          );
+        }
+        out["sortedNow"] = { positions: { [owner]: a, [target]: b }, ordered, attempts };
       }
       return out;
     },
@@ -1857,10 +1878,13 @@ export const VERBS: Record<string, Verb> = {
         requires: names(p["req"]),
         incompatible: names(p["inc"]),
       }));
-      const want = str(body["name"]);
+      // `name` or `names: [...]`: rules that mention any of them, on either side.
+      const want = [
+        ...(str(body["name"]) !== undefined ? [str(body["name"])!] : []),
+        ...(Array.isArray(body["names"]) ? (body["names"] as unknown[]).filter((x): x is string => typeof x === "string") : []),
+      ].map(toPluginId);
       const mentions = (p: (typeof plugins)[number]): boolean =>
-        want === undefined ||
-        [p.name, ...p.after, ...p.requires, ...p.incompatible].some((n) => toPluginId(n) === toPluginId(want));
+        want.length === 0 || [p.name, ...p.after, ...p.requires, ...p.incompatible].some((n) => want.includes(toPluginId(n)));
       return {
         autoSort: readsAutoSort(api.getState()),
         plugins: plugins.filter(mentions),
