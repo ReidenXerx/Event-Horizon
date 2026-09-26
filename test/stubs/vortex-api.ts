@@ -128,7 +128,12 @@ export const util = {
   installIconSet: (): Promise<void> => Promise.resolve(),
   getManifest: (): unknown => ({}),
   removeMods: (): Promise<void> => Promise.resolve(),
+  /** The game extension a test is running against; reassign `__testGame.current`. */
+  getGame: (): unknown => __testGame.current,
 };
+
+/** What `util.getGame` returns. Undefined unless a test sets it. */
+export const __testGame: { current: unknown } = { current: undefined };
 
 export const actions = {
   // Carries its arguments, because WHICH profile a mod is enabled in is the
@@ -185,6 +190,11 @@ export const actions = {
     payload: profileId,
   }),
   setProfile: (profile: unknown) => ({ type: "STUB_SET_PROFILE", payload: profile }),
+  // Carries its payload: WHERE a game was pointed, and with which store, is the assertion.
+  setGamePath: (gameId: string, gamePath: string, store: string, exePath: string) => ({
+    type: "STUB_SET_GAME_PATH",
+    payload: { gameId, gamePath, store, exePath },
+  }),
 };
 
 /** Swallowed by default so tests do not print. Reassign in a test to assert on it. */

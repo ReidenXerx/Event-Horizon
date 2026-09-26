@@ -41,6 +41,7 @@ import {
 } from "./errors";
 import { HomePage } from "./pages/HomePage";
 import { AboutPage } from "./pages/AboutPage";
+import { AgentsPage } from "./pages/AgentsPage";
 import { InstallPage } from "./pages/install/InstallPage";
 import { CollectionsPage } from "./pages/CollectionsPage";
 import { BuildPage } from "./pages/build/BuildPage";
@@ -200,6 +201,8 @@ function RouteOutlet(props: RouteOutletProps): JSX.Element {
       return <PluginDiffsPage key="plugin-diffs" onNavigate={onNavigate} />;
     case "mod-diffs":
       return <ModDiffsPage key="mod-diffs" onNavigate={onNavigate} />;
+    case "agents":
+      return <AgentsPage key="agents" />;
     case "about":
       return <AboutPage key="about" />;
     default: {

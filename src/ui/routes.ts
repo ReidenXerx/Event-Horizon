@@ -20,6 +20,7 @@ export type EventHorizonRoute =
   | "curator"
   | "plugin-diffs"
   | "mod-diffs"
+  | "agents"
   | "about";
 
 export interface RouteDescriptor {
@@ -92,6 +93,12 @@ export const ROUTES: RouteDescriptor[] = [
     label: "Mod Diffs",
     description: "Review mod snapshot comparison reports",
     icon: "collection",
+  },
+  {
+    id: "agents",
+    label: "Agents",
+    description: "Let AI agents on this PC drive Vortex (off until you turn it on)",
+    icon: "settings",
   },
   {
     id: "about",

@@ -206,6 +206,12 @@ function init(context: types.IExtensionContext): boolean {
     void import("./ui/runtime/collectionUpdates").then(({ watchCollectionUpdates }) =>
       watchCollectionUpdates(context.api),
     );
+    // The agents' control channel: only if the user turned it on. The
+    // one-time offer waits for Vortex's own startup dialogs to settle.
+    void import("./core/control/controlService").then(({ startControlChannelIfEnabled, showControlPromoOnce }) => {
+      startControlChannelIfEnabled(context.api);
+      setTimeout(() => void showControlPromoOnce(context.api).catch(() => undefined), 20000);
+    });
   });
 
   return true;

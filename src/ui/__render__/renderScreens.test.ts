@@ -46,6 +46,7 @@ import {
   PreviewStep,
 } from "../pages/install/steps";
 import { AboutPage } from "../pages/AboutPage";
+import { AgentsPage } from "../pages/AgentsPage";
 import { ApiProvider } from "../state/ApiContext";
 import { ToastProvider } from "../components/Toast";
 import { gradientPng } from "./fixtureImages";
@@ -2780,6 +2781,10 @@ describe("render", () => {
 
   it("about — the page nobody screenshots and everybody links to", () => {
     write("about", React.createElement(AboutPage, null));
+  });
+
+  it("agents — the control channel switch, in its default OFF state", () => {
+    write("agents", React.createElement(AgentsPage, null));
   });
 
   it("build form — the curator's whole workbench", () => {
