@@ -34,7 +34,11 @@ import { gameExecutable, purgeGameDeployment, readDiscovery } from "../environme
 import { getActiveGameId } from "../getModsListForProfile";
 import { deployAndWait } from "../installer/runInstall";
 import { switchToProfile } from "../installer/profile";
-import { installFromExistingDownload, installNexusViaApi, uninstallMods } from "../installer/modInstall";
+import {
+  installFromExistingDownload,
+  installNexusViaApi,
+  uninstallMods,
+} from "../installer/modInstall";
 import type { VortexInstallerChoices } from "../installer/installerChoices";
 import { adoptLocalArchive } from "../installer/adoptLocalArchive";
 import {
@@ -45,6 +49,7 @@ import {
   toPluginId,
 } from "../installer/applyPluginOrder";
 import { readUserPluginsTxt } from "../installer/checkPluginOrder";
+import { ACTION_SET_AUTOSORT_ENABLED, readsAutoSort } from "../installer/autoSort";
 import { countMods, deployBudgetMs } from "../installer/timeBudgets";
 import { looksLikeWine } from "../proton/detect";
 import { listReceipts } from "../installLedger";
@@ -414,7 +419,10 @@ export let DEPLOY_FLAG_SETTLE_MS = 20000;
 export function setSettleWindowsForTests(ms: number): void {
   DEPLOY_FLAG_SETTLE_MS = ms;
   PLUGIN_SETTLE_MS = ms;
+  PLUGIN_QUIET_MS = ms;
 }
+/** How long plugin state must stay unchanged before an order is judged (autosort lands after a change). */
+export let PLUGIN_QUIET_MS = 3000;
 /** How long Vortex may take to reflect plugin changes in its state. */
 export let PLUGIN_SETTLE_MS = 5000;
 
@@ -546,6 +554,34 @@ async function installFromCopy(
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
+}
+
+/**
+ * Downloads a Nexus file WITHOUT installing it and returns its download id.
+ * The same call downloadNexusArchiveOnly makes (`nexusDownload` with
+ * allowInstall=false), which returns the file PATH; the silent-replace check
+ * needs the id.
+ */
+async function nexusDownloadOnly(api: types.IExtensionApi, gameId: string, modId: number, fileId: number): Promise<string | undefined> {
+  const dl = (api as unknown as { ext?: { nexusDownload?: (...a: unknown[]) => Promise<unknown> } }).ext?.nexusDownload;
+  if (typeof dl !== "function") return undefined;
+  const id = await dl(gameId, modId, fileId, undefined, false);
+  return typeof id === "string" && id.length > 0 ? id : undefined;
+}
+
+/**
+ * Mods an install of this download would collide with: installed from the same
+ * archive, or already holding the install name Vortex derives from its file
+ * name (the archive name without extension, the usual case). Either one sends
+ * Vortex down queryUserReplace.
+ */
+function existingFor(api: types.IExtensionApi, gameId: string, archiveId: string): string[] {
+  const dl = (api.getState() as unknown as { persistent?: { downloads?: { files?: Record<string, { localPath?: string }> } } })
+    .persistent?.downloads?.files?.[archiveId];
+  const base = dl?.localPath !== undefined ? path.basename(dl.localPath, path.extname(dl.localPath)).toLowerCase() : undefined;
+  return Object.values(modPool(api, gameId))
+    .filter((m) => m.state === "installed" && (m.archiveId === archiveId || (base !== undefined && m.id.toLowerCase() === base)))
+    .map((m) => m.id);
 }
 
 function modSummary(m: ModRecord, enabled: boolean, owner?: string): Record<string, unknown> {
@@ -746,6 +782,24 @@ async function settlePlugins(
   return c;
 }
 
+/**
+ * Waits until Vortex's plugin state stops changing: quiet for PLUGIN_QUIET_MS,
+ * capped at 10x that. Vortex's autosort runs LOOT a moment AFTER a plugin
+ * change, so an order read straight after an apply can be a state that is
+ * about to be replaced (live: verified "as given", re-sorted seconds later).
+ */
+async function waitForQuietPlugins(api: types.IExtensionApi): Promise<void> {
+  const slice = (): unknown => (api.getState() as { loadOrder?: unknown }).loadOrder;
+  let last = slice();
+  let quietFor = 0;
+  for (let waited = 0; quietFor < PLUGIN_QUIET_MS && waited < PLUGIN_QUIET_MS * 10; waited += 250) {
+    await new Promise((r) => setTimeout(r, 250));
+    const now = slice();
+    quietFor = now === last ? quietFor + 250 : 0;
+    last = now;
+  }
+}
+
 /** What plugins.txt on DISK says, after Vortex has had a moment to flush it. The game reads this file, not Vortex's state. */
 async function pluginsTxtOnDisk(api: types.IExtensionApi, gameId: string, wants: readonly PluginWant[]): Promise<Record<string, unknown>> {
   const store = readDiscovery(api.getState(), gameId).store;
@@ -760,7 +814,29 @@ async function pluginsTxtOnDisk(api: types.IExtensionApi, gameId: string, wants:
   if (file === undefined) return { read: false };
   const active = new Set(file.filter((e) => e.enabled).map((e) => toPluginId(e.name)));
   const missingActive = wants.filter((w) => w.enabled && !active.has(toPluginId(w.name))).map((w) => w.name);
-  return { read: true, entries: file.length, active: active.size, missingActive: missingActive.slice(0, 50), missingActiveCount: missingActive.length };
+  // Relative order of the asked-for plugins as the FILE has them: the game loads this, whatever Vortex's state says.
+  const pos = new Map(file.map((e, i) => [toPluginId(e.name), i]));
+  let outOfOrder = 0;
+  let last = -1;
+  const firstOutOfOrder: string[] = [];
+  for (const w of wants) {
+    const p = pos.get(toPluginId(w.name));
+    if (p === undefined) continue;
+    if (p < last) {
+      outOfOrder += 1;
+      if (firstOutOfOrder.length < 20) firstOutOfOrder.push(w.name);
+    }
+    last = Math.max(last, p);
+  }
+  return {
+    read: true,
+    entries: file.length,
+    active: active.size,
+    missingActive: missingActive.slice(0, 50),
+    missingActiveCount: missingActive.length,
+    outOfOrder,
+    firstOutOfOrder,
+  };
 }
 
 const lc = (v: unknown): string => String(v ?? "").toLowerCase();
@@ -806,6 +882,7 @@ export const VERBS: Record<string, Verb> = {
         profiles: Object.values(prof)
           .filter((p) => p.gameId === gameId)
           .map((p) => ({ id: p.id, name: p.name })),
+        plugins: { autoSort: readsAutoSort(state) },
         deployment: {
           needed: vortexFlag || emptyButEnabled,
           vortexFlag,
@@ -891,6 +968,32 @@ export const VERBS: Record<string, Verb> = {
         plugins: readPluginList(api.getState())
           .filter((p) => p.modId === id)
           .map((p) => ({ name: p.name, enabled: p.enabled, loadOrder: p.loadOrder })),
+      };
+    },
+  },
+
+  /** Every mod rule on a mod, and every rule other mods hold on it. */
+  "mods.rules": {
+    mutates: false,
+    run: async (api, body) => {
+      const gameId = activeGame(api);
+      const id = need(body, "id");
+      const pool = modPool(api, gameId);
+      const mod = pool[id];
+      if (mod === undefined) throw new ControlError("no-such-mod", `No mod ${id} in ${gameId}.`, 404);
+      const refName = (ref: Record<string, unknown> | undefined): string | undefined => {
+        const target = Object.values(pool).find((m) => refersTo(m, ref));
+        return target !== undefined ? target.id : undefined;
+      };
+      return {
+        id,
+        name: modName(mod),
+        rules: ((mod.rules ?? []) as ModRule[]).map((r) => ({ type: r.type, reference: r.reference, resolvesTo: refName(r.reference) })),
+        heldByOthers: Object.values(pool)
+          .filter((m) => m.id !== id)
+          .flatMap((m) =>
+            ((m.rules ?? []) as ModRule[]).filter((r) => refersTo(mod, r.reference)).map((r) => ({ from: m.id, fromName: modName(m), type: r.type })),
+          ),
       };
     },
   },
@@ -1223,33 +1326,234 @@ export const VERBS: Record<string, Verb> = {
         });
       }
       // A LOOT sort may legitimately move plugins, so order is only checked when the list is meant to be kept exactly.
-      const check = await settlePlugins(api, wants, !sort);
+      const autoSort = readsAutoSort(api.getState());
+      await settlePlugins(api, wants, !sort); // the apply itself landed
+      await waitForQuietPlugins(api); // ...and whatever Vortex's autosort does next has happened
+      const check = checkPlugins(api, wants, !sort);
+      const resortHint =
+        autoSort === true && !sort
+          ? "Vortex's autosort is ON and re-sorted after the apply: an exact order only survives it through LOOT " +
+            "userlist rules (plugins.rule) or with autosort off (plugins.setAutoSort)."
+          : undefined;
       if (check.wrongEnabled.length > 0 || check.outOfOrder > 0) {
         throw new ControlError(
-          "plugins-unverified",
-          `${check.wrongEnabled.length} plugins have the wrong enabled state and ${check.outOfOrder} are out of order.`,
+          check.wrongEnabled.length === 0 && resortHint !== undefined ? "resorted-after-apply" : "plugins-unverified",
+          `${check.wrongEnabled.length} plugins have the wrong enabled state and ${check.outOfOrder} are out of order` +
+            (resortHint !== undefined ? `. ${resortHint}` : "."),
           500,
-          { wrongEnabled: check.wrongEnabled.slice(0, 100), outOfOrder: check.outOfOrder, unknown: check.unknown, notes: applied.notes },
+          {
+            wrongEnabled: check.wrongEnabled.slice(0, 100),
+            outOfOrder: check.outOfOrder,
+            unknown: check.unknown,
+            autoSort,
+            notes: applied.notes,
+          },
         );
       }
       const disk = await pluginsTxtOnDisk(api, gameId, wants);
+      if (!sort && disk["read"] === true && Number(disk["outOfOrder"]) > 0) {
+        throw new ControlError(
+          "plugins-txt-order",
+          `Vortex's state has the order, but plugins.txt on disk has ${String(disk["outOfOrder"])} of the plugins out of it` +
+            (resortHint !== undefined ? `. ${resortHint}` : "."),
+          500,
+          { pluginsTxt: disk, autoSort },
+        );
+      }
       return {
         gameId,
         profileId,
         entries: wants.length,
         enabledCorrections: applied.enabledCorrections,
         sorted: applied.sorted,
+        autoSort,
         unknown: check.unknown,
         notes: applied.notes,
         pluginsTxt: disk,
         verified: {
           state: "matches",
-          order: sort ? "sorted by LOOT" : "as given",
-          pluginsTxt: disk["read"] === true && disk["missingActiveCount"] === 0,
+          order: sort ? "sorted by LOOT" : "as given, after Vortex went quiet",
+          pluginsTxt: disk["read"] === true && disk["missingActiveCount"] === 0 && (sort || disk["outOfOrder"] === 0),
         },
       };
     },
     describe: (_b, r) => `applied a ${String(r["entries"])}-plugin list`,
+  },
+
+  /**
+   * A LOOT userlist rule between two plugins: the kind of order that SURVIVES
+   * Vortex's autosort, which a pinned order does not. Through the installer's
+   * own applyUserlist (verified in state.userlist).
+   *
+   *   { name, type: "after"|"before"|"requires"|"incompatible", reference, sort? }
+   *   { name, type, reference, remove: true }
+   *
+   * "before" is stored the way LOOT stores it: `reference` loads after `name`.
+   * `sort: true` runs LOOT now and checks the two plugins came out in that order.
+   */
+  "plugins.rule": {
+    mutates: true,
+    run: async (api, body) => {
+      const gameId = activeGame(api);
+      const name = need(body, "name");
+      const reference = need(body, "reference");
+      const type = need(body, "type");
+      if (!["after", "before", "requires", "incompatible"].includes(type)) {
+        throw new ControlError("bad-request", `"type" must be after, before, requires or incompatible.`);
+      }
+      if (toPluginId(name) === toPluginId(reference)) throw new ControlError("bad-request", "A plugin cannot have a rule on itself.");
+      // LOOT's storage: `owner` carries the list, `target` is in it.
+      const [owner, target] = type === "before" ? [reference, name] : [name, reference];
+      const kind = type === "requires" ? "req" : type === "incompatible" ? "inc" : "after";
+      const listOf = (): string[] => {
+        const pl = ((api.getState() as { userlist?: { plugins?: Array<Record<string, unknown>> } }).userlist?.plugins ?? []).find(
+          (p) => typeof p["name"] === "string" && toPluginId(p["name"] as string) === toPluginId(owner),
+        );
+        const list = (pl?.[kind] as unknown[] | undefined) ?? [];
+        return list.map((r) => toPluginId(typeof r === "string" ? r : String((r as { name?: unknown })?.name ?? "")));
+      };
+      const has = (): boolean => listOf().includes(toPluginId(target));
+
+      if (body["remove"] === true) {
+        if (has()) {
+          dispatchRaw(api, "REMOVE_USERLIST_RULE", {
+            pluginId: owner,
+            reference: target,
+            type: kind === "req" ? "requires" : kind === "inc" ? "incompatible" : "after",
+          });
+        }
+        if (has()) throw new ControlError("plugin-rule-unverified", `The ${type} rule ${owner} -> ${target} is still in LOOT's userlist.`, 500);
+        return { gameId, name, type, reference, removed: true, verified: { inUserlist: false } };
+      }
+
+      const { applyUserlist } = await import("../installer/applyUserlist");
+      const r = applyUserlist({ api, userlist: { plugins: [{ name: owner, [kind]: [target] }], groups: [] } });
+      if (!has()) {
+        throw new ControlError(
+          "plugin-rule-unverified",
+          r.skipped[0]?.reason ?? `LOOT's userlist does not show ${owner} ${kind} ${target}.`,
+          500,
+          { skipped: r.skipped },
+        );
+      }
+      const out: Record<string, unknown> = {
+        gameId,
+        name,
+        type,
+        reference,
+        stored: { plugin: owner, [kind]: target },
+        autoSort: readsAutoSort(api.getState()),
+        verified: { inUserlist: true },
+      };
+      if (body["sort"] === true && kind === "after") {
+        await new Promise<void>((resolve, reject) =>
+          api.events.emit("autosort-plugins", true, (err: Error | null | undefined) => (err ? reject(err) : resolve())),
+        );
+        await waitForQuietPlugins(api);
+        const pos = new Map(readPluginList(api.getState()).map((p) => [toPluginId(p.name), p.loadOrder]));
+        const a = pos.get(toPluginId(owner));
+        const b = pos.get(toPluginId(target));
+        const ordered = typeof a === "number" && typeof b === "number" ? a > b : undefined;
+        if (ordered === false) {
+          throw new ControlError("plugin-rule-not-effective", `After LOOT's sort ${owner} still loads before ${target}.`, 500, {
+            positions: { [owner]: a, [target]: b },
+          });
+        }
+        out["sortedNow"] = { positions: { [owner]: a, [target]: b }, ordered };
+      }
+      return out;
+    },
+    describe: (b) =>
+      b["remove"] === true
+        ? `removed LOOT rule ${String(b["name"])} ${String(b["type"])} ${String(b["reference"])}`
+        : `LOOT rule: ${String(b["name"])} ${String(b["type"])} ${String(b["reference"])}`,
+  },
+
+  /**
+   * LOOT userlist as Vortex holds it: every plugin entry (group, after,
+   * requires, incompatible) and the user's groups. `name?` narrows to rules
+   * that mention that plugin, on either side.
+   */
+  "plugins.rules": {
+    mutates: false,
+    run: async (api, body) => {
+      const ul = (api.getState() as { userlist?: { plugins?: Array<Record<string, unknown>>; groups?: Array<Record<string, unknown>> } })
+        .userlist;
+      const names = (v: unknown): string[] =>
+        (Array.isArray(v) ? v : []).map((r) => (typeof r === "string" ? r : String((r as { name?: unknown })?.name ?? "")));
+      const plugins = (ul?.plugins ?? []).map((p) => ({
+        name: String(p["name"] ?? ""),
+        ...(p["group"] !== undefined ? { group: String(p["group"]) } : {}),
+        after: names(p["after"]),
+        requires: names(p["req"]),
+        incompatible: names(p["inc"]),
+      }));
+      const want = str(body["name"]);
+      const mentions = (p: (typeof plugins)[number]): boolean =>
+        want === undefined ||
+        [p.name, ...p.after, ...p.requires, ...p.incompatible].some((n) => toPluginId(n) === toPluginId(want));
+      return {
+        autoSort: readsAutoSort(api.getState()),
+        plugins: plugins.filter(mentions),
+        groups: (ul?.groups ?? []).map((g) => ({ name: String(g["name"] ?? ""), after: names(g["after"]) })),
+      };
+    },
+  },
+
+  /** Puts a plugin in a LOOT group (userlist), read back. The group must exist (LOOT's masterlist or the user's). */
+  "plugins.setGroup": {
+    mutates: true,
+    run: async (api, body) => {
+      const name = need(body, "name");
+      const group = need(body, "group");
+      const { applyUserlist } = await import("../installer/applyUserlist");
+      const r = applyUserlist({ api, userlist: { plugins: [{ name, group }], groups: [] } });
+      const now = ((api.getState() as { userlist?: { plugins?: Array<Record<string, unknown>> } }).userlist?.plugins ?? []).find(
+        (p) => typeof p["name"] === "string" && toPluginId(p["name"] as string) === toPluginId(name),
+      )?.["group"];
+      if (now !== group) {
+        throw new ControlError("plugin-group-unverified", r.skipped[0]?.reason ?? `LOOT's userlist shows group ${String(now)} for ${name}.`, 500, {
+          skipped: r.skipped,
+        });
+      }
+      return { name, group, verified: { group: now } };
+    },
+    describe: (b) => `put ${String(b["name"])} in LOOT group ${String(b["group"])}`,
+  },
+
+  /**
+   * Runs LOOT's sort now (the same event Vortex's Sort button fires) and
+   * reports what moved.
+   */
+  "plugins.sort": {
+    mutates: true,
+    run: async (api) => {
+      const before = new Map(readPluginList(api.getState()).map((p) => [p.name, p.loadOrder]));
+      await new Promise<void>((resolve, reject) =>
+        api.events.emit("autosort-plugins", true, (err: Error | null | undefined) => (err ? reject(err) : resolve())),
+      );
+      await waitForQuietPlugins(api);
+      const moved = readPluginList(api.getState())
+        .filter((p) => before.get(p.name) !== p.loadOrder)
+        .map((p) => ({ name: p.name, from: before.get(p.name), to: p.loadOrder }));
+      return { moved: moved.slice(0, 300), movedCount: moved.length, truncated: moved.length > 300 };
+    },
+    describe: (_b, r) => `ran LOOT sort (${String(r["movedCount"])} moved)`,
+  },
+
+  /** Vortex's plugin autosort on or off (`settings.plugins.autoSort`), read back. */
+  "plugins.setAutoSort": {
+    mutates: true,
+    run: async (api, body) => {
+      if (typeof body["enabled"] !== "boolean") throw new ControlError("bad-request", `"enabled" (boolean) is required.`);
+      dispatchRaw(api, ACTION_SET_AUTOSORT_ENABLED, body["enabled"] as unknown as Record<string, unknown>);
+      const now = readsAutoSort(api.getState());
+      if (now !== body["enabled"]) {
+        throw new ControlError("autosort-unverified", `Vortex reports autosort ${String(now)} after setting ${String(body["enabled"])}.`, 500);
+      }
+      return { autoSort: now, verified: { autoSort: now } };
+    },
+    describe: (b) => `turned plugin autosort ${b["enabled"] ? "on" : "off"}`,
   },
 
   "profile.switch": {
@@ -1350,42 +1654,54 @@ export const VERBS: Record<string, Verb> = {
       const choices = body["choices"] as VortexInstallerChoices | undefined;
       const unattended = body["unattended"] === true;
       const nexus = body["nexus"] as { modId?: unknown; fileId?: unknown } | undefined;
-      let vortexModId: string;
+      let vortexModId!: string;
+      const asCopy = str(body["asCopy"]);
+      let archiveId: string | undefined;
       if (nexus !== undefined) {
         if (typeof nexus.modId !== "number" || typeof nexus.fileId !== "number") {
           throw new ControlError("bad-request", `"nexus" needs numeric modId and fileId.`);
         }
-        ({ vortexModId } = await installNexusViaApi(api, {
-          gameId,
-          nexusModId: nexus.modId,
-          nexusFileId: nexus.fileId,
-          ...(choices !== undefined ? { choices } : {}),
-          unattended,
-        }));
+        if (!unattended && asCopy === undefined) {
+          // Attended: Vortex asks about anything already installed, and ifExisting answers it.
+          ({ vortexModId } = await installNexusViaApi(api, {
+            gameId,
+            nexusModId: nexus.modId,
+            nexusFileId: nexus.fileId,
+            ...(choices !== undefined ? { choices } : {}),
+            unattended,
+          }));
+        } else {
+          // Unattended or a copy: download first, so the silent-replace check below
+          // sees the archive BEFORE Vortex decides anything about it.
+          archiveId = await nexusDownloadOnly(api, gameId, nexus.modId, nexus.fileId);
+          if (archiveId === undefined) {
+            throw new ControlError("download-failed", `Vortex could not download ${nexus.modId}:${nexus.fileId}.`, 500);
+          }
+        }
       } else {
-        const archiveId = need(body, "archiveId");
-        const asCopy = str(body["asCopy"]);
-        const fromThisArchive = Object.values(modPool(api, gameId)).filter(
-          (m) => m.archiveId === archiveId && m.state === "installed",
-        );
+        archiveId = need(body, "archiveId");
+      }
+      if (archiveId !== undefined) {
+        const collides = existingFor(api, gameId, archiveId);
         /**
          * ─── THE SILENT REPLACE ─────────────────────────────────────────────
-         * Reinstalling an archive whose mod is already in the pool, unattended
-         * and with different choices, is what Vortex's queryUserReplace calls a
+         * Installing an archive whose mod is already in the pool (the same
+         * archive, or one whose install name is already taken), unattended and
+         * with different choices, is what Vortex's queryUserReplace calls a
          * DEPENDENCY reinstall: outside a collection session it picks
          * "replace" with no dialog at all (read in app.asar), and replace
          * swaps the mod in EVERY profile. Refused unless that is what the
          * caller asked for; `asCopy` is the way to get a second copy.
          */
-        if (fromThisArchive.length > 0 && unattended && asCopy === undefined && body["ifExisting"] !== "replace") {
+        if (collides.length > 0 && unattended && asCopy === undefined && body["ifExisting"] !== "replace") {
           throw new ControlError(
             "would-replace-everywhere",
-            `Mod ${fromThisArchive.map((m) => m.id).join(", ")} is already installed from this archive. An unattended ` +
+            `Mod ${collides.join(", ")} is already installed from this archive (or under its name). An unattended ` +
               `reinstall makes Vortex REPLACE it in every profile, silently. Send "asCopy": "<label>" to install a ` +
               `separate copy (no dialogs), drop "unattended" to be asked, or send "ifExisting": "replace" if replacing ` +
               `everywhere is the intent.`,
             409,
-            { existing: fromThisArchive.map((m) => m.id) },
+            { existing: collides, archiveId },
           );
         }
         if (asCopy !== undefined) {

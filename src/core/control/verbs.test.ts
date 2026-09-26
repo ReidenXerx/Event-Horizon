@@ -124,6 +124,21 @@ function fakeVortex() {
           state.settings.profiles.activeProfileId = a.payload;
           setTimeout(() => fire("profile-did-change", a.payload));
         }
+        if (a.type === "ADD_USERLIST_RULE" || a.type === "REMOVE_USERLIST_RULE" || a.type === "SET_PLUGIN_GROUP") {
+          state.userlist ??= { plugins: [], groups: [{ name: "default" }, { name: "Late Loaders" }] };
+          const key = String(a.payload.pluginId).toLowerCase();
+          let p = state.userlist.plugins.find((x: any) => x.name.toLowerCase() === key);
+          if (p === undefined) state.userlist.plugins.push((p = { name: a.payload.pluginId }));
+          if (a.type === "SET_PLUGIN_GROUP") p.group = a.payload.group;
+          else {
+            const list = a.payload.type === "requires" ? "req" : a.payload.type === "incompatible" ? "inc" : "after";
+            p[list] = (p[list] ?? []).filter((r: string) => r.toLowerCase() !== String(a.payload.reference).toLowerCase());
+            if (a.type === "ADD_USERLIST_RULE") p[list].push(a.payload.reference);
+          }
+        }
+        if (a.type === "GAMEBRYO_SET_AUTOSORT_ENABLED") {
+          state.settings.plugins = { ...(state.settings.plugins ?? {}), autoSort: a.payload };
+        }
         if (a.type === "SET_PLUGIN_ENABLED") {
           const id = String(a.payload.pluginName).toLowerCase();
           if (state.loadOrder[id] !== undefined) state.loadOrder[id].enabled = a.payload.enabled;
@@ -515,7 +530,7 @@ describe("plugins.setEnabled / plugins.apply", () => {
     expect(v.state.loadOrder["c.esl"]).toMatchObject({ enabled: true, loadOrder: 0 });
     expect(v.state.loadOrder["b.esp"]).toMatchObject({ enabled: false, loadOrder: 1 });
     expect(v.state.loadOrder["a.esp"].loadOrder).toBe(3);
-    expect(r).toMatchObject({ entries: 4, unknown: ["Missing.esp"], verified: { state: "matches", order: "as given" } });
+    expect(r).toMatchObject({ entries: 4, unknown: ["Missing.esp"], verified: { state: "matches", order: "as given, after Vortex went quiet" } });
   });
 
   it("fails as unverified when Vortex does not take the enabled state", async () => {
@@ -537,6 +552,88 @@ describe("plugins.setEnabled / plugins.apply", () => {
   it("rejects a malformed list before touching anything", async () => {
     await expect(run("plugins.apply", { order: [{ name: "A.esp" }] })).rejects.toMatchObject({ code: "bad-request" });
     expect(v.state.loadOrder["a.esp"]).toMatchObject({ enabled: true, loadOrder: 1 });
+  });
+});
+
+describe("plugin rules, groups, sort, autosort", () => {
+  it("plugins.apply catches autosort re-sorting AFTER the apply (the live false positive)", async () => {
+    v.state.settings.plugins = { autoSort: true };
+    const emit = v.api.events.emit;
+    v.api.events.emit = (ev: string, ...args: unknown[]) => {
+      emit(ev, ...args);
+      // LOOT moves C back after A, a moment later, as Vortex's autosort does.
+      if (ev === "set-plugin-list") setTimeout(() => (v.state.loadOrder = { ...v.state.loadOrder, "c.esl": { ...v.state.loadOrder["c.esl"], loadOrder: 9 } }), 60);
+    };
+    await expect(
+      run("plugins.apply", { order: [{ name: "C.esl", enabled: false }, { name: "A.esp", enabled: true }] }),
+    ).rejects.toMatchObject({ code: "resorted-after-apply", details: { autoSort: true, outOfOrder: 1 } });
+  });
+
+  it("plugins.apply fails when plugins.txt on disk has them out of order", async () => {
+    disk.entries = [{ name: "A.esp", enabled: true }, { name: "B.esp", enabled: true }];
+    await expect(
+      run("plugins.apply", { order: [{ name: "B.esp", enabled: true }, { name: "A.esp", enabled: true }] }),
+    ).rejects.toMatchObject({ code: "plugins-txt-order" });
+  });
+
+  it("plugins.rule after: stored on the plugin, verified in the userlist", async () => {
+    const r = (await run("plugins.rule", { name: "ArPrevisPatch.esp", type: "after", reference: "prp.esp" })) as any;
+    expect(r).toMatchObject({ stored: { plugin: "ArPrevisPatch.esp", after: "prp.esp" }, verified: { inUserlist: true } });
+    expect(((await run("plugins.rules", { name: "prp.esp" })) as any).plugins).toEqual([
+      expect.objectContaining({ name: "ArPrevisPatch.esp", after: ["prp.esp"] }),
+    ]);
+  });
+
+  it("plugins.rule before: stored the way LOOT stores it, on the other plugin", async () => {
+    const r = (await run("plugins.rule", { name: "A.esp", type: "before", reference: "B.esp" })) as any;
+    expect(r.stored).toEqual({ plugin: "B.esp", after: "A.esp" });
+  });
+
+  it("plugins.rule remove: gone from the userlist", async () => {
+    await run("plugins.rule", { name: "A.esp", type: "after", reference: "B.esp" });
+    const r = (await run("plugins.rule", { name: "A.esp", type: "after", reference: "B.esp", remove: true })) as any;
+    expect(r).toMatchObject({ removed: true, verified: { inUserlist: false } });
+    expect(v.state.userlist.plugins[0].after).toEqual([]);
+  });
+
+  it("plugins.setGroup: read back from the userlist", async () => {
+    await expect(run("plugins.setGroup", { name: "A.esp", group: "Late Loaders" })).resolves.toMatchObject({
+      verified: { group: "Late Loaders" },
+    });
+  });
+
+  it("plugins.setAutoSort: read back, and state reports it", async () => {
+    await expect(run("plugins.setAutoSort", { enabled: false })).resolves.toMatchObject({ verified: { autoSort: false } });
+    expect(((await run("state")) as any).plugins).toEqual({ autoSort: false });
+  });
+
+  it("plugins.sort: fires LOOT and reports what moved", async () => {
+    v.api.events.emit = (ev: string, ...args: unknown[]) => {
+      if (ev === "autosort-plugins") {
+        v.state.loadOrder = { ...v.state.loadOrder, "a.esp": { ...v.state.loadOrder["a.esp"], loadOrder: 5 } };
+        (args[1] as (e: unknown) => void)(null);
+      }
+    };
+    const r = (await run("plugins.sort")) as any;
+    expect(r).toMatchObject({ movedCount: 1, moved: [{ name: "A.esp", from: 1, to: 5 }] });
+  });
+
+  it("mods.rules: the mod's own rules and the ones other mods hold on it", async () => {
+    v.state.persistent.mods.fallout4.a.rules = [{ type: "after", reference: { id: "b" } }];
+    const r = (await run("mods.rules", { id: "b" })) as any;
+    expect(r.rules).toEqual([]);
+    expect(r.heldByOthers).toEqual([{ from: "a", fromName: "Mod A", type: "after" }]);
+  });
+});
+
+describe("nexus installs and the silent replace", () => {
+  it("downloads first when unattended, and refuses when the download collides with an installed mod's name", async () => {
+    v.state.persistent.downloads.files.dl9 = { localPath: "B.7z", state: "finished", game: ["fallout4"] }; // Vortex names the mod after the archive: "b"
+    (v.api as any).ext = { nexusDownload: async () => "dl9" };
+    await expect(run("install", { nexus: { modId: 1, fileId: 2 }, unattended: true })).rejects.toMatchObject({
+      code: "would-replace-everywhere",
+      details: { existing: ["b"], archiveId: "dl9" },
+    });
   });
 });
 

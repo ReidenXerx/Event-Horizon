@@ -88,6 +88,8 @@ All of them act on Vortex's **active game**.
 | `downloads` | `name?`, `state?`, `limit?` (500) | The active game's downloads, with Nexus ids. |
 | `conflicts` | `modId?`, `unresolvedOnly?`, `limit?` (500) | Vortex's own computed file conflicts for the enabled mods, one entry per pair: both mods, the file count plus a sample, and `resolved` with the settling `rule` (a before/after/conflicts rule on either side, by Vortex's own test). `calculated: false` means Vortex has not computed them yet, which is not the same as having none. |
 | `plugins.lastGood` | `profileId?` (default active) | The last good plugin list Event Horizon's wipe guard saved for that profile: `order: [{name, enabled}]` plus `savedAt` and `active`, ready to feed to `plugins.apply`. `no-snapshot` (404) until one has been saved. |
+| `plugins.rules` | `name?` | LOOT's userlist as Vortex holds it: each plugin's `group`, `after`, `requires`, `incompatible`, plus the user's `groups` and whether autosort is on. `name` narrows to rules that mention that plugin on either side. |
+| `mods.rules` | `id` | Every mod rule on a mod (with the mod each one `resolvesTo`), and the rules other mods hold on it (`heldByOthers`). |
 | `vortex.notifications` | none | Every current Vortex notification and open dialog. |
 
 ### Changes
@@ -101,6 +103,10 @@ All of them act on Vortex's **active game**.
 | `mods.rule` | `source`, `type` (before/after/conflicts/requires/recommends), `reference`, `versionMatch?` (any/compatible/exact, default any); or `source`, `reference`, `remove: true`, `type?` | Adds or removes a rule, like Vortex's conflict editor: an order rule replaces any before/after/conflicts rule the source already has on that mod. Verified by reading the rules back. The reply has `rulesOnPair` (only the rules between the two) and `sourceRules` (everything the source holds). Reports `otherSideRules` (an order rule the other mod holds on this one, which could make a cycle) and whether the pair's conflict is now `resolved`. |
 | `plugins.setEnabled` | `names[]`, `enabled`, `profileId?` (must be the active profile) | Enables or disables plugins by file name. Names Vortex does not list come back in `unknown`. Verified in Vortex's state, and `pluginsTxt` reports what plugins.txt on disk holds once flushed. |
 | `plugins.apply` | `order: [{name, enabled}]`, `profileId?` (active only), `sort?` (default false) | Replays a known list, order and enabled state, through EH's installer writer: pins without disabling the user's other plugins, corrects only the states that differ, and flushes plugins.txt. The order is kept exactly unless `sort: true` lets LOOT place the rest. Verified in state (enabled, relative order) and on disk (`pluginsTxt.missingActive`). |
+| `plugins.rule` | `name`, `type` (after/before/requires/incompatible), `reference`, `sort?`; or the same with `remove: true` | A LOOT userlist rule, the kind of order that **survives autosort** (a pinned order does not). Written through the installer's `applyUserlist` and verified in the userlist. A `before` rule is stored as LOOT stores it: `reference` gets `after: name` (see `stored`). `sort: true` runs LOOT at once and checks the two plugins came out in that order (`plugin-rule-not-effective` otherwise). |
+| `plugins.setGroup` | `name`, `group` | Puts a plugin in a LOOT group (which must exist in LOOT's masterlist or the user's groups). Verified in the userlist. |
+| `plugins.sort` | none | Runs LOOT now (the Sort button's event), waits for Vortex to go quiet, and reports `moved: [{name, from, to}]`. |
+| `plugins.setAutoSort` | `enabled` | Turns Vortex's plugin autosort on or off, verified in `settings.plugins.autoSort`. `state.plugins.autoSort` reports it. |
 | `profile.switch` | `profileId`, `assumeGameClosed?` | Switches profile (which may auto-deploy) and verifies it is the active profile. |
 | `game.setPath` | `path`, `store?`, `assumeGameClosed?` | Repoints the active game and verifies the path and store Vortex now reports. |
 | `game.switchInstall` | `path`, `profileId`, `store?`, `assumeGameClosed?` | Purge, then set path, switch profile and deploy, each step verified. It stops at the first failure with `failedStep` and `completedSteps`. |
@@ -117,6 +123,7 @@ otherwise. Adopted mods count as `"not-eh"`: they are the user's own.
 | `deploy-unverified` | Vortex said the deploy was done, but it still flags the game as needing a deploy, or the manifests could not be read. |
 | `install-unverified` / `enable-unverified` | The mod is missing from the pool, is not in the `installed` state, or was not enabled. |
 | `remove-incomplete` | Some mods are still in the pool. `details` lists which were removed and which were not. |
+| `resorted-after-apply` / `plugins-txt-order` | `plugins.apply` saw its order undone once Vortex went quiet (autosort on), or plugins.txt on disk disagrees with the order. Use `plugins.rule` for orders that must survive a sort. |
 | `plugins-unverified` / `plugins-not-applied` | Vortex does not show the enabled state or order that was asked for. `details` lists the plugins. |
 | `not-active-profile` | Plugin state lives in the active profile only. Switch first (`game.switchInstall` for another install). |
 | `rule-unverified` | The rules Vortex now holds for the pair are not what was asked. `details.rulesOnPair` shows them. |
