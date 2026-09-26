@@ -28,33 +28,88 @@ fetch(c.url + "state", { headers: { authorization: "Bearer " + c.token } }).then
 
 ## Requests and replies
 
-- `GET /v1/health` returns the version and the verb list.
-- `POST /v1/<verb>` with a JSON object body (read verbs also accept `GET`).
-- Success: `200 { "ok": true, "result": { ... } }`.
-- Refusal or failure: `{ "ok": false, "code": "<code>", "message": "..." }`, with 400 for a bad request, 409 for a
-  guard refusal, and 500 when Vortex failed.
-- Commands run **one at a time** in arrival order. A long deploy holds the connection until it finishes, so use no
-  client timeout, or a long one.
+- `GET /v1/health` returns the version, every verb (`reads` or `mutates`), the running op, and the queue length.
+- `POST /v1/<verb>` takes a JSON object body. Read verbs also accept `GET` with query parameters.
+- **Changes run one at a time**, in arrival order. **Reads never wait** behind a running change, so you can watch
+  a long deploy while it runs.
 - Every state-changing command shows a notification in Vortex, and a refusal shows a warning.
+
+### Every reply has the same shape
+
+```jsonc
+// success: HTTP 200
+{ "ok": true,  "opId": "op-lx3k9q-a1b2c3", "verb": "install", "status": "succeeded", "ms": 5230,
+  "result": { ..., "verified": { ... }, "vortex": { "notifications": [], "openDialogs": [] } } }
+// failure: HTTP 400 bad request, 404 unknown thing, 409 guard refusal, 500 Vortex did not do it
+{ "ok": false, "opId": "...", "verb": "mods.remove", "status": "failed", "ms": 812,
+  "code": "remove-incomplete", "message": "...", "details": { "removed": [...], "notRemoved": [...], "vortex": {...} } }
+```
+
+- **`ok: true` is a verified success.** After acting, every changing verb reads Vortex back and fails with an
+  `*-unverified` or `*-incomplete` code when the result is not there. `result.verified` lists what was checked.
+  You do not need a follow-up `state` call to confirm.
+- **`details` on a failure says what did happen**: the steps completed (`completedSteps`, `failedStep`), the mods
+  removed before the error, and the files left deployed.
+- **`vortex`** is attached to every changing command, on success (in `result`) and on failure (in `details`):
+  - `notifications`: what Vortex raised while the command ran. An `error` one means something failed that no
+    callback reported.
+  - `openDialogs`: dialogs waiting for the user. This is how you learn a FOMOD installer or a confirmation is
+    blocking.
+
+### Long commands: `async` and the op log
+
+- Add `"async": true` to any changing command's body. You get `202 { opId, status: "queued" }` at once, and the
+  command runs in the queue.
+- `POST /v1/ops.get {"opId": "..."}` returns the record: `queued` → `running` → `succeeded` | `failed`, the same
+  fields as the reply, plus the body you sent and timestamps. It answers straight away, even while a change is
+  running.
+- `POST /v1/ops.list {"limit"?, "verb"?, "status"?, "includeReads"?}` lists recent ops, newest first. Only
+  changes are listed unless you pass `includeReads`.
+- The last 500 ops are kept in memory. Every finished op is also appended to
+  `<Vortex userData>/event-horizon/control-ops.jsonl`, so the owner can read what agents did.
+- A dropped connection loses nothing: the op finishes anyway, and `ops.get` has the outcome.
 
 ## Verbs
 
 All of them act on Vortex's **active game**.
 
-| Verb | Body | Does |
+### Reads
+
+| Verb | Body | Returns |
 |---|---|---|
-| `state` | none | Game (path, store, executable, running), active profile, the game's profiles, mods (id, name, version, enabled, type, nexus ids, source, archiveId, `owner`), plugins (load order), downloads, and deployment (`needed`, `deployedFiles`). |
-| `deploy` | `assumeGameClosed?` | Deploys the active profile and waits for Vortex. |
-| `purge` | `assumeGameClosed?` | Purges the game folder. The reply carries `deployedFilesAfter`. |
-| `mods.setEnabled` | `modIds[]`, `enabled`, `profileId?` | Enables or disables by exact id. It does not deploy. |
-| `mods.remove` | `modIds[]`, `assumeGameClosed?` | Uninstalls by exact id. The reply lists `removed` (with `owner`) and `notRemoved`. |
-| `profile.switch` | `profileId`, `assumeGameClosed?` | Switches profile, which may auto-deploy. |
-| `game.setPath` | `path`, `store?`, `assumeGameClosed?` | Points the active game at another install folder. |
-| `game.switchInstall` | `path`, `profileId`, `store?`, `assumeGameClosed?` | Purge, then set path, switch profile and deploy. It stops at the first failed step and names it. |
-| `install` | `nexus: {modId, fileId}` **or** `archiveId`; `choices?`, `unattended?`, `enable?` (default true) | Installs into the active game and enables it in the active profile. It does not deploy. |
+| `state` | `include?`: any of `"mods"`, `"plugins"`, `"downloads"` | Game (path, store, executable, running), active profile, the game's profiles, deployment (`needed`, `deployedFiles`), `counts`, Vortex notifications and open dialogs. The long lists come only when you ask for them in `include`. |
+| `mods.find` | `name?` (substring of name or id), `nexusModId?`, `enabled?`, `owner?`, `limit?` (200) | `{ total, mods[], truncated }`: id, name, version, enabled, state, type, nexus ids, source, archiveId, owner. |
+| `mod.get` | `id` | Everything Vortex holds about one mod: attributes, rules, installationPath, which profiles enable it, and its plugins. |
+| `plugins` | `name?`, `enabled?`, `limit?` (2000) | Plugins in load order. |
+| `downloads` | `name?`, `state?`, `limit?` (500) | The active game's downloads, with Nexus ids. |
+| `vortex.notifications` | none | Every current Vortex notification and open dialog. |
+
+### Changes
+
+| Verb | Body | Does, and verifies |
+|---|---|---|
+| `deploy` | `assumeGameClosed?` | Deploys the active profile. Verifies the "needs deploying" flag is cleared and the manifests read. |
+| `purge` | `assumeGameClosed?` | Purges the game folder. Verifies zero files are left deployed. |
+| `mods.setEnabled` | `modIds[]`, `enabled`, `profileId?` | Enables or disables by exact id and verifies each change in the profile. It does not deploy. |
+| `mods.remove` | `modIds[]`, `assumeGameClosed?` | Uninstalls by exact id and verifies each mod is gone from the pool. `removed` lists them with `owner`. |
+| `profile.switch` | `profileId`, `assumeGameClosed?` | Switches profile (which may auto-deploy) and verifies it is the active profile. |
+| `game.setPath` | `path`, `store?`, `assumeGameClosed?` | Repoints the active game and verifies the path and store Vortex now reports. |
+| `game.switchInstall` | `path`, `profileId`, `store?`, `assumeGameClosed?` | Purge, then set path, switch profile and deploy, each step verified. It stops at the first failure with `failedStep` and `completedSteps`. |
+| `install` | `nexus: {modId, fileId}` **or** `archiveId`; `choices?`, `unattended?`, `enable?` (default true) | Installs and verifies the mod is in the pool as `installed`, and enabled when asked. It does not deploy. |
 
 `owner` is `"eh-installed"` when an Event Horizon receipt proves Event Horizon installed the mod, and `"not-eh"`
 otherwise. Adopted mods count as `"not-eh"`: they are the user's own.
+
+### Failure codes worth knowing
+
+| Code | Meaning |
+|---|---|
+| `purge-incomplete` / `purge-unverified` | Vortex said the purge was done, but files remain, or the manifests could not be read. |
+| `deploy-unverified` | Vortex said the deploy was done, but it still flags the game as needing a deploy, or the manifests could not be read. |
+| `install-unverified` / `enable-unverified` | The mod is missing from the pool, is not in the `installed` state, or was not enabled. |
+| `remove-incomplete` | Some mods are still in the pool. `details` lists which were removed and which were not. |
+| `switch-unverified` / `set-path-failed` | Vortex does not report the profile or path that was asked for. |
+| `vortex-error` | Vortex threw. The message is Vortex's own. |
 
 ## Guards (enforced, not advised)
 
@@ -83,6 +138,7 @@ own `GameStoreHelper.identifyStore` decides. The reply always echoes what Vortex
 
 ### FOMOD installers
 
-`install` without `choices` lets Vortex show its installer dialog, and the request waits until the user answers it.
+`install` without `choices` lets Vortex show its installer dialog, and the op waits until the user answers it. Send it
+with `async: true`; the dialog then shows up in `vortex.notifications` → `openDialogs`, and in the op record once it ends.
 With `choices` (Vortex's `{ type: "fomod", options: [...] }`), the choices are replayed. With `unattended: true`, no
 dialog is shown.

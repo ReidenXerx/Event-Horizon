@@ -7,7 +7,7 @@ import { util, __testGame } from "@nexusmods/vortex-api";
 vi.mock("./gameProcess", () => ({ isProcessRunning: vi.fn(async () => false) }));
 
 import { isProcessRunning } from "./gameProcess";
-import { VERBS } from "./verbs";
+import { runVerb, VERBS } from "./verbs";
 
 const running = isProcessRunning as unknown as ReturnType<typeof vi.fn>;
 
@@ -111,7 +111,7 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("state", () => {
   it("reports the active game, its mods with enablement, and only this game's profiles and downloads", async () => {
-    const s = (await run("state")) as any;
+    const s = (await run("state", { include: ["mods", "downloads"] })) as any;
     expect(s.gameId).toBe("fallout4");
     expect(s.game).toMatchObject({ path: OG, store: "gog", executable: "Fallout4.exe", running: false });
     expect(s.profile).toEqual({ id: "og", name: "Ivy OG" });
@@ -171,13 +171,90 @@ describe("game.switchInstall", () => {
     v.api.events.emit = (ev: string, ...args: unknown[]) => {
       if (ev === "purge-mods") setTimeout(() => (args[1] as (e: unknown) => void)(null)); // files stay
     };
-    await expect(run("game.switchInstall", { path: AE, profileId: "ae" })).rejects.toMatchObject({ code: "not-purged" });
+    await expect(run("game.switchInstall", { path: AE, profileId: "ae" })).rejects.toMatchObject({
+      code: "purge-incomplete",
+      details: { failedStep: "purge", completedSteps: [], deployedFilesAfter: 5 },
+    });
     expect(v.state.settings.gameMode.discovered.fallout4.path).toBe(OG);
   });
 
   it("refuses a profile of another game before touching anything", async () => {
     await expect(run("game.switchInstall", { path: AE, profileId: "sky" })).rejects.toMatchObject({ code: "bad-profile" });
     expect(v.log).toEqual([]);
+  });
+});
+
+describe("verified outcomes", () => {
+  it("purge fails when Vortex says done but files remain", async () => {
+    v.api.events.emit = (ev: string, ...args: unknown[]) => {
+      if (ev === "purge-mods") setTimeout(() => (args[1] as (e: unknown) => void)(null));
+    };
+    await expect(run("purge")).rejects.toMatchObject({ code: "purge-incomplete", details: { deployedFilesAfter: 5 } });
+  });
+
+  it("deploy fails when Vortex still says the game needs deploying", async () => {
+    v.state.persistent.deployment = { needToDeploy: { fallout4: true } };
+    await expect(run("deploy")).rejects.toMatchObject({ code: "deploy-unverified" });
+  });
+
+  it("deploy succeeds with what it verified", async () => {
+    await expect(run("deploy")).resolves.toMatchObject({
+      verified: { deploymentNeeded: false, deployedFiles: 9 },
+    });
+  });
+
+  it("remove fails, naming what did and did not go, when Vortex leaves a mod", async () => {
+    vi.spyOn(util, "removeMods").mockImplementation((async () => {
+      delete v.state.persistent.mods.fallout4.a; // b stays
+    }) as never);
+    await expect(run("mods.remove", { modIds: ["a", "b"] })).rejects.toMatchObject({
+      code: "remove-incomplete",
+      details: { removed: [expect.objectContaining({ id: "a" })], notRemoved: [expect.objectContaining({ id: "b" })] },
+    });
+  });
+});
+
+describe("queries", () => {
+  it("mods.find filters by name, nexus id and enabled", async () => {
+    expect(((await run("mods.find", { name: "mod b" })) as any).mods.map((m: any) => m.id)).toEqual(["b"]);
+    expect(((await run("mods.find", { nexusModId: 12 })) as any).mods.map((m: any) => m.id)).toEqual(["a"]);
+    expect(((await run("mods.find", { enabled: true })) as any).mods.map((m: any) => m.id)).toEqual(["a"]);
+  });
+
+  it("mod.get returns the whole record and where it is enabled; 404 for an unknown id", async () => {
+    const m = (await run("mod.get", { id: "a" })) as any;
+    expect(m).toMatchObject({ id: "a", name: "Mod A", enabled: true, enabledIn: [{ id: "og", name: "Ivy OG" }] });
+    await expect(run("mod.get", { id: "zz" })).rejects.toMatchObject({ code: "no-such-mod", status: 404 });
+  });
+
+  it("state stays compact unless the lists are asked for", async () => {
+    const s = (await run("state")) as any;
+    expect(s.mods).toBeUndefined();
+    expect(s.counts).toMatchObject({ mods: 2, enabledMods: 1, downloads: 1 });
+  });
+});
+
+describe("runVerb: what Vortex said while a command ran", () => {
+  it("attaches notifications raised during the command and dialogs left open", async () => {
+    v.state.session = { notifications: { notifications: [{ id: "old", type: "info", title: "before" }], dialogs: [] } };
+    v.api.events.emit = (ev: string, ...args: unknown[]) => {
+      if (ev === "deploy-mods") {
+        v.state.session.notifications.notifications.push({ id: "n1", type: "error", title: "Deploy hiccup", message: "x" });
+        v.state.session.notifications.dialogs.push({ id: "d1", type: "question", title: "FOMOD", content: { text: "Pick one" } });
+        setTimeout(() => (args[0] as (e: unknown) => void)(null));
+      }
+    };
+    const r = (await runVerb(v.api as any, "deploy", {})) as any;
+    expect(r.vortex.notifications).toEqual([{ type: "error", title: "Deploy hiccup", message: "x" }]);
+    expect(r.vortex.openDialogs).toEqual([{ type: "question", title: "FOMOD", text: "Pick one" }]);
+  });
+
+  it("attaches them to a failure too", async () => {
+    v.state.session = { notifications: { notifications: [], dialogs: [] } };
+    await expect(runVerb(v.api as any, "game.setPath", { path: AE })).rejects.toMatchObject({
+      code: "not-purged",
+      details: { vortex: { notifications: [], openDialogs: [] } },
+    });
   });
 });
 

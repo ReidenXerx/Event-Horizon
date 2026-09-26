@@ -1,6 +1,6 @@
 /**
  * What the control channel can do. One entry per verb; the server routes
- * `POST /v1/<verb>` here and runs them one at a time.
+ * `POST /v1/<verb>` here. Changes run one at a time; reads never wait.
  *
  * Every verb reuses the wrapper Event Horizon's own installer already relies
  * on (deployAndWait, switchToProfile, purgeGameDeployment, uninstallMods, the
@@ -8,6 +8,15 @@
  * relearning them: deploy-mods takes its callback FIRST, a profile switch is
  * confirmed by state when its event is missed, a purge is bounded because
  * nothing else can settle it.
+ *
+ * ─── A SUCCESS IS A VERIFIED SUCCESS ────────────────────────────────────────
+ * An agent must be able to act on `ok: true` without re-reading Vortex to
+ * check. So every changing verb reads Vortex back after acting and fails with
+ * a `*-unverified` / `*-incomplete` code when the result is not what it asked
+ * for (a purge that left files, an install that is not "installed", a removal
+ * that left a mod). What was checked is in `result.verified`. And every reply
+ * carries `vortex`: the notifications Vortex raised while the command ran,
+ * and any dialog left waiting for the user.
  *
  * Mutating verbs pass through `guards.ts` first. Removal is allowed (owner,
  * 2026-09-26) but only of the exact ids named, and every reply says which of
@@ -40,6 +49,8 @@ export class ControlError extends Error {
     readonly code: string,
     message: string,
     readonly status = 400,
+    /** Facts the caller needs even though the command failed (what DID happen). */
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -47,7 +58,7 @@ export class ControlError extends Error {
 
 export type VerbBody = Record<string, unknown>;
 export type Verb = {
-  /** Changes the owner's setup: shown as a Vortex notification when it succeeds. */
+  /** Changes the owner's setup: queued, and shown as a Vortex notification. */
   mutates: boolean;
   run: (api: types.IExtensionApi, body: VerbBody) => Promise<Record<string, unknown>>;
   /** One line for the notification, from the body and the result. */
@@ -88,7 +99,15 @@ function activeProfileId(api: types.IExtensionApi): string | undefined {
   return str(p?.activeProfileId) ?? str(p?.nextProfileId);
 }
 
-type ModRecord = { id: string; type?: string; state?: string; archiveId?: string; attributes?: Record<string, unknown> };
+type ModRecord = {
+  id: string;
+  type?: string;
+  state?: string;
+  archiveId?: string;
+  installationPath?: string;
+  attributes?: Record<string, unknown>;
+  rules?: unknown[];
+};
 
 function modPool(api: types.IExtensionApi, gameId: string): Record<string, ModRecord> {
   return ((api.getState() as { persistent?: { mods?: Record<string, Record<string, ModRecord>> } }).persistent?.mods?.[
@@ -101,6 +120,13 @@ type ProfileRecord = { id: string; name?: string; gameId?: string; modState?: Re
 function profiles(api: types.IExtensionApi): Record<string, ProfileRecord> {
   return ((api.getState() as { persistent?: { profiles?: Record<string, ProfileRecord> } }).persistent?.profiles ??
     {}) as Record<string, ProfileRecord>;
+}
+
+function needToDeploy(api: types.IExtensionApi, gameId: string): boolean {
+  return (
+    (api.getState() as { persistent?: { deployment?: { needToDeploy?: Record<string, boolean> } } }).persistent
+      ?.deployment?.needToDeploy?.[gameId] === true
+  );
 }
 
 async function gameRunning(api: types.IExtensionApi, gameId: string): Promise<{ running: boolean | undefined; exe?: string }> {
@@ -155,19 +181,98 @@ function budget(api: types.IExtensionApi): number {
   return deployBudgetMs(countMods(api.getState()), { wine: looksLikeWine() });
 }
 
-async function purge(api: types.IExtensionApi, gameId: string): Promise<number | undefined> {
+// ─── Vortex's own voice: notifications and open dialogs ────────────────────
+
+type VortexNotice = { id: string; type?: string; title?: string; message?: string };
+type VortexDialog = { id: string; type?: string; title?: string; text?: string };
+
+function notices(api: types.IExtensionApi): VortexNotice[] {
+  const list = (api.getState() as { session?: { notifications?: { notifications?: unknown[] } } }).session
+    ?.notifications?.notifications;
+  return (Array.isArray(list) ? list : []).map((n) => {
+    const x = n as Record<string, unknown>;
+    return { id: String(x["id"]), type: str(x["type"]), title: str(x["title"]), message: str(x["message"]) };
+  });
+}
+
+function openDialogs(api: types.IExtensionApi): VortexDialog[] {
+  const list = (api.getState() as { session?: { notifications?: { dialogs?: unknown[] } } }).session?.notifications
+    ?.dialogs;
+  return (Array.isArray(list) ? list : []).map((d) => {
+    const x = d as Record<string, unknown>;
+    const c = (x["content"] ?? {}) as Record<string, unknown>;
+    return {
+      id: String(x["id"]),
+      type: str(x["type"]),
+      title: str(x["title"]),
+      text: (str(c["text"]) ?? str(c["message"]) ?? str(c["bbcode"]))?.slice(0, 500),
+    };
+  });
+}
+
+/**
+ * Runs a verb and attaches what Vortex said while it ran: new notifications
+ * (an "error" one means something failed that no callback reported) and any
+ * dialog still open, which is how an agent learns a FOMOD installer or a
+ * confirmation is waiting for the user.
+ */
+export async function runVerb(api: types.IExtensionApi, name: string, body: VerbBody): Promise<Record<string, unknown>> {
+  const verb = VERBS[name];
+  if (verb === undefined) throw new ControlError("no-such-verb", `Unknown verb ${name}.`, 404);
+  const before = new Set(notices(api).map((n) => n.id));
+  const activity = (): Record<string, unknown> => ({
+    notifications: notices(api)
+      .filter((n) => !before.has(n.id) && n.type !== "activity")
+      .map(({ type, title, message }) => ({ type, title, message })),
+    openDialogs: openDialogs(api).map(({ type, title, text }) => ({ type, title, text })),
+  });
+  try {
+    const result = await verb.run(api, body);
+    return verb.mutates ? { ...result, vortex: activity() } : result;
+  } catch (err) {
+    if (err instanceof ControlError) {
+      throw new ControlError(err.code, err.message, err.status, { ...(err.details ?? {}), vortex: activity() });
+    }
+    throw new ControlError("vortex-error", String((err as Error)?.message ?? err), 500, { vortex: activity() });
+  }
+}
+
+// ─── the actions, each verified ────────────────────────────────────────────
+
+async function purge(api: types.IExtensionApi, gameId: string): Promise<number> {
   if (getActiveGameId(api.getState()) !== gameId) {
     throw new ControlError("game-changed", "Vortex switched games before the purge; nothing was purged.", 409);
   }
   await purgeGameDeployment(api, { timeoutMs: budget(api) });
-  return deployedFileCount(api, gameId);
+  const left = await deployedFileCount(api, gameId);
+  if (left === undefined) {
+    throw new ControlError("purge-unverified", "Vortex reported the purge done, but the deployment manifests could not be read.", 500);
+  }
+  if (left > 0) {
+    throw new ControlError("purge-incomplete", `Vortex reported the purge done, but ${left} files are still deployed.`, 500, {
+      deployedFilesAfter: left,
+    });
+  }
+  return left;
 }
 
-async function deploy(api: types.IExtensionApi): Promise<string> {
+async function deploy(api: types.IExtensionApi, gameId: string): Promise<Record<string, unknown>> {
   const profileId = activeProfileId(api);
   if (profileId === undefined) throw new ControlError("no-profile", "Vortex has no active profile.", 409);
   await deployAndWait(api, profileId);
-  return profileId;
+  const files = await deployedFileCount(api, gameId);
+  const stillNeeded = needToDeploy(api, gameId);
+  if (files === undefined || stillNeeded) {
+    throw new ControlError(
+      "deploy-unverified",
+      files === undefined
+        ? "Vortex reported the deploy done, but the deployment manifests could not be read."
+        : "Vortex reported the deploy done, but still says the game needs deploying.",
+      500,
+      { deployedFiles: files, deploymentNeeded: stillNeeded },
+    );
+  }
+  return { profileId, deployedFiles: files, verified: { deploymentNeeded: false, deployedFiles: files } };
 }
 
 async function identifyStore(gamePath: string): Promise<string | undefined> {
@@ -218,70 +323,204 @@ async function setGamePath(
   if (after.path === undefined || path.resolve(after.path) !== newPath) {
     throw new ControlError("set-path-failed", `Vortex still reports ${after.path ?? "no path"} for ${gameId}.`, 500);
   }
-  return { gameId, previousPath: before.path, previousStore: before.store, path: after.path, store: after.store };
+  return {
+    gameId,
+    previousPath: before.path,
+    previousStore: before.store,
+    path: after.path,
+    store: after.store,
+    verified: { path: after.path, store: after.store },
+  };
 }
+
+function modSummary(m: ModRecord, enabled: boolean, owner?: string): Record<string, unknown> {
+  const a = m.attributes ?? {};
+  return {
+    id: m.id,
+    name: modName(m),
+    version: str(a["version"]),
+    enabled,
+    state: m.state,
+    type: m.type || undefined,
+    nexus: a["modId"] !== undefined ? { modId: a["modId"], fileId: a["fileId"] } : undefined,
+    source: str(a["source"]),
+    archiveId: m.archiveId,
+    ...(owner !== undefined ? { owner } : {}),
+  };
+}
+
+function enabledMap(api: types.IExtensionApi, profileId: string | undefined): Record<string, { enabled?: boolean }> {
+  return profileId !== undefined ? (profiles(api)[profileId]?.modState ?? {}) : {};
+}
+
+function downloadsFor(api: types.IExtensionApi, gameId: string): Array<Record<string, unknown>> {
+  const files =
+    (api.getState() as unknown as { persistent?: { downloads?: { files?: Record<string, Record<string, unknown>> } } })
+      .persistent?.downloads?.files ?? {};
+  return Object.entries(files)
+    .filter(([, d]) => ((d["game"] as string[] | undefined) ?? []).includes(gameId))
+    .map(([id, d]) => ({
+      id,
+      fileName: d["localPath"],
+      state: d["state"],
+      size: d["size"],
+      nexus: (d["modInfo"] as { nexus?: { ids?: unknown } } | undefined)?.nexus?.ids,
+    }));
+}
+
+const lc = (v: unknown): string => String(v ?? "").toLowerCase();
+const limitOf = (body: VerbBody, dflt: number): number => Math.max(1, Math.min(Number(body["limit"]) || dflt, 5000));
 
 // ─── the verbs ─────────────────────────────────────────────────────────────
 
 export const VERBS: Record<string, Verb> = {
+  /**
+   * A compact summary by default; `include: ["mods","plugins","downloads"]`
+   * adds the long lists (a thousand-mod setup is a big reply).
+   */
   state: {
     mutates: false,
-    run: async (api) => {
+    run: async (api, body) => {
       const state = api.getState();
       const gameId = getActiveGameId(state);
       if (gameId === undefined) return { gameId: null };
+      const include = new Set(Array.isArray(body["include"]) ? (body["include"] as string[]) : String(body["include"] ?? "").split(","));
       const discovery = readDiscovery(state, gameId);
       const profileId = activeProfileId(api);
       const prof = profiles(api);
-      const modState = profileId !== undefined ? (prof[profileId]?.modState ?? {}) : {};
+      const modState = enabledMap(api, profileId);
       const pool = modPool(api, gameId);
-      const owner = await ownership(gameId, Object.keys(pool));
       const running = await gameRunning(api, gameId);
-      const downloads = (state as unknown as { persistent?: { downloads?: { files?: Record<string, Record<string, unknown>> } } })
-        .persistent?.downloads?.files ?? {};
-      return {
+      const plugins = readPluginList(state);
+      const downloads = downloadsFor(api, gameId);
+      const out: Record<string, unknown> = {
         gameId,
         game: { path: discovery.path, store: discovery.store, executable: running.exe, running: running.running },
         profile: profileId !== undefined ? { id: profileId, name: prof[profileId]?.name } : null,
         profiles: Object.values(prof)
           .filter((p) => p.gameId === gameId)
           .map((p) => ({ id: p.id, name: p.name })),
-        deployment: {
-          needed: (state as { persistent?: { deployment?: { needToDeploy?: Record<string, boolean> } } }).persistent
-            ?.deployment?.needToDeploy?.[gameId] === true,
-          deployedFiles: await deployedFileCount(api, gameId),
+        deployment: { needed: needToDeploy(api, gameId), deployedFiles: await deployedFileCount(api, gameId) },
+        counts: {
+          mods: Object.keys(pool).length,
+          enabledMods: Object.keys(pool).filter((id) => modState[id]?.enabled === true).length,
+          plugins: plugins.length,
+          enabledPlugins: plugins.filter((p) => p.enabled).length,
+          downloads: downloads.length,
         },
-        mods: Object.values(pool).map((m) => {
-          const a = m.attributes ?? {};
-          return {
-            id: m.id,
-            name: modName(m),
-            version: str(a["version"]),
-            enabled: modState[m.id]?.enabled === true,
-            type: m.type || undefined,
-            nexus: a["modId"] !== undefined ? { modId: a["modId"], fileId: a["fileId"] } : undefined,
-            source: str(a["source"]),
-            archiveId: m.archiveId,
-            owner: owner[m.id],
-          };
-        }),
-        plugins: readPluginList(state).map((p) => ({
+        vortex: {
+          notifications: notices(api)
+            .filter((n) => n.type !== "activity")
+            .map(({ type, title, message }) => ({ type, title, message })),
+          openDialogs: openDialogs(api).map(({ type, title, text }) => ({ type, title, text })),
+        },
+      };
+      if (include.has("mods")) {
+        const owner = await ownership(gameId, Object.keys(pool));
+        out["mods"] = Object.values(pool).map((m) => modSummary(m, modState[m.id]?.enabled === true, owner[m.id]));
+      }
+      if (include.has("plugins")) {
+        out["plugins"] = plugins.map((p) => ({
           name: p.name,
           enabled: p.enabled,
           loadOrder: p.loadOrder,
           modId: p.modId,
           native: p.isNative || undefined,
-        })),
-        downloads: Object.entries(downloads)
-          .filter(([, d]) => ((d["game"] as string[] | undefined) ?? []).includes(gameId))
-          .map(([id, d]) => ({
-            id,
-            fileName: d["localPath"],
-            state: d["state"],
-            nexus: (d["modInfo"] as { nexus?: { ids?: unknown } } | undefined)?.nexus?.ids,
-          })),
+        }));
+      }
+      if (include.has("downloads")) out["downloads"] = downloads;
+      return out;
+    },
+  },
+
+  /** Filter the active game's mods: `name` (substring), `nexusModId`, `enabled`, `owner`, `limit`. */
+  "mods.find": {
+    mutates: false,
+    run: async (api, body) => {
+      const gameId = activeGame(api);
+      const pool = modPool(api, gameId);
+      const modState = enabledMap(api, activeProfileId(api));
+      const owner = await ownership(gameId, Object.keys(pool));
+      const name = body["name"] !== undefined ? lc(body["name"]) : undefined;
+      const nexusModId = body["nexusModId"] !== undefined ? Number(body["nexusModId"]) : undefined;
+      const enabled = body["enabled"] === undefined ? undefined : body["enabled"] === true || body["enabled"] === "true";
+      const matches = Object.values(pool)
+        .map((m) => modSummary(m, modState[m.id]?.enabled === true, owner[m.id]))
+        .filter(
+          (m) =>
+            (name === undefined || lc(m["name"]).includes(name) || lc(m["id"]).includes(name)) &&
+            (nexusModId === undefined || Number((m["nexus"] as { modId?: unknown } | undefined)?.modId) === nexusModId) &&
+            (enabled === undefined || m["enabled"] === enabled) &&
+            (body["owner"] === undefined || m["owner"] === body["owner"]),
+        );
+      const limit = limitOf(body, 200);
+      return { gameId, total: matches.length, mods: matches.slice(0, limit), truncated: matches.length > limit };
+    },
+  },
+
+  /** Everything Vortex holds about one mod, plus its plugins and which profiles enable it. */
+  "mod.get": {
+    mutates: false,
+    run: async (api, body) => {
+      const gameId = activeGame(api);
+      const id = need(body, "id");
+      const m = modPool(api, gameId)[id];
+      if (m === undefined) throw new ControlError("no-such-mod", `No mod ${id} in ${gameId}.`, 404);
+      const owner = (await ownership(gameId, [id]))[id];
+      return {
+        ...modSummary(m, enabledMap(api, activeProfileId(api))[id]?.enabled === true, owner),
+        installationPath: m.installationPath,
+        attributes: m.attributes ?? {},
+        rules: m.rules ?? [],
+        enabledIn: Object.values(profiles(api))
+          .filter((p) => p.gameId === gameId && p.modState?.[id]?.enabled === true)
+          .map((p) => ({ id: p.id, name: p.name })),
+        plugins: readPluginList(api.getState())
+          .filter((p) => p.modId === id)
+          .map((p) => ({ name: p.name, enabled: p.enabled, loadOrder: p.loadOrder })),
       };
     },
+  },
+
+  /** Plugins in load order: `enabled`, `name` (substring), `limit`. */
+  plugins: {
+    mutates: false,
+    run: async (api, body) => {
+      const name = body["name"] !== undefined ? lc(body["name"]) : undefined;
+      const enabled = body["enabled"] === undefined ? undefined : body["enabled"] === true || body["enabled"] === "true";
+      const list = readPluginList(api.getState()).filter(
+        (p) => (name === undefined || lc(p.name).includes(name)) && (enabled === undefined || p.enabled === enabled),
+      );
+      const limit = limitOf(body, 2000);
+      return {
+        total: list.length,
+        plugins: list.slice(0, limit).map((p) => ({ name: p.name, enabled: p.enabled, loadOrder: p.loadOrder, modId: p.modId })),
+        truncated: list.length > limit,
+      };
+    },
+  },
+
+  /** The active game's downloads: `name` (substring), `state`, `limit`. */
+  downloads: {
+    mutates: false,
+    run: async (api, body) => {
+      const gameId = activeGame(api);
+      const name = body["name"] !== undefined ? lc(body["name"]) : undefined;
+      const list = downloadsFor(api, gameId).filter(
+        (d) => (name === undefined || lc(d["fileName"]).includes(name)) && (body["state"] === undefined || d["state"] === body["state"]),
+      );
+      const limit = limitOf(body, 500);
+      return { gameId, total: list.length, downloads: list.slice(0, limit), truncated: list.length > limit };
+    },
+  },
+
+  /** What Vortex is showing right now: notifications, and dialogs waiting for the user. */
+  "vortex.notifications": {
+    mutates: false,
+    run: async (api) => ({
+      notifications: notices(api).map(({ type, title, message }) => ({ type, title, message })),
+      openDialogs: openDialogs(api).map(({ type, title, text }) => ({ type, title, text })),
+    }),
   },
 
   purge: {
@@ -290,7 +529,7 @@ export const VERBS: Record<string, Verb> = {
       const gameId = activeGame(api);
       await guardClosed(api, gameId, body);
       const left = await purge(api, gameId);
-      return { gameId, deployedFilesAfter: left };
+      return { gameId, deployedFilesAfter: left, verified: { deployedFiles: left } };
     },
     describe: (_b, r) => `purged ${String(r["gameId"])}`,
   },
@@ -300,8 +539,7 @@ export const VERBS: Record<string, Verb> = {
     run: async (api, body) => {
       const gameId = activeGame(api);
       await guardClosed(api, gameId, body);
-      const profileId = await deploy(api);
-      return { gameId, profileId, deployedFiles: await deployedFileCount(api, gameId) };
+      return { gameId, ...(await deploy(api, gameId)) };
     },
     describe: (_b, r) => `deployed ${String(r["gameId"])}`,
   },
@@ -322,9 +560,18 @@ export const VERBS: Record<string, Verb> = {
       const now = profiles(api)[profile.id]?.modState ?? {};
       const notApplied = ids.filter((id) => (now[id]?.enabled === true) !== body["enabled"]);
       if (notApplied.length > 0) {
-        throw new ControlError("not-applied", `Vortex did not apply the change for: ${notApplied.join(", ")}.`, 500);
+        throw new ControlError("not-applied", `Vortex did not apply the change for: ${notApplied.join(", ")}.`, 500, {
+          applied: ids.filter((id) => !notApplied.includes(id)),
+          notApplied,
+        });
       }
-      return { profileId: profile.id, enabled: body["enabled"], modIds: ids, deployNeeded: true };
+      return {
+        profileId: profile.id,
+        enabled: body["enabled"],
+        modIds: ids,
+        deployNeeded: true,
+        verified: { enabledState: body["enabled"], modIds: ids },
+      };
     },
     describe: (b) => `${b["enabled"] ? "enabled" : "disabled"} ${(b["modIds"] as unknown[]).length} mod(s)`,
   },
@@ -338,10 +585,20 @@ export const VERBS: Record<string, Verb> = {
       enforce(guardKnownMods({ requested: ids, pool: new Set(Object.keys(pool)) }));
       await guardClosed(api, gameId, body);
       const owner = await ownership(gameId, ids);
-      const removed = ids.map((id) => ({ id, name: modName(pool[id]!), owner: owner[id] }));
+      const described = ids.map((id) => ({ id, name: modName(pool[id]!), owner: owner[id] }));
       await uninstallMods(api, { gameId, modIds: ids });
-      const still = ids.filter((id) => modPool(api, gameId)[id] !== undefined);
-      return { gameId, removed: removed.filter((r) => !still.includes(r.id)), notRemoved: still };
+      const after = modPool(api, gameId);
+      const removed = described.filter((d) => after[d.id] === undefined);
+      const notRemoved = described.filter((d) => after[d.id] !== undefined);
+      if (notRemoved.length > 0) {
+        throw new ControlError(
+          "remove-incomplete",
+          `${notRemoved.length} of ${ids.length} mods are still in the pool: ${notRemoved.map((d) => d.id).join(", ")}.`,
+          500,
+          { removed, notRemoved },
+        );
+      }
+      return { gameId, removed, notRemoved: [], verified: { goneFromPool: ids } };
     },
     describe: (_b, r) => `removed ${(r["removed"] as unknown[]).length} mod(s)`,
   },
@@ -355,7 +612,11 @@ export const VERBS: Record<string, Verb> = {
       // A switch deploys (Vortex's auto-deploy), so the game must be closed.
       await guardClosed(api, target.gameId ?? activeGame(api), body);
       await switchToProfile(api, profileId);
-      return { profileId, name: target.name, gameId: target.gameId };
+      const active = activeProfileId(api);
+      if (active !== profileId) {
+        throw new ControlError("switch-unverified", `Vortex reports profile ${active ?? "none"} active, not ${profileId}.`, 500);
+      }
+      return { profileId, name: target.name, gameId: target.gameId, verified: { activeProfile: active } };
     },
     describe: (_b, r) => `switched to profile ${String(r["name"] ?? r["profileId"])}`,
   },
@@ -373,7 +634,7 @@ export const VERBS: Record<string, Verb> = {
   /**
    * One install to another, in the only safe order: purge while still pointed
    * at the old folder, repoint, switch profile, deploy. Each step is checked
-   * before the next; a failure names the step and what state it left.
+   * before the next; a failure names the step and the steps that completed.
    */
   "game.switchInstall": {
     mutates: true,
@@ -392,18 +653,37 @@ export const VERBS: Record<string, Verb> = {
           steps.push(name);
           return out;
         } catch (err) {
-          const e = err instanceof ControlError ? err : new ControlError("step-failed", String((err as Error)?.message ?? err), 500);
-          throw new ControlError(e.code, `${name} failed after [${steps.join(" -> ") || "nothing"}]: ${e.message}`, e.status);
+          const e =
+            err instanceof ControlError ? err : new ControlError("step-failed", String((err as Error)?.message ?? err), 500);
+          throw new ControlError(e.code, `${name} failed after [${steps.join(" -> ") || "nothing"}]: ${e.message}`, e.status, {
+            ...(e.details ?? {}),
+            failedStep: name,
+            completedSteps: [...steps],
+          });
         }
       };
-      const left = await step("purge", () => purge(api, gameId));
-      if (left !== 0) {
-        throw new ControlError("not-purged", `purge left ${left ?? "an unknown number of"} files deployed; stopped before repointing.`, 409);
-      }
+      await step("purge", () => purge(api, gameId));
       const moved = await step("setPath", () => setGamePath(api, gameId, body));
-      await step("profile", () => switchToProfile(api, profileId));
-      await step("deploy", () => deploy(api));
-      return { ...moved, profileId, steps, deployedFiles: await deployedFileCount(api, gameId) };
+      await step("profile", async () => {
+        await switchToProfile(api, profileId);
+        if (activeProfileId(api) !== profileId) {
+          throw new ControlError("switch-unverified", `Vortex reports profile ${activeProfileId(api) ?? "none"} active.`, 500);
+        }
+      });
+      const deployed = await step("deploy", () => deploy(api, gameId));
+      return {
+        ...moved,
+        profileId,
+        steps,
+        deployedFiles: deployed["deployedFiles"],
+        verified: {
+          path: moved["path"],
+          store: moved["store"],
+          activeProfile: profileId,
+          deploymentNeeded: false,
+          deployedFiles: deployed["deployedFiles"],
+        },
+      };
     },
     describe: (_b, r) => `switched ${String(r["gameId"])} to ${String(r["path"])}`,
   },
@@ -411,7 +691,8 @@ export const VERBS: Record<string, Verb> = {
   /**
    * Installs into the active game, from Nexus (`nexus: {modId, fileId}`) or
    * from a download Vortex already has (`archiveId`). Without `choices`, a
-   * FOMOD installer shows its dialog in Vortex and this waits for it.
+   * FOMOD installer shows its dialog in Vortex and this waits for it; use
+   * `async: true` and watch `vortex.openDialogs` to see that happen.
    */
   install: {
     mutates: true,
@@ -441,11 +722,35 @@ export const VERBS: Record<string, Verb> = {
           unattended,
         }));
       }
+      const m = modPool(api, gameId)[vortexModId];
+      if (m === undefined || m.state !== "installed") {
+        throw new ControlError(
+          "install-unverified",
+          `Vortex finished the install, but mod ${vortexModId} is ${m === undefined ? "not in the pool" : `in state "${String(m.state)}"`}.`,
+          500,
+          { vortexModId },
+        );
+      }
       const enable = body["enable"] !== false;
       const profileId = activeProfileId(api);
-      if (enable && profileId !== undefined) api.store?.dispatch(actions.setModEnabled(profileId, vortexModId, true));
-      const m = modPool(api, gameId)[vortexModId];
-      return { gameId, vortexModId, name: m ? modName(m) : undefined, enabled: enable, deployNeeded: true };
+      if (enable && profileId !== undefined) {
+        api.store?.dispatch(actions.setModEnabled(profileId, vortexModId, true));
+        if (enabledMap(api, profileId)[vortexModId]?.enabled !== true) {
+          throw new ControlError("enable-unverified", `Mod ${vortexModId} installed, but Vortex did not enable it.`, 500, {
+            vortexModId,
+            installed: true,
+          });
+        }
+      }
+      return {
+        gameId,
+        vortexModId,
+        name: modName(m),
+        version: str(m.attributes?.["version"]),
+        enabled: enable,
+        deployNeeded: true,
+        verified: { inPool: true, state: m.state, enabledIn: enable ? profileId : undefined },
+      };
     },
     describe: (_b, r) => `installed ${String(r["name"] ?? r["vortexModId"])}`,
   },

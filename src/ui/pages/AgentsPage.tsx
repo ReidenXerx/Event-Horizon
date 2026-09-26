@@ -21,7 +21,9 @@ import {
 type VerbRow = { verb: string; what: string };
 
 const VERBS: VerbRow[] = [
-  { verb: "state", what: "Read the active game, its folder and store, profiles, mods, plugins, downloads and deployment." },
+  { verb: "state", what: "Read the active game, its folder and store, profiles, deployment, and anything Vortex is asking." },
+  { verb: "mods.find · mod.get · plugins · downloads", what: "Search and inspect mods, plugins and downloads." },
+  { verb: "ops.get · ops.list", what: "Look up any command's outcome, even after the connection dropped." },
   { verb: "deploy", what: "Deploy the active profile and wait for Vortex to finish." },
   { verb: "purge", what: "Remove every deployed file from the game folder." },
   { verb: "mods.setEnabled", what: "Enable or disable mods by exact id." },
@@ -37,7 +39,8 @@ const GUARDS = [
   "Refuses anything sent from a web browser.",
   "Never deploys, purges, removes or repoints while the game is running.",
   "Will not move a game folder that still has mods deployed into it.",
-  "Runs one command at a time, and every change shows a notification here.",
+  "Runs one change at a time, and every change shows a notification here.",
+  "Reports success only after checking Vortex actually did it, and logs every command to control-ops.jsonl.",
 ];
 
 export function AgentsPage(): JSX.Element {

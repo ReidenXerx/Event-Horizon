@@ -26,6 +26,7 @@ import * as http from "http";
 import * as path from "path";
 
 import { ehLog } from "../logging/ehLog";
+import { envelope, MAX_OPS, OpLog, type OpStatus } from "./ops";
 
 export type ControlVerb = {
   mutates: boolean;
@@ -33,11 +34,13 @@ export type ControlVerb = {
   describe?: (body: Record<string, unknown>, result: Record<string, unknown>) => string;
 };
 
-export type ControlErrorShape = { code?: unknown; status?: unknown; message?: unknown };
+export type ControlErrorShape = { code?: unknown; status?: unknown; message?: unknown; details?: unknown };
 
 export type ControlServerOptions = {
   /** Where control.json goes (port + token for clients). */
   infoFile: string;
+  /** Where finished operations are appended (JSON lines); none in tests. */
+  opsJournal?: string;
   verbs: Record<string, ControlVerb>;
   version: string;
   /** Called after a mutating verb succeeds (Vortex notification). */
@@ -114,6 +117,7 @@ function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
 export async function startControlServer(opts: ControlServerOptions): Promise<ControlServer> {
   const token = crypto.randomBytes(32).toString("hex");
   let queue: Promise<unknown> = Promise.resolve();
+  const ops = new OpLog(opts.opsJournal);
   let port = 0;
 
   const server = http.createServer((req, res) => {
@@ -123,10 +127,48 @@ export async function startControlServer(opts: ControlServerOptions): Promise<Co
 
       const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
       const m = /^\/v1\/([A-Za-z.]+)$/.exec(url.pathname);
-      if (url.pathname === "/v1/health" && req.method === "GET") {
-        return send(res, 200, { ok: true, result: { version: opts.version, verbs: Object.keys(opts.verbs) } });
+      const verbName = m?.[1];
+      if (verbName === "health" && req.method === "GET") {
+        return send(res, 200, {
+          ok: true,
+          result: {
+            version: opts.version,
+            verbs: Object.fromEntries(Object.entries(opts.verbs).map(([k, v]) => [k, v.mutates ? "mutates" : "reads"])),
+            running: ops.list({ status: "running", limit: 5 }).map((o) => o.opId),
+            queued: ops.list({ status: "queued", limit: 50 }).length,
+          },
+        });
       }
-      const verbName = m?.[1] === undefined ? undefined : m[1];
+
+      let body: Record<string, unknown>;
+      try {
+        body = req.method === "GET" ? Object.fromEntries(url.searchParams) : await readBody(req);
+      } catch (err) {
+        const e = err as ControlErrorShape;
+        return send(res, Number(e.status) || 400, { ok: false, code: e.code, message: String(e.message) });
+      }
+
+      // The op log answers straight away, never behind a queued command:
+      // it is how an agent watches a long one.
+      if (verbName === "ops.get") {
+        const op = ops.get(String(body["opId"] ?? ""));
+        return op === undefined
+          ? send(res, 404, { ok: false, code: "no-such-op", message: `No operation ${String(body["opId"])} (kept: the last ${MAX_OPS}).` })
+          : send(res, 200, { ok: true, result: { ...envelope(op), body: op.body, queuedAt: op.queuedAt, startedAt: op.startedAt, endedAt: op.endedAt } });
+      }
+      if (verbName === "ops.list") {
+        const status = typeof body["status"] === "string" ? (body["status"] as OpStatus) : undefined;
+        const list = ops.list({
+          ...(typeof body["verb"] === "string" ? { verb: body["verb"] } : {}),
+          ...(status !== undefined ? { status } : {}),
+          limit: Number(body["limit"]) || 50,
+          ...(body["includeReads"] === true || body["includeReads"] === "true"
+            ? {}
+            : { mutatingOnly: (v: string) => opts.verbs[v]?.mutates === true }),
+        });
+        return send(res, 200, { ok: true, result: { ops: list.map(envelope) } });
+      }
+
       const verb = verbName !== undefined ? opts.verbs[verbName] : undefined;
       if (verbName === undefined || verb === undefined) {
         return send(res, 404, { ok: false, code: "no-such-verb", message: `Unknown path ${url.pathname}.` });
@@ -135,36 +177,44 @@ export async function startControlServer(opts: ControlServerOptions): Promise<Co
         return send(res, 405, { ok: false, code: "method", message: "Use POST (GET only for read verbs)." });
       }
 
-      let body: Record<string, unknown>;
-      try {
-        body = req.method === "GET" ? {} : await readBody(req);
-      } catch (err) {
-        const e = err as ControlErrorShape;
-        return send(res, Number(e.status) || 400, { ok: false, code: e.code, message: String(e.message) });
-      }
-
-      // One at a time: the next command starts when the previous settles.
-      const run = queue.then(async () => {
-        const started = Date.now();
+      const asyncMode = body["async"] === true;
+      const op = ops.create(verbName, body);
+      const execute = async (): Promise<void> => {
+        ops.start(op);
         try {
           const result = await verb.run(body);
-          ehLog("info", "control.verb.ok", { verb: verbName, ms: Date.now() - started });
+          ops.finish(op, { ok: true, result });
+          ehLog("info", "control.verb.ok", { verb: verbName, opId: op.opId, ms: op.ms });
           if (verb.mutates) opts.onMutated?.(verb.describe?.(body, result) ?? verbName);
-          return { status: 200, payload: { ok: true, result } };
         } catch (err) {
           const e = err as ControlErrorShape;
           const message = String(e?.message ?? err);
-          ehLog("warn", "control.verb.fail", { verb: verbName, code: e?.code, message, ms: Date.now() - started });
+          const code = typeof e?.code === "string" ? e.code : "error";
+          ops.finish(op, {
+            ok: false,
+            code,
+            message,
+            httpStatus: typeof e?.status === "number" ? e.status : 500,
+            ...(e?.details !== null && typeof e?.details === "object" ? { details: e.details as Record<string, unknown> } : {}),
+          });
+          ehLog("warn", "control.verb.fail", { verb: verbName, opId: op.opId, code, message, ms: op.ms });
           if (verb.mutates) opts.onFailed?.(verbName, message);
-          return {
-            status: typeof e?.status === "number" ? e.status : 500,
-            payload: { ok: false, code: typeof e?.code === "string" ? e.code : "error", message },
-          };
         }
-      });
-      queue = run.catch(() => undefined);
-      const out = await run;
-      send(res, out.status, out.payload);
+      };
+
+      // Changes run one at a time: the next starts when the previous settles.
+      // Reads do not wait behind them, so an agent can watch a long deploy.
+      let run: Promise<void>;
+      if (verb.mutates) {
+        run = queue.then(execute);
+        queue = run.catch(() => undefined);
+      } else {
+        run = execute();
+      }
+
+      if (asyncMode) return send(res, 202, envelope(op));
+      await run;
+      send(res, op.httpStatus ?? 500, envelope(op));
     })().catch((err) => {
       ehLog("error", "control.request.crash", { err });
       if (!res.headersSent) send(res, 500, { ok: false, code: "crash", message: String((err as Error)?.message) });

@@ -16,7 +16,7 @@ import { getEventHorizonRoot } from "../paths/appDataPaths";
 import { loadPreferences, updatePreferences } from "../preferences";
 import { EXTENSION_VERSION } from "../../ui/version";
 import { startControlServer, type ControlServer, type ControlVerb } from "./controlServer";
-import { VERBS } from "./verbs";
+import { runVerb, VERBS } from "./verbs";
 
 export const PROMO_ID = "control-channel-promo";
 
@@ -62,7 +62,7 @@ function boundVerbs(api: types.IExtensionApi): Record<string, ControlVerb> {
   return Object.fromEntries(
     Object.entries(VERBS).map(([name, v]) => [
       name,
-      { mutates: v.mutates, run: (body) => v.run(api, body), ...(v.describe ? { describe: v.describe } : {}) },
+      { mutates: v.mutates, run: (body) => runVerb(api, name, body), ...(v.describe ? { describe: v.describe } : {}) },
     ]),
   );
 }
@@ -72,6 +72,7 @@ async function start(api: types.IExtensionApi): Promise<void> {
   try {
     server = await startControlServer({
       infoFile: controlInfoFile(),
+      opsJournal: path.join(getEventHorizonRoot(), "control-ops.jsonl"),
       verbs: boundVerbs(api),
       version: EXTENSION_VERSION,
       onMutated: (summary) =>
