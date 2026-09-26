@@ -451,6 +451,99 @@ function downloadsFor(api: types.IExtensionApi, gameId: string): Array<Record<st
     }));
 }
 
+// ─── rules and conflicts (mirrors Vortex's mod-dependency-manager) ─────────
+
+type ModRule = { type?: string; reference?: Record<string, unknown> };
+
+/** Rule types that settle a file conflict, per mod-dependency-manager's own check. */
+const ORDER_RULES = ["before", "after", "conflicts"];
+const RULE_TYPES = ["before", "after", "conflicts", "requires", "recommends"];
+
+/** Does this rule's reference point at `mod`? Vortex's own matcher when present, else the id. */
+function refersTo(mod: ModRecord, reference: Record<string, unknown> | undefined): boolean {
+  if (reference === undefined) return false;
+  const test = (util as unknown as { testModReference?: (m: unknown, r: unknown) => boolean }).testModReference;
+  if (typeof test === "function") {
+    try {
+      return test(mod, reference) === true;
+    } catch {
+      // Fall through to the id: a matcher that throws must not read as "no rule".
+    }
+  }
+  return reference["id"] === mod.id;
+}
+
+/**
+ * Is the conflict between these two mods settled by a rule on either side?
+ * Vortex's own test (mod-dependency-manager, `re`): a before/after/conflicts
+ * rule on one mod whose reference matches the other.
+ */
+function orderRuleBetween(pool: Record<string, ModRecord>, a: string, b: string): { on: string; type: string } | undefined {
+  for (const [from, to] of [
+    [a, b],
+    [b, a],
+  ] as const) {
+    const src = pool[from];
+    const dst = pool[to];
+    if (src === undefined || dst === undefined) continue;
+    const hit = ((src.rules ?? []) as ModRule[]).find((r) => ORDER_RULES.includes(String(r.type)) && refersTo(dst, r.reference));
+    if (hit !== undefined) return { on: from, type: String(hit.type) };
+  }
+  return undefined;
+}
+
+type ConflictPair = {
+  modId: string;
+  modName: string;
+  otherId: string;
+  otherName: string;
+  files: number;
+  sampleFiles: string[];
+  resolved: boolean;
+  rule?: { on: string; type: string };
+};
+
+/** Vortex's computed file conflicts, one entry per pair. `undefined` when Vortex has not computed them. */
+function conflictPairs(api: types.IExtensionApi, gameId: string): ConflictPair[] | undefined {
+  const raw = (api.getState() as { session?: { dependencies?: { conflicts?: Record<string, unknown[]> } } }).session
+    ?.dependencies?.conflicts;
+  if (raw === undefined || raw === null) return undefined;
+  const pool = modPool(api, gameId);
+  const seen = new Set<string>();
+  const out: ConflictPair[] = [];
+  for (const [modId, list] of Object.entries(raw)) {
+    for (const c of Array.isArray(list) ? list : []) {
+      const x = c as { otherMod?: { id?: string }; files?: unknown[] };
+      const otherId = x.otherMod?.id;
+      if (otherId === undefined) continue;
+      const key = [modId, otherId].sort().join("\u0000");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const rule = orderRuleBetween(pool, modId, otherId);
+      const files = Array.isArray(x.files) ? x.files.map(String) : [];
+      out.push({
+        modId,
+        modName: pool[modId] ? modName(pool[modId]!) : modId,
+        otherId,
+        otherName: pool[otherId] ? modName(pool[otherId]!) : otherId,
+        files: files.length,
+        sampleFiles: files.slice(0, 10),
+        resolved: rule !== undefined,
+        ...(rule !== undefined ? { rule } : {}),
+      });
+    }
+  }
+  return out;
+}
+
+function versionMatchFor(mod: ModRecord, match: unknown): string {
+  const version = str(mod.attributes?.["version"]);
+  if (match === undefined || match === "any" || version === undefined) return "*";
+  if (match === "compatible") return `^${version}`;
+  if (match === "exact") return version;
+  throw new ControlError("bad-request", `"versionMatch" must be "any", "compatible" or "exact".`);
+}
+
 const lc = (v: unknown): string => String(v ?? "").toLowerCase();
 const limitOf = (body: VerbBody, dflt: number): number => Math.max(1, Math.min(Number(body["limit"]) || dflt, 5000));
 
@@ -615,6 +708,38 @@ export const VERBS: Record<string, Verb> = {
     },
   },
 
+  /**
+   * Vortex's own computed file conflicts (for the ENABLED mods of the active
+   * profile), one entry per pair, with whether a rule settles each. The
+   * "There are unresolved file conflicts" notification names no mods; this
+   * does. `modId?` narrows to one mod, `unresolvedOnly?` to what still needs
+   * a rule.
+   */
+  conflicts: {
+    mutates: false,
+    run: async (api, body) => {
+      const gameId = activeGame(api);
+      const pairs = conflictPairs(api, gameId);
+      if (pairs === undefined) {
+        return { gameId, calculated: false, note: "Vortex has not calculated conflicts yet (it does so after a deploy).", pairs: [] };
+      }
+      const modId = str(body["modId"]);
+      const unresolvedOnly = body["unresolvedOnly"] === true || body["unresolvedOnly"] === "true";
+      const list = pairs.filter(
+        (p) => (modId === undefined || p.modId === modId || p.otherId === modId) && (!unresolvedOnly || !p.resolved),
+      );
+      const limit = limitOf(body, 500);
+      return {
+        gameId,
+        calculated: true,
+        total: list.length,
+        unresolved: pairs.filter((p) => !p.resolved).length,
+        pairs: list.slice(0, limit),
+        truncated: list.length > limit,
+      };
+    },
+  },
+
   /** What Vortex is showing right now: notifications, and dialogs waiting for the user. */
   "vortex.notifications": {
     mutates: false,
@@ -702,6 +827,83 @@ export const VERBS: Record<string, Verb> = {
       return { gameId, removed, notRemoved: [], verified: { goneFromPool: ids } };
     },
     describe: (_b, r) => `removed ${(r["removed"] as unknown[]).length} mod(s)`,
+  },
+
+  /**
+   * Adds or removes a mod rule: `source` loads `type` (before/after/conflicts/
+   * requires/recommends) `reference`. Mirrors Vortex's own conflict editor:
+   * an order rule first replaces any before/after/conflicts rule the source
+   * already has on that mod, so the pair never carries two contradicting
+   * ones. Read back from Vortex before it answers.
+   *
+   *   { source, type, reference, versionMatch?: "any"|"compatible"|"exact" }
+   *   { source, reference, remove: true, type? }
+   */
+  "mods.rule": {
+    mutates: true,
+    run: async (api, body) => {
+      const gameId = activeGame(api);
+      const source = need(body, "source");
+      const reference = need(body, "reference");
+      if (source === reference) throw new ControlError("bad-request", "A mod cannot have a rule on itself.");
+      enforce(guardKnownMods({ requested: [source, reference], pool: new Set(Object.keys(modPool(api, gameId))) }));
+      const remove = body["remove"] === true;
+      const type = str(body["type"]);
+      if (!remove && (type === undefined || !RULE_TYPES.includes(type))) {
+        throw new ControlError("bad-request", `"type" must be one of ${RULE_TYPES.join(", ")}.`);
+      }
+      const pool = modPool(api, gameId);
+      const src = pool[source]!;
+      const ref = pool[reference]!;
+      const existing = ((src.rules ?? []) as ModRule[]).filter((r) => refersTo(ref, r.reference));
+      const toRemove = remove
+        ? existing.filter((r) => type === undefined || r.type === type)
+        : ORDER_RULES.includes(type!)
+          ? existing.filter((r) => ORDER_RULES.includes(String(r.type)))
+          : existing.filter((r) => r.type === type);
+      for (const r of toRemove) api.store?.dispatch(actions.removeModRule(gameId, source, r as never));
+      let added: ModRule | undefined;
+      if (!remove) {
+        added = { type, reference: { id: reference, versionMatch: versionMatchFor(ref, body["versionMatch"]) } };
+        api.store?.dispatch(actions.addModRule(gameId, source, added as never));
+      }
+
+      // Read back what Vortex now holds for this pair.
+      const after = modPool(api, gameId);
+      const now = ((after[source]?.rules ?? []) as ModRule[]).filter((r) => refersTo(after[reference]!, r.reference));
+      const ok = remove
+        ? !now.some((r) => type === undefined || r.type === type)
+        : now.some((r) => r.type === type) &&
+          (!ORDER_RULES.includes(type!) || now.filter((r) => ORDER_RULES.includes(String(r.type))).length === 1);
+      if (!ok) {
+        throw new ControlError("rule-unverified", `Vortex's rules for ${source} -> ${reference} are not what was asked.`, 500, {
+          rulesNow: now,
+        });
+      }
+      // The other mod may carry its own order rule on this one; say so, since two
+      // rules that disagree make a cycle Vortex will complain about.
+      const otherSide = ((after[reference]?.rules ?? []) as ModRule[])
+        .filter((r) => ORDER_RULES.includes(String(r.type)) && refersTo(after[source]!, r.reference))
+        .map((r) => ({ type: r.type }));
+      const pair = conflictPairs(api, gameId)?.find(
+        (p) => (p.modId === source && p.otherId === reference) || (p.modId === reference && p.otherId === source),
+      );
+      return {
+        gameId,
+        source,
+        reference,
+        ...(remove ? { removed: toRemove.length } : { type, replaced: toRemove.map((r) => r.type) }),
+        rulesNow: now.map((r) => ({ type: r.type, reference: r.reference })),
+        otherSideRules: otherSide,
+        conflict: pair === undefined ? null : { files: pair.files, resolved: pair.resolved },
+        deployNeeded: true,
+        verified: { rulesNow: now.map((r) => r.type) },
+      };
+    },
+    describe: (b) =>
+      b["remove"] === true
+        ? `removed a rule ${String(b["source"])} -> ${String(b["reference"])}`
+        : `rule: ${String(b["source"])} ${String(b["type"])} ${String(b["reference"])}`,
   },
 
   "profile.switch": {

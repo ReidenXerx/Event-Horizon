@@ -23,11 +23,13 @@ type VerbRow = { verb: string; what: string };
 const VERBS: VerbRow[] = [
   { verb: "state", what: "Read the active game, its folder and store, profiles, deployment, and anything Vortex is asking." },
   { verb: "mods.find · mod.get · plugins · downloads", what: "Search and inspect mods, plugins and downloads." },
+  { verb: "conflicts", what: "Vortex's own file conflicts, and which ones a rule already settles." },
   { verb: "ops.get · ops.list", what: "Look up any command's outcome, even after the connection dropped." },
   { verb: "deploy", what: "Deploy the active profile and wait for Vortex to finish." },
   { verb: "purge", what: "Remove every deployed file from the game folder." },
   { verb: "mods.setEnabled", what: "Enable or disable mods by exact id." },
   { verb: "mods.remove", what: "Uninstall mods by exact id. The reply says which ones Event Horizon installed." },
+  { verb: "mods.rule", what: "Add or remove a load-order rule (before, after, conflicts, requires) between two mods." },
   { verb: "profile.switch", what: "Switch to another profile." },
   { verb: "game.setPath", what: "Point the game at another install folder (only when nothing is deployed)." },
   { verb: "game.switchInstall", what: "Purge, repoint, switch profile and deploy, in that order." },

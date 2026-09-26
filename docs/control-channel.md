@@ -84,6 +84,7 @@ All of them act on Vortex's **active game**.
 | `mod.get` | `id` | Everything Vortex holds about one mod: attributes, rules, installationPath, which profiles enable it, and its plugins. |
 | `plugins` | `name?`, `enabled?`, `limit?` (2000) | Plugins in load order. |
 | `downloads` | `name?`, `state?`, `limit?` (500) | The active game's downloads, with Nexus ids. |
+| `conflicts` | `modId?`, `unresolvedOnly?`, `limit?` (500) | Vortex's own computed file conflicts for the enabled mods, one entry per pair: both mods, the file count plus a sample, and `resolved` with the settling `rule` (a before/after/conflicts rule on either side, by Vortex's own test). `calculated: false` means Vortex has not computed them yet, which is not the same as having none. |
 | `vortex.notifications` | none | Every current Vortex notification and open dialog. |
 
 ### Changes
@@ -94,6 +95,7 @@ All of them act on Vortex's **active game**.
 | `purge` | `assumeGameClosed?` | Purges the game folder. Verifies zero files are left deployed. |
 | `mods.setEnabled` | `modIds[]`, `enabled`, `profileId?` | Enables or disables by exact id and verifies each change in the profile. It does not deploy. |
 | `mods.remove` | `modIds[]`, `assumeGameClosed?` | Uninstalls by exact id and verifies each mod is gone from the pool. `removed` lists them with `owner`. |
+| `mods.rule` | `source`, `type` (before/after/conflicts/requires/recommends), `reference`, `versionMatch?` (any/compatible/exact, default any); or `source`, `reference`, `remove: true`, `type?` | Adds or removes a rule, like Vortex's conflict editor: an order rule replaces any before/after/conflicts rule the source already has on that mod. Verified by reading the rules back. Reports `otherSideRules` (an order rule the other mod holds on this one, which could make a cycle) and whether the pair's conflict is now `resolved`. |
 | `profile.switch` | `profileId`, `assumeGameClosed?` | Switches profile (which may auto-deploy) and verifies it is the active profile. |
 | `game.setPath` | `path`, `store?`, `assumeGameClosed?` | Repoints the active game and verifies the path and store Vortex now reports. |
 | `game.switchInstall` | `path`, `profileId`, `store?`, `assumeGameClosed?` | Purge, then set path, switch profile and deploy, each step verified. It stops at the first failure with `failedStep` and `completedSteps`. |
@@ -110,6 +112,7 @@ otherwise. Adopted mods count as `"not-eh"`: they are the user's own.
 | `deploy-unverified` | Vortex said the deploy was done, but it still flags the game as needing a deploy, or the manifests could not be read. |
 | `install-unverified` / `enable-unverified` | The mod is missing from the pool, is not in the `installed` state, or was not enabled. |
 | `remove-incomplete` | Some mods are still in the pool. `details` lists which were removed and which were not. |
+| `rule-unverified` | The rules Vortex now holds for the pair are not what was asked. `details.rulesNow` shows them. |
 | `switch-unverified` / `set-path-failed` | Vortex does not report the profile or path that was asked for. |
 | `vortex-error` | Vortex threw. The message is Vortex's own. |
 

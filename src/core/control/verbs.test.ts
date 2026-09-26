@@ -108,6 +108,14 @@ function fakeVortex() {
           state.settings.profiles.activeProfileId = a.payload;
           setTimeout(() => fire("profile-did-change", a.payload));
         }
+        if (a.type === "STUB_ADD_MOD_RULE") {
+          const m = state.persistent.mods[a.payload.gameId][a.payload.modId];
+          m.rules = [...(m.rules ?? []), a.payload.rule];
+        }
+        if (a.type === "STUB_REMOVE_MOD_RULE") {
+          const m = state.persistent.mods[a.payload.gameId][a.payload.modId];
+          m.rules = (m.rules ?? []).filter((r: any) => !(r.type === a.payload.rule.type && r.reference?.id === a.payload.rule.reference?.id));
+        }
         if (a.type === "STUB_SET_GAME_PATH") {
           log.push(`setPath:${path.basename(a.payload.gamePath)}`);
           const d = state.settings.gameMode.discovered[a.payload.gameId];
@@ -351,6 +359,72 @@ describe("ifExisting: Vortex's older-version dialog", () => {
   it("rejects an unknown ifExisting before doing anything", async () => {
     await expect(runVerb(v.api as any, "deploy", { ifExisting: "both" })).rejects.toMatchObject({ code: "bad-request" });
     expect(v.log).toEqual([]);
+  });
+});
+
+describe("conflicts + mods.rule", () => {
+  const withConflict = () => {
+    v.state.session = {
+      notifications: { notifications: [], dialogs: [] },
+      dependencies: {
+        conflicts: {
+          a: [{ otherMod: { id: "b" }, files: ["meshes/x.nif", "textures/y.dds"] }],
+          b: [{ otherMod: { id: "a" }, files: ["meshes/x.nif", "textures/y.dds"] }],
+        },
+      },
+    };
+  };
+
+  it("reports one entry per pair, unresolved when no order rule exists", async () => {
+    withConflict();
+    const r = (await run("conflicts")) as any;
+    expect(r).toMatchObject({ calculated: true, total: 1, unresolved: 1 });
+    expect(r.pairs[0]).toMatchObject({ modId: "a", otherId: "b", files: 2, resolved: false });
+  });
+
+  it("says when Vortex has not calculated conflicts, instead of reporting none", async () => {
+    const r = (await run("conflicts")) as any;
+    expect(r).toMatchObject({ calculated: false, pairs: [] });
+  });
+
+  it("adds an order rule, reads it back, and the pair reads resolved", async () => {
+    withConflict();
+    const r = (await run("mods.rule", { source: "a", type: "after", reference: "b" })) as any;
+    expect(v.state.persistent.mods.fallout4.a.rules).toEqual([{ type: "after", reference: { id: "b", versionMatch: "*" } }]);
+    expect(r).toMatchObject({ type: "after", replaced: [], conflict: { files: 2, resolved: true }, verified: { rulesNow: ["after"] } });
+    expect(((await run("conflicts", { unresolvedOnly: true })) as any).pairs).toEqual([]);
+  });
+
+  it("replaces a contradicting order rule rather than stacking a second one", async () => {
+    v.state.persistent.mods.fallout4.a.rules = [{ type: "before", reference: { id: "b" } }];
+    const r = (await run("mods.rule", { source: "a", type: "after", reference: "b" })) as any;
+    expect(r.replaced).toEqual(["before"]);
+    expect(v.state.persistent.mods.fallout4.a.rules.map((x: any) => x.type)).toEqual(["after"]);
+  });
+
+  it("reports an order rule the other mod holds on this one", async () => {
+    v.state.persistent.mods.fallout4.b.rules = [{ type: "after", reference: { id: "a" } }];
+    const r = (await run("mods.rule", { source: "a", type: "after", reference: "b" })) as any;
+    expect(r.otherSideRules).toEqual([{ type: "after" }]);
+  });
+
+  it("removes a rule and verifies it is gone", async () => {
+    v.state.persistent.mods.fallout4.a.rules = [{ type: "after", reference: { id: "b" } }];
+    const r = (await run("mods.rule", { source: "a", reference: "b", remove: true })) as any;
+    expect(r.removed).toBe(1);
+    expect(v.state.persistent.mods.fallout4.a.rules).toEqual([]);
+  });
+
+  it("refuses unknown mods, self-rules and unknown types before touching anything", async () => {
+    await expect(run("mods.rule", { source: "a", type: "after", reference: "zz" })).rejects.toMatchObject({ code: "unknown-mods" });
+    await expect(run("mods.rule", { source: "a", type: "after", reference: "a" })).rejects.toMatchObject({ code: "bad-request" });
+    await expect(run("mods.rule", { source: "a", type: "loadsnear", reference: "b" })).rejects.toMatchObject({ code: "bad-request" });
+    expect(v.state.persistent.mods.fallout4.a.rules).toBeUndefined();
+  });
+
+  it("uses the mod's version for exact and compatible matches", async () => {
+    await run("mods.rule", { source: "b", type: "requires", reference: "a", versionMatch: "compatible" });
+    expect(v.state.persistent.mods.fallout4.b.rules).toEqual([{ type: "requires", reference: { id: "a", versionMatch: "^1.0" } }]);
   });
 });
 
