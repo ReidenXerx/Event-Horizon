@@ -11,6 +11,8 @@ import * as React from "react";
 import { Button, Callout, Card, Page, Pill } from "../components";
 import { writeToClipboard } from "../clipboard";
 import { useApi } from "../state";
+import { ActivityFeed } from "./agents/ActivityFeed";
+import type { OpRecord } from "../../core/control/ops";
 import {
   getControlStatus,
   onControlStatus,
@@ -24,12 +26,16 @@ const VERBS: VerbRow[] = [
   { verb: "state", what: "Read the active game, its folder and store, profiles, deployment, and anything Vortex is asking." },
   { verb: "mods.find · mod.get · plugins · downloads", what: "Search and inspect mods, plugins and downloads." },
   { verb: "conflicts", what: "Vortex's own file conflicts, and which ones a rule already settles." },
+  { verb: "mods.rules · plugins.rules · plugins.lastGood", what: "Read mod rules, LOOT rules and groups, and the last good plugin list." },
   { verb: "ops.get · ops.list", what: "Look up any command's outcome, even after the connection dropped." },
   { verb: "deploy", what: "Deploy the active profile and wait for Vortex to finish." },
   { verb: "purge", what: "Remove every deployed file from the game folder." },
   { verb: "mods.setEnabled", what: "Enable or disable mods by exact id." },
   { verb: "mods.remove", what: "Uninstall mods by exact id. The reply says which ones Event Horizon installed." },
   { verb: "mods.rule", what: "Add or remove a load-order rule (before, after, conflicts, requires) between two mods." },
+  { verb: "plugins.apply · plugins.setEnabled", what: "Restore a whole load order, or switch plugins on and off by name." },
+  { verb: "plugins.rule · plugins.setGroup", what: "LOOT rules and groups: the kind of order that survives Vortex's autosort." },
+  { verb: "plugins.sort · plugins.setAutoSort", what: "Run LOOT on purpose and report what moved, or turn autosort on or off." },
   { verb: "profile.switch", what: "Switch to another profile." },
   { verb: "game.setPath", what: "Point the game at another install folder (only when nothing is deployed)." },
   { verb: "game.switchInstall", what: "Purge, repoint, switch profile and deploy, in that order." },
@@ -45,7 +51,13 @@ const GUARDS = [
   "Reports success only after checking Vortex actually did it, and logs every command to control-ops.jsonl.",
 ];
 
-export function AgentsPage(): JSX.Element {
+export type AgentsPageProps = {
+  /** The render harness shows a feed without a live channel. */
+  previewOps?: OpRecord[];
+  previewNow?: number;
+};
+
+export function AgentsPage(props: AgentsPageProps = {}): JSX.Element {
   const api = useApi();
   const [status, setStatus] = React.useState<ControlStatus>(() => getControlStatus());
   const [busy, setBusy] = React.useState(false);
@@ -107,6 +119,11 @@ export function AgentsPage(): JSX.Element {
             </div>
           </div>
         </Card>
+
+        <ActivityFeed
+          {...(props.previewOps !== undefined ? { initialOps: props.previewOps } : {})}
+          {...(props.previewNow !== undefined ? { now: props.previewNow } : {})}
+        />
 
         <div className="eh-grid">
           <Card title="What an agent can do">

@@ -17,6 +17,7 @@ import { loadPreferences, updatePreferences } from "../preferences";
 import { EXTENSION_VERSION } from "../../ui/version";
 import { startControlServer, type ControlServer, type ControlVerb } from "./controlServer";
 import { runVerb, VERBS } from "./verbs";
+import { readOpsJournal, type OpRecord } from "./ops";
 
 export const PROMO_ID = "control-channel-promo";
 
@@ -32,6 +33,24 @@ let server: ControlServer | undefined;
 let lastError: string | undefined;
 let transition: Promise<void> = Promise.resolve();
 const listeners = new Set<(s: ControlStatus) => void>();
+const opListeners = new Set<(op: OpRecord) => void>();
+let unsubscribeOps: (() => void) | undefined;
+
+export function opsJournalFile(): string {
+  return path.join(getEventHorizonRoot(), "control-ops.jsonl");
+}
+
+/** Newest first: the live log while the channel runs, the journal otherwise, so history shows even when it is off. */
+export function getRecentOps(limit = 100): OpRecord[] {
+  if (server !== undefined) return server.ops.list({ limit });
+  return readOpsJournal(opsJournalFile(), limit).reverse();
+}
+
+/** Every op as it is queued, starts and finishes. */
+export function onControlOps(fn: (op: OpRecord) => void): () => void {
+  opListeners.add(fn);
+  return () => opListeners.delete(fn);
+}
 
 export function controlInfoFile(): string {
   return path.join(getEventHorizonRoot(), "control.json");
@@ -72,7 +91,7 @@ async function start(api: types.IExtensionApi): Promise<void> {
   try {
     server = await startControlServer({
       infoFile: controlInfoFile(),
-      opsJournal: path.join(getEventHorizonRoot(), "control-ops.jsonl"),
+      opsJournal: opsJournalFile(),
       verbs: boundVerbs(api),
       version: EXTENSION_VERSION,
       onMutated: (summary) =>
@@ -91,6 +110,9 @@ async function start(api: types.IExtensionApi): Promise<void> {
         }),
     });
     lastError = undefined;
+    unsubscribeOps = server.ops.subscribe((op) => {
+      for (const fn of opListeners) fn(op);
+    });
   } catch (err) {
     lastError = String((err as Error)?.message ?? err);
     ehLog("error", "control.start.fail", { err });
@@ -100,6 +122,8 @@ async function start(api: types.IExtensionApi): Promise<void> {
 async function stop(): Promise<void> {
   const s = server;
   server = undefined;
+  unsubscribeOps?.();
+  unsubscribeOps = undefined;
   await s?.close();
 }
 

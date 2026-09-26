@@ -42,6 +42,7 @@ const NOT_A_CLASS = new Set([
   "eh-prereq-repair",
   "eh-mod-diff-file-select", // a Field's element id on the diff pages
   "eh-diff-file-select",
+  "eh-installed", // a mod's `owner` value in control-channel replies (Agents feed)
 ]);
 
 /** A class named only in a comment is not declared and not referenced. */

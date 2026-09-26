@@ -2787,6 +2787,56 @@ describe("render", () => {
     write("agents", React.createElement(AgentsPage, null));
   });
 
+  it("agents — the live feed during an OG→AE migration", () => {
+    const now = Date.parse("2026-09-26T21:00:00.000Z");
+    const at = (s: number): string => new Date(now - s * 1000).toISOString();
+    const op = (o: Record<string, unknown>): Record<string, unknown> => ({ body: {}, queuedAt: at(0), ...o });
+    const previewOps = [
+      op({ opId: "op-9", verb: "deploy", mutates: true, status: "running", startedAt: at(12) }),
+      op({
+        opId: "op-8", verb: "plugins.rule", mutates: true, status: "succeeded", endedAt: at(40), ms: 3120,
+        body: { name: "ArPrevisPatch_NexusID78628.esp", type: "after", reference: "prp.esp", sort: true },
+        summary: "LOOT rule: ArPrevisPatch_NexusID78628.esp after prp.esp",
+        result: { verified: { inUserlist: true }, sortedNow: { ordered: true } },
+      }),
+      op({
+        opId: "op-7", verb: "install", mutates: true, status: "failed", endedAt: at(95), ms: 1840,
+        body: { nexus: { modId: 75767, fileId: 409642 }, unattended: true },
+        code: "would-replace-everywhere",
+        message: "Mod AR2 is already installed from this archive. An unattended reinstall makes Vortex REPLACE it in every profile, silently.",
+      }),
+      op({
+        opId: "op-6", verb: "install", mutates: true, status: "succeeded", endedAt: at(160), ms: 48200,
+        body: { archiveId: "0CNI13X8uA", asCopy: "AE" }, summary: "installed AAF_V1-7-4-1 (AE)",
+        result: {
+          verified: { inPool: true },
+          vortex: { dialogsSeen: [{ title: "F4SE", answer: "Update current profile", answeredBy: "ifExisting" }], notifications: [] },
+        },
+      }),
+      op({
+        opId: "op-5", verb: "plugins.apply", mutates: true, status: "succeeded", endedAt: at(420), ms: 9400,
+        body: { order: new Array(803).fill({}) }, summary: "applied a 803-plugin list",
+        result: { verified: { state: "matches" }, enabledCorrections: 785, unknown: [] },
+      }),
+      op({
+        opId: "op-4", verb: "game.switchInstall", mutates: true, status: "succeeded", endedAt: at(900), ms: 23400,
+        body: { path: "D:\\SteamLibrary\\steamapps\\common\\Fallout 4 AE", profileId: "cE52kv-KI" },
+        summary: "switched fallout4 to D:\\SteamLibrary\\steamapps\\common\\Fallout 4 AE",
+        result: { verified: {}, steps: ["purge", "setPath", "profile", "deploy"], store: "steam", deployedFiles: 59051 },
+      }),
+      op({
+        opId: "op-3", verb: "mods.setEnabled", mutates: true, status: "succeeded", endedAt: at(1300), ms: 210,
+        body: { modIds: new Array(32).fill("x"), enabled: false }, summary: "disabled 32 mod(s)",
+        result: { verified: {} },
+      }),
+      op({ opId: "op-2", verb: "state", mutates: false, status: "succeeded", endedAt: at(1320), ms: 48, result: {} }),
+    ];
+    write(
+      "agents-live",
+      React.createElement(AgentsPage, { previewOps: previewOps as never, previewNow: now }),
+    );
+  });
+
   it("build form — the curator's whole workbench", () => {
     // The largest form in the UI, converted to primitives without ever having
     // been rendered outside Vortex. Two external mods, one prerequisite, two

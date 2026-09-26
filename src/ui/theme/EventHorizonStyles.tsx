@@ -27,6 +27,7 @@ import { PRIMITIVES_CSS } from "./primitives";
 import { UTILITIES_CSS } from "./utilities";
 import { LOGO_CSS } from "./logo";
 import { DASHBOARD_CSS } from "./dashboard";
+import { AGENTS_CSS } from "./agents";
 
 const STYLE_ID = "eh-styles";
 
@@ -45,6 +46,7 @@ export const COMBINED_CSS = [
   UTILITIES_CSS,
   LOGO_CSS,
   DASHBOARD_CSS,
+  AGENTS_CSS,
 ].join("\n\n");
 
 export function EventHorizonStyles(): JSX.Element {

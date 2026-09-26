@@ -49,7 +49,7 @@ export type ControlServerOptions = {
   onFailed?: (verb: string, message: string) => void;
 };
 
-export type ControlServer = { port: number; token: string; close: () => Promise<void> };
+export type ControlServer = { port: number; token: string; ops: OpLog; close: () => Promise<void> };
 
 const MAX_BODY = 1024 * 1024;
 
@@ -179,10 +179,12 @@ export async function startControlServer(opts: ControlServerOptions): Promise<Co
 
       const asyncMode = body["async"] === true;
       const op = ops.create(verbName, body);
+      op.mutates = verb.mutates;
       const execute = async (): Promise<void> => {
         ops.start(op);
         try {
           const result = await verb.run(body);
+          if (verb.mutates) op.summary = verb.describe?.(body, result) ?? verbName;
           ops.finish(op, { ok: true, result });
           ehLog("info", "control.verb.ok", { verb: verbName, opId: op.opId, ms: op.ms });
           if (verb.mutates) opts.onMutated?.(verb.describe?.(body, result) ?? verbName);
@@ -242,6 +244,7 @@ export async function startControlServer(opts: ControlServerOptions): Promise<Co
   return {
     port,
     token,
+    ops,
     close: () =>
       new Promise<void>((resolve) => {
         try {

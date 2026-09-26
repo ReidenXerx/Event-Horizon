@@ -33,14 +33,38 @@ export type OpRecord = {
   message?: string;
   /** On failure: what DID happen (steps completed, mods removed before the error, Vortex notifications). */
   details?: Record<string, unknown>;
+  /** One line a person can read: the verb's own description of what it did. */
+  summary?: string;
+  /** Changes the setup (a read otherwise). */
+  mutates?: boolean;
 };
 
 export const MAX_OPS = 500;
 
 export class OpLog {
   private readonly ops = new Map<string, OpRecord>();
+  private readonly listeners = new Set<(op: OpRecord) => void>();
 
-  constructor(private readonly journalFile?: string) {}
+  constructor(private readonly journalFile?: string) {
+    // History survives a restart: the Agents page shows what agents did before this start too.
+    if (journalFile !== undefined) for (const op of readOpsJournal(journalFile, 100)) this.ops.set(op.opId, op);
+  }
+
+  /** Called on every create/start/finish; returns an unsubscribe. */
+  subscribe(fn: (op: OpRecord) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  private emit(op: OpRecord): void {
+    for (const fn of this.listeners) {
+      try {
+        fn(op);
+      } catch {
+        // A broken listener must not fail the command it is watching.
+      }
+    }
+  }
 
   create(verb: string, body: Record<string, unknown>): OpRecord {
     const op: OpRecord = {
@@ -52,12 +76,14 @@ export class OpLog {
     };
     this.ops.set(op.opId, op);
     while (this.ops.size > MAX_OPS) this.ops.delete(this.ops.keys().next().value as string);
+    this.emit(op);
     return op;
   }
 
   start(op: OpRecord): void {
     op.status = "running";
     op.startedAt = new Date().toISOString();
+    this.emit(op);
   }
 
   finish(
@@ -84,6 +110,7 @@ export class OpLog {
         // The in-memory record still answers; a full disk must not fail the command.
       }
     }
+    this.emit(op);
   }
 
   get(opId: string): OpRecord | undefined {
@@ -100,6 +127,27 @@ export class OpLog {
     );
     return out.slice(0, Math.max(1, Math.min(filter.limit ?? 50, MAX_OPS)));
   }
+}
+
+/** The last `limit` finished ops in a journal, oldest first. A broken line is skipped, a missing file is none. */
+export function readOpsJournal(file: string, limit: number): OpRecord[] {
+  let text: string;
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch {
+    return [];
+  }
+  const out: OpRecord[] = [];
+  for (const line of text.split(/\r?\n/).slice(-limit - 1)) {
+    if (line.trim() === "") continue;
+    try {
+      const op = JSON.parse(line) as OpRecord;
+      if (typeof op.opId === "string" && typeof op.verb === "string") out.push(op);
+    } catch {
+      // A line cut short by a crash.
+    }
+  }
+  return out.slice(-limit);
 }
 
 /** The reply every command gets: the op record, shaped for a client. */
