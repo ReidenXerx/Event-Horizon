@@ -185,6 +185,17 @@ describe("extractZipEntryToFile", () => {
     const viaBuffer = await readZipEntry(sevenZip("s2.ehcoll"), "stored.bin");
     expect(fs.readFileSync(dest).equals(viaBuffer)).toBe(true);
   });
+
+  // Small entries are now extracted in one read (inside Vortex 2.7.1 the stream took nine minutes for a 15.5 MB
+  // manifest). The streaming path still carries every entry over 64 MB, so it is forced here with bufferedMax 0.
+  it("gives the same bytes through the streaming path, stored and deflated", async () => {
+    const stored = path.join(dir, "stream-stored.bin");
+    await extractZipEntryToFile(sevenZip(), "stored.bin", stored, { bufferedMax: 0 });
+    expect(fs.readFileSync(stored).equals(await readZipEntry(sevenZip("s3.ehcoll"), "stored.bin"))).toBe(true);
+    const deflated = path.join(dir, "stream-manifest.json");
+    await extractZipEntryToFile(dotnet(), "manifest.json", deflated, { bufferedMax: 0 });
+    expect(fs.readFileSync(deflated, "utf8")).toBe(MANIFEST_TEXT);
+  });
 });
 
 describe("damaged archives", () => {
@@ -214,10 +225,19 @@ describe("damaged archives", () => {
     });
     const dest = path.join(dir, "streamed.bin");
     await expect(
-      extractZipEntryToFile(p, "stored.bin", dest),
+      extractZipEntryToFile(p, "stored.bin", dest, { bufferedMax: 0 }),
     ).rejects.toThrow(/did not survive extraction/);
     // And it must not be left behind: a corrupt file on disk is one a later
     // step picks up and trusts, usually under a name that looks verified.
+    expect(fs.existsSync(dest)).toBe(false);
+  });
+
+  it("catches the same corruption through the one-read path small entries now take", async () => {
+    const p = sevenZip("corrupt-buffered.ehcoll", (b) => {
+      b[1000] = b[1000]! ^ 0xff;
+    });
+    const dest = path.join(dir, "buffered.bin");
+    await expect(extractZipEntryToFile(p, "stored.bin", dest)).rejects.toThrow(/did not survive extraction/);
     expect(fs.existsSync(dest)).toBe(false);
   });
 

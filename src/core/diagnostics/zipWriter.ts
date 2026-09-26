@@ -15,7 +15,11 @@
  */
 
 import * as fsp from "fs/promises";
+import * as zlib from "zlib";
 import { deflateRawSync } from "zlib";
+
+// Node's own CRC when present (Node 20.15+): the table loop below crawled inside Vortex 2.7.1, see readZip's crc32.
+const nativeCrc32 = (zlib as unknown as { crc32?: (data: Buffer, value?: number) => number }).crc32;
 
 const CRC_TABLE = ((): Uint32Array => {
   const table = new Uint32Array(256);
@@ -28,6 +32,7 @@ const CRC_TABLE = ((): Uint32Array => {
 })();
 
 export function crc32(buf: Buffer): number {
+  if (nativeCrc32 !== undefined) return nativeCrc32(buf, 0) >>> 0;
   let c = 0xffffffff;
   for (let i = 0; i < buf.length; i += 1) c = CRC_TABLE[(c ^ buf[i]!) & 0xff]! ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
