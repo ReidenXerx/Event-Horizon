@@ -138,4 +138,23 @@ export const AGENTS_CSS = `
 .eh-agent-chip--info { color: var(--eh-cyan-bright); background: var(--eh-accent-soft); }
 .eh-agent-chip--warn { color: var(--eh-warning); background: rgba(255, 177, 92, .1); }
 .eh-agent-chip--fail { color: var(--eh-danger); background: rgba(255, 91, 120, .1); }
+
+/* ── Connect your AI ────────────────────────────────────────────────── */
+.eh-agent-code {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--eh-bg-deep);
+  border: 1px solid var(--eh-border-default);
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 11px;
+}
+.eh-agent-ask {
+  margin: 0;
+  padding: 6px 12px;
+  border-left: 2px solid var(--eh-disk-warm);
+  color: var(--eh-text-secondary);
+  font-style: italic;
+}
 `;

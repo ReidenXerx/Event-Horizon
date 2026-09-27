@@ -890,6 +890,25 @@ describe("install and the FOMOD question", () => {
   });
 });
 
+describe("logs for troubleshooting", () => {
+  it("lists crash and F4SE logs from the game's My Games folder, newest first, and reads one by id only", async () => {
+    const docs = fs.mkdtempSync(path.join(os.tmpdir(), "eh-docs-"));
+    __testPaths.documentsPath = docs;
+    const se = path.join(docs, "My Games", "Fallout4", "F4SE");
+    fs.mkdirSync(se, { recursive: true });
+    const crashText = ['Unhandled exception "EXCEPTION_ACCESS_VIOLATION"', "PROBABLE CALL STACK:", "  [0] SomeMod.dll", ...Array(50).fill("x")];
+    fs.writeFileSync(path.join(se, "crash-2026-09-26-10-00-00.log"), crashText.join("\n"));
+    fs.writeFileSync(path.join(se, "f4se.log"), "plugin loaded correctly");
+    const list = (await run("logs.list")) as any;
+    const ids = list.logs.map((l: any) => l.id);
+    expect(ids).toEqual(expect.arrayContaining(["crash:crash-2026-09-26-10-00-00.log", "extender:f4se.log"]));
+    const crash = (await run("logs.read", { id: "crash:crash-2026-09-26-10-00-00.log", head: 3 })) as any;
+    expect(crash.text).toContain("PROBABLE CALL STACK");
+    expect(crash.returnedLines).toBe(3);
+    await expect(run("logs.read", { id: "extender:../../secret.txt" })).rejects.toMatchObject({ code: "no-such-log" });
+  });
+});
+
 describe("state: deployment.needed", () => {
   it("says a deploy is needed when mods are enabled but nothing is deployed, whatever Vortex's flag says", async () => {
     v.deployed.n = 0;

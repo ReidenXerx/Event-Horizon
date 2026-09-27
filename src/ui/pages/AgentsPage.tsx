@@ -12,6 +12,7 @@ import { Button, Callout, Card, Page, Pill } from "../components";
 import { writeToClipboard } from "../clipboard";
 import { useApi } from "../state";
 import { ActivityFeed } from "./agents/ActivityFeed";
+import { ConnectCard } from "./agents/ConnectCard";
 import type { OpRecord } from "../../core/control/ops";
 import {
   getControlStatus,
@@ -86,7 +87,7 @@ export function AgentsPage(props: AgentsPageProps = {}): JSX.Element {
       <div className="eh-stack eh-stack--xl">
         <Card
           title="Agent control"
-          subtitle="Let AI assistants you run on this PC (Claude Code and similar) drive Vortex for you: deploy, purge, switch profiles, install, enable and remove mods."
+          subtitle="Let an AI assistant do your modding: tell it what you want in plain words, and it works in Vortex for you, from installing mods to finding why the game crashes."
           actions={
             <Pill intent={status.running ? "success" : status.enabled ? "warning" : "info"} withDot>
               {state === "running" ? `On · port ${String(status.port)}` : state === "starting" ? "Starting" : "Off"}
@@ -106,7 +107,7 @@ export function AgentsPage(props: AgentsPageProps = {}): JSX.Element {
               <span className="eh-muted">
                 {status.enabled
                   ? "Agents can connect while Vortex is open."
-                  : "Nothing is listening. Turn it on only if you use an agent that needs it."}
+                  : "Off. Turn it on, then connect your AI below."}
               </span>
             </div>
             <div className="eh-stack eh-stack--sm">
@@ -121,13 +122,15 @@ export function AgentsPage(props: AgentsPageProps = {}): JSX.Element {
           </div>
         </Card>
 
+        <ConnectCard enabled={status.enabled} />
+
         <ActivityFeed
           {...(props.previewOps !== undefined ? { initialOps: props.previewOps } : {})}
           {...(props.previewNow !== undefined ? { now: props.previewNow } : {})}
         />
 
         <div className="eh-grid">
-          <Card title="What an agent can do">
+          <Card title="Everything it can do (for the technically curious)">
             <div className="eh-stack eh-stack--sm">
               {VERBS.map((v) => (
                 <div key={v.verb} className="eh-stack eh-stack--xs">

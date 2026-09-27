@@ -8,6 +8,8 @@
  * is invisible.
  */
 
+import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import type { types } from "@nexusmods/vortex-api";
 
@@ -18,8 +20,10 @@ import { EXTENSION_VERSION } from "../../ui/version";
 import { startControlServer, type ControlServer, type ControlVerb } from "./controlServer";
 import { runVerb, VERBS } from "./verbs";
 import { readOpsJournal, type OpRecord } from "./ops";
+import { mcpLaunch, mergeDesktopConfig, type McpLaunch } from "./connectConfig";
 
-export const PROMO_ID = "control-channel-promo";
+/** v2: the newcomer pitch. A new id, so people who dismissed the technical v1 see it once. */
+export const PROMO_ID = "control-channel-promo-2";
 
 export type ControlStatus = {
   enabled: boolean;
@@ -156,18 +160,64 @@ export async function showControlPromoOnce(api: types.IExtensionApi): Promise<vo
   if (typeof api.showDialog !== "function") return;
   const answer = await api.showDialog(
     "question",
-    "New in Event Horizon: let your AI agents drive Vortex",
+    "New in Event Horizon: just tell an AI what you want",
     {
       bbcode:
-        "Event Horizon can open a private control channel on this PC so AI assistants you run " +
-        "(Claude Code and similar) can deploy, purge, switch profiles, enable, install and remove mods for you, " +
-        "without you clicking through Vortex.[br][/br][br][/br]" +
-        "It listens only on this computer (127.0.0.1), needs a secret token that changes every start, and " +
-        "refuses browsers. Every change it makes pops up as a notification here. It never deploys " +
-        "while your game is running, and it will not move a game folder that still has mods deployed.[br][/br][br][/br]" +
-        "It is [b]off[/b] until you turn it on. You can switch it any time on Event Horizon's [b]Agents[/b] page.",
+        "Modding without the clicking. Connect an AI assistant such as Claude to Vortex, then say what you want in plain " +
+        "words:[br][/br][br][/br]" +
+        "[i]“Install this mod and pick the right installer options for my setup.”[/i][br][/br]" +
+        "[i]“My game crashes on startup. Find out why and fix it.”[/i][br][/br]" +
+        "[i]“Make this texture mod win over the other one.”[/i][br][/br][br][/br]" +
+        "It installs mods and answers their installers, fixes load order and conflicts, reads crash logs, and shows every " +
+        "step on Event Horizon’s [b]Agents[/b] page. It checks each change really happened, asks before removing " +
+        "anything, and never touches the game while it is running. It works only on this PC.[br][/br][br][/br]" +
+        "It is [b]off[/b] until you turn it on. The Agents page connects Claude in one click.",
     },
     [{ label: "Not now" }, { label: "Turn it on", default: true }],
   );
   if (answer?.action === "Turn it on") await setControlChannelEnabled(api, true);
+}
+
+// ─── connecting an AI (the Agents page's "Connect your AI" card) ──────────
+
+/** How an AI client starts the connector on THIS machine: Vortex's own exe, the deployed server script, this channel. */
+export function connectorLaunch(): McpLaunch {
+  return mcpLaunch({
+    // In Vortex's renderer this is Vortex.exe, which runs the connector as plain Node.
+    vortexExe: process.execPath,
+    // dist/core/control -> dist/mcp/server.js, wherever the extension is installed.
+    serverJs: path.resolve(__dirname, "..", "..", "mcp", "server.js"),
+    controlFile: controlInfoFile(),
+  });
+}
+
+export function claudeDesktopConfigPath(): string {
+  const appData = process.env["APPDATA"] ?? path.join(os.homedir(), "AppData", "Roaming");
+  return path.join(appData, "Claude", "claude_desktop_config.json");
+}
+
+/**
+ * Adds Event Horizon to Claude Desktop's config, keeping everything else in
+ * it and a backup of the file as it was. Refuses a file it cannot read rather
+ * than overwrite the user's other servers.
+ */
+export function addToClaudeDesktop(): { ok: boolean; message: string; file: string } {
+  const file = claudeDesktopConfigPath();
+  let existing: string | undefined;
+  try {
+    existing = fs.readFileSync(file, "utf8");
+  } catch {
+    existing = undefined;
+  }
+  const merged = mergeDesktopConfig(existing, connectorLaunch());
+  if (!merged.ok) return { ok: false, message: merged.reason, file };
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    if (existing !== undefined) fs.writeFileSync(`${file}.before-event-horizon.bak`, existing, "utf8");
+    fs.writeFileSync(file, merged.text, "utf8");
+  } catch (err) {
+    return { ok: false, message: `Could not write Claude Desktop's config: ${String((err as Error)?.message ?? err)}`, file };
+  }
+  ehLog("info", "control.connect.claude-desktop", { file, backedUp: existing !== undefined });
+  return { ok: true, message: "Added. Quit Claude Desktop completely and open it again, then ask it anything about your mods.", file };
 }

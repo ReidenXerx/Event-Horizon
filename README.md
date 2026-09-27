@@ -43,6 +43,22 @@ Event Horizon is a Vortex extension in two halves. **Curators** get a workbench 
 - **A different game version is a warning, not a wall.** If the curator played on another version, you are told exactly which mods care, and you decide.
 - **Missing runtimes, found and fixed.** The Microsoft runtimes that script-extender plugins, xEdit and ENB need are checked before an install and in the Doctor, with a button that installs the missing ones.
 
+## New: tell an AI what you want, and it mods for you
+
+Connect an AI assistant such as Claude to Vortex, then say what you want in plain words. It does the work in Vortex:
+
+- *"Install this mod and pick the right installer options for my setup."* It reads the installer **before** installing,
+  checks which options need mods you don't have, answers the installer, and deploys.
+- *"My game crashes on startup. Find out why and fix it."* It reads the crash log and your script extender's log,
+  finds the culprit, explains it, and proposes the fix.
+- *"Make this texture mod win over the other one."* It settles the conflict with a rule, or fixes the plugin order with
+  a LOOT rule that survives sorting.
+
+**Every change is checked before it is reported done**, it asks before removing anything, it never works under a
+running game, and every step shows live on the **Agents** page. It is off until you turn it on, works only on your PC,
+and connects to Claude Desktop in one click. Nothing extra to install: the connector runs on Vortex itself.
+**[Set it up in two minutes →](docs/AGENTS_QUICKSTART.md)**
+
 <p align="center"><img src="docs/img/players.jpg" alt="For players: install it once, know it is right" width="100%"></p>
 
 <p align="center"><img src="docs/img/shot-home.jpg" alt="Home: the collection you are playing, its health, and what it is made of" width="100%"></p>
@@ -143,6 +159,8 @@ Vortex does not offer Event Horizon updates by itself yet: download each new ver
 | Doc | Read it for |
 | --- | --- |
 | [`CHANGELOG.md`](CHANGELOG.md) | Every change, newest first, written for the people who use it |
+| [`docs/AGENTS_QUICKSTART.md`](docs/AGENTS_QUICKSTART.md) | Connecting an AI assistant to Vortex, and what to ask it |
+| [`docs/control-channel.md`](docs/control-channel.md) | The local control channel the AI (or any script) drives Vortex through |
 | [`docs/business/`](docs/business/) | Per-operation behaviour in plain English: failure modes, edge cases, invariants |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Code layout and execution flow |
 | [`docs/DATA_FORMATS.md`](docs/DATA_FORMATS.md) | The exact shape of every JSON file read or written |

@@ -53,7 +53,8 @@ import { ACTION_SET_AUTOSORT_ENABLED, readsAutoSort } from "../installer/autoSor
 import { countMods, deployBudgetMs } from "../installer/timeBudgets";
 import { looksLikeWine } from "../proton/detect";
 import { listReceipts } from "../installLedger";
-import { getVortexUserDataPath } from "../paths/appDataPaths";
+import { getEventHorizonDir, getVortexUserDataPath } from "../paths/appDataPaths";
+import { iniLocationFor } from "../manifest/gameIni";
 import { readPluginList } from "../curator/pluginPool";
 import { collectDistinctModTypes } from "../deploymentManifest";
 import { isProcessRunning } from "./gameProcess";
@@ -932,6 +933,68 @@ async function pluginsTxtOnDisk(api: types.IExtensionApi, gameId: string, wants:
 const lc = (v: unknown): string => String(v ?? "").toLowerCase();
 const limitOf = (body: VerbBody, dflt: number): number => Math.max(1, Math.min(Number(body["limit"]) || dflt, 5000));
 
+/** Script extender log folder name inside the game's My Games folder. */
+const EXTENDER_LOG_DIR: Record<string, string> = { fallout4: "F4SE", fallout4vr: "F4SE", skyrimse: "SKSE", skyrimvr: "SKSE" };
+
+type LogFile = { id: string; name: string; where: string; path: string; size: number; modified: string };
+
+/**
+ * The log files an agent may read, and nothing else: logs.read resolves an id
+ * against this list, so no path from the caller ever reaches the filesystem.
+ */
+function listLogFiles(api: types.IExtensionApi): LogFile[] {
+  const out: LogFile[] = [];
+  const add = (where: string, dir: string, match: (name: string) => boolean, limit: number): void => {
+    let names: string[];
+    try {
+      names = fs.readdirSync(dir).filter(match);
+    } catch {
+      return;
+    }
+    const files = names
+      .map((name) => {
+        try {
+          const st = fs.statSync(path.join(dir, name));
+          return st.isFile() ? { name, st } : undefined;
+        } catch {
+          return undefined;
+        }
+      })
+      .filter((x): x is { name: string; st: fs.Stats } => x !== undefined)
+      .sort((a, b) => b.st.mtimeMs - a.st.mtimeMs)
+      .slice(0, limit);
+    for (const f of files) {
+      out.push({ id: `${where}:${f.name}`, name: f.name, where, path: path.join(dir, f.name), size: f.st.size, modified: f.st.mtime.toISOString() });
+    }
+  };
+  const gameId = getActiveGameId(api.getState());
+  if (gameId !== undefined) {
+    try {
+      const docs = util.getVortexPath("documents");
+      const loc = iniLocationFor(gameId, docs, readDiscovery(api.getState(), gameId).store);
+      const ext = EXTENDER_LOG_DIR[gameId];
+      if (loc !== undefined && ext !== undefined) {
+        const dir = path.join(loc.dir, ext);
+        add("crash", dir, (n) => /^crash[-_].*\.log$/i.test(n), 10);
+        add("extender", dir, (n) => /\.log$/i.test(n) && !/^crash[-_]/i.test(n), 30);
+      }
+    } catch {
+      // No documents folder or an unknown game: nothing to list there.
+    }
+  }
+  try {
+    add("event-horizon", getEventHorizonDir("logs"), (n) => /\.log$/i.test(n), 3);
+  } catch {
+    // EH writes no log file on this machine.
+  }
+  try {
+    add("vortex", util.getVortexPath("userData"), (n) => /^vortex(_prev)?\.log$/i.test(n), 2);
+  } catch {
+    // Unknown user data folder.
+  }
+  return out;
+}
+
 /** A download's file on disk. */
 function archivePathFor(api: types.IExtensionApi, gameId: string, archiveId: string): string {
   const dl = (api.getState() as unknown as { persistent?: { downloads?: { files?: Record<string, { localPath?: string }> } } })
@@ -1445,6 +1508,45 @@ export const VERBS: Record<string, Verb> = {
       return { moduleName: view.moduleName, cancelled: true, verified: { closed: true } };
     },
     describe: (_b, r) => `cancelled the ${String(r["moduleName"] ?? "FOMOD")} installer`,
+  },
+
+  /**
+   * The logs worth reading when something goes wrong: crash logs and script
+   * extender logs from the game's My Games folder (Buffout 4 / Crash Logger
+   * write there), Event Horizon's own log, and Vortex's. Newest first. Read
+   * one with logs.read by its id.
+   */
+  "logs.list": {
+    mutates: false,
+    run: async (api) => {
+      const out = listLogFiles(api).map(({ id, name, where, size, modified }) => ({ id, name, where, size, modified }));
+      return { logs: out };
+    },
+  },
+
+  /** One log from logs.list, by id: the last `tail` lines (default 400), or `head` lines from the top. */
+  "logs.read": {
+    mutates: false,
+    run: async (api, body) => {
+      const id = need(body, "id");
+      const hit = listLogFiles(api).find((l) => l.id === id);
+      if (hit === undefined) throw new ControlError("no-such-log", `No log ${id}. Use logs.list for the ids.`, 404);
+      const raw = fs.readFileSync(hit.path);
+      const text = raw.toString(raw.includes(0) ? "latin1" : "utf8");
+      const lines = text.split(/\r?\n/);
+      const head = Number(body["head"]);
+      const tail = Number(body["tail"]) || 400;
+      const picked = Number.isFinite(head) && head > 0 ? lines.slice(0, head) : lines.slice(-tail);
+      const joined = picked.join("\n");
+      return {
+        id,
+        name: hit.name,
+        where: hit.where,
+        totalLines: lines.length,
+        returnedLines: picked.length,
+        text: joined.length > 400_000 ? joined.slice(-400_000) : joined,
+      };
+    },
   },
 
   /** What Vortex is showing right now: notifications, and dialogs waiting for the user. */
