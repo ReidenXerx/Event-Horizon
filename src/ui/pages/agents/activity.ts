@@ -76,6 +76,13 @@ const META: Record<string, Meta> = {
   },
   "profile.switch": { badge: "PROFILE", doing: (b) => `Switching to profile ${String(b["profileId"])}` },
   "game.setPath": { badge: "GAME", doing: (b) => `Pointing the game at ${String(b["path"])}` },
+  "collection.list": { badge: "READ", doing: () => "Reading your collections", read: true },
+  "collection.manifest": { badge: "READ", doing: (b) => `Reading the ${String(b["name"] ?? "collection")} package`, read: true },
+  "collection.build": {
+    badge: "BUILD",
+    doing: (b) => `${b["dryRun"] === true ? "Planning" : "Building"} ${String(b["name"])} ${String(b["version"])}`,
+  },
+  "collection.upload": { badge: "DRAFT", doing: (b) => `Uploading ${String(b["name"] ?? "a collection")} to Nexus as a draft` },
   "game.switchInstall": { badge: "SWITCH", doing: (b) => `Switching the game to ${String(b["path"])}` },
 };
 
@@ -137,6 +144,10 @@ function resultChips(verb: string, r: Record<string, unknown>): Chip[] {
   const conflict = r["conflict"] as { resolved?: boolean } | null | undefined;
   if (conflict?.resolved === true) out.push({ text: "Conflict resolved", tone: "ok" });
   if (typeof r["store"] === "string" && verb.startsWith("game.")) out.push({ text: `Store: ${r["store"]}`, tone: "info" });
+  if (verb === "collection.build" && typeof r["mods"] === "number") out.push({ text: `${n(r["mods"])} mods`, tone: "info" });
+  if (verb === "collection.upload" && typeof r["revisionNumber"] === "number") {
+    out.push({ text: `Draft revision ${r["revisionNumber"]}: publish it on Nexus`, tone: "warn" });
+  }
   return [...out, ...vortexChips(r["vortex"])];
 }
 

@@ -10,6 +10,17 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [Unreleased]
+
+### For curators: releases while you sleep
+- **An AI can build your collection's next version and upload it to Nexus as a draft.** Four new agent tools: list
+  your collections, read a built package, build (exactly as the Build page does, keeping your saved decisions), and
+  upload as a draft. **There is no publish tool**: the draft waits on Nexus for your own click.
+- **It refuses the mistakes that cost players.** A build under a name no collection has (that would start a new
+  collection nobody gets as an update), a version that is not newer than the last one, an upload from a stale older
+  config, and an upload whose name differs from the live collection's (Vortex would rename your page) are all
+  refused with the reason.
+
 ## [0.2.18] — 2026-09-27
 
 ### Let an AI do your modding

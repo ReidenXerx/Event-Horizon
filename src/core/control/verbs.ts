@@ -70,17 +70,9 @@ import {
   type FomodDescription,
 } from "./installerDescribe";
 
-export class ControlError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-    readonly status = 400,
-    /** Facts the caller needs even though the command failed (what DID happen). */
-    readonly details?: Record<string, unknown>,
-  ) {
-    super(message);
-  }
-}
+import { ControlError } from "./controlError";
+import { COLLECTION_VERBS } from "./collectionVerbs";
+export { ControlError };
 
 export type VerbBody = Record<string, unknown>;
 export type Verb = {
@@ -2276,4 +2268,7 @@ export const VERBS: Record<string, Verb> = {
     },
     describe: (_b, r) => `installed ${String(r["name"] ?? r["vortexModId"])}`,
   },
+
+  // Collection build + draft upload: no publish verb, ever (collectionVerbs.ts).
+  ...COLLECTION_VERBS,
 };

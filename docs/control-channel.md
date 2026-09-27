@@ -122,6 +122,32 @@ All of them act on Vortex's **active game**.
 `owner` is `"eh-installed"` when an Event Horizon receipt proves Event Horizon installed the mod, and `"not-eh"`
 otherwise. Adopted mods count as `"not-eh"`: they are the user's own.
 
+### Collections (for curators)
+
+A release can run unattended: build the next version, upload it as a **draft**, and leave publishing to the curator.
+**There is no publish verb.** Publishing, like deleting, is the curator's own click on Nexus.
+
+| Verb | Body | What it does |
+|---|---|---|
+| `collection.list` | none | Every collection config on this PC: `slug`, `packageId`, `lastBuiltVersion`, `lastBuiltAt`, `lastBuiltName`, and the Nexus collection it is bound to (`nexusId`, `nexusSlug`). A read. |
+| `collection.manifest` | `name` (newest build) **or** `path` | A built package, summarized: package id, name, version, game version, policy and store, mod count, bundled mods, external dependencies. A read. |
+| `collection.build` | `name`, `version`; `changelog?`, `description?`, `readme?`, `author?`, `gameVersion?`, `gameVersionPolicy?`, `dryRun?`, `allowNew?`, `allowSameVersion?` | Builds exactly as the Build page's button does, from the collection's own saved decisions. Anything not sent is kept from the last build. `dryRun` returns the plan and builds nothing. The reply reads the package back (`verified.packageId`, `verified.version`). Send it `async`. |
+| `collection.upload` | `name` (newest build) **or** `path`; `collection?` (the slug you expect), `allowNameMismatch?` | Uploads the package as a DRAFT revision of the Nexus collection its config is bound to, and returns `revisionNumber` and `url`. It never creates a collection. |
+
+What each refuses, and why:
+
+| Code | Refused because |
+|---|---|
+| `new-collection` | No collection has that exact name. A new name is a new package id, and existing players would get no update. `allowNew: true` if a new collection really is the intent. |
+| `bad-version` | The version is not newer than the last build. Rebuilding a version players already installed is the destructive path. `allowSameVersion: true` overrides the equal case only. |
+| `busy` | A build or a collection install is already running. |
+| `build-refused` | The build's own checks refused the setup (e.g. a mod with no archive). The message says which. |
+| `not-bound` | The package was never uploaded, so it belongs to no Nexus collection. The first upload is done by hand. |
+| `wrong-collection` | `collection` names a different collection than the one the package is bound to. |
+| `stale-binding` | Another config bound to the same collection was built more recently. This package is from the stale one. |
+| `name-mismatch` | The package's name differs from the live collection's, and Vortex's upload renames the page. With `allowNameMismatch: true` it uploads under the live name, which leaves the page's name alone. |
+| `nexus-would-refuse` / `upload-failed` / `not-logged-in` | Nexus would refuse the package, did refuse it, or Vortex is not logged in. |
+
 ### Failure codes worth knowing
 
 | Code | Meaning |

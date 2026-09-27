@@ -324,6 +324,57 @@ export const TOOLS: ToolSpec[] = [
     properties: { path: str("The other game folder."), profileId: str("Profile to use there."), store: str("steam / gog / xbox / epic."), assumeGameClosed: assume },
     required: ["path", "profileId"],
   },
+
+  // ── collections (for curators) ────────────────────────────────────────
+  {
+    name: "collection_list",
+    verb: "collection.list",
+    mutates: false,
+    description: "The curator's collections on this PC: exact name, package id, last built version and date, and the Nexus collection each is bound to.",
+    properties: {},
+  },
+  {
+    name: "collection_manifest",
+    verb: "collection.manifest",
+    mutates: false,
+    description: "What a built collection package holds: name, version, game version and store, mod count, bundled mods. By name (the newest build) or by path.",
+    properties: { name: str("The collection's exact name, from collection_list."), path: str("A built .ehcoll file instead.") },
+  },
+  {
+    name: "collection_build",
+    verb: "collection.build",
+    mutates: true,
+    description:
+      "Build a new version of one of the curator's collections from the current Vortex setup, exactly as the Build page does. " +
+      "Use the EXACT name from collection_list: a different name starts a new collection. Everything not given (author, " +
+      "description, readme, changelog, per-mod decisions) is kept from the last build. Try dryRun:true first.",
+    properties: {
+      name: str("The collection's exact name."),
+      version: str("New version, x.y.z, newer than the last build."),
+      changelog: str("What changed in this version (replaces the kept changelog)."),
+      description: str("Collection description (default: the last build's)."),
+      readme: str("Readme (default: the last build's)."),
+      author: str("Author (default: the last build's)."),
+      gameVersion: str("Game version the collection needs (default: the installed game's)."),
+      gameVersionPolicy: { type: "string", enum: ["exact", "minimum"] },
+      dryRun: bool("Say what would be built without building."),
+    },
+    required: ["name", "version"],
+  },
+  {
+    name: "collection_upload_draft",
+    verb: "collection.upload",
+    mutates: true,
+    description:
+      "Upload a built collection to its Nexus collection as a DRAFT revision. It never publishes: tell the curator the " +
+      "draft is waiting for them to publish on Nexus. Refuses a package bound to no collection, a stale package, or one " +
+      "whose name differs from the live collection's (an upload would rename the page).",
+    properties: {
+      name: str("The collection's exact name (uploads its newest build)."),
+      path: str("A built .ehcoll file instead."),
+      collection: str("The Nexus collection slug you expect, as a check."),
+    },
+  },
 ];
 
 /** What the AI is told when it connects: how to work in Vortex safely, for someone who may be new to modding. */
@@ -355,4 +406,8 @@ export const GUIDE = [
   "- logs_list, then read the newest crash log (logs_read with head:200). The probable call stack and the modules or",
   "  plugins it names usually point at the cause. Explain it simply, propose a fix (disable, update, reorder, or a missing",
   "  requirement), apply it with the user's OK, deploy, and ask them to try again.",
+  "",
+  "Collections (for curators):",
+  "- collection_list first; build under the exact name it shows. collection_build with dryRun:true, then for real.",
+  "- collection_upload_draft makes a DRAFT on Nexus. There is no publish tool: publishing is the curator's own click.",
 ].join("\n");
