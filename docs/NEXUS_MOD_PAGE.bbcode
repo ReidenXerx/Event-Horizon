@@ -14,6 +14,47 @@
 
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/divider.png[/img][/center]
 
+[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1b5429109c2dff50192aed3d38c3597ba4aeb995/docs/img/agents-hero.jpg[/img][/center]
+
+[size=5][b][color=#ffb15c]New in 0.2.17: tell an AI what you want, and it does the modding[/color][/b][/size]
+
+Connect an AI assistant such as Claude to Vortex, then say what you want in plain words. It does the work in Vortex and explains it as it goes, so a newcomer doesn't need to know what a FOMOD, a master or a load order is.
+
+[b]Set it up:[/b] Event Horizon → [b]Agents[/b] → [b]Turn on[/b] → [b]Add Event Horizon to Claude Desktop[/b]. One click, and nothing else to install: the connector runs on Vortex itself. For Claude Code or another MCP app, the same page has the command to copy. [url=https://github.com/ReidenXerx/Event-Horizon/blob/master/docs/AGENTS_QUICKSTART.md]The setup guide[/url] takes two minutes.
+[size=2]Claude Code needs a paid Claude plan (Pro, Max, Team or Enterprise). On a free account, use Claude Desktop's one-click button: its local connectors list no plan requirement, and the free plan's daily limits apply.[/size]
+
+[b]Then just ask:[/b]
+[list]
+[*][i]"Install the Unofficial Fallout 4 Patch and pick the right options for my setup."[/i][/*]
+[*][i]"My game crashes when I load a save. Find out why and fix it."[/i][/*]
+[*][i]"Make this texture mod win over the other one."[/i][/*]
+[*][i]"Turn off every mod that changes the body, I want to test without them."[/i][/*]
+[/list]
+
+[size=4][b]What it does[/b][/size]
+[list]
+[*][b]Reads an installer before it installs.[/b] It sees every page and option of a FOMOD first, flags the options that need mods you don't have, and answers the installer by name.[/*]
+[*][b]Hunts crashes.[/b] It reads the newest crash log and your F4SE or SKSE logs, finds the mod or plugin they name, explains it simply, and proposes the fix.[/*]
+[*][b]Settles conflicts properly.[/b] File conflicts get rules, and a plugin order that has to survive sorting becomes a LOOT rule.[/*]
+[*][b]Brings a wiped load order back.[/b] If your plugin list gets emptied, it restores the last good one.[/*]
+[*][b]Shows its work.[/b] The Agents page lists every command live: what it did, what was verified, and which installer questions it answered for you.[/*]
+[/list]
+
+[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1b5429109c2dff50192aed3d38c3597ba4aeb995/docs/img/agents-measured.jpg[/img][/center]
+
+[size=4][b]What keeps it safe[/b][/size]
+[list]
+[*][b]Nothing is claimed that wasn't checked.[/b] Every change is read back from Vortex before it's reported done.[/*]
+[*][b]It asks before removing anything[/b], never touches the game while it runs, and never moves a game folder that still has mods deployed.[/*]
+[*][b]It refuses a silent replace.[/b] An install that Vortex would quietly turn into a replace in every profile is refused, and the refusal says why.[/*]
+[*][b]Off until you turn it on.[/b] It works only on this PC, needs a key that changes every time Vortex starts, and refuses web pages.[/*]
+[/list]
+
+[center][url=https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1b5429109c2dff50192aed3d38c3597ba4aeb995/docs/img/shot-agents.jpg][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1b5429109c2dff50192aed3d38c3597ba4aeb995/docs/img/shot-agents.jpg[/img][/url][/center]
+[center][i]The Agents page: connect in one click, then watch every change it makes, verified.[/i][/center]
+
+[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/divider.png[/img][/center]
+
 [size=5][b][color=#ffb15c]Built in public, and nothing to run but JavaScript[/color][/b][/size]
 [list]
 [*][b]No executable, no DLL, no native code.[/b] The download is the JavaScript that Vortex loads: checked against the 0.2.12 archive, it holds script files, their source maps, a licence and one icon. The programs it ever starts are ones you already have — your game, through Vortex's own launcher; Vortex's own 7-Zip; Windows' reg.exe, to read which runtimes are installed — and Microsoft's runtime installers, downloaded from Microsoft, only when you press [i]Install the missing ones[/i].[/*]
@@ -34,6 +75,7 @@ Event Horizon is a Vortex extension in two halves. [b]Curators[/b] get a workben
 [*][b]Collections live on Nexus.[/b] Press [i]Add collection[/i] on an Event Horizon collection's Nexus page and Event Horizon opens its install. When the curator publishes a new revision, you are offered the update when Vortex starts and on the collection's card, and it installs into its own profile, so the version you were playing stays one click away.[/*]
 [*][b]A new look.[/b] Home is a dashboard now: the collection you are playing, how healthy it is, what your game is made of and what modding costs your disk.[/*]
 [*][b]A different game version is a warning, not a wall.[/b] If the curator played on another version of the game, you are told exactly which mods care, and you decide.[/*]
+[*][b]A wiped plugin list is caught.[/b] Fallout 4 AE's own load-order manager can empty the shared plugins.txt, and Vortex then takes that empty list into your profiles. Event Horizon remembers each profile's last good plugin list and, when nearly everything suddenly turns off, offers to restore it with one click.[/*]
 [*][b]Missing runtimes, found and fixed.[/b] The Microsoft runtimes that script-extender plugins, xEdit and ENB need are checked before an install and in the Doctor, with a button that installs the missing ones.[/*]
 [/list]
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/players.jpg[/img][/center]
@@ -161,7 +203,7 @@ Built by [b]DuduPhudu[/b] and [b]Bluuuk[/b].
 [*][b]LOOT.[/b] The place your own plugins take between the collection's is LOOT's work.[/*]
 [*][b]Every mod author[/b] whose work ends up in a collection. Event Horizon downloads each mod from its author's own Nexus page.[/*]
 [/list]
-Source, issues, full documentation and a changelog written for the people who use it: [url=https://github.com/ReidenXerx/Event-Horizon]github.com/ReidenXerx/Event-Horizon[/url]. Community: [url=https://discord.gg/JcaXUzWQqF]Dudu's Den on Discord[/url].
+Source, issues, full documentation and a changelog written for the people who use it: [url=https://github.com/ReidenXerx/Event-Horizon]github.com/ReidenXerx/Event-Horizon[/url]. Community: [url=https://discord.gg/H9yqPhjuY5]Dudu's Den on Discord[/url].
 
 [center][i]Vortex is a black hole. Collections, rules, installer answers, load orders — they all get pulled in and never come out the same on the other side. Event Horizon is the boundary that captures everything before it crosses over.[/i][/center]
 
