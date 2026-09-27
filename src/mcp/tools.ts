@@ -384,7 +384,9 @@ export const TOOLS: ToolSpec[] = [
     description:
       "Upload a built collection to its Nexus collection as a DRAFT revision. It never publishes: tell the curator the " +
       "draft is waiting for them to publish on Nexus. Refuses a package bound to no collection, a stale package, or one " +
-      "whose name differs from the live collection's (an upload would rename the page).",
+      "whose name differs from the live collection's (an upload would rename the page). The reply's " +
+      "changelog holds this version's changelog (markdown, bbcode) and the revision's id: EH cannot set it on Nexus " +
+      "itself, so post it with Nexus's GraphQL createChangelog(revisionId, description) or give it to the curator.",
     properties: {
       name: str("The collection's exact name (uploads its newest build)."),
       path: str("A built .ehcoll file instead."),

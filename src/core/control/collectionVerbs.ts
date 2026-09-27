@@ -145,6 +145,48 @@ async function packageFor(body: Body): Promise<string> {
   return file;
 }
 
+/**
+ * This version's changelog, ready for the Nexus revision (owner, 2026-09-28:
+ * the upload's one minus was an empty changelog on the draft).
+ *
+ * Not sent from here: Vortex has no event that sets a revision's changelog,
+ * and Event Horizon never touches the player's Nexus login. Nexus's v2
+ * GraphQL has `createChangelog(revisionId, description)`, which a caller with
+ * an API key can post; `revisionId` is included for exactly that. The Build
+ * page's own flow is the same text, pasted by hand.
+ */
+async function revisionChangelog(
+  api: types.IExtensionApi,
+  m: EhcollManifest,
+  slug: string,
+  revisionNumber: number | undefined,
+): Promise<Record<string, unknown> | undefined> {
+  const entries = m.package.changelog ?? [];
+  const entry = entries.find((e) => e.version === m.package.version) ?? entries[0];
+  if (entry === undefined) return undefined;
+  const { renderChangelogBbcode, renderChangelogMarkdown } = await import("../changelog/changelog");
+  let revisionId: unknown;
+  if (revisionNumber !== undefined) {
+    try {
+      const res = (await api.emitAndAwait?.("get-nexus-collection-revision", slug, revisionNumber)) as unknown[] | undefined;
+      revisionId = (res?.[0] as { id?: unknown } | undefined)?.id;
+    } catch {
+      revisionId = undefined;
+    }
+  }
+  return {
+    sentToNexus: false,
+    why:
+      "Vortex offers no way to set a revision's changelog, and Event Horizon never uses the Nexus login. " +
+      "Post `markdown` with Nexus's GraphQL mutation createChangelog(revisionId, description) using an API key, " +
+      "or paste it into the draft's changelog on Nexus.",
+    version: entry.version,
+    ...(revisionId !== undefined ? { revisionId } : {}),
+    markdown: renderChangelogMarkdown(m.package.name, [entry]),
+    bbcode: renderChangelogBbcode(entry),
+  };
+}
+
 export const COLLECTION_VERBS = {
   /** Every collection config on this machine: name, package id, last build, Nexus binding. */
   "collection.list": {
@@ -302,6 +344,7 @@ export const COLLECTION_VERBS = {
       }
       await cfg.rememberNexusCollectionLink(getCollectionsConfigDir(), m.package.id, outcome.link).catch(() => false);
       const url = up.nexusCollectionUrl(outcome.link, outcome.revisionNumber);
+      const changelog = await revisionChangelog(api, m, outcome.link.slug, outcome.revisionNumber);
       api.sendNotification?.({ type: "success", title: "Draft uploaded to Nexus", message: `${live.name}: publish it on Nexus when it is ready.` });
       return {
         collection: outcome.link.slug,
@@ -311,6 +354,7 @@ export const COLLECTION_VERBS = {
         status: outcome.revisionStatus ?? "draft",
         url,
         note: "A DRAFT. Publishing it is the curator's click on Nexus.",
+        ...(changelog !== undefined ? { changelog } : {}),
         verified: { draft: true, revisionNumber: outcome.revisionNumber },
       };
     },

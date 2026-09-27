@@ -171,7 +171,23 @@ describe("collection.upload: a draft, only where this package belongs", () => {
     expect(h.remember).toHaveBeenCalled();
   });
 
-  it("refuses a package whose name differs from the live collection's (it would rename the page)", async () => {
+  it("returns this version's changelog, ready for the revision, with the revision's id", async () => {
+    const file = manifest("ivy.ehcoll", IVY, "Ivy's Panties - Event Horizon", "1.0.37");
+    h.manifests.get(file).package.changelog = [
+      { version: "1.0.37", date: "2026-09-28T00:00:00.000Z", notes: "AE fixes and the Reapers reinstall." },
+      { version: "1.0.36", date: "2026-09-27T00:00:00.000Z", notes: "Moved to AE." },
+    ];
+    h.built = [{ fullPath: file }];
+    h.upload.mockResolvedValue(ok);
+    const withRevision = { ...api, emitAndAwait: async (ev: string) => (ev === "get-nexus-collection-revision" ? [{ id: 9901 }] : []) };
+    const r = (await VERBS["collection.upload"]!.run(withRevision, { name: "x" })) as any;
+    expect(r.changelog).toMatchObject({ sentToNexus: false, version: "1.0.37", revisionId: 9901 });
+    expect(r.changelog.markdown).toContain("AE fixes and the Reapers reinstall.");
+    expect(r.changelog.markdown).not.toContain("Moved to AE.");
+    expect(typeof r.changelog.bbcode).toBe("string");
+  });
+
+    it("refuses a package whose name differs from the live collection's (it would rename the page)", async () => {
     h.built = [{ fullPath: manifest("ivy.ehcoll", IVY, "Ivy's Panties AE") }];
     expect(await code(run("collection.upload", { name: "Ivy's Panties AE" }))).toBe("name-mismatch");
     expect(h.upload).not.toHaveBeenCalled();

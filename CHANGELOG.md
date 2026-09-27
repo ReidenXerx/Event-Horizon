@@ -12,6 +12,12 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
 
 ## [Unreleased]
 
+### Let an AI do your modding
+- **A draft upload now brings its changelog along.** When an AI uploads your collection as a draft, the reply
+  includes this version's changelog, ready for Nexus, and the revision's id. The agent can post it to the draft
+  with your Nexus API key, or hand it to you to paste. Event Horizon can't set it on Nexus itself: Vortex offers
+  no way to, and Event Horizon never uses your Nexus login.
+
 ### Building collections
 - **Next-gen F4SE plugins are no longer reported as "cannot load" on newer game versions.** Plugins built with
   CommonLibF4 for the 1.11 game list only the game version they were built on, but declare that they work on any 1.11
