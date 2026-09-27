@@ -7,12 +7,31 @@
 [center][size=4][b]A Vortex extension that installs a collection exactly as its curator built it — every archive checked by hash, the load order pinned — and then keeps it that way.[/b][/size][/center]
 
 [center]
-[url=https://github.com/ReidenXerx/Event-Horizon/actions/workflows/tests.yml][img]https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FReidenXerx%2FEvent-Horizon%2Fbadges%2Ftests.json&style=for-the-badge&labelColor=2b2b2b&logo=vitest&logoColor=white[/img][/url] [url=https://www.virustotal.com/gui/file/0f7cc0302cab73c8b2b1360f1a4848b003e3d5d6ade5194fbe1f2425cb2a3f97][img]https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FReidenXerx%2FEvent-Horizon%2Fmaster%2Fdocs%2Fvt-badge.json&style=for-the-badge&labelColor=2b2b2b&logo=virustotal&logoColor=white[/img][/url] [url=https://github.com/ReidenXerx/Event-Horizon/blob/master/LICENSE][img]https://img.shields.io/badge/license-PolyForm%20Strict%201.0.0-blue?style=for-the-badge&labelColor=2b2b2b[/img][/url] [url=https://github.com/ReidenXerx/Event-Horizon][img]https://img.shields.io/badge/source-GitHub-181717?style=for-the-badge&labelColor=2b2b2b&logo=github&logoColor=white[/img][/url]
+[url=https://github.com/ReidenXerx/Event-Horizon/actions/workflows/tests.yml][img]https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FReidenXerx%2FEvent-Horizon%2Fbadges%2Ftests.json&style=for-the-badge&labelColor=2b2b2b&logo=vitest&logoColor=white[/img][/url] [url=https://www.virustotal.com/gui/file/d36f24458dc5cba1d84e2a095f0ed586b7bd80a6e7a5109684651d79370c45f5][img]https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FReidenXerx%2FEvent-Horizon%2Fmaster%2Fdocs%2Fvt-badge.json&style=for-the-badge&labelColor=2b2b2b&logo=virustotal&logoColor=white[/img][/url] [url=https://github.com/ReidenXerx/Event-Horizon/blob/master/LICENSE][img]https://img.shields.io/badge/license-PolyForm%20Strict%201.0.0-blue?style=for-the-badge&labelColor=2b2b2b[/img][/url] [url=https://github.com/ReidenXerx/Event-Horizon][img]https://img.shields.io/badge/source-GitHub-181717?style=for-the-badge&labelColor=2b2b2b&logo=github&logoColor=white[/img][/url]
 [url=https://github.com/ReidenXerx/Event-Horizon][img]https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FReidenXerx%2FEvent-Horizon%2Fbadges%2Floc.json&style=for-the-badge&labelColor=2b2b2b[/img][/url] [url=https://github.com/ReidenXerx/Event-Horizon/commits][img]https://img.shields.io/github/last-commit/ReidenXerx/Event-Horizon?label=last%20commit&style=for-the-badge&labelColor=2b2b2b[/img][/url]
 [img]https://img.shields.io/badge/Vortex-extension-4a4a4a?style=for-the-badge&labelColor=2b2b2b[/img] [img]https://img.shields.io/badge/status-beta-8a5a00?style=for-the-badge&labelColor=2b2b2b[/img]
 [/center]
 
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/divider.png[/img][/center]
+
+[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@129d1ebfdb531d4b9f8cae6cc0b838f34f3d16d4/docs/img/hashing.jpg[/img][/center]
+
+[size=5][b][color=#ffb15c]New in 0.2.19: 33× faster hashing, with Event Horizon's own pipeline[/color][/b][/size]
+
+Every check Event Horizon makes hashes files: building a collection, verifying an install, the Doctor, matching downloads. That hashing used to run inside Vortex's own process, on the one thread that also runs Vortex's whole window. Now Event Horizon hashes with its own pipeline: background workers on every core but one, outside Vortex, so Vortex's window stays responsive.
+
+[list]
+[*][b]Measured on the real 1,751-mod Meridia's Panties collection[/b], full re-hash. Before, inside Vortex: 356,676 files in 47 minutes (126 files a second). Now: 320,986 files in 1 minute 25 seconds (3,776 files a second).[/*]
+[*][b]33× less waiting, and 30× more files a second.[/b] Throughput reaches 3 GB/s off the disk, where it used to be about 3 MB/s with the disk sitting idle.[/*]
+[*][b]Same checksums, byte for byte.[/b] Everything already built or installed stays valid. There's nothing to set up, and if the workers can't start, Event Horizon hashes the old way.[/*]
+[/list]
+
+[b]Also in 0.2.19:[/b]
+[list]
+[*]AI agents can build a collection and upload it to Nexus as a draft. There is no publish tool: publishing stays the curator's click.[/*]
+[*]Agents can answer Vortex's External Changes question.[/*]
+[*]A switched-off bundled mod no longer stops a build.[/*]
+[/list]
 
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1b5429109c2dff50192aed3d38c3597ba4aeb995/docs/img/agents-hero.jpg[/img][/center]
 
@@ -57,9 +76,9 @@ Connect an AI assistant such as Claude to Vortex, then say what you want in plai
 
 [size=5][b][color=#ffb15c]Built in public, and nothing to run but JavaScript[/color][/b][/size]
 [list]
-[*][b]No executable, no DLL, no native code.[/b] The download is the JavaScript that Vortex loads: checked against the 0.2.18 archive, it holds script files, their source maps, Vortex's info.json, a licence and one icon. The programs it ever starts are ones you already have — your game, through Vortex's own launcher; Vortex's own 7-Zip; Windows' reg.exe, to read which runtimes are installed — and Microsoft's runtime installers, downloaded from Microsoft, only when you press [i]Install the missing ones[/i].[/*]
+[*][b]No executable, no DLL, no native code.[/b] The download is the JavaScript that Vortex loads: checked against the 0.2.19 archive, it holds script files, their source maps, Vortex's info.json, a licence and one icon. The programs it ever starts are ones you already have — your game, through Vortex's own launcher; Vortex's own 7-Zip; Windows' reg.exe, to read which runtimes are installed — and Microsoft's runtime installers, downloaded from Microsoft, only when you press [i]Install the missing ones[/i].[/*]
 [*][b]Every line is readable:[/b] [url=https://github.com/ReidenXerx/Event-Horizon]github.com/ReidenXerx/Event-Horizon[/url]. [b]Every push runs the whole test suite in public[/b] on GitHub Actions, and the tests badge above is that run's live count, not a number anybody typed.[/*]
-[*][b]Scanned on VirusTotal.[/b] The badge is generated from the scan and names the build it covers — today that is 0.2.18 — and turns red by itself if the result ever changes.[/*]
+[*][b]Scanned on VirusTotal.[/b] The badge is generated from the scan and names the build it covers — today that is 0.2.19 — and turns red by itself if the result ever changes.[/*]
 [/list]
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/divider.png[/img][/center]
 
