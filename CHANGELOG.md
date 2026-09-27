@@ -10,9 +10,30 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
-## [Unreleased]
+## [0.2.19] — 2026-09-27
 
-### For curators: releases while you sleep
+# 33× faster hashing: Event Horizon's own hashing pipeline
+
+Every check Event Horizon makes (building a collection, verifying an install, the Doctor, matching downloads) comes
+down to hashing files. Until now that hashing ran inside Vortex's own process, on the same single thread that runs
+Vortex's whole window, so it crawled no matter how fast your PC is. Event Horizon now hashes with **its own pipeline**:
+background workers on every core of your machine but one, outside Vortex, with Vortex's window staying responsive.
+
+Measured on a real 1,751-mod Skyrim collection (Meridia's Panties), full re-hash of every file:
+
+- **Before, hashing inside Vortex:** 356,676 files in **47 minutes** (126 files a second).
+- **Now, Event Horizon's own pipeline:** 320,986 files in **1 minute 25 seconds** (3,776 files a second).
+
+**33× less waiting, 30× more files per second**, up to 3 GB/s straight off the disk, where hashing inside Vortex
+managed about 3 MB/s while the disk sat idle.
+
+- **Same checksums, byte for byte.** Only where the work runs changed, so every collection already built or
+  installed stays valid.
+- **Nothing to set up.** The workers are Vortex's own executable, start in a quarter of a second when there is real
+  work, and stop on their own when it is done.
+- **It cannot make anything fail.** If the workers cannot start, a file is hashed the old way, exactly as before.
+
+### Let an AI do your modding
 - **An AI can build your collection's next version and upload it to Nexus as a draft.** Four new agent tools: list
   your collections, read a built package, build (exactly as the Build page does, keeping your saved decisions), and
   upload as a draft. **There is no publish tool**: the draft waits on Nexus for your own click.
@@ -24,13 +45,6 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
   file it saved), Vortex stops the deploy to ask what to do. The AI couldn't see that question and waited until the
   connection dropped. Now the deploy says right away that Vortex is asking, lists the files, and the AI can answer
   (keep the change, undo it, or keep the newer file) or ask you first. It never keeps a deletion without your OK.
-
-### Faster everywhere files are checked
-- **Hashing uses every core now.** Checking files (building a collection, verifying an install, the Doctor, matching
-  downloads) used to run on Vortex's own busy thread: about 3 MB/s on the curator's Skyrim setup, with the disk idle.
-  It now runs in background workers, one per core but one, with Vortex's window staying responsive: 3 GB/s measured
-  on the same files. A full re-check of a 1,750-mod collection goes from over an hour to a few minutes. The results
-  are the same checksums as before, so nothing already built or installed changes.
 
 ### Building collections
 - **Switching a bundled mod off leaves it out, like any other mod.** It used to refuse the build, and only at the
