@@ -56,7 +56,8 @@ Connect an AI assistant such as Claude to Vortex, then say what you want in plai
 
 **Every change is checked before it is reported done**, it asks before removing anything, it never works under a
 running game, and every step shows live on the **Agents** page. It is off until you turn it on, works only on your PC,
-and connects to Claude Desktop in one click. Nothing extra to install: the connector runs on Vortex itself.
+and connects to Claude Desktop in one click (the route for a free Claude account; Claude Code needs a paid plan).
+Nothing extra to install: the connector runs on Vortex itself.
 **[Set it up in two minutes →](docs/AGENTS_QUICKSTART.md)**
 
 <p align="center"><img src="docs/img/shot-agents.png" alt="The Agents page: connect Claude in one click, then watch every change it makes, verified" width="100%"></p>

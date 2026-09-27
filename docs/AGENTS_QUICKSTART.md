@@ -18,6 +18,10 @@ You do not need to know what a FOMOD, a master or a load order is. It does, and 
 
 That's it. Nothing else to install: the connector runs on Vortex itself.
 
+**Which Claude plan?** Claude Code needs a paid Claude plan (Pro, Max, Team or Enterprise). On a **free** account, use
+**Claude Desktop**: its local connectors list no plan requirement, and the free plan's daily usage limits apply. A long
+modding session fits a paid plan better.
+
 ## Then just ask
 
 Some things people ask:
