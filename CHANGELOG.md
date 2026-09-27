@@ -10,6 +10,39 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.17] — 2026-09-27
+
+Tell an AI what you want, and it does the modding in Vortex for you. New players no longer need to learn what a
+FOMOD, a master or a load order is to get a working setup.
+
+### Let an AI do your modding
+- **Talk to your mods.** Connect an AI assistant such as Claude, then say what you want in plain words: *"Install
+  this mod and pick the right options for my setup"*, *"My game crashes when I load a save, find out why and fix
+  it"*, *"Make this texture mod win over the other one"*. It does the work in Vortex and explains it as it goes.
+  Open **Event Horizon → Agents**, turn it on, and click **Add Event Horizon to Claude Desktop**. Nothing else to
+  install: the connector runs on Vortex itself. Setup guide: `docs/AGENTS_QUICKSTART.md`.
+- **It reads an installer before it installs.** For a mod with a FOMOD installer, it sees every page and option
+  first, including which options would add plugins needing mods you do not have, and answers the installer by
+  name. Tested on a real patch hub: it flagged exactly the five patches for mods the setup lacked.
+- **It hunts crashes.** It reads the newest crash log and your F4SE/SKSE logs, finds the mod or plugin named in
+  them, explains it simply, and proposes a fix.
+- **It fixes conflicts and load order properly.** File conflicts are settled with rules, and plugin orders that
+  must survive LOOT sorting become LOOT rules.
+- **Nothing is claimed that was not checked.** Every change is read back from Vortex before it is reported done.
+  It asks before removing anything, never touches the game while it runs, never moves a game folder that still
+  has mods deployed, and refuses an install that Vortex would silently turn into a replace in every profile.
+- **You can watch it work.** The Agents page shows every command live: what it did, what was verified, and the
+  installer questions it answered for you. Each change also shows a Vortex notification.
+- **Off until you turn it on.** It works only on your PC, needs a key that changes every time Vortex starts, and
+  refuses web pages.
+
+### Using Event Horizon
+- **A wiped plugin list is caught.** Fallout 4 AE's own load-order manager can rewrite the shared plugins.txt,
+  and Vortex then takes the empty list into your profiles. Event Horizon now remembers each profile's last good
+  plugin list and, when nearly everything suddenly turns off, offers to restore it with one click.
+- **Script extender `.trace` files are no longer reported as changed.** Plugins write them while the game runs.
+- **Hashing reads files in 8 MB pieces**, which is faster on big archives inside Vortex 2.7.
+
 ## [0.2.16] — 2026-09-26
 
 Faster where it was slow for no good reason, and safe when Event Horizon is installed twice.
