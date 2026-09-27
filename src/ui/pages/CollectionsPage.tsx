@@ -925,7 +925,12 @@ export function ReceiptCard(props: {
         </div>
         {((update !== undefined && props.onUpdate !== undefined) || props.onUninstall !== undefined) && (
           <div className="eh-row">
-            {update !== undefined && props.onUpdate !== undefined && (
+            {update?.hold !== undefined && (
+              <span className="eh-muted" title={update.hold.message}>
+                Revision {update.latestRevision} needs game {update.hold.required} (yours is {update.hold.installed})
+              </span>
+            )}
+            {update !== undefined && update.hold === undefined && props.onUpdate !== undefined && (
             <Button
               intent="primary"
               size="sm"

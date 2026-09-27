@@ -15,9 +15,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   downloadRevision,
   getCollectionUpdateStore,
+  notifyUpdate,
   pendingUpdateFor,
   startCollectionUpdate,
   type UpdateDeps,
+  withGameVersionHolds,
 } from "./collectionUpdates";
 import { getEHRuntime } from "./ehRuntime";
 import type { CollectionUpdate } from "../../core/nexus/collectionUpdates";
@@ -335,5 +337,40 @@ describe("an install that starts while the update downloads", () => {
       "opened",
     );
     expect(d.openInstall).toHaveBeenCalled();
+  });
+});
+
+describe("an update the player's game cannot run (owner poll, 2026-09-27)", () => {
+  // Ivy 1.0.36 is revision 6 on Nexus, built for 1.11.240.0; OG players are on 1.10.163.
+  const ae = (): CollectionUpdate => ({ ...update(), latestRevision: 6, installed: { ...update().installed, revisionNumber: 5 }, requiredGameVersions: ["1.11.240.0"] });
+
+  it("is held with the reason when the player's game is older than the revision's", async () => {
+    const { api } = fakeApi();
+    const [held] = await withGameVersionHolds(api, "fallout4", [ae()], async () => "1.10.163.0");
+    expect(held!.hold).toMatchObject({ required: "1.11.240", installed: "1.10.163" });
+    expect(held!.hold!.message).toMatch(/revision 6 needs .* 1\.11\.240\. Your game is 1\.10\.163, so you stay on revision 5/);
+  });
+
+  it("is offered as usual once the game matches, or is newer, or cannot be read", async () => {
+    const { api } = fakeApi();
+    for (const version of ["1.11.240", "1.11.240.0", "1.11.300.0", undefined]) {
+      const [u] = await withGameVersionHolds(api, "fallout4", [ae()], async () => version);
+      expect(u!.hold).toBeUndefined();
+    }
+    // A revision Nexus records no version for is never held.
+    const [none] = await withGameVersionHolds(api, "fallout4", [update()], async () => "1.10.163");
+    expect(none!.hold).toBeUndefined();
+  });
+
+  it("notifies with no Update action, and the Update action refuses without downloading", async () => {
+    const { api, notifications, calls } = fakeApi({ revision: REVISION, urls: URLS });
+    const [held] = await withGameVersionHolds(api, "fallout4", [ae()], async () => "1.10.163");
+    notifyUpdate(api, held!);
+    const notice = notifications.find((n) => n.id === `eh-collection-update-${held!.packageId}`);
+    expect(notice).toMatchObject({ type: "warning", message: held!.hold!.message });
+    expect(notice!.actions).toBeUndefined();
+
+    await expect(startCollectionUpdate(api, held!, deps())).resolves.toBe("refused");
+    expect(calls).toHaveLength(0);
   });
 });

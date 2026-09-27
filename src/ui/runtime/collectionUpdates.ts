@@ -22,11 +22,11 @@
 
 import * as path from "path";
 
-import { selectors, type types } from "@nexusmods/vortex-api";
+import { selectors, util, type types } from "@nexusmods/vortex-api";
 
 import { listReceipts } from "../../core/installLedger";
 import { ehLog } from "../../core/logging/ehLog";
-import { findCollectionUpdates, type CollectionUpdate } from "../../core/nexus/collectionUpdates";
+import { findCollectionUpdates, gameVersionHold, type CollectionUpdate } from "../../core/nexus/collectionUpdates";
 import { isLoggedInToNexus } from "../../core/nexus/collectionUpload";
 import { getVortexUserDataPath } from "../../core/paths/appDataPaths";
 import type { InstallReceipt } from "../../types/installLedger";
@@ -187,7 +187,9 @@ async function runOneCheck(
 ): Promise<CollectionUpdate[]> {
   const updates = getCollectionUpdateStore();
   const receipts = (await listReceipts(getVortexUserDataPath())).filter((r) => r.gameId === gameId);
-  const { updates: found, answeredSlugs } = await findCollectionUpdates(api, receipts);
+  const checked = await findCollectionUpdates(api, receipts);
+  const found = await withGameVersionHolds(api, gameId, checked.updates);
+  const { answeredSlugs } = checked;
   updates.replaceForGame(gameId, found, answeredSlugs);
   const trackedSlugs = new Set(
     receipts
@@ -208,7 +210,18 @@ async function runOneCheck(
   return found;
 }
 
-function notifyUpdate(api: types.IExtensionApi, update: CollectionUpdate): void {
+export function notifyUpdate(api: types.IExtensionApi, update: CollectionUpdate): void {
+  if (update.hold !== undefined) {
+    // No Update: the player's game cannot run this revision (owner poll,
+    // 2026-09-27). Said rather than hidden, so they learn the collection moved.
+    api.sendNotification?.({
+      id: `eh-collection-update-${update.packageId}`,
+      type: "warning",
+      title: "Collection update needs a newer game",
+      message: update.hold.message,
+    });
+    return;
+  }
   api.sendNotification?.({
     id: `eh-collection-update-${update.packageId}`,
     type: "info",
@@ -229,6 +242,59 @@ function notifyUpdate(api: types.IExtensionApi, update: CollectionUpdate): void 
 }
 
 /** What Update needs from outside, replaceable in tests. */
+/**
+ * The player's installed game version: Vortex's state, else the game
+ * extension's own reading of the executable (Vortex's state is often empty).
+ */
+export async function installedGameVersion(api: types.IExtensionApi, gameId: string): Promise<string | undefined> {
+  const state = api.getState() as {
+    persistent?: { gameSettings?: Record<string, { version?: string }> };
+    settings?: { gameMode?: { discovered?: Record<string, { version?: string }> } };
+  };
+  const known = state.persistent?.gameSettings?.[gameId]?.version ?? state.settings?.gameMode?.discovered?.[gameId]?.version;
+  if (typeof known === "string" && known !== "") return known;
+  try {
+    const game = (util as unknown as {
+      getGame?: (id: string) => { getInstalledVersion?: (d: unknown) => PromiseLike<string> } | undefined;
+    }).getGame?.(gameId);
+    const discovery = state.settings?.gameMode?.discovered?.[gameId];
+    if (game?.getInstalledVersion === undefined || discovery === undefined) return undefined;
+    const v = await game.getInstalledVersion(discovery);
+    return typeof v === "string" && v !== "" ? v : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Marks the updates the player's game cannot take: no Update for those, only the reason. */
+export async function withGameVersionHolds(
+  api: types.IExtensionApi,
+  gameId: string,
+  found: readonly CollectionUpdate[],
+  readVersion: (api: types.IExtensionApi, gameId: string) => Promise<string | undefined> = installedGameVersion,
+): Promise<CollectionUpdate[]> {
+  if (!found.some((u) => u.requiredGameVersions !== undefined)) return [...found];
+  const installed = await readVersion(api, gameId);
+  const gameName =
+    (util as unknown as { getGame?: (id: string) => { name?: string } | undefined }).getGame?.(gameId)?.name ?? "the game";
+  return found.map((u) => {
+    const held = gameVersionHold(u.requiredGameVersions, installed);
+    if (held === undefined) return u;
+    const message =
+      `${u.packageName} revision ${u.latestRevision} needs ${gameName} ${held.required}. ` +
+      `Your game is ${held.installed}, so you stay on revision ${u.installed.revisionNumber}: nothing is ` +
+      `downloaded or installed. Once your game is on ${held.required}, the update is offered here.`;
+    ehLog("info", "collection-update.held", {
+      packageId: u.packageId,
+      slug: u.installed.slug,
+      revision: u.latestRevision,
+      required: u.requiredGameVersions,
+      installed,
+    });
+    return { ...u, hold: { ...held, message } };
+  });
+}
+
 export type UpdateDeps = {
   waitForDownload: (
     api: types.IExtensionApi,
@@ -275,6 +341,7 @@ export async function startCollectionUpdate(
   };
 
   if (inFlight.has(update.packageId)) return "refused";
+  if (update.hold !== undefined) return refuse(update.hold.message);
   if (getEHRuntime().getSnapshot().installBusy) {
     return refuse("An install is running. Update when it has finished.");
   }

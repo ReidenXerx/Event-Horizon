@@ -7,7 +7,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { findCollectionUpdates, latestPublishedRevision } from "./collectionUpdates";
+import { compareGameVersions, findCollectionUpdates, gameVersionHold, latestPublishedRevision } from "./collectionUpdates";
 import type { InstallReceipt } from "../../types/installLedger";
 
 const LOGGED_IN = { persistent: { nexus: { userInfo: { name: "player" } } } };
@@ -118,5 +118,23 @@ describe("finding collection updates", () => {
       emitAndAwait: async () => [{ revisionNumber: 99, latestPublishedRevision: { revisionNumber: 13 } }],
     } as never;
     expect(await latestPublishedRevision(api, "tumkz9")).toBe(13);
+  });
+});
+
+describe("game version of a new revision", () => {
+  it("compares versions numerically, treating a missing part as 0", () => {
+    expect(compareGameVersions("1.10.163", "1.11.240.0")).toBe(-1);
+    expect(compareGameVersions("1.11.240", "1.11.240.0")).toBe(0);
+    expect(compareGameVersions("1.10.984.0", "1.10.163.0")).toBe(1);
+    expect(compareGameVersions("unknown", "1.0")).toBeUndefined();
+  });
+
+  it("holds only a player whose game is older than every version the revision was built for", () => {
+    expect(gameVersionHold(["1.11.240.0"], "1.10.163.0")).toEqual({ required: "1.11.240", installed: "1.10.163" });
+    expect(gameVersionHold(["1.11.240.0"], "1.11.240")).toBeUndefined();
+    expect(gameVersionHold(["1.11.240.0"], "1.11.300")).toBeUndefined();
+    expect(gameVersionHold(["1.10.163.0", "1.11.240.0"], "1.10.163")).toBeUndefined();
+    expect(gameVersionHold([], "1.10.163")).toBeUndefined();
+    expect(gameVersionHold(["1.11.240.0"], undefined)).toBeUndefined();
   });
 });

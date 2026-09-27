@@ -26,11 +26,77 @@ export type CollectionUpdate = {
   gameId: string;
   installed: InstallReceiptNexusCollection;
   latestRevision: number;
+  /** The game versions the new revision was built for, as Nexus records them ("1.11.240.0"). */
+  requiredGameVersions?: string[];
+  /**
+   * Set when the player's game cannot run the new revision: then there is no
+   * Update, only this explanation (owner poll, 2026-09-27).
+   */
+  hold?: UpdateHold;
 };
+
+export type UpdateHold = { required: string; installed: string; message: string };
 
 type NexusApi = Pick<types.IExtensionApi, "getState"> & {
   emitAndAwait?: (event: string, ...args: unknown[]) => PromiseLike<unknown>;
 };
+
+const versionParts = (v: string): number[] | undefined => {
+  const m = /^\s*(\d+(?:\.\d+)*)/.exec(v);
+  return m === null ? undefined : m[1]!.split(".").map(Number);
+};
+
+/** Numeric compare, missing parts as 0 ("1.11.240" = "1.11.240.0"). Undefined when either is not a version. */
+export function compareGameVersions(a: string, b: string): number | undefined {
+  const x = versionParts(a);
+  const y = versionParts(b);
+  if (x === undefined || y === undefined) return undefined;
+  for (let i = 0; i < Math.max(x.length, y.length); i += 1) {
+    const d = (x[i] ?? 0) - (y[i] ?? 0);
+    if (d !== 0) return d > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
+/** "1.11.240.0" as people write it: "1.11.240". */
+const shortVersion = (v: string): string => v.trim().replace(/^(\d+\.\d+\.\d+)\.0$/, "$1");
+
+/**
+ * Does the player's game stop them from taking this revision?
+ *
+ * Only when their version is OLDER than every version the revision was built
+ * for: no policy (exact or minimum) lets an older game run it. A newer game is
+ * left to the install-time soft block, which knows the policy; an unknown
+ * version, or a revision with none recorded, is never held here.
+ */
+export function gameVersionHold(
+  required: readonly string[] | undefined,
+  installed: string | undefined,
+): { required: string; installed: string } | undefined {
+  if (installed === undefined || required === undefined || required.length === 0) return undefined;
+  if (!required.every((r) => compareGameVersions(installed, r) === -1)) return undefined;
+  const lowest = [...required].sort((a, b) => compareGameVersions(a, b) ?? 0)[0]!;
+  return { required: shortVersion(lowest), installed: shortVersion(installed) };
+}
+
+/** The game versions a revision was built for, from Nexus. Undefined when Nexus did not say. */
+export async function revisionGameVersions(
+  api: NexusApi,
+  slug: string,
+  revisionNumber: number,
+): Promise<string[] | undefined> {
+  if (api.emitAndAwait === undefined) return undefined;
+  try {
+    const results = (await api.emitAndAwait("get-nexus-collection-revision", slug, revisionNumber)) as unknown[] | undefined;
+    const revision = results?.[0] as { gameVersions?: Array<{ reference?: unknown }> } | undefined;
+    const versions = (revision?.gameVersions ?? [])
+      .map((g) => g?.reference)
+      .filter((r): r is string => typeof r === "string" && r !== "");
+    return versions.length > 0 ? versions : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * The newest published revision number of a collection, or undefined when
@@ -108,12 +174,14 @@ export async function findCollectionUpdates(
     });
     if (latest !== undefined) answeredSlugs.add(installed.slug);
     if (latest !== undefined && latest > installed.revisionNumber) {
+      const requiredGameVersions = await revisionGameVersions(api, installed.slug, latest);
       updates.push({
         packageId: receipt.packageId,
         packageName: receipt.packageName,
         gameId: receipt.gameId,
         installed,
         latestRevision: latest,
+        ...(requiredGameVersions !== undefined ? { requiredGameVersions } : {}),
       });
     }
   }

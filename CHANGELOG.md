@@ -12,6 +12,12 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
 
 ## [Unreleased]
 
+### Collection updates for players
+- **No Update button for a revision your game can't run.** When a collection's new revision was built for a newer
+  game than yours (Ivy moving to Fallout 4 1.11.240 while you're on 1.10.163), the update notice now says so and
+  that you stay on your current revision. Nothing is downloaded or installed. Once your game is on that version,
+  the normal notice and Update button come back. The Collections page shows the same note instead of the button.
+
 ### Faster archive checks in builds
 - **Archive checksums (CRC-32) run on every core too.** The build compares mods against their archives by CRC-32,
   which ran on Vortex's own thread like hashing did. It now runs in the same workers: 1.75 GB/s measured on the
