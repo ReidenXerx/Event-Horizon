@@ -10,6 +10,15 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [Unreleased]
+
+### Building collections
+- **Next-gen F4SE plugins are no longer reported as "cannot load" on newer game versions.** Plugins built with
+  CommonLibF4 for the 1.11 game list only the game version they were built on, but declare that they work on any 1.11
+  version. Event Horizon read only part of that declaration and warned about 19 of them in an Ivy build for
+  1.11.240, while F4SE loaded every one. It now reads the whole declaration. Plugins made only for the 1.10.980
+  generation are still reported on 1.11, because F4SE really does refuse those.
+
 ## [0.2.22] — 2026-09-28
 
 ### Installer-conditional files

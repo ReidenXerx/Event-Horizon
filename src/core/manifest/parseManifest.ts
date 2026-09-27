@@ -1049,6 +1049,8 @@ function readNativePlugins(raw: unknown): EhcollNativePlugin[] | undefined {
         ? { runtimes: e.runtimes as string[] }
         : {}),
       ...(typeof e.hasQuery === "boolean" ? { hasQuery: e.hasQuery } : {}),
+      ...(Number.isInteger(e.addressIndependence) ? { addressIndependence: e.addressIndependence as number } : {}),
+      ...(Number.isInteger(e.structureIndependence) ? { structureIndependence: e.structureIndependence as number } : {}),
     });
   }
   return out;

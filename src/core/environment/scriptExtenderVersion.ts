@@ -63,6 +63,14 @@ export type NativePluginDeclaration =
       runtimes: string[];
       /** Also exports `…Plugin_Query`, so an old-gen extender loads it too. */
       hasQuery: boolean;
+      /**
+       * F4SE only, raw: `addressIndependence` and `structureIndependence` from the
+       * version block. Next-gen CommonLibF4 plugins set bit 2 in both (Address
+       * Library and struct layout for 1.11), which the one `versionIndependent`
+       * boolean could not express per game generation.
+       */
+      addressIndependence?: number;
+      structureIndependence?: number;
     }
   /** Only the old `…Plugin_Query` function: declares nothing readable. */
   | { kind: "query-only" }
@@ -179,6 +187,9 @@ export function readNativePluginDeclaration(
       (block.readUInt32LE(layout.independence) & layout.independentMask) !== 0,
     runtimes,
     hasQuery,
+    ...(extender === "f4se"
+      ? { addressIndependence: block.readUInt32LE(520), structureIndependence: block.readUInt32LE(524) }
+      : {}),
   };
 }
 

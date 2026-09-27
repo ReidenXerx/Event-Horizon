@@ -19,6 +19,7 @@ import {
   judgePlugin,
   runtimeIdFor,
 } from "./nativePluginCompat";
+import { f4seIndependentOn } from "./nativePluginCompat";
 
 const declares = (over: Partial<EhcollNativePlugin> = {}): EhcollNativePlugin => ({
   path: "SKSE/Plugins/x.dll",
@@ -338,5 +339,39 @@ describe("a conflict decided by a chain of rules", () => {
       target: AE_GOG,
     });
     expect(j.undeterminedConflicts).toHaveLength(1);
+  });
+});
+
+describe("next-gen F4SE independence flags (Ivy 1.0.37 false alarm, 2026-09-28)", () => {
+  // Measured on the curator's staging: CommonLibF4 NG plugins set address=4 and
+  // structure=4 and list only the runtime they were built on; F4SE loaded all
+  // of them on 1.11.240 ("loaded correctly" in f4se.log).
+  const ng = (runtimes: string[], address = 4, structure = 4) => ({
+    path: "F4SE/Plugins/po3_BaseObjectSwapperF4.dll",
+    extender: "f4se" as const,
+    kind: "declares" as const,
+    versionIndependent: false,
+    runtimes,
+    hasQuery: false,
+    addressIndependence: address,
+    structureIndependence: structure,
+  });
+  const on = (runtime: string) => ({ runtime, api: "version" as const });
+
+  it("loads a 1.11 Address Library + 1.11 layout plugin on any 1.11 runtime it does not list", () => {
+    expect(judgePlugin(ng(["1.11.169"]), on("1.11.240"))).toEqual({ kind: "loads" });
+    expect(judgePlugin(ng([]), on("1.11.240"))).toEqual({ kind: "loads" });
+  });
+
+  it("does not stretch 1.11 flags to 1.10.984, nor 1.10.980 flags to 1.11", () => {
+    expect(judgePlugin(ng(["1.11.169"]), on("1.10.984")).kind).toBe("cannot-load");
+    expect(judgePlugin(ng(["1.10.984"], 2, 2), on("1.11.240")).kind).toBe("cannot-load");
+    expect(judgePlugin(ng(["1.10.984"], 2, 2), on("1.10.984"))).toEqual({ kind: "loads" });
+  });
+
+  it("needs both words: an address flag alone with a pinned struct layout is not independent", () => {
+    expect(f4seIndependentOn(4, 0, "1.11.240")).toBe(false);
+    expect(f4seIndependentOn(1, 1, "1.11.240")).toBe(true);
+    expect(judgePlugin(ng(["1.11.191"], 4, 0), on("1.11.240")).kind).toBe("cannot-load");
   });
 });

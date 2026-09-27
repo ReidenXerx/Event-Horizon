@@ -73,6 +73,8 @@ async function readNativePlugins(files: readonly WalkedFile[]): Promise<EhcollNa
         versionIndependent: d.versionIndependent,
         runtimes: d.runtimes,
         hasQuery: d.hasQuery,
+        ...(d.addressIndependence !== undefined ? { addressIndependence: d.addressIndependence } : {}),
+        ...(d.structureIndependence !== undefined ? { structureIndependence: d.structureIndependence } : {}),
       });
     } else if (d.kind === "query-only") {
       out.push({ path: file.relativePath, extender, kind: "query-only" });

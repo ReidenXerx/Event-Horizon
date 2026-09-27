@@ -671,6 +671,14 @@ export type EhcollNativePlugin = {
   runtimes?: string[];
   /** `declares` only: also exports Query, so a Query-calling extender loads it. */
   hasQuery?: boolean;
+  /**
+   * F4SE only, raw: `addressIndependence` and `structureIndependence` from the
+   * version block. Next-gen CommonLibF4 plugins set bit 2 in both (Address
+   * Library and struct layout for 1.11), which the one `versionIndependent`
+   * boolean could not express per game generation.
+   */
+  addressIndependence?: number;
+  structureIndependence?: number;
 };
 
 export type EhcollStagingFile = {

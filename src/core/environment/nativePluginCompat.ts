@@ -127,6 +127,30 @@ export function runtimeIdFor(
   return undefined;
 }
 
+/**
+ * Does next-gen F4SE accept this plugin on `runtime` without it being listed?
+ *
+ * It needs BOTH words to cover the runtime's generation. Address: bit 0
+ * signatures (any), bit 1 Address Library for 1.10.980, bit 2 Address Library
+ * for 1.11.137 and later. Structure: bit 0 no structs (any), bit 1 the 1.10.980
+ * layout, bit 2 the 1.11.137 layout.
+ *
+ * Measured 2026-09-28 on the curator's Fallout 4 staging: every next-gen
+ * CommonLibF4 plugin sets address=4 and structure=4 and lists only the runtime
+ * it was built on (1.11.169, 1.11.191, 1.10.984...). Reading only bits 0-1 of
+ * the address word called 19 of them unloadable on 1.11.240, while the
+ * curator's f4se.log on that very runtime showed each one "loaded correctly".
+ */
+export function f4seIndependentOn(address: number, structure: number, runtime: string): boolean {
+  const v = tuple(runtime);
+  if (v === undefined) return false;
+  const gen11 = atLeast(v, [1, 11, 137]);
+  const gen10 = !gen11 && atLeast(v, [1, 10, 980]);
+  const addressOk = (address & 1) !== 0 || (gen11 && (address & 4) !== 0) || (gen10 && (address & 2) !== 0);
+  const structOk = (structure & 1) !== 0 || (gen11 && (structure & 4) !== 0) || (gen10 && (structure & 2) !== 0);
+  return addressOk && structOk;
+}
+
 /** Will ONE plugin load on this target? */
 export function judgePlugin(plugin: EhcollNativePlugin, target: NativeTarget): PluginVerdict {
   if (plugin.kind === "unreadable") {
@@ -156,7 +180,9 @@ export function judgePlugin(plugin: EhcollNativePlugin, target: NativeTarget): P
       : // Not established for next-gen F4SE, so not claimed.
         { kind: "unknown", why: "it declares no game version, and this extender's handling of that is not known" };
   }
-  if (plugin.versionIndependent === true) return { kind: "loads" };
+  if (plugin.extender === "f4se" && plugin.addressIndependence !== undefined && plugin.structureIndependence !== undefined) {
+    if (f4seIndependentOn(plugin.addressIndependence, plugin.structureIndependence, target.runtime)) return { kind: "loads" };
+  } else if (plugin.versionIndependent === true) return { kind: "loads" };
   const runtimes = plugin.runtimes ?? [];
   if (runtimes.includes(target.runtime)) return { kind: "loads" };
   return {

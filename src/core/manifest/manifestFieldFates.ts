@@ -183,6 +183,8 @@ export const NATIVE_PLUGIN_FATES: {
   versionIndependent: { kind: "applied", by: "core/environment/nativePluginCompat.ts" },
   runtimes: { kind: "applied", by: "core/environment/nativePluginCompat.ts" },
   hasQuery: { kind: "applied", by: "core/environment/nativePluginCompat.ts" },
+  addressIndependence: { kind: "applied", by: "core/environment/nativePluginCompat.ts" },
+  structureIndependence: { kind: "applied", by: "core/environment/nativePluginCompat.ts" },
 };
 
 /**
