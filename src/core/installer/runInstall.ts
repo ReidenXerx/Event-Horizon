@@ -2119,8 +2119,14 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         // A file the installer creates only with plugins this load order does
         // not have is not expected here; it is said, not failed.
         const recordedFiles = manifestEntry?.state.stagingFiles;
-        const conditionNotMet =
-          recordedFiles?.filter(
+        // Only for a mod its own installer lays down: a bundled or mirrored mod
+        // carries the curator's files, so the file is there and is checked.
+        const carriesCuratorFiles =
+          manifestEntry?.state.mirrored === true ||
+          (manifestEntry?.source as { bundled?: boolean } | undefined)?.bundled === true;
+        const conditionNotMet = carriesCuratorFiles
+          ? []
+          : recordedFiles?.filter(
             (f) =>
               f.installerCondition !== undefined &&
               installerConditionUnmet(f.installerCondition.needs, playerPluginActive),
