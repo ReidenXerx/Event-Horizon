@@ -24,6 +24,7 @@
  */
 
 import { spawn, type ChildProcess } from "child_process";
+import * as fs from "fs";
 import * as os from "os";
 
 import { ehLog } from "./logging/ehLog";
@@ -33,13 +34,33 @@ import { AbortError } from "../utils/abortError";
 export const WORKER_SOURCE = String.raw`
 const fs = require("fs");
 const crypto = require("crypto");
+const zlib = require("zlib");
 const CHUNK = 8 * 1024 * 1024;
 const buf = Buffer.allocUnsafe(CHUNK);
 const queue = [];
 const cancelled = new Set();
 let busy = false;
+// zlib.crc32 is native from Node 20.15 / 22.2 (Vortex ships 24); a table for anything older.
+let TABLE;
+function crcUpdate(c, b) {
+  if (typeof zlib.crc32 === "function") return zlib.crc32(b, c);
+  if (TABLE === undefined) {
+    TABLE = new Int32Array(256);
+    for (let n = 0; n < 256; n++) { let k = n; for (let i = 0; i < 8; i++) k = k & 1 ? 0xedb88320 ^ (k >>> 1) : k >>> 1; TABLE[n] = k; }
+  }
+  let x = ~c;
+  for (let i = 0; i < b.length; i++) x = TABLE[(x ^ b[i]) & 0xff] ^ (x >>> 8);
+  return ~x >>> 0;
+}
+function crcHasher() {
+  let c = 0;
+  return {
+    update(b) { c = crcUpdate(c, b); },
+    digest() { return (c >>> 0).toString(16).padStart(8, "0"); },
+  };
+}
 async function hashOne(job) {
-  const h = crypto.createHash("sha256");
+  const h = job.algo === "crc32" ? crcHasher() : crypto.createHash("sha256");
   const fh = await fs.promises.open(job.path, "r");
   let bytes = 0;
   try {
@@ -79,9 +100,13 @@ process.on("disconnect", () => process.exit(0));
 process.send({ ready: true });
 `;
 
+/** What a worker computes: SHA-256 (hex) or CRC-32 (8 lowercase hex digits, as archive listings print it). */
+export type HashAlgo = "sha256" | "crc32";
+
 type Job = {
   id: number;
   path: string;
+  algo: HashAlgo;
   resolve: (sha256: string) => void;
   reject: (err: Error) => void;
   worker?: PoolWorker;
@@ -157,10 +182,10 @@ export class HashPool {
     return this.broken;
   }
 
-  hash(filePath: string, signal?: AbortSignal): Promise<string> {
+  hash(filePath: string, signal?: AbortSignal, algo: HashAlgo = "sha256"): Promise<string> {
     if (this.broken !== undefined) return Promise.reject(new PoolUnavailable(this.broken));
     return new Promise<string>((resolve, reject) => {
-      const job: Job = { id: this.nextId++, path: filePath, resolve, reject };
+      const job: Job = { id: this.nextId++, path: filePath, algo, resolve, reject };
       if (signal !== undefined) {
         if (signal.aborted) return reject(abortError());
         const onAbort = (): void => this.cancel(job);
@@ -289,7 +314,7 @@ export class HashPool {
       if (w.inFlight.size === 0) hold(w, true);
       w.inFlight.set(job.id, job);
       try {
-        w.child.send({ id: job.id, path: job.path });
+        w.child.send({ id: job.id, path: job.path, algo: job.algo });
       } catch (err) {
         w.inFlight.delete(job.id);
         job.reject(new PoolUnavailable(`could not reach a worker: ${String((err as Error)?.message ?? err)}`));
@@ -389,6 +414,51 @@ function abortError(): Error {
 /** `EH_HASH_POOL=0` turns the pool off (a support escape hatch). */
 export function hashPoolEnabled(): boolean {
   return process.env["EH_HASH_POOL"] !== "0";
+}
+
+const BIG_FILE = 64 * 1024 * 1024;
+/** Hashes done in-process while the pool is down, before it is started for the rest. */
+let coldHashes = 0;
+export const WARM_UP_AFTER = 32;
+
+async function isBig(filePath: string): Promise<boolean> {
+  try {
+    return (await fs.promises.stat(filePath)).size >= BIG_FILE;
+  } catch {
+    return false; // the hash itself reports what is wrong with the file
+  }
+}
+
+/**
+ * One file through the pool when that pays, otherwise `inProcess` — the same
+ * answer either way. The pool is used when it is already running, and started
+ * for a big file (worth ~0.3 s of start-up) or once enough small ones have
+ * come through in-process; a one-off hash never starts it. Any pool failure
+ * falls back to `inProcess` for that file.
+ */
+export async function hashViaPool(
+  algo: HashAlgo,
+  filePath: string,
+  signal: AbortSignal | undefined,
+  inProcess: (filePath: string, signal?: AbortSignal) => Promise<string>,
+): Promise<string> {
+  if (hashPoolEnabled()) {
+    const pool = getHashPool();
+    let usePool = pool.ready;
+    if (!usePool && (await isBig(filePath))) usePool = await pool.whenReady();
+    else if (!usePool && (coldHashes += 1) >= WARM_UP_AFTER) {
+      coldHashes = 0;
+      pool.warmUp();
+    }
+    if (usePool) {
+      try {
+        return await pool.hash(filePath, signal, algo);
+      } catch (err) {
+        if (!(err instanceof PoolUnavailable)) throw err;
+      }
+    }
+  }
+  return inProcess(filePath, signal);
 }
 
 let shared: HashPool | undefined;

@@ -107,7 +107,8 @@ describe("no mod leaves the accounting without a report", () => {
     // GP-7.
     expect(source).toContain('ehLog("warn", "selfcheck.mod-threw"');
     expect(source).toContain("function unchecked(");
-    expect(source).toContain("if (opts?.signal?.aborted === true) break;");
+    // Mods run several at once; a cancel skips the ones not yet started.
+    expect(source).toContain("if (opts?.signal?.aborted === true) return;");
   });
 
   it("pushes a skipped report when a mod's check throws", () => {
@@ -115,8 +116,9 @@ describe("no mod leaves the accounting without a report", () => {
     // The catch records the mod rather than only logging it. The window spans
     // the docblock between them, which is why it is generous.
     const body = source.slice(at, at + 1400);
-    expect(body).toContain("reports.push(");
-    expect(body).toContain("unchecked(mod,");
+    // Into the mod's slot, and every slot is flushed into the reports in order.
+    expect(body).toContain("slots[slot] = unchecked(mod,");
+    expect(body).toContain("for (const r of slots) if (r !== undefined) reports.push(r);");
   });
 
   it("fills in the mods a cancel never reached", () => {

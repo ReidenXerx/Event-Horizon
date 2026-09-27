@@ -22,6 +22,10 @@
  * not be checked, and the build proceeds.
  */
 
+import { getHashPool, hashPoolEnabled } from "../hashPool";
+
+/** Mods self-checked at once while the hash pool runs. */
+const SELF_CHECK_PARALLEL = 4;
 import { fingerprintUnexplained } from "./unexplainedFiles";
 import * as fs from "fs";
 import * as fsp from "fs/promises";
@@ -1118,8 +1122,13 @@ export async function runSelfChecks(
 
   /** modId → Vortex's staging folder name, for the stale-archive check below. */
   const stagingFolderByModId = new Map<string, string | undefined>();
-  for (const mod of comparable) {
-    if (opts?.signal?.aborted === true) break;
+  // Several mods at once: each extracts into its own temp folder with its own
+  // 7-Zip process, and its checksums go through the hash pool. Reports keep
+  // the mods' order, so warnings and summaries read exactly as before.
+  const slots: Array<SelfCheckReport | undefined> = new Array(comparable.length);
+  const parallel = hashPoolEnabled() && (await getHashPool().whenReady()) ? SELF_CHECK_PARALLEL : 1;
+  await pMap(comparable, parallel, async (mod, slot) => {
+    if (opts?.signal?.aborted === true) return;
     stagingFolderByModId.set(mod.id, mod.installationPath);
     done += 1;
     opts?.onProgress?.(done, total, mod.name);
@@ -1153,7 +1162,7 @@ export async function runSelfChecks(
     if (archivePath !== undefined) archiveByModId.set(mod.id, archivePath);
 
     try {
-      reports.push(
+      slots[slot] = (
         await selfCheckMod({
           sevenZip,
           modId: mod.id,
@@ -1167,7 +1176,7 @@ export async function runSelfChecks(
           readEntry,
           ...(caseMode !== undefined ? { caseMode } : {}),
           ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
-        }),
+        })
       );
     } catch (err) {
       // selfCheckMod contains its own failures; this is belt and braces so one
@@ -1183,11 +1192,10 @@ export async function runSelfChecks(
        * accounting is worse than no catch, because the count still reads as
        * complete.
        */
-      reports.push(
-        unchecked(mod, `the check threw on this mod: ${messageOf(err)}`),
-      );
+      slots[slot] = unchecked(mod, `the check threw on this mod: ${messageOf(err)}`);
     }
-  }
+  });
+  for (const r of slots) if (r !== undefined) reports.push(r);
 
   /**
    * ─── AND A MOD NEVER REACHED IS NOT A MOD THAT PASSED ─────────────────

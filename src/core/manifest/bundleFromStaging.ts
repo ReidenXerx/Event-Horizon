@@ -43,6 +43,9 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+/** Archives listed at once (each listing is a 7-Zip process of its own). */
+const LIST_PARALLEL = 8;
+import { pMap } from "../../utils/pMap";
 import * as fsp from "fs/promises";
 import * as path from "path";
 
@@ -591,6 +594,27 @@ export async function detectExternalDrift(args: {
 
   const op = beginOp("bundle.drift", { mods: args.mods.length });
 
+  // Every archive is listed up front, several at once (each listing is its own
+  // 7-Zip process; one at a time was 1,776 listings in a row on Meridia). The
+  // comparison below is unchanged and runs in the mods' order.
+  const listingByPath = new Map<string, { entries: Array<{ path: string }> } | { failed: unknown }>();
+  const toList = [
+    ...new Set(
+      args.mods
+        .filter((m) => args.isExternal(m) && (m.stagingFiles ?? []).length > 0)
+        .map((m) => args.archivePathFor(m))
+        .filter((p): p is string => p !== undefined),
+    ),
+  ];
+  await pMap(toList, LIST_PARALLEL, async (archivePath) => {
+    if (args.signal?.aborted === true) return;
+    try {
+      listingByPath.set(archivePath, await args.listArchive(archivePath));
+    } catch (err) {
+      listingByPath.set(archivePath, { failed: err });
+    }
+  });
+
   const out: ExternalDrift[] = [];
   for (const mod of args.mods) {
     if (args.signal?.aborted === true) break;
@@ -603,7 +627,9 @@ export async function detectExternalDrift(args: {
 
     let entries: Array<{ path: string }>;
     try {
-      entries = (await args.listArchive(archivePath)).entries;
+      const listed = listingByPath.get(archivePath) ?? (await args.listArchive(archivePath));
+      if ("failed" in listed) throw listed.failed;
+      entries = listed.entries;
     } catch (err) {
       // unreadable archive is the self-check's problem, not this one
       ehLog("debug", "bundle.drift.archive-unreadable", { modId: mod.id, err });

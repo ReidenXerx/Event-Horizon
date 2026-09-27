@@ -39,6 +39,11 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { pMap } from "../../utils/pMap";
+
+/** Mirrored mods compared with their archives at once. */
+const MIRROR_PARALLEL = 4;
+import { getDefaultHashConcurrency } from "./stagingFileWalker";
 import * as path from "path";
 
 import type { EhcollStagingFile } from "../../types/ehcoll";
@@ -92,28 +97,38 @@ export async function findFilesTheArchiveProvides(args: {
   }
 
   const out: ArchiveProvision = { provided: [], compared: 0, unreadable: 0 };
-  for (const file of args.staged) {
-    if (args.signal?.aborted === true) break;
+  // Which staged files have a same-size entry at the same place: only those need a checksum.
+  const work = args.staged.flatMap((file) => {
     // Without a hash the user's side could not check the archive's copy — and
     // packaging refuses a mirrored mod with such a file anyway.
-    if (file.sha256 === undefined) continue;
+    if (file.sha256 === undefined) return [];
     const candidates = (bySize.get(file.size) ?? []).filter((e) =>
       entrySitsAt(e.path, file.path),
     );
-    if (candidates.length === 0) continue;
-
+    return candidates.length === 0 ? [] : [{ file, candidates }];
+  });
+  // Checksummed several at once (the hash pool does them on every core);
+  // `provided` keeps the staged order either way.
+  const verdicts = await pMap(
+    work,
+    Math.max(1, getDefaultHashConcurrency()),
+    async ({ file, candidates }): Promise<"provided" | "differs" | "unreadable" | "skipped"> => {
+      if (args.signal?.aborted === true) return "skipped";
+      let crc: string;
+      try {
+        crc = (await args.crcOf(file.path)).toLowerCase();
+      } catch {
+        return "unreadable";
+      }
+      return candidates.some((e) => e.crc!.toLowerCase() === crc) ? "provided" : "differs";
+    },
+  );
+  verdicts.forEach((v, i) => {
+    if (v === "skipped") return;
     out.compared += 1;
-    let crc: string;
-    try {
-      crc = (await args.crcOf(file.path)).toLowerCase();
-    } catch {
-      out.unreadable += 1;
-      continue;
-    }
-    if (candidates.some((e) => e.crc!.toLowerCase() === crc)) {
-      out.provided.push(file.path);
-    }
-  }
+    if (v === "unreadable") out.unreadable += 1;
+    if (v === "provided") out.provided.push(work[i]!.file.path);
+  });
   return out;
 }
 
@@ -185,9 +200,11 @@ export async function proveMirroredFilesFromArchives<
   signal?: AbortSignal;
 }): Promise<Map<string, MirrorProvision>> {
   const out = new Map<string, MirrorProvision>();
-  for (const mod of args.mods) {
-    if (mod.mirrored !== true) continue;
-    if (args.signal?.aborted === true) break;
+  // Several mods at once: each lists its own archive (7-Zip is a process of its
+  // own) and checksums its own files. Results are keyed by mod, so order is moot.
+  const mirrored = args.mods.filter((m) => m.mirrored === true);
+  await pMap(mirrored, MIRROR_PARALLEL, async (mod) => {
+    if (args.signal?.aborted === true) return;
     const shipsAll = (why: string): void => {
       out.set(mod.id, { kind: "ships-all", why });
     };
@@ -195,22 +212,22 @@ export async function proveMirroredFilesFromArchives<
     const unpredictable = args.unpredictable(mod);
     if (unpredictable !== undefined) {
       shipsAll(unpredictable);
-      continue;
+      return;
     }
     const archivePath = args.archiveFor(mod);
     if (archivePath === undefined) {
       shipsAll("the build had no archive to compare it with");
-      continue;
+      return;
     }
     const root = args.stagingRootOf(mod);
     if (root === undefined) {
       shipsAll("its staging folder could not be located");
-      continue;
+      return;
     }
     const listing = await args.listArchive(archivePath);
     if (listing === undefined) {
       shipsAll(`its archive could not be listed (${path.basename(archivePath)})`);
-      continue;
+      return;
     }
 
     const staged = mod.stagingFiles ?? [];
@@ -221,7 +238,7 @@ export async function proveMirroredFilesFromArchives<
       ...(args.signal !== undefined ? { signal: args.signal } : {}),
     });
     out.set(mod.id, { kind: "proven", staged: staged.length, ...proof });
-  }
+  });
   return out;
 }
 

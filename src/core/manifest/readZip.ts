@@ -29,6 +29,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { hashViaPool } from "../hashPool";
 import * as crypto from "crypto";
 import * as fsp from "fs/promises";
 import * as fs from "fs";
@@ -1010,6 +1011,17 @@ export function crc32UpdateTable(crc: number, buf: Buffer): number {
  * megabytes and this is called per suspect file.
  */
 export async function crc32File(
+  filePath: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  // On every core, off Vortex's thread (hashPool.ts): the same CRC-32, as 8
+  // lowercase hex digits; in-process below when the pool is not worth it or
+  // not available.
+  return hashViaPool("crc32", filePath, signal, crc32FileInProcess);
+}
+
+/** CRC-32 of a file on Vortex's own thread. The pool's fallback. */
+export async function crc32FileInProcess(
   filePath: string,
   signal?: AbortSignal,
 ): Promise<string> {

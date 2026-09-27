@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { hashFileSha256, hashFileSha256InProcess } from "./archiveHashing";
 import { HashPool, PoolUnavailable, setHashPoolForTests } from "./hashPool";
+import { crc32FileInProcess } from "./manifest/readZip";
 import { AbortError } from "../utils/abortError";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eh-hashpool-"));
@@ -41,6 +42,15 @@ describe("hash pool", () => {
     const got = await Promise.all([empty, small, big, small, big].map((f) => pool!.hash(f)));
     expect(got).toEqual([sha(Buffer.alloc(0)), sha(Buffer.from("TES4 plugin bytes")), sha(bigBytes), sha(Buffer.from("TES4 plugin bytes")), sha(bigBytes)]);
     expect(got[2]).toBe(await hashFileSha256InProcess(big));
+  });
+
+  it("gives the same CRC-32 as the in-process reader, as 8 lowercase hex digits", async () => {
+    pool = new HashPool({ workers: 2 });
+    const got = await Promise.all([empty, small, big].map((f) => pool!.hash(f, undefined, "crc32")));
+    const want = await Promise.all([empty, small, big].map((f) => crc32FileInProcess(f)));
+    expect(got).toEqual(want);
+    expect(got[0]).toBe("00000000");
+    expect(got[2]).toMatch(/^[0-9a-f]{8}$/);
   });
 
   it("keeps the error code of a file that cannot be read (not a pool failure)", async () => {

@@ -10,6 +10,18 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [Unreleased]
+
+### Faster archive checks in builds
+- **Archive checksums (CRC-32) run on every core too.** The build compares mods against their archives by CRC-32,
+  which ran on Vortex's own thread like hashing did. It now runs in the same workers: 1.75 GB/s measured on the
+  Meridia files, against 195 MB/s before.
+- **Several mods are checked at once.** The self-check and the mirrored-mod comparison each worked through one mod
+  at a time, and every archive was listed one after another (1,776 listings in a row on Meridia). Now four mods are
+  checked at once and eight archives listed at once, each in its own 7-Zip process and its own temp folder. None of
+  this touches Vortex's staging folder or its install pipeline, and installs stay strictly one at a time, which is
+  what keeps Vortex from losing files.
+
 ## [0.2.19] — 2026-09-27
 
 # 33× faster hashing: Event Horizon's own hashing pipeline
