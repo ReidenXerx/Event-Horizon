@@ -10,7 +10,7 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
-## [Unreleased]
+## [0.2.22] — 2026-09-28
 
 ### Installer-conditional files
 - **No more "could not be reproduced" for a file the mod's installer skips on purpose.** Some FOMOD installers create
