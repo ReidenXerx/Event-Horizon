@@ -243,27 +243,30 @@ export function notifyUpdate(api: types.IExtensionApi, update: CollectionUpdate)
 
 /** What Update needs from outside, replaceable in tests. */
 /**
- * The player's installed game version: Vortex's state, else the game
- * extension's own reading of the executable (Vortex's state is often empty).
+ * The player's installed game version, read from the game's executable first
+ * (the game extension's getInstalledVersion) and from Vortex's state only when
+ * that cannot answer. Executable first because the hold must lift the moment
+ * a player updates the game: a version Vortex saved earlier can be stale.
  */
 export async function installedGameVersion(api: types.IExtensionApi, gameId: string): Promise<string | undefined> {
   const state = api.getState() as {
     persistent?: { gameSettings?: Record<string, { version?: string }> };
     settings?: { gameMode?: { discovered?: Record<string, { version?: string }> } };
   };
-  const known = state.persistent?.gameSettings?.[gameId]?.version ?? state.settings?.gameMode?.discovered?.[gameId]?.version;
-  if (typeof known === "string" && known !== "") return known;
+  const discovery = state.settings?.gameMode?.discovered?.[gameId];
   try {
     const game = (util as unknown as {
       getGame?: (id: string) => { getInstalledVersion?: (d: unknown) => PromiseLike<string> } | undefined;
     }).getGame?.(gameId);
-    const discovery = state.settings?.gameMode?.discovered?.[gameId];
-    if (game?.getInstalledVersion === undefined || discovery === undefined) return undefined;
-    const v = await game.getInstalledVersion(discovery);
-    return typeof v === "string" && v !== "" ? v : undefined;
+    if (game?.getInstalledVersion !== undefined && discovery !== undefined) {
+      const v = await game.getInstalledVersion(discovery);
+      if (typeof v === "string" && v !== "") return v;
+    }
   } catch {
-    return undefined;
+    // the executable could not be read; Vortex's record is the fallback
   }
+  const saved = state.persistent?.gameSettings?.[gameId]?.version ?? discovery?.version;
+  return typeof saved === "string" && saved !== "" ? saved : undefined;
 }
 
 /** Marks the updates the player's game cannot take: no Update for those, only the reason. */

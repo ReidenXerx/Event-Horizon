@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   downloadRevision,
   getCollectionUpdateStore,
+  installedGameVersion,
   notifyUpdate,
   pendingUpdateFor,
   startCollectionUpdate,
@@ -22,6 +23,7 @@ import {
   withGameVersionHolds,
 } from "./collectionUpdates";
 import { getEHRuntime } from "./ehRuntime";
+import { __testGame } from "@nexusmods/vortex-api";
 import type { CollectionUpdate } from "../../core/nexus/collectionUpdates";
 
 const DIR = path.join("D:", "Vortex", "vortexDownload", "fallout4");
@@ -372,5 +374,34 @@ describe("an update the player's game cannot run (owner poll, 2026-09-27)", () =
 
     await expect(startCollectionUpdate(api, held!, deps())).resolves.toBe("refused");
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("the player's game version", () => {
+  afterEach(() => {
+    __testGame.current = undefined;
+  });
+  const state = (saved?: string) =>
+    ({
+      getState: () => ({
+        persistent: { gameSettings: saved === undefined ? {} : { fallout4: { version: saved } } },
+        settings: { gameMode: { discovered: { fallout4: { path: "C:/Games/Fallout 4" } } } },
+      }),
+    }) as never;
+
+  it("is read from the executable first, so a stale saved version cannot keep an update held", async () => {
+    __testGame.current = { getInstalledVersion: async () => "1.11.240.0" };
+    await expect(installedGameVersion(state("1.10.163.0"), "fallout4")).resolves.toBe("1.11.240.0");
+  });
+
+  it("falls back to Vortex's saved version when the executable cannot be read", async () => {
+    __testGame.current = {
+      getInstalledVersion: async () => {
+        throw new Error("no exe");
+      },
+    };
+    await expect(installedGameVersion(state("1.10.163.0"), "fallout4")).resolves.toBe("1.10.163.0");
+    __testGame.current = undefined;
+    await expect(installedGameVersion(state(), "fallout4")).resolves.toBeUndefined();
   });
 });

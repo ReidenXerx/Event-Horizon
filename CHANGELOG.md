@@ -10,6 +10,14 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.21] — 2026-09-27
+
+### Collection updates for players
+- **The Update button comes back as soon as you update your game.** To decide whether a collection's new revision
+  fits your game, Event Horizon now reads the version from the game's executable first, and falls back to Vortex's
+  saved record only when it can't. A version Vortex saved before you updated the game can no longer keep the update
+  held back.
+
 ## [0.2.20] — 2026-09-27
 
 ### Collection updates for players
