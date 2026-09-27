@@ -101,6 +101,23 @@ describe("resolveBundles", () => {
     expect(out).toEqual({ bundles: [], errors: [], warnings: [], droppedModIds: [] });
   });
 
+  it("leaves out a bundled mod that is switched off, keeps its answer, and builds on", () => {
+    // Ivy AE, 2026-09-27: the OG-only settings mod and UFO4P were switched off
+    // on purpose and refused the build 45 minutes in.
+    const out = resolveBundles(
+      pool("fallout4", ["Ivy'sPantiesSettings", "kept"]),
+      "fallout4",
+      flagged("Ivy'sPantiesSettings", "kept"),
+      [handMade("kept")],
+      packed({ bundles: [bundle("kept")] }),
+    );
+    expect(out.errors).toEqual([]);
+    expect(out.bundles.map((b) => b.rootDir)).toEqual(["C:/staging/kept"]);
+    expect(out.droppedModIds).toEqual([]);
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0]).toMatch(/"Ivy'sPantiesSettings" is marked "bundle" but is switched off/);
+  });
+
   it("drops an answer whose mod is gone from Vortex, packed or not", () => {
     const out = resolveBundles(pool("skyrimse", []), "skyrimse", flagged("gone"), [], packed());
     expect(out.errors).toEqual([]);

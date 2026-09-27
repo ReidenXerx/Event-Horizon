@@ -21,6 +21,11 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
   config, and an upload whose name differs from the live collection's (Vortex would rename your page) are all
   refused with the reason.
 
+### Building collections
+- **Switching a bundled mod off leaves it out, like any other mod.** It used to refuse the build, and only at the
+  very end: an Ivy build stopped after 45 minutes over two mods switched off on purpose. The build now goes on,
+  ships nothing of them, and says so. Your "bundle" answer is kept, so switching the mod back on ships it again.
+
 ## [0.2.18] — 2026-09-27
 
 ### Let an AI do your modding

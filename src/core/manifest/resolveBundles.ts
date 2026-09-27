@@ -48,6 +48,7 @@ import type { types } from "@nexusmods/vortex-api";
 
 import {
   classifyMissingConfigEntry,
+  describeDisabledBundle,
   describeDroppedEntry,
 } from "./staleConfigEntries";
 import { isNexusSourced } from "../identity/nexusSourced";
@@ -122,11 +123,19 @@ export function resolveBundles(
         });
         continue;
       }
-      errors.push(
-        `Config flags modId "${modId}" as bundled, but that mod is installed ` +
-          `and NOT enabled in this profile, so it is not in the collection. ` +
-          `Enable it, or set bundled=false.`,
-      );
+      // Switched off: the curator is not shipping it, so neither is the build
+      // (owner, 2026-09-27: a disabled bundled mod must be excluded like any
+      // other disabled mod). The answer is KEPT, not dropped, so switching the
+      // mod back on bundles it again. This used to refuse the build, at the
+      // very end: 45 minutes into an Ivy AE build, over the OG-only settings
+      // mod and UFO4P, both deliberately off on AE.
+      warnings.push(describeDisabledBundle(entry.name ?? modId));
+      ehLog("info", "build.config.bundled-but-disabled", {
+        modId,
+        name: entry.name,
+        answer: "kept",
+        why: "the mod is switched off in this profile, so it is not in the collection",
+      });
       continue;
     }
 

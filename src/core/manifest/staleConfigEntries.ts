@@ -16,9 +16,11 @@
  *   active profile right now.
  *
  *  - **DISABLED** — the mod is still in Vortex's per-game pool, just switched
- *    off or in another profile. The answer is live and the absence is very
- *    likely an oversight: the curator marked it to ship and it is not
- *    shipping. Failing the build protects them. UNCHANGED.
+ *    off or in another profile. It is not shipped and the build goes on, with
+ *    a note; the answer is kept for when the mod is switched back on. (This
+ *    once refused the build as a likely oversight. Owner, 2026-09-27: a
+ *    profile is its enabled mods, so switching a bundled mod off is how a
+ *    curator leaves it out, e.g. the OG-only mods in an AE build.)
  *
  *  - **DELETED** — the mod is gone from the pool entirely. The answer refers
  *    to nothing and can never be satisfied, so it blocks every future build
@@ -50,6 +52,15 @@ export function classifyMissingConfigEntry(
 ): StaleEntryKind | undefined {
   if (inCollection.has(modId)) return undefined;
   return inGamePool.has(modId) ? "disabled" : "deleted";
+}
+
+/** The sentence a curator reads about a bundled mod left out because it is switched off. */
+export function describeDisabledBundle(name: string): string {
+  return (
+    `"${name}" is marked "bundle" but is switched off in this profile, so it ` +
+    `is not in the collection and nothing of it ships. The "bundle" answer is ` +
+    `kept: switch the mod back on and it ships again.`
+  );
 }
 
 /** The sentence a curator reads about a dropped answer. */

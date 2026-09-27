@@ -2792,13 +2792,15 @@ export async function runBuildPipeline(
   if (bundleErrors.length > 0) {
     throw new BundleResolutionError(bundleErrors);
   }
+  // Every note, not only the pruned ones: a switched-off bundled mod is
+  // reported here too, and prunes nothing.
+  bundleWarnings.push(...staleConfigWarnings);
   /**
    * Prune answers whose mod no longer exists, so the next build does not have
    * to re-discover them. Best-effort: a config we cannot rewrite is not worth
    * failing a finished build over, and the warning has already been recorded.
    */
   if (staleConfigModIds.length > 0) {
-    bundleWarnings.push(...staleConfigWarnings);
     const pruned = { ...collectionConfig.externalMods };
     for (const id of staleConfigModIds) delete pruned[id];
     try {
