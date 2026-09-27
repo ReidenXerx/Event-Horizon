@@ -10,6 +10,13 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.18] — 2026-09-27
+
+### Let an AI do your modding
+- **The Claude Code setup command works.** The command on the Agents page failed in the current Claude Code
+  ("Invalid environment variable format"): the server name has to come before `--env`. It does now. The one-click
+  Claude Desktop setup was not affected.
+
 ## [0.2.17] — 2026-09-27
 
 Tell an AI what you want, and it does the modding in Vortex for you. New players no longer need to learn what a
