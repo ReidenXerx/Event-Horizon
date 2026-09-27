@@ -17,9 +17,9 @@ describe("connect config", () => {
     });
   });
 
-  it("writes a Claude Code command with every path quoted (they contain spaces)", () => {
+  it("writes a Claude Code command with the name BEFORE the variadic --env, and every path quoted", () => {
     expect(claudeCodeCommand(L)).toBe(
-      'claude mcp add --scope user --env ELECTRON_RUN_AS_NODE=1 event-horizon -- "C:\\Program Files\\Vortex\\Vortex.exe" ' +
+      'claude mcp add --scope user event-horizon --env ELECTRON_RUN_AS_NODE=1 -- "C:\\Program Files\\Vortex\\Vortex.exe" ' +
         '"C:\\Users\\u\\AppData\\Roaming\\Vortex\\plugins\\vortex-event-horizon\\dist\\mcp\\server.js" "--control" ' +
         '"C:\\Users\\u\\AppData\\Roaming\\Vortex\\event-horizon\\control.json"',
     );

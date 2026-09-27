@@ -16,10 +16,15 @@ export function mcpLaunch(p: { vortexExe: string; serverJs: string; controlFile:
 
 const quote = (s: string): string => `"${s.replace(/"/g, '\\"')}"`;
 
-/** The one-line Claude Code setup command. */
+/**
+ * The one-line Claude Code setup command. The server name comes BEFORE
+ * --env: the CLI takes --env as variadic, so a name after it is read as one
+ * more KEY=value and the command fails ("Invalid environment variable
+ * format: event-horizon"). Measured on the live CLI, 2026-09-27.
+ */
 export function claudeCodeCommand(l: McpLaunch): string {
   const env = Object.entries(l.env).map(([k, v]) => `--env ${k}=${v}`);
-  return ["claude mcp add --scope user", ...env, SERVER_NAME, "--", quote(l.command), ...l.args.map(quote)].join(" ");
+  return ["claude mcp add --scope user", SERVER_NAME, ...env, "--", quote(l.command), ...l.args.map(quote)].join(" ");
 }
 
 /** The `mcpServers` entry, as it appears in Claude Desktop's config file. */
