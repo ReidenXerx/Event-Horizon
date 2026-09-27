@@ -182,6 +182,20 @@ If something goes wrong, open the [b]Doctor[/b] and press [b]Save logs…[/b]: i
 [/list]
 Vortex does not offer Event Horizon updates by itself yet: download each new version here and install it the same way.
 
+[size=5][b]Incompatibilities[/b][/size]
+
+Known conflicts, from real reports and the code. Found another one? Tell us in the Bugs tab.
+[list]
+[*][b]Copy or symlink deployment[/b]: the install stops with an error. Switch Vortex to Hardlink deployment (Settings > Mods > Deployment Method).[/*]
+[*][b]Game not managed by Vortex (no folder set, or the game's .exe missing there)[/b]: blocked. In Vortex > Games, click Manage on the game, or use "Manually set location".[/*]
+[*][b]Game installed under Program Files[/b]: blocked. Move the game to a folder like C:\Games; EH's check lists the steps.[/*]
+[*][b]Game inside OneDrive or Dropbox[/b]: blocked. Sync uploads and locks the hundreds of thousands of linked files, and can swap them for online-only placeholders. Move the game out of the synced folder.[/*]
+[*][b]Loose files in the game folder that Vortex didn't put there[/b]: after one confirmation, EH moves them to an "Event Horizon quarantine" folder next to the game folder (not deleted), so the collection starts clean.[/*]
+[*][b]Vortex's "Deploy automatically" setting[/b]: EH asks to turn it off during an install, because a mid-install deploy can link the wrong file.[/*]
+[*][b]Missing Creation Club / Anniversary content a collection needs[/b]: the install stops. Get the content from the store first.[/*]
+[*][b]A game version other than the collection's[/b]: allowed after one "I understand" tick; the preview lists the script-extender DLLs that will break.[/*]
+[/list]
+
 [size=5][b]Questions[/b][/size]
 
 [b]Does it take over ordinary Vortex collections?[/b]
