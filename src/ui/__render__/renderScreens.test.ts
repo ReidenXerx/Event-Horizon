@@ -2833,7 +2833,21 @@ describe("render", () => {
     ];
     write(
       "agents-live",
-      React.createElement(AgentsPage, { previewOps: previewOps as never, previewNow: now }),
+      React.createElement(AgentsPage, {
+        previewOps: previewOps as never,
+        previewNow: now,
+        // Example paths: a screenshot must never carry the build machine's own.
+        previewStatus: { enabled: true, running: true, port: 51234, infoFile: String.raw`C:\Users\You\AppData\Roaming\Vortex\event-horizon\control.json` },
+        previewLaunch: {
+          command: String.raw`C:\Program Files\Vortex\Vortex.exe`,
+          args: [
+            String.raw`C:\Users\You\AppData\Roaming\Vortex\plugins\vortex-event-horizon\dist\mcp\server.js`,
+            "--control",
+            String.raw`C:\Users\You\AppData\Roaming\Vortex\event-horizon\control.json`,
+          ],
+          env: { ELECTRON_RUN_AS_NODE: "1" },
+        },
+      }),
     );
   });
 

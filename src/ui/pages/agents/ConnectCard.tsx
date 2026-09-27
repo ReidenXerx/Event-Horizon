@@ -13,7 +13,7 @@ import * as React from "react";
 import { Button, Callout, Card } from "../../components";
 import { writeToClipboard } from "../../clipboard";
 import { addToClaudeDesktop, connectorLaunch } from "../../../core/control/controlService";
-import { claudeCodeCommand, desktopConfigSnippet } from "../../../core/control/connectConfig";
+import { claudeCodeCommand, desktopConfigSnippet, type McpLaunch } from "../../../core/control/connectConfig";
 
 const ASK = [
   "“Install the Unofficial Fallout 4 Patch and pick the right options for my setup.”",
@@ -23,8 +23,9 @@ const ASK = [
   "“Turn off every mod that changes the body, I want to test without them.”",
 ];
 
-export function ConnectCard(props: { enabled: boolean }): JSX.Element {
-  const launch = React.useMemo(() => connectorLaunch(), []);
+export function ConnectCard(props: { enabled: boolean; previewLaunch?: McpLaunch }): JSX.Element {
+  // The render harness passes example paths: a screenshot must never carry the build machine's own.
+  const launch = React.useMemo(() => props.previewLaunch ?? connectorLaunch(), [props.previewLaunch]);
   const command = claudeCodeCommand(launch);
   const snippet = desktopConfigSnippet(launch);
   const [desktop, setDesktop] = React.useState<{ ok: boolean; message: string } | undefined>();

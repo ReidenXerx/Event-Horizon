@@ -57,11 +57,15 @@ export type AgentsPageProps = {
   /** The render harness shows a feed without a live channel. */
   previewOps?: OpRecord[];
   previewNow?: number;
+  /** Example connector paths for screenshots. */
+  previewLaunch?: import("../../core/control/connectConfig").McpLaunch;
+  /** Example status for screenshots. */
+  previewStatus?: ControlStatus;
 };
 
 export function AgentsPage(props: AgentsPageProps = {}): JSX.Element {
   const api = useApi();
-  const [status, setStatus] = React.useState<ControlStatus>(() => getControlStatus());
+  const [status, setStatus] = React.useState<ControlStatus>(() => props.previewStatus ?? getControlStatus());
   const [busy, setBusy] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
 
@@ -122,7 +126,7 @@ export function AgentsPage(props: AgentsPageProps = {}): JSX.Element {
           </div>
         </Card>
 
-        <ConnectCard enabled={status.enabled} />
+        <ConnectCard enabled={status.enabled} {...(props.previewLaunch !== undefined ? { previewLaunch: props.previewLaunch } : {})} />
 
         <ActivityFeed
           {...(props.previewOps !== undefined ? { initialOps: props.previewOps } : {})}
