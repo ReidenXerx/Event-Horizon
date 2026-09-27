@@ -952,3 +952,92 @@ describe("mods.setEnabled / mods.remove", () => {
     expect(r.notRemoved).toEqual([]);
   });
 });
+
+describe("Vortex's External Changes dialog (skyrim-collection, 2026-09-27)", () => {
+  /** A deploy that stops on the dialog, as Vortex's does, and the dialog's two buttons. */
+  function pauseDeployOnExternalChanges(kind = "refchange") {
+    const seenAtConfirm: string[] = [];
+    let held: ((e: unknown) => void) | undefined;
+    v.state.session.mods = { changes: [] };
+    v.state.persistent.mods.fallout4.a.installationPath = "GT Softbody-152103";
+    const emit = v.api.events.emit;
+    v.api.events.emit = (ev: string, ...args: unknown[]) => {
+      if (ev !== "deploy-mods") return emit(ev, ...args);
+      held = args[0] as (e: unknown) => void;
+      v.state.session.mods.changes = [
+        { modTypeId: "", filePath: "SKSE/Plugins/GTSoftbody.ini", source: "GT Softbody-152103", type: kind, action: kind === "refchange" ? "newest" : "restore" },
+      ];
+    };
+    const reducer = v.api.store.dispatch;
+    v.api.store.dispatch = (a: { type: string; payload: any }) => {
+      if (a.type === "SET_EXTERNAL_CHANGE_ACTION") {
+        for (const c of v.state.session.mods.changes) if (a.payload.filePaths.includes(c.filePath)) c.action = a.payload.action;
+        return;
+      }
+      reducer(a);
+    };
+    const buttons: Record<string, () => void> = {
+      "btn-confirm-activation": () => {
+        seenAtConfirm.push(...v.state.session.mods.changes.map((c: any) => c.action));
+        v.state.session.mods.changes = [];
+        v.deployed.n = 9;
+        setTimeout(() => held?.(null));
+      },
+      "btn-cancel-activation": () => {
+        v.state.session.mods.changes = [];
+        setTimeout(() => held?.(new Error("canceled")));
+      },
+    };
+    (globalThis as any).document = { getElementById: (id: string) => (buttons[id] ? { click: buttons[id] } : null) };
+    return { seenAtConfirm };
+  }
+  afterEach(() => delete (globalThis as any).document);
+
+  it("deploy stops with external-changes and the dialog's content, instead of hanging", async () => {
+    pauseDeployOnExternalChanges();
+    const err = await run("deploy").catch((e) => e);
+    expect(err).toMatchObject({ code: "external-changes", status: 409, details: { deployWaiting: true } });
+    expect(err.details.externalChanges.mods).toEqual([
+      expect.objectContaining({
+        mod: "GT Softbody-152103",
+        modId: "a",
+        files: [expect.objectContaining({ path: "SKSE/Plugins/GTSoftbody.ini", kind: "refchange", choices: ["revert", "save", "newer"] })],
+      }),
+    ]);
+  });
+
+  it("state shows the dialog while it is open", async () => {
+    pauseDeployOnExternalChanges();
+    await run("deploy").catch(() => undefined);
+    const s = (await run("state")) as any;
+    expect(s.vortex.externalChanges).toMatchObject({ type: "external-changes", files: 1 });
+  });
+
+  it("answering sets Vortex's per-file action, confirms, and verifies the deploy it unblocked", async () => {
+    const { seenAtConfirm } = pauseDeployOnExternalChanges();
+    await run("deploy").catch(() => undefined);
+    const r = await run("externalChanges.answer", { all: "save" });
+    expect(seenAtConfirm).toEqual(["import"]);
+    expect(r).toMatchObject({ answered: 1, deploy: "finished", deployedFiles: 9, verified: { dialogClosed: true, deploymentNeeded: false } });
+  });
+
+  it("refuses an answer Vortex does not offer for that change, and changes nothing", async () => {
+    const { seenAtConfirm } = pauseDeployOnExternalChanges("deleted");
+    await run("deploy").catch(() => undefined);
+    await expect(run("externalChanges.answer", { all: "newer" })).rejects.toMatchObject({ code: "bad-answer" });
+    expect(seenAtConfirm).toEqual([]);
+    expect(v.state.session.mods.changes).toHaveLength(1);
+  });
+
+  it("cancel closes the dialog, which cancels the deploy", async () => {
+    pauseDeployOnExternalChanges();
+    await run("deploy").catch(() => undefined);
+    await expect(run("externalChanges.answer", { cancel: true })).resolves.toMatchObject({ cancelled: true, verified: { dialogClosed: true } });
+    expect(v.state.session.mods.changes).toEqual([]);
+  });
+
+  it("says so when no dialog is open", async () => {
+    v.state.session.mods = { changes: [] };
+    await expect(run("externalChanges.answer", { all: "newer" })).rejects.toMatchObject({ code: "no-external-changes" });
+  });
+});

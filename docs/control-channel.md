@@ -114,6 +114,7 @@ All of them act on Vortex's **active game**.
 | `plugins.setAutoSort` | `enabled` | Turns Vortex's plugin autosort on or off, verified in `settings.plugins.autoSort`. `state.plugins.autoSort` reports it. |
 | `fomod.answer` | `picks: [{group, options: [name|id], step?}]`, `finish?` (default true), `expectModule?` | Answers the open wizard: on each step it applies the picks meant for it (by group and option **name**, case-insensitive, or id), then presses Next, or Finish on the last visible step, until the wizard closes. Groups nobody picked keep the wizard's defaults. A name that is not there fails with `bad-pick` listing the real options; nothing is guessed. Each pick is verified in the wizard's state, and the close is verified. **Runs beside the queue**, since the install that opened the wizard is what the queue is waiting on. |
 | `fomod.cancel` | none | Cancels the open wizard; the install that opened it then fails as cancelled. |
+| `externalChanges.answer` | `all?`, `mods?: {<mod or id>: answer}`, `files?: {<path>: answer}` (answers: `revert`, `save`, `newer`); or `cancel: true` | Answers Vortex's External Changes dialog (see below), confirms it, then waits for the deploy or purge it was holding and verifies that like `deploy` / `purge` do. An answer Vortex does not offer for a change fails with `bad-answer` and changes nothing. **Runs beside the queue.** |
 | `profile.switch` | `profileId`, `assumeGameClosed?` | Switches profile (which may auto-deploy) and verifies it is the active profile. |
 | `game.setPath` | `path`, `store?`, `assumeGameClosed?` | Repoints the active game and verifies the path and store Vortex now reports. |
 | `game.switchInstall` | `path`, `profileId`, `store?`, `assumeGameClosed?` | Purge, then set path, switch profile and deploy, each step verified. It stops at the first failure with `failedStep` and `completedSteps`. |
@@ -223,6 +224,33 @@ stays untouched everywhere. Pass `ifExisting: "replace"` only when replacing eve
 `needed` is Vortex's own flag (`vortexFlag`) **or** "mods are enabled but nothing is deployed". After a game
 folder is repointed by hand, Vortex's flag reads false with nothing deployed. When the two disagree, `reason` says
 so.
+
+### External Changes: files changed outside Vortex
+
+Before a deploy or purge, Vortex compares the game folder with what it deployed last. Files changed outside it (a
+mod's settings file the game wrote, a file deleted by hand) go into its **External Changes** dialog, and the deploy
+**waits** on the answer. It is not a notification dialog, so it never appeared in `openDialogs`, and a deploy behind it
+used to hang until the connection dropped.
+
+Now:
+- `deploy` and `purge` stop within a second with code `external-changes` (409), `deployWaiting` / `purgeWaiting`, and
+  `details.externalChanges`. Vortex's run stays paused on the dialog.
+- `state.vortex.externalChanges`, `vortex.notifications` and every change's `vortex` block show the dialog while open.
+- Each file lists `change` (in words), `kind` (Vortex's: `refchange`, `valchange`, `deleted`, `srcdeleted`), `choices`,
+  `current` (Vortex's preselected answer), and `sameFile` when it can tell: `true` means the game-folder file and the
+  staged file are one hardlinked file, so whatever changed one changed both.
+
+| Change | `revert` | `save` | `newer` |
+|---|---|---|---|
+| modified in the game folder (`refchange`) | the staged file wins | the game-folder file wins | whichever is newer |
+| deleted from the game folder (`deleted`) | the link is recreated | **the staged file is deleted too** | not offered |
+| deleted from the staging folder (`srcdeleted`) | restored from the game folder | removed for good | not offered |
+| recorded value changed (`valchange`) | not offered | the only answer | not offered |
+
+`externalChanges.answer` sets each file's action through Vortex's own `SET_EXTERNAL_CHANGE_ACTION`, then presses the
+dialog's Confirm button (`#btn-confirm-activation`). Vortex keeps the confirm function private to itself, so the button
+is the only way in. More than one deletion makes Vortex ask "Confirm deletion", which the verb answers "Continue",
+because deleting was the answer given.
 
 ### FOMOD installers: describe, then answer
 

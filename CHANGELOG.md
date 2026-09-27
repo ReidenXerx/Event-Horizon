@@ -20,6 +20,10 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
   collection nobody gets as an update), a version that is not newer than the last one, an upload from a stale older
   config, and an upload whose name differs from the live collection's (Vortex would rename your page) are all
   refused with the reason.
+- **Vortex's "External Changes" question no longer stalls the AI.** When the game changes a mod's file (a settings
+  file it saved), Vortex stops the deploy to ask what to do. The AI couldn't see that question and waited until the
+  connection dropped. Now the deploy says right away that Vortex is asking, lists the files, and the AI can answer
+  (keep the change, undo it, or keep the newer file) or ask you first. It never keeps a deletion without your OK.
 
 ### Building collections
 - **Switching a bundled mod off leaves it out, like any other mod.** It used to refuse the build, and only at the

@@ -50,6 +50,10 @@ const META: Record<string, Meta> = {
     doing: (b) => `Answering the installer (${Array.isArray(b["picks"]) ? (b["picks"] as unknown[]).length : 0} choice(s))`,
   },
   "fomod.cancel": { badge: "FOMOD", doing: () => "Cancelling the installer" },
+  "externalChanges.answer": {
+    badge: "CHANGES",
+    doing: (b) => (b["cancel"] === true ? "Cancelling at External Changes" : `Answering External Changes (${String(b["all"] ?? "per file")})`),
+  },
   install: {
     badge: "INSTALL",
     doing: (b) => {

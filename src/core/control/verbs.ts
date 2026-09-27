@@ -72,6 +72,14 @@ import {
 
 import { ControlError } from "./controlError";
 import { COLLECTION_VERBS } from "./collectionVerbs";
+import { installRootFor } from "../stagingPath";
+import {
+  clickDialogButton,
+  describeExternalChanges,
+  locateDefault,
+  planAnswer,
+  readChanges,
+} from "./externalChanges";
 export { ControlError };
 
 export type VerbBody = Record<string, unknown>;
@@ -88,6 +96,7 @@ export type Verb = {
 // ─── small readers ─────────────────────────────────────────────────────────
 
 const str = (v: unknown): string | undefined => (typeof v === "string" && v.length > 0 ? v : undefined);
+const isRecord = (v: unknown): boolean => typeof v === "object" && v !== null && !Array.isArray(v);
 
 function need(body: VerbBody, key: string): string {
   const v = str(body[key]);
@@ -228,6 +237,73 @@ function openDialogs(api: types.IExtensionApi): VortexDialog[] {
       text: (str(c["text"]) ?? str(c["message"]) ?? str(c["bbcode"]))?.slice(0, 500),
     };
   });
+}
+
+/** The active game's mod id for a staging folder name (what the External Changes dialog lists). */
+function modIdBySource(api: types.IExtensionApi): (source: string) => string | undefined {
+  const state = api.getState() as { persistent?: { mods?: Record<string, Record<string, { installationPath?: string }>> } };
+  const pool = state.persistent?.mods?.[getActiveGameId(api.getState()) ?? ""] ?? {};
+  const byPath = new Map(Object.entries(pool).map(([id, m]) => [m?.installationPath ?? id, id]));
+  return (source) => byPath.get(source);
+}
+
+/** Vortex's External Changes dialog as an agent reads it, or undefined when it is not open. */
+function externalChanges(api: types.IExtensionApi): Record<string, unknown> | undefined {
+  const state = api.getState();
+  if (readChanges(state).length === 0) return undefined;
+  const gameId = getActiveGameId(state) ?? "";
+  let deployRoot: string | undefined;
+  try {
+    const discovered = readDiscovery(state, gameId).path;
+    const game = util.getGame(gameId) as { queryModPath?: (p: string) => string } | undefined;
+    const rel = discovered !== undefined ? game?.queryModPath?.(discovered) : undefined;
+    deployRoot = discovered !== undefined && rel !== undefined ? path.resolve(discovered, rel) : undefined;
+  } catch {
+    deployRoot = undefined;
+  }
+  return describeExternalChanges(state, modIdBySource(api), locateDefault(installRootFor(state, gameId), deployRoot));
+}
+
+/**
+ * A deploy or purge Vortex paused on its External Changes dialog. Kept so the
+ * answer can wait for the same run to finish and verify it.
+ */
+let pausedRun: { kind: "deploy" | "purge"; gameId: string; done: Promise<unknown> } | undefined;
+
+/**
+ * Runs a deploy or purge, and returns early with `external-changes` if Vortex
+ * stops to ask about files changed outside it. Vortex's run stays paused on
+ * the dialog, waiting for externalChanges.answer.
+ */
+async function unlessExternalChanges<T>(
+  api: types.IExtensionApi,
+  kind: "deploy" | "purge",
+  gameId: string,
+  run: Promise<T>,
+): Promise<T> {
+  let settled = false;
+  const tracked = run.finally(() => {
+    settled = true;
+  });
+  tracked.catch(() => undefined);
+  const paused = new Promise<"paused">((resolve) => {
+    const tick = (): void => {
+      if (settled) return;
+      if (readChanges(api.getState()).length > 0) resolve("paused");
+      else setTimeout(tick, 250);
+    };
+    setTimeout(tick, 250);
+  });
+  const first = await Promise.race([tracked.then((v) => ({ v })), paused]);
+  if (first !== "paused") return first.v;
+  pausedRun = { kind, gameId, done: tracked };
+  throw new ControlError(
+    "external-changes",
+    `Vortex stopped the ${kind} to ask about mod files changed outside it (its External Changes dialog). ` +
+      `The ${kind} is waiting: answer with externalChanges.answer (revert, save or newer), or cancel it.`,
+    409,
+    { externalChanges: externalChanges(api), [kind === "deploy" ? "deployWaiting" : "purgeWaiting"]: true },
+  );
 }
 
 /**
@@ -404,6 +480,7 @@ export async function runVerb(api: types.IExtensionApi, name: string, body: Verb
     installersSeen: watch?.installers ?? [],
     openDialogs: openDialogs(api).map(({ type, title, text }) => ({ type, title, text })),
     ...(readFomod(api.getState()) !== undefined ? { openInstaller: fomodSummary(readFomod(api.getState())) } : {}),
+    ...(externalChanges(api) !== undefined ? { externalChanges: externalChanges(api) } : {}),
   });
   try {
     const result = await verb.run(api, body);
@@ -434,7 +511,7 @@ async function purge(api: types.IExtensionApi, gameId: string): Promise<number> 
   if (getActiveGameId(api.getState()) !== gameId) {
     throw new ControlError("game-changed", "Vortex switched games before the purge; nothing was purged.", 409);
   }
-  await purgeGameDeployment(api, { timeoutMs: budget(api) });
+  await unlessExternalChanges(api, "purge", gameId, purgeGameDeployment(api, { timeoutMs: budget(api) }));
   const left = await deployedFileCount(api, gameId);
   if (left === undefined) {
     throw new ControlError("purge-unverified", "Vortex reported the purge done, but the deployment manifests could not be read.", 500);
@@ -463,7 +540,12 @@ export let PLUGIN_SETTLE_MS = 5000;
 async function deploy(api: types.IExtensionApi, gameId: string): Promise<Record<string, unknown>> {
   const profileId = activeProfileId(api);
   if (profileId === undefined) throw new ControlError("no-profile", "Vortex has no active profile.", 409);
-  await deployAndWait(api, profileId);
+  await unlessExternalChanges(api, "deploy", gameId, deployAndWait(api, profileId));
+  return verifyDeploy(api, gameId, profileId);
+}
+
+/** Reads the deploy back: files in the manifests, and Vortex no longer asking for one. */
+async function verifyDeploy(api: types.IExtensionApi, gameId: string, profileId: string): Promise<Record<string, unknown>> {
   const files = await deployedFileCount(api, gameId);
   // Vortex clears its "needs deploying" flag a few seconds AFTER the deploy
   // callback (measured live: failed at the callback, false 6 s later), so
@@ -1235,6 +1317,7 @@ export const VERBS: Record<string, Verb> = {
             .map(({ type, title, message }) => ({ type, title, message })),
           openDialogs: openDialogs(api).map(({ type, title, text }) => ({ type, title, text })),
           openInstaller: fomodSummary(readFomod(state)) ?? null,
+          externalChanges: externalChanges(api) ?? null,
         },
       };
       if (include.has("mods")) {
@@ -1503,6 +1586,98 @@ export const VERBS: Record<string, Verb> = {
   },
 
   /**
+   * Answers Vortex's External Changes dialog (files changed outside Vortex,
+   * found before a deploy or purge), then waits for that deploy or purge to
+   * finish and verifies it.
+   *
+   *   { all?: "revert"|"save"|"newer", mods?: {<mod or id>: answer}, files?: {<path>: answer}, cancel?: true }
+   *
+   * Runs beside the queue: the deploy it unblocks may be the queued command.
+   */
+  "externalChanges.answer": {
+    mutates: true,
+    queue: false,
+    run: async (api, body) => {
+      const changes = readChanges(api.getState());
+      if (changes.length === 0) {
+        throw new ControlError("no-external-changes", "Vortex is not showing its External Changes dialog.", 409);
+      }
+      const shown = externalChanges(api);
+      const run = pausedRun;
+      if (body["cancel"] === true) {
+        if (!clickDialogButton("cancel")) {
+          throw new ControlError("dialog-not-shown", "The External Changes dialog is not on screen to cancel.", 409, { externalChanges: shown });
+        }
+        const closed = await settle(() => readChanges(api.getState()).length === 0, 10000);
+        if (!closed) throw new ControlError("cancel-unverified", "The External Changes dialog is still open.", 500);
+        pausedRun = undefined;
+        return { cancelled: true, [run?.kind ?? "deploy"]: "cancelled by Vortex", verified: { dialogClosed: true } };
+      }
+      const idOf = modIdBySource(api);
+      const plan = planAnswer(
+        changes,
+        {
+          ...(str(body["all"]) !== undefined ? { all: str(body["all"])! } : {}),
+          ...(isRecord(body["mods"]) ? { mods: body["mods"] as Record<string, string> } : {}),
+          ...(isRecord(body["files"]) ? { files: body["files"] as Record<string, string> } : {}),
+        },
+        idOf,
+      );
+      if (plan.problems.length > 0) {
+        throw new ControlError("bad-answer", plan.problems.join(" "), 400, { externalChanges: shown });
+      }
+      for (const a of plan.actions) dispatchRaw(api, "SET_EXTERNAL_CHANGE_ACTION", { filePaths: a.filePaths, action: a.action });
+      const want = new Map(plan.actions.flatMap((a) => a.filePaths.map((f) => [f, a.action] as const)));
+      const applied = await settle(() =>
+        readChanges(api.getState()).every((c) => !want.has(c.filePath) || c.action === want.get(c.filePath)),
+      );
+      if (!applied) {
+        throw new ControlError("answer-unverified", "Vortex did not take the answers.", 500, { externalChanges: externalChanges(api) });
+      }
+      const deletions = readChanges(api.getState()).filter((c) => c.action === "delete").length;
+      if (!clickDialogButton("confirm")) {
+        throw new ControlError("dialog-not-shown", "The External Changes dialog is not on screen to confirm.", 409, {
+          externalChanges: externalChanges(api),
+        });
+      }
+      // More than one deletion: Vortex asks "Confirm deletion" [Back, Continue]. Deleting was the answer given.
+      if (deletions > 1) {
+        const asked = await settle(() => openDialogs(api).some((d) => d.title === "Confirm deletion"), 5000);
+        const d = openDialogs(api).find((x) => x.title === "Confirm deletion");
+        if (asked && d !== undefined) api.closeDialog?.(d.id, "Continue", {});
+      }
+      const closed = await settle(() => readChanges(api.getState()).length === 0, 15000);
+      if (!closed) {
+        throw new ControlError("confirm-unverified", "The External Changes dialog is still open after Confirm.", 500, {
+          externalChanges: externalChanges(api),
+        });
+      }
+      pausedRun = undefined;
+      const answered = { answered: changes.length, applied: plan.actions };
+      if (run === undefined) {
+        // Opened by a deploy the channel did not start (the user's, or an install's): it carries on by itself.
+        return { ...answered, note: "Vortex carries on with the deploy it was running.", verified: { dialogClosed: true } };
+      }
+      // The run may have given up while it waited (its own time budget); the read-back below decides.
+      await Promise.race([run.done.catch(() => undefined), new Promise((r) => setTimeout(r, budget(api)))]);
+      const profileId = activeProfileId(api);
+      if (run.kind === "purge") {
+        const left = await deployedFileCount(api, run.gameId);
+        if (left !== 0) {
+          throw new ControlError("purge-incomplete", `After the answer, ${String(left)} files are still deployed.`, 500, {
+            deployedFilesAfter: left,
+          });
+        }
+        return { ...answered, purge: "finished", verified: { dialogClosed: true, deployedFilesAfter: 0 } };
+      }
+      if (profileId === undefined) throw new ControlError("no-profile", "Vortex has no active profile.", 409);
+      const deployed = await verifyDeploy(api, run.gameId, profileId);
+      return { ...answered, deploy: "finished", ...deployed, verified: { dialogClosed: true, ...(deployed["verified"] as object) } };
+    },
+    describe: (b) => (b["cancel"] === true ? "cancelled at Vortex's External Changes" : "answered Vortex's External Changes"),
+  },
+
+  /**
    * The logs worth reading when something goes wrong: crash logs and script
    * extender logs from the game's My Games folder (Buffout 4 / Crash Logger
    * write there), Event Horizon's own log, and Vortex's. Newest first. Read
@@ -1549,6 +1724,8 @@ export const VERBS: Record<string, Verb> = {
       openDialogs: openDialogs(api).map(({ type, title, text }) => ({ type, title, text })),
       // A FOMOD wizard waiting for answers: read it in full with `fomod`, answer it with `fomod.answer`.
       openInstaller: fomodSummary(readFomod(api.getState())) ?? null,
+      // Vortex's External Changes dialog: answer it with externalChanges.answer.
+      externalChanges: externalChanges(api) ?? null,
     }),
   },
 

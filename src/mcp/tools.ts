@@ -309,6 +309,22 @@ export const TOOLS: ToolSpec[] = [
     properties: {},
   },
   {
+    name: "external_changes_answer",
+    verb: "externalChanges.answer",
+    mutates: true,
+    description:
+      "Answer Vortex's External Changes dialog: mod files changed outside Vortex, found before a deploy or purge, which " +
+      "waits on this answer (a deploy reply with code external-changes lists them). Per file: revert (put Vortex's copy " +
+      "back), save (keep the change; for a deletion, delete for good), newer (keep whichever is newer; changed files " +
+      "only). Then it finishes and verifies the waiting deploy.",
+    properties: {
+      all: { type: "string", enum: ["revert", "save", "newer"], description: "One answer for every file." },
+      mods: { type: "object", description: "Answers per mod, by the mod name or id the dialog listed: {\"<mod>\": \"newer\"}." },
+      files: { type: "object", description: "Answers per file path: {\"<path>\": \"revert\"}." },
+      cancel: bool("Cancel instead: the waiting deploy or purge is cancelled."),
+    },
+  },
+  {
     name: "profile_switch",
     verb: "profile.switch",
     mutates: true,
@@ -397,6 +413,9 @@ export const GUIDE = [
   "  chose and why, then install with picks. Use only option names the installer listed.",
   "- If a reply mentions an open installer or dialog Vortex is showing, tell the user it is waiting for them, or answer it",
   "  with installer_answer.",
+  "- A deploy or purge that stops with code external-changes is waiting on Vortex's External Changes dialog. When every",
+  "  file says sameFile:true (the game wrote a mod's own settings file through the link), answer newer. Otherwise tell",
+  "  the user what changed and ask. Never answer save for a deleted file without the user's OK: it deletes for good.",
   "",
   "Load order and conflicts:",
   "- After adding or swapping mods, check conflicts (unresolvedOnly) and settle real ones with mods_rule (identical:true",
