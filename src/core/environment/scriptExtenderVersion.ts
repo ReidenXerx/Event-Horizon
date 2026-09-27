@@ -187,10 +187,25 @@ export function readNativePluginDeclaration(
       (block.readUInt32LE(layout.independence) & layout.independentMask) !== 0,
     runtimes,
     hasQuery,
-    ...(extender === "f4se"
-      ? { addressIndependence: block.readUInt32LE(520), structureIndependence: block.readUInt32LE(524) }
-      : {}),
+    ...(extender === "f4se" ? f4seIndependence(dll, block) : {}),
   };
+}
+
+/**
+ * F4SE's two independence words, as F4SE 0.7.9 itself uses them
+ * (PluginManager::CheckPluginCompatibility, ianpatt/f4se): a set
+ * `reservedBreaking` (offset 600) cancels independence outright, so it is
+ * folded in here as zeros rather than carried as a third field.
+ */
+function f4seIndependence(
+  dll: Buffer,
+  block: Buffer,
+): { addressIndependence: number; structureIndependence: number } {
+  const full = readExportedData(dll, "F4SEPlugin_Version", 604);
+  const breaking = full !== undefined ? full.readUInt32LE(600) : 0;
+  return breaking !== 0
+    ? { addressIndependence: 0, structureIndependence: 0 }
+    : { addressIndependence: block.readUInt32LE(520), structureIndependence: block.readUInt32LE(524) };
 }
 
 /** Which extender a staged path belongs to, from where it sits. */

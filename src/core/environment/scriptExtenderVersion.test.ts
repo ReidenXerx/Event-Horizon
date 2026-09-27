@@ -228,3 +228,23 @@ describe("an independence dword with an unrecognised bit", () => {
     }
   });
 });
+
+describe("F4SE's raw independence words (F4SE 0.7.9 CheckPluginCompatibility)", () => {
+  const block = (address: number, structure: number, breaking = 0): Buffer => {
+    const b = Buffer.alloc(604);
+    f4seBlock({ name: "NG", independence: address, runtimes: [pack(1, 11, 169)] }).copy(b);
+    b.writeUInt32LE(structure, 524);
+    b.writeUInt32LE(breaking, 600);
+    return b;
+  };
+
+  it("records both words for the judge", () => {
+    const read = readNativePluginDeclaration(buildPe({ exportData: { F4SEPlugin_Version: block(4, 4) } }), "f4se");
+    expect(read).toMatchObject({ kind: "declares", addressIndependence: 4, structureIndependence: 4 });
+  });
+
+  it("zeroes them when reservedBreaking is set, as F4SE ignores independence then", () => {
+    const read = readNativePluginDeclaration(buildPe({ exportData: { F4SEPlugin_Version: block(4, 4, 1) } }), "f4se");
+    expect(read).toMatchObject({ kind: "declares", addressIndependence: 0, structureIndependence: 0 });
+  });
+});

@@ -135,6 +135,13 @@ export function runtimeIdFor(
  * for 1.11.137 and later. Structure: bit 0 no structs (any), bit 1 the 1.10.980
  * layout, bit 2 the 1.11.137 layout.
  *
+ * For 1.11 this is F4SE 0.7.9's own rule, read from its source
+ * (PluginManager::CheckPluginCompatibility): independent iff the address word
+ * has signatures or the 1.11.137 Address Library AND the structure word has
+ * no-structs or the 1.11.137 layout; otherwise the runtime must be listed
+ * exactly. Checked against the curator's real f4se.log on 1.11.240: all six
+ * deployed DLLs the rule and the log were compared on agree.
+ *
  * Measured 2026-09-28 on the curator's Fallout 4 staging: every next-gen
  * CommonLibF4 plugin sets address=4 and structure=4 and lists only the runtime
  * it was built on (1.11.169, 1.11.191, 1.10.984...). Reading only bits 0-1 of
