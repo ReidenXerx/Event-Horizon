@@ -345,6 +345,12 @@ export type InstallSuccess = {
    */
   iniTweakNotice?: string[];
   /**
+   * Files a mod's installer creates only when certain plugins are present,
+   * which this load order does not have: not installed, and not a failure
+   * (owner poll, 2026-09-28).
+   */
+  installerConditionNotice?: string[];
+  /**
    * Ready-to-send reports for mods that could not be reproduced.
    *
    * One per mod that failed against the curator's staging, failed against its
@@ -661,6 +667,12 @@ export type InstallFailed = {
   pluginOrderNotApplied?: string[];
   /** Curator INI tweaks that were ticked. */
   iniTweakNotice?: string[];
+  /**
+   * Files a mod's installer creates only when certain plugins are present,
+   * which this load order does not have: not installed, and not a failure
+   * (owner poll, 2026-09-28).
+   */
+  installerConditionNotice?: string[];
   /** Mods that changed on disk since a previous install of this collection. */
   stagingDriftNotice?: string[];
   /**

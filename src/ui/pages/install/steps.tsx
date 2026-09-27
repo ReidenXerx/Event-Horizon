@@ -3356,6 +3356,21 @@ function InstallNotes(props: {
 }): JSX.Element | null {
   const { result } = props;
   const present: Array<{ label: string; node: JSX.Element }> = [];
+  if ((result.installerConditionNotice?.length ?? 0) > 0) {
+    present.push({
+      label: "files an installer skipped",
+      node: (
+        <Notice
+          key="installer-condition"
+          label="Not installed, as expected"
+          intent="info"
+          summary="Some mods' installers only create certain files when other plugins are present. You don't have those plugins, so those files were not installed. Nothing failed."
+        >
+          <NoticeLines lines={result.installerConditionNotice ?? []} />
+        </Notice>
+      ),
+    });
+  }
   if ((result.iniTweakNotice?.length ?? 0) > 0) {
     present.push({
       label: "INI tweaks",

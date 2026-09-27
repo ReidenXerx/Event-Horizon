@@ -10,6 +10,17 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [Unreleased]
+
+### Installer-conditional files
+- **No more "could not be reproduced" for a file the mod's installer skips on purpose.** Some FOMOD installers create
+  a file only when certain other plugins are present (a Munitions patch for 5.45mm weapons you don't have). When a
+  collection records such a file and your load order doesn't have those plugins, the install now says the file was
+  not installed because its condition isn't met, and names the plugins. It no longer reports the mod as failed.
+- **Curators are told at build time.** A staged file your mod's installer would not create now (usually left over
+  from an older install) gets a build warning with the plugins it needs, so you can reinstall the mod and keep your
+  staging clean. The file stays in the collection's record: nothing is dropped behind your back.
+
 ## [0.2.21] — 2026-09-27
 
 ### Collection updates for players

@@ -22,6 +22,7 @@ import {
 } from "./miniXml";
 
 import type {
+  FomodCondition,
   FomodConditionalPattern,
   FomodFileSpec,
   FomodGroup,
@@ -179,6 +180,38 @@ function collectPluginStateDependencies(root: XmlElement): string[] {
 }
 
 /**
+ * A `<dependencies>` element as a condition tree, or undefined when any part
+ * of it cannot be evaluated (a game-version test, or an element FOMOD allows
+ * that is not modelled here). Operator "Or" is any, anything else is all.
+ */
+function parseCondition(node: XmlElement | undefined): FomodCondition | undefined {
+  if (node === undefined) return undefined;
+  const terms: FomodCondition[] = [];
+  for (const el of node.children ?? []) {
+    const name = (el as { name?: string }).name;
+    if (name === undefined) continue;
+    const e = el as XmlElement;
+    if (name === "fileDependency") {
+      const file = attr(e, "file");
+      if (file === undefined) return undefined;
+      terms.push({ kind: "file", file: file.trim().toLowerCase(), state: (attr(e, "state") ?? "Active").trim() });
+    } else if (name === "flagDependency") {
+      const flag = attr(e, "flag");
+      if (flag === undefined) return undefined;
+      terms.push({ kind: "flag", flag, value: attr(e, "value") ?? "" });
+    } else if (name === "dependencies") {
+      const nested = parseCondition(e);
+      if (nested === undefined) return undefined;
+      terms.push(nested);
+    } else {
+      return undefined;
+    }
+  }
+  const op = (attr(node, "operator") ?? "And").trim().toLowerCase();
+  return { kind: op === "or" ? "any" : "all", terms };
+}
+
+/**
  * Parse `conditionalFileInstalls`.
  *
  * Only `flagDependency` is modelled. FOMOD also allows `fileDependency`,
@@ -221,10 +254,12 @@ function parseConditionals(
       unsupportedDependencies.push(`operator=${operator}`);
       warnings.push(`Dependency operator "${operator}" is not modelled (assuming And).`);
     }
+    const condition = parseCondition(deps);
     out.push({
       flagDependencies,
       files: parseFiles(first(pattern, "files")),
       unsupportedDependencies,
+      ...(condition !== undefined ? { condition } : {}),
     });
   }
   return out;

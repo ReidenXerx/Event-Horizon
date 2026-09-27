@@ -683,6 +683,14 @@ export type EhcollStagingFile = {
    * curator's manifest was built with `verificationLevel = "thorough"`.
    */
   sha256?: string;
+  /**
+   * The mod's installer creates this file only when one of these plugins is
+   * active (a conditionalFileInstalls pattern), and on the curator's own
+   * plugins it would not have. A player without them is told the file is not
+   * installed because its condition is not met, rather than that the mod
+   * could not be reproduced. Optional: older clients ignore it.
+   */
+  installerCondition?: { needs: string[] };
 };
 
 export type ModUiAttributes = {

@@ -34,7 +34,8 @@ import { type CaseMode, pathKey } from "../paths";
 import type { OmissionLead } from "./omissionLeads";
 import { expandFomodPlan, fomodRootOf } from "./expandFomodPlan";
 import type { RecordedStep } from "./fomodReplay";
-import { replayFomod } from "./fomodReplay";
+import { replayFomod, type FomodConditionalPattern } from "./fomodReplay";
+import { evaluateCondition, pluginsWanted, type PluginState } from "./conditionalFiles";
 import { parseModuleConfig } from "./parseModuleConfig";
 import type {
   ArchiveVerificationResult,
@@ -58,6 +59,13 @@ export type SelfCheckDepth =
   | "skipped";
 
 export type SelfCheckReport = {
+  /**
+   * Staged files the installer would NOT create now: they come only from
+   * conditionalFileInstalls patterns whose plugin condition is false on the
+   * curator's own plugins (e.g. left over from an older install). Each keeps
+   * the plugins it needs, any one of which would make the installer create it.
+   */
+  installerConditionUnmet?: Array<{ path: string; needs: string[] }>;
   modId: string;
   modName: string;
   depth: SelfCheckDepth;
@@ -208,6 +216,8 @@ export type SelfCheckInput = {
    * side is where that becomes permanent for every user of the package.
    */
   caseMode?: CaseMode;
+  /** The curator's plugins, as a FOMOD condition asks about them. Without it, nothing is explained. */
+  pluginState?: (file: string) => PluginState;
 };
 
 /** Where a FOMOD script lives. Case varies in the wild (`fomod`, `FOMod`). */
@@ -479,6 +489,7 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
   }
 
   let expected;
+  let conditionUnmet: Array<{ path: string; needs: string[] }> = [];
   try {
     const parsed = await parseModuleConfig(raw);
     // Whatever the replay concludes, the script has now been read and its
@@ -528,6 +539,17 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
       );
       return withDeps({ ...withLeads, depth: "containment", notes, ...unexplainedFacts(containment, listing) });
     }
+    if (input.pluginState !== undefined) {
+      conditionUnmet = stagedButConditionUnmet({
+        patterns: parsed.script.conditionalPatterns,
+        flags: replay.flags,
+        pluginState: input.pluginState,
+        expanded: (specs) => expandFomodPlan(specs, listing, fomodRootOf(configEntry)).files,
+        expectedKeys: new Set(expected.files.map((f) => key(f.path))),
+        staged: input.staged.map((f) => f.path),
+        key,
+      });
+    }
   } catch (err) {
     notes.push(`FOMOD replay failed: ${err instanceof Error ? err.message : String(err)}`);
     return withDeps({ ...withLeads, depth: "containment", notes, ...unexplainedFacts(containment, listing) });
@@ -559,6 +581,7 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
     missing,
     ...unexplainedFacts(containment, listing),
     expectedCount: expected.files.length,
+    ...(conditionUnmet.length > 0 ? { installerConditionUnmet: conditionUnmet } : {}),
     // The same answers pick the same files anywhere — unless the script also
     // asks the game which plugins are active.
     ...(readsPluginState.length === 0 ? { reproducibleInstall: true } : {}),
@@ -566,6 +589,47 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
 }
 
 /** Aggregate for logging and for the build summary. */
+/**
+ * Staged files that only a plugin-conditioned pattern creates, when every such
+ * pattern's condition is false on these plugins. Flag-only patterns are left
+ * to the replay, which already predicts them.
+ */
+export function stagedButConditionUnmet(args: {
+  patterns: readonly FomodConditionalPattern[];
+  flags: Readonly<Record<string, string>>;
+  pluginState: (file: string) => PluginState;
+  expanded: (specs: FomodConditionalPattern["files"]) => Array<{ path: string }>;
+  expectedKeys: ReadonlySet<string>;
+  staged: readonly string[];
+  key: (p: string) => string;
+}): Array<{ path: string; needs: string[] }> {
+  const unexpected = new Map<string, string>();
+  for (const p of args.staged) if (!args.expectedKeys.has(args.key(p))) unexpected.set(args.key(p), p);
+  if (unexpected.size === 0) return [];
+  const produced = new Set<string>();
+  const needsByKey = new Map<string, Set<string>>();
+  for (const pattern of args.patterns) {
+    if (pattern.condition === undefined || pattern.unsupportedDependencies.length === 0) continue;
+    const holds = evaluateCondition(pattern.condition, args.flags, args.pluginState);
+    const wanted = pluginsWanted(pattern.condition);
+    for (const f of args.expanded(pattern.files)) {
+      const k = args.key(f.path);
+      if (!unexpected.has(k)) continue;
+      if (holds) {
+        produced.add(k);
+        continue;
+      }
+      const set = needsByKey.get(k) ?? new Set<string>();
+      wanted.forEach((w) => set.add(w));
+      needsByKey.set(k, set);
+    }
+  }
+  return [...needsByKey.entries()]
+    .filter(([k, needs]) => !produced.has(k) && needs.size > 0)
+    .map(([k, needs]) => ({ path: unexpected.get(k)!, needs: [...needs].sort() }))
+    .sort((a, b) => (a.path < b.path ? -1 : 1));
+}
+
 export function summarizeSelfChecks(reports: SelfCheckReport[]): {
   replayed: number;
   containment: number;

@@ -647,6 +647,13 @@ export function applySelfCheckFindings(
       .filter((r) => (r.readsPluginState?.length ?? 0) > 0)
       .map((r) => [r.modId, r.readsPluginState!] as const),
   );
+  // Staged files the installer would not create now: recorded on the file so a
+  // player is told why it is absent (owner poll, 2026-09-28).
+  const conditionByMod = new Map(
+    reports
+      .filter((r) => (r.installerConditionUnmet?.length ?? 0) > 0)
+      .map((r) => [r.modId, new Map(r.installerConditionUnmet!.map((c) => [c.path, c.needs] as const))] as const),
+  );
 
   if (verifiedEmpty.size > 0) {
     ehLog("info", "build.empty-selection-verified", { mods: verifiedEmpty.size });
@@ -679,6 +686,14 @@ export function applySelfCheckFindings(
     ...(unexamined.has(m.id) ? { installerUnexamined: true } : {}),
     ...(pluginStateReaders.has(m.id)
       ? { readsPluginState: pluginStateReaders.get(m.id)! }
+      : {}),
+    ...(conditionByMod.has(m.id) && m.stagingFiles !== undefined
+      ? {
+          stagingFiles: m.stagingFiles.map((f) => {
+            const needs = conditionByMod.get(m.id)!.get(f.path);
+            return needs !== undefined ? { ...f, installerCondition: { needs } } : f;
+          }),
+        }
       : {}),
   }));
 }

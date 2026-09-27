@@ -22,6 +22,7 @@
  * not be checked, and the build proceeds.
  */
 
+import { describeNeeds, type PluginState } from "./conditionalFiles";
 import { getHashPool, hashPoolEnabled } from "../hashPool";
 
 /** Mods self-checked at once while the hash pool runs. */
@@ -909,6 +910,27 @@ export type SelfCheckRunResult = {
  * Vortex exposes — so the temp dir is created and removed per call. The files
  * involved are FOMOD scripts, a few KB.
  */
+/**
+ * The curator's plugins as a FOMOD condition asks about them: Active (enabled
+ * in the load order), Inactive (known but off) or Missing. Undefined when
+ * Vortex's load order cannot be read: an empty list would make every plugin
+ * look missing and blame files the installer does create.
+ */
+export function curatorPluginState(state: unknown): ((file: string) => PluginState) | undefined {
+  const s = state as {
+    loadOrder?: Record<string, { enabled?: boolean }>;
+    session?: { plugins?: { pluginList?: Record<string, unknown> } };
+  };
+  const order = s.loadOrder ?? {};
+  if (Object.keys(order).length === 0) return undefined;
+  const enabled = new Set(Object.entries(order).filter(([, v]) => v?.enabled === true).map(([k]) => k.toLowerCase()));
+  const known = new Set([...Object.keys(order), ...Object.keys(s.session?.plugins?.pluginList ?? {})].map((k) => k.toLowerCase()));
+  return (file) => {
+    const f = file.toLowerCase();
+    return enabled.has(f) ? "Active" : known.has(f) ? "Inactive" : "Missing";
+  };
+}
+
 export function makeReadEntry(sevenZip: SevenZipApi) {
   return async (archivePath: string, entryPath: string): Promise<Buffer | undefined> => {
     const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "eh-selfcheck-"));
@@ -1125,6 +1147,7 @@ export async function runSelfChecks(
   // Several mods at once: each extracts into its own temp folder with its own
   // 7-Zip process, and its checksums go through the hash pool. Reports keep
   // the mods' order, so warnings and summaries read exactly as before.
+  const pluginState = curatorPluginState(state);
   const slots: Array<SelfCheckReport | undefined> = new Array(comparable.length);
   const parallel = hashPoolEnabled() && (await getHashPool().whenReady()) ? SELF_CHECK_PARALLEL : 1;
   await pMap(comparable, parallel, async (mod, slot) => {
@@ -1175,6 +1198,7 @@ export async function runSelfChecks(
           recordedChoices: mod.fomodSelections ?? [],
           readEntry,
           ...(caseMode !== undefined ? { caseMode } : {}),
+          ...(pluginState !== undefined ? { pluginState } : {}),
           ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
         })
       );
@@ -1248,6 +1272,28 @@ export async function runSelfChecks(
   const skippedReports = reports.filter((r) => r.depth === "skipped");
 
   const warnings: string[] = [];
+  const conditionUnmet = reports.filter((r) => (r.installerConditionUnmet?.length ?? 0) > 0);
+  if (conditionUnmet.length > 0) {
+    ehLog("warn", "selfcheck.installer-condition-unmet", {
+      mods: conditionUnmet.length,
+      detail: conditionUnmet.slice(0, 10).map((r) => ({ mod: r.modName, files: r.installerConditionUnmet })),
+    });
+    warnings.push(
+      `${conditionUnmet.length} mod(s) have staged files your installer wouldn't produce now: each comes from an ` +
+        `installer step that only runs when certain plugins are present, and they aren't. They were probably left ` +
+        `by an older install. Reinstall the mod so its staging matches a clean install. Players are told these ` +
+        `files are not installed because the condition isn't met, not that the mod failed. ` +
+        conditionUnmet
+          .slice(0, 5)
+          .map((r) => {
+            const first = r.installerConditionUnmet![0]!;
+            return `${r.modName}: ${first.path} (${describeNeeds(first.needs)})` +
+              (r.installerConditionUnmet!.length > 1 ? ` and ${r.installerConditionUnmet!.length - 1} more` : "");
+          })
+          .join("; ") +
+        (conditionUnmet.length > 5 ? `; and ${conditionUnmet.length - 5} more mods.` : "."),
+    );
+  }
 
   /**
    * ─── SAY WHEN THE EXPENSIVE COMPARISON DID NOT ACTUALLY RUN ───────────

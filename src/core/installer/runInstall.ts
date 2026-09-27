@@ -150,6 +150,7 @@ import {
   walkStagingFolder,
 } from "../manifest/stagingFileWalker";
 import { buildCuratorReport } from "./curatorReport";
+import { describeNeeds, installerConditionUnmet } from "../manifest/conditionalFiles";
 import * as path from "path";
 import { selectors } from "@nexusmods/vortex-api";
 import { readReceipt } from "../installLedger";
@@ -905,6 +906,8 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
    * on the result instead, where the UI can offer them.
    */
   const curatorReports: string[] = [];
+  /** Files left out of the check because their installer condition is not met here. */
+  const installerConditionNotes: string[] = [];
   /**
    * Notes about hand-supplied archives that are not the curator's.
    *
@@ -2099,12 +2102,45 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         `Verifying ${installedMods.length} mod${installedMods.length === 1 ? "" : "s"}...`,
       );
 
+      const playerPluginActive = ((): ((plugin: string) => boolean) => {
+        const order = (api.getState() as { loadOrder?: Record<string, { enabled?: boolean }> }).loadOrder ?? {};
+        const on = new Set(
+          Object.entries(order)
+            .filter(([, v]) => v?.enabled === true)
+            .map(([k]) => k.toLowerCase()),
+        );
+        return (plugin) => on.has(plugin.toLowerCase());
+      })();
       for (let i = 0; i < installedMods.length; i++) {
         const installEntry = installedMods[i];
         const manifestEntry = manifestByCompareKey.get(
           installEntry.compareKey,
         );
-        const expectedFiles = manifestEntry?.state.stagingFiles;
+        // A file the installer creates only with plugins this load order does
+        // not have is not expected here; it is said, not failed.
+        const recordedFiles = manifestEntry?.state.stagingFiles;
+        const conditionNotMet =
+          recordedFiles?.filter(
+            (f) =>
+              f.installerCondition !== undefined &&
+              installerConditionUnmet(f.installerCondition.needs, playerPluginActive),
+          ) ?? [];
+        const expectedFiles =
+          conditionNotMet.length > 0
+            ? recordedFiles!.filter((f) => !conditionNotMet.includes(f))
+            : recordedFiles;
+        if (conditionNotMet.length > 0) {
+          const first = conditionNotMet[0]!;
+          ehLog("info", "verify.installer-condition-unmet", {
+            mod: installEntry.name,
+            files: conditionNotMet.map((f) => ({ path: f.path, needs: f.installerCondition!.needs })),
+          });
+          installerConditionNotes.push(
+            `${installEntry.name}: ${conditionNotMet.length} file(s) not installed because the mod's installer ` +
+              `only creates them when a plugin you don't have is present (${first.path}, ` +
+              `${describeNeeds(first.installerCondition!.needs)}). That's expected for this collection, not a failure.`,
+          );
+        }
 
         reportProgress(
           "verifying-mods",
@@ -5062,6 +5098,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
          */
         ...(rulesPurgeNotice !== undefined ? { rulesPurgeNotice } : {}),
         ...(curatorReports.length > 0 ? { curatorReports } : {}),
+        ...(installerConditionNotes.length > 0 ? { installerConditionNotice: installerConditionNotes } : {}),
         ...(damagedArchives.length > 0
           ? { damagedArchiveNotice: damagedArchives }
           : {}),
@@ -5302,6 +5339,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         ? { iniTweakRemovedNotice: describeIniTweakRemovals(iniTweaksTurnedOff) }
         : {}),
       ...(curatorReports.length > 0 ? { curatorReports } : {}),
+      ...(installerConditionNotes.length > 0 ? { installerConditionNotice: installerConditionNotes } : {}),
       ...(finishingSkipped.length > 0
         ? {
             finishingSkippedNotice: [

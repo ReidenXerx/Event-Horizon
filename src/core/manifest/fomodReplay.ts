@@ -82,8 +82,21 @@ export type FomodConditionalPattern = {
    * three files.
    */
   unsupportedDependencies: string[];
+  /**
+   * The whole condition, plugin files included, when every part of it is one
+   * this code can evaluate (no gameDependency, no unknown element). The replay
+   * above still ignores it: it predicts only from flags. It is for explaining a
+   * file a plugin condition kept out (conditionalFiles.ts).
+   */
+  condition?: FomodCondition;
 };
 
+
+/** A FOMOD `<dependencies>` tree: plugin-file and flag tests under And/Or. */
+export type FomodCondition =
+  | { kind: "file"; file: string; state: string }
+  | { kind: "flag"; flag: string; value: string }
+  | { kind: "all" | "any"; terms: FomodCondition[] };
 export type FomodScript = {
   moduleName?: string;
   requiredInstallFiles: FomodFileSpec[];
