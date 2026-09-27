@@ -10,6 +10,7 @@ import { isInside, toPosix, type CaseMode } from "../paths";
 
 import type { EhcollStagingFile, VerificationLevel } from "../../types/ehcoll";
 import { hashFileSha256 } from "../archiveHashing";
+import { getHashPool, hashPoolEnabled } from "../hashPool";
 import { AbortError } from "../../utils/abortError";
 import { ehLog } from "../logging/ehLog";
 import { pMap } from "../../utils/pMap";
@@ -53,6 +54,10 @@ import { pMap } from "../../utils/pMap";
  * {@link hashStagingFiles}.
  */
 export function getDefaultHashConcurrency(): number {
+  // With the hash pool, a caller's "concurrency" is only how many files it
+  // keeps in flight; the pool decides how many are hashed at once. Enough to
+  // keep every worker busy.
+  if (hashPoolEnabled() && getHashPool().parallelism > 0) return getHashPool().parallelism;
   const cpus = os.cpus().length;
   if (!Number.isFinite(cpus) || cpus < 2) {
     return 2;

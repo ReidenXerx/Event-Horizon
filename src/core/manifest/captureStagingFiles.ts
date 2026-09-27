@@ -9,6 +9,11 @@ import type { types } from "@nexusmods/vortex-api";
 import type { AuditorMod } from "../getModsListForProfile";
 import type { EhcollStagingFile, VerificationLevel } from "../../types/ehcoll";
 import { AbortError } from "../../utils/abortError";
+import { pMap } from "../../utils/pMap";
+import { getHashPool, hashPoolEnabled } from "../hashPool";
+
+/** Mods walked and hashed at once while the hash pool runs. */
+const MOD_PARALLEL = 4;
 import { ehLog } from "../logging/ehLog";
 import { installRootFor, installationPathFromState, stagingRootFromFolder } from "../stagingPath";
 import * as fsp from "fs/promises";
@@ -179,7 +184,8 @@ export async function captureStagingFiles(
     signal,
     hashCache,
   } = options;
-  const workers = hashConcurrency ?? getDefaultHashConcurrency();
+  // Read per mod, not once: the hash pool comes up after the capture starts.
+  const workers = (): number => hashConcurrency ?? getDefaultHashConcurrency();
 
   if (level === "none") {
     onProgress?.(mods.length, mods.length, mods[mods.length - 1]!);
@@ -224,7 +230,14 @@ export async function captureStagingFiles(
   /** Files deliberately not recorded because nothing installs them. */
   let volatileSkipped = 0;
 
-  for (let i = 0; i < mods.length; i++) {
+  // Several mods at once while the hash pool runs, so a stretch of small mods
+  // (one or two files each) still keeps every worker busy. One at a time,
+  // exactly as before, when it does not.
+  const modParallel = level !== "fast" && hashPoolEnabled() && (await getHashPool().whenReady()) ? MOD_PARALLEL : 1;
+  await pMap(
+    mods.map((_, i) => i),
+    modParallel,
+    async (i) => {
     if (signal?.aborted) throw new AbortError();
     const mod = mods[i]!;
     const enriched: StagingEnrichedAuditorMod = { ...mod };
@@ -245,7 +258,7 @@ export async function captureStagingFiles(
       out[i] = enriched;
       done += 1;
       onProgress?.(done, mods.length, mod);
-      continue;
+      return;
     }
 
     const stagingRoot = stagingRootFromFolder(
@@ -274,7 +287,7 @@ export async function captureStagingFiles(
       out[i] = enriched;
       done += 1;
       onProgress?.(done, mods.length, mod);
-      continue;
+      return;
     }
 
     try {
@@ -309,7 +322,7 @@ export async function captureStagingFiles(
         stagingRoot,
         files,
         level,
-        workers,
+        workers(),
         signal,
         (relPath, err) => onWarn?.(mod, `${relPath}: ${err.message}`),
         hashCache,
@@ -356,7 +369,9 @@ export async function captureStagingFiles(
     out[i] = enriched;
     done += 1;
     onProgress?.(done, mods.length, mod);
-  }
+    },
+    signal,
+  );
 
   /**
    * The number a curator should be able to read off the log without counting:

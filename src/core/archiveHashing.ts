@@ -14,6 +14,7 @@ import { AbortError, isAbort } from "../utils/abortError";
 import { ehLog } from "./logging/ehLog";
 import { getDefaultHashConcurrency } from "./manifest/stagingFileWalker";
 import { pMap } from "../utils/pMap";
+import { getHashPool, hashPoolEnabled, PoolUnavailable } from "./hashPool";
 
 /**
  * Sentinel error emitted by `pMap` and `enrichModsWithArchiveHashes`
@@ -37,7 +38,54 @@ export { AbortError };
  * in-flight hash. The underlying stream is destroyed and the promise
  * rejects with an `AbortError`.
  */
-export function hashFileSha256(
+export async function hashFileSha256(
+  filePath: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  // On every core, off Vortex's thread (hashPool.ts). The same SHA-256 of the
+  // same bytes; if the pool is unavailable or loses a worker, the file is
+  // hashed here in-process exactly as before.
+  if (hashPoolEnabled()) {
+    const pool = getHashPool();
+    if (pool.ready) {
+      try {
+        return await pool.hash(filePath, signal);
+      } catch (err) {
+        if (!(err instanceof PoolUnavailable)) throw err;
+      }
+    } else if (await isBig(filePath)) {
+      // One big file (an archive, a built package) is worth waiting ~0.3 s for the pool.
+      if (await pool.whenReady()) {
+        try {
+          return await pool.hash(filePath, signal);
+        } catch (err) {
+          if (!(err instanceof PoolUnavailable)) throw err;
+        }
+      }
+    } else if ((coldHashes += 1) >= WARM_UP_AFTER) {
+      // Enough work to be worth eleven processes; a one-off hash never starts them.
+      coldHashes = 0;
+      pool.warmUp();
+    }
+  }
+  return hashFileSha256InProcess(filePath, signal);
+}
+
+const BIG_FILE = 64 * 1024 * 1024;
+async function isBig(filePath: string): Promise<boolean> {
+  try {
+    return (await fs.promises.stat(filePath)).size >= BIG_FILE;
+  } catch {
+    return false; // the hash itself reports what is wrong with the file
+  }
+}
+
+/** Hashes done in-process since the pool was last idle, before it is started for the rest. */
+let coldHashes = 0;
+const WARM_UP_AFTER = 32;
+
+/** The in-process hash: Vortex's own thread. The pool's fallback. */
+export function hashFileSha256InProcess(
   filePath: string,
   signal?: AbortSignal,
 ): Promise<string> {
@@ -189,6 +237,8 @@ export async function enrichModsWithArchiveHashes(
   mods: AuditorMod[],
   options: EnrichOptions = {},
 ): Promise<AuditorMod[]> {
+  // A batch this size is worth the hash pool from its first archive.
+  if (mods.length >= WARM_UP_AFTER && hashPoolEnabled()) await getHashPool().whenReady();
   const {
     concurrency = getDefaultHashConcurrency(),
     onProgress,

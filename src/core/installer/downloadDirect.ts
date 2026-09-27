@@ -37,7 +37,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
-import { createHash } from "crypto";
+import { hashFileSha256 } from "../archiveHashing";
 import * as fs from "fs";
 import * as http from "http";
 import * as https from "https";
@@ -779,17 +779,12 @@ export async function sha256OfFile(filePath: string, signal?: AbortSignal): Prom
 }
 
 async function hashFile(filePath: string, signal?: AbortSignal): Promise<string> {
-  const hash = createHash("sha256");
-  // 8 MB reads: every chunk is a trip through Vortex's event loop, which crawled in Vortex 2.7 (see readZip.ts).
-  const stream = fs.createReadStream(filePath, { highWaterMark: 8 * 1024 * 1024 });
-  const onAbort = (): void => {
-    stream.destroy(new AbortError("download cancelled"));
-  };
-  signal?.addEventListener("abort", onAbort, { once: true });
+  // Through the hash pool (every core, off Vortex's thread), with the same
+  // cancellation wording as the rest of a download.
   try {
-    for await (const chunk of stream) hash.update(chunk as Buffer);
-  } finally {
-    signal?.removeEventListener("abort", onAbort);
+    return await hashFileSha256(filePath, signal);
+  } catch (err) {
+    if (err instanceof AbortError) throw new AbortError("download cancelled");
+    throw err;
   }
-  return hash.digest("hex");
 }

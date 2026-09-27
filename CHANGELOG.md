@@ -25,6 +25,13 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
   connection dropped. Now the deploy says right away that Vortex is asking, lists the files, and the AI can answer
   (keep the change, undo it, or keep the newer file) or ask you first. It never keeps a deletion without your OK.
 
+### Faster everywhere files are checked
+- **Hashing uses every core now.** Checking files (building a collection, verifying an install, the Doctor, matching
+  downloads) used to run on Vortex's own busy thread: about 3 MB/s on the curator's Skyrim setup, with the disk idle.
+  It now runs in background workers, one per core but one, with Vortex's window staying responsive: 3 GB/s measured
+  on the same files. A full re-check of a 1,750-mod collection goes from over an hour to a few minutes. The results
+  are the same checksums as before, so nothing already built or installed changes.
+
 ### Building collections
 - **Switching a bundled mod off leaves it out, like any other mod.** It used to refuse the build, and only at the
   very end: an Ivy build stopped after 45 minutes over two mods switched off on purpose. The build now goes on,
