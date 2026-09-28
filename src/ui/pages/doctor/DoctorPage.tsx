@@ -246,7 +246,18 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
         });
         if (!alive) return;
         setObs(obs);
-        setChecks(evaluateHealth(toHealthView(loaded.selected), obs));
+        // Findings the player kept on purpose show as kept until they change.
+        const [kept, { getVortexUserDataPath: userData }] = await Promise.all([
+          import("../../../core/doctor/keptOnPurpose"),
+          import("../../../core/paths"),
+        ]);
+        if (!alive) return;
+        setChecks(
+          kept.applyKept(
+            evaluateHealth(toHealthView(loaded.selected), obs),
+            kept.loadKept(`${userData()}/event-horizon`, kept.keptKey(loaded.selected)),
+          ),
+        );
         setCheckedAt(Date.now());
       } catch (err) {
         if (!alive) return;
@@ -390,6 +401,48 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
       })();
     },
     [api, loaded, pkg, props, reportError, toast],
+  );
+
+  // ── keep as is ───────────────────────────────────────────────────────
+  const changeKept = React.useCallback(
+    (update: (kept: Record<string, string>, fingerprint: typeof import("../../../core/doctor/keptOnPurpose").findingFingerprint) => void) => {
+      if (loaded === undefined) return;
+      void (async (): Promise<void> => {
+        try {
+          const [kept, { getVortexUserDataPath: userData }] = await Promise.all([
+            import("../../../core/doctor/keptOnPurpose"),
+            import("../../../core/paths"),
+          ]);
+          const dir = `${userData()}/event-horizon`;
+          const key = kept.keptKey(loaded.selected);
+          const current = kept.loadKept(dir, key);
+          update(current, kept.findingFingerprint);
+          kept.saveKept(dir, key, current);
+          setTick((n) => n + 1);
+        } catch (err) {
+          reportError(err, { title: "Couldn't save that choice", context: { step: "doctor-keep" } });
+        }
+      })();
+    },
+    [loaded, reportError],
+  );
+  const keep = React.useCallback(
+    (check: HealthCheck) => {
+      ehLog("info", "doctor.keep", { check: check.id, detail: check.detail.length });
+      changeKept((k, fingerprint) => {
+        k[check.id] = fingerprint(check);
+      });
+      toast({ intent: "info", message: `"${check.title}" is kept as it is. It shows again if anything in it changes.` });
+    },
+    [changeKept, toast],
+  );
+  const unkeep = React.useCallback(
+    (checkId: string) => {
+      changeKept((k) => {
+        delete k[checkId];
+      });
+    },
+    [changeKept],
   );
 
   // ── repair all ───────────────────────────────────────────────────────
@@ -607,6 +660,8 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
           }}
           onHeal={heal}
           onRepairAll={repairAll}
+          onKeep={keep}
+          onUnkeep={unkeep}
           repairAllCount={repairPlan.length}
           repairingAll={repairingAll}
           {...(pkg === undefined

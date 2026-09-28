@@ -51,6 +51,10 @@ export interface DoctorPanelProps {
   onHeal?: (action: HealAction, checkId: string) => void;
   /** Runs every available fix for the problems shown, after one confirmation. */
   onRepairAll?: () => void;
+  /** Keep this exact finding as the player's own choice; it shows again when it changes. */
+  onKeep?: (check: HealthCheck) => void;
+  /** Stop keeping a finding. */
+  onUnkeep?: (checkId: string) => void;
   /** How many fixes "Repair all" would run; the button shows only when there are any. */
   repairAllCount?: number;
   repairingAll?: boolean;
@@ -197,6 +201,8 @@ function VerdictRing(props: { checks: readonly HealthCheck[] }): JSX.Element {
 }
 
 function CheckCard(props: {
+  onKeep?: (check: HealthCheck) => void;
+  onUnkeep?: (checkId: string) => void;
   check: HealthCheck;
   busy: boolean;
   /** Another cure is running — this one waits, even though it is not it. */
@@ -287,6 +293,24 @@ function CheckCard(props: {
                   ? "Install in progress"
                   : (unavailable ?? check.heal.label)}
           </Button>
+        )}
+        {isProblem && props.onKeep !== undefined && (
+          // The player's own choice (a mod removed, one added, another game
+          // version): remembered for exactly this finding.
+          <Button
+            intent="ghost"
+            size="sm"
+            disabled={busy || othersBusy}
+            title="Stop flagging this. It shows again if anything in it changes."
+            onClick={() => props.onKeep?.(check)}
+          >
+            Keep as is
+          </Button>
+        )}
+        {check.keptOnPurpose === true && props.onUnkeep !== undefined && (
+          <LinkButton variant="caps" onClick={() => props.onUnkeep?.(check.id)}>
+            Undo "keep as is"
+          </LinkButton>
         )}
       </div>
     </Card>
@@ -432,6 +456,8 @@ export function DoctorPanel(props: DoctorPanelProps): JSX.Element {
               ? { unavailableHeal: props.unavailableHeal }
               : {})}
             {...(props.onHeal !== undefined ? { onHeal: props.onHeal } : {})}
+            {...(props.onKeep !== undefined ? { onKeep: props.onKeep } : {})}
+            {...(props.onUnkeep !== undefined ? { onUnkeep: props.onUnkeep } : {})}
           />
         ))}
       </section>

@@ -118,6 +118,8 @@ export interface HealthCheck {
   affectedCount: number;
   /** Absent when nothing can be done automatically. */
   heal?: { action: HealAction; label: string };
+  /** The player kept this exact finding on purpose (keptOnPurpose.ts); shown as healthy until it changes. */
+  keptOnPurpose?: boolean;
 }
 
 /** Everything the checks need, gathered from Vortex by the caller. */

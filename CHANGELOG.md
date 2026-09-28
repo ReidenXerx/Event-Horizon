@@ -12,6 +12,12 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
 
 ## [Unreleased]
 
+### Doctor
+- **"Keep as is" for choices you made on purpose.** Removed a mod, added one, or play on another game version? Each
+  problem card now has "Keep as is": the Doctor stops flagging that exact finding, stops counting it against the
+  collection's health, and leaves it out of "Repair all". If anything in it changes (another mod goes missing, the
+  game version moves), it shows again. "Undo" puts it back. Updating the collection asks again too.
+
 ### Play
 - **Play looks at your game folder, not at a box you ticked.** If you run a collection on another game version and
   have set your game folder up for it (script extender, Address Library and plugins for your version), Play starts
