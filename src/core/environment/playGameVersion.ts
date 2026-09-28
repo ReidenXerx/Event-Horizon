@@ -25,7 +25,18 @@ import { resolveGameVersion } from "../resolver/userState";
 import { compareVersions, gameVersionGuidance } from "../resolver/gameVersionGuidance";
 import type { InstallReceipt, InstallReceiptGameVersion } from "../../types/installLedger";
 
-export type PlayVersionRefusal = { title: string; lines: string[]; steps: string[] };
+export type PlayVersionRefusal = {
+  title: string;
+  lines: string[];
+  steps: string[];
+  /**
+   * The player ticked "I understand" for exactly this version pair when they
+   * installed (owner poll, 2026-09-28): Play warns and offers "Start anyway"
+   * instead of refusing. A game that changed AFTER the install is not this
+   * case and stays refused.
+   */
+  acknowledged?: true;
+};
 
 /** Whether the game at `installed` may be started for a collection that requires `required`. */
 export function decidePlayGameVersion(input: {
@@ -35,6 +46,8 @@ export function decidePlayGameVersion(input: {
   requirement: InstallReceiptGameVersion;
   installed: string | undefined;
   store?: string;
+  /** The version pair the player accepted at install (`InstallReceipt.installedOnMismatchedVersion`). */
+  acknowledgedAtInstall?: { required: string; installed: string };
 }): PlayVersionRefusal | undefined {
   const { installed } = input;
   const { required, policy } = input.requirement;
@@ -46,7 +59,13 @@ export function decidePlayGameVersion(input: {
   // that cannot be compared is only refused when it is not the same text.
   const fits = policy === "exact" ? (cmp === undefined ? installed.trim() === required.trim() : cmp === 0) : cmp === undefined || cmp >= 0;
   if (fits) return undefined;
+  const ack = input.acknowledgedAtInstall;
+  const acknowledged =
+    ack !== undefined &&
+    compareVersions(ack.required, required) === 0 &&
+    compareVersions(ack.installed, installed) === 0;
   return {
+    ...(acknowledged ? { acknowledged: true as const } : {}),
     title: `${input.gameName} is version ${installed}, but ${input.collectionName} was built for ${required}${policy === "minimum" ? " or newer" : ""}.`,
     lines: [
       "The script extender and the collection's plugins only work with the game version the collection was built for, so the game would close or crash on start.",
@@ -128,6 +147,9 @@ export async function checkPlayGameVersion(args: {
     requirement: receipt.gameVersion,
     installed,
     ...(args.store !== undefined ? { store: args.store } : {}),
+    ...(receipt.installedOnMismatchedVersion !== undefined
+      ? { acknowledgedAtInstall: receipt.installedOnMismatchedVersion }
+      : {}),
   });
   ehLog(refusal !== undefined ? "warn" : "info", "play.game-version", {
     gameId: args.gameId,

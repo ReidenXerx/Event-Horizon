@@ -10,6 +10,13 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [Unreleased]
+
+### Play
+- **Play respects the "I understand" you ticked at install.** If you installed a collection on a different game
+  version and accepted it, Play now reminds you and offers "Start anyway" instead of refusing to start the game.
+  If your game changed after you installed (Steam updated it, say), Play still stops you and says how to fix it.
+
 ## [0.2.25] — 2026-09-28
 
 ### Doctor

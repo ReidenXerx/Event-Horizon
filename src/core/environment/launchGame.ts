@@ -181,7 +181,25 @@ export async function launchGame(
     ...(facts.store !== undefined ? { store: facts.store } : {}),
     appDataPath: options.appDataPath ?? getVortexUserDataPath(),
   });
-  if (versionRefusal !== undefined) return refuse(versionRefusal.title, versionRefusal.lines, versionRefusal.steps);
+  if (versionRefusal?.acknowledged === true) {
+    // Accepted at install for exactly this pair: say it again, let them decide.
+    const answer = await api.showDialog?.(
+      "question",
+      versionRefusal.title,
+      {
+        text:
+          `You accepted this when you installed the collection.\n\n${versionRefusal.lines.join("\n\n")}\n\n` +
+          `If you have swapped the mods the installer listed for your game version, it can work.`,
+      },
+      [{ label: "Cancel" }, { label: "Start anyway" }],
+    );
+    if (answer?.action !== "Start anyway") {
+      return refuse(versionRefusal.title, versionRefusal.lines, versionRefusal.steps);
+    }
+    ehLog("info", "play.game-version.started-anyway", { gameId, title: versionRefusal.title });
+  } else if (versionRefusal !== undefined) {
+    return refuse(versionRefusal.title, versionRefusal.lines, versionRefusal.steps);
+  }
 
   const gameDir = report.gameDir;
   if (gameDir === undefined) {

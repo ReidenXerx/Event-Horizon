@@ -83,3 +83,30 @@ describe("which collection Play checks", () => {
     expect(activeCollectionReceipt([receipt({})], "fallout4", undefined)).toBeUndefined();
   });
 });
+
+describe("a mismatch the player accepted at install (owner poll, 2026-09-28)", () => {
+  const withAck = (installed: string, ack: { required: string; installed: string }) =>
+    decidePlayGameVersion({
+      gameId: "skyrimse",
+      gameName: "Skyrim Special Edition",
+      collectionName: "Meridia's Panties - Event Horizon",
+      requirement: { required: "1.6.1179.0", policy: "exact" },
+      installed,
+      store: "gog",
+      acknowledgedAtInstall: ack,
+    });
+
+  it("is marked acknowledged when the game is still the version they accepted", () => {
+    expect(withAck("1.6.1170.0", { required: "1.6.1179", installed: "1.6.1170" })?.acknowledged).toBe(true);
+  });
+
+  it("stays a plain refusal when the game changed after the install", () => {
+    const r = withAck("1.6.1170.0", { required: "1.6.1179.0", installed: "1.6.640.0" });
+    expect(r).toBeDefined();
+    expect(r!.acknowledged).toBeUndefined();
+  });
+
+  it("stays a plain refusal with no acknowledgement recorded", () => {
+    expect(decide("1.10.984.0")?.acknowledged).toBeUndefined();
+  });
+});
