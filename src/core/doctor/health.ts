@@ -27,6 +27,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { assessNativeOnDisk, type NativeOnDisk } from "./nativeOnDisk";
 import type { UserPluginMasters } from "../installer/repinPluginOrder";
 /** Which aspect of the collection a check covers. */
 import type { FomodReplayMode } from "../installer/fomodReplayMode";
@@ -72,7 +73,13 @@ export type HealthCheckId =
    * and the current side counted entries, which is neither.
    */
   | "userlist"
-  | "userlist-groups";
+  | "userlist-groups"
+  /**
+   * The script extender, its Address Library and the deployed plugin DLLs,
+   * read from the game folder and judged for the game version installed NOW.
+   * Lists what is still for another version after a player swapped mods.
+   */
+  | "native-plugins";
 
 /**
  * Deliberately five states, not "pass/fail".
@@ -115,6 +122,8 @@ export interface HealthCheck {
 
 /** Everything the checks need, gathered from Vortex by the caller. */
 export interface HealthObservations {
+  /** The script-extender side of the game folder, for the installed game version (nativeOnDisk.ts). */
+  nativeOnDisk?: NativeOnDisk;
   /**
    * Profile ids that currently exist for this game — `undefined` when
    * Vortex's profile table could not be read at all.
@@ -876,6 +885,7 @@ export function evaluateHealth(
     }),
   );
 
+  if (obs.nativeOnDisk !== undefined) checks.push(assessNativeOnDisk(obs.nativeOnDisk));
   return checks;
 }
 

@@ -349,6 +349,54 @@ export async function gatherObservations(
     activeProfileId = undefined;
   }
 
+  // The script-extender side of the game folder, for the version installed now.
+  let nativeOnDisk: import("./nativeOnDisk").NativeOnDisk | undefined;
+  try {
+    const [{ gatherNativeOnDisk }, { readInstalledGameVersion }, { discoveredStore }, vortex] = await Promise.all([
+      import("./nativeOnDisk"),
+      import("../environment/playGameVersion"),
+      import("../comparePlugins"),
+      import("@nexusmods/vortex-api"),
+    ]);
+    const s = state as unknown as {
+      settings?: { gameMode?: { discovered?: Record<string, { path?: string }> } };
+      persistent?: { mods?: Record<string, Record<string, { installationPath?: string; attributes?: { name?: string; modName?: string } }>> };
+    };
+    const gameDir = s.settings?.gameMode?.discovered?.[gameId]?.path;
+    const gameVersion = await readInstalledGameVersion(state, gameId);
+    if (gameDir !== undefined && gameVersion !== undefined) {
+      const byFolder = new Map(
+        Object.entries(s.persistent?.mods?.[gameId] ?? {}).map(([id, m]) => [
+          m?.installationPath ?? id,
+          m?.attributes?.name ?? m?.attributes?.modName ?? id,
+        ]),
+      );
+      let ownerOf: Map<string, string> | undefined;
+      try {
+        const manifest = (await (vortex.util as unknown as {
+          getManifest: (a: unknown, t: string, g: string) => Promise<{ files?: Array<{ relPath: string; source: string }> }>;
+        }).getManifest(api, "", gameId)) ?? {};
+        ownerOf = new Map((manifest.files ?? []).map((f) => [f.relPath.replace(/\\/g, "/").toLowerCase(), f.source]));
+      } catch {
+        ownerOf = undefined;
+      }
+      const store = discoveredStore(state, gameId);
+      nativeOnDisk = gatherNativeOnDisk({
+        gameId,
+        gameDir,
+        gameVersion,
+        ...(store !== undefined ? { store } : {}),
+        deployedBy: (rel) => {
+          const source = ownerOf?.get(rel.toLowerCase());
+          return source === undefined ? undefined : byFolder.get(source) ?? source;
+        },
+      });
+    }
+  } catch (err) {
+    ehLog("debug", "doctor.gather.native-on-disk-failed", { gameId, err });
+    nativeOnDisk = undefined;
+  }
+
   const observations: HealthObservations = {
     existingProfileIds: readProfileIds(state, gameId),
     activeProfileId,
@@ -367,6 +415,7 @@ export async function gatherObservations(
     ...(currentPluginLightFlags !== undefined
       ? { currentPluginLightFlags }
       : {}),
+    ...(nativeOnDisk !== undefined ? { nativeOnDisk } : {}),
   };
   op.ok({
     // `undefined` here means the table was unreadable, not that it was empty

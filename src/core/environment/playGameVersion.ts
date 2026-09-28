@@ -94,7 +94,7 @@ export function activeCollectionReceipt(
     .sort((a, b) => (a.installedAt < b.installedAt ? 1 : a.installedAt > b.installedAt ? -1 : 0))[0];
 }
 
-async function readInstalledGameVersion(state: types.IState, gameId: string): Promise<string | undefined> {
+export async function readInstalledGameVersion(state: types.IState, gameId: string): Promise<string | undefined> {
   try {
     const discovery = (state as unknown as {
       settings?: { gameMode?: { discovered?: Record<string, unknown> } };

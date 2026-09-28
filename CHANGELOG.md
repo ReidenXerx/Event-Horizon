@@ -12,6 +12,12 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
 
 ## [Unreleased]
 
+### Doctor
+- **The Doctor lists what is still for the wrong game version.** Playing a collection on a different game version
+  means swapping some mods for your version's build, and it's easy to forget one. A new Doctor check reads your game
+  folder and names everything still wrong for the version you have now: the script extender (SKSE/F4SE), the
+  Address Library, and each plugin that won't load, with the mod it came from. When everything matches, it says so.
+
 ### Play
 - **Play respects the "I understand" you ticked at install.** If you installed a collection on a different game
   version and accepted it, Play now reminds you and offers "Start anyway" instead of refusing to start the game.
