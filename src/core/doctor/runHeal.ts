@@ -275,10 +275,15 @@ async function healImpl(
        * the two are separated by however long the card sat on screen.
        */
       const state = api.getState() as unknown as {
-        persistent?: { mods?: Record<string, Record<string, unknown>> };
-        settings?: { profiles?: Record<string, unknown> };
+        persistent?: {
+          mods?: Record<string, Record<string, unknown>>;
+          profiles?: Record<string, unknown>;
+        };
       };
-      const profiles = state.settings?.profiles;
+      // Vortex keeps profiles in persistent.profiles. `settings.profiles` only
+      // holds activeProfileId and the like, and reading it here reported EVERY
+      // real profile as deleted (Rubens, Ivy 1.0.37, 2026-09-28).
+      const profiles = state.persistent?.profiles;
       if (
         profiles !== undefined &&
         typeof profiles === "object" &&
