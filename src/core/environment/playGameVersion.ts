@@ -36,6 +36,8 @@ export type PlayVersionRefusal = {
    * case and stays refused.
    */
   acknowledged?: true;
+  /** The collection it is about, for remembering a "Start anyway". Set by checkPlayGameVersion. */
+  packageId?: string;
 };
 
 /** Whether the game at `installed` may be started for a collection that requires `required`. */
@@ -151,6 +153,7 @@ export async function checkPlayGameVersion(args: {
       ? { acknowledgedAtInstall: receipt.installedOnMismatchedVersion }
       : {}),
   });
+  if (refusal !== undefined) refusal.packageId = receipt.packageId;
   ehLog(refusal !== undefined ? "warn" : "info", "play.game-version", {
     gameId: args.gameId,
     collection: receipt.packageName,

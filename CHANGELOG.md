@@ -10,6 +10,14 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [Unreleased]
+
+### Play
+- **Play looks at your game folder, not at a box you ticked.** If you run a collection on another game version and
+  have set your game folder up for it (script extender, Address Library and plugins for your version), Play starts
+  the game and tells you so. If something there is still for the other version, Play lists exactly what, by mod,
+  and offers "Start anyway". That answer is remembered until your game version or those files change.
+
 ## [0.2.26] — 2026-09-28
 
 ### Doctor

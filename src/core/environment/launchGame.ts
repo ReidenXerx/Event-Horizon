@@ -51,6 +51,94 @@ export type LaunchTarget =
     }
   | { kind: "refused"; title: string; lines: string[]; steps: string[] };
 
+/**
+ * The game is not the version the collection was built for. Decided from the
+ * game folder, not from a tick at install (owner poll, 2026-09-28): a player
+ * who moved the collection to their version (Ruinfan: Meridia on Steam
+ * 1.6.1170, built on GOG 1.6.1179) is stopped only while something there is
+ * still for the other version.
+ *
+ *  - The script extender, Address Library and every deployed plugin are right
+ *    for the version installed now: start, and say so.
+ *  - Otherwise: say exactly what is still wrong, by mod, and offer "Start
+ *    anyway". The answer is remembered for this collection until the game
+ *    version or those files change, then asked again.
+ *  - The folder cannot be read: the old rule, "Start anyway" only for a pair
+ *    accepted at install.
+ */
+async function playOnAnotherVersion(
+  api: types.IExtensionApi,
+  gameId: string,
+  refusal: import("./playGameVersion").PlayVersionRefusal,
+  appDataPath: string,
+): Promise<boolean> {
+  const { readNativeOnDisk, assessNativeOnDisk, nativeFingerprint } = await import("../doctor/nativeOnDisk");
+  const onDisk = await readNativeOnDisk(api, gameId);
+  const ackFile = path.join(appDataPath, "event-horizon", "play-acknowledgements.json");
+  const readAcks = async (): Promise<Record<string, string>> => {
+    try {
+      return JSON.parse(await fsp.readFile(ackFile, "utf8")) as Record<string, string>;
+    } catch {
+      return {};
+    }
+  };
+
+  if (onDisk === undefined) {
+    if (refusal.acknowledged !== true) return false;
+    const answer = await api.showDialog?.(
+      "question",
+      refusal.title,
+      { text: `You accepted this when you installed the collection.\n\n${refusal.lines.join("\n\n")}` },
+      [{ label: "Cancel" }, { label: "Start anyway" }],
+    );
+    return answer?.action === "Start anyway";
+  }
+
+  const card = assessNativeOnDisk(onDisk);
+  // Positive evidence only: "nothing wrong found" in a folder with no script
+  // extender for this version is not a folder set up for it.
+  if (card.status === "healthy" && onDisk.extender.present) {
+    ehLog("info", "play.game-version.folder-matches", { gameId, installed: onDisk.gameVersion });
+    api.sendNotification?.({
+      type: "info",
+      title: `Started on ${onDisk.gameVersion}`,
+      message: `${refusal.title} Your game folder is set up for ${onDisk.gameVersion} (${onDisk.extenderName}, Address Library and plugins), so Event Horizon started it.`,
+      displayMS: 8000,
+    });
+    return true;
+  }
+
+  const key = refusal.packageId ?? gameId;
+  const fingerprint = nativeFingerprint(onDisk);
+  const acks = await readAcks();
+  if (acks[key] === fingerprint) {
+    ehLog("info", "play.game-version.remembered", { gameId, key });
+    return true;
+  }
+  const answer = await api.showDialog?.(
+    "question",
+    refusal.title,
+    {
+      text:
+        `Still for another game version in your game folder:\n\n` +
+        card.detail.slice(0, 12).map((d) => `• ${d}`).join("\n") +
+        (card.detail.length > 12 ? `\n• …and ${card.detail.length - 12} more (the Doctor lists them all)` : "") +
+        `\n\nSwap these for the ${onDisk.gameVersion} builds, or start anyway. "Start anyway" is remembered until ` +
+        `your game version or these files change.`,
+    },
+    [{ label: "Cancel" }, { label: "Start anyway" }],
+  );
+  if (answer?.action !== "Start anyway") return false;
+  try {
+    await fsp.mkdir(path.dirname(ackFile), { recursive: true });
+    await fsp.writeFile(ackFile, JSON.stringify({ ...acks, [key]: fingerprint }, null, 2));
+  } catch (err) {
+    ehLog("warn", "play.game-version.ack-save-failed", { err });
+  }
+  ehLog("info", "play.game-version.started-anyway", { gameId, key, still: card.detail.length });
+  return true;
+}
+
 export const VORTEX_PLAY_WARNING =
   "Do not use Vortex's Play button for this collection: it can start the game without the script extender and not tell you.";
 
@@ -181,24 +269,9 @@ export async function launchGame(
     ...(facts.store !== undefined ? { store: facts.store } : {}),
     appDataPath: options.appDataPath ?? getVortexUserDataPath(),
   });
-  if (versionRefusal?.acknowledged === true) {
-    // Accepted at install for exactly this pair: say it again, let them decide.
-    const answer = await api.showDialog?.(
-      "question",
-      versionRefusal.title,
-      {
-        text:
-          `You accepted this when you installed the collection.\n\n${versionRefusal.lines.join("\n\n")}\n\n` +
-          `If you have swapped the mods the installer listed for your game version, it can work.`,
-      },
-      [{ label: "Cancel" }, { label: "Start anyway" }],
-    );
-    if (answer?.action !== "Start anyway") {
-      return refuse(versionRefusal.title, versionRefusal.lines, versionRefusal.steps);
-    }
-    ehLog("info", "play.game-version.started-anyway", { gameId, title: versionRefusal.title });
-  } else if (versionRefusal !== undefined) {
-    return refuse(versionRefusal.title, versionRefusal.lines, versionRefusal.steps);
+  if (versionRefusal !== undefined) {
+    const go = await playOnAnotherVersion(api, gameId, versionRefusal, options.appDataPath ?? getVortexUserDataPath());
+    if (!go) return refuse(versionRefusal.title, versionRefusal.lines, versionRefusal.steps);
   }
 
   const gameDir = report.gameDir;

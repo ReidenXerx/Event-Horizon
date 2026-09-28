@@ -26,7 +26,10 @@
 import * as fs from "fs";
 import * as path from "path";
 
+import type { types } from "@nexusmods/vortex-api";
+
 import type { HealthCheck } from "./health";
+import { ehLog } from "../logging/ehLog";
 import { extenderApiFor, judgePlugin, runtimeIdFor } from "../environment/nativePluginCompat";
 import { readNativePluginDeclaration } from "../environment/scriptExtenderVersion";
 import type { EhcollNativePlugin } from "../../types/ehcoll";
@@ -180,4 +183,73 @@ export function assessNativeOnDisk(o: NativeOnDisk): HealthCheck {
     detail,
     affectedCount: problems,
   };
+}
+
+/**
+ * The same reading, from Vortex: the game's folder, the version installed now
+ * (read from the executable first), its store, and which mod deployed each
+ * file. Shared by the Doctor and Play so both judge the folder one way.
+ * Undefined when any of it cannot be established.
+ */
+export async function readNativeOnDisk(api: types.IExtensionApi, gameId: string): Promise<NativeOnDisk | undefined> {
+  try {
+    const [{ readInstalledGameVersion }, { discoveredStore }, vortex] = await Promise.all([
+      import("../environment/playGameVersion"),
+      import("../comparePlugins"),
+      import("@nexusmods/vortex-api"),
+    ]);
+    const state = api.getState();
+    const s = state as unknown as {
+      settings?: { gameMode?: { discovered?: Record<string, { path?: string }> } };
+      persistent?: {
+        mods?: Record<string, Record<string, { installationPath?: string; attributes?: { name?: string; modName?: string } }>>;
+      };
+    };
+    const gameDir = s.settings?.gameMode?.discovered?.[gameId]?.path;
+    const gameVersion = await readInstalledGameVersion(state, gameId);
+    if (gameDir === undefined || gameVersion === undefined) return undefined;
+    const byFolder = new Map(
+      Object.entries(s.persistent?.mods?.[gameId] ?? {}).map(([id, m]) => [
+        m?.installationPath ?? id,
+        m?.attributes?.name ?? m?.attributes?.modName ?? id,
+      ]),
+    );
+    let ownerOf: Map<string, string> | undefined;
+    try {
+      const manifest =
+        (await (vortex.util as unknown as {
+          getManifest: (a: unknown, t: string, g: string) => Promise<{ files?: Array<{ relPath: string; source: string }> }>;
+        }).getManifest(api, "", gameId)) ?? {};
+      ownerOf = new Map((manifest.files ?? []).map((f) => [f.relPath.replace(/\\/g, "/").toLowerCase(), f.source]));
+    } catch {
+      ownerOf = undefined;
+    }
+    const store = discoveredStore(state, gameId);
+    return gatherNativeOnDisk({
+      gameId,
+      gameDir,
+      gameVersion,
+      ...(store !== undefined ? { store } : {}),
+      deployedBy: (rel) => {
+        const source = ownerOf?.get(rel.toLowerCase());
+        return source === undefined ? undefined : (byFolder.get(source) ?? source);
+      },
+    });
+  } catch (err) {
+    ehLog("debug", "native-on-disk.read-failed", { gameId, err });
+    return undefined;
+  }
+}
+
+/**
+ * What a remembered "Start anyway" was given for: the game version and the
+ * script-extender files as they were. Any change there asks again.
+ */
+export function nativeFingerprint(o: NativeOnDisk): string {
+  return JSON.stringify({
+    v: o.gameVersion,
+    se: [...o.extender.found].sort(),
+    al: o.addressLibrary.present,
+    bad: o.cannotLoad.map((c) => `${c.mod ?? ""}|${c.file}`).sort(),
+  });
 }
