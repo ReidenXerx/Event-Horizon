@@ -10,7 +10,7 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
-## [Unreleased]
+## [0.2.26] — 2026-09-28
 
 ### Doctor
 - **The Doctor lists what is still for the wrong game version.** Playing a collection on a different game version
