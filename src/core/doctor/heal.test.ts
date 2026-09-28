@@ -12,7 +12,10 @@ import {
   describeHeal,
   healNeedsConfirmation,
   healNeedsManifest,
-  matchEhcollFile,} from "./heal";
+  matchEhcollFile,
+  planRepairAll,
+  REPAIR_ALL_ORDER,
+} from "./heal";
 import type { HealAction } from "./health";
 
 /**
@@ -242,5 +245,42 @@ describe("restoring ESL flags", () => {
     expect(describeHeal("restore-light-flags").body).toMatch(
       /Nothing is reinstalled/,
     );
+  });
+});
+
+describe("Repair all", () => {
+  const check = (id: string, status: string, action?: HealAction) => ({ id, status, ...(action ? { heal: { action } } : {}) });
+
+  it("runs each problem's fix once, profile first and reinstall last", () => {
+    const plan = planRepairAll(
+      [
+        check("files", "broken", "reinstall-mods"),
+        check("order", "drifted", "repin-plugin-order"),
+        check("enabled", "broken", "enable-mods"),
+        check("profile", "broken", "switch-profile"),
+        check("enabled-2", "broken", "enable-mods"),
+      ],
+      () => undefined,
+    );
+    expect(plan.map((p) => p.action)).toEqual(["switch-profile", "enable-mods", "repin-plugin-order", "reinstall-mods"]);
+    expect(plan.find((p) => p.action === "enable-mods")!.checkId).toBe("enabled");
+  });
+
+  it("leaves out healthy checks, checks with no fix, and fixes that cannot run now", () => {
+    const plan = planRepairAll(
+      [
+        check("rules", "healthy", "reapply-rules"),
+        check("unknown", "unknown", "enable-mods"),
+        check("nofix", "broken"),
+        check("files", "broken", "reinstall-mods"),
+        check("loot", "drifted", "reapply-userlist"),
+      ],
+      (a) => (a === "reinstall-mods" ? "needs the collection package" : undefined),
+    );
+    expect(plan.map((p) => p.action)).toEqual(["reapply-userlist"]);
+  });
+
+  it("orders every fix that exists", () => {
+    expect([...REPAIR_ALL_ORDER].sort()).toEqual([...ALL].sort());
   });
 });

@@ -34,7 +34,7 @@ import { ehLog } from "../../../core/logging/ehLog";
 import type { HealAction, HealthCheck, HealthReceiptView } from "../../../core/doctor/health";
 import { gatherObservations } from "../../../core/doctor/gather";
 import { toHealthView } from "../../../core/doctor/receiptView";
-import { describeHeal, healNeedsConfirmation, healNeedsManifest } from "../../../core/doctor/heal";
+import { describeHeal, healNeedsConfirmation, healNeedsManifest, planRepairAll } from "../../../core/doctor/heal";
 import { runHeal } from "../../../core/doctor/runHeal";
 import { getInstallSession } from "../install/installSession";
 import type { EventHorizonRoute } from "../../routes";
@@ -392,6 +392,76 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
     [api, loaded, pkg, props, reportError, toast],
   );
 
+  // ── repair all ───────────────────────────────────────────────────────
+  const [repairingAll, setRepairingAll] = React.useState(false);
+  const unavailableFor = React.useCallback(
+    (action: HealAction): string | undefined =>
+      pkg === undefined && healNeedsManifest(action) ? "needs the collection package" : undefined,
+    [pkg],
+  );
+  const repairPlan = React.useMemo(
+    () => (checks === undefined ? [] : planRepairAll(checks, unavailableFor)),
+    [checks, unavailableFor],
+  );
+  const repairAll = React.useCallback(() => {
+    if (loaded === undefined || repairPlan.length === 0) return;
+    void (async (): Promise<void> => {
+      // One question for the whole run, listing every fix and what it does.
+      const listed = repairPlan
+        .map((p, i) => `${i + 1}. ${describeHeal(p.action).title}\n${describeHeal(p.action).body}`)
+        .join("\n\n");
+      const answer = await api.showDialog?.(
+        "question",
+        `Run ${repairPlan.length} repair${repairPlan.length === 1 ? "" : "s"}?`,
+        { text: `These run one after another, in this order:\n\n${listed}` },
+        [{ label: "Cancel" }, { label: "Repair all" }],
+      );
+      if (answer?.action !== "Repair all") return;
+      setRepairingAll(true);
+      const done: string[] = [];
+      const skipped: string[] = [];
+      try {
+        for (const step of repairPlan) {
+          setBusyCheckId(step.checkId);
+          try {
+            const outcome = await runHeal(step.action, {
+              api,
+              gameId: loaded.selected.gameId,
+              receipt: loaded.selected,
+              ...(pkg !== undefined ? { manifest: pkg.manifest, ehcollPath: pkg.path } : {}),
+            });
+            if (outcome.kind === "blocked") {
+              skipped.push(`${describeHeal(step.action).confirm}: ${outcome.reason}`);
+              continue;
+            }
+            if (outcome.kind === "handoff") {
+              // Last by design: the Install page takes it from here.
+              toast({ intent: "info", message: [...done, outcome.summary].join(" ") });
+              getInstallSession().pickFile(api, outcome.ehcollPath);
+              props.onNavigate("install");
+              return;
+            }
+            done.push(outcome.summary);
+          } catch (err) {
+            skipped.push(`${describeHeal(step.action).confirm}: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+        ehLog("info", "doctor.repair-all", { ran: repairPlan.map((p) => p.action), done: done.length, skipped });
+        toast({
+          intent: skipped.length === 0 ? "success" : "warning",
+          message:
+            [...done, ...(skipped.length > 0 ? [`Not done: ${skipped.join(" ")}`] : [])].join(" ") ||
+            "Nothing needed repairing.",
+        });
+      } finally {
+        setBusyCheckId(undefined);
+        setRepairingAll(false);
+        // Re-diagnose so the verdicts show what the run changed.
+        setTick((n) => n + 1);
+      }
+    })();
+  }, [api, loaded, pkg, props, repairPlan, toast]);
+
   const pickPackage = React.useCallback(() => {
     void (async (): Promise<void> => {
       try {
@@ -536,6 +606,9 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
             setTick((n) => n + 1);
           }}
           onHeal={heal}
+          onRepairAll={repairAll}
+          repairAllCount={repairPlan.length}
+          repairingAll={repairingAll}
           {...(pkg === undefined
             ? {
                 unavailableHeal: (action: HealAction): string | undefined =>

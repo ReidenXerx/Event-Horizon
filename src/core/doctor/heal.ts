@@ -106,6 +106,40 @@ export function healNeedsConfirmation(action: HealAction): boolean {
 }
 
 /**
+ * The order "Repair all" runs fixes in. The profile first, since every other
+ * fix acts on the collection's profile; mod state before the rules and orders
+ * that read it; plugin files before their order; and reinstalling last,
+ * because it hands the collection to the Install page and ends the run.
+ */
+export const REPAIR_ALL_ORDER: readonly HealAction[] = [
+  "switch-profile",
+  "enable-mods",
+  "reapply-rules",
+  "reapply-userlist",
+  "restore-light-flags",
+  "repin-plugin-order",
+  "reinstall-mods",
+];
+
+/**
+ * The fixes "Repair all" would run: each problem check's fix that can run now,
+ * once per fix, in {@link REPAIR_ALL_ORDER}.
+ */
+export function planRepairAll(
+  checks: ReadonlyArray<{ id: string; status: string; heal?: { action: HealAction } }>,
+  unavailable: (action: HealAction) => string | undefined,
+): Array<{ action: HealAction; checkId: string }> {
+  const byAction = new Map<HealAction, string>();
+  for (const c of checks) {
+    if (c.heal === undefined) continue;
+    if (c.status !== "broken" && c.status !== "drifted") continue;
+    if (unavailable(c.heal.action) !== undefined) continue;
+    if (!byAction.has(c.heal.action)) byAction.set(c.heal.action, c.id);
+  }
+  return REPAIR_ALL_ORDER.filter((a) => byAction.has(a)).map((a) => ({ action: a, checkId: byAction.get(a)! }));
+}
+
+/**
  * What the user is agreeing to, in their words, before it happens.
  *
  * Every one of these writes to the machine, and several are slow. A button

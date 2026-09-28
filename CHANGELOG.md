@@ -10,6 +10,15 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [Unreleased]
+
+### Doctor
+- **"Repair all" runs every fix in one go.** When the Doctor finds problems, a new button next to Re-check runs all
+  the fixes it offers, after one confirmation that lists each fix and what it does. They run in a safe order:
+  the collection's profile first, then mods, rules, LOOT rules, plugin flags and plugin order, and reinstalling
+  changed mods last, which continues on the Install page. A fix that can't run is skipped and named at the end,
+  and the Doctor re-checks when it's done.
+
 ## [0.2.24] — 2026-09-28
 
 ### Doctor

@@ -49,6 +49,11 @@ export interface DoctorPanelProps {
   /** When the displayed verdicts were produced (epoch ms). */
   checkedAt?: number;
   onHeal?: (action: HealAction, checkId: string) => void;
+  /** Runs every available fix for the problems shown, after one confirmation. */
+  onRepairAll?: () => void;
+  /** How many fixes "Repair all" would run; the button shows only when there are any. */
+  repairAllCount?: number;
+  repairingAll?: boolean;
   /**
    * Set while an install is running. Every heal re-runs a pipeline step that
    * mutates Vortex, so they are disabled rather than hidden — a button that
@@ -351,6 +356,23 @@ export function DoctorPanel(props: DoctorPanelProps): JSX.Element {
                 onClick={props.onRecheck}
               >
                 {props.rechecking === true ? "Checking…" : "Re-check"}
+              </Button>
+            )}
+            {props.onRepairAll !== undefined && (props.repairAllCount ?? 0) > 0 && (
+              <Button
+                intent="primary"
+                busy={props.repairingAll === true}
+                disabled={
+                  props.healingBlocked !== undefined ||
+                  props.scanning === true ||
+                  props.rechecking === true ||
+                  props.busyCheckId !== undefined
+                }
+                onClick={props.onRepairAll}
+              >
+                {props.repairingAll === true
+                  ? "Repairing…"
+                  : `Repair all (${props.repairAllCount} fix${props.repairAllCount === 1 ? "" : "es"})`}
               </Button>
             )}
             {props.onRunDeepScan !== undefined && (
