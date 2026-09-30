@@ -176,6 +176,21 @@ What each refuses, and why:
 | `unknown-mods` | Any id not in the game's pool. **Nothing** is changed; a batch never half-applies. |
 | `bad-profile` | The profile is missing, or belongs to another game. |
 
+### The user's click before anything destructive
+
+`mods.remove`, `purge`, `game.setPath`, `game.switchInstall` and an `install` with `ifExisting: "replace"` stop
+after their own checks, and Vortex asks the person at the PC: "An agent wants to remove 3 mods", listing exactly
+what, with **Allow** and **Deny**. No verb answers that dialog. While it is open, the command is `running` and
+`vortex.openDialogs` shows it.
+
+| Code | Meaning |
+|---|---|
+| `owner-denied` (403) | The user pressed Deny. Nothing changed. Do not send it again unless they ask you to. |
+| `owner-no-answer` (409) | Nobody answered within 10 minutes, so the question was closed and nothing changed. |
+
+The user can turn the question off on the Agents page ("Stop asking"), for agents of their own. It is on by
+default.
+
 ### Why `game.setPath` refuses unless everything is purged
 
 Vortex's own "Manually set location" repoints a game **without** purging (`browseGameLocation` in Vortex's bundle).

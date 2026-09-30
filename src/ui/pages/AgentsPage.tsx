@@ -17,6 +17,7 @@ import type { OpRecord } from "../../core/control/ops";
 import {
   getControlStatus,
   onControlStatus,
+  setAgentAskFirst,
   setControlChannelEnabled,
   type ControlStatus,
 } from "../../core/control/controlService";
@@ -47,6 +48,7 @@ const VERBS: VerbRow[] = [
 const GUARDS = [
   "Listens on this PC only (127.0.0.1), and only with the token in control.json, which changes every time Vortex starts.",
   "Refuses anything sent from a web browser.",
+  "Asks you in Vortex before removing mods, purging, moving the game or replacing a mod everywhere. Only your click lets it happen.",
   "Never deploys, purges, removes or repoints while the game is running.",
   "Will not move a game folder that still has mods deployed into it.",
   "Runs one change at a time, and every change shows a notification here.",
@@ -78,6 +80,11 @@ export function AgentsPage(props: AgentsPageProps = {}): JSX.Element {
     } finally {
       setBusy(false);
     }
+  };
+
+  const toggleAskFirst = (): void => {
+    setAgentAskFirst(!status.askFirst);
+    setStatus(getControlStatus());
   };
 
   const copyPath = async (): Promise<void> => {
@@ -112,6 +119,16 @@ export function AgentsPage(props: AgentsPageProps = {}): JSX.Element {
                 {status.enabled
                   ? "Agents can connect while Vortex is open."
                   : "Off. Turn it on, then connect your AI below."}
+              </span>
+            </div>
+            <div className="eh-row">
+              <Button intent="ghost" size="sm" onClick={toggleAskFirst}>
+                {status.askFirst ? "Stop asking" : "Ask me first"}
+              </Button>
+              <span className="eh-muted">
+                {status.askFirst
+                  ? "Before an agent removes mods, purges or moves the game, Vortex asks you, listing exactly what. Only your click lets it go ahead."
+                  : "Agents remove mods, purge and move the game without asking you. Turn this back on unless the agent is your own."}
               </span>
             </div>
             <div className="eh-stack eh-stack--sm">

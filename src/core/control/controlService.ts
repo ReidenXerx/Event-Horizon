@@ -27,6 +27,8 @@ export const PROMO_ID = "control-channel-promo-2";
 
 export type ControlStatus = {
   enabled: boolean;
+  /** Vortex asks before an agent removes mods, purges or moves the game. */
+  askFirst: boolean;
   running: boolean;
   port?: number;
   infoFile: string;
@@ -63,6 +65,7 @@ export function controlInfoFile(): string {
 export function getControlStatus(): ControlStatus {
   const out: ControlStatus = {
     enabled: loadPreferences().controlChannel.enabled,
+    askFirst: loadPreferences().controlChannel.askFirst,
     running: server !== undefined,
     infoFile: controlInfoFile(),
   };
@@ -142,8 +145,15 @@ export function startControlChannelIfEnabled(api: types.IExtensionApi): void {
   transition = transition.then(() => start(api)).then(emit);
 }
 
+/** Whether Vortex asks the person at the PC before an agent removes mods, purges or moves the game. */
+export function setAgentAskFirst(askFirst: boolean): void {
+  updatePreferences((p) => ({ ...p, controlChannel: { ...p.controlChannel, askFirst } }));
+  ehLog("info", "control.ask-first", { askFirst });
+  emit();
+}
+
 export function setControlChannelEnabled(api: types.IExtensionApi, enabled: boolean): Promise<ControlStatus> {
-  updatePreferences((p) => ({ ...p, controlChannel: { enabled } }));
+  updatePreferences((p) => ({ ...p, controlChannel: { ...p.controlChannel, enabled } }));
   ehLog("info", "control.toggle", { enabled });
   transition = transition.then(() => (enabled ? start(api) : stop())).then(emit);
   return transition.then(() => getControlStatus());

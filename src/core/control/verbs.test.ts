@@ -5,6 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { util, __testGame, __testPaths } from "@nexusmods/vortex-api";
 
 vi.mock("./gameProcess", () => ({ isProcessRunning: vi.fn(async () => false) }));
+/** Never the machine's real preferences.json: askFirst is set per test. */
+const prefs = vi.hoisted(() => ({ askFirst: true }));
+vi.mock("../preferences", () => ({
+  loadPreferences: () => ({ controlChannel: { enabled: true, askFirst: prefs.askFirst }, shownOnce: {} }),
+}));
+/** How "the user" answers Vortex's agent confirmation: a button, or "none" (walked away). */
+const consent = vi.hoisted(() => ({ answer: "Allow" as string, asked: [] as Array<{ title: string; text: string }> }));
 // plugins.txt on disk: the machine running the tests may have a real one.
 const disk = vi.hoisted(() => ({ entries: undefined as undefined | Array<{ name: string; enabled: boolean }> }));
 vi.mock("../installer/checkPluginOrder", () => ({ readUserPluginsTxt: vi.fn(async () => disk.entries) }));
@@ -29,6 +36,12 @@ fs.writeFileSync(path.join(OG, "Fallout4.exe"), "");
 type Api = ReturnType<typeof fakeVortex>["api"];
 
 /** A Vortex that answers the events and actions the verbs use, and records their order. */
+beforeEach(() => {
+  consent.answer = "Allow";
+  consent.asked = [];
+  prefs.askFirst = true;
+});
+
 function fakeVortex() {
   const log: string[] = [];
   const deployed = { n: 5 };
@@ -78,8 +91,18 @@ function fakeVortex() {
     });
   };
   const pending = new Map<string, (action: string) => void>();
+  let dialogSeq = 0;
   const api = {
     getState: () => state,
+    showDialog: async (_type: string, title: string, content: { text?: string }, actions: Array<{ label: string }>) => {
+      const id = `dialog-${++dialogSeq}`;
+      const pressed = openDialog({ id, title, text: content.text ?? "", actions: actions.map((a) => a.label) });
+      if (title.startsWith("An agent wants to")) {
+        consent.asked.push({ title, text: content.text ?? "" });
+        if (consent.answer !== "none") setTimeout(() => api.closeDialog(id, consent.answer), 0);
+      }
+      return { action: await pressed, input: {} };
+    },
     closeDialog: (id: string, action: string) => {
       closed.push({ id, action });
       state.session.notifications.dialogs = state.session.notifications.dialogs.filter((x: any) => x.id !== id);
@@ -1039,5 +1062,70 @@ describe("Vortex's External Changes dialog (skyrim-collection, 2026-09-27)", () 
   it("says so when no dialog is open", async () => {
     v.state.session.mods = { changes: [] };
     await expect(run("externalChanges.answer", { all: "newer" })).rejects.toMatchObject({ code: "no-external-changes" });
+  });
+});
+
+describe("the owner's click before an agent destroys anything", () => {
+  const withMods = () => {
+    const v = fakeVortex();
+    vi.spyOn(util, "removeMods").mockImplementation((async (_api: unknown, _game: string, ids: string[]) => {
+      for (const id of ids) delete v.state.persistent.mods.fallout4[id];
+    }) as never);
+    return v;
+  };
+
+  it("asks in Vortex, naming every mod, and removes only after Allow", async () => {
+    const v = withMods();
+    const ids = Object.keys(v.state.persistent.mods.fallout4 ?? {}).slice(0, 1);
+    await runVerb(v.api as never, "mods.remove", { modIds: ids });
+    expect(consent.asked).toHaveLength(1);
+    expect(consent.asked[0]!.title).toBe("An agent wants to remove 1 mod");
+    expect(v.state.persistent.mods.fallout4[ids[0]!]).toBeUndefined();
+  });
+
+  it("changes nothing on Deny, and says so in a code the agent can read", async () => {
+    consent.answer = "Deny";
+    const v = withMods();
+    const ids = Object.keys(v.state.persistent.mods.fallout4 ?? {}).slice(0, 1);
+    await expect(runVerb(v.api as never, "mods.remove", { modIds: ids })).rejects.toMatchObject({ code: "owner-denied" });
+    expect(v.state.persistent.mods.fallout4[ids[0]!]).toBeDefined();
+  });
+
+  it("gives up, closes the question and changes nothing when nobody answers", async () => {
+    consent.answer = "none";
+    const { setConsentTimeoutForTests } = await import("./ownerConsent");
+    setConsentTimeoutForTests(50);
+    try {
+      const v = withMods();
+      await expect(runVerb(v.api as never, "purge", {})).rejects.toMatchObject({ code: "owner-no-answer" });
+      expect(v.closed.some((c) => c.action === "Deny")).toBe(true);
+      expect(v.state.session.notifications.dialogs).toHaveLength(0);
+    } finally {
+      setConsentTimeoutForTests(10 * 60 * 1000);
+    }
+  });
+
+  it("does not ask when the owner turned the question off", async () => {
+    prefs.askFirst = false;
+    const v = withMods();
+    const ids = Object.keys(v.state.persistent.mods.fallout4 ?? {}).slice(0, 1);
+    await runVerb(v.api as never, "mods.remove", { modIds: ids });
+    expect(consent.asked).toHaveLength(0);
+  });
+
+  it("is never answered by the channel's own dialog watcher, whatever ifExisting says", async () => {
+    consent.answer = "none";
+    const { setConsentTimeoutForTests } = await import("./ownerConsent");
+    setConsentTimeoutForTests(50);
+    try {
+      const v = withMods();
+      const ids = Object.keys(v.state.persistent.mods.fallout4 ?? {}).slice(0, 1);
+      await expect(runVerb(v.api as never, "mods.remove", { modIds: ids, ifExisting: "replace" })).rejects.toMatchObject({
+        code: "owner-no-answer",
+      });
+      expect(v.closed.every((c) => c.action === "Deny")).toBe(true);
+    } finally {
+      setConsentTimeoutForTests(10 * 60 * 1000);
+    }
   });
 });

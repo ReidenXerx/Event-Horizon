@@ -80,6 +80,8 @@ import {
   planAnswer,
   readChanges,
 } from "./externalChanges";
+import { askOwner } from "./ownerConsent";
+
 export { ControlError };
 
 export type VerbBody = Record<string, unknown>;
@@ -137,6 +139,11 @@ type ModRecord = {
   attributes?: Record<string, unknown>;
   rules?: unknown[];
 };
+
+function gamePathOf(api: types.IExtensionApi, gameId: string): string | undefined {
+  return (api.getState() as { settings?: { gameMode?: { discovered?: Record<string, { path?: string }> } } }).settings
+    ?.gameMode?.discovered?.[gameId]?.path;
+}
 
 function modPool(api: types.IExtensionApi, gameId: string): Record<string, ModRecord> {
   return ((api.getState() as { persistent?: { mods?: Record<string, Record<string, ModRecord>> } }).persistent?.mods?.[
@@ -1734,6 +1741,12 @@ export const VERBS: Record<string, Verb> = {
     run: async (api, body) => {
       const gameId = activeGame(api);
       await guardClosed(api, gameId, body);
+      const deployed = await deployedFileCount(api, gameId);
+      await askOwner(api, {
+        action: `purge ${gameId}`,
+        lines: [`Take every mod file out of the game folder${deployed !== undefined ? ` (${deployed} files)` : ""}.`],
+        consequence: "The mods stay installed; a deploy puts them back. Files the game or a tool changed in place are lost.",
+      });
       const left = await purge(api, gameId);
       return { gameId, deployedFilesAfter: left, verified: { deployedFiles: left } };
     },
@@ -1792,6 +1805,11 @@ export const VERBS: Record<string, Verb> = {
       await guardClosed(api, gameId, body);
       const owner = await ownership(gameId, ids);
       const described = ids.map((id) => ({ id, name: modName(pool[id]!), owner: owner[id] }));
+      await askOwner(api, {
+        action: `remove ${ids.length} mod${ids.length === 1 ? "" : "s"}`,
+        lines: described.map((d) => `${d.name}${d.owner === "eh-installed" ? " (installed by a collection)" : ""}`),
+        consequence: "Removing deletes the mod's files from Vortex's staging folder. Getting it back means installing it again.",
+      });
       await uninstallMods(api, { gameId, modIds: ids });
       const after = modPool(api, gameId);
       const removed = described.filter((d) => after[d.id] === undefined);
@@ -2243,6 +2261,11 @@ export const VERBS: Record<string, Verb> = {
     run: async (api, body) => {
       const gameId = activeGame(api);
       await guardClosed(api, gameId, body);
+      await askOwner(api, {
+        action: `move ${gameId} to another folder`,
+        lines: [`From: ${gamePathOf(api, gameId) ?? "(unknown)"}`, `To: ${String(body["path"] ?? "")}`],
+        consequence: "Vortex will manage the game in the new folder from now on.",
+      });
       return setGamePath(api, gameId, body);
     },
     describe: (_b, r) => `set the ${String(r["gameId"])} folder to ${String(r["path"])}`,
@@ -2263,6 +2286,15 @@ export const VERBS: Record<string, Verb> = {
         throw new ControlError("bad-profile", `Profile ${profileId} is not a ${gameId} profile.`, 409);
       }
       await guardClosed(api, gameId, body);
+      await askOwner(api, {
+        action: `switch ${gameId} to another install`,
+        lines: [
+          `Purge the mods from: ${gamePathOf(api, gameId) ?? "(unknown)"}`,
+          `Point Vortex at: ${String(body["path"] ?? "")}`,
+          `Switch to profile: ${target.name ?? profileId}, then deploy it`,
+        ],
+        consequence: "The current folder is left without mods until you switch back.",
+      });
       const steps: string[] = [];
       const step = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
         try {
@@ -2324,6 +2356,18 @@ export const VERBS: Record<string, Verb> = {
       if (picks !== undefined && !Array.isArray(picks)) throw new ControlError("bad-request", `"picks" must be an array of {group, options, step?}.`);
       if (picks !== undefined && (choices !== undefined || unattended)) {
         throw new ControlError("bad-request", `"picks" answers the live wizard; send it without "choices" and "unattended".`);
+      }
+      if (body["ifExisting"] === "replace") {
+        await askOwner(api, {
+          action: "replace an installed mod in every profile",
+          lines: [
+            nexus !== undefined
+              ? `Nexus mod ${String(nexus.modId)}, file ${String(nexus.fileId)}`
+              : `Download ${String(body["archiveId"] ?? "")}`,
+            "If a version of it is already installed, every profile moves to this one, including other installs of the game.",
+          ],
+          consequence: "The version installed now is replaced everywhere, not only in the active profile.",
+        });
       }
       /**
        * Nobody said how to answer a FOMOD (no choices, no picks, not

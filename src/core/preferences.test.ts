@@ -23,12 +23,17 @@ describe("preferences", () => {
     expect(parsePreferences({ controlChannel: { enabled: "yes" } }).controlChannel.enabled).toBe(false);
     expect(parsePreferences({ controlChannel: { enabled: 1 } }).controlChannel.enabled).toBe(false);
     expect(parsePreferences({ controlChannel: { enabled: true } }).controlChannel.enabled).toBe(true);
+    // Asking before destructive agent commands is on unless explicitly turned off.
+    expect(parsePreferences({ controlChannel: { enabled: true } }).controlChannel.askFirst).toBe(true);
+    expect(parsePreferences({}).controlChannel.askFirst).toBe(true);
+    expect(parsePreferences({ controlChannel: { askFirst: "no" } }).controlChannel.askFirst).toBe(true);
+    expect(parsePreferences({ controlChannel: { askFirst: false } }).controlChannel.askFirst).toBe(false);
   });
 
   it("keeps a one-time flag across an unrelated update", () => {
     const f = tmp();
     updatePreferences((p) => ({ ...p, shownOnce: { ...p.shownOnce, promo: true } }), f);
-    updatePreferences((p) => ({ ...p, controlChannel: { enabled: true } }), f);
+    updatePreferences((p) => ({ ...p, controlChannel: { ...p.controlChannel, enabled: true } }), f);
     const back = loadPreferences(f);
     expect(back.shownOnce).toEqual({ promo: true });
     expect(back.controlChannel.enabled).toBe(true);
