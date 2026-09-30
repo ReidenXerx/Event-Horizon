@@ -120,6 +120,36 @@ export function parseInstallLink(input: string): InstallLink {
   if (insecure !== undefined) return { kind: "invalid", why: insecure };
 
   if (NEXUS_HOSTS.has(url.hostname.toLowerCase())) {
+    /**
+     * ─── A COLLECTION PAGE IS THE RIGHT PAGE AND THE WRONG BOX ──────────
+     * `https://www.nexusmods.com/games/fallout4/collections/<slug>` is where
+     * a curator's collection actually lives, so pasting it here is not a
+     * mistake about what the collection is — it is a mistake about which
+     * button installs it. Answering "not a mod page, paste .../mods/108944"
+     * sends that person looking for a mod page that does not exist.
+     *
+     * There is no link to fetch, because a collection page serves no file:
+     * Nexus hands the package to Vortex, and Event Horizon's own installer
+     * claims it on the way in (`collectionIntercept`, priority 1, on an
+     * archive carrying both `collection.json` and our `manifest.json`). So
+     * the honest answer is the button, not another URL.
+     *
+     * Reported by a new user on Discord who pasted exactly this.
+     */
+    const collection = /^\/(?:games\/)?[a-z0-9]+\/collections\/([A-Za-z0-9]+)/i.exec(
+      url.pathname,
+    );
+    if (collection !== null) {
+      return {
+        kind: "invalid",
+        why:
+          "That is a collection page, and it does not serve a file to paste here. " +
+          "Open it on Nexus and use its own Download or \"Add to Vortex\" button — " +
+          "Vortex fetches the package and hands it straight to Event Horizon, " +
+          "which then walks you through the install.",
+      };
+    }
+
     const m = /^\/(?:games\/)?([a-z0-9]+)\/mods\/(\d+)(?:\/|$)/i.exec(url.pathname);
     if (m === null) {
       return {

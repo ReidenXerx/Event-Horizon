@@ -32,6 +32,34 @@ describe("parseInstallLink", () => {
     });
   });
 
+  it("sends a collection page to its own Download button, not to a mod page", () => {
+    // The URL a curator actually hands out (Ivy: fallout4/collections/dmt85e).
+    // Pasting it is a mistake about which BUTTON installs a collection, not
+    // about what a collection is, so the old "not a mod page, paste
+    // .../mods/108944" sent people hunting for a page that does not exist.
+    for (const url of [
+      "https://www.nexusmods.com/games/fallout4/collections/dmt85e",
+      "https://nexusmods.com/fallout4/collections/dmt85e",
+      "https://www.nexusmods.com/games/skyrimspecialedition/collections/abc123?tab=mods",
+    ]) {
+      const link = parseInstallLink(url);
+      expect(link.kind).toBe("invalid");
+      const why = link.kind === "invalid" ? link.why : "";
+      expect(why).toContain("collection page");
+      expect(why).toContain("Add to Vortex");
+      // Never the mod-page advice: there is no mod page to go to.
+      expect(why).not.toContain("mods/108944");
+    }
+  });
+
+  it("still calls a Nexus link that is neither mods nor collections what it is", () => {
+    const link = parseInstallLink("https://www.nexusmods.com/fallout4/users/12345");
+    expect(link).toEqual({
+      kind: "invalid",
+      why: "That is a Nexus link, but not a mod page. Paste the page address, like https://www.nexusmods.com/fallout4/mods/108944.",
+    });
+  });
+
   it("reads the /games/ form the site itself uses and ignores the tab", () => {
     expect(
       parseInstallLink("  https://www.nexusmods.com/games/skyrimspecialedition/mods/191460?tab=description "),
@@ -70,7 +98,11 @@ describe("parseInstallLink", () => {
   });
 
   it("refuses a Nexus link that is not a mod page, and says what to paste instead", () => {
-    const r = parseInstallLink("https://www.nexusmods.com/fallout4/collections/tumkz9");
+    // Fixture changed deliberately: this used a /collections/ URL, which now
+    // has an answer of its own (the collection's own Download button) rather
+    // than the mod-page advice. A collection URL can no longer stand in for
+    // "some other Nexus page" here — see the collection-page test above.
+    const r = parseInstallLink("https://www.nexusmods.com/fallout4/images/98765");
     expect(r.kind).toBe("invalid");
     expect((r as { why: string }).why).toMatch(/mods\/108944/);
   });
