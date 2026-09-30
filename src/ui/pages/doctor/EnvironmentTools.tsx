@@ -187,7 +187,7 @@ export function EnvironmentTools(): JSX.Element {
       setSavingLogs(true);
       try {
         const [
-          { collectLogSources, logBundleDirs, writeLogBundle },
+          { collectFolderCapped, collectLogSources, logBundleDirs, writeLogBundle, SCRIPT_EXTENDER_FOLDER_CAP },
           { scriptExtenderLogFor },
           { iniLocationFor },
           { detectRuntimes },
@@ -213,6 +213,7 @@ export function EnvironmentTools(): JSX.Element {
          */
         const extraFiles: Array<{ absPath: string; zipName: string }> = [];
         let system: Record<string, unknown> | undefined;
+        let extenderFolder: Record<string, unknown> | undefined;
         try {
           const documentsPath = (
             util as unknown as { getVortexPath?: (id: string) => string }
@@ -230,6 +231,22 @@ export function EnvironmentTools(): JSX.Element {
                 absPath: `${location.dir}/${where.folder}/${where.file}`,
                 zipName: `game/${where.file}`,
               });
+              // The whole folder too: every plugin's own log and the crash
+              // logger's crash-*.log files live beside the extender's log.
+              const folder = await collectFolderCapped(
+                `${location.dir}/${where.folder}`,
+                `game/${where.folder}`,
+                SCRIPT_EXTENDER_FOLDER_CAP,
+              );
+              extraFiles.push(...folder.files);
+              extenderFolder = {
+                folder: `${location.dir}/${where.folder}`,
+                files: folder.files.length,
+                bytes: folder.bytes,
+                ...(folder.omitted.length > 0
+                  ? { omittedForSize: folder.omitted, capBytes: SCRIPT_EXTENDER_FOLDER_CAP }
+                  : {}),
+              };
             }
           }
         } catch (err) {
@@ -269,6 +286,7 @@ export function EnvironmentTools(): JSX.Element {
         }
         try {
           system = {
+            ...(extenderFolder !== undefined ? { scriptExtenderFolder: extenderFolder } : {}),
             ...(divergedExternals.length > 0
               ? { suppliedArchivesThatDiffer: divergedExternals }
               : {}),
@@ -619,7 +637,8 @@ export function EnvironmentTools(): JSX.Element {
       <Card title="Logs" inert>
         <div className="eh-stack eh-stack--sm">
           <span className="eh-secondary">
-            Saves every Event Horizon log, Vortex&apos;s own logs and Event Horizon&apos;s install records into one zip.
+            Saves every Event Horizon log, Vortex&apos;s own logs, Event Horizon&apos;s install records and the game&apos;s
+            script-extender folder (every plugin&apos;s log and the crash logs) into one zip.
             Send that file when someone asks what happened — it is everything needed to find out.
           </span>
           <div className="eh-row">

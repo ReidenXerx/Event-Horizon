@@ -12,6 +12,8 @@
  *     in-progress markers, journals, quarantine records
  *   - the game's script-extender log (f4se.log / skse64.log), which is the
  *     only artefact that says whether a plugin DLL actually loaded
+ *   - that whole folder (game/F4SE/ or game/SKSE/): every plugin's own log and
+ *     the crash logger's crash logs, newest first up to a size cap
  *   - bundle.json: what was included, what could not be read, the host, and
  *     the Microsoft runtimes the machine has
  *
@@ -94,6 +96,57 @@ async function filesUnder(dir: string): Promise<string[]> {
     }
   }
   return out.sort();
+}
+
+/**
+ * A whole folder for the bundle, newest files first, up to `maxBytes`.
+ *
+ * The script extender's folder (Documents\My Games\<game>\F4SE or SKSE) holds
+ * more than its own log: every plugin writes its log there, and crash loggers
+ * (Buffout 4, Crash Logger SSE) put their crash-*.log files there. Those are
+ * usually what a curator needs. A folder can also hold years of crash logs, so
+ * the newest files go in until the cap and the rest are listed by name, so the
+ * curator knows what was left out and can ask for one.
+ */
+/** Text logs compress about tenfold, so this stays a file someone can attach. */
+export const SCRIPT_EXTENDER_FOLDER_CAP = 32 * 1024 * 1024;
+
+export async function collectFolderCapped(
+  dir: string,
+  zipPrefix: string,
+  maxBytes: number,
+): Promise<{
+  files: Array<{ absPath: string; zipName: string }>;
+  omitted: Array<{ name: string; size: number }>;
+  bytes: number;
+}> {
+  const found: Array<{ absPath: string; zipName: string; size: number; mtimeMs: number }> = [];
+  for (const file of await filesUnder(dir)) {
+    try {
+      const st = await fsp.stat(file);
+      found.push({
+        absPath: file,
+        zipName: `${zipPrefix}/${toPosix(path.relative(dir, file))}`,
+        size: st.size,
+        mtimeMs: st.mtimeMs,
+      });
+    } catch {
+      // Vanished between listing and stat.
+    }
+  }
+  found.sort((a, b) => b.mtimeMs - a.mtimeMs || a.zipName.localeCompare(b.zipName));
+  const files: Array<{ absPath: string; zipName: string }> = [];
+  const omitted: Array<{ name: string; size: number }> = [];
+  let bytes = 0;
+  for (const f of found) {
+    if (bytes + f.size > maxBytes) {
+      omitted.push({ name: f.zipName, size: f.size });
+      continue;
+    }
+    bytes += f.size;
+    files.push({ absPath: f.absPath, zipName: f.zipName });
+  }
+  return { files, omitted, bytes };
 }
 
 export async function collectLogSources(dirs: LogBundleDirs): Promise<LogBundleSource[]> {

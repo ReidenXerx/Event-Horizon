@@ -11,7 +11,7 @@ import * as path from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { listZipEntries, readZipEntry } from "../manifest/readZip";
-import { collectLogSources, writeLogBundle } from "./logBundle";
+import { collectFolderCapped, collectLogSources, writeLogBundle } from "./logBundle";
 import { crc32, writeZip } from "./zipWriter";
 
 let tmp: string;
@@ -216,5 +216,50 @@ describe("what the bundle carries about the MACHINE, not the collection", () => 
     const sources = await collectLogSources(dirs);
     expect(sources.map((s) => s.zipName)).not.toContain("game/f4se.log");
     expect(sources.length).toBeGreaterThan(0);
+  });
+});
+
+describe("the script extender's whole folder", () => {
+  const at = (file: string, content: string, minutesAgo: number): void => {
+    write(file, content);
+    const t = new Date(Date.now() - minutesAgo * 60_000);
+    fs.utimesSync(file, t, t);
+  };
+
+  it("takes the newest files first up to the cap and names the rest", async () => {
+    const dir = path.join(tmp, "F4SE");
+    at(path.join(dir, "f4se.log"), "x".repeat(10), 1);
+    at(path.join(dir, "Plugins", "rapport.log"), "x".repeat(10), 2);
+    at(path.join(dir, "crash-2026-01-01.log"), "x".repeat(10), 3000);
+    const out = await collectFolderCapped(dir, "game/F4SE", 25);
+    expect(out.files.map((f) => f.zipName)).toEqual(["game/F4SE/f4se.log", "game/F4SE/Plugins/rapport.log"]);
+    expect(out.omitted).toEqual([{ name: "game/F4SE/crash-2026-01-01.log", size: 10 }]);
+    expect(out.bytes).toBe(20);
+  });
+
+  it("keeps filling past one file too big for what is left", async () => {
+    const dir = path.join(tmp, "F4SE");
+    at(path.join(dir, "big.log"), "x".repeat(100), 1);
+    at(path.join(dir, "small.log"), "x".repeat(5), 2);
+    const out = await collectFolderCapped(dir, "game/F4SE", 50);
+    expect(out.files.map((f) => f.zipName)).toEqual(["game/F4SE/small.log"]);
+    expect(out.omitted.map((o) => o.name)).toEqual(["game/F4SE/big.log"]);
+  });
+
+  it("is empty, not an error, when the folder does not exist", async () => {
+    expect(await collectFolderCapped(path.join(tmp, "nope"), "game/F4SE", 50)).toEqual({ files: [], omitted: [], bytes: 0 });
+  });
+
+  it("lists f4se.log once when it comes both alone and with its folder", async () => {
+    const dir = path.join(tmp, "F4SE");
+    at(path.join(dir, "f4se.log"), "log", 1);
+    const folder = await collectFolderCapped(dir, "game/F4SE", 1000);
+    const sources = await collectLogSources({
+      vortexUserData: path.join(tmp, "none"),
+      ehRoot: path.join(tmp, "none-eh"),
+      recordDirs: [],
+      extraFiles: [{ absPath: path.join(dir, "f4se.log"), zipName: "game/f4se.log" }, ...folder.files],
+    });
+    expect(sources.map((s) => s.zipName)).toEqual(["game/f4se.log"]);
   });
 });
