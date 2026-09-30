@@ -14,6 +14,8 @@ export type ToolSpec = {
   verb: string;
   /** Changes the setup: run async and awaited through the op log. */
   mutates: boolean;
+  /** Answered by the connector itself, with no call to Vortex (the handbook). */
+  local?: boolean;
   description: string;
   properties: Record<string, unknown>;
   required?: string[];
@@ -43,6 +45,18 @@ const picks = {
 const assume = bool("Only when you KNOW the game is closed and Event Horizon could not tell (code game-state-unknown).");
 
 export const TOOLS: ToolSpec[] = [
+  {
+    name: "handbook",
+    verb: "",
+    mutates: false,
+    local: true,
+    description:
+      "What an experienced Vortex and Bethesda modder knows, versioned with these tools: how Vortex works, plugins " +
+      "and masters, game files, script extenders and game versions, Fallout 4 and Skyrim specifics, how to find a " +
+      "crash, and what Event Horizon guarantees. Call it with no topic for the index. Read the topic before a job " +
+      "it covers; it is faster than guessing and it is right for this user's tools.",
+    properties: { topic: str("A topic id from the index (e.g. vortex, plugins, crashes), or a playbook name.") },
+  },
   // ── look ──────────────────────────────────────────────────────────────
   {
     name: "state",
@@ -439,37 +453,32 @@ export const TOOLS: ToolSpec[] = [
 /** What the AI is told when it connects: how to work in Vortex safely, for someone who may be new to modding. */
 export const GUIDE = [
   "You are driving the user's Vortex mod manager through Event Horizon. The user may be new to modding: explain what you",
-  "are doing in plain words, one step at a time.",
+  "are doing in plain words, one step at a time, and say what you changed.",
+  "",
+  "Know before you act:",
+  "- handbook (no topic) lists what Event Horizon teaches: how Vortex works, plugins and masters, game files, script",
+  "  extenders and game versions, Fallout 4 and Skyrim specifics, finding a crash, and Event Horizon's guarantees. Read",
+  "  the topic for the job before starting it; it is written for these tools and this user's setup.",
+  "- Call state first, and again whenever you are unsure what is set up.",
   "",
   "Ground rules:",
-  "- Call state first, and again whenever you are unsure what is set up.",
   "- Every change is checked before it reports success: ok:true means it really happened. On a failure, read code and",
   "  message; they say what to do. Never repeat a refused command unchanged.",
-  "- Ask the user before removing mods, purging, or moving the game to another folder.",
-  "- The game must be closed for deploy, purge, removals, profile switches and folder moves. If it is running, ask the",
-  "  user to close it.",
+  "- Removing mods, purging, moving the game folder and replacing a mod everywhere stop and ask the user in Vortex. On",
+  "  owner-denied, stop and ask the user what they want instead.",
+  "- Every change to mods, rules or plugins takes a restore point; undo goes back one step. Offer it when something got",
+  "  worse.",
+  "- The game must be closed for deploy, purge, removals, profile switches and folder moves.",
   "- After installing, enabling, disabling or adding rules, deploy, or the game will not see the change.",
+  "- Change one thing at a time when troubleshooting, and let the user test in between.",
   "",
-  "Installing mods:",
-  "- For a mod with an installer, call installer_describe with checkMasters:true, choose options that fit the user's",
-  "  game and mods (skip options with missingMasters, prefer Recommended ones, read descriptions), tell the user what you",
-  "  chose and why, then install with picks. Use only option names the installer listed.",
-  "- If a reply mentions an open installer or dialog Vortex is showing, tell the user it is waiting for them, or answer it",
-  "  with installer_answer.",
-  "- A deploy or purge that stops with code external-changes is waiting on Vortex's External Changes dialog. When every",
-  "  file says sameFile:true (the game wrote a mod's own settings file through the link), answer newer. Otherwise tell",
-  "  the user what changed and ask. Never answer save for a deleted file without the user's OK: it deletes for good.",
+  "Crashes and problems: diagnose_crash first (a verdict with suspects and the mod each came from), then",
+  "diagnose_setup (findings with fixes). Explain, propose one fix, apply it with the user's OK, deploy, ask them to test.",
   "",
-  "Load order and conflicts:",
-  "- After adding or swapping mods, check conflicts (unresolvedOnly) and settle real ones with mods_rule (identical:true",
-  "  pairs need nothing). Use plugins_rule for plugin orders that must survive LOOT sorting.",
+  "Installing mods: check requirements, installer_describe with checkMasters:true, choose options that fit the user's",
+  "game and mods, tell the user what you chose and why, install with picks, settle new conflicts with mods_rule, deploy,",
+  "then diagnose_setup.",
   "",
-  "Troubleshooting a crash:",
-  "- logs_list, then read the newest crash log (logs_read with head:200). The probable call stack and the modules or",
-  "  plugins it names usually point at the cause. Explain it simply, propose a fix (disable, update, reorder, or a missing",
-  "  requirement), apply it with the user's OK, deploy, and ask them to try again.",
-  "",
-  "Collections (for curators):",
-  "- collection_list first; build under the exact name it shows. collection_build with dryRun:true, then for real.",
-  "- collection_upload_draft makes a DRAFT on Nexus. There is no publish tool: publishing is the curator's own click.",
+  "Collections (for curators): collection_list first; build under the exact name it shows, dryRun first.",
+  "collection_upload_draft makes a DRAFT on Nexus. There is no publish tool: publishing is the curator's own click.",
 ].join("\n");

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { startControlServer, type ControlServer } from "../core/control/controlServer";
 import { VERBS } from "../core/control/verbs";
+import { HANDBOOK, PLAYBOOKS } from "./handbook";
 import { handle } from "./server";
 import { TOOLS } from "./tools";
 
@@ -21,7 +22,7 @@ const call = async (file: string, name: string, args: Record<string, unknown> = 
 describe("the tool table", () => {
   it("maps every tool to a real control channel verb (or the op log)", () => {
     const known = new Set([...Object.keys(VERBS), "ops.get", "ops.list"]);
-    expect(TOOLS.filter((t) => !known.has(t.verb)).map((t) => t.verb)).toEqual([]);
+    expect(TOOLS.filter((t) => t.local !== true && !known.has(t.verb)).map((t) => t.verb)).toEqual([]);
   });
 
   it("uses names MCP accepts, once each, and marks the right tools as changes", () => {
@@ -46,7 +47,7 @@ describe("MCP protocol", () => {
 
   it("answers nothing to a notification, and method-not-found to an unknown method", async () => {
     expect(await handle("unused", { jsonrpc: "2.0", method: "notifications/initialized" })).toBeUndefined();
-    expect(JSON.parse((await handle("unused", { jsonrpc: "2.0", id: 3, method: "resources/list" }))!).error.code).toBe(-32601);
+    expect(JSON.parse((await handle("unused", { jsonrpc: "2.0", id: 3, method: "sampling/createMessage" }))!).error.code).toBe(-32601);
   });
 
   it("tells the AI what to ask the user when Vortex is closed or the channel is off", async () => {
@@ -95,5 +96,41 @@ describe("through a real control channel", () => {
     const r = await call(file, "purge");
     expect(r.isError).toBe(true);
     expect(JSON.parse(r.content[0].text)).toMatchObject({ status: "failed", code: "game-running" });
+  });
+});
+
+describe("the handbook", () => {
+  it("lists every topic as a resource and reads each one back", async () => {
+    const list = JSON.parse((await handle("unused", { jsonrpc: "2.0", id: 1, method: "resources/list" }))!).result.resources;
+    expect(list.map((r: { uri: string }) => r.uri)).toContain("eh://handbook/crashes");
+    for (const r of list) {
+      const read = JSON.parse((await handle("unused", { jsonrpc: "2.0", id: 2, method: "resources/read", params: { uri: r.uri } }))!);
+      expect(read.result.contents[0].text.length).toBeGreaterThan(200);
+    }
+  });
+
+  it("answers the handbook tool locally, with the index when no topic is given", async () => {
+    const call = async (args: Record<string, unknown>) =>
+      JSON.parse((await handle("no-such-control-file", { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "handbook", arguments: args } }))!).result;
+    expect((await call({})).content[0].text).toMatch(/Handbook topics/);
+    expect((await call({ topic: "plugins" })).content[0].text).toMatch(/Masters/);
+    expect((await call({ topic: "nope" })).isError).toBe(true);
+  });
+
+  it("offers the playbooks as prompts, with their arguments filled in", async () => {
+    const list = JSON.parse((await handle("unused", { jsonrpc: "2.0", id: 4, method: "prompts/list" }))!).result.prompts;
+    expect(list.map((p: { name: string }) => p.name)).toContain("fix_crash");
+    const got = JSON.parse(
+      (await handle("unused", { jsonrpc: "2.0", id: 5, method: "prompts/get", params: { name: "install_mod", arguments: { mod: "https://www.nexusmods.com/fallout4/mods/47327" } } }))!,
+    ).result;
+    expect(got.messages[0].content.text).toMatch(/mods\/47327/);
+  });
+
+  it("never names a tool the connector does not have", () => {
+    const names = new Set(TOOLS.map((t) => t.name));
+    const text = [...HANDBOOK.map((t) => t.text), ...PLAYBOOKS.map((p) => p.text({}))].join("\n");
+    const toolish = [...text.matchAll(/`([a-z]+_[a-z_]+)`/g)].map((m) => m[1]!);
+    const bare = [...text.matchAll(/\b(diagnose_\w+|installer_\w+|plugins_\w+|mods_\w+|restore_points|recent_operations|logs_list|game_switch_install|external_changes_answer)\b/g)].map((m) => m[1]!);
+    expect([...new Set([...toolish, ...bare])].filter((n) => !names.has(n))).toEqual([]);
   });
 });

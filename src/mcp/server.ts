@@ -18,6 +18,7 @@ import * as os from "os";
 import * as path from "path";
 import * as readline from "readline";
 
+import { HANDBOOK, PLAYBOOKS, handbookIndex, handbookTopic } from "./handbook";
 import { GUIDE, TOOLS, type ToolSpec } from "./tools";
 
 type Json = Record<string, unknown>;
@@ -125,7 +126,7 @@ export async function handle(file: string, msg: Json): Promise<string | undefine
     case "initialize":
       return reply(id, {
         protocolVersion: typeof params["protocolVersion"] === "string" ? params["protocolVersion"] : "2025-06-18",
-        capabilities: { tools: { listChanged: false } },
+        capabilities: { tools: { listChanged: false }, resources: { listChanged: false }, prompts: { listChanged: false } },
         serverInfo: { name: "event-horizon", title: "Event Horizon (Vortex)", version: VERSION },
         instructions: GUIDE,
       });
@@ -139,12 +140,52 @@ export async function handle(file: string, msg: Json): Promise<string | undefine
           inputSchema: { type: "object", properties: t.properties, ...(t.required !== undefined ? { required: t.required } : {}) },
         })),
       });
+    case "resources/list":
+      return reply(id, {
+        resources: HANDBOOK.map((t) => ({
+          uri: `eh://handbook/${t.id}`,
+          name: t.id,
+          title: t.title,
+          description: t.summary,
+          mimeType: "text/markdown",
+        })),
+      });
+    case "resources/read": {
+      const uri = String(params["uri"] ?? "");
+      const topic = HANDBOOK.find((t) => `eh://handbook/${t.id}` === uri);
+      if (topic === undefined) return error(id, -32002, `Unknown resource ${uri}.`);
+      return reply(id, { contents: [{ uri, mimeType: "text/markdown", text: topic.text }] });
+    }
+    case "prompts/list":
+      return reply(id, {
+        prompts: PLAYBOOKS.map((p) => ({
+          name: p.name,
+          title: p.title,
+          description: p.description,
+          ...(p.arguments !== undefined ? { arguments: p.arguments } : {}),
+        })),
+      });
+    case "prompts/get": {
+      const p = PLAYBOOKS.find((x) => x.name === params["name"]);
+      if (p === undefined) return error(id, -32602, `Unknown prompt ${String(params["name"])}.`);
+      const args = (params["arguments"] ?? {}) as Record<string, string>;
+      return reply(id, { description: p.description, messages: [{ role: "user", content: { type: "text", text: p.text(args) } }] });
+    }
     case "tools/call": {
       const tool = TOOLS.find((t) => t.name === params["name"]);
       if (tool === undefined) return error(id, -32602, `Unknown tool ${String(params["name"])}.`);
+      if (tool.local === true) {
+        const topic = String(((params["arguments"] ?? {}) as Json)["topic"] ?? "");
+        const text = topic === "" ? handbookIndex() : handbookTopic(topic);
+        return reply(id, {
+          content: [{ type: "text", text: text ?? `No topic "${topic}".\n\n${handbookIndex()}` }],
+          isError: text === undefined,
+        });
+      }
       try {
         const out = await runTool(file, tool, (params["arguments"] ?? {}) as Json);
-        return reply(id, { content: [{ type: "text", text: JSON.stringify(out, null, 1) }], isError: out["ok"] === false });
+        // Compact: an agent pays for every character, and indentation is a third of a big reply.
+        return reply(id, { content: [{ type: "text", text: JSON.stringify(out) }], isError: out["ok"] === false });
       } catch (err) {
         return reply(id, { content: [{ type: "text", text: String((err as Error)?.message ?? err) }], isError: true });
       }
