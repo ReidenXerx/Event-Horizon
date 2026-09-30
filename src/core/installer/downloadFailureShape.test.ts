@@ -136,3 +136,23 @@ describe("describeSystemicFailure", () => {
     }
   });
 });
+
+describe("when the Nexus account is the cause (a free-account player, 2026-09-30)", () => {
+  const base = { streak: 8, lastModName: "BakaFramework", lastError: "returned no archiveId", remaining: 957, shape: "unclear" as const };
+
+  it("a free account is named as the cause, not the extractor or the disk", () => {
+    const text = describeSystemicFailure({ ...base, account: "free" });
+    expect(text).toMatch(/not Premium/);
+    expect(text).toMatch(/Only available to premium users/);
+    expect(text).toMatch(/Continue/);
+    expect(text).not.toMatch(/extractor, the Nexus connection, or disk space/);
+  });
+
+  it("no sign-in says to sign in", () => {
+    expect(describeSystemicFailure({ ...base, account: "logged-out" })).toMatch(/not signed in/);
+  });
+
+  it("without an account cause the old wording stands", () => {
+    expect(describeSystemicFailure(base)).toMatch(/extractor, the Nexus connection, or disk space/);
+  });
+});

@@ -169,15 +169,15 @@ describe("describeNexusAccount", () => {
     expect(said).toMatch(/does not have it/);
     // The requirement is justified, not just asserted — a rule with a
     // checkable reason survives being argued with.
-    expect(said).toMatch(/direct download links/);
-    expect(said).toMatch(/browser/);
+    expect(said).toMatch(/download files directly/);
+    expect(said).toMatch(/Only available to premium users/);
   });
 
   it("escalates for a big collection but not a small one", () => {
     const many = describeNexusAccount({ kind: "free" }, 954).join(" ");
     const few = describeNexusAccount({ kind: "free" }, 3).join(" ");
-    expect(many).toMatch(/not a realistic way/);
-    expect(few).not.toMatch(/not a realistic way/);
+    expect(many).toMatch(/runs unattended/);
+    expect(few).not.toMatch(/runs unattended/);
     // And a single mod reads as one, not "1 mods".
     expect(describeNexusAccount({ kind: "free" }, 1).join(" ")).toMatch(
       /1 mod\b/,
@@ -190,5 +190,22 @@ describe("describeNexusAccount", () => {
     expect(said).toMatch(/12 mods/);
     // Premium is the wrong advice for someone who has not logged in yet.
     expect(said).not.toMatch(/Premium/);
+  });
+});
+
+describe("downloadAccountCause", () => {
+  const api = (state: unknown) => ({ getState: () => state }) as never;
+
+  it("names a free account from Vortex's premium notification when the account itself is unreadable", async () => {
+    const { downloadAccountCause } = await import("./checkNexusAccount");
+    const state = {
+      session: { notifications: { notifications: [{ type: "error", message: "Only available to premium users" }] } },
+    };
+    expect(downloadAccountCause(api(state))).toBe("free");
+  });
+
+  it("is undefined when nothing points at the account", async () => {
+    const { downloadAccountCause } = await import("./checkNexusAccount");
+    expect(downloadAccountCause(api({ session: { notifications: { notifications: [] } } }))).toBeUndefined();
   });
 });

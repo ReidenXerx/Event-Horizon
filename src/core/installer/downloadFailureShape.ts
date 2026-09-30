@@ -104,11 +104,37 @@ export function describeSystemicFailure(opts: {
   lastError: string;
   remaining: number;
   shape: DownloadFailureShape;
+  /**
+   * The Nexus account can't download directly: a free account (Vortex says
+   * so, or raised "Only available to premium users" while it ran) or no
+   * sign-in at all. Then that IS the cause, and naming the extractor or the
+   * disk sends someone hunting a problem their machine does not have
+   * (a free-account player, 2026-09-30).
+   */
+  account?: "free" | "logged-out";
 }): string {
   const head =
     `${opts.streak} mods in a row failed to install, ending with ` +
     `"${opts.lastModName}": ${opts.lastError}.`;
   const tail = `Stopped rather than repeating it ${opts.remaining} more times.`;
+
+  if (opts.account === "free") {
+    return (
+      `${opts.streak} mods in a row could not be downloaded, ending with "${opts.lastModName}". ` +
+      `Your Nexus Mods account is not Premium, and Nexus only lets mod managers download files ` +
+      `directly for Premium accounts: that is what Vortex's "Only available to premium users" ` +
+      `notifications mean. It is not your extractor, connection or disk, and trying again will ` +
+      `not change it. With Nexus Premium (one month is enough), press Continue on the ` +
+      `collection: everything already installed is kept. ${tail}`
+    );
+  }
+  if (opts.account === "logged-out") {
+    return (
+      `${opts.streak} mods in a row could not be downloaded, ending with "${opts.lastModName}". ` +
+      `Vortex is not signed in to Nexus Mods, so it cannot download anything. Sign in on ` +
+      `Vortex's Nexus Mods page, then press Continue on the collection. ${tail}`
+    );
+  }
 
   if (opts.shape === "timed-out") {
     return (

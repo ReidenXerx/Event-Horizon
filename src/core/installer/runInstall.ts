@@ -299,6 +299,7 @@ import {
 } from "./verifyJournal";
 import { storeInstalledPackage } from "./packageStore";
 import { repairDecisionFor } from "../resolver/resolveInstallPlan";
+import { downloadAccountCause } from "./checkNexusAccount";
 // NOTE: there used to be a `pluginsTxt.ts` writer module here. It
 // was deleted along with the `writing-plugins-txt` driver phase
 // when the rules-only strategy locked. Vortex's
@@ -1745,10 +1746,12 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           systemicTimeout ||
           run.consecutiveFailures >= SYSTEMIC_FAILURE_STREAK
         ) {
+          const accountCause = downloadAccountCause(api);
           ehLog("error", "install.systemic-failure", {
             streak: run.consecutiveFailures,
             timeoutStreak: run.consecutiveTimeouts,
             shape: systemicTimeout ? "timed-out" : "unclear",
+            account: accountCause ?? "not the cause",
             atIndex: i + 1,
             total,
           });
@@ -1762,6 +1765,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               lastError: formatError(err),
               remaining: total - i,
               shape: systemicTimeout ? "timed-out" : "unclear",
+              ...(accountCause !== undefined ? { account: accountCause } : {}),
             }),
             installedSoFar: installedMods.map((m) => m.vortexModId),
             failedMods,

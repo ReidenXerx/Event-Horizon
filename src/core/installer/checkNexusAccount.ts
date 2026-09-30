@@ -204,14 +204,14 @@ export function describeNexusAccount(
 
   const lines = [
     `Nexus Premium is required to install this collection, and this account ` +
-      `does not have it. Nexus only gives mod managers direct download links ` +
-      `to Premium accounts, so Vortex cannot fetch the ${mods} this needs — ` +
-      `each one opens in your browser for you to start by hand.`,
+      `does not have it. Nexus only lets mod managers download files directly ` +
+      `for Premium accounts, so Vortex cannot fetch the ${mods} this needs: each ` +
+      `one fails with "Only available to premium users", and the install stops.`,
   ];
   if (downloadCount >= LOT) {
     lines.push(
-      `At ${downloadCount} downloads, doing that by hand is not a realistic ` +
-        `way to install this. Upgrade to Premium and it runs unattended.`,
+      `With Premium (one month is enough) the whole install runs unattended, ` +
+        `and a stopped install continues where it left off.`,
     );
   }
   return lines;
@@ -261,4 +261,27 @@ function describeSelectorAvailability(): string {
     (n) => typeof sel[n] === "function",
   );
   return present.length === 0 ? "none" : present.join(",");
+}
+
+/**
+ * Whether the Nexus account is why downloads fail: a free account, or no
+ * sign-in. Vortex's own "Only available to premium users" notification counts
+ * too, for when its account state could not be read. Undefined when the
+ * account is not the explanation.
+ */
+export function downloadAccountCause(api: types.IExtensionApi): "free" | "logged-out" | undefined {
+  const account = readNexusAccount(api);
+  if (account.kind === "free" || account.kind === "logged-out") return account.kind;
+  try {
+    const list = (api.getState() as { session?: { notifications?: { notifications?: unknown[] } } })?.session?.notifications
+      ?.notifications;
+    const saysPremium = (Array.isArray(list) ? list : []).some((n) => {
+      const x = n as { message?: unknown; title?: unknown } | null;
+      return /premium users/i.test(`${String(x?.title ?? "")} ${String(x?.message ?? "")}`);
+    });
+    if (saysPremium) return "free";
+  } catch {
+    // Unreadable state: the account is not shown to be the cause.
+  }
+  return undefined;
 }
