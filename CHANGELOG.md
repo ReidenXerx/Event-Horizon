@@ -10,6 +10,47 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.28] — 2026-09-30
+
+### Collections
+- **Endorsing works from Event Horizon, and it asks again now and then.** The endorse button almost never worked:
+  Vortex endorses a collection only through an entry Event Horizon's installer never created. It now endorses with
+  your own Vortex login either way. The question also comes back politely instead of once: only after you have
+  played, and less often each time you say "Not now" (3 days, then 7, 14, 30). A new revision of the collection
+  brings it back sooner, since curators keep improving their work. "Don't ask again" holds until the next revision,
+  and once you have endorsed, it never asks again. Endorsements count toward the collection's rating on Nexus.
+- **Endorse the collection's mods in one go.** Now and then Event Horizon offers to endorse the mods in the
+  collection you play that you have not endorsed yet, one at a time through your Vortex login, with progress and a
+  Stop button. Each one goes to that mod's author.
+- **"Last played" on the dashboard** shows when you last launched each collection. It was always empty before.
+
+### Install
+- **A collection's Nexus page link gets the right answer.** Pasting a collection page's address used to say "that is
+  not a mod page". It now tells you to use the page's Download or "Add to Vortex" button, which is how a collection
+  arrives.
+- **Picking a mod archive instead of a collection says where it goes.** Choosing a single mod's .7z or .rar with
+  "Choose package file" is now caught right away, with a note that mods belong on Vortex's own Mods page.
+- **"Maybe a different installer option" now says whether reinstalling fixes it.** When the curator's installer
+  answers are recorded, a reinstall lands their version, and the report now says so plainly. It also names the usual
+  cause: clicking through a mod's installer by hand keeps the mod's own defaults instead of the curator's choices.
+
+### Doctor
+- **"Save logs" takes the whole script-extender folder.** Every plugin's own log and the crash logger's crash logs
+  now go into the zip, not just f4se.log / skse64.log, newest first up to 32 MB.
+
+### Let an AI do your modding
+- **Your click before anything destructive.** When an agent wants to remove mods, purge, move the game folder or
+  replace a mod in every profile, Vortex asks you first, listing exactly what. Only your Allow lets it happen. It is
+  on by default; the Agents page can turn it off for your own agents.
+- **Undo.** Before every change an agent makes to mods, rules or plugin order, Event Horizon saves how things were.
+  One command puts it back. Mods installed since are only disabled, never deleted.
+- **Crash and setup diagnosis.** An agent can read your newest crash log in one step and get the likely culprits
+  with the mod each came from, and check your whole setup for missing masters, plugin limits and script-extender or
+  DLL versions that do not match your game.
+- **A modding handbook for your AI.** Event Horizon now teaches a connected AI how Vortex works, plugins and
+  masters, script extenders and game versions, Fallout 4 and Skyrim specifics and how to hunt a crash, plus
+  step-by-step playbooks it offers as ready prompts.
+
 ## [0.2.27] — 2026-09-29
 
 ### Doctor
