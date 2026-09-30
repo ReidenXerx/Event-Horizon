@@ -176,6 +176,20 @@ What each refuses, and why:
 | `unknown-mods` | Any id not in the game's pool. **Nothing** is changed; a batch never half-applies. |
 | `bad-profile` | The profile is missing, or belongs to another game. |
 
+### Restore points and `restore`
+
+Before every command that changes mods, rules or plugins (`mods.setEnabled`, `mods.remove`, `mods.rule`,
+`plugins.setEnabled`, `plugins.apply`, `plugins.rule`, `plugins.setGroup`, `plugins.sort`, `install`), the channel
+records the active profile: which mods are enabled, every mod rule, LOOT's userlist and the plugin list in order. The
+reply carries its id as `restorePoint`. The last 10 are kept in `<Vortex userData>/event-horizon/agent-restore-points.json`.
+
+| Verb | Body | Does |
+|---|---|---|
+| `restorePoints.list` | none | The points, newest first: `id`, `at`, `before` (the command), profile, counts. |
+| `restore` | `id?` (default: the newest) | Puts the profile back: enabled states, mod rules both ways, LOOT rules both ways (and groups), plugin order through `plugins.apply`. Verified by reading back; `restore-incomplete` lists what is left. Mods installed since are **disabled**, not removed (`installedSince`); mods removed since are listed with their `archiveId` (`removedSince`). Takes a point of its own first, so a restore can be undone too. Does not deploy. |
+
+`not-active-profile` (409): the point belongs to another game or profile. Switch to it first.
+
 ### The user's click before anything destructive
 
 `mods.remove`, `purge`, `game.setPath`, `game.switchInstall` and an `install` with `ifExisting: "replace"` stop

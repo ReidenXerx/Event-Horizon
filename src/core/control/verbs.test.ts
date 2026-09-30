@@ -5,6 +5,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { util, __testGame, __testPaths } from "@nexusmods/vortex-api";
 
 vi.mock("./gameProcess", () => ({ isProcessRunning: vi.fn(async () => false) }));
+/** Restore points go to a temp file, never the real Vortex folder. */
+vi.mock("./restorePoints", async (orig) => {
+  const m = (await orig()) as typeof import("./restorePoints");
+  const nodePath = await import("path");
+  const nodeOs = await import("os");
+  const file = nodePath.join(nodeOs.tmpdir(), `eh-restore-points-${process.pid}.json`);
+  return {
+    ...m,
+    restorePointsFile: () => file,
+    loadRestorePoints: () => m.loadRestorePoints(file),
+    saveRestorePoint: (pt: import("./restorePoints").RestorePoint) => m.saveRestorePoint(pt, file),
+  };
+});
 /** Never the machine's real preferences.json: askFirst is set per test. */
 const prefs = vi.hoisted(() => ({ askFirst: true }));
 vi.mock("../preferences", () => ({
@@ -1127,5 +1140,32 @@ describe("the owner's click before an agent destroys anything", () => {
     } finally {
       setConsentTimeoutForTests(10 * 60 * 1000);
     }
+  });
+});
+
+describe("restore points: one step back from what an agent changed", () => {
+  it("takes one before a change and puts the enabled mods back", async () => {
+    const v = fakeVortex();
+    const profileId = v.state.settings.profiles.activeProfileId as string;
+    const ids = Object.keys(v.state.persistent.mods.fallout4);
+    const before = Object.fromEntries(ids.map((id) => [id, v.state.persistent.profiles[profileId].modState?.[id]?.enabled === true]));
+    const target = ids.find((id) => before[id] === true) ?? ids[0]!;
+    const r = (await runVerb(v.api as never, "mods.setEnabled", { modIds: [target], enabled: !before[target] })) as any;
+    expect(r.restorePoint).toMatch(/^rp-/);
+    expect(v.state.persistent.profiles[profileId].modState[target].enabled).toBe(!before[target]);
+
+    const back = (await runVerb(v.api as never, "restore", {})) as any;
+    expect(back.restoredTo.id).toBe(r.restorePoint);
+    expect(v.state.persistent.profiles[profileId].modState[target]?.enabled === true).toBe(before[target]);
+    expect(back.deployNeeded).toBe(true);
+    // The restore took a point of its own, so it can be undone too.
+    expect(back.restorePoint).toMatch(/^rp-/);
+  });
+
+  it("refuses a point from another profile rather than restoring into the wrong one", async () => {
+    const v = fakeVortex();
+    await runVerb(v.api as never, "mods.setEnabled", { modIds: [Object.keys(v.state.persistent.mods.fallout4)[0]!], enabled: true });
+    v.state.settings.profiles.activeProfileId = "someone-else";
+    await expect(runVerb(v.api as never, "restore", {})).rejects.toMatchObject({ code: "not-active-profile" });
   });
 });

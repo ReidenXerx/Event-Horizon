@@ -81,6 +81,14 @@ import {
   readChanges,
 } from "./externalChanges";
 import { askOwner } from "./ownerConsent";
+import {
+  loadRestorePoints,
+  planRestore,
+  saveRestorePoint,
+  summarizePoint,
+  type RestorePoint,
+  type UserlistPlugin,
+} from "./restorePoints";
 
 export { ControlError };
 
@@ -93,6 +101,8 @@ export type Verb = {
   run: (api: types.IExtensionApi, body: VerbBody) => Promise<Record<string, unknown>>;
   /** One line for the notification, from the body and the result. */
   describe?: (body: VerbBody, result: Record<string, unknown>) => string;
+  /** Changes the setup an agent can get wrong: a restore point is taken before it runs. */
+  restorePoint?: boolean;
 };
 
 // ─── small readers ─────────────────────────────────────────────────────────
@@ -459,6 +469,53 @@ function watchDialogs(
   return { seen, installers, stop: () => unsubscribe?.() };
 }
 
+// ─── restore points ────────────────────────────────────────────────────────
+
+function readUserlist(api: types.IExtensionApi): UserlistPlugin[] {
+  const ul = (api.getState() as { userlist?: { plugins?: Array<Record<string, unknown>> } }).userlist;
+  const names = (v: unknown): string[] =>
+    (Array.isArray(v) ? v : []).map((r) => (typeof r === "string" ? r : String((r as { name?: unknown })?.name ?? "")));
+  return (ul?.plugins ?? []).map((p) => ({
+    name: String(p["name"] ?? ""),
+    ...(p["group"] !== undefined ? { group: String(p["group"]) } : {}),
+    after: names(p["after"]),
+    req: names(p["req"]),
+    inc: names(p["inc"]),
+  }));
+}
+
+/** The active profile as a restore point would record it. */
+function readSetup(api: types.IExtensionApi, gameId: string, profileId: string): Omit<RestorePoint, "id" | "at" | "verb"> {
+  const pool = modPool(api, gameId);
+  const enabled = enabledMap(api, profileId);
+  const mods: RestorePoint["mods"] = {};
+  const modRules: RestorePoint["modRules"] = {};
+  for (const [id, m] of Object.entries(pool)) {
+    mods[id] = { enabled: enabled[id]?.enabled === true, name: modName(m), ...(m.archiveId !== undefined ? { archiveId: m.archiveId } : {}) };
+    if (Array.isArray(m.rules) && m.rules.length > 0) modRules[id] = m.rules;
+  }
+  const plugins = [...readPluginList(api.getState())]
+    .sort((a, b) => (a.loadOrder ?? 0) - (b.loadOrder ?? 0))
+    .map((p) => ({ name: p.name, enabled: p.enabled }));
+  return { gameId, profileId, mods, modRules, plugins, userlist: readUserlist(api) };
+}
+
+let pointSeq = 0;
+
+/** Best effort: a restore point that cannot be written never stops the command. */
+function takeRestorePoint(api: types.IExtensionApi, verb: string): string | undefined {
+  try {
+    const gameId = activeGame(api);
+    const profileId = activeProfileId(api);
+    if (profileId === undefined) return undefined;
+    const id = `rp-${Date.now().toString(36)}-${(++pointSeq).toString(36)}`;
+    saveRestorePoint({ id, at: new Date().toISOString(), verb, ...readSetup(api, gameId, profileId) });
+    return id;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Runs a verb and attaches what Vortex said while it ran: new notifications
  * (an "error" one means something failed that no callback reported), every
@@ -489,9 +546,11 @@ export async function runVerb(api: types.IExtensionApi, name: string, body: Verb
     ...(readFomod(api.getState()) !== undefined ? { openInstaller: fomodSummary(readFomod(api.getState())) } : {}),
     ...(externalChanges(api) !== undefined ? { externalChanges: externalChanges(api) } : {}),
   });
+  const restorePoint = verb.restorePoint === true ? takeRestorePoint(api, name) : undefined;
   try {
     const result = await verb.run(api, body);
-    return verb.mutates ? { ...result, vortex: activity() } : result;
+    const withPoint = restorePoint !== undefined ? { ...result, restorePoint } : result;
+    return verb.mutates ? { ...withPoint, vortex: activity() } : withPoint;
   } catch (err) {
     if (err instanceof ControlError) {
       throw new ControlError(err.code, err.message, err.status, { ...(err.details ?? {}), vortex: activity() });
@@ -1765,6 +1824,7 @@ export const VERBS: Record<string, Verb> = {
 
   "mods.setEnabled": {
     mutates: true,
+    restorePoint: true,
     run: async (api, body) => {
       const gameId = activeGame(api);
       const ids = needIds(body);
@@ -1795,8 +1855,96 @@ export const VERBS: Record<string, Verb> = {
     describe: (b) => `${b["enabled"] ? "enabled" : "disabled"} ${(b["modIds"] as unknown[]).length} mod(s)`,
   },
 
+  /** The last restore points, newest first: what each was taken before, and when. */
+  "restorePoints.list": {
+    mutates: false,
+    run: async () => ({ points: loadRestorePoints().map(summarizePoint) }),
+  },
+
+  /**
+   * Puts the active profile back as it was at a restore point (the newest by
+   * default): enabled mods, mod rules, LOOT's userlist, and the plugin list.
+   * Mods installed since are disabled, not removed; mods removed since are
+   * named, with their archive, to install again. Does not deploy.
+   */
+  restore: {
+    mutates: true,
+    // Takes its own point, AFTER choosing the one to go back to: taken before,
+    // it would itself be "the newest point" and the restore would change nothing.
+    run: async (api, body) => {
+      const points = loadRestorePoints();
+      const wanted = str(body["id"]);
+      const point = wanted !== undefined ? points.find((p) => p.id === wanted) : points[0];
+      if (point === undefined) {
+        throw new ControlError("no-restore-point", wanted !== undefined ? `No restore point ${wanted}.` : "No restore point has been taken yet.", 404);
+      }
+      const gameId = activeGame(api);
+      const profileId = activeProfileId(api);
+      if (point.gameId !== gameId || point.profileId !== profileId) {
+        throw new ControlError(
+          "not-active-profile",
+          `Restore point ${point.id} is for ${point.gameId} profile ${point.profileId}; switch to it first.`,
+          409,
+        );
+      }
+      const ownPoint = takeRestorePoint(api, "restore");
+      const plan = planRestore(point, readSetup(api, gameId, profileId));
+      const done: string[] = [];
+      if (plan.enable.length > 0) {
+        await VERBS["mods.setEnabled"]!.run(api, { modIds: plan.enable, enabled: true, profileId });
+        done.push(`enabled ${plan.enable.length}`);
+      }
+      if (plan.disable.length > 0) {
+        await VERBS["mods.setEnabled"]!.run(api, { modIds: plan.disable, enabled: false, profileId });
+        done.push(`disabled ${plan.disable.length}`);
+      }
+      for (const r of plan.modRulesToRemove) api.store?.dispatch(actions.removeModRule(gameId, r.modId, r.rule as never));
+      for (const r of plan.modRulesToAdd) api.store?.dispatch(actions.addModRule(gameId, r.modId, r.rule as never));
+      if (plan.modRulesToRemove.length + plan.modRulesToAdd.length > 0) {
+        done.push(`mod rules -${plan.modRulesToRemove.length} +${plan.modRulesToAdd.length}`);
+      }
+      for (const r of plan.userlistToRemove) dispatchRaw(api, "REMOVE_USERLIST_RULE", r);
+      if (plan.userlistToAdd.length > 0) {
+        const { applyUserlist } = await import("../installer/applyUserlist");
+        applyUserlist({ api, userlist: { plugins: plan.userlistToAdd, groups: [] } });
+      }
+      if (plan.userlistToRemove.length + plan.userlistToAdd.length > 0) {
+        done.push(`LOOT rules -${plan.userlistToRemove.length} +${plan.userlistToAdd.length}`);
+      }
+      let plugins: Record<string, unknown> | undefined;
+      if (plan.pluginOrder.length > 0) {
+        plugins = await VERBS["plugins.apply"]!.run(api, { order: plan.pluginOrder });
+        done.push(`plugin order (${plan.pluginOrder.length})`);
+      }
+
+      // Read back what was asked of the mods and their rules.
+      const after = planRestore(point, readSetup(api, gameId, profileId));
+      const left = {
+        enable: after.enable,
+        disable: after.disable,
+        modRules: after.modRulesToRemove.length + after.modRulesToAdd.length,
+        lootRules: after.userlistToRemove.length,
+      };
+      if (left.enable.length + left.disable.length + left.modRules + left.lootRules > 0) {
+        throw new ControlError("restore-incomplete", "Vortex does not show everything restored.", 500, { left, done });
+      }
+      return {
+        restoredTo: summarizePoint(point),
+        done,
+        installedSince: plan.installedSince,
+        removedSince: plan.removedSince,
+        ...(plugins !== undefined ? { plugins: plugins["verified"] ?? plugins } : {}),
+        deployNeeded: true,
+        ...(ownPoint !== undefined ? { restorePoint: ownPoint } : {}),
+        verified: { enabledState: true, modRules: true, lootRules: true },
+      };
+    },
+    describe: (_b, r) => `restored the setup from ${String((r["restoredTo"] as { at?: unknown } | undefined)?.at ?? "a restore point")}`,
+  },
+
   "mods.remove": {
     mutates: true,
+    restorePoint: true,
     run: async (api, body) => {
       const gameId = activeGame(api);
       const ids = needIds(body);
@@ -1839,6 +1987,7 @@ export const VERBS: Record<string, Verb> = {
    */
   "mods.rule": {
     mutates: true,
+    restorePoint: true,
     run: async (api, body) => {
       const gameId = activeGame(api);
       const source = need(body, "source");
@@ -1916,6 +2065,7 @@ export const VERBS: Record<string, Verb> = {
    */
   "plugins.setEnabled": {
     mutates: true,
+    restorePoint: true,
     run: async (api, body) => {
       const gameId = activeGame(api);
       const profileId = pluginProfile(api, body);
@@ -1966,6 +2116,7 @@ export const VERBS: Record<string, Verb> = {
    */
   "plugins.apply": {
     mutates: true,
+    restorePoint: true,
     run: async (api, body) => {
       const gameId = activeGame(api);
       const profileId = pluginProfile(api, body);
@@ -2051,6 +2202,7 @@ export const VERBS: Record<string, Verb> = {
    */
   "plugins.rule": {
     mutates: true,
+    restorePoint: true,
     run: async (api, body) => {
       const gameId = activeGame(api);
       const name = need(body, "name");
@@ -2185,6 +2337,7 @@ export const VERBS: Record<string, Verb> = {
   /** Puts a plugin in a LOOT group (userlist), read back. The group must exist (LOOT's masterlist or the user's). */
   "plugins.setGroup": {
     mutates: true,
+    restorePoint: true,
     run: async (api, body) => {
       const name = need(body, "name");
       const group = need(body, "group");
@@ -2209,6 +2362,7 @@ export const VERBS: Record<string, Verb> = {
    */
   "plugins.sort": {
     mutates: true,
+    restorePoint: true,
     run: async (api) => {
       const before = new Map(readPluginList(api.getState()).map((p) => [p.name, p.loadOrder]));
       await new Promise<void>((resolve, reject) =>
@@ -2345,6 +2499,7 @@ export const VERBS: Record<string, Verb> = {
    */
   install: {
     mutates: true,
+    restorePoint: true,
     run: async (api, body) => {
       const gameId = activeGame(api);
       const choices = body["choices"] as VortexInstallerChoices | undefined;

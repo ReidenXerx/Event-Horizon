@@ -176,8 +176,27 @@ export const TOOLS: ToolSpec[] = [
     description: "The most recent changes made through Event Horizon, newest first.",
     properties: { limit: num("How many (default 50).") },
   },
+  {
+    name: "restore_points",
+    verb: "restorePoints.list",
+    mutates: false,
+    description:
+      "The last 10 restore points, newest first. One is taken automatically before every change you make to mods, " +
+      "rules or plugins; each reply that changed something carries its restorePoint id.",
+    properties: {},
+  },
 
   // ── change ────────────────────────────────────────────────────────────
+  {
+    name: "undo",
+    verb: "restore",
+    mutates: true,
+    description:
+      "Put the active profile back as it was at a restore point (the newest by default): which mods are enabled, mod " +
+      "rules, LOOT rules and the plugin order. Use it when a change made things worse. Mods installed since are only " +
+      "disabled; mods removed since are listed with their archive to install again. Deploy afterwards.",
+    properties: { id: str("A restore point id from restore_points or an earlier reply. Default: the newest.") },
+  },
   {
     name: "install",
     verb: "install",
