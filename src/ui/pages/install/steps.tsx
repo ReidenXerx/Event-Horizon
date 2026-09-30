@@ -763,6 +763,25 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
     () => describeNexusAccount(account, countNexusDownloads(plan)),
     [account, plan],
   );
+  /**
+   * A free or signed-out account stops the install before it starts (owner
+   * poll, 2026-09-30): it cannot download a single mod, and a player on a
+   * free account got eight failed downloads and a message blaming their disk.
+   * Only a DEFINITE reading blocks; an account Vortex's state does not
+   * describe stays a warning, per the rule on computeVerdict.
+   */
+  const accountBlocks = React.useMemo(
+    () =>
+      (account.kind === "free" || account.kind === "logged-out") && accountLines.length > 0
+        ? [
+            ...accountLines,
+            ...(account.kind === "free"
+              ? ["Just upgraded? Vortex reads Premium when it signs in: sign out and back in on Vortex's Nexus Mods page, then come back."]
+              : []),
+          ]
+        : [],
+    [account, accountLines],
+  );
 
   /**
    * Missing system runtimes, said BEFORE the install rather than discovered
@@ -832,12 +851,12 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
   const verdict = computeVerdict(
     plan,
     [
-      ...accountLines,
+      ...(accountBlocks.length > 0 ? [] : accountLines),
       ...runtimeLines,
       ...environment.warnings,
       ...(runtimeFixed !== undefined ? [runtimeFixed] : []),
     ],
-    environment.blockers,
+    [...environment.blockers, ...accountBlocks],
     versionAcknowledged,
   );
 
@@ -1168,11 +1187,12 @@ function RulesScopePreview(props: {
  * `accountLines` describes anything about the user's Nexus account that will
  * make this install harder than the plan implies — see checkNexusAccount.
  *
- * It never sets `canProceed: false`, even for a logged-out account that
- * genuinely cannot download. Blocking would rest the whole screen on one
- * inferred state path, and a wrong block leaves the user with no way forward
- * and no explanation; a wrong warning merely wastes a paragraph. The install
- * driver still fails loudly if it turns out to be right.
+ * They never set `canProceed: false` here. Blocking would rest the whole
+ * screen on one inferred state path, and a wrong block leaves the user with
+ * no way forward and no explanation; a wrong warning merely wastes a
+ * paragraph. The one exception is decided by the caller and arrives as an
+ * environment blocker: a DEFINITE free or signed-out account with downloads
+ * to do (owner poll, 2026-09-30), which cannot install anything anyway.
  */
 export function computeVerdict(
   plan: InstallPlan,
