@@ -1,0 +1,66 @@
+CRASH TIME: 2026-09-27 16:53:17
+Skyrim SSE v1.6.1179
+CrashLoggerSSE v1-25-0-0 Aug 21 2026 09:19:20
+
+Unhandled exception "EXCEPTION_ACCESS_VIOLATION" at 0x7FF691504010 SkyrimSE.exe+1424010	mov eax, [rdi+0x28]
+Exception Flags: 0x00000000 (Continuable)
+
+POSSIBLE RELEVANT OBJECTS:
+	R13: (BSScript::Internal::CodeTasklet*)
+	RSP+60: (FormID 0x14 -> PlayerCharacter* 0x23EFE0EA080) "Prisoner" [0x00000014] ("Apprentice.esp")
+	RSP+4A0: (BSScript::Internal::CodeTasklet*)
+	RSP+9C0: (hkbClipGenerator*) "CLIP_Idle_TailWag1"
+	RSP+BF0: (BSScript::Internal::VirtualMachine*)
+	RSP+F08: (hkbStateMachine*) "NonCombatIdleBehavior_Cow"
+	RSP+F78: (PeakValueModifierEffect*)
+	RSP+F88: (SpellItem*) "combat loop off" [0xFE4FB82E] ("Smooth Moveset.esp") "combat loop off" {kSpell, kFireAndForget, kSelf}
+
+
+CALL STACK ([P]robable / [S]tack scan):
+	[ 0][P] 0x7FF691504010            SkyrimSE.exe+1424010 -> 104253+0x20	mov eax, [rdi+0x28]
+	[ 1][P] 0x7FF69045D07F            SkyrimSE.exe+037D07F -> 23255+0x1F	nop
+	[ 2][P] 0x7FF691506B5B            SkyrimSE.exe+1426B5B -> 104296+0xCB	jmp 0x00007FF691506B66
+	[ 3][P] 0x7FF691505941            SkyrimSE.exe+1425941 -> 104288+0x81	mov rax, [r14]
+	[ 4][P] 0x7FF691505621            SkyrimSE.exe+1425621 -> 104279+0x181	nop
+	[ 5][P] 0x7FF691549C1D            SkyrimSE.exe+1469C1D -> 105212+0x5CD	test rbx, rbx
+	[ 6][P] 0x7FF691543AF5            SkyrimSE.exe+1463AF5 -> 105176+0x405	nop
+	[ 7][P] 0x7FF690DD92A8            SkyrimSE.exe+0CF92A8 -> 69378+0xD8	mov ecx, [rbx+0x0C]
+	[ 8][P] 0x7FF690DD9871            SkyrimSE.exe+0CF9871 -> 69380+0x361	mov r15d, eax
+	[ 9][P] 0x7FF690DD7BFA            SkyrimSE.exe+0CF7BFA -> 69344+0x8A	movzx eax, byte ptr [rbx+0xA74]
+	[10][P] 0x7FF690DB287D            SkyrimSE.exe+0CD287D -> 68445+0x3D	mov rcx, [0x00007FF6932AD758]
+	[11][P] 0x7FFCCD85CDF7            KERNEL32.DLL+002CDF7
+
+REGISTERS:
+	RAX 0x1C156900         (size_t) [471165184]
+	RCX 0x1                (size_t) [1]
+	RDX 0x1                (size_t) [1]
+	RBX 0x0                (size_t) [0]
+	RSP 0x7C17DFC780       (void*)
+	RBP 0x7C17DFC9A0       (void*)
+	RSI 0x80000002         (size_t) [2147483650]
+	RDI 0x1                (size_t) [1]
+	R8  0x1                (size_t) [1]
+	R9  0xB                (size_t) [11]
+	R10 0x1C156917         (size_t) [471165207]
+	R11 0xB                (size_t) [11]
+	R12 0x7C17DFEE40       (void*)
+	R13 0x2406B946B10      (BSScript::Internal::CodeTasklet*)
+		Stack Trace: 
+[WetFunctionMCM (BB000800)].ecMCM.OnGameReload() - "jtmqfakiy" Line 0
+[alias playerAlias on quest WetFunctionMCM (BB000800)].SKI_PlayerLoadGameAlias.OnPlayerLoadGame() - "SKI_PlayerLoadGameAlias.psc" Line 0
+
+			File: "WetFunction.esp"
+			Flags: 0x00400008 kInitialized
+			Name: "WetFunctionMCM"
+
+SKSE PLUGINS:
+	!!!!!!!##$Save&LoadAcceleratorForSKSECosaves.dll
+	00_MMSF.dll
+	00_VariousDialogueTags.dll
+
+PLUGINS:
+	Light: 1477	Regular: 199	Total: 1676
+	[ 0]     Skyrim.esm
+	[ 1]     Update.esm
+	[ 2]     Dawnguard.esm
+	[ 3]     HearthFires.esm

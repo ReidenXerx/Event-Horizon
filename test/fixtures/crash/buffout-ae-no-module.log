@@ -1,0 +1,96 @@
+CRASH TIME: 2026-09-29 01:38:08
+Fallout 4 v1.11.240
+Addictol Crash Logger v1.6.0 Sep  9 2026 03:40:52
+
+Unhandled exception "EXCEPTION_ACCESS_VIOLATION" at 0x01A4E6955F80
+Exception Flags: 0x00000000 (Continuable)
+
+POSSIBLE RELEVANT OBJECTS:
+	RBX: (NiNode*) "AnatAnus_L"
+	RSP+38: (NiNode*) "Pelvis_skin"
+	RSP+B8: (NiNode*) "Pelvis_FULL_OFFSET"
+	RSP+D0: (NiNode*) "Pelvis"
+	RSP+F8: (NiNode*) "com"
+	RSP+138: (NiNode*) "COM_OR_SUBNODE"
+	RSP+178: (NiNode*) "COM_Override"
+	RSP+1B8: (BSFlattenedBoneTree*) "Root"
+	RSP+248: (NiNode*) "[Overlays]"
+	RSP+288: (BSFadeNode*) "skeleton.nif"
+	RSP+2D8: (Actor*) [0x00002CD1] ("Fallout4.esm") [0x00002CCF]
+	RSP+300: (NiCamera*) "WorldRoot Camera"
+	RSP+400: (BSJobs::JobThread*)
+
+
+CALL STACK ([P]robable / [S]tack scan):
+	[ 0][P] 0x01A4E6955F80               
+	[ 1][S] 0x7FF7316FF0B2   Fallout4.exe+16BF0B2	cmp dword ptr [rsi+0xBC], 0x00
+	[ 2][S] 0x7FF731706EDB   Fallout4.exe+16C6EDB	mov rcx, rsi
+	[ 3][S] 0x7FF7321BDFE5   Fallout4.exe+217DFE5	mov ecx, [rbx+0x14]
+	[ 4][S] 0x7FF731708595   Fallout4.exe+16C8595	mov rcx, [rbx+0x28]
+	[ 5][S] 0x7FF730501C57   Fallout4.exe+04C1C57	mov rdi, rax
+	[ 6][S] 0x7FF730CE95BD   Fallout4.exe+0CA95BD	mov [rsp+0xA0], rbx
+	[ 7][S] 0x7FF73169940F   Fallout4.exe+165940F	cmp [rdi], eax
+	[ 8][S] 0x7FF730CA8629   Fallout4.exe+0C68629	and dword ptr [rbx+0x2D0], 0xFFFFFFFE
+	[ 9][S] 0x7FF730DF9DC9   Fallout4.exe+0DB9DC9	xor ecx, ecx
+	[10][S] 0x7FF7316C932A   Fallout4.exe+168932A	mov rax, [rdi+0x18]
+	[11][S] 0x7FF7316C983B   Fallout4.exe+168983B	mov [rbp+0x04], eax
+	[12][S] 0x7FF7318F0045   Fallout4.exe+18B0045	test rbx, rbx
+	[13][S] 0x7FFCCC6890EB KERNELBASE.dll+00790EB
+	[14][S] 0x7FFCCC62BE9F KERNELBASE.dll+001BE9F
+	[15][S] 0x7FF7316C7D49   Fallout4.exe+1687D49	movzx eax, byte ptr [rbx+0xA74]
+	[16][S] 0x7FF7316A536D   Fallout4.exe+166536D	mov rcx, [0x00007FF7333DFA30]
+	[17][S] 0x7FFCCD85CDF7   KERNEL32.DLL+002CDF7
+	[18][S] 0x7FFCCED7EE4C      ntdll.dll+007EE4C
+	[19][S] 0x7FFCCC71F400 KERNELBASE.dll+010F400
+
+REGISTERS:
+	RAX 0x1A461CB7060      (void*)
+	RCX 0x1A461BF41E0      (void*)
+	RDX 0x5F5D7CF680       (void*)
+	RBX 0x1A461BF39A0      (NiNode*) "AnatAnus_L"
+		RTTIName: "NiNode"
+		Checking TESObjectREFR: {}
+			Object Reference: 
+				File: "Fallout4.esm"
+				Flags: 0x00040009
+				EditorID: "Cathy"
+				FormID: 0x00002CCF
+				FormType: kNPC_ (45)
+			Parent Cell: 
+				File: "FallonsBasementOverhaul.esp"
+				Modified by: Fallout4.esm -> DLCCoast.esm -> ccjvdfo4001-holiday.esl -> ccbgsfo4047-qthund.esl -> necessity.esp -> unofficial fallout 4 patch.esp -> ppf.esm -> AmericaRising2.esm -> MFC2025_EndAlz_Conspiracy.esm -> REPUTATION.esm -> Crazy Wasteland - New Magazines.esl -> VehicleOverhaulContinued.esp -> 3DNPC_FO4.esp -> Ketaros_Treasures.esp -> AUR_CleanupDC.esp -> Vault4.esp -> Vault4-eXoPatch.esp -> The House.esp -> PekMod Herbert.esp -> DesPadreMateo-AQuestMod.esp -> CSEPAllAmericans.esp -> PLC.esp -> Achill_Perk_Magazines.esp -> Yokai's Gag Weapons v2.esp -> TheGlowingNightmare.esp -> LotsMoreFood.esp -> MoreDCBounties.esp -> NV_mags.esp -> prp.esp -> FallonsBasementOverhaul.esp
+				Flags: 0x0004000B
+				EditorID: "DiamondCityOrigin"
+				FormID: 0x00000FEE
+				FormType: kCELL (63)
+		Checking Parent: 
+			Name: "Pelvis_skin"
+
+STACK:
+	[RSP+0  ] 0x7FF7316FF0B2     (void* -> Fallout4.exe+16BF0B2	cmp dword ptr [rsi+0xBC], 0x00)
+	[RSP+8  ] 0xBF7E88E7BD5A1366 (size_t) [uint: 13798616837205398374 int: -4648127236504153242]
+	[RSP+10 ] 0x3DBDB313         (size_t) [1035842323]
+	[RSP+18 ] 0xBD847CFF3F7D708F (size_t) [uint: 13656177405817876623 int: -4790566667891674993]
+	[RSP+20 ] 0xBE006100         (size_t) [3187695872]
+	[RSP+28 ] 0x7                (size_t) [7]
+	[RSP+30 ] 0x18               (size_t) [24]
+	[RSP+38 ] 0x1A461C70620      (NiNode*) "Pelvis_skin"
+		RTTIName: "NiNode"
+		Checking TESObjectREFR: {}
+			Object Reference: 
+
+F4SE PLUGINS:
+	AAF_1_11_240.DLL
+	AcousticOcclusionRD.dll v1.6.3
+	AdaptiveNPCAimRD.dll v1.4.1
+	Addictol.dll v1.6
+
+PLUGINS:
+	Light: 725	Regular: 240	Total: 965
+	[ 0]     Fallout4.esm
+	[ 1]     DLCRobot.esm
+	[ 2]     DLCworkshop01.esm
+	[ 3]     DLCCoast.esm
+	[ 4]     DLCworkshop02.esm
+	[ 5]     DLCworkshop03.esm
+	[ 6]     DLCNukaWorld.esm

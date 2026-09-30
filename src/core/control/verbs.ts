@@ -81,6 +81,7 @@ import {
   readChanges,
 } from "./externalChanges";
 import { askOwner } from "./ownerConsent";
+import { judgeCrash, parseCrashLog, type Owner } from "./diagnose";
 import {
   loadRestorePoints,
   planRestore,
@@ -1778,6 +1779,195 @@ export const VERBS: Record<string, Verb> = {
         totalLines: lines.length,
         returnedLines: picked.length,
         text: joined.length > 400_000 ? joined.slice(-400_000) : joined,
+      };
+    },
+  },
+
+  /**
+   * The newest crash log (or `id` from logs.list), read and judged: the
+   * exception, what its location means, and ranked suspects (DLLs, plugins,
+   * files, scripts) with the Vortex mod each came from.
+   */
+  "diagnose.crash": {
+    mutates: false,
+    run: async (api, body) => {
+      const all = listLogFiles(api);
+      const id = str(body["id"]);
+      const hit = id !== undefined ? all.find((l) => l.id === id) : all.find((l) => l.where === "crash");
+      if (hit === undefined) {
+        throw new ControlError(
+          "no-crash-log",
+          id !== undefined
+            ? `No log ${id}. Use logs.list for the ids.`
+            : "No crash log found. The game writes one only with a crash logger installed and enabled: Buffout 4 " +
+                "(or Addictol) for Fallout 4, Crash Logger SSE for Skyrim. With none, the Windows event log still names " +
+                "the faulting module.",
+          404,
+        );
+      }
+      const raw = fs.readFileSync(hit.path);
+      const log = parseCrashLog(raw.toString(raw.includes(0) ? "latin1" : "utf8"));
+      const gameId = activeGame(api);
+      const pool = modPool(api, gameId);
+      const ownerOf = (modId: string | undefined): Owner | undefined => {
+        if (modId === undefined) return undefined;
+        const m = pool[modId] ?? Object.values(pool).find((x) => x.installationPath === modId);
+        return m === undefined ? undefined : { modId: m.id, modName: modName(m) };
+      };
+      const norm = (s: string): string => s.replace(/\\/g, "/").toLowerCase();
+      const byBase = new Map<string, string>();
+      const byRel = new Map<string, string>();
+      try {
+        const { captureDeploymentManifests } = await import("../deploymentManifest");
+        for (const man of await captureDeploymentManifests(api, api.getState() as never, gameId)) {
+          for (const f of man.files) {
+            byRel.set(norm(f.relPath), f.source);
+            byBase.set(path.basename(norm(f.relPath)), f.source);
+          }
+        }
+      } catch {
+        // No manifest: suspects are named without their mod.
+      }
+      const plugins = new Map(readPluginList(api.getState()).map((p) => [p.name.toLowerCase(), p.modId]));
+      const { isBaseGameMaster, isCreationClubMaster } = await import("../manifest/pluginMasters");
+      const verdict = judgeCrash(log, {
+        dll: (f) => ownerOf(byBase.get(f.toLowerCase())),
+        plugin: (f) => ownerOf(plugins.get(f.toLowerCase())),
+        asset: (a) => {
+          const n = norm(a);
+          for (const [rel, source] of byRel) if (rel === n || rel.endsWith(`/${n}`) || n.endsWith(`/${rel}`)) return ownerOf(source);
+          return undefined;
+        },
+        isBaseGame: (p) => isBaseGameMaster(p, gameId) || isCreationClubMaster(p),
+      });
+      return {
+        log: { id: hit.id, name: hit.name, modified: hit.modified },
+        ...(log.game !== undefined ? { game: log.game } : {}),
+        ...(log.logger !== undefined ? { logger: log.logger } : {}),
+        ...(log.exception !== undefined ? { exception: log.exception } : {}),
+        ...verdict,
+        callStackTop: log.callStack.slice(0, 8).map((f) => f.module),
+        pluginsLoaded: log.loadedPlugins.length,
+        next: "Explain the likely cause to the user, then check the top suspect (mod_get, diagnose_setup) before changing anything.",
+      };
+    },
+  },
+
+  /**
+   * A health check of the active setup, as findings with a severity and a fix:
+   * plugin limits, missing or late masters, the script extender and Address
+   * Library against the installed game version, undeployed changes, and file
+   * conflicts no rule settles.
+   */
+  "diagnose.setup": {
+    mutates: false,
+    run: async (api) => {
+      const gameId = activeGame(api);
+      type Finding = { severity: "error" | "warning" | "info"; code: string; message: string; fix?: string; details?: unknown };
+      const findings: Finding[] = [];
+      const add = (f: Finding): void => void findings.push(f);
+
+      if (needToDeploy(api, gameId)) {
+        add({ severity: "warning", code: "deploy-needed", message: "There are changes Vortex has not deployed: the game does not see them yet.", fix: "deploy" });
+      }
+      if (externalChanges(api) !== undefined) {
+        add({ severity: "warning", code: "external-changes", message: "Vortex is waiting on its External Changes dialog.", fix: "external_changes_answer (see the handbook)" });
+      }
+
+      const { pluginCapabilityFor } = await import("../manifest/pluginCapability");
+      const { readPluginHeader, isCreationClubMaster } = await import("../manifest/pluginMasters");
+      const capability = pluginCapabilityFor(gameId);
+      const all = readPluginList(api.getState());
+      const enabled = all.filter((p) => p.enabled).sort((a, b) => (a.loadOrder ?? -1) - (b.loadOrder ?? -1));
+      const position = new Map(enabled.map((p, i) => [p.name.toLowerCase(), p.isNative ? -1 : i]));
+      const known = new Map(all.map((p) => [p.name.toLowerCase(), p]));
+      let light = 0;
+      let medium = 0;
+      let regular = 0;
+      const unreadable: string[] = [];
+      const queue = [...enabled];
+      const worker = async (): Promise<void> => {
+        for (let p = queue.shift(); p !== undefined; p = queue.shift()) {
+          if (p.filePath === undefined) {
+            if (/\.esl$/i.test(p.name) && capability?.lightPlugins === true) light++;
+            else regular++;
+            continue;
+          }
+          const h = await readPluginHeader(p.filePath, capability);
+          if (h.kind !== "ok") {
+            unreadable.push(p.name);
+            regular++;
+            continue;
+          }
+          if (h.flags?.isLight === true || (/\.esl$/i.test(p.name) && capability?.lightPlugins === true)) light++;
+          else if (h.flags?.isMedium === true) medium++;
+          else regular++;
+          const me = position.get(p.name.toLowerCase()) ?? 0;
+          for (const m of h.masters) {
+            const at = position.get(m.toLowerCase());
+            if (at === undefined) {
+              const there = known.get(m.toLowerCase());
+              add(
+                there !== undefined
+                  ? { severity: "error", code: "master-disabled", message: `${p.name} needs ${m}, which is installed but not enabled.`, fix: there.modId !== undefined ? `enable mod ${there.modId} and plugin ${m}` : `enable plugin ${m}` }
+                  : isCreationClubMaster(m)
+                    ? { severity: "error", code: "missing-cc-master", message: `${p.name} needs ${m}, Creation Club content that is not installed.`, fix: "the user needs that Creation Club item, or disable the plugin that needs it" }
+                    : { severity: "error", code: "missing-master", message: `${p.name} needs ${m}, which is not installed. The game will not start (or crash on load) with it active.`, fix: `install the mod that provides ${m}, or disable ${p.name}` },
+              );
+            } else if (at > me) {
+              add({ severity: "error", code: "master-after", message: `${p.name} loads before its master ${m}.`, fix: `plugins_rule ${p.name} after ${m}, then plugins_sort` });
+            }
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: 16 }, worker));
+      if (capability !== undefined && regular > capability.regularSlots) {
+        add({ severity: "error", code: "too-many-plugins", message: `${regular} full plugins are active; the game can load ${capability.regularSlots}.`, fix: "disable plugins, or ESL-flag small ones that are safe to flag" });
+      }
+      if (light > 4096) add({ severity: "error", code: "too-many-light-plugins", message: `${light} light plugins are active; the game can load 4096.` });
+      if (unreadable.length > 0) {
+        add({ severity: "info", code: "plugins-unreadable", message: `${unreadable.length} active plugins could not be read, so their masters were not checked.`, details: unreadable.slice(0, 20) });
+      }
+
+      let gameVersion: string | undefined;
+      try {
+        const { readNativeOnDisk, assessNativeOnDisk } = await import("../doctor/nativeOnDisk");
+        const native = await readNativeOnDisk(api, gameId);
+        if (native !== undefined) {
+          gameVersion = native.gameVersion;
+          const card = assessNativeOnDisk(native);
+          if (card.status !== "healthy") {
+            add({
+              severity: card.status === "broken" ? "error" : "warning",
+              code: "native-plugins",
+              message: card.summary,
+              fix: "install the script extender, Address Library and DLL builds made for this game version",
+              details: card.detail.slice(0, 30),
+            });
+          }
+        }
+      } catch {
+        // No executable to read: the native check is skipped, and says nothing.
+      }
+
+      try {
+        const c = await VERBS["conflicts"]!.run(api, { unresolvedOnly: true, limit: 20 });
+        const n = Number(c["unresolvedDifferent"] ?? 0);
+        if (n > 0) {
+          add({ severity: "warning", code: "unresolved-conflicts", message: `${n} pairs of mods overwrite each other's files and no rule says which wins.`, fix: "conflicts, then mods_rule for each pair" });
+        }
+      } catch {
+        // Vortex has not computed conflicts yet.
+      }
+
+      const rank = { error: 0, warning: 1, info: 2 } as const;
+      findings.sort((a, b) => rank[a.severity] - rank[b.severity]);
+      return {
+        gameId,
+        ...(gameVersion !== undefined ? { gameVersion } : {}),
+        plugins: { active: enabled.length, full: regular, light, medium, fullLimit: capability?.regularSlots },
+        ok: findings.every((f) => f.severity !== "error"),
+        findings,
       };
     },
   },

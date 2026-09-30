@@ -155,6 +155,28 @@ export const TOOLS: ToolSpec[] = [
     required: ["id"],
   },
   {
+    name: "diagnose_crash",
+    verb: "diagnose.crash",
+    mutates: false,
+    description:
+      "THE FIRST STEP FOR ANY CRASH. Reads the newest crash log (or id from logs_list) and returns a verdict: the " +
+      "exception, what its location means in words, and ranked suspects (DLLs, plugins, files, Papyrus scripts) with " +
+      "the Vortex mod each came from, plus the objects the game was handling. Explain it to the user; check the top " +
+      "suspect before changing anything.",
+    properties: { id: str("A crash log id from logs_list. Default: the newest crash log.") },
+  },
+  {
+    name: "diagnose_setup",
+    verb: "diagnose.setup",
+    mutates: false,
+    description:
+      "A health check of the whole setup, as findings (error / warning / info), each with a fix: plugin limits, " +
+      "masters that are missing, disabled or load too late, the script extender, Address Library and DLL plugins " +
+      "against the installed game version, undeployed changes, and file conflicts no rule settles. Run it after " +
+      "installing or changing mods, and when the game will not start.",
+    properties: {},
+  },
+  {
     name: "vortex_notifications",
     verb: "vortex.notifications",
     mutates: false,

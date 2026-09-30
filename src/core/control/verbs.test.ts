@@ -1169,3 +1169,42 @@ describe("restore points: one step back from what an agent changed", () => {
     await expect(runVerb(v.api as never, "restore", {})).rejects.toMatchObject({ code: "not-active-profile" });
   });
 });
+
+describe("diagnose.setup: findings an agent can act on", () => {
+  const sub = (type: string, data: Buffer): Buffer => {
+    const head = Buffer.alloc(6);
+    head.write(type, 0, 4, "latin1");
+    head.writeUInt16LE(data.length, 4);
+    return Buffer.concat([head, data]);
+  };
+  const plugin = (masters: string[]): Buffer => {
+    const body = Buffer.concat([sub("HEDR", Buffer.alloc(12)), ...masters.map((m) => sub("MAST", Buffer.from(`${m} `, "latin1")))]);
+    const header = Buffer.alloc(24);
+    header.write("TES4", 0, 4, "latin1");
+    header.writeUInt32LE(body.length, 4);
+    return Buffer.concat([header, body]);
+  };
+
+  it("names a disabled master, a missing one, and a master that loads too late, each with a fix", async () => {
+    const v = fakeVortex();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eh-diag-"));
+    const at = (name: string, masters: string[]): string => {
+      fs.writeFileSync(path.join(dir, name), plugin(masters));
+      return path.join(dir, name);
+    };
+    v.state.session.plugins.pluginList = {
+      "fallout4.esm": { isNative: true },
+      "a.esp": { filePath: at("A.esp", ["Fallout4.esm", "C.esl", "B.esp"]) },
+      "b.esp": { filePath: at("B.esp", ["Fallout4.esm", "Missing.esm"]) },
+      "c.esl": { filePath: at("C.esl", ["Fallout4.esm"]), modId: "c-mod" },
+    };
+    const r = (await runVerb(v.api as never, "diagnose.setup", {})) as any;
+    const codes = r.findings.map((f: any) => `${f.code}:${f.message.split(" ")[0]}`);
+    expect(codes).toEqual(expect.arrayContaining(["master-disabled:A.esp", "master-after:A.esp", "missing-master:B.esp"]));
+    expect(r.findings.find((f: any) => f.code === "master-disabled").fix).toMatch(/c-mod/);
+    expect(r.ok).toBe(false);
+    expect(r.plugins).toMatchObject({ active: 3, full: 3, light: 0 });
+    // Errors come first.
+    expect(r.findings[0].severity).toBe("error");
+  });
+});
