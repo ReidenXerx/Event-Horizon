@@ -10,6 +10,19 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.29] — 2026-09-30
+
+### Install
+- **A free Nexus account is told before the install starts.** Nexus only lets mod managers download files directly
+  for Premium accounts, so on a free account every download fails with "Only available to premium users". The
+  install used to start anyway, fail eight mods in a row, and blame your extractor, connection or disk. Now the
+  preview says "Cannot install", explains why, and says what to do: Nexus Premium (one month is enough), or signing in
+  if Vortex is not signed in to Nexus. Just upgraded? Sign out and back in on Vortex's Nexus Mods page so it sees it.
+  Mods you already have downloaded still count, and if Vortex cannot tell what kind of account you have, it only
+  warns.
+- **An install that stops on download failures names the real cause.** When the account is the reason, the message
+  now says so and points to Continue once it is fixed, instead of sending you to check your disk.
+
 ## [0.2.28] — 2026-09-30
 
 ### Collections
