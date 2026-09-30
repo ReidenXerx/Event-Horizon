@@ -255,6 +255,8 @@ import {
 } from "./downloadFailureShape";
 import { dismissNoisyNotifications } from "./quietNotifications";
 import { replayArgs } from "./installerChoices";
+import { isUnattended } from "./fomodReplayMode";
+import { describeVariantAmbiguous } from "./variantReport";
 import {
   applyGameIni,
   describeGameIniApplication,
@@ -2431,13 +2433,44 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           * decides.
           */
          if (judgement.kind === "variant-ambiguous") {
+           /**
+            * ─── "MAY OR MAY NOT CHANGE IT" IS NOT ADVICE ──────────────────
+            * We know which of the two cases this is, and the answer decides
+            * whether a reinstall is worth the user's time:
+            *
+            *   answers RECORDED   — replaying them lands the curator's
+            *                        variant. Reinstalling fixes it.
+            *   nothing recorded   — there is nothing to replay (NS-8: an
+            *                        empty selection is never guessed), so a
+            *                        reinstall lands this same variant again.
+            *                        Telling someone to try it is wasting an
+            *                        uninstall and a re-extract on a
+            *                        foregone conclusion.
+            *
+            * And where the answers ARE recorded, name the likely cause rather
+            * than leaving a mystery: an ATTENDED install shows the mod's own
+            * FOMOD dialog with its own defaults pre-ticked, and a curator's
+            * recorded answer is frequently to tick NOTHING in some groups
+            * (per-variant toggles). Clicking Next-Next-Install through that
+            * dialog therefore lands the FOMOD's defaults, not the curator's
+            * answer, and this report is the first place the difference shows.
+            *
+            * Measured on a tester's fresh install of two DynDOLOD tree-LOD
+            * mods: both carry full recorded selections (5 and 3 steps) whose
+            * later groups are deliberately empty, and 4 and 5 LOD meshes
+            * differed.
+            */
            curatorReports.push(
-             `"${installEntry.name}" may be a different installer option than ` +
-               `the curator's: ${judgement.paths.length} file(s) differ at ` +
-               `path(s) this mod's archive can fill more than one way ` +
-               `(for example ${judgement.paths.slice(0, 3).join(", ")}). ` +
-               `Nothing is damaged — reinstalling would replay the curator's ` +
-               `recorded answers, which may or may not change it.`,
+             describeVariantAmbiguous({
+               name: installEntry.name,
+               paths: judgement.paths,
+               recorded:
+                 (manifestEntry?.install?.fomodSelections?.length ?? 0) > 0 ||
+                 manifestEntry?.install?.emptySelectionVerified === true,
+               attended:
+                 ctx.decisions.fomodReplayMode !== undefined &&
+                 !isUnattended(ctx.decisions.fomodReplayMode),
+             }),
            );
            verifications.push({
              kind: "ok",
