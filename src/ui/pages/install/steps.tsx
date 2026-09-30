@@ -188,6 +188,20 @@ function StepFrame(props: {
 // 1. PickStep
 // ===========================================================================
 
+/**
+ * Said by both doors into this step — dropping a file and browsing for one.
+ *
+ * It names the mistake rather than only the rule, because the mistake is one
+ * people actually make: a collection package and a mod archive are both "an
+ * archive the internet gave me", and this screen is the first thing a new
+ * user sees. A tester walked a LoversLab `.7z` up to this button, and being
+ * told "that's not a collection package" without being told where a mod DOES
+ * go leaves them with the same file and no next move.
+ */
+const NOT_A_PACKAGE =
+  "That's not a collection package. Pick the .ehcoll or .zip the curator sent you — " +
+  "a single mod's .7z or .rar isn't one, and those go on Vortex's own Mods page.";
+
 export interface PickStepProps {
   onPick: (zipPath: string) => void;
   /** A pasted link: a Nexus mod page, or a direct link to a package file. */
@@ -214,16 +228,26 @@ export function PickStep(props: PickStepProps): JSX.Element {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { pickEhcollFile } = await import("../../../utils/utils");
       const file = await pickEhcollFile(api);
-      if (file !== undefined) {
-        props.onPick(file);
+      if (file === undefined) return;
+      // The dialog's extension filter is not the last word — a path typed
+      // into the filename box goes through it, and some hosts add an "all
+      // files" entry — so the same check the drop path makes belongs here
+      // too. Without it a single mod's .7z reaches the package reader and
+      // the user is told the PACKAGE is broken, when what happened is that
+      // they picked a mod. Measured: a tester fed a LoversLab .7z to this
+      // button.
+      if (!isPackageFileName(file)) {
+        showToast({ intent: "warning", message: NOT_A_PACKAGE });
+        return;
       }
+      props.onPick(file);
     } catch (err) {
       reportError(err, {
         title: "Couldn't open file picker",
         context: { step: "pick" },
       });
     }
-  }, [props, reportError]);
+  }, [props, reportError, showToast]);
 
   const handleDragEnter = React.useCallback((e: React.DragEvent): void => {
     e.preventDefault();
@@ -275,10 +299,7 @@ export function PickStep(props: PickStepProps): JSX.Element {
         return;
       }
       if (!isPackageFileName(filePath)) {
-        showToast({
-          intent: "warning",
-          message: "That's not a collection package. Drop the .ehcoll or .zip file the collection came as.",
-        });
+        showToast({ intent: "warning", message: NOT_A_PACKAGE });
         return;
       }
       props.onPick(filePath);
@@ -303,6 +324,10 @@ export function PickStep(props: PickStepProps): JSX.Element {
         <EventHorizonMark size={120} />
         <div>
           <h3 className="eh-dropzone__title">Drop a collection package or click to browse</h3>
+          <p className="eh-dropzone__hint">
+            One file, the whole collection — not a mod. A single mod's .7z or .rar belongs on
+            Vortex's Mods page instead.
+          </p>
           <p className="eh-dropzone__hint">
             Event Horizon never modifies your current profile until you click Install on the final review screen.
           </p>
