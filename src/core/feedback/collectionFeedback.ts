@@ -34,6 +34,7 @@ import * as fsp from "fs/promises";
 import * as path from "path";
 
 import { ehLog } from "../logging/ehLog";
+import { isCollectionPlay, type CollectionPlay } from "./endorsePrompts";
 
 export const COLLECTION_FEEDBACK_FILE = "collection-feedback.json";
 
@@ -76,6 +77,12 @@ export type CollectionFeedbackStore = {
   schema: string;
   /** Keyed by `<packageId>@<revisionNumber>`. */
   entries: Record<string, FeedbackEntry>;
+  /**
+   * Keyed by packageId: launches across revisions, and the endorse questions
+   * that come back on a schedule (endorsePrompts.ts). Absent in stores
+   * written before 2026-09-30.
+   */
+  collections?: Record<string, CollectionPlay>;
 };
 
 export const feedbackKey = (packageId: string, revisionNumber: number): string =>
@@ -102,6 +109,7 @@ export function notePlayed(
   const key = feedbackKey(entry.packageId, entry.revisionNumber);
   if (store.entries[key] !== undefined) return store;
   return {
+    ...store,
     schema: SCHEMA,
     entries: { ...store.entries, [key]: { ...entry, firstPlayedAt: at } },
   };
@@ -117,6 +125,7 @@ export function noteAnswered(
   const existing = store.entries[key];
   if (existing === undefined) return store;
   return {
+    ...store,
     schema: SCHEMA,
     entries: {
       ...store.entries,
@@ -138,6 +147,7 @@ export function noteEndorsed(
   const existing = store.entries[key];
   if (existing === undefined) return store;
   return {
+    ...store,
     schema: SCHEMA,
     entries: { ...store.entries, [key]: { ...existing, endorsedAt: at } },
   };
@@ -207,7 +217,11 @@ export async function loadFeedback(
       // ask about a collection that does not exist.
       if (isEntry(v)) entries[k] = v;
     }
-    return { schema: SCHEMA, entries };
+    const collections: Record<string, CollectionPlay> = {};
+    for (const [k, v] of Object.entries(parsed?.collections ?? {})) {
+      if (isCollectionPlay(v)) collections[k] = v;
+    }
+    return { schema: SCHEMA, entries, ...(Object.keys(collections).length > 0 ? { collections } : {}) };
   } catch {
     return emptyFeedbackStore();
   }
@@ -233,4 +247,9 @@ export async function saveFeedback(
       consequence: "the question may be asked again next time; nothing is lost",
     });
   }
+}
+
+/** Replace one collection's play record. */
+export function withCollection(store: CollectionFeedbackStore, play: CollectionPlay): CollectionFeedbackStore {
+  return { ...store, collections: { ...(store.collections ?? {}), [play.packageId]: play } };
 }

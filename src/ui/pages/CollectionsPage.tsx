@@ -17,6 +17,8 @@
  */
 
 import * as React from "react";
+import * as endorsePromptsSync from "../../core/feedback/endorsePrompts";
+import type { CollectionPlay } from "../../core/feedback/endorsePrompts";
 import { util } from "@nexusmods/vortex-api";
 import type { types } from "@nexusmods/vortex-api";
 
@@ -244,12 +246,44 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
   const [feedbackId, setFeedbackId] = React.useState<string | undefined>(undefined);
   const [feedbackBusy, setFeedbackBusy] = React.useState(false);
 
-  /** Can Vortex endorse this collection from here at all? */
+  /**
+   * Endorsing needs Nexus's numeric collection id; with it, Event Horizon can
+   * always endorse from here (through the collection's own Vortex entry, or a
+   * placeholder it adds and removes — collectionRating.ts).
+   */
   const canEndorseHere = React.useCallback(
-    async (entry: { gameDomain: string; collectionId?: number }): Promise<boolean> => {
-      if (entry.collectionId === undefined) return false;
-      const { findCollectionModId } = await import("../runtime/collectionRating");
-      return findCollectionModId(api, entry.gameDomain, entry.collectionId) !== undefined;
+    async (entry: { collectionId?: number }): Promise<boolean> => entry.collectionId !== undefined,
+    [],
+  );
+
+  /** Loads the store, changes one collection's play record, saves it. */
+  const updatePlay = React.useCallback(
+    async (packageId: string, change: (p: CollectionPlay) => CollectionPlay): Promise<void> => {
+      const [{ loadFeedback, saveFeedback, withCollection }, { getEventHorizonRoot }] = await Promise.all([
+        import("../../core/feedback/collectionFeedback"),
+        import("../../core/paths/appDataPaths"),
+      ]);
+      const root = getEventHorizonRoot();
+      const store = await loadFeedback(root);
+      const play = store.collections?.[packageId];
+      if (play === undefined) return;
+      await saveFeedback(root, withCollection(store, change(play)));
+    },
+    [],
+  );
+
+  /** The collection's mods, as installed in this game, that are not endorsed yet. */
+  const unendorsedModsOf = React.useCallback(
+    async (packageId: string, gameId: string | undefined) => {
+      if (gameId === undefined) return [];
+      const [{ listReceipts }, { getVortexUserDataPath }, { endorsableCollectionMods }] = await Promise.all([
+        import("../../core/installLedger"),
+        import("../../core/paths"),
+        import("../../core/curator/endorseRun"),
+      ]);
+      const receipt = (await listReceipts(getVortexUserDataPath())).find((r) => r.packageId === packageId);
+      if (receipt === undefined) return [];
+      return endorsableCollectionMods(api, gameId, receipt.mods.map((m) => m.vortexModId));
     },
     [api],
   );
@@ -258,11 +292,11 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
     let alive = true;
     void (async (): Promise<void> => {
       try {
-        const [{ loadFeedback, nextToAsk, nextToOfferEndorsement }, { getEventHorizonRoot }] =
-          await Promise.all([
-            import("../../core/feedback/collectionFeedback"),
-            import("../../core/paths/appDataPaths"),
-          ]);
+        const [{ loadFeedback, nextToAsk }, { nextEndorsePrompt }, { getEventHorizonRoot }] = await Promise.all([
+          import("../../core/feedback/collectionFeedback"),
+          import("../../core/feedback/endorsePrompts"),
+          import("../../core/paths/appDataPaths"),
+        ]);
         const store = await loadFeedback(getEventHorizonRoot());
         if (!alive) return;
         const ask = nextToAsk(store);
@@ -271,12 +305,21 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
           setFeedback({ kind: "asking", entry: ask.entry });
           return;
         }
-        const offer = nextToOfferEndorsement(store);
-        if (offer === undefined) return;
-        const endorsableHere = await canEndorseHere(offer.entry);
+        // One scheduled question per visit, and only for the game Vortex is
+        // managing: Vortex endorses nothing for another game.
+        const { getActiveGameId } = await import("../../core/getModsListForProfile");
+        const active = getActiveGameId(api.getState());
+        const plays = Object.values(store.collections ?? {}).filter((p) => p.gameId === undefined || p.gameId === active);
+        const counts = new Map<string, number>();
+        for (const p of plays) counts.set(p.packageId, (await unendorsedModsOf(p.packageId, p.gameId ?? active)).length);
         if (!alive) return;
-        setFeedbackId(offer.key);
-        setFeedback({ kind: "offer-endorse", entry: offer.entry, endorsableHere });
+        const next = nextEndorsePrompt(plays, (id) => counts.get(id) ?? 0, Date.now());
+        if (next === undefined) return;
+        setFeedback(
+          next.kind === "endorse"
+            ? { kind: "ask-endorse", play: next.play }
+            : { kind: "ask-mods", play: next.play, count: next.count ?? 0 },
+        );
       } catch {
         // A prompt that cannot load is simply not shown.
       }
@@ -284,7 +327,7 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
     return (): void => {
       alive = false;
     };
-  }, [canEndorseHere]);
+  }, [api, unendorsedModsOf]);
 
   const recordFeedback = React.useCallback(
     async (outcome: { answer?: "worked" | "did-not-work"; dismissed?: boolean }): Promise<void> => {
@@ -349,55 +392,156 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
   );
 
   const onFeedbackDismiss = React.useCallback((): void => {
-    void recordFeedback({ dismissed: true });
+    // "No thanks" to endorsing after "It worked" is a "Not now" on the
+    // schedule, so it comes back later instead of on every visit.
+    if (feedback.kind === "offer-endorse") {
+      void updatePlay(feedback.entry.packageId, (p) => {
+        const { noteAsk } = endorsePromptsSync;
+        return noteAsk(p, "endorse", "not-now", new Date().toISOString());
+      });
+    } else {
+      void recordFeedback({ dismissed: true });
+    }
     setFeedback({ kind: "idle" });
-  }, [recordFeedback]);
+  }, [feedback, recordFeedback, updatePlay]);
+
+  /** Endorse one collection with the player's Vortex login; says what happened. */
+  const endorseNow = React.useCallback(
+    async (target: { packageId: string; name: string; gameDomain: string; gameId?: string; collectionId?: number }): Promise<boolean> => {
+      if (target.collectionId === undefined) return false;
+      const [{ endorseCollection }, { getActiveGameId }] = await Promise.all([
+        import("../runtime/collectionRating"),
+        import("../../core/getModsListForProfile"),
+      ]);
+      const out = await endorseCollection(api, {
+        gameId: target.gameId ?? getActiveGameId(api.getState()) ?? target.gameDomain,
+        collectionId: target.collectionId,
+        name: target.name,
+      });
+      if (out.kind === "endorsed") {
+        const now = new Date().toISOString();
+        await updatePlay(target.packageId, (p) => endorsePromptsSync.noteAsk(p, "endorse", "done", now));
+        if (feedbackId !== undefined) {
+          const [{ loadFeedback, noteEndorsed, saveFeedback }, { getEventHorizonRoot }] = await Promise.all([
+            import("../../core/feedback/collectionFeedback"),
+            import("../../core/paths/appDataPaths"),
+          ]);
+          const root = getEventHorizonRoot();
+          await saveFeedback(root, noteEndorsed(await loadFeedback(root), feedbackId, now));
+        }
+        showToast({ intent: "success", message: `Endorsed "${target.name}". Thank you — the curator will see it.` });
+        return true;
+      }
+      showToast({
+        intent: "info",
+        message:
+          out.kind === "wrong-game"
+            ? "Vortex endorses only for the game it is managing now. Switch to this collection's game and it will ask again."
+            : out.kind === "not-logged-in"
+              ? "Vortex is not logged in to Nexus, so it cannot endorse. The collection's page can."
+              : `Not endorsed: ${out.why}. The collection's page can do it.`,
+      });
+      return false;
+    },
+    [api, feedbackId, showToast, updatePlay],
+  );
 
   const onFeedbackEndorse = React.useCallback((): void => {
     if (feedback.kind !== "offer-endorse") return;
     const entry = feedback.entry;
-    if (entry.collectionId === undefined) return;
     setFeedbackBusy(true);
     void (async (): Promise<void> => {
       try {
-        const { endorseCollection } = await import("../runtime/collectionRating");
-        const out = endorseCollection(api, {
-          gameId: entry.gameDomain,
-          collectionId: entry.collectionId!,
+        const [{ loadFeedback }, { getEventHorizonRoot }] = await Promise.all([
+          import("../../core/feedback/collectionFeedback"),
+          import("../../core/paths/appDataPaths"),
+        ]);
+        const play = (await loadFeedback(getEventHorizonRoot())).collections?.[entry.packageId];
+        const ok = await endorseNow({
+          packageId: entry.packageId,
+          name: entry.packageName,
+          gameDomain: entry.gameDomain,
+          ...(play?.gameId !== undefined ? { gameId: play.gameId } : {}),
+          ...(entry.collectionId !== undefined ? { collectionId: entry.collectionId } : {}),
         });
-        if (out.kind === "endorsed") {
-          const [{ loadFeedback, noteEndorsed, saveFeedback }, { getEventHorizonRoot }] =
-            await Promise.all([
-              import("../../core/feedback/collectionFeedback"),
-              import("../../core/paths/appDataPaths"),
-            ]);
-          const root = getEventHorizonRoot();
-          if (feedbackId !== undefined) {
-            await saveFeedback(
-              root,
-              noteEndorsed(await loadFeedback(root), feedbackId, new Date().toISOString()),
-            );
-          }
-          showToast({ intent: "success", message: "Endorsed. Thank you." });
-        } else {
-          showToast({
-            intent: "info",
-            message: "Vortex could not endorse from here — the collection's page can.",
-          });
-        }
-        setFeedback({ kind: "idle" });
+        setFeedback(ok ? { kind: "idle" } : { kind: "offer-endorse", entry, endorsableHere: false });
       } finally {
         setFeedbackBusy(false);
       }
     })();
-  }, [api, feedback, feedbackId, showToast]);
+  }, [endorseNow, feedback]);
+
+  const modsRun = React.useRef<AbortController | undefined>(undefined);
+
+  const onEndorseAnswer = React.useCallback(
+    (which: "endorse" | "mods", answer: "yes" | "not-now" | "never"): void => {
+      if (feedback.kind !== "ask-endorse" && feedback.kind !== "ask-mods") return;
+      const play = feedback.play;
+      const now = new Date().toISOString();
+      if (answer !== "yes") {
+        void updatePlay(play.packageId, (p) => endorsePromptsSync.noteAsk(p, which, answer, now));
+        setFeedback({ kind: "idle" });
+        return;
+      }
+      setFeedbackBusy(true);
+      void (async (): Promise<void> => {
+        try {
+          if (which === "endorse") {
+            const ok = await endorseNow({
+              packageId: play.packageId,
+              name: play.packageName,
+              gameDomain: play.gameDomain,
+              ...(play.gameId !== undefined ? { gameId: play.gameId } : {}),
+              ...(play.collectionId !== undefined ? { collectionId: play.collectionId } : {}),
+            });
+            if (!ok) {
+              // Not the player's "no": the next visit may try again.
+              await updatePlay(play.packageId, (p) => endorsePromptsSync.noteAsk(p, "endorse", "not-now", now));
+            }
+            setFeedback({ kind: "idle" });
+            return;
+          }
+          const [{ getActiveGameId }, { runEndorsements }, { describeEndorseRun }] = await Promise.all([
+            import("../../core/getModsListForProfile"),
+            import("../../core/curator/endorseRun"),
+            import("../../core/curator/endorseOutcome"),
+          ]);
+          const gameId = play.gameId ?? getActiveGameId(api.getState());
+          const targets = await unendorsedModsOf(play.packageId, gameId);
+          if (gameId === undefined || targets.length === 0) {
+            setFeedback({ kind: "idle" });
+            return;
+          }
+          const controller = new AbortController();
+          modsRun.current = controller;
+          setFeedback({ kind: "endorsing-mods", play, progress: `Starting — ${targets.length} mods` });
+          const run = await runEndorsements(api, gameId, targets, {
+            signal: controller.signal,
+            onProgress: (progress) => setFeedback({ kind: "endorsing-mods", play, progress }),
+            logEvent: "player.endorse-mods",
+          });
+          await updatePlay(play.packageId, (p) => endorsePromptsSync.noteAsk(p, "mods", "done", new Date().toISOString()));
+          showToast({
+            intent: run.failed.length === 0 ? "success" : "info",
+            message: describeEndorseRun(run, targets.length, controller.signal.aborted),
+          });
+          setFeedback({ kind: "idle" });
+        } finally {
+          modsRun.current = undefined;
+          setFeedbackBusy(false);
+        }
+      })();
+    },
+    [api, endorseNow, feedback, showToast, unendorsedModsOf, updatePlay],
+  );
 
   const onFeedbackOpenPage = React.useCallback((): void => {
-    if (feedback.kind === "idle") return;
-    const entry = feedback.entry;
+    if (feedback.kind === "idle" || feedback.kind === "endorsing-mods") return;
+    const where =
+      feedback.kind === "ask-endorse" || feedback.kind === "ask-mods" ? feedback.play : feedback.entry;
     void (async (): Promise<void> => {
       const { collectionPageUrl } = await import("../runtime/collectionRating");
-      api.events.emit("open-url", collectionPageUrl(entry.gameDomain, entry.slug));
+      api.events.emit("open-url", collectionPageUrl(where.gameDomain, where.slug));
       setFeedback({ kind: "idle" });
     })();
   }, [api, feedback]);
@@ -678,6 +822,8 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
         onDismiss={onFeedbackDismiss}
         onEndorse={onFeedbackEndorse}
         onOpenPage={onFeedbackOpenPage}
+        onEndorseAnswer={onEndorseAnswer}
+        onStopMods={(): void => modsRun.current?.abort()}
         onSendLogs={(): void => {
           // The bundle tool already exists on the Doctor page; sending them
           // there beats a second copy of a flow that works.

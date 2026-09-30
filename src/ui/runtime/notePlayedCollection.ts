@@ -64,12 +64,14 @@ export async function notePlayedCollection(
       return;
     }
 
-    const { loadFeedback, notePlayed, saveFeedback } = await import(
-      "../../core/feedback/collectionFeedback"
-    );
+    const [{ loadFeedback, notePlayed, saveFeedback, withCollection }, { noteLaunch }] = await Promise.all([
+      import("../../core/feedback/collectionFeedback"),
+      import("../../core/feedback/endorsePrompts"),
+    ]);
     const root = getEventHorizonRoot();
     const before = await loadFeedback(root);
-    const after = notePlayed(
+    const now = new Date().toISOString();
+    const rated = notePlayed(
       before,
       {
         packageId: receipt.packageId,
@@ -83,16 +85,29 @@ export async function notePlayedCollection(
           ? { collectionId: nexus.collectionId }
           : {}),
       },
-      new Date().toISOString(),
+      now,
     );
-    // `notePlayed` returns the store unchanged on a repeat launch, so this
-    // writes once per revision rather than on every press of Play.
-    if (after === before) return;
-    await saveFeedback(root, after);
+    // Every launch is counted per collection: the endorse questions come back
+    // on a schedule measured in launches and days (endorsePrompts.ts).
+    const play = noteLaunch(
+      before.collections?.[receipt.packageId],
+      {
+        packageId: receipt.packageId,
+        packageName: receipt.packageName ?? nexus.slug,
+        slug: nexus.slug,
+        gameDomain: nexus.gameDomain,
+        gameId: receipt.gameId,
+        revisionNumber: nexus.revisionNumber,
+        ...(typeof nexus.collectionId === "number" ? { collectionId: nexus.collectionId } : {}),
+      },
+      now,
+    );
+    await saveFeedback(root, withCollection(rated, play));
     ehLog("info", "played.recorded", {
       packageId: receipt.packageId,
       revisionNumber: nexus.revisionNumber,
-      why: "so Event Horizon can ask whether the collection worked",
+      launches: play.launches,
+      why: "so Event Horizon can ask whether the collection worked, and later about endorsing it",
     });
   } catch (err) {
     ehLog("debug", "played.record-failed", {

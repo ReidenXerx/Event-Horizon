@@ -23,9 +23,16 @@
  * question — they get the log bundle instead, which is the thing that
  * actually helps the curator fix it.
  *
- * Asked once per revision, and a dismissal counts as an answer. A prompt that
- * returns every time is one people learn to close without reading, and the
- * next one that matters gets closed with it.
+ * "Did it work?" is asked once per revision, and a dismissal counts as an
+ * answer.
+ *
+ * ─── ENDORSING COMES BACK, ON A SCHEDULE (owner poll, 2026-09-30) ──────
+ * Endorsing is approval of the whole collection, it counts toward its rating
+ * on Nexus, and curators keep improving collections for months. So it is
+ * asked again after "Not now", further apart each time, sooner after a new
+ * revision, never once endorsed, and "Don't ask again" holds until the next
+ * revision (core/feedback/endorsePrompts.ts). The same for endorsing the
+ * collection's mods, on a slower clock. One question per visit.
  * ──────────────────────────────────────────────────────────────────────
  */
 
@@ -33,6 +40,7 @@ import * as React from "react";
 
 import { Button, Callout } from "../../components";
 import type { FeedbackEntry } from "../../../core/feedback/collectionFeedback";
+import type { CollectionPlay } from "../../../core/feedback/endorsePrompts";
 
 export type DidItWorkState =
   /** Waiting on the answer to the question itself. */
@@ -41,6 +49,12 @@ export type DidItWorkState =
   | { kind: "offer-endorse"; entry: FeedbackEntry; endorsableHere: boolean }
   /** They said no. Nothing more is asked of them. */
   | { kind: "thanks-no"; entry: FeedbackEntry }
+  /** The scheduled question: endorse the collection they keep playing. */
+  | { kind: "ask-endorse"; play: CollectionPlay }
+  /** The scheduled question: endorse its mods that are not endorsed yet. */
+  | { kind: "ask-mods"; play: CollectionPlay; count: number }
+  /** Endorsing those mods, one at a time. */
+  | { kind: "endorsing-mods"; play: CollectionPlay; progress: string }
   /** Everything done, or nothing to ask. */
   | { kind: "idle" };
 
@@ -52,9 +66,63 @@ export function DidItWorkPrompt(props: {
   onEndorse: () => void;
   onOpenPage: () => void;
   onSendLogs: () => void;
+  /** The scheduled questions: yes, not now, or not until the next revision. */
+  onEndorseAnswer?: (which: "endorse" | "mods", answer: "yes" | "not-now" | "never") => void;
+  onStopMods?: () => void;
 }): JSX.Element | null {
   const { state } = props;
   if (state.kind === "idle") return null;
+
+  if (state.kind === "ask-endorse" || state.kind === "ask-mods") {
+    const which = state.kind === "ask-endorse" ? "endorse" : "mods";
+    const answer = (a: "yes" | "not-now" | "never") => (): void => props.onEndorseAnswer?.(which, a);
+    const name = state.play.packageName;
+    return (
+      <Callout
+        tone="info"
+        icon="♥"
+        title={
+          which === "endorse"
+            ? `Enjoying "${name}"? Endorse it`
+            : `Endorse the ${state.kind === "ask-mods" ? state.count : ""} mods in "${name}" you have not endorsed yet?`
+        }
+        actions={
+          <span className="eh-row eh-row--sm">
+            <Button intent="primary" size="sm" disabled={props.busy === true} onClick={answer("yes")}>
+              {which === "endorse" ? "Endorse" : "Endorse them all"}
+            </Button>
+            <Button size="sm" disabled={props.busy === true} onClick={answer("not-now")}>
+              Not now
+            </Button>
+            <Button size="sm" disabled={props.busy === true} onClick={answer("never")}>
+              Don&apos;t ask again
+            </Button>
+          </span>
+        }
+      >
+        {which === "endorse"
+          ? `An endorsement counts toward the collection's rating on Nexus: it is what ranks it and helps other players find it, and it tells the curator the work is worth continuing. You have played revision ${state.play.revisionNumber}; curators keep fixing and improving, so this comes back now and then until you decide. "Don't ask again" holds until the next revision.`
+          : `Each endorsement goes to that mod's author, the people whose work the collection is built from. Event Horizon sends them one at a time through your Vortex login and reads each answer back; you can stop at any time.`}
+      </Callout>
+    );
+  }
+
+  if (state.kind === "endorsing-mods") {
+    return (
+      <Callout
+        tone="info"
+        icon="♥"
+        title={`Endorsing the mods in "${state.play.packageName}"`}
+        actions={
+          <Button size="sm" onClick={props.onStopMods}>
+            Stop after this one
+          </Button>
+        }
+      >
+        {state.progress}
+      </Callout>
+    );
+  }
 
   if (state.kind === "asking") {
     return (
@@ -122,8 +190,8 @@ export function DidItWorkPrompt(props: {
         }
       >
         {state.endorsableHere
-          ? `An endorsement is a separate thing from the rating: it is for the collection rather than this one revision, and it is what shows up as a number on ${state.entry.packageName}'s page.`
-          : `Endorsing needs the collection's own entry in Vortex, which this install does not have — the page takes one click.`}
+          ? `An endorsement is for the whole collection rather than this one revision, and it counts toward its rating on Nexus: it is what ranks ${state.entry.packageName} and helps other players find it.`
+          : `Endorsing from here was not possible this time; the collection's page takes one click.`}
       </Callout>
     );
   }

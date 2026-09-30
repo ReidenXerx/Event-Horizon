@@ -170,6 +170,9 @@ export const actions = {
     payload: { id, game, localPath, fileSize },
   }),
   setLoadOrder: () => ({ type: "STUB_SET_LOAD_ORDER" }),
+  /** Carries the entry, so a test can see exactly what was added to (and removed from) the pool. */
+  addMod: (gameId: string, mod: unknown) => ({ type: "STUB_ADD_MOD", payload: { gameId, mod } }),
+  removeMod: (gameId: string, modId: string) => ({ type: "STUB_REMOVE_MOD", payload: { gameId, modId } }),
   // These carry their payloads for the same reason the ones below do: a rule
   // purge is only testable if the double records WHICH rule was removed, and
   // an action that forgets its arguments makes "we deleted exactly what we

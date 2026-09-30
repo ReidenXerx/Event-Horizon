@@ -29,15 +29,24 @@
  * Vortex has no collection-endorsement event. `endorse-mod` reaches
  * `endorseThing`, which endorses a COLLECTION when the mod it is handed
  * carries `attributes.collectionId` — the entry Vortex's own collection
- * installer creates. Event Horizon replaces that installer, so the entry may
- * not exist, and that is a fact about the machine rather than something this
- * module can fix. When no entry carries the id, the honest outcome is
- * "cannot from here" and the player is sent to the page, which always works.
+ * installer creates. Event Horizon replaces that installer, so the entry
+ * usually does not exist. Then Event Horizon adds a placeholder entry for the
+ * collection (never enabled, no files), hands it to Vortex, waits for Nexus's
+ * answer on it, and removes it again (owner poll, 2026-09-30). The endorsement
+ * goes out with the player's own Vortex login, as if they had pressed the
+ * button in Vortex's collection view.
+ *
+ * The game passed here is VORTEX'S id ("skyrimse"), not the Nexus domain
+ * ("skyrimspecialedition"): Vortex keys its mod pool by its own id, and the
+ * lookup by domain found nothing on every Skyrim install.
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { actions } from "@nexusmods/vortex-api";
 import type { types } from "@nexusmods/vortex-api";
 
+import { statusToSend, waitForEndorseOutcome } from "../../core/curator/endorseOutcome";
+import { readNexusAccount } from "../../core/installer/checkNexusAccount";
 import { ehLog } from "../../core/logging/ehLog";
 
 export type RateOutcome =
@@ -48,8 +57,13 @@ export type RateOutcome =
 
 export type EndorseOutcome =
   | { kind: "endorsed" }
-  | { kind: "no-mod-entry" }
+  /** Vortex endorses only for the game it is managing right now. */
+  | { kind: "wrong-game"; activeGameId?: string }
+  | { kind: "not-logged-in" }
   | { kind: "failed"; why: string };
+
+/** Placeholder entries are named so a leftover can always be recognised and removed. */
+export const TEMP_ENTRY_PREFIX = "eh-endorse-collection-";
 
 /** Vortex's own wording for the two votes; anything else is rejected there. */
 const VOTE = { worked: "positive", "did-not-work": "negative" } as const;
@@ -167,27 +181,95 @@ export function findCollectionModId(
   }
 }
 
+type ModsByGame = Record<string, Record<string, { attributes?: Record<string, unknown> }> | undefined>;
+
+const modsOf = (api: types.IExtensionApi): ModsByGame | undefined =>
+  (api.getState() as unknown as { persistent?: { mods?: ModsByGame } })?.persistent?.mods;
+
+function activeGameOf(api: types.IExtensionApi): string | undefined {
+  const s = api.getState() as unknown as {
+    settings?: { profiles?: { activeProfileId?: string } };
+    persistent?: { profiles?: Record<string, { gameId?: string }> };
+  };
+  const profileId = s?.settings?.profiles?.activeProfileId;
+  return profileId === undefined ? undefined : s?.persistent?.profiles?.[profileId]?.gameId;
+}
+
+/** Removes placeholder entries a crash or a late answer left behind. */
+export function removeLeftoverPlaceholders(api: types.IExtensionApi, gameId: string): number {
+  const ids = Object.keys(modsOf(api)?.[gameId] ?? {}).filter((id) => id.startsWith(TEMP_ENTRY_PREFIX));
+  for (const id of ids) api.store?.dispatch(actions.removeMod(gameId, id));
+  return ids.length;
+}
+
 /**
- * Endorse the collection.
+ * Endorse the collection, with the player's Vortex login.
  *
- * `"Undecided"` is what Vortex must be HANDED to make it endorse — its
- * handler takes the current status and toggles. The same trap the bulk mod
- * endorse already documents in `core/curator/endorseOutcome.ts`: sending
- * "Endorsed", the state we want, makes it abstain instead.
+ * `"Undecided"` (or whatever the entry holds now) is what Vortex must be
+ * HANDED to make it endorse: its handler takes the current status and
+ * toggles. The same trap the bulk mod endorse documents in
+ * `core/curator/endorseOutcome.ts`: sending "Endorsed" makes it abstain.
  */
-export function endorseCollection(
+export async function endorseCollection(
   api: types.IExtensionApi,
-  args: { gameId: string; collectionId: number },
-): EndorseOutcome {
-  const modId = findCollectionModId(api, args.gameId, args.collectionId);
-  if (modId === undefined) return { kind: "no-mod-entry" };
-  try {
-    api.events.emit("endorse-mod", args.gameId, modId, "Undecided");
-    ehLog("info", "collection-endorse.sent", { ...args, modId });
-    return { kind: "endorsed" };
-  } catch (err) {
-    return { kind: "failed", why: err instanceof Error ? err.message : String(err) };
+  args: { gameId: string; collectionId: number; name: string; timeoutMs?: number },
+): Promise<EndorseOutcome> {
+  const active = activeGameOf(api);
+  if (active !== undefined && active !== args.gameId) return { kind: "wrong-game", activeGameId: active };
+  if (readNexusAccount(api as never).kind === "logged-out") return { kind: "not-logged-in" };
+  removeLeftoverPlaceholders(api, args.gameId);
+
+  const existing = findCollectionModId(api, args.gameId, args.collectionId);
+  const modId = existing ?? `${TEMP_ENTRY_PREFIX}${args.collectionId}`;
+  if (existing === undefined) {
+    api.store?.dispatch(
+      actions.addMod(args.gameId, {
+        id: modId,
+        state: "installed",
+        type: "",
+        installationPath: modId,
+        attributes: {
+          name: args.name,
+          logicalFileName: args.name,
+          collectionId: args.collectionId,
+          downloadGame: args.gameId,
+          source: "nexus",
+          endorsed: "Undecided",
+        },
+      } as never),
+    );
+    if (modsOf(api)?.[args.gameId]?.[modId] === undefined) {
+      return { kind: "failed", why: "Vortex did not take the collection's placeholder entry" };
+    }
   }
+  const read = (): string | undefined => modsOf(api)?.[args.gameId]?.[modId]?.attributes?.["endorsed"] as string | undefined;
+  const before = read();
+  let result: Awaited<ReturnType<typeof waitForEndorseOutcome>> = "not-sent";
+  try {
+    api.events.emit("endorse-mod", args.gameId, modId, statusToSend(before));
+    result = await waitForEndorseOutcome({ read, readPending: read, before, timeoutMs: args.timeoutMs ?? 20_000 });
+  } finally {
+    if (existing === undefined) {
+      // A late answer written to a removed entry would leave a half-entry behind,
+      // so a request still in flight gets another minute before the entry goes.
+      const remove = (): void => void removeLeftoverPlaceholders(api, args.gameId);
+      if (result === "timeout") setTimeout(remove, 60_000);
+      else remove();
+    }
+  }
+  ehLog("info", "collection-endorse.result", { ...args, modId, placeholder: existing === undefined, result });
+  if (result === "endorsed") return { kind: "endorsed" };
+  return {
+    kind: "failed",
+    why:
+      result === "abstained"
+        ? "Nexus recorded it as withdrawn"
+        : result === "timeout"
+          ? "Nexus has not answered yet"
+          : result === "not-sent"
+            ? "Vortex did not send the request"
+            : "Nexus refused it (Vortex's notification says why)",
+  };
 }
 
 /** The page, for when endorsing from here is not possible. */

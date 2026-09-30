@@ -146,12 +146,15 @@ async function playedFor(): Promise<Map<string, string>> {
       import("../../../core/paths/appDataPaths"),
     ]);
     const store = await loadFeedback(getEventHorizonRoot());
-    for (const entry of Object.values(store.entries ?? {})) {
-      const e = entry as { packageId?: string; playedAt?: string };
-      if (e.packageId === undefined || e.playedAt === undefined) continue;
-      const prev = out.get(e.packageId);
-      if (prev === undefined || Date.parse(e.playedAt) > Date.parse(prev)) out.set(e.packageId, e.playedAt);
-    }
+    // `lastPlayedAt` per collection is written on every launch (since 2026-09-30).
+    // The per-revision entries only ever held `firstPlayedAt`: this read a
+    // `playedAt` nothing wrote, so "last played" was always empty.
+    const note = (packageId: string, at: string): void => {
+      const prev = out.get(packageId);
+      if (prev === undefined || Date.parse(at) > Date.parse(prev)) out.set(packageId, at);
+    };
+    for (const e of Object.values(store.entries ?? {})) note(e.packageId, e.firstPlayedAt);
+    for (const p of Object.values(store.collections ?? {})) note(p.packageId, p.lastPlayedAt);
   } catch (err) {
     ehLog("debug", "dashboard.played-failed", { err });
   }

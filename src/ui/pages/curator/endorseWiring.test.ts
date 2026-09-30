@@ -15,17 +15,23 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const SRC = readFileSync(join(__dirname, "useCuratorActions.ts"), "utf8");
+/** The loop itself moved to core (2026-09-30) so the player's prompt shares it. */
+const RUN = readFileSync(join(__dirname, "../../../core/curator/endorseRun.ts"), "utf8");
 
-function section(from: string, to: string): string {
-  const a = SRC.indexOf(from);
+function section(from: string, to: string, src: string = SRC): string {
+  const a = src.indexOf(from);
   expect(a, `${from} not found`).toBeGreaterThan(-1);
-  const b = SRC.indexOf(to, a);
+  const b = src.indexOf(to, a);
   expect(b, `${to} not found after ${from}`).toBeGreaterThan(a);
-  return SRC.slice(a, b);
+  return src.slice(a, b);
 }
 
 describe("endorseEach", () => {
-  const body = (): string => section("const endorseEach", "const describeEndorse");
+  const body = (): string => section("export async function runEndorsements", "export function endorsableCollectionMods", RUN);
+
+  it("the curator page runs the shared loop", () => {
+    expect(section("const endorseEach", "const describeEndorse")).toContain("runEndorsements(api, gameId!, targets");
+  });
 
   it("decides whether Vortex would send before emitting", () => {
     const b = body();
