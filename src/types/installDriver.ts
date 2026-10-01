@@ -351,6 +351,12 @@ export type InstallSuccess = {
    */
   installerConditionNotice?: string[];
   /**
+   * Enabled plugins whose masters are not active after the install: switched
+   * off when they came from this collection's mods, reported when they are the
+   * player's own (owner poll, 2026-10-02).
+   */
+  missingMasterNotice?: string[];
+  /**
    * Ready-to-send reports for mods that could not be reproduced.
    *
    * One per mod that failed against the curator's staging, failed against its
@@ -673,6 +679,12 @@ export type InstallFailed = {
    * (owner poll, 2026-09-28).
    */
   installerConditionNotice?: string[];
+  /**
+   * Enabled plugins whose masters are not active after the install: switched
+   * off when they came from this collection's mods, reported when they are the
+   * player's own (owner poll, 2026-10-02).
+   */
+  missingMasterNotice?: string[];
   /** Mods that changed on disk since a previous install of this collection. */
   stagingDriftNotice?: string[];
   /**

@@ -19,6 +19,11 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
   patch. Helios, for example, lost its College of Winterhold meshes that way. They now install in steps, with the
   plugins switched on before each step. In a large collection that is dozens of patch hubs and compatibility
   patches that now land as the curator has them.
+- **No plugin is left switched on without its masters.** Some installers make patches based on what you had active
+  when you installed, so your setup can hold a patch the curator never had. When a new version of the collection
+  drops the mod that patch is for, the patch stays switched on with its master gone, and the game will not start.
+  After every install and update, Event Horizon now switches off any such plugin from the collection's mods (it is
+  not deleted) and lists it on the Done screen. A plugin from your own mods is only listed, never changed.
 
 ## [0.2.29] — 2026-09-30
 

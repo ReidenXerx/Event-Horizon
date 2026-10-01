@@ -3401,6 +3401,21 @@ function InstallNotes(props: {
 }): JSX.Element | null {
   const { result } = props;
   const present: Array<{ label: string; node: JSX.Element }> = [];
+  if ((result.missingMasterNotice?.length ?? 0) > 0) {
+    present.push({
+      label: "plugins missing a master",
+      node: (
+        <Notice
+          key="missing-master"
+          label="Plugins switched off"
+          intent="warning"
+          summary="These plugins need another plugin that is not active, usually a patch for a mod this version of the collection no longer uses. A game with such a plugin switched on does not start."
+        >
+          <NoticeLines lines={result.missingMasterNotice ?? []} />
+        </Notice>
+      ),
+    });
+  }
   if ((result.installerConditionNotice?.length ?? 0) > 0) {
     present.push({
       label: "files an installer skipped",

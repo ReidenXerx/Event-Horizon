@@ -911,6 +911,8 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
   const curatorReports: string[] = [];
   /** Files left out of the check because their installer condition is not met here. */
   const installerConditionNotes: string[] = [];
+  /** Enabled plugins whose masters are not active: switched off (ours) or reported (theirs). */
+  let missingMasterNotes: string[] = [];
   /**
    * Notes about hand-supplied archives that are not the curator's.
    *
@@ -4487,6 +4489,50 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       });
     }
 
+    // ── no enabled plugin without its masters (owner poll, 2026-10-02) ──
+    // A patch an installer made on THIS machine (never on the curator's) can
+    // outlive the plugin it patches when a revision drops it, and one enabled
+    // plugin with a missing master stops the game starting. Plugin enablement
+    // has just been set from the manifest, so this is the state the game gets.
+    try {
+      const [{ readPluginList }, { readPluginHeader }, { findOrphanedPlugins, describeOrphanedPlugins }, { ACTION_SET_PLUGIN_ENABLED, dispatchRaw }] =
+        await Promise.all([
+          import("../curator/pluginPool"),
+          import("../manifest/pluginMasters"),
+          import("./missingMasterPlugins"),
+          import("./applyPluginOrder"),
+        ]);
+      const ours = new Set(installedMods.map((m) => m.vortexModId));
+      const listed = readPluginList(ctx.api.getState());
+      const checked = await Promise.all(
+        listed.map(async (p) => ({
+          name: p.name,
+          enabled: p.enabled,
+          isNative: p.isNative,
+          fromCollection: p.modId !== undefined && ours.has(p.modId),
+          masters:
+            p.enabled && !p.isNative && p.filePath !== undefined
+              ? await readPluginHeader(p.filePath, undefined).then((h) => (h.kind === "ok" ? h.masters : undefined))
+              : undefined,
+        })),
+      );
+      const orphans = findOrphanedPlugins(checked);
+      for (const o of orphans.filter((x) => x.disabled)) {
+        dispatchRaw(ctx.api, ACTION_SET_PLUGIN_ENABLED, { pluginName: o.name, enabled: false });
+      }
+      missingMasterNotes = describeOrphanedPlugins(orphans);
+      ehLog(orphans.length > 0 ? "warn" : "info", "plugins.missing-masters", {
+        checked: checked.filter((c) => c.masters !== undefined).length,
+        switchedOff: orphans.filter((o) => o.disabled).map((o) => ({ plugin: o.name, missing: o.missing })),
+        reportedOnly: orphans.filter((o) => !o.disabled).map((o) => ({ plugin: o.name, missing: o.missing })),
+      });
+    } catch (err) {
+      ehLog("warn", "plugins.missing-masters.unchecked", {
+        err,
+        consequence: "a plugin with a missing master, if any, is still enabled; the Doctor's setup check finds it",
+      });
+    }
+
     // Final sweep, at the same point Vortex's own collection post-processing
     // does it: plugin enablement has just been set from the manifest, so any
     // surviving "contains multiple plugins" prompt is answering a question
@@ -5159,6 +5205,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         ...(rulesPurgeNotice !== undefined ? { rulesPurgeNotice } : {}),
         ...(curatorReports.length > 0 ? { curatorReports } : {}),
         ...(installerConditionNotes.length > 0 ? { installerConditionNotice: installerConditionNotes } : {}),
+        ...(missingMasterNotes.length > 0 ? { missingMasterNotice: missingMasterNotes } : {}),
         ...(damagedArchives.length > 0
           ? { damagedArchiveNotice: damagedArchives }
           : {}),
@@ -5400,6 +5447,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         : {}),
       ...(curatorReports.length > 0 ? { curatorReports } : {}),
       ...(installerConditionNotes.length > 0 ? { installerConditionNotice: installerConditionNotes } : {}),
+        ...(missingMasterNotes.length > 0 ? { missingMasterNotice: missingMasterNotes } : {}),
       ...(finishingSkipped.length > 0
         ? {
             finishingSkippedNotice: [
