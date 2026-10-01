@@ -277,9 +277,75 @@ describe("how the driver runs the two epochs", () => {
   });
 
   it("costs nothing when no mod defers", () => {
-    expect(src).toContain(
-      "if (i === secondEpochStartsAt && secondEpoch.length > 0) {",
-    );
+    expect(src).toContain("if (layerStarts.has(i) && secondEpoch.length > 0) {");
     expect(src).toContain("if (secondEpoch.length > 0) {");
+  });
+});
+
+describe("deferred mods waiting on each other install in layers (Meridia 1.0.24, 2026-10-02)", () => {
+  /** Like `manifest`, plus the staged plugin each mod provides. */
+  const withPlugins = (
+    mods: { name: string; reads?: string[]; provides?: string[] }[],
+    pluginNames: string[],
+  ): EhcollManifest =>
+    ({
+      game: { id: "skyrimse" },
+      plugins: { order: pluginNames.map((name) => ({ name, enabled: true })) },
+      mods: mods.map((m, i) => ({
+        compareKey: `nexus:${i}:${i}`,
+        name: m.name,
+        install: { fomodSelections: [], ...(m.reads !== undefined ? { readsPluginState: m.reads } : {}) },
+        state: { stagingFiles: (m.provides ?? []).map((p) => ({ path: p })) },
+      })),
+    }) as unknown as EhcollManifest;
+
+  it("Helios waits for Obscure's College of Winterhold, which itself waits: Helios goes one layer later", () => {
+    const m = withPlugins(
+      [
+        { name: "Obsidian Weathers", provides: ["Obsidian Weathers.esp"] },
+        { name: "Helios", reads: ["obsidian weathers.esp", "ocw_obscure's_collegeofwinterhold.esp"], provides: ["Helios.esp"] },
+        { name: "OCW", reads: ["falskaar.esm"], provides: ["OCW_Obscure's_CollegeofWinterhold.esp"] },
+        { name: "Falskaar", provides: ["Falskaar.esm"] },
+      ],
+      ["Falskaar.esm", "Obsidian Weathers.esp", "OCW_Obscure's_CollegeofWinterhold.esp", "Helios.esp"],
+    );
+    const e = planInstallEpochs(m);
+    expect(e.first).toEqual(["nexus:0:0", "nexus:3:3"]);
+    expect(e.layers).toEqual([["nexus:2:2"], ["nexus:1:1"]]);
+    expect(e.second).toEqual(["nexus:2:2", "nexus:1:1"]);
+    expect(e.deferred.find((d) => d.name === "Helios")?.layer).toBe(2);
+  });
+
+  it("a chain three deep gets three layers; independent waiters share one", () => {
+    const m = withPlugins(
+      [
+        { name: "A", reads: ["base.esp"], provides: ["a.esp"] },
+        { name: "B", reads: ["a.esp"], provides: ["b.esp"] },
+        { name: "C", reads: ["b.esp"], provides: ["c.esp"] },
+        { name: "D", reads: ["base.esp"] },
+        { name: "Base", provides: ["base.esp"] },
+      ],
+      ["base.esp", "a.esp", "b.esp", "c.esp"],
+    );
+    expect(planInstallEpochs(m).layers).toEqual([["nexus:0:0", "nexus:3:3"], ["nexus:1:1"], ["nexus:2:2"]]);
+  });
+
+  it("a cycle cannot be satisfied, so it is cut instead of looping", () => {
+    const m = withPlugins(
+      [
+        { name: "X", reads: ["y.esp"], provides: ["x.esp"] },
+        { name: "Y", reads: ["x.esp"], provides: ["y.esp"] },
+      ],
+      ["x.esp", "y.esp"],
+    );
+    const e = planInstallEpochs(m);
+    expect(e.second.sort()).toEqual(["nexus:0:0", "nexus:1:1"]);
+    expect(e.layers.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("the driver activates at the start of EVERY layer", () => {
+    expect(src).toContain("const layerStarts = new Map<number, number>();");
+    expect(src).toContain("if (present > 0) layerStarts.set(at, n + 1);");
+    expect(src).toContain("const secondEpoch = epochs.second.flatMap((key) => {");
   });
 });

@@ -1485,15 +1485,30 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     const firstEpoch = plan.modResolutions.filter(
       (r) => !secondEpochKeys.has(r.compareKey),
     );
-    const secondEpoch = plan.modResolutions.filter((r) =>
-      secondEpochKeys.has(r.compareKey),
-    );
+    // In LAYER order: a deferred mod waiting on another deferred mod's plugin
+    // installs in a later layer, after a boundary that activates it.
+    const resolutionByKey = new Map(plan.modResolutions.map((r) => [r.compareKey, r] as const));
+    const secondEpoch = epochs.second.flatMap((key) => {
+      const r = resolutionByKey.get(key);
+      return r === undefined ? [] : [r];
+    });
     const installQueue = [...firstEpoch, ...secondEpoch];
     const secondEpochStartsAt = firstEpoch.length;
+    /** Queue index where each deferred layer starts: every one is a boundary. */
+    const layerStarts = new Map<number, number>();
+    {
+      let at = secondEpochStartsAt;
+      epochs.layers.forEach((layer, n) => {
+        const present = layer.filter((key) => resolutionByKey.has(key)).length;
+        if (present > 0) layerStarts.set(at, n + 1);
+        at += present;
+      });
+    }
     if (secondEpoch.length > 0) {
       ehLog("info", "install.epoch.planned", {
         firstEpoch: firstEpoch.length,
         secondEpoch: secondEpoch.length,
+        layers: epochs.layers.map((l) => l.length),
         deferred: epochs.deferred.slice(0, 20),
         why:
           "these mods' installers ask the game whether a plugin this " +
@@ -1513,7 +1528,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
        * sorting here would spend a full LOOT run on a load order that is about
        * to change again.
        */
-      if (i === secondEpochStartsAt && secondEpoch.length > 0) {
+      if (layerStarts.has(i) && secondEpoch.length > 0) {
         try {
           reportProgress(
             "installing-mods",
@@ -1562,6 +1577,8 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               : {}),
           });
           ehLog("info", "install.epoch.second.start", {
+            layer: layerStarts.get(i),
+            of: epochs.layers.length,
             mods: secondEpoch.length,
             modTypesRestored: epochTypes.length,
             pluginOrderPinned: pin.pinned,

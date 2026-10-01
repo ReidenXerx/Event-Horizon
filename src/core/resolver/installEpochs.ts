@@ -55,13 +55,29 @@ export type DeferredMod = {
    * whose activation this install controls.
    */
   waitsFor: string[];
+  /**
+   * Which deferred layer it installs in, from 1. A mod waiting on a plugin
+   * that ANOTHER deferred mod provides goes one layer later than that mod, so
+   * the plugin is active by the time it asks.
+   */
+  layer: number;
 };
 
 export type InstallEpochs = {
   /** compareKeys that install first, in manifest order. */
   first: string[];
-  /** compareKeys that install after the plugins are active. */
+  /** compareKeys that install after the plugins are active: every layer, in layer order. */
   second: string[];
+  /**
+   * The deferred mods split into layers, each activated before it installs.
+   *
+   * One boundary was not enough (Meridia 1.0.24, 2026-10-02): Helios waits on
+   * Obscure's College of Winterhold's plugin, and OCW is itself deferred, so
+   * at the single boundary its plugin did not exist yet and Helios took the
+   * "not installed" branch. Layer N waits only on plugins from layers before
+   * it, so each boundary activates everything the next layer asks about.
+   */
+  layers: string[][];
   /** The deferred mods with their reasons, for the log and the report. */
   deferred: DeferredMod[];
   /**
@@ -97,15 +113,54 @@ export function planInstallEpochs(manifest: EhcollManifest): InstallEpochs {
       .map((p) => p.name.toLowerCase())
       .filter((name) => !isBaseGameMaster(name, manifest.game.id)),
   );
-
-  const first: string[] = [];
-  const second: string[] = [];
-  const deferred: DeferredMod[] = [];
-  const unexamined: { compareKey: string; name: string }[] = [];
-
+  /** Which mod's staged files carry each plugin — the mod whose install makes it exist. */
+  const providerOf = new Map<string, string>();
+  for (const mod of manifest.mods) {
+    for (const f of mod.state?.stagingFiles ?? []) {
+      const base = f.path.replace(/\\/g, "/").split("/").pop()!.toLowerCase();
+      if (/\.(esp|esm|esl)$/.test(base) && shipped.has(base) && !providerOf.has(base)) {
+        providerOf.set(base, mod.compareKey);
+      }
+    }
+  }
+  const waitsForOf = new Map<string, string[]>();
   for (const mod of manifest.mods) {
     const named = mod.install?.readsPluginState ?? [];
-    const waitsFor = named.filter((n) => shipped.has(n.toLowerCase()));
+    waitsForOf.set(mod.compareKey, named.filter((n) => shipped.has(n.toLowerCase())));
+  }
+
+  // 0 = first epoch. A deferred mod sits one layer after the deepest deferred
+  // mod providing a plugin it waits on. A cycle (two installers each asking
+  // about the other's plugin) is cut where it closes: no order satisfies both.
+  const layerOf = new Map<string, number>();
+  const visiting = new Set<string>();
+  const layer = (key: string): number => {
+    const known = layerOf.get(key);
+    if (known !== undefined) return known;
+    const waits = waitsForOf.get(key) ?? [];
+    if (waits.length === 0) {
+      layerOf.set(key, 0);
+      return 0;
+    }
+    visiting.add(key);
+    let deepest = 0;
+    for (const plugin of waits) {
+      const provider = providerOf.get(plugin.toLowerCase());
+      if (provider === undefined || provider === key || visiting.has(provider)) continue;
+      deepest = Math.max(deepest, layer(provider));
+    }
+    visiting.delete(key);
+    const mine = deepest + 1;
+    layerOf.set(key, mine);
+    return mine;
+  };
+
+  const first: string[] = [];
+  const byLayer: string[][] = [];
+  const deferred: DeferredMod[] = [];
+  const unexamined: { compareKey: string; name: string }[] = [];
+  for (const mod of manifest.mods) {
+    const waitsFor = waitsForOf.get(mod.compareKey) ?? [];
     if (waitsFor.length === 0) {
       first.push(mod.compareKey);
       // Reported from the same pass that decides, so the two can never
@@ -115,11 +170,12 @@ export function planInstallEpochs(manifest: EhcollManifest): InstallEpochs {
       }
       continue;
     }
-    second.push(mod.compareKey);
-    deferred.push({ compareKey: mod.compareKey, name: mod.name, waitsFor });
+    const at = layer(mod.compareKey);
+    (byLayer[at - 1] ??= []).push(mod.compareKey);
+    deferred.push({ compareKey: mod.compareKey, name: mod.name, waitsFor, layer: at });
   }
-
-  return { first, second, deferred, unexamined };
+  const layers = byLayer.filter((l) => l !== undefined && l.length > 0);
+  return { first, second: layers.flat(), layers, deferred, unexamined };
 }
 
 /**
