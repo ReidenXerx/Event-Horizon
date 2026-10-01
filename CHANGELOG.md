@@ -10,6 +10,16 @@ could never reach you as one.
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
 
+## [0.2.30] — 2026-10-02
+
+### Install
+- **Patch hubs install the curator's patches more reliably.** Some mods' installers pick their files by checking
+  which other plugins you have. Event Horizon already installed those after the plugins they check were switched on,
+  but in one batch, so a mod checking a plugin that ANOTHER such mod provides found it switched off and skipped its
+  patch. Helios, for example, lost its College of Winterhold meshes that way. They now install in steps, with the
+  plugins switched on before each step. In a large collection that is dozens of patch hubs and compatibility
+  patches that now land as the curator has them.
+
 ## [0.2.29] — 2026-09-30
 
 ### Install
