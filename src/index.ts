@@ -206,6 +206,11 @@ function init(context: types.IExtensionContext): boolean {
     void import("./ui/runtime/collectionUpdates").then(({ watchCollectionUpdates }) =>
       watchCollectionUpdates(context.api),
     );
+    // A hand-installed copy is never updated by Vortex, silently; say so once
+    // Vortex has fetched its extension list.
+    void Promise.all([import("./ui/runtime/selfUpdateCheck"), import("./ui/version")]).then(
+      ([{ watchSelfUpdate }, { EXTENSION_VERSION }]) => watchSelfUpdate(context.api, EXTENSION_VERSION),
+    );
     // A plugins.txt rewritten outside Vortex (Fallout 4 AE's own load-order
     // manager wiped the owner's) is caught and offered back.
     void import("./core/doctor/pluginWipeGuard").then(({ startPluginWipeGuard }) => startPluginWipeGuard(context.api));
