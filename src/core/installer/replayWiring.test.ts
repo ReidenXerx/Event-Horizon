@@ -82,14 +82,37 @@ describe("start-install-download call shape", () => {
     expect(typeof call.args[2]).toBe("function");
   });
 
-  it("makes the ORIGINAL one-argument call when a mod has no choices", async () => {
-    // The other 840 mods in a collection must install exactly as before.
+  it("leaves Vortex's defaults alone when a mod has no choices, but still passes the callback", async () => {
+    // The other 840 mods in a collection must install exactly as before:
+    // no options bag. The callback is what lets a refusal come back.
     const { api, emitted } = fakeApi("fallout4", "dl-2");
 
     await installFromExistingDownload(api, { gameId: "fallout4", archiveId: "dl-2" });
 
     const call = emitted.find((e) => e.event === "start-install-download")!;
-    expect(call.args).toEqual(["dl-2"]);
+    expect(call.args.slice(0, 2)).toEqual(["dl-2", undefined]);
+    expect(typeof call.args[2]).toBe("function");
+  });
+
+  it("surfaces a refusal of a mod WITHOUT choices too (2026-10-02 hang)", async () => {
+    // A FOMOD that refused on moduleDependencies left an agent's install op
+    // running forever: the no-choices call carried no callback.
+    const events = new EventEmitter();
+    (events as unknown as { emit: (e: string, ...a: unknown[]) => boolean }).emit = ((
+      event: string,
+      ...args: unknown[]
+    ): boolean => {
+      if (event === "start-install-download") {
+        const cb = args[2] as (err: Error) => void;
+        setTimeout(() => cb(new Error("Installer reported errors: requires DX Adventurer Outfit.esp")), 0);
+      }
+      return true;
+    }) as never;
+    const api = { events, getState: () => ({}) } as unknown as types.IExtensionApi;
+
+    await expect(
+      installFromExistingDownload(api, { gameId: "fallout4", archiveId: "dl-4" }),
+    ).rejects.toThrow(/requires DX Adventurer Outfit\.esp/);
   });
 
   it("surfaces a refusal through the callback instead of hanging", async () => {

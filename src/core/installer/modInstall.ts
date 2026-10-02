@@ -476,29 +476,21 @@ export async function installFromExistingDownload(
     signal: args.signal,
   });
 
-  if (args.choices === undefined) {
-    try {
-      // `emit` is synchronous and rethrows whatever a listener throws, so an
-      // archiveId Vortex does not know escapes from HERE with the waiter
-      // fully armed. Every other emit in this file is already wrapped; this
-      // branch was the one left bare, and it is the common path.
-      api.events.emit("start-install-download", args.archiveId);
-      const result = await completed.promise;
-      return { vortexModId: result.modId };
-    } finally {
-      standDownWaiter(completed);
-    }
-  }
-
   // Observed signature — see installerChoices.ts. Vortex passes a callback of
   // its own, and it is the only channel for a failure: without it a refused
-  // install would sit until the stall watchdog fires 90 seconds later, with
-  // the real reason discarded.
+  // install never settles. 2026-10-02: a FOMOD that refused on its
+  // moduleDependencies ("Installer reported errors") left an agent's install
+  // op `running` for good, because a mod with no recorded choices went out
+  // with no callback. Every install now passes one; without choices the
+  // options stay `undefined`, which Vortex reads as its defaults (the call
+  // requirementStep.ts already makes). `emit` is synchronous and rethrows
+  // whatever a listener throws; inside this executor that rejects `failed`,
+  // so an archiveId Vortex does not know still leaves through the `finally`.
   const failed = new Promise<never>((_resolve, reject) => {
     api.events.emit(
       "start-install-download",
       args.archiveId,
-      installOptions(args.choices!, args.unattended),
+      args.choices === undefined ? undefined : installOptions(args.choices, args.unattended),
       (err: Error | null | undefined) => {
         if (err) reject(err);
       },
