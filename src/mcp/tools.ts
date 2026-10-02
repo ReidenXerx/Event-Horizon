@@ -206,6 +206,16 @@ export const TOOLS: ToolSpec[] = [
     required: ["opId"],
   },
   {
+    name: "cancel_operation",
+    verb: "ops.cancel",
+    mutates: false,
+    description:
+      "Withdraw a change that is still waiting in the queue (status queued), by its opId. A change already " +
+      "running cannot be stopped. Use it when a queued build, install or deploy should no longer happen.",
+    properties: { opId: str("The opId of the queued change.") },
+    required: ["opId"],
+  },
+  {
     name: "recent_operations",
     verb: "ops.list",
     mutates: false,

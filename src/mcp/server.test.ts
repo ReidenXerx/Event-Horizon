@@ -21,7 +21,7 @@ const call = async (file: string, name: string, args: Record<string, unknown> = 
 
 describe("the tool table", () => {
   it("maps every tool to a real control channel verb (or the op log)", () => {
-    const known = new Set([...Object.keys(VERBS), "ops.get", "ops.list"]);
+    const known = new Set([...Object.keys(VERBS), "ops.get", "ops.list", "ops.cancel"]);
     expect(TOOLS.filter((t) => t.local !== true && !known.has(t.verb)).map((t) => t.verb)).toEqual([]);
   });
 

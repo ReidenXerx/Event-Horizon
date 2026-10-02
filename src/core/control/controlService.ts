@@ -52,6 +52,25 @@ export function getRecentOps(limit = 100): OpRecord[] {
   return readOpsJournal(opsJournalFile(), limit).reverse();
 }
 
+/**
+ * Withdraw a change still waiting in the queue, from the Agents page. Same
+ * rule as the channel's `ops.cancel`: only `queued`; one already running is
+ * never interrupted. Its queue slot sees it is no longer queued and runs
+ * nothing.
+ */
+export function cancelQueuedOp(opId: string): boolean {
+  const op = server?.ops.get(opId);
+  if (server === undefined || op === undefined || op.status !== "queued") return false;
+  server.ops.finish(op, {
+    ok: false,
+    code: "cancelled",
+    message: "Cancelled from the Agents page before it started.",
+    httpStatus: 409,
+  });
+  ehLog("info", "control.op.cancelled", { opId, verb: op.verb, by: "agents-page" });
+  return true;
+}
+
 /** Every op as it is queued, starts and finishes. */
 export function onControlOps(fn: (op: OpRecord) => void): () => void {
   opListeners.add(fn);

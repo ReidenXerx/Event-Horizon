@@ -213,3 +213,33 @@ describe("startControlServer", () => {
     expect(r.json).toMatchObject({ ok: true, result: { fine: true } });
   });
 });
+
+describe("ops.cancel: withdraw a change still waiting in the queue (2026-10-02)", () => {
+  it("a queued change is cancelled and never runs; the running one cannot be", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const ran: string[] = [];
+    const { server: s, auth } = await start({
+      slow: { mutates: true, run: async () => (ran.push("slow"), await gate, {}) },
+      build: { mutates: true, run: async () => (ran.push("build"), {}) },
+    });
+    const post = (p: string, body: unknown) =>
+      raw(s.port, { method: "POST", path: p, headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify(body) });
+    const first = await post("/v1/slow", { async: true });
+    const second = await post("/v1/build", { async: true });
+    expect(second.json.status).toBe("queued");
+
+    const refused = await post("/v1/ops.cancel", { opId: first.json.opId });
+    expect(refused).toMatchObject({ status: 409, json: { code: "not-queued" } });
+
+    const cancelled = await post("/v1/ops.cancel", { opId: second.json.opId });
+    expect(cancelled).toMatchObject({ status: 200, json: { ok: true, result: { cancelled: true, status: "failed", code: "cancelled" } } });
+
+    release();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(ran).toEqual(["slow"]);
+    const after = await post("/v1/ops.get", { opId: second.json.opId });
+    expect(after.json.result).toMatchObject({ status: "failed", code: "cancelled" });
+    expect((await post("/v1/ops.cancel", { opId: "nope" })).status).toBe(404);
+  });
+});

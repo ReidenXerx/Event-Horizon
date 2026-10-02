@@ -161,6 +161,32 @@ export async function startControlServer(opts: ControlServerOptions): Promise<Co
           ? send(res, 404, { ok: false, code: "no-such-op", message: `No operation ${String(body["opId"])} (kept: the last ${MAX_OPS}).` })
           : send(res, 200, { ok: true, result: { ...envelope(op), body: op.body, queuedAt: op.queuedAt, startedAt: op.startedAt, endedAt: op.endedAt } });
       }
+      /**
+       * Cancel a change that is still WAITING in the queue (2026-10-02: a
+       * collection build queued behind two deploys could not be withdrawn
+       * once the owner wanted an audit first, short of closing Vortex). Only
+       * a queued op: one already running is mid-way through Vortex and is
+       * never interrupted from here.
+       */
+      if (verbName === "ops.cancel") {
+        const op = ops.get(String(body["opId"] ?? ""));
+        if (op === undefined) {
+          return send(res, 404, { ok: false, code: "no-such-op", message: `No operation ${String(body["opId"])} (kept: the last ${MAX_OPS}).` });
+        }
+        if (op.status !== "queued") {
+          return send(res, 409, {
+            ok: false,
+            code: "not-queued",
+            message:
+              op.status === "running"
+                ? `Operation ${op.opId} (${op.verb}) is already running and cannot be stopped from here.`
+                : `Operation ${op.opId} (${op.verb}) has already finished: ${op.status}.`,
+          });
+        }
+        ops.finish(op, { ok: false, code: "cancelled", message: "Cancelled before it started.", httpStatus: 409 });
+        ehLog("info", "control.op.cancelled", { opId: op.opId, verb: op.verb });
+        return send(res, 200, { ok: true, result: { ...envelope(op), cancelled: true } });
+      }
       if (verbName === "ops.list") {
         const status = typeof body["status"] === "string" ? (body["status"] as OpStatus) : undefined;
         const list = ops.list({
@@ -186,6 +212,8 @@ export async function startControlServer(opts: ControlServerOptions): Promise<Co
       const op = ops.create(verbName, body);
       op.mutates = verb.mutates;
       const execute = async (): Promise<void> => {
+        // Cancelled while it waited (ops.cancel): its turn comes and nothing runs.
+        if (op.status !== "queued") return;
         ops.start(op);
         try {
           const result = await verb.run(body);

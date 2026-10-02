@@ -72,6 +72,8 @@ fetch(c.url + "state", { headers: { authorization: "Bearer " + c.token } }).then
   running.
 - `POST /v1/ops.list {"limit"?, "verb"?, "status"?, "includeReads"?}` lists recent ops, newest first. Only
   changes are listed unless you pass `includeReads`.
+- `POST /v1/ops.cancel {"opId": "..."}` withdraws a change still `queued`: it ends `failed` with code `cancelled`
+  and never runs. A `running` change cannot be cancelled (`not-queued`, 409).
 - The last 500 ops are kept in memory. Every finished op is also appended to
   `<Vortex userData>/event-horizon/control-ops.jsonl`, so the owner can read what agents did.
 - A dropped connection loses nothing: the op finishes anyway, and `ops.get` has the outcome.

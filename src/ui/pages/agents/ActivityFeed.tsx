@@ -11,6 +11,7 @@ import * as React from "react";
 
 import { Button, Card, StatGrid, StatTile } from "../../components";
 import {
+  cancelQueuedOp,
   getRecentOps,
   onControlOps,
 } from "../../../core/control/controlService";
@@ -74,7 +75,13 @@ export function ActivityFeed(props: ActivityFeedProps): JSX.Element {
         ) : (
           <ol className="eh-agent-feed">
             {views.map((v) => (
-              <OpLine key={v.id} view={v} />
+              <OpLine
+                key={v.id}
+                view={v}
+                {...(v.tone === "queued" && props.initialOps === undefined
+                  ? { onCancel: (): void => void (cancelQueuedOp(v.id) && setOps(getRecentOps(100))) }
+                  : {})}
+              />
             ))}
           </ol>
         )}
@@ -83,7 +90,7 @@ export function ActivityFeed(props: ActivityFeedProps): JSX.Element {
   );
 }
 
-function OpLine(props: { view: OpView }): JSX.Element {
+function OpLine(props: { view: OpView; onCancel?: () => void }): JSX.Element {
   const v = props.view;
   return (
     <li className={`eh-agent-op eh-agent-op--${v.tone}`}>
@@ -96,6 +103,11 @@ function OpLine(props: { view: OpView }): JSX.Element {
             {v.duration !== undefined ? `${v.duration} · ` : ""}
             {v.when}
           </span>
+          {props.onCancel !== undefined && (
+            <Button intent="ghost" size="sm" onClick={props.onCancel} title="Withdraw it: it has not started, and will not.">
+              Cancel
+            </Button>
+          )}
         </div>
         {v.detail !== undefined && <p className="eh-agent-op__detail">{v.detail}</p>}
         {v.steps !== undefined && (
