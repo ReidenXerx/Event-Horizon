@@ -1,7 +1,7 @@
 # Changelog
 
 Everything that changed in Event Horizon, newest first, written for the people who use it. Since the first commit
-in April 2026 that is about 390 changes across 152 builds.
+in April 2026 that is about 400 changes across 153 builds.
 
 Until 0.1.0-alpha.149 builds were numbered `0.1.0-alpha.N`. From **0.1.151** the build number is the patch number:
 Vortex ignores everything after the dash when it decides whether an extension has an update, so an alpha number
@@ -9,6 +9,35 @@ could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
+
+## [0.2.31] — 2026-10-03
+
+### Updates
+- **Event Horizon tells you when Vortex will never update it.** A copy installed by hand (downloaded from Nexus and
+  dropped in) has no link to its Nexus page, so Vortex never offers an update for it. Event Horizon now notices
+  when a newer version is out and you have such a copy, and offers to open its page so you can install it with the
+  Vortex button, which keeps it updated from then on. Two copies installed side by side are pointed out too.
+
+### Install
+- **An install no longer hangs when a mod's installer refuses.** A mod whose installer needs a plugin you do not
+  have stops with Vortex's own message, which names what is missing. Before, the install waited forever.
+- **A mod you downloaded by hand is checked against the file you picked.** For a mod you fetch yourself and point
+  Event Horizon at, the checks after install could not find that file again. They said "the archive is no longer on
+  disk" and reported the mod as broken without looking. Two players were told that about mods that were fine.
+- **Leftover files from the creator's tools no longer fail your install.** A `.bak` or `.tmp` file that a tool left
+  in a mod's folder, and that no download contains, is no longer something you are expected to have.
+- **A blocked install can be checked again.** Fixed the problem outside Event Horizon, for example by downloading
+  the Creation Club content? Press **Check again** instead of restarting Vortex.
+
+### For collection creators
+- **Tool leftovers stay out of your collection.** A `.bak` or `.tmp` file in a mod's folder that the mod's own
+  download does not contain is left out of the package, and the build report lists it. The questions about changed
+  mods no longer ask about these files, and their cards show what was left out. A `.bak` the mod's author ships is
+  kept.
+
+### Agents
+- **A change waiting in the queue can be cancelled**, from the Agents page or by the agent. A change already running
+  is never interrupted.
 
 ## [0.2.30] — 2026-10-02
 
