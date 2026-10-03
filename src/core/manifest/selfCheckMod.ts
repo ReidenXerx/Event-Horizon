@@ -30,6 +30,7 @@ import type { SevenZipApi } from "./sevenZip";
 import type { ArchiveListing } from "./archiveContents";
 import { listArchiveContents } from "./archiveContents";
 import { findOmissionLeads } from "./omissionLeads";
+import { findGeneratedFiles } from "./generatedFiles";
 import { type CaseMode, pathKey } from "../paths";
 import type { OmissionLead } from "./omissionLeads";
 import { expandFomodPlan, fomodRootOf } from "./expandFomodPlan";
@@ -173,6 +174,12 @@ export type SelfCheckReport = {
    * archive — see mirrorPayload.ts. Absent means it carries every file.
    */
   reproducibleInstall?: boolean;
+  /**
+   * Staged `.bak`/`.tmp` files a tool wrote, which the archive has no file of
+   * that name for (see generatedFiles.ts). Left out of every comparison above
+   * and, by the build, out of the package. Absent when there are none.
+   */
+  generated?: string[];
 };
 
 export type SelfCheckInput = {
@@ -356,16 +363,28 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
     };
   }
 
+  // A tool's leftovers are not the mod (generatedFiles.ts): set aside before
+  // anything is compared, so they neither count as unexplained nor reach the
+  // curator's per-mod question. The build leaves them out of the package.
+  const generated = findGeneratedFiles(input.staged.map((f) => f.path), listing);
+  const leftOut = new Set(generated);
+  const staged = generated.length === 0 ? input.staged : input.staged.filter((f) => !leftOut.has(f.path));
+  base.stagedCount = staged.length;
+
   // Containment first — it works for every mod and needs nothing but the
   // archive, so a failure further down still leaves a usable answer.
-  const containment = verifyStagingAgainstArchive(input.staged, listing);
+  const containment = verifyStagingAgainstArchive(staged, listing);
 
   // Containment answers "did these bytes come from the archive?"; this answers
   // the opposite question, "is anything from the archive missing?", and needs a
   // different matcher — see omissionLeads.ts. Returns nothing for archives with
   // a FOMOD script, which the replay below handles authoritatively instead.
-  const omission = findOmissionLeads(listing, input.staged.map((f) => f.path));
-  const withLeads = { ...base, omissionLeads: omission.leads };
+  const omission = findOmissionLeads(listing, staged.map((f) => f.path));
+  const withLeads = {
+    ...base,
+    omissionLeads: omission.leads,
+    ...(generated.length > 0 ? { generated } : {}),
+  };
 
   const configEntry = findModuleConfigEntry(listing);
   if (configEntry === undefined) {
@@ -412,7 +431,7 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
       archivePath: input.archivePath,
       configEntry,
       listing,
-      staged: input.staged,
+      staged: staged,
       /**
        * ─── ONLY THE *ADDED* ONES ──────────────────────────────────────────
        * Staged files the containment pass could not account for, split by
@@ -546,7 +565,7 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
         pluginState: input.pluginState,
         expanded: (specs) => expandFomodPlan(specs, listing, fomodRootOf(configEntry)).files,
         expectedKeys: new Set(expected.files.map((f) => key(f.path))),
-        staged: input.staged.map((f) => f.path),
+        staged: staged.map((f) => f.path),
         key,
       });
     }
@@ -555,7 +574,7 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
     return withDeps({ ...withLeads, depth: "containment", notes, ...unexplainedFacts(containment, listing) });
   }
 
-  const stagedPaths = new Set(input.staged.map((f) => key(f.path)));
+  const stagedPaths = new Set(staged.map((f) => key(f.path)));
   /**
    * ─── A RUNTIME'S FILE IS NEVER MISSING ───────────────────────────────
    * Verification skipping what a runtime writes is SETTLED — `isVolatileFile`

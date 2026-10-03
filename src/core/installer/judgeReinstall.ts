@@ -40,6 +40,7 @@ import {
 } from "../paths";
 
 import { listArchiveNativeFirst } from "../manifest/listArchive";
+import { hasGeneratedName } from "../manifest/generatedFiles";
 import { crc32File } from "../manifest/readZip";
 import {
   verifyStagingAgainstArchive,
@@ -146,7 +147,15 @@ export async function judgeReinstall(
   // file the curator recorded and the user lacks is an omission regardless of
   // any post-processing — and that is the failure this project was built to
   // catch. Never explained away.
-  if (input.missingFiles.length > 0 && input.postProcessed !== true) {
+  //
+  // One exception, and it goes to the archive rather than past it: a package
+  // built before generatedFiles.ts can have recorded a tool's `.bak`/`.tmp`
+  // (Ivy 1.0.37, `porcOverlays_en.txt.bak`). When EVERY missing file has such
+  // a name, the archive below decides, exactly as for a declared mod: a name
+  // it has is still a reinstall, a name it lacks is the curator's leftover.
+  const onlyGeneratedMissing =
+    input.missingFiles.length > 0 && input.missingFiles.every(hasGeneratedName);
+  if (input.missingFiles.length > 0 && input.postProcessed !== true && !onlyGeneratedMissing) {
     ehLog("info", "judge-reinstall.verdict", {
       kind: "reinstall",
       reason: "missing-files",

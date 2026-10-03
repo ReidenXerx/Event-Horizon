@@ -410,3 +410,39 @@ describe("a ZIP archive is read natively, with no 7z at all", () => {
     expect(judgement.kind).toBe("undecidable");
   });
 });
+
+describe("a tool's leftover recorded by an older package (generatedFiles.ts)", () => {
+  it("is the curator's, not a reinstall, when the archive has no such file", async () => {
+    // Ivy 1.0.37 recorded porcOverlays_en.txt.bak; no player could have it.
+    const judgement = await judgeReinstall({
+      missingFiles: ["Interface/Translations/porcOverlays_en.txt.bak"],
+      differingPaths: [],
+      stagingRoot: staging,
+      archivePath,
+      sevenZip: listing([{ path: "Interface/Translations/porcOverlays_en.txt", size: 10, crc: "aaaaaaaa" }]),
+    });
+    expect(judgement.kind).toBe("curator-only");
+  });
+
+  it("still reinstalls when the archive DOES ship that .bak", async () => {
+    const judgement = await judgeReinstall({
+      missingFiles: ["MCM/Config/X/settings.ini.bak"],
+      differingPaths: [],
+      stagingRoot: staging,
+      archivePath,
+      sevenZip: listing([{ path: "MCM/Config/X/settings.ini.bak", size: 10, crc: "aaaaaaaa" }]),
+    });
+    expect(judgement.kind).toBe("reinstall");
+  });
+
+  it("still reinstalls at once when anything else is missing too", async () => {
+    const judgement = await judgeReinstall({
+      missingFiles: ["x.txt.bak", "Data/lost.esp"],
+      differingPaths: [],
+      stagingRoot: staging,
+      archivePath,
+      sevenZip: listing([]),
+    });
+    expect(judgement).toMatchObject({ kind: "reinstall", archiveConsulted: false });
+  });
+});

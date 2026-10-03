@@ -2100,6 +2100,37 @@ export async function runBuildPipeline(
     selfCheckReports = selfCheck.reports;
     selfCheckArchives = selfCheck.archiveByModId;
 
+    // A tool's `.bak`/`.tmp` leftovers that no archive can produce
+    // (generatedFiles.ts): out of the package, so no player is ever expected
+    // to have them, and named in the build report so it is not a silent hole.
+    const generatedByMod = new Map(
+      selfCheck.reports
+        .filter((r) => (r.generated?.length ?? 0) > 0)
+        .map((r) => [r.modId, new Set(r.generated)] as const),
+    );
+    if (generatedByMod.size > 0) {
+      mods = mods.map((m) => {
+        const leftOut = generatedByMod.get(m.id);
+        return leftOut === undefined || m.stagingFiles === undefined
+          ? m
+          : { ...m, stagingFiles: m.stagingFiles.filter((f) => !leftOut.has(f.path)) };
+      });
+      const all = [...generatedByMod.values()].reduce((n, s) => n + s.size, 0);
+      const examples = selfCheck.reports
+        .flatMap((r) => (r.generated ?? []).map((p) => `${r.modName}: ${p}`))
+        .slice(0, 5);
+      ehLog("info", "build.generated-files.left-out", {
+        files: all,
+        mods: generatedByMod.size,
+        byMod: Object.fromEntries([...generatedByMod].map(([id, s]) => [id, [...s]])),
+      });
+      selfCheckWarnings = [
+        ...selfCheckWarnings,
+        `${all} generated file(s) left out of the package (.bak/.tmp a tool wrote, which no ` +
+          `mod archive contains): ${examples.join("; ")}${all > examples.length ? "; …" : ""}`,
+      ];
+    }
+
     /**
      * ─── ASK BEFORE PACKING ────────────────────────────────────────────
      * The question used to be asked on the Done card, after the package was

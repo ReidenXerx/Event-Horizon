@@ -452,3 +452,37 @@ describe("an installer inside a wrapper folder", () => {
     expect(r.reproducibleInstall).toBe(true);
   });
 });
+
+describe("a tool's leftovers in the curator's staging (generatedFiles.ts)", () => {
+  it("sets them aside: not unexplained, not counted, named in the report", async () => {
+    // Ivy 1.0.37: a tool wrote porcOverlays_en.txt.bak into PorcOverlays'
+    // staging. Before this it counted as unexplained and could ship.
+    const r = await selfCheckMod({
+      sevenZip: sevenZip([{ name: "PorcOverlays.esl", size: 5, crc: "33333333" }]),
+      modId: "porc", modName: "PorcOverlays",
+      archivePath: "a.7z",
+      staged: [
+        { path: "PorcOverlays.esl", size: 5, crc: "33333333" },
+        { path: "Interface/Translations/porcOverlays_en.txt.bak", size: 9, crc: "44444444" },
+      ],
+      recordedChoices: [],
+      readEntry: async () => undefined,
+    });
+    expect(r.generated).toEqual(["Interface/Translations/porcOverlays_en.txt.bak"]);
+    expect(r.unexplained).toBe(0);
+    expect(r.stagedCount).toBe(1);
+  });
+
+  it("keeps a .bak the archive ships, and still checks it", async () => {
+    const r = await selfCheckMod({
+      sevenZip: sevenZip([{ name: "settings.ini.bak", size: 5, crc: "55555555" }]),
+      modId: "m", modName: "M",
+      archivePath: "a.7z",
+      staged: [{ path: "settings.ini.bak", size: 6, crc: "66666666" }],
+      recordedChoices: [],
+      readEntry: async () => undefined,
+    });
+    expect(r.generated).toBeUndefined();
+    expect(r.unexplained).toBe(1);
+  });
+});
