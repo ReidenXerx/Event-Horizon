@@ -903,3 +903,50 @@ describe("mirroring, through the real driver", () => {
     expect((result as { kind?: string }).kind).not.toBe("failed");
   });
 });
+
+describe("a hand-supplied external archive is still there to consult afterwards", () => {
+  it("excuses a tool's .bak an older package recorded, by reading the file the user picked", async () => {
+    // Ivy 1.0.37, two players: PorcOverlays recorded porcOverlays_en.txt.bak,
+    // which no archive has. A mod with no installer answers goes through
+    // `start-install` from a path, which registers no Vortex download, so
+    // every archive check said "no longer on disk" and the mod was reported
+    // as unreproducible without its archive ever being opened.
+    const ESL = "an esl plugin";
+    world = makeWorld({
+      mods: [
+        {
+          id: "porc",
+          name: "PorcOverlays",
+          archiveSha256: "e".repeat(64),
+          files: {
+            "PorcOverlays.esl": ESL,
+            "Interface/Translations/porcOverlays_en.txt.bak": "ascii original",
+          },
+        },
+      ],
+    });
+    const manifest = await packageFrom(world);
+    const picked = path.join(world.root, "user-downloads", "PorcOverlays.zip");
+    fs.mkdirSync(path.dirname(picked), { recursive: true });
+    fs.writeFileSync(picked, makeZip([{ name: "PorcOverlays.esl", data: Buffer.from(ESL) }]));
+    const fake = makeFakeVortex({
+      gameId: world.gameId,
+      stagingRoot: world.stagingRoot,
+      installProduces: (id) => (id.startsWith("from-path:") ? { "PorcOverlays.esl": ESL } : undefined),
+    });
+
+    const result = (await install(manifest, fake, undefined, {
+      conflictChoices: { [manifest.mods[0]!.compareKey]: { kind: "use-local-file", localPath: picked } },
+    })) as {
+      kind: string;
+      verifications?: Array<{ kind: string; okReason?: string }>;
+      curatorReports?: string[];
+    };
+
+    expect(emitsOf(fake, "start-install")).toHaveLength(1);
+    expect(result.curatorReports ?? []).toEqual([]);
+    expect(result.verifications?.[0]).toMatchObject({ kind: "ok", okReason: "curator-only" });
+    // Judged, not reinstalled: one install only.
+    expect(fake.installed).toHaveLength(1);
+  });
+});

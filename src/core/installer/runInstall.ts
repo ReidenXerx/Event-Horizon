@@ -87,6 +87,7 @@ import { isAbort } from "../../utils/abortError";
 import { planInstallEpochs } from "../resolver/installEpochs";
 import { actions, types, util } from "@nexusmods/vortex-api";
 import { stagingRootForModId } from "../stagingPath";
+import { existsSync } from "fs";
 
 import {
   InstallLedgerError,
@@ -535,11 +536,29 @@ function listProfilesForGame(
   }
 }
 
+/**
+ * The file a hand-supplied external mod was installed from, by game and Vortex
+ * mod id.
+ *
+ * Vortex's `start-install` from a path, which `installFromLocalArchive` uses
+ * when a mod has no recorded installer answers, registers no download, so the
+ * mod it creates has no `archiveId` and `archivePathForMod` found nothing.
+ * Every archive-based check then said "the archive is no longer on disk":
+ * Ivy 1.0.37's PorcOverlays and Render Tattoos (2026-10-03, two players) were
+ * reported as unreproducible without the archive ever being opened. Kept for
+ * the life of the process; the file is checked for existence when read.
+ */
+const handSuppliedArchives = new Map<string, string>();
+
 function archivePathForMod(
   api: types.IExtensionApi,
   gameId: string,
   entry: InstalledModReportEntry,
 ): string | undefined {
+  const handSupplied = (): string | undefined => {
+    const p = handSuppliedArchives.get(`${gameId}/${entry.vortexModId}`);
+    return p !== undefined && existsSync(p) ? p : undefined;
+  };
   try {
     const state = api.getState();
     const mod = (
@@ -549,7 +568,7 @@ function archivePathForMod(
     )?.persistent?.mods?.[gameId]?.[entry.vortexModId] as
       | { archiveId?: string }
       | undefined;
-    if (mod === undefined) return undefined;
+    if (mod === undefined) return handSupplied();
     // (state, archiveId, gameId) — the order every other caller uses. This
     // read `getModArchivePath(state, gameId, mod as never)`, which handed the
     // gameId in as the archive id and the mod OBJECT in as the game, so the
@@ -561,9 +580,9 @@ function archivePathForMod(
     // consult the archive" → undecidable → reinstall, and checkArchiveIdentity
     // read it as "unknown". Both features were dead in production while their
     // unit tests — which pass the path in directly — stayed green.
-    return getModArchivePath(state, mod.archiveId, gameId) ?? undefined;
+    return getModArchivePath(state, mod.archiveId, gameId) ?? handSupplied();
   } catch {
-    return undefined;
+    return handSupplied();
   }
 }
 
@@ -6161,6 +6180,10 @@ async function executePromptUserChoice(args: {
     signal: ctx.abortSignal,
     ...replayArgs(manifestEntry, ctx.decisions.fomodReplayMode),
   });
+  handSuppliedArchives.set(
+    `${ctx.plan.manifest.game.id}/${result.vortexModId}`,
+    choice.localPath,
+  );
 
   return {
     compareKey,

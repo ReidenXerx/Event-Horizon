@@ -181,11 +181,23 @@ export function makeFakeVortex(args: {
         // route back to the archive on disk. Without it every archive-based
         // check — the reinstall judge, the identity check — degrades to "no
         // archive" and silently reinstalls instead.
-        archiveId,
+        //
+        // EXCEPT `start-install` from a path, which registers no download:
+        // the real mod has no archiveId. This double used to invent one
+        // (`from-path:…`), so the e2e suite could not see that every archive
+        // check was dead for a hand-supplied external mod (Ivy 1.0.37,
+        // 2026-10-03).
+        ...(archiveId.startsWith("from-path:") ? {} : { archiveId }),
         attributes: { name: vortexModId, version: "1.0.0" },
       };
 
       realEmit("did-install-mod", args.gameId, archiveId, vortexModId);
+      // A path install is matched by its callback, as on a real Vortex
+      // (`installManager.install(null, path, …, callback)`): with no
+      // archiveId, nothing else can tie the new mod to the file.
+      if (archiveId.startsWith("from-path:") && typeof cb === "function") {
+        (cb as (e: null, id: string) => void)(null, vortexModId);
+      }
     }, 0);
   };
 
