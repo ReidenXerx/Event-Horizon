@@ -55,6 +55,17 @@ describe("surviving a crash", () => {
     expect(found[0].totalMods).toBe(954);
   });
 
+  it("remembers the package file, so 'Run the install again' can open it", async () => {
+    // 2026-10-04: a player whose disk filled at 98% was sent to an empty
+    // Install page and did not know where the package was.
+    await writeInstallMarker(dir, marker({ packagePath: "D:\\Vortex\\downloads\\collection_dmt85e_8.zip" }));
+    expect((await listInterruptedInstalls(dir))[0].packagePath).toBe("D:\\Vortex\\downloads\\collection_dmt85e_8.zip");
+    // A marker from before the field existed reads back without one.
+    await writeInstallMarker(dir, marker({ packageId: "older" }));
+    const older = (await listInterruptedInstalls(dir)).find((m) => m.packageId === "older");
+    expect(older?.packagePath).toBeUndefined();
+  });
+
   it("records the profile the run left behind", async () => {
     // Without this the user cannot tell which of the profiles in their list
     // came from the interrupted run.

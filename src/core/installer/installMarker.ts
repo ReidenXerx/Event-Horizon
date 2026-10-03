@@ -59,6 +59,14 @@ export interface InstallMarker {
   gameId: string;
   /** How many mods the plan had, so "interrupted" can be given a scale. */
   totalMods: number;
+  /**
+   * The package file this run was installing from, so "Run the install
+   * again" can open it instead of an empty Install page. 2026-10-04: a player
+   * whose disk filled at 98% was sent to pick the package again and did not
+   * know where it was. Optional: older markers have none, and a file that has
+   * since been moved or deleted is simply not used.
+   */
+  packagePath?: string;
 }
 
 /** Markers live beside the receipts, in their own directory. */
@@ -210,6 +218,7 @@ function parseMarker(raw: unknown): InstallMarker | undefined {
     ...(typeof o.packageVersion === "string"
       ? { packageVersion: o.packageVersion }
       : {}),
+    ...(str(o.packagePath) !== undefined ? { packagePath: str(o.packagePath)! } : {}),
   };
 }
 

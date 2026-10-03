@@ -16,6 +16,7 @@
  * install driver.
  */
 
+import { existsSync } from "fs";
 import * as React from "react";
 import * as endorsePromptsSync from "../../core/feedback/endorsePrompts";
 import type { CollectionPlay } from "../../core/feedback/endorsePrompts";
@@ -144,7 +145,7 @@ export function CollectionsPage(props: CollectionsPageProps): JSX.Element {
  */
 export function InterruptedInstalls(props: {
   markers: readonly InstallMarker[];
-  onResume: () => void;
+  onResume: (marker: InstallMarker) => void;
 }): JSX.Element | null {
   if (props.markers.length === 0) return null;
   return (
@@ -161,7 +162,7 @@ export function InterruptedInstalls(props: {
             </span>
           }
           actions={
-            <Button intent="primary" size="sm" onClick={props.onResume}>
+            <Button intent="primary" size="sm" onClick={(): void => props.onResume(m)}>
               Run the install again
             </Button>
           }
@@ -834,7 +835,38 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
       {!installBusy && (
         <InterruptedInstalls
           markers={state.interrupted}
-          onResume={(): void => props.onNavigate("install")}
+          onResume={(m): void => {
+            // Open the same package straight away: the file this run used if
+            // it is still there, else the copy kept at install time (markers
+            // written before `packagePath` existed). Neither → the Install
+            // page asks for it, as before.
+            void (async (): Promise<void> => {
+              try {
+                let path = m.packagePath !== undefined && existsSync(m.packagePath) ? m.packagePath : undefined;
+                if (path === undefined && m.packageVersion !== undefined) {
+                  const { locateCollectionPackage } = await import("../../core/manifest/locatePackage");
+                  path = (
+                    await locateCollectionPackage({
+                      packageId: m.packageId,
+                      packageName: m.packageName,
+                      packageVersion: m.packageVersion,
+                    })
+                  )?.path;
+                }
+                if (path !== undefined) {
+                  const { getInstallSession } = await import("./install/installSession");
+                  getInstallSession().pickFile(api, path);
+                }
+              } catch (err) {
+                reportError(err, {
+                  title: "Couldn't reopen this collection's package",
+                  context: { step: "resume-interrupted", packageId: m.packageId },
+                });
+              } finally {
+                props.onNavigate("install");
+              }
+            })();
+          }}
         />
       )}
       <FailedAttempts

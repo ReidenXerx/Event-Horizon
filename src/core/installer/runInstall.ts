@@ -1458,6 +1458,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       profileId: activeProfileId,
       gameId: plan.manifest.game.id,
       totalMods: total,
+      packagePath: ctx.ehcollZipPath,
     });
 
     // The header a remote log needs to be readable at all: what was being
