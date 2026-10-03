@@ -1,0 +1,36 @@
+=== ARTICLE: Event Horizon - under the hood ===
+[size=4][b]Plain Vortex against Event Horizon[/b][/size]
+The Vortex side is read from Vortex 2.7's own source.
+[list]
+[*][b]Identity.[/b] Vortex: Nexus file id plus the archive's MD5; a mod set to "latest" installs whatever is newest. Event Horizon: the curator's exact file, with a SHA-256 of the archive and of every file it installs.[/*]
+[*][b]Installing.[/b] Vortex: up to five mods at once. Event Horizon: one at a time, then every one checked.[/*]
+[*][b]Checking.[/b] Vortex: trusts what the installer extracted. Event Horizon: re-hashes every installed file against the curator's record, repairs what differs, and names what it can't.[/*]
+[*][b]The curator's edits.[/b] Vortex: opt-in per mod (Replicate, binary patches). Event Horizon: finds every edited mod and ships it bundled (the exact folder, the same content hash on every build) or mirrored (the author's archive from Nexus plus the changed files, so the author keeps the download).[/*]
+[*][b]Load order.[/b] Vortex: which plugins are enabled, plus LOOT rules; LOOT sorts on your machine. Event Horizon: the curator's exact order and ESL flags, pinned; LOOT only places plugins of your own.[/*]
+[*][b]INI.[/b] Vortex: tweaks the curator writes by hand. Event Horizon: the curator's real game INI values, captured at build, minus the ones that describe their hardware.[/*]
+[*][b]Game version.[/b] Vortex: warns when yours differs. Event Horizon: reads which versions each script-extender plugin declares, and names the mods that won't load on yours.[/*]
+[*][b]Updates.[/b] Vortex: in place, in your current profile. Event Horizon: each revision builds its own profile; the one you play stays switchable until the new one works.[/*]
+[*][b]Around the install.[/b] Vortex: installs into the game folder as it is. Event Horizon: before any download, checks the store build, runtimes, protected and cloud-synced folders, and the Creation Club files your plugins need; quarantines stray game files (restorable, never deleted), and keeps a receipt the Doctor diffs your setup against and heals from.[/*]
+[/list]
+
+[size=4][b]Which mod wins a file[/b][/size]
+When two mods ship the same file, the winner comes from the collection's mod rules, which the install applies. Measured on a 1,753-mod collection, the rules reproduce the curator's winner for 17,159 of 17,161 contested files. The other two are a Readme.txt and a FOMod/info.xml, which the game never loads.
+
+[size=4][b]Fast hashing, measured[/b][/size]
+Every check Event Horizon makes hashes files: building a collection, verifying an install, the Doctor, matching downloads. That hashing used to run inside Vortex's own process, on the one thread that also runs Vortex's whole window. Now Event Horizon hashes with its own pipeline: background workers on every core but one, outside Vortex, so Vortex's window stays responsive.
+[list]
+[*][b]Measured on the real 1,751-mod Meridia's Panties collection[/b], full re-hash. Before, inside Vortex: 356,676 files in 47 minutes (126 files a second). Now: 320,986 files in 1 minute 25 seconds (3,776 files a second).[/*]
+[*][b]33x less waiting, and 30x more files a second.[/b] Throughput reaches 3 GB/s off the disk, where it used to be about 3 MB/s with the disk sitting idle.[/*]
+[*][b]Same checksums, byte for byte.[/b] Everything already built or installed stays valid. There's nothing to set up, and if the workers can't start, Event Horizon hashes the old way.[/*]
+[/list]
+
+[size=4][b]What the download holds[/b][/size]
+No executable, no DLL, no native code. The download is the JavaScript that Vortex loads. Checked against the 0.2.19 archive, it holds script files, their source maps, Vortex's info.json, a licence and one icon. The programs it ever starts are ones you already have: your game, through Vortex's own launcher; Vortex's own 7-Zip; Windows' reg.exe, to read which runtimes are installed. The other program is Microsoft's runtime installers, downloaded from Microsoft, only when you press [i]Install the missing ones[/i].
+
+The VirusTotal badge on the page is generated from the scan and names the build it covers (0.2.19 when this article was written).
+
+[size=4][b]Agents, in 0.2.17 and 0.2.19[/b][/size]
+[list]
+[*]0.2.17: connect an AI assistant to Vortex and ask for the modding in plain words (the Agents page).[/*]
+[*]0.2.19: AI agents can build a collection and upload it to Nexus as a draft. There is no publish tool: publishing stays the curator's click. Agents can answer Vortex's External Changes question. A switched-off bundled mod no longer stops a build.[/*]
+[/list]
