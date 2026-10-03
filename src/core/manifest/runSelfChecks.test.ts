@@ -101,3 +101,40 @@ describe("a mod whose archive cannot be read", () => {
     ).toEqual([]);
   });
 });
+
+describe("a tool's leftovers on the decision card (generatedFiles.ts)", () => {
+  const report = (over: Record<string, unknown>) =>
+    ({
+      modId: "porc",
+      modName: "PorcOverlays",
+      depth: "containment",
+      notes: [],
+      missing: [],
+      unexplained: 0,
+      unexplainedExamples: [],
+      omissionLeads: [],
+      stagedCount: 3,
+      expectedCount: 0,
+      ...over,
+    }) as never;
+
+  it("asks nothing about a mod whose only difference was a .bak a tool wrote", () => {
+    const out = findPostProcessingCandidates([report({ generated: ["x/porcOverlays_en.txt.bak"] })], new Map());
+    expect(out).toEqual([]);
+  });
+
+  it("shows what was set aside on a card that is asked for other reasons", () => {
+    const out = findPostProcessingCandidates(
+      [
+        report({
+          unexplained: 1,
+          unexplainedExamples: [{ path: "x/porcOverlays_en.txt", kind: "modified" }],
+          unexplainedFingerprint: "f",
+          generated: ["x/porcOverlays_en.txt.bak"],
+        }),
+      ],
+      new Map(),
+    );
+    expect(out[0]).toMatchObject({ generated: ["x/porcOverlays_en.txt.bak"], generatedCount: 1, unexplained: 1 });
+  });
+});

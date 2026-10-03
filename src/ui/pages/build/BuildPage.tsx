@@ -3229,6 +3229,37 @@ function PostProcessingDecisions(props: {
                 </div>
               )}
 
+              {/*
+                What the build already set aside on its own: a tool's .bak/.tmp
+                that no archive has (generatedFiles.ts). Shown so the curator
+                knows they are not part of this question, and not shipped.
+              */}
+              {(c.generatedCount ?? 0) > 0 && (
+                <div className="eh-stack eh-stack--xs">
+                  <p className="eh-body">
+                    {c.generatedCount} file{c.generatedCount === 1 ? "" : "s"} a
+                    tool wrote {c.generatedCount === 1 ? "is" : "are"} left out
+                    on {c.generatedCount === 1 ? "its" : "their"} own: no archive
+                    has {c.generatedCount === 1 ? "it" : "them"}, nobody
+                    installing needs {c.generatedCount === 1 ? "it" : "them"}, and
+                    this answer does not cover {c.generatedCount === 1 ? "it" : "them"}.
+                  </p>
+                  <ul className="eh-inset eh-inset--deep eh-list eh-list--inset eh-mono">
+                    {(c.generated ?? []).map((p) => (
+                      <li key={`generated:${p}`}>
+                        {p}
+                        <span className="eh-muted">{" — left out"}</span>
+                      </li>
+                    ))}
+                    {c.generatedCount! > (c.generated ?? []).length && (
+                      <li className="eh-list__more">
+                        and {c.generatedCount! - (c.generated ?? []).length} more
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              )}
+
               {settledAs !== undefined && !changing.has(c.modId) ? (
                 <div className="eh-row">
                   <Pill intent="neutral">

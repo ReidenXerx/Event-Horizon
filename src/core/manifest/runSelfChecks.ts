@@ -216,6 +216,15 @@ export type PostProcessingCandidate = {
   removed: string[];
   removedCount: number;
   /**
+   * A tool's `.bak`/`.tmp` leftovers in this mod's folder, which the build
+   * leaves out on its own (generatedFiles.ts). Shown on the card so the
+   * curator sees what was set aside and is not asked to answer for it: they
+   * are not in `unexplained`, `files` or the fingerprint. Capped for display;
+   * `generatedCount` is the real number. Absent when there are none.
+   */
+  generated?: string[];
+  generatedCount?: number;
+  /**
    * A few of them, classified, so the answer comes from looking.
    *
    * Not bare paths: a path cannot tell the curator whether declaring means the
@@ -631,6 +640,12 @@ export function findPostProcessingCandidates(
           unexplained: r.unexplained,
           removed: removedFiles(r).slice(0, REMOVED_EXAMPLES),
           removedCount: removedFiles(r).length,
+          ...((r.generated?.length ?? 0) > 0
+            ? {
+                generated: r.generated!.slice(0, REMOVED_EXAMPLES),
+                generatedCount: r.generated!.length,
+              }
+            : {}),
           // Every staged file unexplained ⇒ nothing of this mod survives a
           // plain install. `stagedCount > 0` because a mod that stages no
           // files at all is a different (and harmless) shape.
