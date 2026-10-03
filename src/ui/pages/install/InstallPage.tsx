@@ -277,6 +277,7 @@ function InstallWizard(props: InstallPageProps): JSX.Element {
             onAcknowledgeVersion={(a): void => session.acknowledgeVersion(a)}
             onContinue={(): void => session.openDecisionsFromPreview()}
             onCancel={(): void => session.reset()}
+            onCheckAgain={(): void => session.pickFile(api, state.bundle.zipPath)}
           />
         </>
       );

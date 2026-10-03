@@ -2141,6 +2141,38 @@ describe("render", () => {
     );
   });
 
+  it("preview — blocked, with a way to check again without restarting Vortex", () => {
+    // 2026-10-03: a player bought the Anniversary Upgrade mid-install and the
+    // "missing Creation Club files" block stayed until he restarted Vortex.
+    const base = bundle as unknown as { plan: Record<string, unknown> & { summary: Record<string, unknown> } };
+    const blocked = {
+      ...(bundle as unknown as Record<string, unknown>),
+      plan: { ...base.plan, summary: { ...base.plan.summary, canProceed: false } },
+    } as never;
+    const html = write(
+      "preview-blocked",
+      React.createElement(PreviewStep, {
+        bundle: blocked,
+        onContinue: () => undefined,
+        onCancel: () => undefined,
+        onCheckAgain: () => undefined,
+      } as never),
+    );
+    expect(html).toContain("Cannot install");
+    expect(html).toContain("Check again");
+    const open = renderToStaticMarkup(
+      shell(
+        React.createElement(PreviewStep, {
+          bundle,
+          onContinue: () => undefined,
+          onCancel: () => undefined,
+          onCheckAgain: () => undefined,
+        } as never),
+      ),
+    );
+    expect(open).not.toContain("Check again");
+  });
+
   it("collections — installed collections with and without a design", () => {
     const receipt = {
       packageId: "ivy",

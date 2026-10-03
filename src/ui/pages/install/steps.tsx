@@ -693,6 +693,14 @@ export interface PreviewStepProps {
   onAcknowledgeVersion?: (acknowledged: boolean) => void;
   onContinue: () => void;
   onCancel: () => void;
+  /**
+   * Load the same package again, so a fix made outside (a store download, a
+   * game started once, a Vortex setting) is seen without restarting Vortex.
+   * 2026-10-03: a player bought the Anniversary Upgrade mid-install, and the
+   * "missing Creation Club files" block stayed until he restarted Vortex,
+   * because the check ran once when the plan loaded.
+   */
+  onCheckAgain?: () => void;
 }
 
 /**
@@ -1111,6 +1119,15 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
         <Button intent="ghost" onClick={onCancel}>
           Cancel
         </Button>
+        {!verdict.canProceed && props.onCheckAgain !== undefined && (
+          <Button
+            intent="ghost"
+            onClick={props.onCheckAgain}
+            title="Fixed it outside Event Horizon? Load this collection again and re-run every check."
+          >
+            Check again
+          </Button>
+        )}
         <Button
           intent="primary"
           onClick={onContinue}
