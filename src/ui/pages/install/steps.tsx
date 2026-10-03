@@ -1613,7 +1613,17 @@ function ConflictRow(props: {
     const expected = decision.expectedSha256;
     if (expected === undefined) {
       // Identity falls back to the staging-set hash for these, which cannot
-      // be known before installing. Claiming anything here would be a guess.
+      // be known before installing. Claiming anything here would be a guess —
+      // but saying NOTHING read as "still waiting" (2026-10-04: a player
+      // picked PorcPubes three times, sure it had not been taken). Say what
+      // happened and when the check comes.
+      setIdentity({
+        state: "done",
+        ok: true,
+        text:
+          "Taken. This collection recorded this mod's installed files rather than its download, " +
+          "so Event Horizon checks them right after it installs, not now.",
+      });
       return;
     }
     setIdentity({ state: "checking" });
@@ -1739,6 +1749,13 @@ function ConflictRow(props: {
                 : `Expected filename: ${decision.expectedFilename}`
             }
           />
+          {value?.kind === "use-local-file" && (
+            <div className="eh-row">
+              <Button intent="ghost" size="sm" onClick={(): void => void handlePickFile()}>
+                Choose another file…
+              </Button>
+            </div>
+          )}
           {identity !== undefined && value?.kind === "use-local-file" && (
             <Callout
               tone={

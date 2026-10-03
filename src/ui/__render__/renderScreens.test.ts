@@ -2356,6 +2356,27 @@ describe("render", () => {
         } as never),
       }),
     );
+
+    // 2026-10-04: once a file was picked, the only way to pick another was to
+    // tick Skip and back. A picked row now offers it directly.
+    const picked = write(
+      "decisions-picked",
+      React.createElement(ApiProvider, {
+        api: { getState: () => ({}) } as never,
+        children: React.createElement(DecisionsStep, {
+          state: {
+            kind: "decisions",
+            bundle: conflictBundle,
+            conflictChoices: { "ext:0": { kind: "use-local-file", localPath: "D:/Downloads/ExternalMod0.7z" } },
+            orphanChoices: {},
+          },
+          dispatch: () => undefined,
+          onContinue: () => undefined,
+        } as never),
+      }),
+    );
+    expect(picked).toContain("Picked: D:/Downloads/ExternalMod0.7z");
+    expect(picked.match(/Choose another file/g)).toHaveLength(1);
   });
 
 
