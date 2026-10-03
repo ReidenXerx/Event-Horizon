@@ -43,6 +43,8 @@ const NOT_A_CLASS = new Set([
   "eh-mod-diff-file-select", // a Field's element id on the diff pages
   "eh-diff-file-select",
   "eh-installed", // a mod's `owner` value in control-channel replies (Agents feed)
+  "eh-manual-install-behind", // Vortex notification id (selfUpdateCheck.ts)
+  "eh-duplicate-install", // Vortex notification id (selfUpdateCheck.ts)
 ]);
 
 /** A class named only in a comment is not declared and not referenced. */
