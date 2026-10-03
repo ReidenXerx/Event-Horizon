@@ -1,10 +1,12 @@
+[center][url=https://ko-fi.com/duduphudu][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-anatomy@6e50d8308b73ca15df0469604f39b03332242391/docs/img/support-kofi.png[/img][/url] [url=https://www.paypal.com/donate/?business=motet.volutes.5a@icloud.com&no_recurring=0&currency_code=USD][img]https://cdn.jsdelivr.net/gh/ReidenXerx/fo4-anatomy@6e50d8308b73ca15df0469604f39b03332242391/docs/img/support-paypal.png[/img][/url]
+[size=1]PayPal: motet.volutes.5a@icloud.com[/size][/center]
 [size=1]Comments here are also answered by Dudu's Butt, my own AI model: it handles your questions and brings bug reports straight to me.[/size]
 [center][url=https://discord.gg/H9yqPhjuY5][img]https://img.shields.io/discord/1273646070215348375?style=for-the-badge&labelColor=2b2b2b&logo=discord&logoColor=white&color=5865F2&label=Dudu%27s%20Den[/img][/url]
 [b][url=https://discord.gg/H9yqPhjuY5]Join Dudu's Den on Discord[/url][/b]: news, help and a chat with the people who play these mods.[/center]
 
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/hero.jpg[/img][/center]
 
-[center][size=4][b]A Vortex extension that installs a collection exactly as its curator built it — every archive checked by hash, the load order pinned — and then keeps it that way.[/b][/size][/center]
+[center][size=4][b]Big Vortex collections can install wrong: files go missing, and the load order gets shuffled. Event Horizon installs a collection exactly as its creator built it, checks every file, and then keeps it that way.[/b][/size][/center]
 
 [center]
 [url=https://github.com/ReidenXerx/Event-Horizon/actions/workflows/tests.yml][img]https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FReidenXerx%2FEvent-Horizon%2Fbadges%2Ftests.json&style=for-the-badge&labelColor=2b2b2b&logo=vitest&logoColor=white[/img][/url] [url=https://www.virustotal.com/gui/file/d36f24458dc5cba1d84e2a095f0ed586b7bd80a6e7a5109684651d79370c45f5][img]https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FReidenXerx%2FEvent-Horizon%2Fmaster%2Fdocs%2Fvt-badge.json&style=for-the-badge&labelColor=2b2b2b&logo=virustotal&logoColor=white[/img][/url] [url=https://github.com/ReidenXerx/Event-Horizon/blob/master/LICENSE][img]https://img.shields.io/badge/license-PolyForm%20Strict%201.0.0-blue?style=for-the-badge&labelColor=2b2b2b[/img][/url] [url=https://github.com/ReidenXerx/Event-Horizon][img]https://img.shields.io/badge/source-GitHub-181717?style=for-the-badge&labelColor=2b2b2b&logo=github&logoColor=white[/img][/url]
@@ -14,28 +16,76 @@
 
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/divider.png[/img][/center]
 
+[size=5][b][color=#ffb15c]In short[/color][/b][/size]
+
+[b]What you get[/b]
+[list]
+[*]Install a whole Nexus collection of hundreds of mods, one mod at a time, with every download checked against the creator's.[/*]
+[*]The creator's plugin order stays in place. If Vortex's sorting breaks it, you get a notification with the fix.[/*]
+[*]The Collection Doctor checks your setup at any time and repairs what it can with one click.[/*]
+[*]Your plugin list is saved, so if Fallout 4 AE's own load-order manager wipes it, one click brings it back.[/*]
+[*]Optional: tell an AI assistant such as Claude what you want, and it does the modding in Vortex for you.[/*]
+[*]For collection creators: one workbench to see the whole profile, then build, upload and update a collection.[/*]
+[/list][b]What you need[/b]: Vortex 2.x, one of the supported games (Skyrim Special Edition, Fallout 4, Fallout 3, Fallout: New Vegas, Starfield), and Hardlink deployment turned on in Vortex.
+[b]How it goes[/b]: download the file here, drop it onto Vortex's Extensions page, restart Vortex. Nothing to set up. Step by step: [b]Installation[/b], below.
+
+[size=5][b]What it is[/b][/size]
+
+Event Horizon is an extension for Vortex, the mod manager. It has two sides. If you [b]play[/b] collections, it installs them one mod at a time, proves every file matches what the creator had, and keeps the creator's plugin order. Its Doctor tells you the moment something changes. If you [b]make[/b] collections, it gives you a workbench that sees the whole profile at once, reads what every mod needs, and packs the exact working setup into a collection.
+
+[quote][b]A Vortex collection:[/b] "Here are the mods. Install them."
+[b]An Event Horizon collection:[/b] "Here is the exact state that worked. Rebuild it, and prove it matches."[/quote][b]How it works:[/b] [url=https://www.nexusmods.com/site/articles/251]Event Horizon - under the hood →[/url]
+
+[b]Collections live on Nexus.[/b] Press [i]Add collection[/i] on an Event Horizon collection's Nexus page and Event Horizon opens its install. When the creator publishes a new version, you are offered the update when Vortex starts. It installs into its own profile, so the version you were playing stays one click away.
+
+[b]A new look.[/b] Home is a dashboard now: the collection you are playing, how healthy it is, what your game is made of and what modding costs your disk.
+
+[b]A different game version is a warning, not a wall.[/b] If the creator played on another version of the game, you are told exactly which mods care, and you decide.
+
+[b]A wiped plugin list is caught.[/b] Fallout 4 AE's own load-order manager can empty the shared plugins.txt, and Vortex then takes that empty list into your profiles. Event Horizon remembers each profile's last good plugin list and, when nearly everything suddenly turns off, offers to restore it with one click.
+
+[b]Missing runtimes, found and fixed.[/b] Script-extender plugins, xEdit and ENB need some Microsoft runtimes. Event Horizon checks for them before an install and in the Doctor, with a button that installs the missing ones.
+[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/players.jpg[/img][/center]
+
+[center][url=https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-home.jpg][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-home.jpg[/img][/url][/center]
+[center][i]Home: the collection you are playing, its health, and what it is made of.[/i][/center]
+
+[size=4][b]Installing a collection[/b][/size]
+[list]
+[*][b]Your game setup is checked first.[/b] If the game is unmanaged, was never started, has a file from another store's copy, or sits under Program Files, the install stops at once with the steps to fix it. You don't find out an hour in.[/*]
+[*][b]You see the plan before anything changes.[/b] What you already have, what installs by itself, what needs you, and what can no longer be downloaded. It comes under the creator's own banner, screenshots and About page.[/*]
+[*][b]One mod at a time, every download checked.[/b] Vortex can lose files when hundreds of mods install at once, so Event Horizon installs them one by one. It matches each download to the creator's by SHA-256, a fingerprint of the file. The creator's installer answers are replayed. You choose once whether to watch them or let them apply.[/*]
+[*][b]Proof at the end.[/b] Every installed file is checked against the creator's, and the finished install says how many.[/*]
+[*][b]Interrupted? It carries on.[/b] Even after Vortex was killed, the install continues where it stopped, in the same profile. Every ending leaves a record under [b]My Collections[/b].[/*]
+[/list][center][url=https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-preview.jpg][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-preview.jpg[/img][/url][/center]
+
+[center][url=https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-done.jpg][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-done.jpg[/img][/url][/center]
+
+[size=4][b]The load order stays the creator's[/b][/size]
+
+The install keeps the creator's plugin order for the collection's plugins. LOOT, the sorting tool, places only your own plugins between them. Afterwards Event Horizon keeps watching. If Vortex's automatic sort or a Sort click replaces that order, a notification tells you, with the fix on it.
+
+[center][url=https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-loadorder.jpg][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-loadorder.jpg[/img][/url][/center]
+
+[size=4][b]The Collection Doctor[/b][/size]
+
+Is this collection still what was installed? The Doctor checks the profile, the mods, which are enabled, the files on disk, plugin order, ESL flags, mod rules and LOOT rules. Each one has its own card, and "not checked" is never shown as "fine". Every problem that can be repaired has its repair button on the card. What you add on top is yours: your own rules are counted, not flagged.
+
+[center][url=https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-doctor.jpg][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-doctor.jpg[/img][/url][/center]
+
+If something goes wrong, open the [b]Doctor[/b] and press [b]Save logs…[/b]. It puts Vortex's and Event Horizon's logs, the install records and your script extender's log into one zip. Attach that to a bug report.
+
+[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/divider.png[/img][/center]
+
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@129d1ebfdb531d4b9f8cae6cc0b838f34f3d16d4/docs/img/hashing.jpg[/img][/center]
 
-[size=5][b][color=#ffb15c]New in 0.2.19: 33× faster hashing, with Event Horizon's own pipeline[/color][/b][/size]
+[size=5][b][color=#ffb15c]Fast checking[/color][/b][/size]
 
-Every check Event Horizon makes hashes files: building a collection, verifying an install, the Doctor, matching downloads. That hashing used to run inside Vortex's own process, on the one thread that also runs Vortex's whole window. Now Event Horizon hashes with its own pipeline: background workers on every core but one, outside Vortex, so Vortex's window stays responsive.
-
-[list]
-[*][b]Measured on the real 1,751-mod Meridia's Panties collection[/b], full re-hash. Before, inside Vortex: 356,676 files in 47 minutes (126 files a second). Now: 320,986 files in 1 minute 25 seconds (3,776 files a second).[/*]
-[*][b]33× less waiting, and 30× more files a second.[/b] Throughput reaches 3 GB/s off the disk, where it used to be about 3 MB/s with the disk sitting idle.[/*]
-[*][b]Same checksums, byte for byte.[/b] Everything already built or installed stays valid. There's nothing to set up, and if the workers can't start, Event Horizon hashes the old way.[/*]
-[/list]
-
-[b]Also in 0.2.19:[/b]
-[list]
-[*]AI agents can build a collection and upload it to Nexus as a draft. There is no publish tool: publishing stays the curator's click.[/*]
-[*]Agents can answer Vortex's External Changes question.[/*]
-[*]A switched-off bundled mod no longer stops a build.[/*]
-[/list]
+Every check Event Horizon makes reads and fingerprints files: building a collection, verifying an install, the Doctor, matching downloads. Event Horizon does that work in its own background workers, outside Vortex, so Vortex's window stays responsive. On the real 1,751-mod Meridia's Panties collection, a full re-check went from 47 minutes to 1 minute 25 seconds, about 33 times faster. The checksums are exactly the same as before, so everything already built or installed stays valid. Nothing to set up. If the workers can't start, Event Horizon falls back to the old way. The measurements are in the article.
 
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1b5429109c2dff50192aed3d38c3597ba4aeb995/docs/img/agents-hero.jpg[/img][/center]
 
-[size=5][b][color=#ffb15c]New in 0.2.17: tell an AI what you want, and it does the modding[/color][/b][/size]
+[size=5][b][color=#ffb15c]Tell an AI what you want, and it does the modding[/color][/b][/size]
 
 Connect an AI assistant such as Claude to Vortex, then say what you want in plain words. It does the work in Vortex and explains it as it goes, so a newcomer doesn't need to know what a FOMOD, a master or a load order is.
 
@@ -48,158 +98,84 @@ Connect an AI assistant such as Claude to Vortex, then say what you want in plai
 [*][i]"My game crashes when I load a save. Find out why and fix it."[/i][/*]
 [*][i]"Make this texture mod win over the other one."[/i][/*]
 [*][i]"Turn off every mod that changes the body, I want to test without them."[/i][/*]
-[/list]
-
-[size=4][b]What it does[/b][/size]
+[/list][size=4][b]What it does[/b][/size]
 [list]
-[*][b]Reads an installer before it installs.[/b] It sees every page and option of a FOMOD first, flags the options that need mods you don't have, and answers the installer by name.[/*]
+[*][b]Reads an installer before it installs.[/b] It sees every page and option of a FOMOD (a mod's install menu) first, flags the options that need mods you don't have, and answers the installer by name.[/*]
 [*][b]Hunts crashes.[/b] It reads the newest crash log and your F4SE or SKSE logs, finds the mod or plugin they name, explains it simply, and proposes the fix.[/*]
-[*][b]Settles conflicts properly.[/b] File conflicts get rules, and a plugin order that has to survive sorting becomes a LOOT rule.[/*]
+[*][b]Settles conflicts properly.[/b] When two mods ship the same file, it sets a rule for which wins. A plugin order that has to survive sorting becomes a LOOT rule.[/*]
 [*][b]Brings a wiped load order back.[/b] If your plugin list gets emptied, it restores the last good one.[/*]
 [*][b]Shows its work.[/b] The Agents page lists every command live: what it did, what was verified, and which installer questions it answered for you.[/*]
-[/list]
-
-[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1b5429109c2dff50192aed3d38c3597ba4aeb995/docs/img/agents-measured.jpg[/img][/center]
+[*][b]Builds collections.[/b] It can build a collection and upload it to Nexus as a draft. There is no publish tool: publishing stays the creator's click. It can also answer Vortex's External Changes question.[/*]
+[/list][center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1b5429109c2dff50192aed3d38c3597ba4aeb995/docs/img/agents-measured.jpg[/img][/center]
 
 [size=4][b]What keeps it safe[/b][/size]
 [list]
 [*][b]Nothing is claimed that wasn't checked.[/b] Every change is read back from Vortex before it's reported done.[/*]
 [*][b]It asks before removing anything[/b], never touches the game while it runs, and never moves a game folder that still has mods deployed.[/*]
-[*][b]It refuses a silent replace.[/b] An install that Vortex would quietly turn into a replace in every profile is refused, and the refusal says why.[/*]
+[*][b]It refuses a silent replace.[/b] If Vortex would quietly turn an install into a replace in every profile, Event Horizon refuses, and says why.[/*]
 [*][b]Off until you turn it on.[/b] It works only on this PC, needs a key that changes every time Vortex starts, and refuses web pages.[/*]
-[/list]
-
-[center][url=https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1b5429109c2dff50192aed3d38c3597ba4aeb995/docs/img/shot-agents.jpg][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1b5429109c2dff50192aed3d38c3597ba4aeb995/docs/img/shot-agents.jpg[/img][/url][/center]
+[/list][center][url=https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1b5429109c2dff50192aed3d38c3597ba4aeb995/docs/img/shot-agents.jpg][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1b5429109c2dff50192aed3d38c3597ba4aeb995/docs/img/shot-agents.jpg[/img][/url][/center]
 [center][i]The Agents page: connect in one click, then watch every change it makes, verified.[/i][/center]
-
-[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/divider.png[/img][/center]
-
-[size=5][b][color=#ffb15c]Built in public, and nothing to run but JavaScript[/color][/b][/size]
-[list]
-[*][b]No executable, no DLL, no native code.[/b] The download is the JavaScript that Vortex loads: checked against the 0.2.19 archive, it holds script files, their source maps, Vortex's info.json, a licence and one icon. The programs it ever starts are ones you already have — your game, through Vortex's own launcher; Vortex's own 7-Zip; Windows' reg.exe, to read which runtimes are installed — and Microsoft's runtime installers, downloaded from Microsoft, only when you press [i]Install the missing ones[/i].[/*]
-[*][b]Every line is readable:[/b] [url=https://github.com/ReidenXerx/Event-Horizon]github.com/ReidenXerx/Event-Horizon[/url]. [b]Every push runs the whole test suite in public[/b] on GitHub Actions, and the tests badge above is that run's live count, not a number anybody typed.[/*]
-[*][b]Scanned on VirusTotal.[/b] The badge is generated from the scan and names the build it covers — today that is 0.2.19 — and turns red by itself if the result ever changes.[/*]
-[/list]
-[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/divider.png[/img][/center]
-
-[size=5][b]What it is[/b][/size]
-
-Event Horizon is a Vortex extension in two halves. [b]Curators[/b] get a workbench that sees the whole profile at once, reads what every mod needs, and packs the exact working setup into a package. [b]Players[/b] get an installer that rebuilds that setup one mod at a time, proves every archive matches, pins the curator's load order — and a Doctor that says so the moment anything drifts.
-
-[quote][b]A Vortex collection:[/b] "Here are the mods. Install them."
-[b]An Event Horizon collection:[/b] "Here is the exact state that worked. Rebuild it, and prove it matches."[/quote]
-
-[size=4][b][color=#ffb15c]New in the 0.2 beta[/color][/b][/size]
-[list]
-[*][b]Collections live on Nexus.[/b] Press [i]Add collection[/i] on an Event Horizon collection's Nexus page and Event Horizon opens its install. When the curator publishes a new revision, you are offered the update when Vortex starts and on the collection's card, and it installs into its own profile, so the version you were playing stays one click away.[/*]
-[*][b]A new look.[/b] Home is a dashboard now: the collection you are playing, how healthy it is, what your game is made of and what modding costs your disk.[/*]
-[*][b]A different game version is a warning, not a wall.[/b] If the curator played on another version of the game, you are told exactly which mods care, and you decide.[/*]
-[*][b]A wiped plugin list is caught.[/b] Fallout 4 AE's own load-order manager can empty the shared plugins.txt, and Vortex then takes that empty list into your profiles. Event Horizon remembers each profile's last good plugin list and, when nearly everything suddenly turns off, offers to restore it with one click.[/*]
-[*][b]Missing runtimes, found and fixed.[/b] The Microsoft runtimes that script-extender plugins, xEdit and ENB need are checked before an install and in the Doctor, with a button that installs the missing ones.[/*]
-[/list]
-[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/players.jpg[/img][/center]
-
-[center][url=https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-home.jpg][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-home.jpg[/img][/url][/center]
-[center][i]Home: the collection you are playing, its health, and what it is made of.[/i][/center]
-
-[size=4][b]Installing a collection[/b][/size]
-[list]
-[*][b]Your game setup is checked first.[/b] An unmanaged game, a game that was never started, a file from another store's copy, an install under Program Files — the install stops with the steps to fix it, not an hour in.[/*]
-[*][b]The plan before anything changes.[/b] What you already have, what installs by itself, what needs you, what can no longer be downloaded — shown under the curator's own banner, screenshots and About page.[/*]
-[*][b]One mod at a time, every archive checked.[/b] Vortex can lose files when hundreds of mods install at once, so Event Horizon installs them one by one, and matches each download to the curator's by SHA-256. The curator's installer answers are replayed; you choose once whether to watch them or let them apply.[/*]
-[*][b]Proof at the end.[/b] Every installed file is checked against the curator's, and the finished install says how many.[/*]
-[*][b]Interrupted? It carries on.[/b] Even after Vortex was killed, the install continues where it stopped, in the same profile. Every ending leaves a record under [b]My Collections[/b].[/*]
-[/list]
-[center][url=https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-preview.jpg][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-preview.jpg[/img][/url][/center]
-
-[center][url=https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-done.jpg][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-done.jpg[/img][/url][/center]
-
-[size=4][b]The load order stays the curator's[/b][/size]
-
-The install pins the curator's order for the collection's plugins, lets LOOT place your own plugins between them, and puts the collection's plugins back in the curator's sequence. Afterwards Event Horizon keeps watching: the moment Vortex's automatic sort or a Sort click replaces that order, a notification tells you, with the fix on it.
-
-[center][url=https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-loadorder.jpg][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-loadorder.jpg[/img][/url][/center]
-
-[size=4][b]The Collection Doctor[/b][/size]
-
-Is this collection still what was installed? The profile, the mods, which are enabled, the files on disk, plugin order, ESL flags, mod rules and LOOT rules are each checked on their own card — and "not checked" is never shown as "fine". Every problem that can be repaired has its repair on the card, run through the same step the install used. What you add on top is yours: your own rules are counted, not flagged.
-
-[center][url=https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-doctor.jpg][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-doctor.jpg[/img][/url][/center]
-
-If something goes wrong, open the [b]Doctor[/b] and press [b]Save logs…[/b]: it puts Vortex's and Event Horizon's logs, the install records and your script extender's log into one zip. Attach that to a bug report.
 
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/divider.png[/img][/center]
 
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/curators.jpg[/img][/center]
 
+[size=5][b][color=#ffb15c]For collection creators[/color][/b][/size]
+
 [center][url=https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-curator.jpg][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-curator.jpg[/img][/url][/center]
 
 [size=4][b]Curator Tools[/b][/size]
 [list]
-[*][b]One workbench for the whole profile.[/b] Updates, manual updates, frozen mods, missing requirements, mods others depend on, duplicates, disabled mods, plugins, and downloads nothing was ever made from — in one table. Views combine, a search box finds a mod, a requirement or a plugin by name, and the action bar offers only what applies to what you ticked.[/*]
-[*][b]Requirements, read and acted on.[/b] Every mod's Nexus requirements and every plugin's masters, resolved against your pool: satisfied, installed but disabled, missing, off Nexus, DLC — each with the one action that fits.[/*]
-[*][b]Make it work.[/b] One button reads the whole chain of what a mod is missing — each requirement's own requirements too — shows the plan, lets you choose where a page ships several files, then installs in dependency order. Without Nexus Premium it runs guided, one page at a time.[/*]
-[*][b]Bulk update, one mod at a time,[/b] each verified against its archive afterwards. [b]Freeze[/b] a mod at a version and be told loudly if Vortex's own update button moves it anyway.[/*]
-[/list]
-[center][url=https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-makeitwork.jpg][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-makeitwork-820.jpg[/img][/url][/center]
+[*][b]One workbench for the whole profile.[/b] Updates, manual updates, frozen mods, missing requirements, mods others depend on, duplicates, disabled mods, plugins, and downloads nothing was ever made from, all in one table. Views combine, a search box finds a mod, a requirement or a plugin by name, and the action bar offers only what applies to what you ticked.[/*]
+[*][b]Requirements, read and acted on.[/b] Every mod's Nexus requirements and every plugin's masters are checked against your mods: satisfied, installed but disabled, missing, off Nexus, DLC. Each gets the one action that fits.[/*]
+[*][b]Make it work.[/b] One button reads the whole chain of what a mod is missing, including each requirement's own requirements. It shows the plan, lets you choose where a page offers several files, then installs in the right order. Without Nexus Premium it runs guided, one page at a time.[/*]
+[*][b]Bulk update, one mod at a time,[/b] each checked against its download afterwards. [b]Freeze[/b] a mod at a version and be told loudly if Vortex's own update button moves it anyway.[/*]
+[/list][center][url=https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-makeitwork.jpg][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-makeitwork-820.jpg[/img][/url][/center]
 
 [size=4][b]Build[/b][/size]
 [list]
-[*][b]Everything that made it work, recorded:[/b] every archive's SHA-256, the mod rules, the LOOT userlist and groups, plugin order and ESL flags, the installer answers and INI tweaks.[/*]
-[*][b]Can your players still download it?[/b] The build asks Nexus about every mod and separates [i]file gone[/i] from [i]page gone[/i] — you are the one person who cannot notice, because your copy is already on disk. It warns, and you decide; nothing is bundled behind your back.[/*]
+[*][b]Everything that made it work, recorded:[/b] every download's SHA-256 fingerprint, the mod rules, the LOOT userlist and groups, plugin order and ESL flags, the installer answers and INI tweaks.[/*]
+[*][b]Can your players still download it?[/b] The build asks Nexus about every mod and separates [i]file gone[/i] from [i]page gone[/i]. You are the one person who can't notice, because your copy is already on disk. It warns, and you decide; nothing is bundled behind your back.[/*]
 [*][b]Your collection's look:[/b] a banner, a card image, screenshots, colours, links and an About page, shown to everyone who installs it.[/*]
-[*][b]Straight to Nexus:[/b] upload a finished build to a collection page of yours as a draft revision — publishing stays your click. Players who add it there get Event Horizon's install, and are offered every update you publish.[/*]
-[/list]
-[center][url=https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-presentation.jpg][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-presentation.jpg[/img][/url][/center]
+[*][b]Straight to Nexus:[/b] upload a finished build to a collection page of yours as a draft revision. Publishing stays your click. Players who add it there get Event Horizon's install, and are offered every update you publish.[/*]
+[/list][center][url=https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-presentation.jpg][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-presentation.jpg[/img][/url][/center]
 
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/divider.png[/img][/center]
 
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/pipeline.jpg[/img][/center]
 
-[b]For the curious: which mod wins a file[/b]
-[spoiler]When two mods ship the same file, the winner comes from the collection's mod rules, which the install applies. Measured on a 1,753-mod collection, the rules reproduce the curator's winner for 17,159 of 17,161 contested files; the other two are a Readme.txt and a FOMod/info.xml, which the game never loads.[/spoiler]
+[b]How it works:[/b] [url=https://www.nexusmods.com/site/articles/251]Event Horizon - under the hood →[/url] It covers how Event Horizon differs from plain Vortex, which mod wins a file, the measured results and what the download holds.
 
 [center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/divider.png[/img][/center]
 
-[size=5][b][color=#ffb15c]Tech deep dive: vanilla Vortex vs Event Horizon[/color][/b][/size]
-[i]The Vortex side is read from Vortex 2.7's own source.[/i]
+[size=5][b][color=#ffb15c]Open to read, and no programs to run[/color][/b][/size]
 [list]
-[*][b]Identity.[/b] Vortex: Nexus file id plus the archive's MD5; a mod set to "latest" installs whatever is newest. [color=#ffb15c]Event Horizon:[/color] the curator's exact file, with a SHA-256 of the archive and of every file it installs.[/*]
-[*][b]Installing.[/b] Vortex: up to five mods at once. [color=#ffb15c]Event Horizon:[/color] one at a time, then every one checked.[/*]
-[*][b]Checking.[/b] Vortex: trusts what the installer extracted. [color=#ffb15c]Event Horizon:[/color] re-hashes every installed file against the curator's record, repairs what differs, and names what it can't.[/*]
-[*][b]The curator's edits.[/b] Vortex: opt-in per mod (Replicate, binary patches). [color=#ffb15c]Event Horizon:[/color] finds every edited mod and ships it bundled (the exact folder, the same content hash on every build) or mirrored (the author's archive from Nexus plus the changed files, so the author keeps the download).[/*]
-[*][b]Load order.[/b] Vortex: which plugins are enabled, plus LOOT rules; LOOT sorts on your machine. [color=#ffb15c]Event Horizon:[/color] the curator's exact order and ESL flags, pinned; LOOT only places plugins of your own.[/*]
-[*][b]INI.[/b] Vortex: tweaks the curator writes by hand. [color=#ffb15c]Event Horizon:[/color] the curator's real game INI values, captured at build, minus the ones that describe their hardware.[/*]
-[*][b]Game version.[/b] Vortex: warns when yours differs. [color=#ffb15c]Event Horizon:[/color] reads which versions each script-extender plugin declares, and names the mods that won't load on yours.[/*]
-[*][b]Updates.[/b] Vortex: in place, in your current profile. [color=#ffb15c]Event Horizon:[/color] each revision builds its own profile; the one you play stays switchable until the new one works.[/*]
-[*][b]Around the install.[/b] Vortex: installs into the game folder as it is. [color=#ffb15c]Event Horizon:[/color] before any download, checks the store build, runtimes, protected and cloud-synced folders, and the Creation Club files your plugins need; quarantines stray game files (restorable, never deleted), and keeps a receipt the Doctor diffs your setup against and heals from.[/*]
-[/list]
-
-[center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/divider.png[/img][/center]
+[*][b]The download is only the JavaScript that Vortex loads.[/b] It holds no executable, no DLL and no native code. The programs it ever starts are ones you already have, or Microsoft's own runtime installers, and only when you press [i]Install the missing ones[/i]. The list is in the article.[/*]
+[*][b]Every line is readable:[/b] [url=https://github.com/ReidenXerx/Event-Horizon]github.com/ReidenXerx/Event-Horizon[/url]. [b]Every push runs the whole test suite in public[/b] on GitHub Actions. The tests badge above is that run's live count, not a number anybody typed.[/*]
+[*][b]Scanned on VirusTotal.[/b] The badge is generated from the scan and names the build it covers. It turns red by itself if the result ever changes.[/*]
+[/list][center][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/divider.png[/img][/center]
 
 [size=5][b][color=#ffb15c]Four things to know before you install[/color][/b][/size]
 [list=1]
-[*][b]It replaces your mod rules and LOOT userlist for that game; it does not merge them.[/b] Everything is backed up first, and the backup reaching disk is a hard interlock — nothing is cleared without it. Merging would produce a rule set that exists on nobody else's machine, and it fails invisibly: every file verifies and the game still loads something different.[/*]
-[*][b]Hardlink deployment is required.[/b] If Vortex is set to copy or symlink, the install is refused before anything changes: copying silently undoes the curator's ESL flags.[/*]
-[*][b]Hands off while it installs.[/b] Deploying, sorting or switching mods in Vortex mid-install changes the result, so Event Horizon asks you — with Liberty Prime's help — to leave Vortex alone until it says it is done.[/*]
+[*][b]It replaces your mod rules and LOOT userlist for that game. It does not merge them.[/b] Everything is backed up first, and nothing is cleared until the backup is safely on disk. Merging would make a rule set that exists on nobody else's PC, and it fails invisibly: every file checks out and the game still loads something different.[/*]
+[*][b]Hardlink deployment is required.[/b] If Vortex is set to copy or symlink, the install is refused before anything changes, because copying silently undoes the creator's ESL flags.[/*]
+[*][b]Hands off while it installs.[/b] Deploying, sorting or switching mods in Vortex mid-install changes the result. Event Horizon asks you, with Liberty Prime's help, to leave Vortex alone until it says it is done.[/*]
 [*][b]Nexus Premium is recommended, not required.[/b] Without it, large installs run guided: one page opened at a time, one [i]Mod manager download[/i] click from you per mod. Nothing is blocked, and you are told before it starts.[/*]
-[/list]
-[center][url=https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-handsoff.jpg][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-handsoff-820.jpg[/img][/url][/center]
+[/list][center][url=https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-handsoff.jpg][img]https://cdn.jsdelivr.net/gh/ReidenXerx/Event-Horizon@1bbb7d6eb2220ece884a36a3a4cf159395e168ac/docs/img/shot-handsoff-820.jpg[/img][/url][/center]
 
 [size=5][b]Requirements[/b][/size]
 [list]
 [*][b]Vortex 2.x.[/b] It does not run on Vortex 1.16.[/*]
-[*][b]Windows, or Linux and Steam Deck through Proton.[/b] Both are supported targets: Event Horizon reads its own packages with its own ZIP reader, so nothing extra is spawned inside a Proton prefix. A 950-mod collection has been installed and verified under umu/Proton.[/*]
+[*][b]Windows, or Linux and Steam Deck through Proton.[/b] Both are supported. Event Horizon reads its own packages with its own ZIP reader, so nothing extra is started inside a Proton prefix. A 950-mod collection has been installed and verified under umu/Proton.[/*]
 [*][b]A supported game:[/b] Skyrim Special Edition, Fallout 4, Fallout 3, Fallout: New Vegas or Starfield, with Steam and GOG copies both handled. Proven on a Fallout 4 collection of about 1,000 mods and a Skyrim Special Edition collection of about 1,750.[/*]
 [*][b]Hardlink deployment[/b], as above. [b]Nexus Premium[/b] recommended, not required.[/*]
-[/list]
-[size=5][b]Installation[/b][/size]
+[/list][size=5][b]Installation[/b][/size]
 [list=1]
 [*]Download the archive from the Files tab.[/*]
 [*]In Vortex, open [b]Extensions[/b] and drop the zip onto the drop zone at the bottom of the list.[/*]
 [*]Restart Vortex when it asks. [b]Event Horizon[/b] appears in the sidebar; there is nothing to configure.[/*]
-[/list]
-Vortex does not offer Event Horizon updates by itself yet: download each new version here and install it the same way.
+[/list]Vortex does not offer Event Horizon updates by itself yet: download each new version here and install it the same way.
 
 [size=5][b]Incompatibilities[/b][/size]
 
@@ -213,14 +189,14 @@ Known conflicts, from real reports and the code. Found another one? Tell us in t
 [*][b]Vortex's "Deploy automatically" setting[/b]: EH asks to turn it off during an install, because a mid-install deploy can link the wrong file.[/*]
 [*][b]Missing Creation Club / Anniversary content a collection needs[/b]: the install stops. Get the content from the store first.[/*]
 [*][b]A game version other than the collection's[/b]: allowed after one "I understand" tick; the preview lists the script-extender DLLs that will break.[/*]
-[/list]
-
-[size=5][b]Questions[/b][/size]
+[/list][size=5][b]Questions[/b][/size]
 
 [b]Does it take over ordinary Vortex collections?[/b]
 [spoiler]No. Only Event Horizon collections open in Event Horizon; every other Nexus collection installs in Vortex exactly as it always did.[/spoiler]
 [b]What if somebody adds an Event Horizon collection without Event Horizon?[/b]
-[spoiler]They get no mods and a description saying the collection needs Event Horizon — rather than a bulk install that loses files.[/spoiler]
+[spoiler]They get no mods and a description saying the collection needs Event Horizon, rather than a bulk install that loses files.[/spoiler]
+[b]Do I need Nexus Premium?[/b]
+[spoiler]No. Premium is recommended, not required. Without it, large installs run guided: one page at a time, and one [i]Mod manager download[/i] click from you per mod.[/spoiler]
 [b]Is it open source?[/b]
 [spoiler]It is source-available: every line is public and readable, but the PolyForm Strict licence does not allow copying, changing or redistributing it without written permission. Versions 0.1.154 and earlier were MIT.[/spoiler]
 [b]Something went wrong. Where do I report it?[/b]
@@ -235,11 +211,6 @@ Built by [b]DuduPhudu[/b] and [b]Bluuuk[/b].
 [*][b]Vortex and the Nexus Mods team.[/b] Event Horizon is an extension: everything it does happens inside Vortex, through Vortex's own downloads, installers and deployment.[/*]
 [*][b]LOOT.[/b] The place your own plugins take between the collection's is LOOT's work.[/*]
 [*][b]Every mod author[/b] whose work ends up in a collection. Event Horizon downloads each mod from its author's own Nexus page.[/*]
-[/list]
-Source, issues, full documentation and a changelog written for the people who use it: [url=https://github.com/ReidenXerx/Event-Horizon]github.com/ReidenXerx/Event-Horizon[/url]. Community: [url=https://discord.gg/H9yqPhjuY5]Dudu's Den on Discord[/url].
+[/list]Source, issues, full documentation and a changelog written for the people who use it: [url=https://github.com/ReidenXerx/Event-Horizon]github.com/ReidenXerx/Event-Horizon[/url]. Community: [url=https://discord.gg/H9yqPhjuY5]Dudu's Den on Discord[/url].
 
 [center][i]Vortex is a black hole. Collections, rules, installer answers, load orders — they all get pulled in and never come out the same on the other side. Event Horizon is the boundary that captures everything before it crosses over.[/i][/center]
-
-[center]If you'd like to support my work:
-[url=https://ko-fi.com/duduphudu][img]https://img.shields.io/badge/Ko--fi-support%20me-FF5E5B?style=for-the-badge&labelColor=2b2b2b&logo=kofi&logoColor=white[/img][/url] [url=https://www.paypal.com/donate/?business=motet.volutes.5a@icloud.com&no_recurring=0&currency_code=USD][img]https://img.shields.io/badge/PayPal-donate-0070BA?style=for-the-badge&labelColor=2b2b2b&logo=paypal&logoColor=white[/img][/url]
-[size=1]PayPal: motet.volutes.5a@icloud.com[/size][/center]
