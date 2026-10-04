@@ -440,14 +440,15 @@ export function buildManifest(input: BuildManifestInput): BuildManifestResult {
   const folderToKey = new Map<string, string>();
   for (const m of input.snapshot.mods) {
     const key = compareKeyById.get(m.id);
-    const folder = (m as { installationPath?: string }).installationPath ?? m.id;
+    const folder = m.installationPath ?? m.id;
     if (key !== undefined) folderToKey.set(folder.toLowerCase(), key);
   }
   const deploymentWinners = recordDeploymentWinners({
     mods: mods.map((m) => ({
       compareKey: m.compareKey,
       ...(m.state.modType !== undefined ? { modType: m.state.modType } : {}),
-      stagingPaths: (m.state.stagingFiles ?? []).map((f) => f.path),
+      ...(m.state.enabled !== undefined ? { enabled: m.state.enabled } : {}),
+      files: m.state.stagingFiles ?? [],
     })),
     manifests: input.snapshot.deploymentManifests ?? [],
     folderToKey,

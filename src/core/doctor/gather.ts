@@ -23,7 +23,7 @@ import { beginOp, ehLog } from "../logging/ehLog";
 import type { HealthObservations } from "./health";
 import type { UserPluginMasters } from "../installer/repinPluginOrder";
 import type { OrderReceipt, OrderStanding } from "./loadOrderStatus";
-import type { EhcollDeploymentWinner } from "../../types/ehcoll";
+import type { EhcollManifest } from "../../types/ehcoll";
 
 /**
  * Profiles that exist for a game, by id — or `undefined` when Vortex's
@@ -161,8 +161,10 @@ export interface GatherOptions {
    * compareKey → Vortex mod id map to find the player's copy of each mod.
    * Both needed; without them the conflict check is "not checked".
    */
-  deploymentWinners?: readonly EhcollDeploymentWinner[];
-  receiptMods?: ReadonlyArray<{ compareKey: string; vortexModId: string; name: string }>;
+  deployCheck?: {
+    manifest: Pick<EhcollManifest, "mods" | "rules" | "deployment">;
+    receiptMods: ReadonlyArray<{ compareKey: string; vortexModId: string; name: string }>;
+  };
 }
 
 /**
@@ -360,43 +362,32 @@ export async function gatherObservations(
   // The script-extender side of the game folder, for the version installed now.
   const nativeOnDisk = await (await import("./nativeOnDisk")).readNativeOnDisk(api, gameId);
 
-  // Which mod's copy of each contested file the game got (deploymentWinners.ts).
+  // Which mod the game gets each collection file from (deploymentCheck.ts).
   let deployWinners: HealthObservations["deployWinners"];
-  if (opts.deploymentWinners !== undefined && opts.deploymentWinners.length > 0 && opts.receiptMods !== undefined) {
-    try {
-      const [{ captureDeploymentManifests }, { judgeDeploymentWinners, countRecordedPaths }] = await Promise.all([
-        import("../deploymentManifest"),
-        import("../manifest/deploymentWinners"),
-      ]);
-      const manifests = await captureDeploymentManifests(api, state, gameId);
-      const poolMods = ((state as unknown as { persistent?: { mods?: Record<string, Record<string, { installationPath?: string }>> } })
-        .persistent?.mods?.[gameId]) ?? {};
-      const keyToFolder = new Map<string, string>();
-      const nameByKey = new Map<string, string>();
-      const nameByFolder = new Map<string, string>();
-      for (const m of opts.receiptMods) {
-        const folder = poolMods[m.vortexModId]?.installationPath ?? m.vortexModId;
-        keyToFolder.set(m.compareKey, folder);
-        nameByKey.set(m.compareKey, m.name);
-        nameByFolder.set(folder.toLowerCase(), m.name);
+  if (opts.deployCheck !== undefined) {
+    if (activeProfileId !== receiptProfileId) {
+      // Vortex's deployment is the ACTIVE profile's; judging another profile's
+      // collection against it reports hundreds of differences that are not.
+      deployWinners = { kind: "not-checked", why: "this collection's profile is not the one Vortex has active." };
+    } else {
+      try {
+        const { checkDeployment } = await import("../installer/deploymentCheck");
+        deployWinners = await checkDeployment({
+          api,
+          gameId,
+          manifest: opts.deployCheck.manifest,
+          mods: opts.deployCheck.receiptMods,
+        });
+        ehLog(deployWinners.kind === "checked" && deployWinners.findings.length > 0 ? "warn" : "info", "doctor.deploy-winners", {
+          result: deployWinners.kind,
+          ...(deployWinners.kind === "checked"
+            ? { judgedPaths: deployWinners.judgedPaths, judgedWinners: deployWinners.judgedWinners, wrong: deployWinners.findings.length, lines: deployWinners.lines.slice(0, 10) }
+            : { why: deployWinners.why }),
+        });
+      } catch (err) {
+        ehLog("warn", "doctor.deploy-winners.unreadable", { err });
+        deployWinners = { kind: "not-checked", why: "the game's deployment could not be read." };
       }
-      const findings = judgeDeploymentWinners({ winners: opts.deploymentWinners, manifests, keyToFolder });
-      deployWinners = {
-        recorded: countRecordedPaths(opts.deploymentWinners),
-        findings: findings.map((f) => ({
-          path: f.path,
-          expected: nameByKey.get(f.expected) ?? f.expected,
-          actual: f.actual === undefined ? undefined : (nameByFolder.get(f.actual.toLowerCase()) ?? f.actual),
-        })),
-      };
-      ehLog(findings.length > 0 ? "warn" : "info", "doctor.deploy-winners", {
-        recorded: deployWinners.recorded,
-        wrong: findings.length,
-        examples: deployWinners.findings.slice(0, 10),
-      });
-    } catch (err) {
-      ehLog("warn", "doctor.deploy-winners.unreadable", { err });
-      deployWinners = undefined;
     }
   }
 

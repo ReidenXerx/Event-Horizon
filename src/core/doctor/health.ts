@@ -218,10 +218,7 @@ export interface HealthObservations {
    * or the player's deployment could not be read — "not checked", never
    * "fine".
    */
-  deployWinners?: {
-    recorded: number;
-    findings: ReadonlyArray<{ path: string; expected: string; actual: string | undefined }>;
-  };
+  deployWinners?: import("../installer/deploymentCheck").DeployCheckResult;
 }
 
 /**
@@ -264,47 +261,49 @@ export function doctorLightFlagBaseline<T extends { name: string; enabled: boole
  * is enabled, and nothing compared it with the curator's.
  */
 export function deployWinnersCheck(obs: HealthObservations["deployWinners"]): HealthCheck {
-  if (obs === undefined) {
+  const base = { id: "deploy-winners" as const, title: "Which mod each file comes from" };
+  if (obs === undefined || obs.kind === "not-checked") {
     return {
-      id: "deploy-winners",
-      title: "File conflicts",
-      // Not "unknown": a package built before winners were recorded has none
-      // to compare, and "unknown" would keep every older collection from ever
-      // reading healthy.
-      status: "not-applicable",
+      ...base,
+      status: "unknown",
       summary:
-        "Not checked: this collection was built before Event Horizon recorded which mod wins each " +
-        "shared file, or the game's deployment could not be read.",
+        obs === undefined
+          ? "Not checked: the collection's package was not found, and the check compares against it."
+          : `Not checked: ${obs.why}`,
       detail: [],
       affectedCount: 0,
     };
   }
-  const wrong = obs.findings;
-  if (wrong.length === 0) {
+  const n = obs.findings.length;
+  if (n === 0) {
     return {
-      id: "deploy-winners",
-      title: "File conflicts",
+      ...base,
       status: "healthy",
-      summary: `All ${obs.recorded} files several mods share come from the same mod as on the creator's game.`,
+      summary:
+        `Every one of the ${obs.judgedPaths} files the collection ships comes from the collection's own mods` +
+        (obs.judgedWinners > 0
+          ? `, and each of the ${obs.judgedWinners} files several of them share comes from the same mod as on the creator's game.`
+          : ".") +
+        " Files inside .ba2 archives are not covered.",
       detail: [],
       affectedCount: 0,
     };
   }
-  const shown = wrong.slice(0, 40).map((f) =>
-    f.actual === undefined
-      ? `${f.path} — not deployed (should come from ${f.expected})`
-      : `${f.path} — from ${f.actual}, should come from ${f.expected}`,
-  );
   return {
-    id: "deploy-winners",
-    title: "File conflicts",
+    ...base,
     status: "drifted",
     summary:
-      `${wrong.length} of ${obs.recorded} files several mods share come from a different mod than on the ` +
-      `creator's game. That is how a body, skeleton or room can look wrong while every mod's files are intact.`,
-    detail: wrong.length > shown.length ? [...shown, `…and ${wrong.length - shown.length} more`] : shown,
-    affectedCount: wrong.length,
-    heal: { action: "redeploy-winners", label: "Re-apply the collection's rules and deploy" },
+      `${n} file${n === 1 ? "" : "s"} the collection ships ${n === 1 ? "comes" : "come"} from a different mod than on ` +
+      `the creator's game, or ${n === 1 ? "is" : "are"} not deployed. Every mod's own files can be intact while the ` +
+      `game uses another copy.` +
+      (obs.fixable
+        ? ""
+        : " The collection's rules do not decide these, so re-applying them would change nothing: switch the named mod off, or order it yourself."),
+    detail: obs.lines,
+    affectedCount: n,
+    ...(obs.fixable
+      ? { heal: { action: "redeploy-winners" as const, label: "Re-apply the collection's rules and deploy" } }
+      : {}),
   };
 }
 

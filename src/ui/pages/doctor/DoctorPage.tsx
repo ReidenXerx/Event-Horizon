@@ -213,6 +213,9 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
   // ── diagnose ─────────────────────────────────────────────────────────
   React.useEffect(() => {
     if (loaded === undefined) return;
+    // Not gated on the package search: that can be a re-download of the
+    // whole package, and every other check works without it. The conflict
+    // check says "not checked" until the package arrives, then this re-runs.
     let alive = true;
     void (async (): Promise<void> => {
       try {
@@ -243,16 +246,19 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
             ? { recordedPlugins: recordedLight.baseline }
             : {}),
           ...(drifted !== undefined ? { driftedCompareKeys: drifted } : {}),
-          // Which mod wins each shared file, against the curator's deployment.
-          // Needs the package; until it is found the check says "not checked".
-          ...(pkg?.manifest.deployment !== undefined
+          // Which mod the game gets each collection file from. Needs the
+          // package (any version: the outside-mod check needs no recorded
+          // winners); without it the check says "not checked".
+          ...(pkg !== undefined
             ? {
-                deploymentWinners: pkg.manifest.deployment.winners,
-                receiptMods: loaded.selected.mods.map((m) => ({
-                  compareKey: m.compareKey,
-                  vortexModId: m.vortexModId,
-                  name: m.name,
-                })),
+                deployCheck: {
+                  manifest: pkg.manifest,
+                  receiptMods: loaded.selected.mods.map((m) => ({
+                    compareKey: m.compareKey,
+                    vortexModId: m.vortexModId,
+                    name: m.name,
+                  })),
+                },
               }
             : {}),
         });

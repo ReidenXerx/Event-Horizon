@@ -231,8 +231,9 @@ export function describeHeal(action: HealAction): {
         title: "Re-apply the collection's rules and deploy?",
         body:
           "The collection's conflict rules are set again, exactly as the install did, and Vortex " +
-          "deploys, so each shared file goes to the mod the creator's game uses. Nothing is " +
-          "installed or removed." +
+          "deploys, so each shared file goes to the mod the creator's game uses. No mod is " +
+          "installed or removed. A conflict rule of your own is replaced only where it contradicts " +
+          "the collection's on the same pair of mods." +
           NL2 +
           "If a file still comes from another mod afterwards, that mod is not part of the " +
           "collection or is ordered by a rule of your own: switch it off or remove the rule.",

@@ -670,6 +670,17 @@ async function healImpl(
       if (deps.manifest === undefined) {
         return { kind: "blocked", reason: MISSING_PACKAGE };
       }
+      // Checked BEFORE the rules are touched: the deploy only runs on the
+      // collection's own profile, and rules rewritten for a deploy that is then
+      // refused would be a change with nothing to show for it.
+      const activeNow = (api.getState() as { settings?: { profiles?: { activeProfileId?: string } } }).settings?.profiles
+        ?.activeProfileId;
+      if (activeNow !== receipt.vortexProfileId) {
+        return {
+          kind: "blocked",
+          reason: "Switch Vortex to this collection's profile first: the deploy only runs there.",
+        };
+      }
       // The same rule step as "reapply-rules", then a deploy: which copy of a
       // shared file the game gets is decided when Vortex deploys, by rules.
       const { applyModRules, collectExistingRules } = await import("../installer/applyModRules");

@@ -213,7 +213,7 @@ export function parseManifest(raw: string): ParseManifestResult {
   const gameIni = validateGameIni(obj.gameIni, errors);
   // deployment (contested-file winners) is additive the same way: older
   // manifests have none, and nothing is judged for them.
-  const deployment = validateDeployment(obj.deployment, errors);
+  const deployment = validateDeployment(obj.deployment, warnings);
   const externalDependencies = validateExternalDependencies(
     obj.externalDependencies,
     errors,
@@ -2123,43 +2123,41 @@ function describe(value: unknown): string {
  */
 /**
  * `deployment.winners`: which collection mod's copy the curator's game got
- * for each contested path. Optional. A malformed entry is dropped with an
- * error rather than guessed at: a wrong winner would tell a player their
- * correct setup is broken.
+ * for each contested path. Optional, and LENIENT: a malformed entry is dropped
+ * with a warning, never an error. This field only feeds a check; refusing a
+ * whole package over it would stop a player installing the collection at all.
+ * Paths are normalised here, so a hand-edited or differently written package
+ * still compares against the deployment's lowercased, "/"-separated keys.
  */
 function validateDeployment(
   raw: unknown,
-  errors: string[],
+  warnings: string[],
 ): { winners: EhcollDeploymentWinner[] } | undefined {
   if (raw === undefined) return undefined;
-  if (!isObject(raw)) {
-    errors.push(`deployment must be an object, got ${describe(raw)}.`);
+  const winners = isObject(raw) ? (raw as Record<string, unknown>).winners : undefined;
+  if (!Array.isArray(winners)) {
+    warnings.push("deployment is not in the expected shape and was ignored; the file-conflict check is off for this package.");
     return undefined;
   }
-  const winners = expectArray((raw as Record<string, unknown>).winners, "deployment.winners", errors);
-  if (winners === undefined) return undefined;
   const out: EhcollDeploymentWinner[] = [];
-  winners.forEach((entry, i) => {
-    const path = `deployment.winners[${i}]`;
-    if (!isObject(entry)) {
-      errors.push(`${path} must be an object, got ${describe(entry)}.`);
-      return;
+  let dropped = 0;
+  for (const entry of winners) {
+    const e = isObject(entry) ? (entry as Record<string, unknown>) : undefined;
+    const paths = e?.paths;
+    if (
+      e === undefined ||
+      typeof e.modType !== "string" ||
+      typeof e.mod !== "string" ||
+      e.mod.length === 0 ||
+      !Array.isArray(paths) ||
+      !paths.every((x): x is string => typeof x === "string")
+    ) {
+      dropped += 1;
+      continue;
     }
-    const e = entry as Record<string, unknown>;
-    const modType = typeof e.modType === "string" ? e.modType : undefined;
-    if (modType === undefined) {
-      errors.push(`${path}.modType must be a string, got ${describe(e.modType)}.`);
-      return;
-    }
-    const mod = expectString(e.mod, `${path}.mod`, errors);
-    const paths = expectArray(e.paths, `${path}.paths`, errors);
-    if (mod === undefined || paths === undefined) return;
-    if (!paths.every((x): x is string => typeof x === "string")) {
-      errors.push(`${path}.paths must hold only strings.`);
-      return;
-    }
-    out.push({ modType, mod, paths });
-  });
+    out.push({ modType: e.modType, mod: e.mod, paths: paths.map((x) => x.replace(/\\/g, "/").toLowerCase()) });
+  }
+  if (dropped > 0) warnings.push(`${dropped} malformed deployment.winners entr${dropped === 1 ? "y was" : "ies were"} ignored.`);
   return { winners: out };
 }
 

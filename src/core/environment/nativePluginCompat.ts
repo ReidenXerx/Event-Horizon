@@ -222,7 +222,7 @@ const refersTo = (reference: string, compareKey: string): boolean =>
  * A base mod plus its "AE Support" and "GOG Fix" updates is exactly this
  * shape, and one real collection had ten such stacks.
  */
-function conflictWinner(
+export function conflictWinner(
   keys: readonly string[],
   rules: readonly EhcollRule[],
 ): string | undefined {

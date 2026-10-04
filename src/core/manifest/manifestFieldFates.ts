@@ -207,7 +207,7 @@ export const MANIFEST_FATES: {
   userlist: { kind: "applied", by: "core/resolver/resolveInstallPlan.ts" },
   gameIni: { kind: "applied", by: "core/installer/applyGameIni.ts" },
   /** Compared against the player's own deployment by the Doctor (deploymentWinners.ts). */
-  deployment: { kind: "applied", by: "ui/pages/doctor/DoctorPage.tsx" },
+  deployment: { kind: "applied", by: "core/installer/deploymentCheck.ts" },
   externalDependencies: {
     kind: "recorded-only",
     why:
