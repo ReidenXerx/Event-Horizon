@@ -226,12 +226,31 @@ export function claudeDesktopConfigPath(): string {
 }
 
 /**
- * Adds Event Horizon to Claude Desktop's config, keeping everything else in
- * it and a backup of the file as it was. Refuses a file it cannot read rather
- * than overwrite the user's other servers.
+ * Every config file a Claude Desktop on this machine may read.
+ *
+ * The Microsoft Store build is packaged (MSIX): its writes to %APPDATA% land
+ * in `%LOCALAPPDATA%\Packages\<Claude package>\LocalCache\Roaming`, and a
+ * config file there shadows the real %APPDATA% one, so an entry written only to
+ * the latter is never seen. 2026-10-04: a player pressed Add, restarted, and
+ * Claude still saw nothing. Both locations are written when the packaged build
+ * is present; the plain installer only has the first.
  */
-export function addToClaudeDesktop(): { ok: boolean; message: string; file: string } {
-  const file = claudeDesktopConfigPath();
+export function claudeDesktopConfigPaths(): string[] {
+  const out = [claudeDesktopConfigPath()];
+  const local = process.env["LOCALAPPDATA"] ?? path.join(os.homedir(), "AppData", "Local");
+  try {
+    for (const pkg of fs.readdirSync(path.join(local, "Packages"))) {
+      if (!/^(Anthropic\.)?Claude_/i.test(pkg)) continue;
+      out.push(path.join(local, "Packages", pkg, "LocalCache", "Roaming", "Claude", "claude_desktop_config.json"));
+    }
+  } catch {
+    // No Packages folder, or unreadable: the plain install path is all there is.
+  }
+  return out;
+}
+
+/** Adds Event Horizon to one Claude Desktop config file. See {@link addToClaudeDesktop}. */
+function addToDesktopConfigFile(file: string): { ok: true } | { ok: false; message: string } {
   let existing: string | undefined;
   try {
     existing = fs.readFileSync(file, "utf8");
@@ -239,14 +258,38 @@ export function addToClaudeDesktop(): { ok: boolean; message: string; file: stri
     existing = undefined;
   }
   const merged = mergeDesktopConfig(existing, connectorLaunch());
-  if (!merged.ok) return { ok: false, message: merged.reason, file };
+  if (!merged.ok) return { ok: false, message: merged.reason };
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     if (existing !== undefined) fs.writeFileSync(`${file}.before-event-horizon.bak`, existing, "utf8");
     fs.writeFileSync(file, merged.text, "utf8");
   } catch (err) {
-    return { ok: false, message: `Could not write Claude Desktop's config: ${String((err as Error)?.message ?? err)}`, file };
+    return { ok: false, message: `Could not write Claude Desktop's config: ${String((err as Error)?.message ?? err)}` };
   }
   ehLog("info", "control.connect.claude-desktop", { file, backedUp: existing !== undefined });
-  return { ok: true, message: "Added. Quit Claude Desktop completely and open it again, then ask it anything about your mods.", file };
+  return { ok: true };
+}
+
+/**
+ * Adds Event Horizon to Claude Desktop's config, keeping everything else in
+ * it and a backup of the file as it was. Refuses a file it cannot read rather
+ * than overwrite the user's other servers. Writes every location a Desktop
+ * here may read (see {@link claudeDesktopConfigPaths}); succeeds when one did.
+ */
+export function addToClaudeDesktop(): { ok: boolean; message: string; file: string } {
+  const files = claudeDesktopConfigPaths();
+  const results = files.map((f) => ({ file: f, result: addToDesktopConfigFile(f) }));
+  const written = results.filter((r) => r.result.ok).map((r) => r.file);
+  const failed = results.filter((r): r is { file: string; result: { ok: false; message: string } } => !r.result.ok);
+  if (written.length === 0) {
+    return { ok: false, message: failed[0]?.result.message ?? "Nothing was written.", file: files[0]! };
+  }
+  const store = written.length > 1 ? " (both the regular and the Microsoft Store locations)" : "";
+  return {
+    ok: true,
+    message:
+      `Added${store}. Quit Claude Desktop completely (right-click its tray icon → Quit) and open it again, ` +
+      `then ask it anything about your mods.`,
+    file: written[0]!,
+  };
 }
