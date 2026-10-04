@@ -1170,6 +1170,22 @@ function waitForInstallCompletion(
       // notification. It is not hung, it is waiting for a person — and a
       // person who has walked away produces exactly the same silence as a
       // hang. Re-arm and keep waiting; the dialog is its own prompt.
+      //
+      // A download that has gone quiet is waited on the same way: Vortex
+      // reports a failed or cancelled download itself, and a line that comes
+      // back finishes it (owner, 2026-10-05: "why do we have timeouts on
+      // downloading anything?"). Extraction keeps its watchdog: that is a
+      // hang, not a slow network.
+      if (phase.phase === "downloading") {
+        ehLog("warn", "install.download-quiet", {
+          gameId: opts.gameId,
+          archiveId: expectedArchiveId,
+          silentSec: Math.round((Date.now() - lastProgressAt) / 1000),
+        });
+        lastProgressAt = Date.now();
+        armStallWatchdog();
+        return;
+      }
       if (isAwaitingUserInput(api)) {
         blockedOnUserMs += budgetMs;
         ehLog("info", "install.waiting-on-user", {
@@ -1360,6 +1376,14 @@ function waitForInstallCompletion(
       // hour is exactly the scale of "went to make dinner". Capping a
       // dialog-blocked install would just move the lost install from the
       // tester who stepped out to the one who went to bed.
+      // Still downloading: a big file on a slow line takes as long as it
+      // takes, and the cap is for a pipeline that never finishes, not a
+      // download that has not finished yet.
+      if (currentStallPhase().phase === "downloading") {
+        ehLog("info", "install.cap-deferred-downloading", { gameId: opts.gameId, archiveId: expectedArchiveId });
+        armAbsoluteCap();
+        return;
+      }
       if (isAwaitingUserInput(api)) {
         ehLog("info", "install.cap-deferred-waiting-on-user", {
           totalBlockedSec: Math.round(blockedOnUserMs / 1000),

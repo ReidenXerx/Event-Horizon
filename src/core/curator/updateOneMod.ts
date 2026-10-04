@@ -96,7 +96,13 @@ export type UpdateOneInput = {
 
 export class UpdateTimeout extends Error {}
 
-const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
+/**
+ * No limit by default (owner, 2026-10-05: "why do we have timeouts on
+ * downloading anything? It looks pointless and harmful"). An update waits as
+ * long as its download takes; Vortex's own failure, the run's Stop, or a
+ * caller that passes a limit ends it.
+ */
+const DEFAULT_TIMEOUT_MS = Number.POSITIVE_INFINITY;
 
 /**
  * Start the update and resolve with the new Vortex mod id once it lands.
@@ -171,6 +177,9 @@ export function updateOneAndWait(input: UpdateOneInput): Promise<string> {
     // would wait fifteen minutes for an event that already fired.
     const arm = (ms: number): void => {
       if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
+      // Infinity means "no limit": setTimeout would clamp it to ~1 ms.
+      if (!Number.isFinite(ms)) return;
       timer = setTimeout(() => {
         finish(() =>
           reject(

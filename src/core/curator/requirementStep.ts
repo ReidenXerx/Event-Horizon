@@ -41,8 +41,12 @@
 import { ehLog } from "../logging/ehLog";
 import { updateOneAndWait, type InstallEvents, type UpdateOneInput } from "./updateOneMod";
 
-/** How long a guided step waits for the user to fetch the file by hand. */
-export const GUIDED_WAIT_MS = 60 * 60 * 1000;
+/**
+ * How long a guided step waits for the user to fetch the file by hand: as long
+ * as it takes (owner, 2026-10-05: no timeouts on downloads). The run's Stop
+ * ends it.
+ */
+export const GUIDED_WAIT_MS = Number.POSITIVE_INFINITY;
 
 export type RequirementStepVia = "existing-download" | "download" | "guided";
 

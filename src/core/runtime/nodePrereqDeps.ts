@@ -44,7 +44,40 @@ const MAX_REDIRECTS = 8;
 const CONNECT_TIMEOUT_MS = 30_000;
 const STALL_TIMEOUT_MS = 60_000;
 
-function download(
+/**
+ * A quiet or dropped connection is retried, as often as it takes, rather than
+ * failing the run (owner, 2026-10-05: "why do we have timeouts on downloading
+ * anything? It looks pointless and harmful"). The two limits above now only
+ * decide when to drop a silent connection and open a new one. An HTTP error,
+ * a file that is not an installer, or the player's Cancel still end it.
+ */
+async function download(
+  url: string,
+  destPath: string,
+  onBytes?: (received: number, total: number | undefined) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await downloadOnce(url, destPath, onBytes, signal);
+      return;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const transient = /stalled after|No response from|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|socket hang up/i.test(message);
+      if (!transient || signal?.aborted === true) throw err;
+      const wait = Math.min(30_000, 2_000 * attempt);
+      await new Promise<void>((resolve, reject) => {
+        const t = setTimeout(resolve, wait);
+        signal?.addEventListener("abort", () => {
+          clearTimeout(t);
+          reject(new Error("Cancelled."));
+        }, { once: true });
+      });
+    }
+  }
+}
+
+function downloadOnce(
   url: string,
   destPath: string,
   onBytes?: (received: number, total: number | undefined) => void,

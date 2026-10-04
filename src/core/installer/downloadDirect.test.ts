@@ -173,18 +173,30 @@ afterAll(async () => {
 });
 
 /** A first run that the server cuts short, leaving a part and its record. */
+/**
+ * A run the server cuts, stopped by the player at the moment the downloader
+ * would reconnect (it now reconnects on its own — owner, 2026-10-05: no
+ * download fails on a timer). Leaves the part on disk for the next run, which
+ * is what these tests are about.
+ */
 async function cutRun(url: string, dest: string, after = 100_000): Promise<number> {
   knobs.cutAfter = after;
-  let message = "";
-  try {
-    await downloadToFile({ url, destPath: dest });
-  } catch (err) {
-    message = (err as Error).message;
-  }
+  const stop = new AbortController();
+  let why = "";
+  let landed = -1;
+  await downloadToFile({
+    url,
+    destPath: dest,
+    signal: stop.signal,
+    onReconnect: (r) => {
+      why = r.why;
+      landed = r.resumeFrom;
+      stop.abort();
+    },
+  }).catch(() => undefined);
   knobs.cutAfter = undefined;
-  const m = /closed after (\d+) of 300000 bytes/.exec(message);
-  expect(m, message).not.toBeNull();
-  return Number(m?.[1]);
+  expect(why).toMatch(/closed after \d+/);
+  return landed;
 }
 
 describe("downloadToFile", () => {
@@ -422,18 +434,41 @@ describe("downloadToFile", () => {
     await expect(fs.promises.stat(`${dest}.part`)).rejects.toBeTruthy();
   });
 
-  it("turns a server that goes quiet into the resumable interruption, not an endless wait", async () => {
+  it("reconnects to a server that goes quiet, continuing from the bytes on disk — never fails on the timer", async () => {
     const dest = path.join(tmp, "stall.ehcoll");
-    const run = downloadToFile({ url: `${base}/stall`, destPath: dest, idleTimeoutMs: 200 });
-    const settled = await Promise.race([
-      run.then(
-        () => "resolved",
-        (e: Error) => e.message,
-      ),
-      new Promise<string>((r) => setTimeout(() => r("still waiting"), 3000)),
-    ]);
-    expect(settled).toMatch(/Nothing arrived for 200 ms after 1000 of 300000 bytes\. Paste the link again to continue/);
+    const stop = new AbortController();
+    const seen: Array<{ why: string; resumeFrom: number }> = [];
+    const run = downloadToFile({
+      url: `${base}/stall`,
+      destPath: dest,
+      idleTimeoutMs: 200,
+      signal: stop.signal,
+      onReconnect: (r) => {
+        seen.push(r);
+        stop.abort();
+      },
+    });
+    await expect(run).rejects.toThrow(/cancelled/);
+    expect(seen[0]?.why).toMatch(/nothing arrived for 200 ms after 1000 bytes/);
+    expect(seen[0]?.resumeFrom).toBe(1000);
     expect((await fs.promises.stat(`${dest}.part`)).size).toBe(1000);
+  });
+
+  it("finishes a cut transfer in ONE run by reconnecting by itself", async () => {
+    const dest = path.join(tmp, "auto.ehcoll");
+    knobs.cutAfter = 100_000;
+    let reconnects = 0;
+    const got = await downloadToFile({
+      url: `${base}/file.ehcoll`,
+      destPath: dest,
+      onReconnect: () => {
+        reconnects += 1;
+        knobs.cutAfter = undefined; // the line recovers
+      },
+    });
+    expect(reconnects).toBe(1);
+    expect(got.resumed).toBe(true);
+    expect(got.sha256).toBe(BODY_SHA);
   });
 
   it("gives up probing a server that never answers", async () => {

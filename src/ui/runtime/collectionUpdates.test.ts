@@ -268,6 +268,37 @@ describe("the update a card offers", () => {
   });
 });
 
+describe("a revision already downloaded", () => {
+  it("is used, not downloaded again, though Vortex saved it under the server's name (Ivy Rev 9, 2026-10-05)", async () => {
+    // Vortex keeps the name Nexus's server gives, so its own "already
+    // downloaded" check (by the name asked for) never fired, and Update
+    // downloaded 4.8 GB again. Found by the revision recorded on the download.
+    const files = {
+      "dl-done": {
+        localPath: "collection_tumkz9_13_2026-10-04.zip",
+        state: "finished",
+        modInfo: { nexus: { ids: { collectionSlug: "tumkz9", revisionNumber: 13 } } },
+      },
+    };
+    const { api, calls } = fakeApi({ revision: REVISION, urls: URLS, files });
+    const waited: string[] = [];
+    const out = await downloadRevision(
+      api,
+      update(),
+      deps({
+        waitForDownload: async (_a: unknown, id: string) => {
+          waited.push(id);
+          return { localPath: "collection_tumkz9_13_2026-10-04.zip" } as never;
+        },
+      }),
+      () => undefined,
+    );
+    expect(calls).toHaveLength(0);
+    expect(waited).toEqual(["dl-done"]);
+    expect(out).toBe(path.join(DIR, "collection_tumkz9_13_2026-10-04.zip"));
+  });
+});
+
 describe("a revision that takes longer than a minute to download", () => {
   it("follows the download Vortex listed instead of failing at 60s (Ivy Rev 9, 2026-10-04)", async () => {
     /**
@@ -312,7 +343,7 @@ describe("a revision that takes longer than a minute to download", () => {
 });
 
 describe("when Vortex never accepts the download", () => {
-  it("gives up after a minute instead of leaving Update pending forever", async () => {
+  it("tells the player after a minute, and keeps waiting instead of failing", async () => {
     /**
      * `emit` returns nothing, so the callback is the only thing that can
      * settle this. A `start-download` nobody answers used to leave the Update
@@ -324,6 +355,7 @@ describe("when Vortex never accepts the download", () => {
      */
     const events = new EventEmitter();
     events.on("get-nexus-collection-revision", () => undefined);
+    const notices: Array<Record<string, unknown>> = [];
     const api = {
       events,
       getState: () => ({ persistent: { downloads: { files: {} } } }),
@@ -331,14 +363,19 @@ describe("when Vortex never accepts the download", () => {
         event === "get-nexus-collection-revision"
           ? [{ id: 1, revisionNumber: 13, downloadLink: "https://nexus/dl", collection: { id: 350133, name: "Ivy" } }]
           : [[{ URI: "https://cf-files.nexus-cdn.com/x.zip" }]],
+      sendNotification: (n: Record<string, unknown>) => notices.push(n),
+      dismissNotification: () => undefined,
     } as never;
 
     vi.useFakeTimers();
     try {
       const p = downloadRevision(api, update(), deps(), () => undefined);
-      const assertion = expect(p).rejects.toThrow(/did not start the download within 60s/);
+      let settled = false;
+      p.then(() => (settled = true), () => (settled = true));
       await vi.advanceTimersByTimeAsync(61_000);
-      await assertion;
+      // Owner, 2026-10-05: no download fails on a timer.
+      expect(settled).toBe(false);
+      expect(notices.map((n) => n.title)).toEqual(["Waiting for Vortex to start downloading Ivy"]);
     } finally {
       vi.useRealTimers();
     }

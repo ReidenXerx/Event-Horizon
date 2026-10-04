@@ -308,11 +308,16 @@ describe("waitForVortexDownload", () => {
     ).rejects.toThrow(/removed from Vortex's Downloads tab/);
   });
 
-  it("stops waiting for a download Vortex never lists", async () => {
+  it("keeps waiting for a download Vortex has not listed yet, until the player cancels", async () => {
+    // Owner, 2026-10-05: no download ends on a timer. It is logged, and the
+    // player's Cancel is what stops it.
     const api = stateWith(() => ({}));
-    await expect(
-      waitForVortexDownload(api, "d", new AbortController().signal, () => undefined, { pollMs: 5, appearWithinMs: 30 }),
-    ).rejects.toThrow(/never listed/);
+    const stop = new AbortController();
+    const run = waitForVortexDownload(api, "d", stop.signal, () => undefined, { pollMs: 5, appearWithinMs: 30 });
+    const early = await Promise.race([run.then(() => "settled", () => "settled"), new Promise((r) => setTimeout(() => r("waiting"), 120))]);
+    expect(early).toBe("waiting");
+    stop.abort();
+    await expect(run).rejects.toThrow(/cancel/i);
   });
 
   /**
@@ -322,14 +327,20 @@ describe("waitForVortexDownload", () => {
    * poll that forever with no message and no log line, so the only way out
    * was killing Vortex mid-install.
    */
-  it("stops waiting for a started download that has moved no bytes", async () => {
-    const api = stateWith(() => ({ d: { id: "d", state: "started", received: 1024, size: 999_999 } }));
-    await expect(
-      waitForVortexDownload(api, "d", new AbortController().signal, () => undefined, {
-        pollMs: 5,
-        stalledAfterMs: 30,
-      }),
-    ).rejects.toThrow(/has not moved for/);
+  it("keeps waiting for a started download that has gone quiet: it may resume, and only Cancel stops it", async () => {
+    let polls = 0;
+    const api = stateWith(() => {
+      polls += 1;
+      // Quiet far past the threshold, then the line comes back and it finishes.
+      return polls < 60
+        ? { d: { id: "d", state: "started", received: 1024, size: 999_999 } }
+        : { d: { id: "d", state: "finished", received: 999_999, size: 999_999, localPath: "x.zip" } };
+    });
+    const dl = await waitForVortexDownload(api, "d", new AbortController().signal, () => undefined, {
+      pollMs: 2,
+      stalledAfterMs: 10,
+    });
+    expect(dl.localPath).toBe("x.zip");
   });
 
   it("does not touch a download that is still moving, however slowly", async () => {

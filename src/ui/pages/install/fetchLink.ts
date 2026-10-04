@@ -404,6 +404,8 @@ export async function waitForVortexDownload(
   const stalledAfterMs = options.stalledAfterMs ?? 15 * 60_000;
   const startedAt = Date.now();
   let seen = false;
+  let quietNoted = false;
+  let stallNoted = false;
   let mostReceived = -1;
   let movedAt = Date.now();
   for (;;) {
@@ -420,11 +422,11 @@ export async function waitForVortexDownload(
             `wait for. ${Retry} to start it over.`,
         );
       }
-      if (Date.now() - startedAt > appearWithinMs) {
-        ehLog("warn", "install.link.vortex-download-stopped", { downloadId, why: "never listed" });
-        throw new Error(
-          `Vortex accepted the download of ${what} but never listed it in its Downloads tab. Check that tab, then ${retry}.`,
-        );
+      // Not listed yet: said once in the log, and still waited for. No time
+      // limit on a download (owner, 2026-10-05); the player can cancel.
+      if (!quietNoted && Date.now() - startedAt > appearWithinMs) {
+        quietNoted = true;
+        ehLog("warn", "install.link.vortex-download-quiet", { downloadId, why: "not listed yet", retryHint: retry });
       }
     } else {
       seen = true;
@@ -451,24 +453,21 @@ export async function waitForVortexDownload(
       } else if (
         dl.state === "started" &&
         !(total !== undefined && received >= total) &&
-        Date.now() - movedAt > stalledAfterMs
+        Date.now() - movedAt > stalledAfterMs &&
+        !stallNoted
       ) {
-        const silentMs = Date.now() - movedAt;
-        ehLog("warn", "install.link.vortex-download-stopped", {
+        // Logged once, never a failure: Vortex still calls it running, and a
+        // transfer that resumes after a long silence is a download that
+        // finished (owner, 2026-10-05). The player can cancel.
+        stallNoted = true;
+        ehLog("warn", "install.link.vortex-download-quiet", {
           downloadId,
-          why: "stalled",
+          why: "no bytes for a while",
           received,
           total,
-          silentMs,
+          silentMs: Date.now() - movedAt,
           state: dl.state,
         });
-        throw new Error(
-          `The download of ${what} has not moved for ${Math.round(silentMs / 60_000)} minutes — ` +
-            `Vortex still calls it running, but no bytes have arrived` +
-            `${total !== undefined ? ` (${received} of ${total})` : ""}. ` +
-            `It may still recover on its own: check Vortex's Downloads tab, and when it has finished, pick the ` +
-            `file with "Choose package file" (Vortex's download folder), or ${retry}.`,
-        );
       }
     }
     await new Promise((resolve) => setTimeout(resolve, pollMs));

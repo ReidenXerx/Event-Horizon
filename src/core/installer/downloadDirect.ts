@@ -96,8 +96,33 @@ const defaultRequest: RequestImpl = (url, options, onResponse) =>
 
 const MAX_REDIRECTS = 5;
 
-/** How long a server may send nothing before the attempt is called interrupted. */
+/**
+ * How long a server may send nothing before the connection is dropped and
+ * opened again, continuing from the bytes on disk. NOT a limit on the
+ * download: owner, 2026-10-05 — "why do we have timeouts on downloading
+ * anything? It looks pointless and harmful". A download ends only when the
+ * file is whole, the server refuses it, or the player cancels; a host that
+ * goes quiet is reconnected to, as often as it takes.
+ */
 export const IDLE_TIMEOUT_MS = 60_000;
+
+/** Wait before reconnecting: 2 s, growing to 30 s. */
+const reconnectDelayMs = (n: number): number => Math.min(30_000, 2_000 * n);
+
+function sleepUnlessAborted(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new AbortError("download cancelled"));
+    const t = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = (): void => {
+      clearTimeout(t);
+      reject(new AbortError("download cancelled"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
 
 /**
  * Media types that are never a package. A file host that wants a captcha,
@@ -136,6 +161,8 @@ export async function downloadToFile(args: {
   destPath: string;
   signal?: AbortSignal;
   onProgress?: (p: DownloadProgress) => void;
+  /** The connection went quiet or dropped and is being opened again (never a failure on its own). */
+  onReconnect?: (r: { reconnects: number; why: string; resumeFrom: number }) => void;
   request?: RequestImpl;
   /** The published SHA-256, lowercase hex. The file must match it. */
   expectedSha256?: string;
@@ -191,16 +218,49 @@ async function download(
   let resumed = false;
   let total: number | undefined;
   let lengthProof: LengthProof = "none";
+  let restarts = 0;
+  let reconnects = 0;
+  /**
+   * The connection went quiet or dropped: open it again and continue from what
+   * reached the disk (or from zero, when the server names no version to resume
+   * against). Never a failure on its own — see IDLE_TIMEOUT_MS.
+   */
+  const reconnect = async (why: string): Promise<void> => {
+    reconnects += 1;
+    const onDisk = await fs.promises.stat(partPath).then((st) => st.size, () => 0);
+    const resumable = record !== undefined && resumeRefusal(0, record, record.url, expected) === undefined;
+    // Not resumable within this run (no version to resume against, no
+    // checksum): ask for the whole file again, which truncates the part. The
+    // part is not deleted here, so a cancelled run leaves it for a later one
+    // that brings a checksum and CAN resume.
+    existing = resumable ? onDisk : 0;
+    partOnDisk = onDisk;
+    ehLog("warn", "link.direct.reconnect", { why, reconnects, resumeFrom: existing, resumable });
+    args.onReconnect?.({ reconnects, why, resumeFrom: existing });
+    await sleepUnlessAborted(reconnectDelayMs(reconnects), args.signal);
+  };
   for (let attempt = 1; ; attempt += 1) {
     const ifRange = existing > 0 ? (record?.etag ?? record?.lastModified) : undefined;
-    const opened = await openRange(
-      request,
-      args.url,
-      existing > 0 ? `bytes=${existing}-` : undefined,
-      args.signal,
-      idleMs,
-      ifRange,
-    );
+    let opened: Awaited<ReturnType<typeof openRange>>;
+    try {
+      opened = await openRange(
+        request,
+        args.url,
+        existing > 0 ? `bytes=${existing}-` : undefined,
+        args.signal,
+        idleMs,
+        ifRange,
+      );
+    } catch (err) {
+      // Cancelled, or a refusal openRange worked out (bad redirect, not a
+      // file): those end it. A host that did not answer is reconnected to.
+      if (isAbort(err, args.signal)) throw new AbortError("download cancelled");
+      if (err instanceof Error && /did not answer within|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|socket hang up/i.test(err.message)) {
+        await reconnect(err.message);
+        continue;
+      }
+      throw err;
+    }
     const { res } = opened;
     ehLog("info", "link.direct.response", {
       status: res.statusCode,
@@ -225,7 +285,8 @@ async function download(
       existing = 0;
       partOnDisk = 0;
       record = undefined;
-      if (attempt >= 2) {
+      restarts += 1;
+      if (restarts >= 2) {
         throw new Error(
           `The server's answers about this file do not fit together (${plan.why}), even after starting over. Try the link again later.`,
         );
@@ -330,19 +391,14 @@ async function download(
         ...(total !== undefined ? { total } : {}),
         why: outcome.idle ? "idle" : String((outcome.net as Error)?.message ?? outcome.net),
       });
-      if (outcome.idle) {
-        throw new Error(`Nothing arrived for ${formatDuration(idleMs)} after ${received}${of} bytes. ${retryHint(record, expected)}`);
-      }
-      // A connection that dropped mid-body is the resumable case, and the
-      // message says so; the socket error underneath ("socket hang up",
-      // ECONNRESET) would send someone diagnosing their network instead.
-      if (total !== undefined && received < total) {
-        throw new Error(`The connection closed after ${received} of ${total} bytes. ${retryHint(record, expected)}`);
-      }
-      throw outcome.net instanceof Error ? outcome.net : new Error(String(outcome.net));
+      // Quiet for a minute, or dropped mid-body: open it again and continue.
+      // Owner, 2026-10-05: a download does not fail on a timer.
+      await reconnect(outcome.idle ? `nothing arrived for ${formatDuration(idleMs)} after ${received} bytes` : `the connection closed after ${received} bytes`);
+      continue;
     }
     if (total !== undefined && received !== total) {
-      throw new Error(`The connection closed after ${received} of ${total} bytes. ${retryHint(record, expected)}`);
+      await reconnect(`the connection closed after ${received} of ${total} bytes`);
+      continue;
     }
     break;
   }

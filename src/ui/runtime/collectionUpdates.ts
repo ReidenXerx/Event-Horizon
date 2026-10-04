@@ -466,6 +466,28 @@ export async function downloadRevision(
     },
   };
 
+  /**
+   * ─── A REVISION ALREADY DOWNLOADED (OR DOWNLOADING) IS USED, NOT FETCHED AGAIN ──
+   * Vortex saves the file under the name Nexus's server gives, not the name
+   * asked for (read in its download manager: the server's name wins over the
+   * hint), so Vortex's own "already downloaded" check, which looks for the
+   * asked-for name, never fired: pressing Update after a finished download
+   * downloaded the 4.8 GB again (alasdairn, Ivy Rev 9, 2026-10-05). Found by
+   * the revision recorded on the download instead.
+   */
+  const already = findRevisionDownload(api, fileName, slug, modInfo.nexus.ids.revisionNumber);
+  if (already !== undefined) {
+    const download = await deps.waitForDownload(api, already, new AbortController().signal, onProgress, {
+      fileName,
+      retry: "press Update again",
+    });
+    const dir = deps.downloadDirFor(api, update.gameId);
+    if (typeof dir !== "string" || dir === "" || typeof download.localPath !== "string") {
+      throw new Error("Vortex did not say where it saved the download. Look in its Downloads tab.");
+    }
+    return path.join(dir, download.localPath);
+  }
+
   let downloadId: string;
   try {
     downloadId = await new Promise<string>((resolve, reject) => {
@@ -482,7 +504,10 @@ export async function downloadRevision(
        * So the download is found in Vortex's list as soon as it APPEARS there,
        * and the transfer is waited on by id as before. The callback still
        * settles it when it comes first (an error, or a download already done).
-       * The minute now bounds only "Vortex never listed it at all".
+       *
+       * No time limit (owner, 2026-10-05: "why do we have timeouts on
+       * downloading anything? It looks pointless and harmful"). After a
+       * minute with nothing listed the player is TOLD, and it keeps waiting.
        */
       const APPEAR_MS = 60_000;
       const before = new Set(Object.keys(downloadFiles(api)));
@@ -492,6 +517,7 @@ export async function downloadRevision(
         settled = true;
         clearInterval(poll);
         clearTimeout(timer);
+        api.dismissNotification?.(`eh-update-waiting-${slug}`);
         fn();
       };
       const poll = setInterval(() => {
@@ -499,14 +525,14 @@ export async function downloadRevision(
         if (id !== undefined) finish(() => resolve(id));
       }, 500);
       const timer = setTimeout(() => {
-        finish(() =>
-          reject(
-            new Error(
-              "Vortex did not start the download within 60s. Check its " +
-                "notifications, then press Update again.",
-            ),
-          ),
-        );
+        if (settled) return;
+        ehLog("warn", "collection-update.download-not-listed-yet", { slug, revision: update.latestRevision });
+        api.sendNotification?.({
+          id: `eh-update-waiting-${slug}`,
+          type: "info",
+          title: `Waiting for Vortex to start downloading ${name}`,
+          message: "It has not appeared in Vortex's Downloads tab yet. Event Horizon keeps waiting; check that tab and Vortex's notifications.",
+        });
       }, APPEAR_MS);
       api.events.emit(
         "start-download",
@@ -552,6 +578,25 @@ function downloadFiles(api: types.IExtensionApi): Record<string, DownloadRecord>
     (api.getState() as { persistent?: { downloads?: { files?: Record<string, DownloadRecord> } } })?.persistent?.downloads
       ?.files ?? {}
   );
+}
+
+/** A download of this revision already in Vortex's list (finished, or still running), newest first. */
+function findRevisionDownload(
+  api: types.IExtensionApi,
+  fileName: string,
+  slug: string,
+  revisionNumber: unknown,
+): string | undefined {
+  const files = downloadFiles(api) as Record<string, DownloadRecord & { state?: unknown; fileTime?: unknown }>;
+  const matches = Object.keys(files).filter((id) => {
+    const d = files[id]!;
+    if (d.state === "failed") return false;
+    if (typeof d.localPath === "string" && d.localPath.toLowerCase() === fileName.toLowerCase()) return true;
+    const ids = d.modInfo?.nexus?.ids;
+    return ids?.collectionSlug === slug && ids?.revisionNumber === revisionNumber;
+  });
+  const t = (id: string): number => (typeof files[id]!.fileTime === "number" ? (files[id]!.fileTime as number) : 0);
+  return matches.sort((a, b) => t(b) - t(a))[0];
 }
 
 /** A download Vortex listed after we asked: this revision's, by file name or by the revision on it. */
