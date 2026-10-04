@@ -1,7 +1,7 @@
 # Changelog
 
 Everything that changed in Event Horizon, newest first, written for the people who use it. Since the first commit
-in April 2026 that is about 400 changes across 156 builds.
+in April 2026 that is about 400 changes across 157 builds.
 
 Until 0.1.0-alpha.149 builds were numbered `0.1.0-alpha.N`. From **0.1.151** the build number is the patch number:
 Vortex ignores everything after the dash when it decides whether an extension has an update, so an alpha number
@@ -9,6 +9,19 @@ could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
+
+## [0.2.35] — 2026-10-04
+
+### Doctor
+- **"Which mod each file comes from".** A new check compares your game with the creator's. It names any file the
+  collection ships that your game takes from a mod outside the collection, and any file several of its mods share that
+  comes from a different mod than on the creator's game. A body, skeleton or room can look wrong this way while every
+  mod is intact. Where the collection's rules decide it, one button re-applies them and deploys. The install's last
+  screen shows the same list. Collections need a rebuild for the shared-file half.
+
+### Install
+- **Mods a collection dropped are only removed by default when they are provably Event Horizon's**: not reinstalled
+  by you since, not installed beside a mod of yours, and not used by another profile.
 
 ## [0.2.34] — 2026-10-04
 
