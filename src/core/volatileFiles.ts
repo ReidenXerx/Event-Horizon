@@ -82,7 +82,15 @@ export type VolatileReason =
    * the curator's machine, both last written during a game session, both
    * failing a tester's Ivy 1.0.35 verification.
    */
-  | "runtime-trace";
+  | "runtime-trace"
+  /**
+   * State a script-extender plugin keeps beside itself and rewrites every
+   * session: `F4SE/Plugins/BetterConsole.mem` is Better Console's console
+   * history. The archive ships an initial one, so a player always has the
+   * file; its contents are whatever the last session typed. Measured
+   * 2026-10-04 on Ivy 1.0.39: the build's only unexplained file for the mod.
+   */
+  | "runtime-state";
 
 /** Filenames that are written by the OS, never by a mod. Compared lowercased. */
 const OS_ARTIFACTS: ReadonlyMap<string, VolatileReason> = new Map([
@@ -137,6 +145,8 @@ export function volatileReason(relPath: string): VolatileReason | undefined {
    * has shown a runtime `.trace`, so nothing else gives up verification.
    */
   if (name.endsWith(".trace") && SCRIPT_EXTENDER_PLUGINS.test(relPath.replace(/\\/g, "/"))) return "runtime-trace";
+  /** Same scope as `.trace`: directly in a script extender's `Plugins` folder, where the evidence is. */
+  if (name.endsWith(".mem") && SCRIPT_EXTENDER_PLUGINS.test(relPath.replace(/\\/g, "/"))) return "runtime-state";
 
   if (EH_PROBE.test(name)) return "eh-case-probe";
 

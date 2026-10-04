@@ -112,6 +112,14 @@ describe("script-extender runtime traces", () => {
     expect(volatileReason("Data/F4SE/Plugins/BastionRD.trace")).toBe("runtime-trace");
   });
 
+  it("skips a plugin's session state beside it: Better Console's console history", () => {
+    // Ivy 1.0.39 (2026-10-04): the plugin rewrites BetterConsole.mem every
+    // session, so the curator's copy never matches a player's.
+    expect(volatileReason("F4SE\\Plugins\\BetterConsole.mem")).toBe("runtime-state");
+    expect(volatileReason("Data/F4SE/Plugins/BetterConsole.mem")).toBe("runtime-state");
+    expect(volatileReason("textures/thing.mem")).toBeUndefined();
+  });
+
   it("still verifies a .trace anywhere else, and anything else in Plugins", () => {
     expect(volatileReason("meshes/debug/shape.trace")).toBeUndefined();
     expect(volatileReason("F4SE/Plugins/Sub/deep.trace")).toBeUndefined();
