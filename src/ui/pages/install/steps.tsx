@@ -2850,12 +2850,11 @@ export function DoneStep(props: DoneStepProps): JSX.Element {
               onClick={onCleanUpProfiles}
               title={
                 `Remove the Vortex profiles that earlier versions of this ` +
-                `collection created. You choose which ones; nothing is ` +
-                `removed until you confirm.`
+                `collection created, and the mods only they still used. You ` +
+                `choose which ones; nothing is removed until you confirm.`
               }
             >
-              Clean up {supersededProfileCount} old profile
-              {supersededProfileCount === 1 ? "" : "s"}
+              Remove old profiles ({supersededProfileCount})
             </Button>
           )}
         <Button intent="primary" onClick={onGoCollections}>

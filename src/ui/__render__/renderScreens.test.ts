@@ -85,6 +85,7 @@ import { readPluginList } from "../../core/curator/pluginPool";
 import { readDownloads } from "../../core/curator/runCleanup";
 import { DidItWorkPrompt } from "../pages/collections/DidItWorkPrompt";
 import { UninstallPlanView, UninstallResult } from "../pages/collections/CollectionUninstallModal";
+import { OldProfilesResult, OldProfilesView } from "../pages/collections/OldProfilesModal";
 import { planCollectionUninstall } from "../../core/installer/collectionUninstall";
 import { getCuratorSession } from "../pages/curator/curatorSession";
 import { readCuratorMods, readEnabledModIds, readModEnabledTimes } from "../../core/curator/readProfile";
@@ -2310,6 +2311,42 @@ describe("render", () => {
     // mod the player enabled in their own profile is kept and says why.
     expect(plan.remove.map((m) => m.name)).toEqual(["Advanced Needs 76", "F4SE Menu Framework"]);
     expect(plan.keep.map((k) => k.name)).toEqual(["Immersive Animation Framework"]);
+  });
+
+  it("collections — remove old profiles after an update", () => {
+    const plan = {
+      packageId: "pkg-ivy",
+      packageName: "Ivy",
+      gameId: "fallout4",
+      profiles: [
+        { id: "p8", name: "Ivy (Event Horizon v1.0.8)", version: "1.0.8", lastActivated: Date.now() - 3 * 86_400_000, deletable: true },
+        { id: "p7", name: "Ivy (Event Horizon v1.0.7)", version: "1.0.7", deletable: false, reason: "Vortex is using it right now. Switch to another profile first." },
+      ],
+      candidates: [{ vortexModId: "old", name: "F4SE Menu Framework" }],
+    };
+    write(
+      "collections-old-profiles",
+      React.createElement(OldProfilesView, {
+        plan,
+        ticked: new Set(["p8"]),
+        alsoMods: true,
+        freedCount: 1,
+        freedBytes: 1_450_000_000,
+        onToggle: () => undefined,
+        onAlsoMods: () => undefined,
+      }),
+    );
+    write(
+      "collections-old-profiles-result",
+      React.createElement(OldProfilesResult, {
+        outcome: {
+          profilesRemoved: ["Ivy (Event Horizon v1.0.8)"],
+          profilesFailed: [],
+          modsRemoved: plan.candidates,
+          modsFailed: [],
+        },
+      }),
+    );
   });
 
   it("decisions — the mods needing a human answer", () => {

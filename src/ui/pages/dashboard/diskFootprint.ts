@@ -38,7 +38,7 @@ export interface Footprint {
  * measurement and was silently short. The caller needs to know, because the
  * card's own contract is that a partial answer is reported as partial.
  */
-async function folderSize(root: string): Promise<{ bytes: number; failed: string[] }> {
+export async function folderSize(root: string): Promise<{ bytes: number; failed: string[] }> {
   let total = 0;
   const failed: string[] = [];
   const stack: string[] = [root];

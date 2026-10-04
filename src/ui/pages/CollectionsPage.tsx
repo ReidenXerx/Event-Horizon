@@ -60,6 +60,7 @@ import type { EventHorizonRoute } from "../routes";
 import { useApi } from "../state";
 import { DidItWorkPrompt, type DidItWorkState } from "./collections/DidItWorkPrompt";
 import { CollectionUninstallModal } from "./collections/CollectionUninstallModal";
+import { OldProfilesModal, oldProfileCount } from "./collections/OldProfilesModal";
 import { useEHRuntime } from "../runtime/useEHRuntime";
 import {
   checkCollectionUpdates,
@@ -551,6 +552,7 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
 
   const [state, setState] = React.useState<PageState>({ kind: "loading" });
   const [uninstalling, setUninstalling] = React.useState<InstallReceipt | undefined>(undefined);
+  const [cleaningProfiles, setCleaningProfiles] = React.useState<InstallReceipt | undefined>(undefined);
   const [selected, setSelected] = React.useState<InstallReceipt | undefined>(
     undefined,
   );
@@ -955,6 +957,8 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
                 isActive={receipt.vortexProfileId === activeProfileId}
                 onOpen={(): void => setSelected(receipt)}
                 onUninstall={(): void => setUninstalling(receipt)}
+                oldProfiles={oldProfileCount(api.getState(), receipt)}
+                onRemoveOldProfiles={(): void => setCleaningProfiles(receipt)}
                 presentation={presentations.get(receipt.packageId)}
                 update={pendingUpdateFor(receipt, updates.get(receipt.packageId))}
                 onUpdate={(update): void => {
@@ -976,6 +980,22 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
         onUninstall={(receipt): void => {
           setSelected(undefined);
           setUninstalling(receipt);
+        }}
+      />
+
+      <OldProfilesModal
+        receipt={cleaningProfiles}
+        onClose={(): void => setCleaningProfiles(undefined)}
+        onFinished={(outcome): void => {
+          setCleaningProfiles(undefined);
+          showToast({
+            intent: outcome.profilesFailed.length + outcome.modsFailed.length > 0 ? "warning" : "success",
+            message:
+              `Removed ${outcome.profilesRemoved.length} old profile(s)` +
+              (outcome.modsRemoved.length > 0 ? ` and ${outcome.modsRemoved.length} mod(s) no profile used` : "") +
+              ".",
+          });
+          refresh();
         }}
       />
 
@@ -1014,6 +1034,9 @@ export function ReceiptCard(props: {
   onUpdate?: (update: CollectionUpdate) => void;
   /** Uninstall straight from the card, without opening the details. */
   onUninstall?: () => void;
+  /** How many profiles earlier revisions left behind; the button shows only above zero. */
+  oldProfiles?: number;
+  onRemoveOldProfiles?: () => void;
 }): JSX.Element {
   const { receipt, isActive, onOpen, presentation, update } = props;
   const tile = presentation?.tile;
@@ -1092,7 +1115,9 @@ export function ReceiptCard(props: {
             </span>
           )}
         </div>
-        {((update !== undefined && props.onUpdate !== undefined) || props.onUninstall !== undefined) && (
+        {((update !== undefined && props.onUpdate !== undefined) ||
+          props.onUninstall !== undefined ||
+          (props.onRemoveOldProfiles !== undefined && (props.oldProfiles ?? 0) > 0)) && (
           <div className="eh-row">
             {update?.hold !== undefined && (
               <span className="eh-muted" title={update.hold.message}>
@@ -1111,6 +1136,20 @@ export function ReceiptCard(props: {
             >
               Update to revision {update.latestRevision}
             </Button>
+            )}
+            {props.onRemoveOldProfiles !== undefined && (props.oldProfiles ?? 0) > 0 && (
+              <Button
+                intent="ghost"
+                size="sm"
+                title="Remove the profiles earlier revisions of this collection left behind, and the mods only they still used."
+                onClick={(event): void => {
+                  // The whole card opens the details; this button must not.
+                  event.stopPropagation();
+                  props.onRemoveOldProfiles?.();
+                }}
+              >
+                Remove old profiles ({props.oldProfiles})
+              </Button>
             )}
             {props.onUninstall !== undefined && (
               <Button

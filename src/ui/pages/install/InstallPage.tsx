@@ -30,12 +30,13 @@ import { nativeNotify } from "../../runtime/nativeNotify";
 import { selectors, types } from "@nexusmods/vortex-api";
 import { switchToProfile } from "../../../core/installer/profile";
 import {
-  deploymentInProgress,
   readKnownProfiles,
-  removeSupersededProfiles,
   supersededEhProfiles,
   type SupersededProfile,
 } from "../../../core/installer/profileCleanup";
+import { listReceipts } from "../../../core/installLedger";
+import type { InstallReceipt } from "../../../types/installLedger";
+import { OldProfilesModal } from "../collections/OldProfilesModal";
 import { getActiveProfileId } from "../../../core/getModsListForProfile";
 import { getVortexUserDataPath } from "../../../core/paths";
 import type { InstallResult } from "../../../types/installDriver";
@@ -81,6 +82,8 @@ function InstallWizard(props: InstallPageProps): JSX.Element {
   const reportFormatted = useErrorReporterFormatted();
   const showToast = useToast();
   const session = React.useMemo(() => getInstallSession(), []);
+  // The collection whose old profiles the Done screen's "Remove old profiles" opened.
+  const [oldProfilesFor, setOldProfilesFor] = React.useState<InstallReceipt | undefined>(undefined);
 
   const [snapshot, setSnapshot] = React.useState<InstallSessionSnapshot>(() =>
     session.getSnapshot(),
@@ -319,18 +322,45 @@ function InstallWizard(props: InstallPageProps): JSX.Element {
 
     case "done": {
       const superseded = offerableProfiles(api, state.result, state.bundle);
+      const packageId = state.bundle.plan.manifest.package.id;
       return (
+        <>
+        <OldProfilesModal
+          receipt={oldProfilesFor}
+          onClose={(): void => setOldProfilesFor(undefined)}
+          onFinished={(outcome): void => {
+            setOldProfilesFor(undefined);
+            showToast({
+              intent: outcome.profilesFailed.length + outcome.modsFailed.length > 0 ? "warning" : "success",
+              title: "Old profiles removed",
+              message:
+                `${outcome.profilesRemoved.length} profile(s)` +
+                (outcome.modsRemoved.length > 0 ? ` and ${outcome.modsRemoved.length} mod(s)` : "") +
+                " removed.",
+              ttl: 5000,
+            });
+          }}
+        />
         <DoneStep
           result={state.result}
           bundle={state.bundle}
           supersededProfileCount={superseded.length}
           onCleanUpProfiles={(): void => {
-            void cleanUpProfiles({
-              api,
-              showToast,
-              gameId: state.bundle.plan.manifest.game.id,
-              profiles: superseded,
-            });
+            // The receipt this install just wrote: the modal plans from it.
+            void listReceipts(getVortexUserDataPath()).then(
+              (all) => {
+                const receipt = all.find((r) => r.packageId === packageId);
+                if (receipt !== undefined) setOldProfilesFor(receipt);
+              },
+              (err: unknown) => {
+                showToast({
+                  intent: "warning",
+                  title: "Couldn't read the install record",
+                  message: err instanceof Error ? err.message : String(err),
+                  ttl: 7000,
+                });
+              },
+            );
           }}
           onStartOver={(): void => session.finish()}
           /**
@@ -375,6 +405,7 @@ function InstallWizard(props: InstallPageProps): JSX.Element {
             );
           }}
         />
+        </>
       );
     }
 
@@ -442,109 +473,6 @@ function offerableProfiles(
     keepProfileId: result.profileId,
     activeProfileId,
     lastActiveProfileId,
-  });
-}
-
-/**
- * Ask which of them to remove, then remove exactly those.
- *
- * The tick list IS the consent: every profile is named, NONE start ticked,
- * and the user ticks what they want gone. The text says what is lost — a
- * profile carries the load order and the enabled/disabled state the user had
- * in it, and removing it cannot be undone.
- *
- * ─── WHY NOTHING IS PRE-TICKED ─────────────────────────────────────────
- * They used to start ticked, on the reasoning that unticking is as easy as
- * ticking. It is not, when the affirmative button is "Remove ticked": a
- * player who opens this expecting to review and presses the obvious button
- * destroys every listed profile in one press.
- *
- * What that costs is specific. A version-changing update deliberately
- * installs into a NEW profile "so the version that was working stays
- * switchable" — the previous revision's profile is the rollback that whole
- * design exists to provide, and it is in this list. Pre-ticked, the dialog
- * offered to undo the safety net as its default answer.
- *
- * Unticked, a reflex press does nothing at all, which is the right outcome
- * for a reflex. Housekeeping is worth two clicks; an unrecoverable rollback
- * is not worth one.
- */
-async function cleanUpProfiles(deps: {
-  api: types.IExtensionApi;
-  showToast: ReturnType<typeof useToast>;
-  gameId: string;
-  profiles: readonly SupersededProfile[];
-}): Promise<void> {
-  const { api, showToast, gameId, profiles } = deps;
-  const CONFIRM = "Remove ticked";
-
-  const answer = await api.showDialog?.(
-    "question",
-    "Remove older profiles for this collection?",
-    {
-      text:
-        "Event Horizon created these Vortex profiles for earlier versions of " +
-        "this collection. Removing one throws away the load order and the " +
-        "enabled/disabled state you had in it, and that cannot be undone — " +
-        "including your way back to the version you were on before this " +
-        "update. The profile this install just created is not listed, and " +
-        "neither is the one you are on. Tick only the ones you want removed.",
-      checkboxes: profiles.map((p) => ({
-        id: p.id,
-        text: p.name,
-        value: false,
-      })),
-    },
-    [{ label: "Cancel" }, { label: CONFIRM }],
-  );
-  if (answer?.action !== CONFIRM) return;
-
-  const chosen = profiles.filter(
-    (p) => (answer.input as Record<string, unknown> | undefined)?.[p.id] === true,
-  );
-  if (chosen.length === 0) return;
-
-  // Checked here rather than before the dialog: deployment can start while
-  // the user is reading it, and this is the moment the answer matters.
-  if (deploymentInProgress(api.getState())) {
-    showToast({
-      intent: "warning",
-      title: "Not while Vortex is deploying",
-      message:
-        "Vortex is deploying right now, and pulling a profile out from under " +
-        "it is how a deploy half-finishes. Try again once it has stopped.",
-      ttl: 7000,
-    });
-    return;
-  }
-
-  const outcome = await removeSupersededProfiles({
-    api,
-    gameId,
-    userDataPath: getVortexUserDataPath(),
-    profiles: chosen,
-  });
-
-  if (outcome.failed.length === 0) {
-    showToast({
-      intent: "success",
-      title: "Old profiles removed",
-      message: `${outcome.removed.length} profile${
-        outcome.removed.length === 1 ? "" : "s"
-      } removed.`,
-      ttl: 4000,
-    });
-    return;
-  }
-  // Names the ones that survived. "Some failed" without saying which leaves
-  // the user to diff a profile list by eye.
-  showToast({
-    intent: "warning",
-    title: "Some profiles could not be removed",
-    message:
-      `${outcome.removed.length} removed; still here: ` +
-      outcome.failed.map((f) => `${f.profile.name} (${f.error})`).join("; "),
-    ttl: 9000,
   });
 }
 
