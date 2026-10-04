@@ -1468,7 +1468,7 @@ export function DecisionsStep(props: DecisionsStepProps): JSX.Element {
                 orphan={o}
                 alsoEnabledIn={orphanAlsoEnabledIn(o.existingModId)}
                 value={
-                  state.orphanChoices[o.existingModId] ?? defaultOrphanChoice()
+                  state.orphanChoices[o.existingModId] ?? defaultOrphanChoice(o)
                 }
                 onChange={(choice): void =>
                   dispatch({

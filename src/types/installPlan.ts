@@ -266,6 +266,12 @@ export type ModEventHorizonInstallTag = {
   originalCompareKey: string;
   /** ISO-8601 UTC of when the install completed. UI-only. */
   installedAt: string;
+  /**
+   * The receipt's `ownership` for this mod: `installed` means Event Horizon
+   * put it there, `adopted` means it was the player's already. Absent on old
+   * receipts, and absent means adopted (see `InstallReceiptMod.ownership`).
+   */
+  ownership?: "installed" | "adopted";
 };
 
 /**

@@ -752,6 +752,7 @@ function lineageTagFor(
     collectionVersion: receipt.packageVersion,
     originalCompareKey: m.compareKey,
     installedAt: m.installedAt,
+    ...(m.ownership !== undefined ? { ownership: m.ownership } : {}),
   };
 }
 

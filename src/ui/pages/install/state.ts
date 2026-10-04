@@ -37,7 +37,7 @@ import type {
 } from "../../../types/installDriver";
 import type { FomodReplayMode } from "../../../core/installer/fomodReplayMode";
 import { DEFAULT_FOMOD_REPLAY_MODE } from "../../../core/installer/fomodReplayMode";
-import type { InstallPlan } from "../../../types/installPlan";
+import type { InstallPlan, OrphanedModDecision } from "../../../types/installPlan";
 import type { FormattedError } from "../../errors";
 
 // ===========================================================================
@@ -545,8 +545,14 @@ export function defaultConflictChoice(
   }
 }
 
-export function defaultOrphanChoice(): OrphanChoice {
-  return { kind: "keep" };
+/**
+ * Uninstall an orphan Event Horizon itself installed (the resolver says
+ * `recommend-uninstall` only for a receipt-proven one); keep anything else.
+ * Owner, 2026-10-04: a dropped skeleton or body mod left switched on is
+ * worse than a mod the player has to re-add.
+ */
+export function defaultOrphanChoice(orphan?: Pick<OrphanedModDecision, "recommendation">): OrphanChoice {
+  return orphan?.recommendation === "recommend-uninstall" ? { kind: "uninstall" } : { kind: "keep" };
 }
 
 /**
@@ -635,7 +641,7 @@ export function fillDefaultOrphanChoices(
   const out: Record<string, OrphanChoice> = { ...orphanChoices };
   for (const o of bundle.plan.orphanedMods) {
     if (out[o.existingModId] !== undefined) continue;
-    out[o.existingModId] = defaultOrphanChoice();
+    out[o.existingModId] = defaultOrphanChoice(o);
   }
   return out;
 }

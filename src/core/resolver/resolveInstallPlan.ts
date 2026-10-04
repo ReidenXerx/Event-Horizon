@@ -22,7 +22,9 @@
  *
  * 2. **Conservative-policy invariant** (docs/business/INSTALL_PLAN_SCHEMA.md
  *    "v1 conservative-policy invariant"). Every `*-version-diverged`,
- *    `*-bytes-diverged`, and orphan recommendation is `"manual-review"`.
+ `*-bytes-diverged` recommendation is `"manual-review"`; an orphan
+ *    is too, unless the receipt proves Event Horizon installed it, which
+ *    makes it `"recommend-uninstall"` (owner, 2026-10-04).
  *    The other values exist in the type set for future heuristics; the
  *    v1 resolver MUST NOT emit them. The driver never acts on a
  *    recommendation directly — the action handler converts each into a
@@ -46,7 +48,8 @@
  *   `plan.installTarget.kind === "fresh-profile"`.
  * - In fresh-profile mode no `*-version-diverged` or `*-bytes-diverged`
  *   decision is emitted.
- * - All recommendations are `"manual-review"` in v1.
+ * - All recommendations are `"manual-review"`, except an orphan the
+ *   receipt proves ours (`"recommend-uninstall"`).
  * - The plan is JSON-serialisable (no functions, Dates, circular refs).
  * ──────────────────────────────────────────────────────────────────────
  */
@@ -803,7 +806,7 @@ function resolveExternalMod(
  * No lineage ⇒ no orphans by definition. Fresh-profile mode also
  * never produces orphans (the new profile starts empty).
  */
-function resolveOrphanedMods(
+export function resolveOrphanedMods(
   manifest: EhcollManifest,
   userState: UserSideState,
   installTarget: InstallTarget,
@@ -829,8 +832,15 @@ function resolveOrphanedMods(
       name: installed.name,
       originalCompareKey: tag.originalCompareKey,
       installedFromVersion: tag.collectionVersion,
-      // v1 conservative policy: never auto-uninstall.
-      recommendation: "manual-review",
+      /**
+       * Owner, 2026-10-04: an orphan Event Horizon itself installed is
+       * recommended for removal, and the decisions screen defaults to it — an
+       * old skeleton or body mod left switched on in an in-place run is how a
+       * collection breaks with every file verifying. Only a receipt-proven
+       * `installed` mod (NS-2); an adopted or unknown one stays the player's
+       * call. The driver still only acts on the choice the player confirms.
+       */
+      recommendation: tag.ownership === "installed" ? "recommend-uninstall" : "manual-review",
     });
   }
   return orphans;
