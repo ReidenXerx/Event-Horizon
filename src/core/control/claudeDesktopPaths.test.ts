@@ -30,7 +30,7 @@ const sandbox = (withStore: boolean): { roaming: string; store: string } => {
 };
 
 describe("where Claude Desktop reads its config", () => {
-  it("is only %APPDATA%\Claude for the regular installer", () => {
+  it("is only the AppData Claude folder for the regular installer", () => {
     const p = sandbox(false);
     expect(claudeDesktopConfigPaths()).toEqual([p.roaming]);
   });
