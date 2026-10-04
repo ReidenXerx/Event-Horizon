@@ -345,6 +345,24 @@ export async function installNexusViaApi(
       matchArchiveId: undefined, // we don't know it yet; stood down below
       signal: args.signal,
     });
+    /**
+     * Nothing awaits this waiter while `nexusDownload` runs: we await the
+     * download, and the waiter is only stood down afterwards. Its watchdog
+     * can still fire — with no archive id, the only progress it sees is a
+     * new mod appearing, so a slow download of a big file is ten minutes of
+     * "silence". The rejection then had no handler and reached the player as
+     * an "Unexpected error: Mod install stalled… while extracting" popup
+     * mid-download (alasdairn, 2026-10-04, 0.5 MB/s), while the download
+     * carried on fine. Handled here; the download's own outcome is what the
+     * install acts on.
+     */
+    completed.promise.catch((err: unknown) => {
+      ehLog("info", "install.download.watchdog-quiet", {
+        modId: args.nexusModId,
+        fileId: args.nexusFileId,
+        why: err instanceof Error ? err.message : String(err),
+      });
+    });
 
     try {
       const id = await api.ext.nexusDownload(

@@ -199,3 +199,40 @@ describe("installNexusViaApi — a failed download must not leak its watchdog", 
     expect(emitted[0]!.args[0]).toBe("archive-1");
   });
 });
+
+describe("a slow download is not an unhandled 'stalled' error", () => {
+  it("raises nothing unhandled while nexusDownload is still running past the stall budget", async () => {
+    // alasdairn, 2026-10-04: a 0.5 MB/s download of a big file. Ten minutes
+    // with no new mod tripped the download-phase watchdog, whose promise
+    // nobody awaited, and it surfaced as "Unexpected error: Mod install
+    // stalled… while extracting" while the download carried on.
+    vi.useFakeTimers();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const { api } = fakeApi(undefined);
+      let finish!: (id: string) => void;
+      (api as unknown as { ext: { nexusDownload: unknown } }).ext = {
+        nexusDownload: vi.fn().mockImplementation(() => new Promise<string>((r) => (finish = r))),
+      };
+      const run = installNexusViaApi(api, {
+        gameId: "fallout4",
+        nexusModId: 1,
+        nexusFileId: 2,
+        fileName: "Big.7z",
+      } as never);
+      void run.catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(30 * 60_000);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(unhandled).toEqual([]);
+      finish("archive-1");
+      await vi.advanceTimersByTimeAsync(1_000);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+      vi.useRealTimers();
+    }
+  });
+});
