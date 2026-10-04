@@ -666,6 +666,33 @@ async function healImpl(
       };
     }
 
+    case "redeploy-winners": {
+      if (deps.manifest === undefined) {
+        return { kind: "blocked", reason: MISSING_PACKAGE };
+      }
+      // The same rule step as "reapply-rules", then a deploy: which copy of a
+      // shared file the game gets is decided when Vortex deploys, by rules.
+      const { applyModRules, collectExistingRules } = await import("../installer/applyModRules");
+      const maps = resolveModMaps(receipt);
+      const result = applyModRules({
+        api,
+        gameId,
+        rules: deps.manifest.rules ?? [],
+        modIdByCompareKey: maps.modIdByCompareKey,
+        modIdByNexusModId: maps.modIdByNexusModId,
+        ambiguousNexusModIds: maps.ambiguousNexusModIds,
+        existingRulesBySourceModId: collectExistingRules(api, gameId, maps.modIdByCompareKey),
+      });
+      const { deployAndWait } = await import("../installer/runInstall");
+      await deployAndWait(api, receipt.vortexProfileId);
+      return {
+        kind: "done",
+        summary:
+          `Re-applied ${result.applied} of ${deps.manifest.rules?.length ?? 0} collection rules and deployed. ` +
+          `Check again to see which shared files now come from the right mod.`,
+      };
+    }
+
     case "reinstall-mods": {
       if (deps.ehcollPath === undefined) {
         return { kind: "blocked", reason: MISSING_PACKAGE };

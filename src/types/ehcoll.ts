@@ -99,6 +99,25 @@ export type EhcollManifest = {
    */
   gameIni?: EhcollGameIni;
   externalDependencies: EhcollExternalDependency[];
+  /**
+   * Which collection mod's copy the curator's game got, for every path more
+   * than one collection mod ships. Read from the curator's own Vortex
+   * deployment; the player's is compared against it (deploymentWinners.ts).
+   *
+   * Optional: manifests built before this existed have none, and nothing is
+   * judged for them.
+   */
+  deployment?: { winners: EhcollDeploymentWinner[] };
+};
+
+/** One collection mod's share of the contested paths in one mod type. See deploymentWinners.ts. */
+export type EhcollDeploymentWinner = {
+  /** Vortex mod type ("" is the default, deployed to the game's data folder). */
+  modType: string;
+  /** compareKey of the mod whose copy the curator's game got. */
+  mod: string;
+  /** Contested paths it won, lowercased, "/"-separated, relative to the mod type's target. */
+  paths: string[];
 };
 
 // ---------------------------------------------------------------------------

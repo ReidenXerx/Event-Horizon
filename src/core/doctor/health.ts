@@ -79,7 +79,12 @@ export type HealthCheckId =
    * read from the game folder and judged for the game version installed NOW.
    * Lists what is still for another version after a player swapped mods.
    */
-  | "native-plugins";
+  | "native-plugins"
+  /**
+   * Which mod's copy of each contested file the game gets, against the
+   * curator's own deployment (deploymentWinners.ts).
+   */
+  | "deploy-winners";
 
 /**
  * Deliberately five states, not "pass/fail".
@@ -103,7 +108,9 @@ export type HealAction =
   | "reapply-userlist"
   | "repin-plugin-order"
   | "restore-light-flags"
-  | "switch-profile";
+  | "switch-profile"
+  /** Re-apply the collection's mod rules, then deploy, so each contested file goes to the mod the curator's did. */
+  | "redeploy-winners";
 
 export interface HealthCheck {
   id: HealthCheckId;
@@ -205,6 +212,16 @@ export interface HealthObservations {
   currentUserlistRuleCount: number | undefined;
   /** Plugin entries currently assigned to a LOOT group, counted. */
   currentUserlistGroupAssignmentCount: number | undefined;
+  /**
+   * The player's deployment against the curator's, for contested files.
+   * Absent when the package recorded no winners (built before this existed)
+   * or the player's deployment could not be read — "not checked", never
+   * "fine".
+   */
+  deployWinners?: {
+    recorded: number;
+    findings: ReadonlyArray<{ path: string; expected: string; actual: string | undefined }>;
+  };
 }
 
 /**
@@ -233,6 +250,61 @@ export function doctorLightFlagBaseline<T extends { name: string; enabled: boole
       return rest as T;
     }),
     refused: verdict.reason,
+  };
+}
+
+/**
+ * Contested files where the player's game got a different mod's copy than
+ * the curator's did, or nothing at all.
+ *
+ * The case it exists for: an Ivy updated through several revisions gave
+ * every new character "nailed" breasts, a fresh install did not, and every
+ * file of every mod verified (alasdairn, 2026-10-04). Which copy of a body or
+ * skeleton mesh WINS is decided at deploy time, by rules and by whatever else
+ * is enabled, and nothing compared it with the curator's.
+ */
+export function deployWinnersCheck(obs: HealthObservations["deployWinners"]): HealthCheck {
+  if (obs === undefined) {
+    return {
+      id: "deploy-winners",
+      title: "File conflicts",
+      // Not "unknown": a package built before winners were recorded has none
+      // to compare, and "unknown" would keep every older collection from ever
+      // reading healthy.
+      status: "not-applicable",
+      summary:
+        "Not checked: this collection was built before Event Horizon recorded which mod wins each " +
+        "shared file, or the game's deployment could not be read.",
+      detail: [],
+      affectedCount: 0,
+    };
+  }
+  const wrong = obs.findings;
+  if (wrong.length === 0) {
+    return {
+      id: "deploy-winners",
+      title: "File conflicts",
+      status: "healthy",
+      summary: `All ${obs.recorded} files several mods share come from the same mod as on the creator's game.`,
+      detail: [],
+      affectedCount: 0,
+    };
+  }
+  const shown = wrong.slice(0, 40).map((f) =>
+    f.actual === undefined
+      ? `${f.path} — not deployed (should come from ${f.expected})`
+      : `${f.path} — from ${f.actual}, should come from ${f.expected}`,
+  );
+  return {
+    id: "deploy-winners",
+    title: "File conflicts",
+    status: "drifted",
+    summary:
+      `${wrong.length} of ${obs.recorded} files several mods share come from a different mod than on the ` +
+      `creator's game. That is how a body, skeleton or room can look wrong while every mod's files are intact.`,
+    detail: wrong.length > shown.length ? [...shown, `…and ${wrong.length - shown.length} more`] : shown,
+    affectedCount: wrong.length,
+    heal: { action: "redeploy-winners", label: "Re-apply the collection's rules and deploy" },
   };
 }
 
@@ -838,6 +910,9 @@ export function evaluateHealth(
         : {}),
     });
   }
+
+  // ── who wins each contested file ─────────────────────────────────────
+  checks.push(deployWinnersCheck(obs.deployWinners));
 
   // ── mod rules ────────────────────────────────────────────────────────
   const appliedRules = receipt.rulesApplication?.appliedRuleCount;

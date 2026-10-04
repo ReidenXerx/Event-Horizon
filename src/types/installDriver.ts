@@ -356,6 +356,8 @@ export type InstallSuccess = {
    * player's own (owner poll, 2026-10-02).
    */
   missingMasterNotice?: string[];
+  /** Shared files the game gets from a different mod than the curator's did (deploymentWinners.ts). */
+  deployWinnerNotice?: string[];
   /**
    * Ready-to-send reports for mods that could not be reproduced.
    *
@@ -685,6 +687,8 @@ export type InstallFailed = {
    * player's own (owner poll, 2026-10-02).
    */
   missingMasterNotice?: string[];
+  /** Shared files the game gets from a different mod than the curator's did (deploymentWinners.ts). */
+  deployWinnerNotice?: string[];
   /** Mods that changed on disk since a previous install of this collection. */
   stagingDriftNotice?: string[];
   /**

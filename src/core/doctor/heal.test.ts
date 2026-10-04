@@ -31,6 +31,7 @@ const ALL: HealAction[] = [
   "repin-plugin-order",
   "restore-light-flags",
   "switch-profile",
+  "redeploy-winners",
 ];
 
 describe("healNeedsManifest", () => {
@@ -50,6 +51,8 @@ describe("healNeedsManifest", () => {
     expect(ALL.filter(healNeedsManifest).sort()).toEqual([
       "reapply-rules",
       "reapply-userlist",
+      // Re-applies the manifest's rules before it deploys.
+      "redeploy-winners",
       "reinstall-mods",
     ]);
   });
@@ -83,6 +86,8 @@ describe("healNeedsConfirmation", () => {
       "enable-mods",
       "reapply-rules",
       "reapply-userlist",
+      // The rules step above plus a deploy: repeatable, nothing removed.
+      "redeploy-winners",
       "repin-plugin-order",
       "switch-profile",
     ]);

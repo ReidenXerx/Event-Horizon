@@ -932,6 +932,8 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
   const installerConditionNotes: string[] = [];
   /** Enabled plugins whose masters are not active: switched off (ours) or reported (theirs). */
   let missingMasterNotes: string[] = [];
+  /** Shared files the game gets from a different mod than the curator's did. */
+  let deployWinnerNotes: string[] = [];
   /**
    * Notes about hand-supplied archives that are not the curator's.
    *
@@ -4553,6 +4555,50 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       });
     }
 
+    // ── which mod wins each shared file (deploymentWinners.ts) ─────────
+    // Deployed by now. A file several collection mods ship that the game gets
+    // from a different mod than the curator's did is a body, skeleton or room
+    // that looks wrong with every mod's files intact (alasdairn, 2026-10-04).
+    const recordedWinners = plan.manifest.deployment?.winners ?? [];
+    if (recordedWinners.length > 0) {
+      try {
+        const [{ captureDeploymentManifests }, { judgeDeploymentWinners, countRecordedPaths }] = await Promise.all([
+          import("../deploymentManifest"),
+          import("../manifest/deploymentWinners"),
+        ]);
+        const state = ctx.api.getState();
+        const manifests = await captureDeploymentManifests(ctx.api, state, plan.manifest.game.id);
+        const pool = ((state as unknown as { persistent?: { mods?: Record<string, Record<string, { installationPath?: string }>> } })
+          .persistent?.mods?.[plan.manifest.game.id]) ?? {};
+        const keyToFolder = new Map<string, string>();
+        const nameByKey = new Map<string, string>();
+        const nameByFolder = new Map<string, string>();
+        for (const m of installedMods) {
+          const folder = pool[m.vortexModId]?.installationPath ?? m.vortexModId;
+          keyToFolder.set(m.compareKey, folder);
+          nameByKey.set(m.compareKey, m.name);
+          nameByFolder.set(folder.toLowerCase(), m.name);
+        }
+        const wrong = judgeDeploymentWinners({ winners: recordedWinners, manifests, keyToFolder });
+        deployWinnerNotes = wrong.slice(0, 40).map((f) => {
+          const expected = nameByKey.get(f.expected) ?? f.expected;
+          return f.actual === undefined
+            ? `${f.path} — not deployed (should come from ${expected})`
+            : `${f.path} — from ${nameByFolder.get(f.actual.toLowerCase()) ?? f.actual}, should come from ${expected}`;
+        });
+        if (wrong.length > deployWinnerNotes.length) {
+          deployWinnerNotes.push(`…and ${wrong.length - deployWinnerNotes.length} more`);
+        }
+        ehLog(wrong.length > 0 ? "warn" : "info", "install.deploy-winners", {
+          recorded: countRecordedPaths(recordedWinners),
+          wrong: wrong.length,
+          examples: wrong.slice(0, 10),
+        });
+      } catch (err) {
+        ehLog("warn", "install.deploy-winners.unchecked", { err });
+      }
+    }
+
     // Final sweep, at the same point Vortex's own collection post-processing
     // does it: plugin enablement has just been set from the manifest, so any
     // surviving "contains multiple plugins" prompt is answering a question
@@ -5226,6 +5272,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         ...(curatorReports.length > 0 ? { curatorReports } : {}),
         ...(installerConditionNotes.length > 0 ? { installerConditionNotice: installerConditionNotes } : {}),
         ...(missingMasterNotes.length > 0 ? { missingMasterNotice: missingMasterNotes } : {}),
+        ...(deployWinnerNotes.length > 0 ? { deployWinnerNotice: deployWinnerNotes } : {}),
         ...(damagedArchives.length > 0
           ? { damagedArchiveNotice: damagedArchives }
           : {}),
@@ -5468,6 +5515,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       ...(curatorReports.length > 0 ? { curatorReports } : {}),
       ...(installerConditionNotes.length > 0 ? { installerConditionNotice: installerConditionNotes } : {}),
         ...(missingMasterNotes.length > 0 ? { missingMasterNotice: missingMasterNotes } : {}),
+        ...(deployWinnerNotes.length > 0 ? { deployWinnerNotice: deployWinnerNotes } : {}),
       ...(finishingSkipped.length > 0
         ? {
             finishingSkippedNotice: [

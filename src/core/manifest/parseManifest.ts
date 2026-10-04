@@ -68,6 +68,7 @@ import type {
   VortexDeploymentMethod,
   VortexMetadata,
   EhcollGameIni,
+  EhcollDeploymentWinner,
 } from "../../types/ehcoll";
 import type {
   FomodSelectedChoice,
@@ -210,6 +211,9 @@ export function parseManifest(raw: string): ParseManifestResult {
   // existed simply have none, and absence is not an error. Schema version
   // stays at 1.
   const gameIni = validateGameIni(obj.gameIni, errors);
+  // deployment (contested-file winners) is additive the same way: older
+  // manifests have none, and nothing is judged for them.
+  const deployment = validateDeployment(obj.deployment, errors);
   const externalDependencies = validateExternalDependencies(
     obj.externalDependencies,
     errors,
@@ -294,6 +298,7 @@ export function parseManifest(raw: string): ParseManifestResult {
     iniTweaks: iniTweaks!,
     ...(gameIni !== undefined ? { gameIni } : {}),
     externalDependencies: externalDependencies!,
+    ...(deployment !== undefined ? { deployment } : {}),
   };
 
   return { manifest, warnings };
@@ -2116,6 +2121,48 @@ function describe(value: unknown): string {
  * error rather than half-parsed: a settings block that silently loses keys
  * would apply a configuration nobody wrote.
  */
+/**
+ * `deployment.winners`: which collection mod's copy the curator's game got
+ * for each contested path. Optional. A malformed entry is dropped with an
+ * error rather than guessed at: a wrong winner would tell a player their
+ * correct setup is broken.
+ */
+function validateDeployment(
+  raw: unknown,
+  errors: string[],
+): { winners: EhcollDeploymentWinner[] } | undefined {
+  if (raw === undefined) return undefined;
+  if (!isObject(raw)) {
+    errors.push(`deployment must be an object, got ${describe(raw)}.`);
+    return undefined;
+  }
+  const winners = expectArray((raw as Record<string, unknown>).winners, "deployment.winners", errors);
+  if (winners === undefined) return undefined;
+  const out: EhcollDeploymentWinner[] = [];
+  winners.forEach((entry, i) => {
+    const path = `deployment.winners[${i}]`;
+    if (!isObject(entry)) {
+      errors.push(`${path} must be an object, got ${describe(entry)}.`);
+      return;
+    }
+    const e = entry as Record<string, unknown>;
+    const modType = typeof e.modType === "string" ? e.modType : undefined;
+    if (modType === undefined) {
+      errors.push(`${path}.modType must be a string, got ${describe(e.modType)}.`);
+      return;
+    }
+    const mod = expectString(e.mod, `${path}.mod`, errors);
+    const paths = expectArray(e.paths, `${path}.paths`, errors);
+    if (mod === undefined || paths === undefined) return;
+    if (!paths.every((x): x is string => typeof x === "string")) {
+      errors.push(`${path}.paths must hold only strings.`);
+      return;
+    }
+    out.push({ modType, mod, paths });
+  });
+  return { winners: out };
+}
+
 function validateGameIni(
   raw: unknown,
   errors: string[],

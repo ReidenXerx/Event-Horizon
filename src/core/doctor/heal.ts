@@ -45,6 +45,7 @@ export function healNeedsManifest(action: HealAction): boolean {
     case "reapply-rules":
     case "reapply-userlist":
     case "reinstall-mods":
+    case "redeploy-winners":
       return true;
     case "switch-profile":
     case "enable-mods":
@@ -96,6 +97,7 @@ export function healNeedsConfirmation(action: HealAction): boolean {
     case "restore-light-flags":
     case "reinstall-mods":
       return true;
+    case "redeploy-winners":
     case "reapply-rules":
     case "reapply-userlist":
     case "switch-profile":
@@ -115,6 +117,9 @@ export const REPAIR_ALL_ORDER: readonly HealAction[] = [
   "switch-profile",
   "enable-mods",
   "reapply-rules",
+  // After the rules, which it re-applies too, and before anything that
+  // reads plugin files a deploy can rewrite.
+  "redeploy-winners",
   "reapply-userlist",
   "restore-light-flags",
   "repin-plugin-order",
@@ -220,6 +225,18 @@ export function describeHeal(action: HealAction): {
           "plugin's group assignment is the one thing that can be changed, " +
           "where the collection sets a different one.",
         confirm: "Re-apply LOOT rules",
+      };
+    case "redeploy-winners":
+      return {
+        title: "Re-apply the collection's rules and deploy?",
+        body:
+          "The collection's conflict rules are set again, exactly as the install did, and Vortex " +
+          "deploys, so each shared file goes to the mod the creator's game uses. Nothing is " +
+          "installed or removed." +
+          NL2 +
+          "If a file still comes from another mod afterwards, that mod is not part of the " +
+          "collection or is ordered by a rule of your own: switch it off or remove the rule.",
+        confirm: "Re-apply and deploy",
       };
     case "reinstall-mods":
       return {

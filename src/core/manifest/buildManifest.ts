@@ -19,6 +19,7 @@
  *    {@link BuildManifestResult.warnings} for the UI to surface.
  */
 
+import { recordDeploymentWinners } from "./deploymentWinners";
 import { publicNote } from "../curator/readProfile";
 import { shipsAsExternal } from "./shipsAsExternal";
 
@@ -430,6 +431,28 @@ export function buildManifest(input: BuildManifestInput): BuildManifestResult {
   // not warned about here because nothing is captured into it either: an empty
   // array cannot lose a setting.
 
+  /**
+   * Which collection mod's copy the curator's game got, per contested path
+   * (deploymentWinners.ts). From the deployment manifests the snapshot already
+   * carries; a folder that is not a collection mod (the curator's own extra
+   * mod, a generated output) is not recorded.
+   */
+  const folderToKey = new Map<string, string>();
+  for (const m of input.snapshot.mods) {
+    const key = compareKeyById.get(m.id);
+    const folder = (m as { installationPath?: string }).installationPath ?? m.id;
+    if (key !== undefined) folderToKey.set(folder.toLowerCase(), key);
+  }
+  const deploymentWinners = recordDeploymentWinners({
+    mods: mods.map((m) => ({
+      compareKey: m.compareKey,
+      ...(m.state.modType !== undefined ? { modType: m.state.modType } : {}),
+      stagingPaths: (m.state.stagingFiles ?? []).map((f) => f.path),
+    })),
+    manifests: input.snapshot.deploymentManifests ?? [],
+    folderToKey,
+  });
+
   const manifest: EhcollManifest = {
     schemaVersion: SCHEMA_VERSION,
     package: buildPackageMetadata(input.package),
@@ -470,6 +493,7 @@ export function buildManifest(input: BuildManifestInput): BuildManifestResult {
     // Only written when there is something to write: an empty capture and an
     // absent one mean the same thing to a consumer, and the smaller manifest
     // is the honest one.
+    ...(deploymentWinners.length > 0 ? { deployment: { winners: deploymentWinners } } : {}),
     ...(input.gameIni !== undefined && input.gameIni.files.length > 0
       ? { gameIni: input.gameIni }
       : {}),

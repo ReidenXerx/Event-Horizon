@@ -243,6 +243,18 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
             ? { recordedPlugins: recordedLight.baseline }
             : {}),
           ...(drifted !== undefined ? { driftedCompareKeys: drifted } : {}),
+          // Which mod wins each shared file, against the curator's deployment.
+          // Needs the package; until it is found the check says "not checked".
+          ...(pkg?.manifest.deployment !== undefined
+            ? {
+                deploymentWinners: pkg.manifest.deployment.winners,
+                receiptMods: loaded.selected.mods.map((m) => ({
+                  compareKey: m.compareKey,
+                  vortexModId: m.vortexModId,
+                  name: m.name,
+                })),
+              }
+            : {}),
         });
         if (!alive) return;
         setObs(obs);
@@ -274,7 +286,7 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
     return (): void => {
       alive = false;
     };
-  }, [api, loaded, drifted, tick, reportError]);
+  }, [api, loaded, drifted, tick, reportError, pkg]);
 
   /**
    * `.state` — the snapshot is `{ state, errorSeq }` and the wizard's `kind`

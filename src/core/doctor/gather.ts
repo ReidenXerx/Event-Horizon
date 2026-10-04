@@ -23,6 +23,7 @@ import { beginOp, ehLog } from "../logging/ehLog";
 import type { HealthObservations } from "./health";
 import type { UserPluginMasters } from "../installer/repinPluginOrder";
 import type { OrderReceipt, OrderStanding } from "./loadOrderStatus";
+import type { EhcollDeploymentWinner } from "../../types/ehcoll";
 
 /**
  * Profiles that exist for a game, by id — or `undefined` when Vortex's
@@ -155,6 +156,13 @@ export interface GatherOptions {
    */
   orderReceipt?: OrderReceipt;
   receipts?: readonly OrderReceipt[];
+  /**
+   * The package's recorded winners for contested files, and the receipt's
+   * compareKey → Vortex mod id map to find the player's copy of each mod.
+   * Both needed; without them the conflict check is "not checked".
+   */
+  deploymentWinners?: readonly EhcollDeploymentWinner[];
+  receiptMods?: ReadonlyArray<{ compareKey: string; vortexModId: string; name: string }>;
 }
 
 /**
@@ -352,6 +360,46 @@ export async function gatherObservations(
   // The script-extender side of the game folder, for the version installed now.
   const nativeOnDisk = await (await import("./nativeOnDisk")).readNativeOnDisk(api, gameId);
 
+  // Which mod's copy of each contested file the game got (deploymentWinners.ts).
+  let deployWinners: HealthObservations["deployWinners"];
+  if (opts.deploymentWinners !== undefined && opts.deploymentWinners.length > 0 && opts.receiptMods !== undefined) {
+    try {
+      const [{ captureDeploymentManifests }, { judgeDeploymentWinners, countRecordedPaths }] = await Promise.all([
+        import("../deploymentManifest"),
+        import("../manifest/deploymentWinners"),
+      ]);
+      const manifests = await captureDeploymentManifests(api, state, gameId);
+      const poolMods = ((state as unknown as { persistent?: { mods?: Record<string, Record<string, { installationPath?: string }>> } })
+        .persistent?.mods?.[gameId]) ?? {};
+      const keyToFolder = new Map<string, string>();
+      const nameByKey = new Map<string, string>();
+      const nameByFolder = new Map<string, string>();
+      for (const m of opts.receiptMods) {
+        const folder = poolMods[m.vortexModId]?.installationPath ?? m.vortexModId;
+        keyToFolder.set(m.compareKey, folder);
+        nameByKey.set(m.compareKey, m.name);
+        nameByFolder.set(folder.toLowerCase(), m.name);
+      }
+      const findings = judgeDeploymentWinners({ winners: opts.deploymentWinners, manifests, keyToFolder });
+      deployWinners = {
+        recorded: countRecordedPaths(opts.deploymentWinners),
+        findings: findings.map((f) => ({
+          path: f.path,
+          expected: nameByKey.get(f.expected) ?? f.expected,
+          actual: f.actual === undefined ? undefined : (nameByFolder.get(f.actual.toLowerCase()) ?? f.actual),
+        })),
+      };
+      ehLog(findings.length > 0 ? "warn" : "info", "doctor.deploy-winners", {
+        recorded: deployWinners.recorded,
+        wrong: findings.length,
+        examples: deployWinners.findings.slice(0, 10),
+      });
+    } catch (err) {
+      ehLog("warn", "doctor.deploy-winners.unreadable", { err });
+      deployWinners = undefined;
+    }
+  }
+
   const observations: HealthObservations = {
     existingProfileIds: readProfileIds(state, gameId),
     activeProfileId,
@@ -371,6 +419,7 @@ export async function gatherObservations(
       ? { currentPluginLightFlags }
       : {}),
     ...(nativeOnDisk !== undefined ? { nativeOnDisk } : {}),
+    ...(deployWinners !== undefined ? { deployWinners } : {}),
   };
   op.ok({
     // `undefined` here means the table was unreadable, not that it was empty

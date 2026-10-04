@@ -3450,6 +3450,21 @@ function InstallNotes(props: {
       ),
     });
   }
+  if ((result.deployWinnerNotice?.length ?? 0) > 0) {
+    present.push({
+      label: "shared files from another mod",
+      node: (
+        <Notice
+          key="deploy-winners"
+          label="Shared files from a different mod"
+          intent="warning"
+          summary="Several mods ship these files, and your game gets them from a different mod than the creator's does. A body, skeleton or room can look wrong this way while every mod is intact. Doctor → File conflicts can re-apply the collection's rules and deploy; if a file still comes from another mod after that, switch that mod off."
+        >
+          <NoticeLines lines={result.deployWinnerNotice ?? []} />
+        </Notice>
+      ),
+    });
+  }
   if ((result.installerConditionNotice?.length ?? 0) > 0) {
     present.push({
       label: "files an installer skipped",
