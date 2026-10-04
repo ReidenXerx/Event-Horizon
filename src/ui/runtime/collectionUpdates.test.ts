@@ -268,6 +268,49 @@ describe("the update a card offers", () => {
   });
 });
 
+describe("a revision that takes longer than a minute to download", () => {
+  it("follows the download Vortex listed instead of failing at 60s (Ivy Rev 9, 2026-10-04)", async () => {
+    /**
+     * Vortex answers `start-download` when the download FINISHES. A 4.8 GB
+     * revision on a slower line took minutes, the old 60-second wait reported
+     * "Vortex did not start the download within 60s", and Vortex went on
+     * downloading it. Here Vortex lists the download at once and never calls
+     * back within the test: the update must still follow it by id.
+     */
+    const files: Record<string, unknown> = {};
+    const events = new EventEmitter();
+    events.on("start-download", (_uris: unknown, modInfo: any) => {
+      files["dl-slow"] = { localPath: "Ivy's Panties-rev13.zip", state: "started", modInfo };
+    });
+    const api = {
+      events,
+      getState: () => ({ persistent: { downloads: { files } } }),
+      emitAndAwait: async (event: string) =>
+        event === "get-nexus-collection-revision" ? [REVISION] : [URLS],
+    } as never;
+    const waited: string[] = [];
+    vi.useFakeTimers();
+    try {
+      const p = downloadRevision(
+        api,
+        update(),
+        deps({
+          waitForDownload: async (_api: unknown, id: string) => {
+            waited.push(id);
+            return { localPath: "Ivy's Panties-rev13.zip" } as never;
+          },
+        }),
+        () => undefined,
+      );
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(p).resolves.toBe(path.join(DIR, "Ivy's Panties-rev13.zip"));
+      expect(waited).toEqual(["dl-slow"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("when Vortex never accepts the download", () => {
   it("gives up after a minute instead of leaving Update pending forever", async () => {
     /**

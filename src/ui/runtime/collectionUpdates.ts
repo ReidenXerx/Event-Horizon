@@ -470,35 +470,51 @@ export async function downloadRevision(
   try {
     downloadId = await new Promise<string>((resolve, reject) => {
       /**
-       * This waits only for Vortex to ACCEPT the download and hand back an id
-       * — the transfer itself is waited on separately, and is allowed to take
-       * as long as the file takes. So a short budget is right here, and its
-       * absence was the failure shape: `emit` returns nothing, so a callback
-       * that never comes left Update pending forever with no error.
+       * ─── VORTEX ANSWERS THIS CALLBACK WHEN THE DOWNLOAD FINISHES ────────
+       * Not when it starts (read in Vortex 2.7's download manager: the
+       * success callback is handed to its completion step). This waited 60
+       * seconds for it as if it were an acceptance, so any revision that took
+       * longer than a minute to download — a 4.8 GB Ivy on a slower line —
+       * failed with "Vortex did not start the download within 60s" while
+       * Vortex went on downloading it (Ivy Rev 9, two players, 2026-10-04;
+       * one finished it by hand from the Downloads tab).
+       *
+       * So the download is found in Vortex's list as soon as it APPEARS there,
+       * and the transfer is waited on by id as before. The callback still
+       * settles it when it comes first (an error, or a download already done).
+       * The minute now bounds only "Vortex never listed it at all".
        */
-      const ACCEPT_MS = 60_000;
+      const APPEAR_MS = 60_000;
+      const before = new Set(Object.keys(downloadFiles(api)));
       let settled = false;
-      const timer = setTimeout(() => {
+      const finish = (fn: () => void): void => {
         if (settled) return;
         settled = true;
-        reject(
-          new Error(
-            "Vortex did not start the download within 60s. Check its " +
-              "notifications, then press Update again.",
+        clearInterval(poll);
+        clearTimeout(timer);
+        fn();
+      };
+      const poll = setInterval(() => {
+        const id = findNewDownload(api, before, fileName, slug, modInfo.nexus.ids.revisionNumber);
+        if (id !== undefined) finish(() => resolve(id));
+      }, 500);
+      const timer = setTimeout(() => {
+        finish(() =>
+          reject(
+            new Error(
+              "Vortex did not start the download within 60s. Check its " +
+                "notifications, then press Update again.",
+            ),
           ),
         );
-      }, ACCEPT_MS);
+      }, APPEAR_MS);
       api.events.emit(
         "start-download",
         uris,
         modInfo,
         fileName,
         (err: unknown, id?: string) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          if (err) reject(err);
-          else resolve(id as string);
+          finish(() => (err ? reject(err) : resolve(id as string)));
         },
         "never",
         { allowInstall: false },
@@ -524,6 +540,36 @@ export async function downloadRevision(
     throw new Error("Vortex did not say where it saved the download. Look in its Downloads tab.");
   }
   return path.join(dir, download.localPath);
+}
+
+type DownloadRecord = {
+  localPath?: unknown;
+  modInfo?: { nexus?: { ids?: { collectionSlug?: unknown; revisionNumber?: unknown } } };
+};
+
+function downloadFiles(api: types.IExtensionApi): Record<string, DownloadRecord> {
+  return (
+    (api.getState() as { persistent?: { downloads?: { files?: Record<string, DownloadRecord> } } })?.persistent?.downloads
+      ?.files ?? {}
+  );
+}
+
+/** A download Vortex listed after we asked: this revision's, by file name or by the revision on it. */
+function findNewDownload(
+  api: types.IExtensionApi,
+  before: ReadonlySet<string>,
+  fileName: string,
+  slug: string,
+  revisionNumber: unknown,
+): string | undefined {
+  const files = downloadFiles(api);
+  return Object.keys(files).find((id) => {
+    if (before.has(id)) return false;
+    const d = files[id]!;
+    if (typeof d.localPath === "string" && d.localPath.toLowerCase() === fileName.toLowerCase()) return true;
+    const ids = d.modInfo?.nexus?.ids;
+    return ids?.collectionSlug === slug && ids?.revisionNumber === revisionNumber;
+  });
 }
 
 function safeFileName(name: string): string {
