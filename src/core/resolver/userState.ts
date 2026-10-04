@@ -722,6 +722,7 @@ function projectInstalledMods(
 
     const tag = tagsByVortexModId.get(mod.id);
     if (tag) out.eventHorizonInstall = tag;
+    if (typeof mod.installTime === "string" && mod.installTime.length > 0) out.installTime = mod.installTime;
 
     return out;
   });
@@ -753,6 +754,7 @@ function lineageTagFor(
     originalCompareKey: m.compareKey,
     installedAt: m.installedAt,
     ...(m.ownership !== undefined ? { ownership: m.ownership } : {}),
+    ...(m.displacedModId !== undefined ? { displaced: true } : {}),
   };
 }
 

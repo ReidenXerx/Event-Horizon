@@ -357,6 +357,10 @@ export async function installNexusViaApi(
      * install acts on.
      */
     completed.promise.catch((err: unknown) => {
+      // Standing the waiter down after every download rejects it with an
+      // abort; that is not the watchdog and logging it would mean one bogus
+      // line per mod.
+      if (isAbortErrorLocal(err)) return;
       ehLog("info", "install.download.watchdog-quiet", {
         modId: args.nexusModId,
         fileId: args.nexusFileId,

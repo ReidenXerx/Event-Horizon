@@ -11,12 +11,13 @@ import { resolveOrphanedMods } from "./resolveInstallPlan";
 import { defaultOrphanChoice, fillDefaultOrphanChoices } from "../../ui/pages/install/state";
 
 const PKG = "pkg-1";
-const tag = (key: string, ownership?: "installed" | "adopted") => ({
+const tag = (key: string, ownership?: "installed" | "adopted", extra: Record<string, unknown> = {}) => ({
   collectionPackageId: PKG,
   collectionVersion: "1.0.37",
   originalCompareKey: key,
   installedAt: "2026-10-01T00:00:00Z",
   ...(ownership !== undefined ? { ownership } : {}),
+  ...extra,
 });
 const manifest = { package: { id: PKG }, mods: [{ compareKey: "kept" }] } as never;
 const userState = {
@@ -26,6 +27,16 @@ const userState = {
     { id: "v-ours", name: "Old Skeleton", enabled: true, eventHorizonInstall: tag("old-skel", "installed") },
     { id: "v-theirs", name: "Their Mod", enabled: true, eventHorizonInstall: tag("theirs", "adopted") },
     { id: "v-unknown", name: "Old Receipt Mod", enabled: true, eventHorizonInstall: tag("legacy") },
+    // The player deleted our copy and reinstalled their own; Vortex gave it the same id.
+    {
+      id: "v-reinstalled",
+      name: "Reinstalled",
+      enabled: true,
+      installTime: "2026-10-03T12:00:00Z",
+      eventHorizonInstall: tag("re", "installed"),
+    },
+    // Installed beside a mod of the player's, whose own copy was switched off.
+    { id: "v-beside", name: "Beside", enabled: true, eventHorizonInstall: tag("beside", "installed", { displaced: true }) },
   ],
 } as never;
 
@@ -37,6 +48,8 @@ describe("orphans after an in-place run", () => {
       ["v-ours", "recommend-uninstall"],
       ["v-theirs", "manual-review"],
       ["v-unknown", "manual-review"],
+      ["v-reinstalled", "manual-review"],
+      ["v-beside", "manual-review"],
     ]);
   });
 
@@ -46,7 +59,12 @@ describe("orphans after an in-place run", () => {
       "v-ours": { kind: "uninstall" },
       "v-theirs": { kind: "keep" },
       "v-unknown": { kind: "keep" },
+      "v-reinstalled": { kind: "keep" },
+      "v-beside": { kind: "keep" },
     });
+    // Another profile uses it: Uninstall would take it from there too (NS-3).
+    const shared = fillDefaultOrphanChoices({ plan: { orphanedMods: orphans } } as never, {}, (id) => id === "v-ours");
+    expect(shared["v-ours"]).toEqual({ kind: "keep" });
     // The player's own answer always wins over the default.
     expect(fillDefaultOrphanChoices({ plan: { orphanedMods: orphans } } as never, { "v-ours": { kind: "keep" } })["v-ours"]).toEqual({ kind: "keep" });
     expect(defaultOrphanChoice()).toEqual({ kind: "keep" });

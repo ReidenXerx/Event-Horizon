@@ -241,7 +241,10 @@ export function claudeDesktopConfigPaths(): string[] {
   try {
     for (const pkg of fs.readdirSync(path.join(local, "Packages"))) {
       if (!/^(Anthropic\.)?Claude_/i.test(pkg)) continue;
-      out.push(path.join(local, "Packages", pkg, "LocalCache", "Roaming", "Claude", "claude_desktop_config.json"));
+      // Only where that build has run and made its own folder: creating one
+      // inside a package that never started writes a file nothing reads.
+      const dir = path.join(local, "Packages", pkg, "LocalCache", "Roaming", "Claude");
+      if (fs.existsSync(dir)) out.push(path.join(dir, "claude_desktop_config.json"));
     }
   } catch {
     // No Packages folder, or unreadable: the plain install path is all there is.
@@ -283,6 +286,17 @@ export function addToClaudeDesktop(): { ok: boolean; message: string; file: stri
   const failed = results.filter((r): r is { file: string; result: { ok: false; message: string } } => !r.result.ok);
   if (written.length === 0) {
     return { ok: false, message: failed[0]?.result.message ?? "Nothing was written.", file: files[0]! };
+  }
+  if (failed.length > 0) {
+    // The Store build reads its own file, which shadows the regular one: one
+    // of them written and the other not can still leave Claude seeing nothing.
+    return {
+      ok: false,
+      message: `Added to ${written.length} of ${files.length} Claude Desktop config files. Not changed: ${failed
+        .map((f) => `${f.file} (${f.result.message})`)
+        .join("; ")}`,
+      file: failed[0]!.file,
+    };
   }
   const store = written.length > 1 ? " (both the regular and the Microsoft Store locations)" : "";
   return {

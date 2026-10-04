@@ -541,7 +541,10 @@ class InstallSession {
    * didn't explicitly resolve so the confirm step shows the exact
    * decisions that will be applied.
    */
-  openConfirm(): void {
+  openConfirm(
+    /** Whether another profile has an orphan switched on — the screen's own answer, so its default matches. */
+    enabledElsewhere?: (modId: string) => boolean,
+  ): void {
     if (this.state.kind !== "decisions") return;
     const filledConflicts = fillDefaultConflictChoices(
       this.state.bundle,
@@ -550,6 +553,7 @@ class InstallSession {
     const filledOrphans = fillDefaultOrphanChoices(
       this.state.bundle,
       this.state.orphanChoices,
+      enabledElsewhere,
     );
     const mismatch = this.state.bundle.plan.compatibility?.versionMismatch;
     this.dispatch({

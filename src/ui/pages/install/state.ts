@@ -551,8 +551,12 @@ export function defaultConflictChoice(
  * Owner, 2026-10-04: a dropped skeleton or body mod left switched on is
  * worse than a mod the player has to re-add.
  */
-export function defaultOrphanChoice(orphan?: Pick<OrphanedModDecision, "recommendation">): OrphanChoice {
-  return orphan?.recommendation === "recommend-uninstall" ? { kind: "uninstall" } : { kind: "keep" };
+export function defaultOrphanChoice(
+  orphan?: Pick<OrphanedModDecision, "recommendation">,
+  /** Another profile has it switched on: Uninstall would take it from there too (NS-3). */
+  enabledElsewhere = false,
+): OrphanChoice {
+  return orphan?.recommendation === "recommend-uninstall" && !enabledElsewhere ? { kind: "uninstall" } : { kind: "keep" };
 }
 
 /**
@@ -637,11 +641,12 @@ export function fillDefaultConflictChoices(
 export function fillDefaultOrphanChoices(
   bundle: PreviewBundle,
   orphanChoices: Record<string, OrphanChoice>,
+  enabledElsewhere: (modId: string) => boolean = () => false,
 ): Record<string, OrphanChoice> {
   const out: Record<string, OrphanChoice> = { ...orphanChoices };
   for (const o of bundle.plan.orphanedMods) {
     if (out[o.existingModId] !== undefined) continue;
-    out[o.existingModId] = defaultOrphanChoice(o);
+    out[o.existingModId] = defaultOrphanChoice(o, enabledElsewhere(o.existingModId));
   }
   return out;
 }

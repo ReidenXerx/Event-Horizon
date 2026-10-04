@@ -17,6 +17,7 @@
  *     than one frame belongs in the session.
  */
 
+import { orphanEnabledIn } from "./orphanSharing";
 import * as React from "react";
 
 import { Button, Card } from "../../components";
@@ -287,7 +288,11 @@ function InstallWizard(props: InstallPageProps): JSX.Element {
         <DecisionsStep
           state={state}
           dispatch={dispatch}
-          onContinue={(): void => session.openConfirm()}
+          onContinue={(): void =>
+            session.openConfirm((id) =>
+              state.kind === "decisions" ? orphanEnabledIn(api, state.bundle.plan, id).length > 0 : false,
+            )
+          }
         />
       );
 

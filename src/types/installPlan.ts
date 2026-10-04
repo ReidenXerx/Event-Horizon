@@ -246,6 +246,12 @@ export type InstalledMod = {
    * resolver degrades to fresh-install behavior, never guesses.
    */
   eventHorizonInstall?: ModEventHorizonInstallTag;
+  /**
+   * When Vortex installed this copy (ISO). Compared against the receipt's own
+   * time for the mod: a copy installed well AFTER Event Horizon recorded it is
+   * the player's reinstall under the same id, and is not ours to remove (NS-2).
+   */
+  installTime?: string;
 };
 
 /**
@@ -272,6 +278,12 @@ export type ModEventHorizonInstallTag = {
    * receipts, and absent means adopted (see `InstallReceiptMod.ownership`).
    */
   ownership?: "installed" | "adopted";
+  /**
+   * The receipt says this copy was installed BESIDE a mod of the player's
+   * (`displacedModId`), whose own copy was switched off to make room.
+   * Removing this one would leave them with neither.
+   */
+  displaced?: boolean;
 };
 
 /**
@@ -1006,7 +1018,10 @@ export type OrphanedModDecision = {
    *    curator dropped it, suggest removing.
    *  - `"manual-review"` ⇒ no clear opinion.
    *
-   * **v1 POLICY**: the resolver ALWAYS emits `"manual-review"`.
+   * **POLICY** (owner, 2026-10-04): `"recommend-uninstall"` only for an
+   * orphan the receipt proves Event Horizon installed and Vortex has not
+   * reinstalled since (resolveInstallPlan.ts provenOurs); everything else is
+   * `"manual-review"`.
    * Same defense-in-depth as {@link ConflictRecommendation}. The
    * action handler/UI is required to confirm before any
    * uninstall.

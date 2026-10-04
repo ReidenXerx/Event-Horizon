@@ -22,7 +22,11 @@ const sandbox = (withStore: boolean): { roaming: string; store: string } => {
   process.env["APPDATA"] = path.join(root, "Roaming");
   process.env["LOCALAPPDATA"] = path.join(root, "Local");
   fs.mkdirSync(path.join(root, "Local", "Packages", "SomethingElse_123"), { recursive: true });
-  if (withStore) fs.mkdirSync(path.join(root, "Local", "Packages", "Claude_pzs8sxrjxfjjc"), { recursive: true });
+  // A Store package that never ran has no LocalCache folder and is not written to.
+  fs.mkdirSync(path.join(root, "Local", "Packages", "Claude_neverran"), { recursive: true });
+  if (withStore) {
+    fs.mkdirSync(path.join(root, "Local", "Packages", "Claude_pzs8sxrjxfjjc", "LocalCache", "Roaming", "Claude"), { recursive: true });
+  }
   return {
     roaming: path.join(root, "Roaming", "Claude", "claude_desktop_config.json"),
     store: path.join(root, "Local", "Packages", "Claude_pzs8sxrjxfjjc", "LocalCache", "Roaming", "Claude", "claude_desktop_config.json"),

@@ -108,8 +108,8 @@ External mods are identified by SHA-256 alone (per §5.5 — there is no other i
 
 Per [INSTALL_PLAN_SCHEMA.md "v1 conservative-policy invariant"](INSTALL_PLAN_SCHEMA.md#v1-conservative-policy-invariant-load-bearing):
 
-- Every `nexus-version-diverged`, `nexus-bytes-diverged`, and orphan decision the resolver emits has `recommendation: "manual-review"`.
-- The resolver MUST NOT emit `"replace-existing"` / `"keep-existing"` / `"recommend-uninstall"` / `"keep-installed"` in v1, even when context would suggest one. Those values exist in the type set for future heuristics.
+- Every `nexus-version-diverged` and `nexus-bytes-diverged` decision has `recommendation: "manual-review"`; so does every orphan except an orphan the receipt proves Event Horizon installed (ownership `installed`, not installed beside a player's mod, not reinstalled by Vortex since) is `recommend-uninstall` (owner, 2026-10-04), and the Decisions screen defaults it to Uninstall unless another profile uses it.
+- The resolver MUST NOT emit `"replace-existing"` / `"keep-existing"` / `"keep-installed"`. Those values exist in the type set for future heuristics.
 - The driver acts only on user-confirmed choices the action handler converts from these recommendations — never on the recommendation directly.
 
 This is the structural guarantee that an Event Horizon install never silently destroys user state. The worst case is "we did nothing"; never "we removed the user's stuff."

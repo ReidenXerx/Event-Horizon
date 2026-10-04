@@ -19,6 +19,7 @@
  * entrance animation plays on every step transition.
  */
 
+import { orphanEnabledIn } from "./orphanSharing";
 import * as React from "react";
 import { EnvironmentCard, summarizeEnvironment } from "./EnvironmentCard";
 import { VersionMismatchPanel } from "./VersionMismatchPanel";
@@ -1366,29 +1367,13 @@ export function DecisionsStep(props: DecisionsStepProps): JSX.Element {
    * what "Uninstall it" would actually cost them (NS-3).
    */
   const api = useApi();
-  const orphanAlsoEnabledIn = (modId: string): string[] => {
-    try {
-      const target = state.bundle.plan.installTarget;
-      return profilesEnabling({
-        state: api.getState(),
-        gameId: state.bundle.plan.manifest.game.id,
-        modId,
-        ...(target.kind === "current-profile"
-          ? { excludeProfileId: target.profileId }
-          : {}),
-      });
-    } catch {
-      // A prompt that cannot read state still has to render; it simply falls
-      // back to the generic wording rather than failing the step.
-      return [];
-    }
-  };
+  const orphanAlsoEnabledIn = (modId: string): string[] => orphanEnabledIn(api, state.bundle.plan, modId);
 
   return (
     <StepFrame
       current="decisions"
       title="Resolve conflicts and orphans"
-      subtitle="For each item below, choose what Event Horizon should do. Defaults are conservative — keep your current setup unless you actively want to replace it."
+      subtitle="For each item below, choose what Event Horizon should do. Defaults keep your current setup, except a mod Event Horizon itself installed that this version no longer uses: that one defaults to Uninstall, unless another profile uses it."
     >
       {conflicts.length === 0 && orphans.length === 0 && (
         <Card title="Nothing to resolve">
@@ -1468,7 +1453,8 @@ export function DecisionsStep(props: DecisionsStepProps): JSX.Element {
                 orphan={o}
                 alsoEnabledIn={orphanAlsoEnabledIn(o.existingModId)}
                 value={
-                  state.orphanChoices[o.existingModId] ?? defaultOrphanChoice(o)
+                  state.orphanChoices[o.existingModId] ??
+                  defaultOrphanChoice(o, orphanAlsoEnabledIn(o.existingModId).length > 0)
                 }
                 onChange={(choice): void =>
                   dispatch({
@@ -1605,7 +1591,7 @@ function ConflictRow(props: {
    * still costs nothing.
    */
   const [identity, setIdentity] = React.useState<
-    { state: "checking" } | { state: "done"; text: string; ok: boolean } | undefined
+    { state: "checking" } | { state: "done"; text: string; ok: boolean; neutral?: true } | undefined
   >(undefined);
 
   const checkPickedFile = async (file: string): Promise<void> => {
@@ -1620,6 +1606,8 @@ function ConflictRow(props: {
       setIdentity({
         state: "done",
         ok: true,
+        // Neutral, not green: nothing about the file has been checked yet.
+        neutral: true,
         text:
           "Taken. This collection recorded this mod's installed files rather than its download, " +
           "so Event Horizon checks them right after it installs, not now.",
@@ -1635,6 +1623,9 @@ function ConflictRow(props: {
         archivePath: file,
         expectedSha256: expected,
       });
+      // A larger file picked first can finish hashing after a newer pick:
+      // its verdict is about a file no longer chosen.
+      if (checkedPath.current !== file) return;
       setIdentity({
         state: "done",
         ok: check.kind === "matches",
@@ -1759,7 +1750,7 @@ function ConflictRow(props: {
           {identity !== undefined && value?.kind === "use-local-file" && (
             <Callout
               tone={
-                identity.state === "checking"
+                identity.state === "checking" || identity.neutral === true
                   ? "info"
                   : identity.ok
                     ? "success"

@@ -74,6 +74,7 @@ import type {
   ExternalDependencyVerification,
   ExternalDependencyFileMismatch,
   InstalledMod,
+  ModEventHorizonInstallTag,
   InstallPlan,
   InstallTarget,
   ModDecision,
@@ -806,6 +807,22 @@ function resolveExternalMod(
  * No lineage ⇒ no orphans by definition. Fresh-profile mode also
  * never produces orphans (the new profile starts empty).
  */
+/**
+ * Ours to recommend removing: the receipt says Event Horizon installed it, it
+ * was not installed beside a mod of the player's, and Vortex has not
+ * reinstalled it since. "Liveness is not identity" — the driver applies the
+ * same reinstall test before it treats a receipt claim as ownership; a player
+ * who deleted our copy and reinstalled their own gets the same id back.
+ */
+const REINSTALL_GRACE_MS = 60_000;
+function provenOurs(installed: InstalledMod, tag: ModEventHorizonInstallTag): boolean {
+  if (tag.ownership !== "installed" || tag.displaced === true) return false;
+  const vortexTime = installed.installTime === undefined ? NaN : Date.parse(installed.installTime);
+  const recorded = Date.parse(tag.installedAt);
+  if (Number.isFinite(vortexTime) && Number.isFinite(recorded) && vortexTime > recorded + REINSTALL_GRACE_MS) return false;
+  return true;
+}
+
 export function resolveOrphanedMods(
   manifest: EhcollManifest,
   userState: UserSideState,
@@ -840,7 +857,7 @@ export function resolveOrphanedMods(
        * `installed` mod (NS-2); an adopted or unknown one stays the player's
        * call. The driver still only acts on the choice the player confirms.
        */
-      recommendation: tag.ownership === "installed" ? "recommend-uninstall" : "manual-review",
+      recommendation: provenOurs(installed, tag) ? "recommend-uninstall" : "manual-review",
     });
   }
   return orphans;

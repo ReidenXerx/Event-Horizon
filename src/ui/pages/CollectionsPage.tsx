@@ -836,23 +836,14 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
         <InterruptedInstalls
           markers={state.interrupted}
           onResume={(m): void => {
-            // Open the same package straight away: the file this run used if
-            // it is still there, else the copy kept at install time (markers
-            // written before `packagePath` existed). Neither → the Install
-            // page asks for it, as before.
+            // Open the same package straight away: the exact file this run
+            // used, if it is still there. Nothing else: a "kept copy" found by
+            // version string can be an OLDER revision republished under the
+            // same version, and resuming into it would install the wrong one.
+            // Without the file, the Install page asks for it, as before.
             void (async (): Promise<void> => {
               try {
-                let path = m.packagePath !== undefined && existsSync(m.packagePath) ? m.packagePath : undefined;
-                if (path === undefined && m.packageVersion !== undefined) {
-                  const { locateCollectionPackage } = await import("../../core/manifest/locatePackage");
-                  path = (
-                    await locateCollectionPackage({
-                      packageId: m.packageId,
-                      packageName: m.packageName,
-                      packageVersion: m.packageVersion,
-                    })
-                  )?.path;
-                }
+                const path = m.packagePath !== undefined && existsSync(m.packagePath) ? m.packagePath : undefined;
                 if (path !== undefined) {
                   const { getInstallSession } = await import("./install/installSession");
                   getInstallSession().pickFile(api, path);
