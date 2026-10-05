@@ -151,7 +151,13 @@ import {
   walkStagingFolder,
 } from "../manifest/stagingFileWalker";
 import { buildCuratorReport } from "./curatorReport";
-import { describeNeeds, installerConditionUnmet } from "../manifest/conditionalFiles";
+import {
+  activePluginsFromState,
+  describeNeeds,
+  installerConditionUnmet,
+  pluginsGatedOff,
+  withGatedPluginsOff,
+} from "../manifest/conditionalFiles";
 import * as path from "path";
 import { selectors } from "@nexusmods/vortex-api";
 import { readReceipt } from "../installLedger";
@@ -4112,6 +4118,19 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
        */
     }
 
+    /**
+     * The curator's order as THIS player should have it: a plugin whose
+     * installer creates it only with plugins this player does not have
+     * (a patch for a Creation they do not own) is off here, correctly. Without
+     * this the summary and Doctor would report it, forever, as a plugin the
+     * curator has that is not present.
+     */
+    const curatorOrderHere = (): typeof plan.manifest.plugins.order =>
+      withGatedPluginsOff(
+        plan.manifest.plugins.order,
+        pluginsGatedOff(plan.manifest.mods, activePluginsFromState(api.getState())),
+      );
+
     // Record the curator's plugin order in the receipt.
     //
     // Always, even when LoadOrder is empty. Nothing reads it back yet — the
@@ -4119,7 +4138,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     // record of what the order was supposed to be, and it costs one array.
     rulesApplication = {
       ...rulesApplication,
-      baselinePluginOrder: plan.manifest.plugins.order.map(
+      baselinePluginOrder: curatorOrderHere().map(
         (p): ReceiptPluginEntry => ({
           name: p.name,
           enabled: p.enabled,
@@ -4307,7 +4326,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       );
       if (actual !== undefined) {
         pluginOrderDrift = comparePluginOrder(
-          plan.manifest.plugins.order,
+          curatorOrderHere(),
           actual,
         );
 
@@ -4446,7 +4465,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
 
             if (repinLanded && after !== undefined) {
               pluginOrderDrift = comparePluginOrder(
-                plan.manifest.plugins.order,
+                curatorOrderHere(),
                 after,
               );
               ehLog("info", "plugins.order-drift.after-repin", {
@@ -5152,7 +5171,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             );
             if (settled !== undefined) {
               pluginOrderDrift = comparePluginOrder(
-                plan.manifest.plugins.order,
+                curatorOrderHere(),
                 settled,
               );
               repinUnconfirmed = false;

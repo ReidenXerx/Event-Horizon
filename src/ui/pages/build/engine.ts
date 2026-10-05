@@ -647,12 +647,22 @@ export function applySelfCheckFindings(
       .filter((r) => (r.readsPluginState?.length ?? 0) > 0)
       .map((r) => [r.modId, r.readsPluginState!] as const),
   );
-  // Staged files the installer would not create now: recorded on the file so a
-  // player is told why it is absent (owner poll, 2026-09-28).
+  // Files the installer creates only with certain plugins active: recorded on
+  // the file so a player without them is told why it is absent, not that the
+  // mod could not be reproduced. Both the ones the curator's own plugins would
+  // not create now (owner poll, 2026-09-28) and the ones they do create, which
+  // is what a patch hub for Creations the player may not own looks like
+  // (Ivy CC patches, 2026-10-05).
   const conditionByMod = new Map(
     reports
-      .filter((r) => (r.installerConditionUnmet?.length ?? 0) > 0)
-      .map((r) => [r.modId, new Map(r.installerConditionUnmet!.map((c) => [c.path, c.needs] as const))] as const),
+      .filter((r) => (r.installerConditionUnmet?.length ?? 0) + (r.installerConditionHeld?.length ?? 0) > 0)
+      .map(
+        (r) =>
+          [
+            r.modId,
+            new Map([...(r.installerConditionHeld ?? []), ...(r.installerConditionUnmet ?? [])].map((c) => [c.path, c.needs] as const)),
+          ] as const,
+      ),
   );
 
   if (verifiedEmpty.size > 0) {

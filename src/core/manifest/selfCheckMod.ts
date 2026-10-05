@@ -67,6 +67,13 @@ export type SelfCheckReport = {
    * the plugins it needs, any one of which would make the installer create it.
    */
   installerConditionUnmet?: Array<{ path: string; needs: string[] }>;
+  /**
+   * Staged files only a plugin-conditioned pattern creates, whose condition
+   * HOLDS on the curator's plugins: a CC patch hub installs its patch for the
+   * curator, who owns the Creation, and must not be judged missing for a
+   * player who does not (Ivy CC patches, 2026-10-05).
+   */
+  installerConditionHeld?: Array<{ path: string; needs: string[] }>;
   modId: string;
   modName: string;
   depth: SelfCheckDepth;
@@ -509,6 +516,7 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
 
   let expected;
   let conditionUnmet: Array<{ path: string; needs: string[] }> = [];
+  let conditionHeld: Array<{ path: string; needs: string[] }> = [];
   try {
     const parsed = await parseModuleConfig(raw);
     // Whatever the replay concludes, the script has now been read and its
@@ -559,7 +567,7 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
       return withDeps({ ...withLeads, depth: "containment", notes, ...unexplainedFacts(containment, listing) });
     }
     if (input.pluginState !== undefined) {
-      conditionUnmet = stagedButConditionUnmet({
+      ({ unmet: conditionUnmet, held: conditionHeld } = stagedByPluginCondition({
         patterns: parsed.script.conditionalPatterns,
         flags: replay.flags,
         pluginState: input.pluginState,
@@ -567,7 +575,7 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
         expectedKeys: new Set(expected.files.map((f) => key(f.path))),
         staged: staged.map((f) => f.path),
         key,
-      });
+      }));
     }
   } catch (err) {
     notes.push(`FOMOD replay failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -601,6 +609,7 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
     ...unexplainedFacts(containment, listing),
     expectedCount: expected.files.length,
     ...(conditionUnmet.length > 0 ? { installerConditionUnmet: conditionUnmet } : {}),
+    ...(conditionHeld.length > 0 ? { installerConditionHeld: conditionHeld } : {}),
     // The same answers pick the same files anywhere — unless the script also
     // asks the game which plugins are active.
     ...(readsPluginState.length === 0 ? { reproducibleInstall: true } : {}),
@@ -613,7 +622,17 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
  * pattern's condition is false on these plugins. Flag-only patterns are left
  * to the replay, which already predicts them.
  */
-export function stagedButConditionUnmet(args: {
+export function stagedButConditionUnmet(args: Parameters<typeof stagedByPluginCondition>[0]): Array<{ path: string; needs: string[] }> {
+  return stagedByPluginCondition(args).unmet;
+}
+
+/**
+ * Staged files that only plugin-conditioned patterns create, split by whether
+ * the condition holds on these plugins. `unmet`: no holding pattern creates it
+ * (left over from an older install). `held`: a holding pattern creates it, so
+ * a player without those plugins correctly will not get it.
+ */
+export function stagedByPluginCondition(args: {
   patterns: readonly FomodConditionalPattern[];
   flags: Readonly<Record<string, string>>;
   pluginState: (file: string) => PluginState;
@@ -621,12 +640,13 @@ export function stagedButConditionUnmet(args: {
   expectedKeys: ReadonlySet<string>;
   staged: readonly string[];
   key: (p: string) => string;
-}): Array<{ path: string; needs: string[] }> {
+}): { unmet: Array<{ path: string; needs: string[] }>; held: Array<{ path: string; needs: string[] }> } {
   const unexpected = new Map<string, string>();
   for (const p of args.staged) if (!args.expectedKeys.has(args.key(p))) unexpected.set(args.key(p), p);
-  if (unexpected.size === 0) return [];
+  if (unexpected.size === 0) return { unmet: [], held: [] };
   const produced = new Set<string>();
   const needsByKey = new Map<string, Set<string>>();
+  const heldNeedsByKey = new Map<string, Set<string>>();
   for (const pattern of args.patterns) {
     if (pattern.condition === undefined || pattern.unsupportedDependencies.length === 0) continue;
     const holds = evaluateCondition(pattern.condition, args.flags, args.pluginState);
@@ -636,6 +656,9 @@ export function stagedButConditionUnmet(args: {
       if (!unexpected.has(k)) continue;
       if (holds) {
         produced.add(k);
+        const held = heldNeedsByKey.get(k) ?? new Set<string>();
+        wanted.forEach((w) => held.add(w));
+        heldNeedsByKey.set(k, held);
         continue;
       }
       const set = needsByKey.get(k) ?? new Set<string>();
@@ -643,10 +666,17 @@ export function stagedButConditionUnmet(args: {
       needsByKey.set(k, set);
     }
   }
-  return [...needsByKey.entries()]
-    .filter(([k, needs]) => !produced.has(k) && needs.size > 0)
-    .map(([k, needs]) => ({ path: unexpected.get(k)!, needs: [...needs].sort() }))
-    .sort((a, b) => (a.path < b.path ? -1 : 1));
+  const byPath = (a: { path: string }, b: { path: string }): number => (a.path < b.path ? -1 : 1);
+  return {
+    unmet: [...needsByKey.entries()]
+      .filter(([k, needs]) => !produced.has(k) && needs.size > 0)
+      .map(([k, needs]) => ({ path: unexpected.get(k)!, needs: [...needs].sort() }))
+      .sort(byPath),
+    held: [...heldNeedsByKey.entries()]
+      .filter(([, needs]) => needs.size > 0)
+      .map(([k, needs]) => ({ path: unexpected.get(k)!, needs: [...needs].sort() }))
+      .sort(byPath),
+  };
 }
 
 export function summarizeSelfChecks(reports: SelfCheckReport[]): {

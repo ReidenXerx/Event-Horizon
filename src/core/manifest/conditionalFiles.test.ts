@@ -7,15 +7,18 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  activePluginsFromState,
   describeNeeds,
   evaluateCondition,
   installerConditionUnmet,
+  pluginsGatedOff,
   pluginsWanted,
+  withGatedPluginsOff,
   type PluginState,
 } from "./conditionalFiles";
 import { parseModuleConfig } from "./parseModuleConfig";
 import { parseManifest } from "./parseManifest";
-import { stagedButConditionUnmet } from "./selfCheckMod";
+import { stagedButConditionUnmet, stagedByPluginCondition } from "./selfCheckMod";
 import type { FomodConditionalPattern } from "./fomodReplay";
 
 const FILE = "F4SE/Plugins/RobCo_Patcher/LeveledList/Munitions - An Ammo Expansion.esl/5.45mm/Munitions - An Ammo Expansion.esl.ini";
@@ -152,5 +155,84 @@ describe("the manifest carries a staged file's installer condition", () => {
     expect(files[0]).toEqual({ path: "a.ini", size: 1, installerCondition: { needs: ["sks.esp"] } });
     expect(files[1]).toEqual({ path: "b.ini", size: 1 });
     expect(files[2]).toEqual({ path: "c.ini", size: 1 });
+  });
+});
+
+/**
+ * Ivy CC patches (Fallout-collection, 2026-10-05): one installer, a patch per
+ * Creation, each created only when that Creation is active. The curator owns
+ * them all, so every condition HOLDS at build — and a player who owns none
+ * must still not be told the mod could not be reproduced.
+ */
+describe("a patch hub for Creations the player may not own", () => {
+  const file = (f: string) => ({ source: f, destination: f, priority: 0, isFolder: false });
+  const pattern = (plugin: string, out: string): FomodConditionalPattern => ({
+    flagDependencies: {},
+    files: [file(out)],
+    unsupportedDependencies: ["fileDependency"],
+    condition: { kind: "all", terms: [{ kind: "file", file: plugin, state: "Active" }] },
+  });
+  const patterns = [
+    pattern("ghoulification.esm", "Ivy - Ghoulification Patch.esp"),
+    pattern("vchgs002fo4_bountyhunter.esl", "Ivy - Bounty Hunter Patch.esp"),
+  ];
+  const run = (active: string[]) =>
+    stagedByPluginCondition({
+      patterns,
+      flags: {},
+      pluginState: states(active),
+      expanded: (specs) => specs.map((s) => ({ path: s.destination ?? s.source })),
+      expectedKeys: new Set(),
+      staged: ["Ivy - Ghoulification Patch.esp", "Ivy - Bounty Hunter Patch.esp"],
+      key: (p) => p.toLowerCase(),
+    });
+
+  it("records the condition on a file the curator's plugins DO create", () => {
+    const out = run(["ghoulification.esm", "vchgs002fo4_bountyhunter.esl"]);
+    expect(out.unmet).toEqual([]);
+    expect(out.held).toEqual([
+      { path: "Ivy - Bounty Hunter Patch.esp", needs: ["vchgs002fo4_bountyhunter.esl"] },
+      { path: "Ivy - Ghoulification Patch.esp", needs: ["ghoulification.esm"] },
+    ]);
+  });
+
+  it("keeps the stale-file case exactly as it was", () => {
+    const out = run(["ghoulification.esm"]);
+    expect(out.unmet).toEqual([{ path: "Ivy - Bounty Hunter Patch.esp", needs: ["vchgs002fo4_bountyhunter.esl"] }]);
+    expect(out.held).toEqual([{ path: "Ivy - Ghoulification Patch.esp", needs: ["ghoulification.esm"] }]);
+  });
+
+  const mods = [
+    {
+      source: { kind: "nexus" },
+      state: {
+        stagingFiles: [
+          { path: "Ivy - Ghoulification Patch.esp", installerCondition: { needs: ["ghoulification.esm"] } },
+          { path: "Ivy - Bounty Hunter Patch.esp", installerCondition: { needs: ["vchgs002fo4_bountyhunter.esl"] } },
+          { path: "Textures/x.dds", installerCondition: { needs: ["ghoulification.esm"] } },
+        ],
+      },
+    },
+    {
+      // Bundled: the curator's files ship whole, so its plugins are always there.
+      source: { kind: "bundled", bundled: true },
+      state: { stagingFiles: [{ path: "Bundled Patch.esp", installerCondition: { needs: ["ghoulification.esm"] } }] },
+    },
+  ];
+
+  it("switches off, in the order compared, only the patches this player's installer correctly did not create", () => {
+    const active = activePluginsFromState({ loadOrder: { "Ghoulification.esm": { enabled: true } } });
+    const gated = pluginsGatedOff(mods, active);
+    expect([...gated]).toEqual(["ivy - bounty hunter patch.esp"]);
+    const order = [
+      { name: "Fallout4.esm", enabled: true },
+      { name: "Ivy - Ghoulification Patch.esp", enabled: true },
+      { name: "Ivy - Bounty Hunter Patch.esp", enabled: true },
+    ];
+    expect(withGatedPluginsOff(order, gated)).toEqual([
+      { name: "Fallout4.esm", enabled: true },
+      { name: "Ivy - Ghoulification Patch.esp", enabled: true },
+      { name: "Ivy - Bounty Hunter Patch.esp", enabled: false },
+    ]);
   });
 });

@@ -59,6 +59,56 @@ export function installerConditionUnmet(
   return needs.length > 0 && !needs.some((p) => isActive(p.toLowerCase()));
 }
 
+/** The plugins Vortex has enabled, from its `loadOrder` state, lowercased. */
+export function activePluginsFromState(state: unknown): (plugin: string) => boolean {
+  const order = (state as { loadOrder?: Record<string, { enabled?: boolean }> } | undefined)?.loadOrder ?? {};
+  const on = new Set(
+    Object.entries(order)
+      .filter(([, v]) => v?.enabled === true)
+      .map(([k]) => k.toLowerCase()),
+  );
+  return (plugin) => on.has(plugin.toLowerCase());
+}
+
+type ConditionMod = {
+  source?: unknown;
+  state: { mirrored?: boolean; stagingFiles?: ReadonlyArray<{ path: string; installerCondition?: { needs: string[] } }> };
+};
+
+/**
+ * Plugins the collection lists that this player's installers correctly did
+ * not create: the plugin file carries a condition none of whose plugins is
+ * active here. Bundled and mirrored mods carry the curator's files, so their
+ * plugins are always there and never listed. Lowercased names.
+ */
+export function pluginsGatedOff(mods: readonly ConditionMod[], isActive: (plugin: string) => boolean): Set<string> {
+  const out = new Set<string>();
+  for (const m of mods) {
+    if (m.state.mirrored === true || (m.source as { bundled?: boolean } | undefined)?.bundled === true) continue;
+    for (const f of m.state.stagingFiles ?? []) {
+      if (f.installerCondition === undefined) continue;
+      if (!/\.(esp|esm|esl)$/i.test(f.path)) continue;
+      if (!installerConditionUnmet(f.installerCondition.needs, isActive)) continue;
+      const name = f.path.split(/[\\/]/).pop()!;
+      out.add(name.toLowerCase());
+    }
+  }
+  return out;
+}
+
+/**
+ * The curator's order with those plugins switched off, for comparing against
+ * the player's: a patch that is correctly absent is not a plugin "the curator
+ * has that is not present". Positions are kept, so a re-pin still has them.
+ */
+export function withGatedPluginsOff<T extends { name: string; enabled: boolean }>(
+  order: readonly T[],
+  gated: ReadonlySet<string>,
+): T[] {
+  if (gated.size === 0) return [...order];
+  return order.map((p) => (p.enabled && gated.has(p.name.toLowerCase()) ? { ...p, enabled: false } : p));
+}
+
 /** "needs A.esp" / "needs one of A.esp, B.esp and 24 more". */
 export function describeNeeds(needs: readonly string[]): string {
   if (needs.length === 1) return `needs ${needs[0]}`;
