@@ -72,8 +72,19 @@ export function activePluginsFromState(state: unknown): (plugin: string) => bool
 
 type ConditionMod = {
   source?: unknown;
-  state: { mirrored?: boolean; stagingFiles?: ReadonlyArray<{ path: string; installerCondition?: { needs: string[] } }> };
+  state: {
+    mirrored?: boolean;
+    optional?: true;
+    stagingFiles?: ReadonlyArray<{ path: string; installerCondition?: { needs: string[] } }>;
+  };
 };
+
+/** Every plugin Vortex knows here, enabled or not, lowercased. */
+export function knownPluginsFromState(state: unknown): (plugin: string) => boolean {
+  const order = (state as { loadOrder?: Record<string, unknown> } | undefined)?.loadOrder ?? {};
+  const known = new Set(Object.keys(order).map((k) => k.toLowerCase()));
+  return (plugin) => known.has(plugin.toLowerCase());
+}
 
 /**
  * Plugins the collection lists that this player's installers correctly did
@@ -81,16 +92,30 @@ type ConditionMod = {
  * active here. Bundled and mirrored mods carry the curator's files, so their
  * plugins are always there and never listed. Lowercased names.
  */
-export function pluginsGatedOff(mods: readonly ConditionMod[], isActive: (plugin: string) => boolean): Set<string> {
+export function pluginsGatedOff(
+  mods: readonly ConditionMod[],
+  isActive: (plugin: string) => boolean,
+  /**
+   * Plugins Vortex knows here at all. With it, an OPTIONAL mod's plugin that
+   * is not here (unticked, not downloadable, or left out by its installer) is
+   * off too: a normal optional outcome (owner, 2026-10-05).
+   */
+  isKnown?: (plugin: string) => boolean,
+): Set<string> {
   const out = new Set<string>();
   for (const m of mods) {
-    if (m.state.mirrored === true || (m.source as { bundled?: boolean } | undefined)?.bundled === true) continue;
+    const carriesCuratorFiles =
+      m.state.mirrored === true || (m.source as { bundled?: boolean } | undefined)?.bundled === true;
     for (const f of m.state.stagingFiles ?? []) {
-      if (f.installerCondition === undefined) continue;
       if (!/\.(esp|esm|esl)$/i.test(f.path)) continue;
+      const name = f.path.split(/[\\/]/).pop()!.toLowerCase();
+      if (m.state.optional === true && isKnown !== undefined && !isKnown(name)) {
+        out.add(name);
+        continue;
+      }
+      if (carriesCuratorFiles || f.installerCondition === undefined) continue;
       if (!installerConditionUnmet(f.installerCondition.needs, isActive)) continue;
-      const name = f.path.split(/[\\/]/).pop()!;
-      out.add(name.toLowerCase());
+      out.add(name);
     }
   }
   return out;

@@ -8,6 +8,7 @@ import type { types } from "@nexusmods/vortex-api";
 
 import type { EhcollManifest } from "../../types/ehcoll";
 import type { DeployFinding } from "../manifest/deploymentWinners";
+import { installRootFor } from "../stagingPath";
 
 export type DeployCheckResult =
   | { kind: "not-checked"; why: string }
@@ -67,6 +68,28 @@ export async function checkDeployment(args: {
     manifests,
     keyToFolder,
   });
+  // An optional mod's file that is not here is a normal optional outcome
+  // (owner, 2026-10-05): its installer may leave files out on this machine.
+  const optional = new Set(args.manifest.mods.filter((m) => m.state?.optional === true).map((m) => m.compareKey));
+  if (optional.size > 0) {
+    const fs = await import("fs");
+    const path = await import("path");
+    const root = installRootFor(state, args.gameId);
+    // The optional mod does not have the file here: another mod providing it
+    // is the only copy the game can have, not a wrong winner.
+    const optionalLacks = (key: string, p: string): boolean => {
+      const folder = keyToFolder.get(key);
+      if (root === undefined || folder === undefined) return false;
+      return !fs.existsSync(path.join(root, folder, ...p.split("/")));
+    };
+    report.findings = report.findings.filter(
+      (f) =>
+        !(
+          optional.has(f.expected) &&
+          (f.kind === "not-deployed" || (f.kind === "wrong-winner" && optionalLacks(f.expected, f.path)))
+        ),
+    );
+  }
   if (report.judgedPaths === 0 && report.judgedWinners === 0) {
     return {
       kind: "not-checked",

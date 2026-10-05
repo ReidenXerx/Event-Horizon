@@ -30,6 +30,7 @@ import {
   Button,
   Callout,
   Card,
+  Checkbox,
   ChoiceCard,
   EventHorizonMark,
   Field,
@@ -702,6 +703,48 @@ export interface PreviewStepProps {
    * because the check ran once when the plan loaded.
    */
   onCheckAgain?: () => void;
+  /** compareKeys of optional mods the player unticked. */
+  optionalSkipped?: readonly string[];
+  onToggleOptional?: (compareKey: string, skipped: boolean) => void;
+}
+
+/**
+ * The collection's optional mods, each ticked unless the player unticks it
+ * (owner, 2026-10-05). Shown only when the collection has some.
+ */
+function OptionalMods(props: {
+  mods: ReadonlyArray<{ compareKey: string; name: string; state?: { optional?: true; optionalNote?: string } }>;
+  skipped: readonly string[];
+  onToggle?: (compareKey: string, skipped: boolean) => void;
+}): JSX.Element | null {
+  const optional = props.mods.filter((m) => m.state?.optional === true);
+  if (optional.length === 0) return null;
+  const skipped = new Set(props.skipped);
+  return (
+    <Section
+      title="Optional mods"
+      count={optional.length}
+      countIntent="neutral"
+      description={
+        "Untick any you don't want. Skipping one, or one that can't be downloaded, leaves the collection healthy. " +
+        "Optional mods can depend on other optional content you may or may not have, such as extra Creation Club " +
+        "content, so what they install can differ from the creator's setup. That is expected, not a problem."
+      }
+    >
+      <div className="eh-stack eh-stack--sm">
+        {optional.map((m) => (
+          <Checkbox
+            key={m.compareKey}
+            label={m.name}
+            {...(m.state?.optionalNote !== undefined ? { description: m.state.optionalNote } : {})}
+            checked={!skipped.has(m.compareKey)}
+            disabled={props.onToggle === undefined}
+            onChange={(): void => props.onToggle?.(m.compareKey, !skipped.has(m.compareKey))}
+          />
+        ))}
+      </div>
+    </Section>
+  );
 }
 
 /**
@@ -1035,6 +1078,12 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
         </Section>
       )}
 
+      <OptionalMods
+        mods={plan.manifest.mods}
+        skipped={props.optionalSkipped ?? []}
+        {...(props.onToggleOptional !== undefined ? { onToggle: props.onToggleOptional } : {})}
+      />
+
       <Section title="What needs you">
         <StatGrid min={200}>
           <StatTile
@@ -1232,6 +1281,8 @@ export function computeVerdict(
   const blockers: string[] = [];
 
   for (const r of plan.modResolutions) {
+    // An optional mod that cannot be had is skipped at install, never a blocker.
+    if (r.optional === true) continue;
     if (
       r.decision.kind === "nexus-unreachable" ||
       r.decision.kind === "external-missing"
@@ -2188,8 +2239,11 @@ export function ConfirmStep(props: ConfirmStepProps): JSX.Element {
 
   const isFresh = target.kind === "fresh-profile";
 
+  const optionalSkipped = new Set(bundle.optionalSkipped ?? []);
+  const SILENT = new Set(["nexus-download", "external-use-bundled", "nexus-use-local-download", "external-use-local-download"]);
   const installCount =
-    bundle.plan.summary.willInstallSilently +
+    bundle.plan.summary.willInstallSilently -
+    bundle.plan.modResolutions.filter((r) => optionalSkipped.has(r.compareKey) && SILENT.has(r.decision.kind)).length +
     Object.values(decisions.conflictChoices ?? {}).filter(
       (c) => c.kind === "replace-existing" || c.kind === "use-local-file",
     ).length;
@@ -2220,6 +2274,11 @@ export function ConfirmStep(props: ConfirmStepProps): JSX.Element {
           <li>
             <strong>Mods to install:</strong> {installCount}
           </li>
+          {optionalSkipped.size > 0 && (
+            <li>
+              <strong>Optional mods you unticked:</strong> {optionalSkipped.size}
+            </li>
+          )}
           <li>
             <strong>Conflict decisions:</strong> {conflictCount}
           </li>
@@ -3378,7 +3437,7 @@ function ModAccounting(props: {
     total,
     installed: props.result.installedModIds.length,
     carried: props.result.carriedMods.length,
-    skipped: props.result.skippedMods.length,
+    skipped: props.result.skippedMods.length + (props.result.optionalNotInstalledCount ?? 0),
   });
 
   return (
@@ -3451,6 +3510,25 @@ function InstallNotes(props: {
           summary="Several mods ship these files, and your game gets them from a different mod than the creator's does. A body, skeleton or room can look wrong this way while every mod is intact. Doctor → File conflicts can re-apply the collection's rules and deploy; if a file still comes from another mod after that, switch that mod off."
         >
           <NoticeLines lines={result.deployWinnerNotice ?? []} />
+        </Notice>
+      ),
+    });
+  }
+  if ((result.optionalNotice?.length ?? 0) > 0) {
+    present.push({
+      label: "optional mods",
+      node: (
+        <Notice
+          key="optional-mods"
+          label="Optional mods"
+          intent="info"
+          summary={
+            "These mods are optional in this collection. Ones you unticked or that could not be downloaded were left " +
+            "out, and an optional mod can install fewer files when it depends on optional content you don't have, " +
+            "such as extra Creation Club content. Nothing failed. To add one later, install the collection again."
+          }
+        >
+          <NoticeLines lines={result.optionalNotice ?? []} />
         </Notice>
       ),
     });

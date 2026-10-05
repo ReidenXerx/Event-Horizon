@@ -635,6 +635,17 @@ export type ModInstallState = {
    */
   postProcessed?: boolean;
   /**
+   * An OPTIONAL mod (owner, 2026-10-05). The install preview lists it ticked;
+   * the player may untick it, and a failed download skips it. Either way the
+   * collection stays healthy: nothing reports it absent. Installed, its absent
+   * files are a normal optional outcome (it may depend on other optional
+   * content the player has or not, like Creation Club content); a file whose
+   * CONTENT differs is still flagged.
+   */
+  optional?: true;
+  /** The curator's one line for the preview list. */
+  optionalNote?: string;
+  /**
    * Snapshot of the curator's staging folder for this mod, captured at
    * build time. Used by the user-side {@link verifyModInstall} check to
    * detect Vortex's "lost file" / truncation / corruption bugs after a

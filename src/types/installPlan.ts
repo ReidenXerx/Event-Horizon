@@ -671,6 +671,8 @@ export type ModResolution = {
   sourceKind: "nexus" | "external";
   /** The decision. Discriminated by `kind`. */
   decision: ModDecision;
+  /** An optional mod (see `ModInstallState.optional`): never a blocker, never "missing". */
+  optional?: true;
 };
 
 /**

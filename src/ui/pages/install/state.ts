@@ -55,6 +55,13 @@ export type LoadingPhase =
   | "checking-environment";
 
 export interface PreviewBundle {
+  /**
+   * compareKeys of OPTIONAL mods the player unticked in the preview. Kept on
+   * the bundle so it rides through decisions and confirm unchanged; a new
+   * preview starts with every optional mod ticked (owner: ask fresh on every
+   * update).
+   */
+  optionalSkipped?: string[];
   zipPath: string;
   ehcoll: ReadEhcollResult;
   /**
@@ -272,6 +279,7 @@ export type WizardAction =
       decisions: UserConfirmedDecisions;
     }
   | { type: "set-fomod-mode"; mode: FomodReplayMode }
+  | { type: "set-optional-skipped"; compareKey: string; skipped: boolean }
   | { type: "back-from-confirm" }
   | { type: "ready-to-start" }
   | { type: "cancel-start" }
@@ -398,6 +406,13 @@ export function wizardReducer(
         },
       };
     }
+    case "set-optional-skipped": {
+      if (state.kind !== "preview" && state.kind !== "decisions" && state.kind !== "confirm") return state;
+      const now = new Set(state.bundle.optionalSkipped ?? []);
+      if (action.skipped) now.add(action.compareKey);
+      else now.delete(action.compareKey);
+      return { ...state, bundle: { ...state.bundle, optionalSkipped: [...now].sort() } } as WizardState;
+    }
     case "set-fomod-mode": {
       if (state.kind === "decisions") {
         return { ...state, fomodReplayMode: action.mode };
@@ -516,7 +531,10 @@ export function wizardReducer(
 export function selectConflictResolutions(
   bundle: PreviewBundle,
 ): InstallPlan["modResolutions"] {
+  const unticked = new Set(bundle.optionalSkipped ?? []);
   return bundle.plan.modResolutions.filter((r) => {
+    // An optional mod the player unticked is not installed: nothing to ask.
+    if (r.optional === true && unticked.has(r.compareKey)) return false;
     const k = r.decision.kind;
     return (
       k === "nexus-version-diverged" ||
@@ -662,6 +680,7 @@ export function planHasHardBlockers(
 ): boolean {
   void api;
   for (const r of plan.modResolutions) {
+    if (r.optional === true) continue;
     if (
       r.decision.kind === "nexus-unreachable" ||
       r.decision.kind === "external-missing"

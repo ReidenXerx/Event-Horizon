@@ -577,6 +577,7 @@ function resolveSingleMod(
     name: mod.name,
     sourceKind: mod.source.kind,
     decision,
+    ...(mod.state?.optional === true ? { optional: true as const } : {}),
   };
 }
 
@@ -1060,7 +1061,8 @@ function summarize(input: {
     ) {
       needsUserConfirmation++;
     }
-    if (k === "nexus-unreachable" || k === "external-missing") {
+    // An optional mod that cannot be had is skipped at install, not missing.
+    if ((k === "nexus-unreachable" || k === "external-missing") && r.optional !== true) {
       missing++;
     }
   }

@@ -152,6 +152,11 @@ import {
 } from "../manifest/stagingFileWalker";
 import { buildCuratorReport } from "./curatorReport";
 import {
+  describeOptionalNotInstalled,
+  withoutOptionalSkips,
+  type OptionalNotInstalled,
+} from "./optionalMods";
+import {
   activePluginsFromState,
   describeNeeds,
   installerConditionUnmet,
@@ -414,6 +419,8 @@ function stagingSetHashFor(
   mod: InstalledModReportEntry,
   verifiedOkKeys: ReadonlySet<string>,
   expectedFilesByCompareKey: ReadonlyMap<string, EhcollStagingFile[]>,
+  /** An optional mod's full recorded list, when only part of it is here. */
+  fullListByCompareKey?: ReadonlyMap<string, EhcollStagingFile[]>,
 ): { stagingSetHash?: string; stagingSetPaths?: string } {
   if (!verifiedOkKeys.has(mod.compareKey)) return {};
   const files = expectedFilesByCompareKey.get(mod.compareKey);
@@ -434,7 +441,7 @@ function stagingSetHashFor(
    * reads as "something edited this folder" about a folder nobody touched.
    * Kept together so that comparison can be made first.
    */
-  const paths = computeStagingPathSetHash(files);
+  const paths = computeStagingPathSetHash(fullListByCompareKey?.get(mod.compareKey) ?? files);
   return {
     stagingSetHash: hash,
     ...(paths !== undefined ? { stagingSetPaths: paths } : {}),
@@ -922,6 +929,32 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
   // what conflict-choice maps key on, etc.).
   const manifestByCompareKey = buildManifestIndex(plan.manifest.mods);
   let rulesApplication: RulesApplicationReceipt = emptyRulesApplication();
+  /**
+   * Optional mods (owner, 2026-10-05): the ones this run did not install, and
+   * the lines saying so. Never a failure, never in `failedMods`.
+   */
+  const optionalNotInstalled: OptionalNotInstalled[] = [];
+  const optionalNotes: string[] = [];
+  const optionalSkipped = new Set(ctx.decisions.optionalSkipped ?? []);
+  /**
+   * Plugin files of optional mods that are not here: every plugin of one not
+   * installed, and the plugins verification found absent in one that was.
+   * Decided from what this run KNOWS, never from Vortex's live plugin list,
+   * whose refresh timing would make an installed plugin read as absent.
+   */
+  const optionalAbsentPlugins = new Set<string>();
+  const notePluginsAbsent = (paths: Iterable<string>): void => {
+    for (const p of paths) {
+      if (/\.(esp|esm|esl)$/i.test(p)) optionalAbsentPlugins.add(p.split(/[\\/]/).pop()!.toLowerCase());
+    }
+  };
+  /**
+   * An optional mod verified on the files that are here keeps its FULL
+   * recorded list for the receipt's path fingerprint: the Doctor's deep scan
+   * compares that list with the collection's and then hashes the files that
+   * exist, so absent files never read as drift and a changed one still does.
+   */
+  const optionalFullLists = new Map<string, EhcollStagingFile[]>();
   let userlistApplication: UserlistApplicationReceipt =
     emptyUserlistApplication();
   const verifications: ModVerificationReceipt[] = [];
@@ -1650,6 +1683,26 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         };
       }
 
+      // An optional mod the player unticked, or one nobody can download: left
+      // out, said in grey, and the collection stays healthy.
+      if (manifestEntry.state?.optional === true) {
+        const unavailable =
+          resolution.decision.kind === "nexus-unreachable" || resolution.decision.kind === "external-missing";
+        if (optionalSkipped.has(resolution.compareKey) || unavailable) {
+          const reason = optionalSkipped.has(resolution.compareKey)
+            ? "not installed, you unticked it"
+            : "not installed, it is not available to download";
+          ehLog("info", "install.optional.left-out", {
+            name: resolution.name,
+            compareKey: resolution.compareKey,
+            why: reason,
+          });
+          optionalNotInstalled.push({ compareKey: resolution.compareKey, name: resolution.name, reason });
+          notePluginsAbsent((manifestEntry.state.stagingFiles ?? []).map((f) => f.path));
+          continue;
+        }
+      }
+
       reportProgress(
         "installing-mods",
         i + 1,
@@ -1776,6 +1829,19 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           ms: Date.now() - modStartedAt,
           error: formatError(err),
         });
+        if (manifestEntry.state?.optional === true) {
+          // Optional: skipped, said neutrally, never a failure (owner,
+          // 2026-10-05). Not counted toward the systemic streak either: a
+          // machine problem shows on the required mods that follow, and a run
+          // of removed optional files must not fail the collection.
+          optionalNotInstalled.push({
+            compareKey: resolution.compareKey,
+            name: resolution.name,
+            reason: `not installed, it could not be downloaded or installed (${formatError(err)})`,
+          });
+          notePluginsAbsent((manifestEntry.state.stagingFiles ?? []).map((f) => f.path));
+          continue;
+        }
         failedMods.push({
           compareKey: resolution.compareKey,
           name: resolution.name,
@@ -2184,7 +2250,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               f.installerCondition !== undefined &&
               installerConditionUnmet(f.installerCondition.needs, playerPluginActive),
           ) ?? [];
-        const expectedFiles =
+        let expectedFiles =
           conditionNotMet.length > 0
             ? recordedFiles!.filter((f) => !conditionNotMet.includes(f))
             : recordedFiles;
@@ -2220,7 +2286,13 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
          * would have if this pass had done the hashing itself.
          */
         const proven = reusable.get(installEntry.compareKey);
-        if (proven !== undefined && proven.vortexModId === installEntry.vortexModId) {
+        if (
+          proven !== undefined &&
+          proven.vortexModId === installEntry.vortexModId &&
+          // An optional mod may have been proven on the files that were there;
+          // checked again so its receipt fingerprint covers exactly those.
+          manifestEntry?.state?.optional !== true
+        ) {
           noteVerifiedOk(installEntry.compareKey, expectedFiles);
           verifications.push({
             kind: "ok",
@@ -2278,6 +2350,54 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             reason: "errored",
           });
           continue;
+        }
+
+        /**
+         * ─── AN OPTIONAL MOD'S ABSENT FILES ARE A NORMAL OUTCOME ──────────
+         * It can depend on other optional content this player has or not
+         * (extra Creation Club content, for the first one), so its installer
+         * may leave files out (owner, 2026-10-05). The files that ARE here
+         * are verified again on their own: a changed one is still reported,
+         * and the drift reference in the receipt covers exactly these.
+         */
+        if (
+          verifyResult.kind === "fail" &&
+          manifestEntry?.state?.optional === true &&
+          verifyResult.missingFiles.length > 0
+        ) {
+          const absent = new Set(verifyResult.missingFiles);
+          const present = (expectedFiles ?? []).filter((f) => !absent.has(f.path));
+          ehLog("info", "verify.optional-files-absent", {
+            name: installEntry.name,
+            absent: absent.size,
+            present: present.length,
+            examples: verifyResult.missingFiles.slice(0, 5),
+          });
+          optionalNotes.push(
+            `${installEntry.name}: installed; ${absent.size} of its files are not, which is normal for an ` +
+              `optional mod (for example a patch for content you don't have).`,
+          );
+          optionalFullLists.set(installEntry.compareKey, expectedFiles ?? []);
+          notePluginsAbsent(absent);
+          expectedFiles = present;
+          try {
+            verifyResult = await verifyModInstall({
+              api,
+              gameId: plan.manifest.game.id,
+              vortexModId: installEntry.vortexModId,
+              expectedFiles: present,
+              level: declaredLevel,
+              signal: ctx.abortSignal,
+            });
+          } catch (err) {
+            if (isAbort(err) || ctx.abortSignal?.aborted) {
+              return abortedResult(
+                "verifying-mods",
+                `Install aborted while verifying "${installEntry.name}".`,
+              );
+            }
+            ehLog("warn", "verify.optional-reverify-threw", { name: installEntry.name, err });
+          }
         }
 
         if (verifyResult.kind === "skip") {
@@ -3133,7 +3253,10 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       installed: new Map(
         installedMods.map((m) => [m.compareKey, m.vortexModId] as const),
       ),
-      manifestMods: plan.manifest.mods,
+      // A left-out optional mod's tweaks are the player's choice working.
+      manifestMods: plan.manifest.mods.filter(
+        (m) => !optionalNotInstalled.some((o) => o.compareKey === m.compareKey),
+      ),
     });
 
     /**
@@ -3631,6 +3754,8 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       let vortexModId =
         installedIndex >= 0 ? installedMods[installedIndex]!.vortexModId : undefined;
       if (vortexModId === undefined) {
+        // An optional mod left out is already said, in grey, as optional.
+        if (optionalNotInstalled.some((o) => o.compareKey === mod.compareKey)) return;
         // Not installed by this run: it failed, or the user chose to keep
         // their own copy at a divergence prompt and it lives in carriedMods.
         // Both are legitimate; neither should be silent.
@@ -4128,7 +4253,10 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     const curatorOrderHere = (): typeof plan.manifest.plugins.order =>
       withGatedPluginsOff(
         plan.manifest.plugins.order,
-        pluginsGatedOff(plan.manifest.mods, activePluginsFromState(api.getState())),
+        new Set([
+          ...pluginsGatedOff(plan.manifest.mods, activePluginsFromState(api.getState())),
+          ...optionalAbsentPlugins,
+        ]),
       );
 
     // Record the curator's plugin order in the receipt.
@@ -4247,7 +4375,9 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           regularAfter: 0,
         } satisfies PluginFlagRepair)
       : await applyPluginLightFlags({
-      order: plan.manifest.plugins.order,
+      // An optional mod's plugin that is not here is a normal optional
+      // outcome, not a collection plugin missing from disk.
+      order: plan.manifest.plugins.order.filter((p) => !optionalAbsentPlugins.has(p.name.toLowerCase())),
       dataDir: gameDataDirFor(api, plan.manifest.game.id),
       gameId: plan.manifest.game.id,
       recordedLightFlagBit: plan.manifest.plugins.lightFlagBit,
@@ -4629,7 +4759,10 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       installed: new Map(
         installedMods.map((m) => [m.compareKey, m.vortexModId] as const),
       ),
-      manifestMods: plan.manifest.mods,
+      // A left-out optional mod's tweaks are the player's choice working.
+      manifestMods: plan.manifest.mods.filter(
+        (m) => !optionalNotInstalled.some((o) => o.compareKey === m.compareKey),
+      ),
     });
 
     // ── 7c. game INI settings ───────────────────────────────────────
@@ -5242,6 +5375,19 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       });
     }
     const partialFailure = failedMods.length > 0;
+    // A rule or load-order entry that could not land because its optional mod
+    // is not here is the player's choice working, not a rule that failed.
+    rulesApplication = withoutOptionalSkips(
+      rulesApplication,
+      new Set(optionalNotInstalled.map((o) => o.compareKey)),
+    );
+    const optionalLines = [...describeOptionalNotInstalled(optionalNotInstalled), ...optionalNotes];
+    if (optionalNotInstalled.length > 0) {
+      ehLog("info", "install.optional.summary", {
+        notInstalled: optionalNotInstalled.length,
+        partial: optionalNotes.length,
+      });
+    }
     const failedForReceipt = failedMods.map((f) => ({
       compareKey: f.compareKey,
       name: f.name,
@@ -5275,6 +5421,8 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         ...(rulesPurgeNotice !== undefined ? { rulesPurgeNotice } : {}),
         ...(curatorReports.length > 0 ? { curatorReports } : {}),
         ...(installerConditionNotes.length > 0 ? { installerConditionNotice: installerConditionNotes } : {}),
+      ...(optionalLines.length > 0 ? { optionalNotice: optionalLines } : {}),
+      ...(optionalNotInstalled.length > 0 ? { optionalNotInstalledCount: optionalNotInstalled.length } : {}),
         ...(missingMasterNotes.length > 0 ? { missingMasterNotice: missingMasterNotes } : {}),
         ...(deployWinnerNotes.length > 0 ? { deployWinnerNotice: deployWinnerNotes } : {}),
         ...(damagedArchives.length > 0
@@ -5359,6 +5507,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       gameIniApplication,
       verifiedOkKeys,
       expectedFilesByCompareKey,
+      optionalFullLists,
       ownedByUs,
       finishingSkipped,
       pluginFlagChanges: pluginFlagRepair.changes,
@@ -5518,6 +5667,8 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         : {}),
       ...(curatorReports.length > 0 ? { curatorReports } : {}),
       ...(installerConditionNotes.length > 0 ? { installerConditionNotice: installerConditionNotes } : {}),
+      ...(optionalLines.length > 0 ? { optionalNotice: optionalLines } : {}),
+      ...(optionalNotInstalled.length > 0 ? { optionalNotInstalledCount: optionalNotInstalled.length } : {}),
         ...(missingMasterNotes.length > 0 ? { missingMasterNotice: missingMasterNotes } : {}),
         ...(deployWinnerNotes.length > 0 ? { deployWinnerNotice: deployWinnerNotes } : {}),
       ...(finishingSkipped.length > 0
@@ -6377,13 +6528,17 @@ type RemovalItem = {
  *
  * Empty result ⇒ skip the `removing-mods` phase entirely.
  */
-function collectRemovalPlan(
+export function collectRemovalPlan(
   plan: DriverContext["plan"],
   decisions: UserConfirmedDecisions,
 ): RemovalItem[] {
   const items: RemovalItem[] = [];
 
+  const unticked = new Set(decisions.optionalSkipped ?? []);
   for (const r of plan.modResolutions) {
+    // An unticked optional mod is not installed, so nothing replaces the
+    // player's copy: removing it would destroy their mod for nothing (NS-2).
+    if (r.optional === true && unticked.has(r.compareKey)) continue;
     const choice = decisions.conflictChoices?.[r.compareKey];
     if (!choice || choice.kind !== "replace-existing") continue;
 
@@ -6550,6 +6705,8 @@ function collectHardBlockers(
 ): Array<{ name: string; kind: ModDecision["kind"] }> {
   const out: Array<{ name: string; kind: ModDecision["kind"] }> = [];
   for (const r of resolutions) {
+    // An optional mod nobody can download is skipped at install, never a blocker.
+    if (r.optional === true) continue;
     if (
       r.decision.kind === "nexus-unreachable" ||
       r.decision.kind === "external-missing"
@@ -6565,8 +6722,10 @@ function collectMissingConflictChoices(
   decisions: UserConfirmedDecisions,
 ): Array<{ name: string; kind: ModDecision["kind"] }> {
   const out: Array<{ name: string; kind: ModDecision["kind"] }> = [];
+  const unticked = new Set(decisions.optionalSkipped ?? []);
   for (const r of resolutions) {
     if (!needsConflictChoice(r.decision)) continue;
+    if (r.optional === true && unticked.has(r.compareKey)) continue;
     if (decisions.conflictChoices?.[r.compareKey] === undefined) {
       out.push({ name: r.name, kind: r.decision.kind });
     }
@@ -6912,6 +7071,8 @@ function buildReceipt(args: {
    */
   verifiedOkKeys: ReadonlySet<string>;
   expectedFilesByCompareKey: ReadonlyMap<string, EhcollStagingFile[]>;
+  /** See {@link stagingSetHashFor}: optional mods verified on part of their list. */
+  optionalFullLists?: ReadonlyMap<string, EhcollStagingFile[]>;
   /**
    * Every mod id this run knows to be ours — the journal for this run, plus
    * the previous receipt for every run before it.
@@ -7081,7 +7242,7 @@ function buildReceipt(args: {
       // the manifest says, so a hash derived from the manifest would be a
       // fiction, and one derived from disk would enshrine a broken install as
       // the reference. Absent means unknown; see InstallReceiptMod.
-      ...stagingSetHashFor(m, verifiedOkKeys, expectedFilesByCompareKey),
+      ...stagingSetHashFor(m, verifiedOkKeys, expectedFilesByCompareKey, args.optionalFullLists),
       // The user's own copy, which the alongside install switched off in this
       // profile. Uninstall reads it to switch that copy back on — without it
       // removing our copy leaves the user with NEITHER active.

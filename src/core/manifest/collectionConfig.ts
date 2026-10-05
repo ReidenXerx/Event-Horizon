@@ -156,6 +156,17 @@ export type ExternalModConfigEntry = {
    * the mod, the collection simply stops carrying it.
    */
   dropped?: boolean;
+  /**
+   * An OPTIONAL mod (owner, 2026-10-05). The install preview lists it ticked;
+   * the player may untick it, and a failed download skips it. Either way the
+   * collection stays healthy: nothing reports it absent. Installed, its absent
+   * files are a normal optional outcome (it may depend on other optional
+   * content the player has or not, like Creation Club content); a file whose
+   * CONTENT differs is still flagged.
+   */
+  optional?: boolean;
+  /** One line shown next to an optional mod in the install preview: what it adds. */
+  optionalNote?: string;
   /** Free-form text shown to the user when the mod isn't bundled. */
   instructions?: string;
   /**
@@ -1049,6 +1060,14 @@ const EXTERNAL_MOD_FIELDS: {
     }
     return raw;
   },
+  optional: (raw, path, errors) => {
+    if (typeof raw !== "boolean") {
+      errors.push(`${path} must be a boolean.`);
+      return undefined;
+    }
+    return raw;
+  },
+  optionalNote: (raw, path, errors) => expectStringField(raw, path, errors),
   dropped: (raw, path, errors) => {
     if (typeof raw !== "boolean") {
       errors.push(`${path} must be a boolean.`);

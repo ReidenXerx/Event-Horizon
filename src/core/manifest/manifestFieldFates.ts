@@ -72,6 +72,8 @@ export const MOD_INSTALL_STATE_FATES: {
   nativePluginsIncomplete: { kind: "applied", by: "core/resolver/versionMismatch.ts" },
   enabledINITweaks: { kind: "applied", by: "core/installer/applyIniTweaks.ts" },
   postProcessed: { kind: "applied", by: "core/installer/judgeReinstall.ts" },
+  optional: { kind: "applied", by: "core/installer/runInstall.ts" },
+  optionalNote: { kind: "applied", by: "ui/pages/install/steps.tsx" },
   /**
    * `runInstall`, not `verifyModInstall` — the latter receives the file list
    * as a differently-named argument and mentions `stagingFiles` only in its

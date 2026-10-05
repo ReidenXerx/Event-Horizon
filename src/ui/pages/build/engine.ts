@@ -464,7 +464,7 @@ function declarationsFor(
   entry: ExternalModConfigEntry | undefined,
   mod: AuditorMod,
 ): AuditorMod {
-  if (entry?.postProcessed !== true && entry?.mirrored !== true) return mod;
+  if (entry?.postProcessed !== true && entry?.mirrored !== true && entry?.optional !== true) return mod;
 
   /**
    * ─── AN INCOMPLETE CAPTURE REVOKES A STORED "MIRROR" ANSWER (NS-2) ──────
@@ -499,6 +499,14 @@ function declarationsFor(
     ...mod,
     ...(entry.postProcessed === true ? { postProcessed: true } : {}),
     ...(stillMirrored ? { mirrored: true } : {}),
+    ...(entry.optional === true
+      ? {
+          optional: true,
+          ...(typeof entry.optionalNote === "string" && entry.optionalNote.trim() !== ""
+            ? { optionalNote: entry.optionalNote.trim() }
+            : {}),
+        }
+      : {}),
   };
 }
 

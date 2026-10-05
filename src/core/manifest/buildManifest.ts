@@ -771,6 +771,9 @@ function buildModInstallState(
     // Only when true. A `false` in every entry of a 950-mod manifest is 950
     // lines saying nothing.
     ...(mod.postProcessed === true ? { postProcessed: true } : {}),
+    ...(mod.optional === true
+      ? { optional: true as const, ...(mod.optionalNote !== undefined ? { optionalNote: mod.optionalNote } : {}) }
+      : {}),
     ...(mod.mirrored === true ? { mirrored: true } : {}),
     // Only for a mirrored mod: a claim about the payload means nothing for a
     // mod that has none.

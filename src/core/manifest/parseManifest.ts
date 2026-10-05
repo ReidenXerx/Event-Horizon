@@ -1016,6 +1016,11 @@ function validateInstallState(
     deploymentPriority,
     ...(modType !== undefined ? { modType } : {}),
     ...(postProcessed !== undefined ? { postProcessed } : {}),
+    // Lenient: anything but an explicit true is a required mod, the safe reading.
+    ...(obj.optional === true ? { optional: true as const } : {}),
+    ...(obj.optional === true && typeof obj.optionalNote === "string" && obj.optionalNote.trim() !== ""
+      ? { optionalNote: obj.optionalNote.trim() }
+      : {}),
     ...(mirrored !== undefined ? { mirrored } : {}),
     ...(enabledINITweaks !== undefined ? { enabledINITweaks } : {}),
     ...(stagingFiles !== undefined ? { stagingFiles } : {}),

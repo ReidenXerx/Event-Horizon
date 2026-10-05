@@ -102,6 +102,10 @@ export type AuditorMod = {
    * `ExternalModConfigEntry.postProcessed`.
    */
   postProcessed?: boolean;
+  /** Optional in the collection; overlaid from the collection config. See `ExternalModConfigEntry.optional`. */
+  optional?: boolean;
+  /** The curator's one-line note for an optional mod. */
+  optionalNote?: string;
   /**
    * The curator asked for this mod's staging folder to be reproduced exactly.
    *

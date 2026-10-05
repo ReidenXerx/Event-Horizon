@@ -527,6 +527,11 @@ class InstallSession {
     this.dispatch({ type: "set-fomod-mode", mode });
   }
 
+  /** Tick or untick an optional mod in the preview. */
+  setOptionalSkipped(compareKey: string, skipped: boolean): void {
+    this.dispatch({ type: "set-optional-skipped", compareKey, skipped });
+  }
+
   /** The "I understand" tick on a game-version mismatch. */
   acknowledgeVersion(acknowledged: boolean): void {
     this.dispatch({ type: "acknowledge-version", acknowledged });
@@ -937,7 +942,10 @@ class InstallSession {
           ehcoll: startState.bundle.ehcoll,
           ehcollZipPath: startState.bundle.zipPath,
           appDataPath: startState.bundle.appDataPath,
-          decisions: startState.decisions,
+          decisions: {
+            ...startState.decisions,
+            optionalSkipped: startState.bundle.optionalSkipped ?? [],
+          },
           abortSignal: controller.signal,
           onDeploymentPurged: (): void => {
             this.purgedForPlan = startState.bundle.plan;

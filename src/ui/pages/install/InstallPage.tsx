@@ -282,6 +282,8 @@ function InstallWizard(props: InstallPageProps): JSX.Element {
             onContinue={(): void => session.openDecisionsFromPreview()}
             onCancel={(): void => session.reset()}
             onCheckAgain={(): void => session.pickFile(api, state.bundle.zipPath)}
+            optionalSkipped={state.bundle.optionalSkipped ?? []}
+            onToggleOptional={(key, skipped): void => session.setOptionalSkipped(key, skipped)}
           />
         </>
       );

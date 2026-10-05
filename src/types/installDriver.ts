@@ -98,6 +98,8 @@ export type UserConfirmedDecisions = {
    * game that updated between preview and install is a different question.
    */
   versionMismatchAcknowledged?: { required: string; installed: string };
+  /** compareKeys of OPTIONAL mods the player unticked in the preview. Asked fresh on every install. */
+  optionalSkipped?: string[];
 };
 
 /**
@@ -350,6 +352,14 @@ export type InstallSuccess = {
    * (owner poll, 2026-09-28).
    */
   installerConditionNotice?: string[];
+  /**
+   * Optional mods (owner, 2026-10-05): the ones not installed and why, and
+   * the installed ones whose installer left files out. A normal outcome,
+   * shown in grey, never a failure.
+   */
+  optionalNotice?: string[];
+  /** How many optional mods were not installed, for the Done screen's tally. */
+  optionalNotInstalledCount?: number;
   /**
    * Enabled plugins whose masters are not active after the install: switched
    * off when they came from this collection's mods, reported when they are the
@@ -681,6 +691,14 @@ export type InstallFailed = {
    * (owner poll, 2026-09-28).
    */
   installerConditionNotice?: string[];
+  /**
+   * Optional mods (owner, 2026-10-05): the ones not installed and why, and
+   * the installed ones whose installer left files out. A normal outcome,
+   * shown in grey, never a failure.
+   */
+  optionalNotice?: string[];
+  /** How many optional mods were not installed, for the Done screen's tally. */
+  optionalNotInstalledCount?: number;
   /**
    * Enabled plugins whose masters are not active after the install: switched
    * off when they came from this collection's mods, reported when they are the
