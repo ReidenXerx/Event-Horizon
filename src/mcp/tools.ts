@@ -89,6 +89,20 @@ export const TOOLS: ToolSpec[] = [
     required: ["id"],
   },
   {
+    name: "mods_updates",
+    verb: "mods.updates",
+    mutates: false,
+    description:
+      "Every installed mod with a pending update, in one call: installed vs newest version and file id, the file name " +
+      "and the newest changelog when Nexus gave one. The same test as Vortex's 'Update available' filter. " +
+      "refresh: true asks Nexus first (slower). Default scope: mods enabled in the active profile; all: true for every mod.",
+    properties: {
+      refresh: bool("Run Vortex's update check against Nexus first."),
+      all: bool("Every mod of the game, not only those enabled in the active profile."),
+      limit: num("Most results to return (default 1000)."),
+    },
+  },
+  {
     name: "mods_rules",
     verb: "mods.rules",
     mutates: false,

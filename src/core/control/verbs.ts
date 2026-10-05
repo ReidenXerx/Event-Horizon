@@ -56,6 +56,8 @@ import { listReceipts } from "../installLedger";
 import { getEventHorizonDir, getVortexUserDataPath } from "../paths/appDataPaths";
 import { iniLocationFor } from "../manifest/gameIni";
 import { readPluginList } from "../curator/pluginPool";
+import { readCuratorMods } from "../curator/readProfile";
+import { vortexReportsUpdate } from "../curator/profileActions";
 import { collectDistinctModTypes } from "../deploymentManifest";
 import { isProcessRunning } from "./gameProcess";
 import { guardGameClosed, guardKnownMods, guardSetGamePath, type GuardResult } from "./guards";
@@ -1450,6 +1452,66 @@ export const VERBS: Record<string, Verb> = {
         plugins: readPluginList(api.getState())
           .filter((p) => p.modId === id)
           .map((p) => ({ name: p.name, enabled: p.enabled, loadOrder: p.loadOrder })),
+      };
+    },
+  },
+
+  /**
+   * Every mod with a pending update, in one call (Fallout-collection,
+   * 2026-10-05: it looped mod.get over ~800 mods). The same three signals
+   * Vortex's own "Update available" filter ORs (vortexReportsUpdate).
+   * `refresh: true` runs Vortex's update check against Nexus first. Default:
+   * mods enabled in the active profile; `all: true` for every mod of the game.
+   */
+  "mods.updates": {
+    mutates: false,
+    run: async (api, body) => {
+      const gameId = activeGame(api);
+      const refresh = body["refresh"] === true || body["refresh"] === "true";
+      if (refresh) {
+        const emitAndAwait = (api as unknown as { emitAndAwait?: (e: string, ...a: unknown[]) => Promise<unknown> })
+          .emitAndAwait;
+        if (emitAndAwait === undefined) {
+          throw new ControlError("unsupported", "This Vortex build cannot run its update check from an extension.", 501);
+        }
+        await emitAndAwait.call(api, "check-mods-version", gameId, modPool(api, gameId), true);
+      }
+      const enabled = new Set(
+        Object.entries(enabledMap(api, activeProfileId(api)))
+          .filter(([, s]) => s?.enabled === true)
+          .map(([id]) => id),
+      );
+      const all = body["all"] === true || body["all"] === "true";
+      const pool = modPool(api, gameId);
+      const mods = readCuratorMods(api.getState(), gameId, enabled)
+        .filter((m) => all || m.enabled)
+        .filter(vortexReportsUpdate)
+        .map((m) => {
+          const a = (pool[m.id]?.attributes ?? {}) as Record<string, unknown>;
+          const changelog = a["newestChangelog"] as { content?: unknown } | string | undefined;
+          return {
+            id: m.id,
+            name: m.name,
+            enabled: m.enabled,
+            version: m.version,
+            newestVersion: m.newestVersion,
+            fileId: m.nexusFileId,
+            newestFileId: m.newestFileUnknown === true ? "unknown" : m.newestFileId,
+            logicalFileName: str(a["logicalFileName"]),
+            nexusModId: m.nexusModId,
+            ...(m.frozenAtVersion !== undefined ? { frozenAtVersion: m.frozenAtVersion } : {}),
+            changelog: typeof changelog === "string" ? changelog : str(changelog?.content),
+          };
+        })
+        .sort((x, y) => x.name.localeCompare(y.name));
+      const limit = limitOf(body, 1000);
+      return {
+        gameId,
+        refreshed: refresh,
+        scope: all ? "every mod of the game" : "mods enabled in the active profile",
+        total: mods.length,
+        mods: mods.slice(0, limit),
+        truncated: mods.length > limit,
       };
     },
   },

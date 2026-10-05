@@ -36,6 +36,11 @@ const META: Record<string, Meta> = {
   state: { badge: "READ", doing: () => "Reading the setup", read: true },
   "mods.find": { badge: "READ", doing: () => "Searching mods", read: true },
   "mod.get": { badge: "READ", doing: (b) => `Looking at ${String(b["id"])}`, read: true },
+  "mods.updates": {
+    badge: "READ",
+    doing: (b) => (b["refresh"] === true ? "Checking Nexus for mod updates" : "Listing mods with updates"),
+    read: true,
+  },
   "mods.rules": { badge: "READ", doing: (b) => `Reading rules of ${String(b["id"])}`, read: true },
   plugins: { badge: "READ", doing: () => "Reading the load order", read: true },
   "plugins.rules": { badge: "READ", doing: () => "Reading LOOT rules", read: true },

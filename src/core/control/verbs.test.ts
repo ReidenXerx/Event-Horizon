@@ -1208,3 +1208,35 @@ describe("diagnose.setup: findings an agent can act on", () => {
     expect(r.findings[0].severity).toBe("error");
   });
 });
+
+describe("mods.updates", () => {
+  it("lists only mods with a pending update, the way Vortex's filter decides, scoped to the active profile", async () => {
+    const v = fakeVortex();
+    const mods = v.state.persistent.mods.fallout4;
+    mods.a.attributes = { ...mods.a.attributes, source: "nexus", newestFileId: 99, newestVersion: "1.1", logicalFileName: "Mod A Main", newestChangelog: { format: "html", content: "<p>Fixes</p>" } };
+    mods.c = { id: "c", state: "installed", attributes: { name: "Mod C", version: "2.0", modId: 5, fileId: 6, newestFileId: 6, newestVersion: "2.0" } };
+    mods.d = { id: "d", state: "installed", attributes: { name: "Mod D", version: "1", modId: 7, fileId: 8, newestFileId: "unknown" } };
+    v.state.persistent.profiles.og.modState = { a: { enabled: true }, c: { enabled: true } };
+
+    const r = (await runVerb(v.api as never, "mods.updates", {})) as any;
+    expect(r.mods.map((m: any) => m.id)).toEqual(["a"]);
+    expect(r.mods[0]).toMatchObject({ version: "1.0", newestVersion: "1.1", fileId: 34, newestFileId: 99, logicalFileName: "Mod A Main", changelog: "<p>Fixes</p>" });
+
+    const everything = (await runVerb(v.api as never, "mods.updates", { all: true })) as any;
+    expect(everything.mods.map((m: any) => m.id)).toEqual(["a", "d"]);
+    expect(everything.mods[1].newestFileId).toBe("unknown");
+  });
+
+  it("runs Vortex's own update check first when asked to refresh", async () => {
+    const v = fakeVortex();
+    const asked: unknown[][] = [];
+    (v.api as any).emitAndAwait = async (...args: unknown[]) => {
+      asked.push(args);
+      return [];
+    };
+    const r = (await runVerb(v.api as never, "mods.updates", { refresh: true })) as any;
+    expect(asked.map((a) => a[0])).toEqual(["check-mods-version"]);
+    expect(asked[0]![1]).toBe("fallout4");
+    expect(r.refreshed).toBe(true);
+  });
+});
