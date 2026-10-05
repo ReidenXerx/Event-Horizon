@@ -1,7 +1,7 @@
 # Changelog
 
 Everything that changed in Event Horizon, newest first, written for the people who use it. Since the first commit
-in April 2026 that is about 400 changes across 164 builds.
+in April 2026 that is about 400 changes across 165 builds.
 
 Until 0.1.0-alpha.149 builds were numbered `0.1.0-alpha.N`. From **0.1.151** the build number is the patch number:
 Vortex ignores everything after the dash when it decides whether an extension has an update, so an alpha number
@@ -9,6 +9,14 @@ could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
+
+## [0.2.43] — 2026-10-06
+
+### Collections
+- **Optional Creations.** A collection can support a Creation without requiring it: used when you own it, skipped
+  quietly when you don't.
+- **Creations you own are switched on before mod installers run**, so a patch installer sees them.
+- Newer Creations not named `cc…` are recognised as content you own, not as missing files.
 
 ## [0.2.42] — 2026-10-05
 
