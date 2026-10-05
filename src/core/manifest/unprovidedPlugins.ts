@@ -68,12 +68,15 @@ export function unprovidedPlugins(
   if (order.length === 0) return [];
 
   const provided = pluginsProvidedBy(manifest.mods);
+  const creations = new Set(
+    [...(manifest.game.userOwnedMasters ?? []), ...(manifest.game.optionalOwnedMasters ?? [])].map((m) => m.toLowerCase()),
+  );
 
   const out: string[] = [];
   for (const entry of order) {
     const name = (typeof entry === "string" ? entry : entry.name).toLowerCase();
     if (name === "" || provided.has(name)) continue;
-    if (isBaseGameMaster(name, manifest.game.id) || isCreationClubMaster(name)) continue;
+    if (isBaseGameMaster(name, manifest.game.id) || isCreationClubMaster(name) || creations.has(name)) continue;
     out.push(name);
   }
   return out;

@@ -48,7 +48,7 @@ import * as path from "path";
 
 import { checkMasters, describeMissingMasters, describeUserOwnedMasters, userOwnedMasterFiles } from "./checkMasters";
 import { parsePluginsTxt } from "../comparePlugins";
-import { readPluginMasters } from "./pluginMasters";
+import { isBaseGameMaster, readPluginMasters } from "./pluginMasters";
 import { pluginsProvidedBy } from "./unprovidedPlugins";
 import { ehLog } from "../logging/ehLog";
 
@@ -81,6 +81,13 @@ export type MasterGateResult = {
    * file, never refuse a player who has everything.
    */
   userOwnedMasters?: string[];
+  /**
+   * Creations the collection SUPPORTS but does not require (owner, 2026-10-06):
+   * the ones the curator listed in `optionalCreations`, and the ones only
+   * optional mods' plugins need. Enabled on the player's side when owned,
+   * silently skipped when not. Never one a required plugin needs as a master.
+   */
+  optionalOwnedMasters?: string[];
 };
 
 /**
@@ -117,6 +124,12 @@ export async function gateOnMasters(args: {
   }[];
   /** Called once per plugin so a long walk stays cancellable. Optional. */
   checkAbort?: () => void;
+  /** Creations the curator's game lists (see `checkMasters`), lowercased. */
+  creations?: ReadonlySet<string>;
+  /** Plugin names (lowercased) shipped ONLY by optional mods. */
+  optionalPlugins?: ReadonlySet<string>;
+  /** The curator's `optionalCreations` from the collection config. */
+  optionalCreations?: readonly string[];
 }): Promise<MasterGateResult> {
   const { gameId, gameDir, pluginsTxtContent, checkAbort } = args;
 
@@ -153,10 +166,39 @@ export async function gateOnMasters(args: {
     pluginsWithMasters,
     gameId,
     args.mods === undefined ? undefined : pluginsProvidedBy(args.mods),
+    args.creations,
   );
   const checkedNothing = masterCheck.checked === 0;
   const learnedNothing = checkedNothing || masterCheck.unreadable.length >= masterCheck.checked;
-  const userOwnedMasters = learnedNothing ? undefined : userOwnedMasterFiles(masterCheck);
+  /**
+   * ─── REQUIRED OR OPTIONAL ─────────────────────────────────────────────
+   * A Creation a REQUIRED plugin needs as a master is required, whatever the
+   * config says: a player without it gets a game that closes at startup. One
+   * only optional mods' plugins need, or one the curator listed as optional,
+   * is optional.
+   */
+  const optionalPlugins = args.optionalPlugins ?? new Set<string>();
+  const requiredCheck = {
+    ...masterCheck,
+    userOwned: masterCheck.userOwned.filter((u) => !optionalPlugins.has(u.plugin.trim().toLowerCase())),
+  };
+  const userOwnedMasters = learnedNothing ? undefined : userOwnedMasterFiles(requiredCheck);
+  const requiredKeys = new Set((userOwnedMasters ?? []).map((m) => m.toLowerCase()));
+  const optionalByKey = new Map<string, string>();
+  for (const u of masterCheck.userOwned) {
+    const key = u.master.trim().toLowerCase();
+    if (!requiredKeys.has(key) && !isBaseGameMaster(u.master, gameId) && !optionalByKey.has(key)) {
+      optionalByKey.set(key, u.master.trim());
+    }
+  }
+  const keptRequired: string[] = [];
+  for (const c of args.optionalCreations ?? []) {
+    const key = c.trim().toLowerCase();
+    if (key === "") continue;
+    if (requiredKeys.has(key)) keptRequired.push(c.trim());
+    else if (!optionalByKey.has(key)) optionalByKey.set(key, c.trim());
+  }
+  const optionalOwnedMasters = [...optionalByKey.keys()].sort().map((k) => optionalByKey.get(k)!);
 
   ehLog(
     masterCheck.missing.length > 0 ? "error" : "info",
@@ -175,7 +217,25 @@ export async function gateOnMasters(args: {
     },
   );
 
-  const warnings: string[] = [...describeUserOwnedMasters(masterCheck)];
+  const warnings: string[] = [...describeUserOwnedMasters(requiredCheck)];
+  if (keptRequired.length > 0) {
+    const needers = (c: string): string =>
+      requiredCheck.userOwned
+        .filter((u) => u.master.trim().toLowerCase() === c.toLowerCase())
+        .slice(0, 2)
+        .map((u) => u.plugin)
+        .join(", ");
+    for (const c of keptRequired) {
+      warnings.push(
+        `${c} is listed as an optional Creation, but ${needers(c)} (not optional) needs it as a master, so it stays required.`,
+      );
+    }
+  }
+  if (optionalOwnedMasters.length > 0) {
+    warnings.push(
+      `${optionalOwnedMasters.length} optional Creation(s), used when the player owns them: ${optionalOwnedMasters.join(", ")}.`,
+    );
+  }
 
   /**
    * A check that examined NOTHING is not a pass.
@@ -216,5 +276,6 @@ export async function gateOnMasters(args: {
     warnings,
     checkedNothing,
     ...(userOwnedMasters !== undefined ? { userOwnedMasters } : {}),
+    ...(optionalOwnedMasters.length > 0 ? { optionalOwnedMasters } : {}),
   };
 }

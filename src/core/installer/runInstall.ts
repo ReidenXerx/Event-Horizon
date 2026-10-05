@@ -185,7 +185,9 @@ import {
   type UserRuleSnapshot,
 } from "./purgeUserRules";
 import {
+  ACTION_SET_PLUGIN_ENABLED,
   applyPluginOrder,
+  dispatchRaw,
   describePluginOrderApplication,
   type PluginOrderApplication,
 } from "./applyPluginOrder";
@@ -1543,6 +1545,41 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
      * mod still goes through one code path, with one set of journalling,
      * failure-streak and abort rules.
      */
+    /**
+     * ─── CREATIONS ON BEFORE ANY INSTALLER ASKS ABOUT THEM ───────────────
+     * A patch installer asks the game whether a Creation is Active (Ivy's
+     * Creation Club Patches), and in a fresh profile a Creation the player
+     * owns starts switched off — the final plugin pass would enable it, after
+     * the installer had already decided without it. So every Creation the
+     * curator had enabled is enabled now, where the player has the file.
+     * Optional ones the player does not own are left out, said in grey,
+     * and never reported (owner, 2026-10-06).
+     */
+    {
+      const required = new Set((plan.manifest.game.userOwnedMasters ?? []).map((m) => m.toLowerCase()));
+      const optional = new Set((plan.manifest.game.optionalOwnedMasters ?? []).map((m) => m.toLowerCase()));
+      const dataDir = gameDataDirFor(api, plan.manifest.game.id);
+      let enabledNow = 0;
+      for (const entry of plan.manifest.plugins.order) {
+        const key = entry.name.toLowerCase();
+        if (!entry.enabled || (!required.has(key) && !optional.has(key))) continue;
+        const owned = dataDir !== undefined && existsSync(path.join(dataDir, entry.name));
+        if (owned) {
+          dispatchRaw(api, ACTION_SET_PLUGIN_ENABLED, { pluginName: entry.name, enabled: true });
+          enabledNow += 1;
+        } else if (optional.has(key) && dataDir !== undefined) {
+          optionalAbsentPlugins.add(key);
+          optionalNotes.push(`${entry.name}: a Creation you don't own; the collection works without it.`);
+        }
+      }
+      if (required.size + optional.size > 0) {
+        ehLog("info", "install.creations.enabled-early", {
+          enabled: enabledNow,
+          optionalNotOwned: [...optional].filter((k) => optionalAbsentPlugins.has(k)),
+        });
+      }
+    }
+
     const epochs = planInstallEpochs(plan.manifest);
     const secondEpochKeys = new Set(epochs.second);
     const firstEpoch = plan.modResolutions.filter(

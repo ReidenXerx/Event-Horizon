@@ -2524,6 +2524,31 @@ export async function runBuildPipeline(
      */
     mods,
     checkAbort,
+    ...(await (async () => {
+      // Creations the curator's game lists, so non-`cc` Creations are the
+      // player's to own rather than missing masters (2026-10-06).
+      if (flagGameDir === undefined) return {};
+      const { loadCreationAllowlist } = await import("../../../core/environment/gameFolderScan");
+      const { getCurrentPluginsTxtPath } = await import("../../../core/comparePlugins");
+      let localGameDir: string | undefined;
+      try {
+        localGameDir = path.dirname(getCurrentPluginsTxtPath(gameId, discoveredStore(state, gameId)));
+      } catch {
+        localGameDir = undefined;
+      }
+      const allow = await loadCreationAllowlist(flagGameDir, localGameDir);
+      return { creations: allow.names };
+    })()),
+    optionalPlugins: (() => {
+      const plugin = /\.(esp|esm|esl)$/i;
+      const names = (m: AuditorMod): string[] =>
+        (m.stagingFiles ?? [])
+          .map((f) => f.path.split(/[\\/]/).pop()!.toLowerCase())
+          .filter((n) => plugin.test(n));
+      const required = new Set(mods.filter((m) => m.optional !== true).flatMap(names));
+      return new Set(mods.filter((m) => m.optional === true).flatMap(names).filter((n) => !required.has(n)));
+    })(),
+    ...(collectionConfig.optionalCreations !== undefined ? { optionalCreations: collectionConfig.optionalCreations } : {}),
   });
   if (masterGate.refusal !== undefined) {
     throw new BuildRefusedError("missing-masters", masterGate.refusal);
@@ -2685,6 +2710,9 @@ export async function runBuildPipeline(
       // Club files a player without them crashes on at startup.
       ...(masterGate.userOwnedMasters !== undefined
         ? { userOwnedMasters: masterGate.userOwnedMasters }
+        : {}),
+      ...(masterGate.optionalOwnedMasters !== undefined
+        ? { optionalOwnedMasters: masterGate.optionalOwnedMasters }
         : {}),
     },
     vortex: {

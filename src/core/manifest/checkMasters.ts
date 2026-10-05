@@ -83,6 +83,14 @@ export function checkMasters(
    * spirit, only in signature.
    */
   providedByPackage?: ReadonlySet<string>,
+  /**
+   * Creations the curator's GAME lists as installed (its `.ccc` and the in-game
+   * `ContentCatalog.txt`), lowercased. Newer Creations are not named `cc*`
+   * (ghoulification.esm, dbdhomeaw.esp), so without this a plugin mastered on
+   * one was refused as a missing master: the curator cannot ship it, and the
+   * player is expected to own it, exactly like `cc*` content.
+   */
+  creations?: ReadonlySet<string>,
 ): MasterCheck {
   const enabled = plugins.filter((p) => p.enabled);
   /**
@@ -145,7 +153,7 @@ export function checkMasters(
        * proves it: every user has them, so they need no report either way.
        */
       if (isBaseGameMaster(master, gameId)) continue;
-      if (isUserOwnedMaster(master, gameId)) {
+      if (isUserOwnedMaster(master, gameId) || creations?.has(key) === true) {
         userOwned.push({ plugin: plugin.name, master });
         continue;
       }

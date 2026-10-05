@@ -716,9 +716,12 @@ function OptionalMods(props: {
   mods: ReadonlyArray<{ compareKey: string; name: string; state?: { optional?: true; optionalNote?: string } }>;
   skipped: readonly string[];
   onToggle?: (compareKey: string, skipped: boolean) => void;
+  /** Creations the collection supports but does not require. */
+  creations?: readonly string[];
 }): JSX.Element | null {
   const optional = props.mods.filter((m) => m.state?.optional === true);
-  if (optional.length === 0) return null;
+  const creations = props.creations ?? [];
+  if (optional.length === 0 && creations.length === 0) return null;
   const skipped = new Set(props.skipped);
   return (
     <Section
@@ -732,6 +735,11 @@ function OptionalMods(props: {
       }
     >
       <div className="eh-stack eh-stack--sm">
+        {creations.length > 0 && (
+          <p className="eh-secondary">
+            Optional Creations, used when you own them and skipped when you don't: {creations.join(", ")}.
+          </p>
+        )}
         {optional.map((m) => (
           <Checkbox
             key={m.compareKey}
@@ -1081,6 +1089,7 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
       <OptionalMods
         mods={plan.manifest.mods}
         skipped={props.optionalSkipped ?? []}
+        creations={plan.manifest.game.optionalOwnedMasters ?? []}
         {...(props.onToggleOptional !== undefined ? { onToggle: props.onToggleOptional } : {})}
       />
 

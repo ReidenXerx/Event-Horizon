@@ -75,3 +75,50 @@ describe("gateOnMasters — the Creation Club files for the manifest", () => {
     expect(result.userOwnedMasters).toEqual(["_ResourcePack.esl", "ccBGSSSE001-Fish.esm"]);
   });
 });
+
+/**
+ * Ivy Rev 10 (owner, 2026-10-06): Creations the collection supports but must
+ * not require. Newer Creations are not named `cc*`; the game lists them.
+ */
+describe("gateOnMasters — optional Creations", () => {
+  beforeEach(async () => {
+    await fsp.writeFile(path.join(gameDir, "Data", "Ivy - Ghoul Patch.esp"), plugin(["Fallout4.esm", "ghoulification.esm"]));
+    await fsp.writeFile(path.join(gameDir, "Data", "Required.esp"), plugin(["Fallout4.esm", "dbdhomeaw.esp"]));
+  });
+  const mods = [
+    { optional: true, stagingFiles: [{ path: "Ivy - Ghoul Patch.esp" }] },
+    { stagingFiles: [{ path: "Required.esp" }] },
+  ];
+  const creations = new Set(["ghoulification.esm", "dbdhomeaw.esp", "harrasouvenirsmojave.esl"]);
+  const run = (extra: Record<string, unknown> = {}) =>
+    gateOnMasters({
+      gameId: "fallout4",
+      gameDir,
+      pluginsTxtContent: "*Ivy - Ghoul Patch.esp\n*Required.esp\n",
+      mods,
+      creations,
+      optionalPlugins: new Set(["ivy - ghoul patch.esp"]),
+      ...extra,
+    });
+
+  it("treats a Creation the game lists as the player's, not a missing master", async () => {
+    const result = await gateOnMasters({ gameId: "fallout4", gameDir, pluginsTxtContent: "*Required.esp\n", mods, creations });
+    expect(result.refusal).toBeUndefined();
+    expect(result.userOwnedMasters).toEqual(["dbdhomeaw.esp"]);
+    const without = await gateOnMasters({ gameId: "fallout4", gameDir, pluginsTxtContent: "*Required.esp\n", mods });
+    expect(without.refusal).toBeDefined();
+  });
+
+  it("makes a Creation only an optional mod's plugins need optional, plus the curator's list", async () => {
+    const result = await run({ optionalCreations: ["harrasouvenirsmojave.esl"] });
+    expect(result.userOwnedMasters).toEqual(["dbdhomeaw.esp"]);
+    expect(result.optionalOwnedMasters).toEqual(["ghoulification.esm", "harrasouvenirsmojave.esl"]);
+  });
+
+  it("keeps a Creation required when a required plugin needs it, and says so", async () => {
+    const result = await run({ optionalCreations: ["dbdhomeaw.esp"] });
+    expect(result.userOwnedMasters).toEqual(["dbdhomeaw.esp"]);
+    expect(result.optionalOwnedMasters).toEqual(["ghoulification.esm"]);
+    expect(result.warnings.join("\n")).toMatch(/dbdhomeaw\.esp is listed as an optional Creation, but Required\.esp/);
+  });
+});

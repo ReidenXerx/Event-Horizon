@@ -430,6 +430,13 @@ function validateGame(
     versionPolicy,
     ...(store !== undefined && store.length > 0 ? { store } : {}),
     ...(userOwnedMasters !== undefined ? { userOwnedMasters } : {}),
+    ...(Array.isArray(obj.optionalOwnedMasters)
+      ? {
+          optionalOwnedMasters: obj.optionalOwnedMasters.filter(
+            (m): m is string => typeof m === "string" && m.trim().length > 0,
+          ),
+        }
+      : {}),
   };
 }
 

@@ -192,6 +192,7 @@ export type BuildManifestInput = {
     store?: string;
     /** From the master gate; absent when it could read no plugin. See GameMetadata. */
     userOwnedMasters?: string[];
+    optionalOwnedMasters?: string[];
   };
 
   vortex: {
@@ -467,6 +468,9 @@ export function buildManifest(input: BuildManifestInput): BuildManifestResult {
         ? { store: input.game.store }
         : {}),
       // Written even when empty: [] is "needs none", absent is "never recorded".
+      ...(input.game.optionalOwnedMasters !== undefined && input.game.optionalOwnedMasters.length > 0
+        ? { optionalOwnedMasters: [...input.game.optionalOwnedMasters] }
+        : {}),
       ...(input.game.userOwnedMasters !== undefined
         ? { userOwnedMasters: [...input.game.userOwnedMasters] }
         : {}),

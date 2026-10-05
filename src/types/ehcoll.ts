@@ -224,6 +224,12 @@ export type GameMetadata = {
    * writes it, empty or not. Sorted file names, as the plugins spell them.
    */
   userOwnedMasters?: string[];
+  /**
+   * Creations the collection supports but does not require (owner,
+   * 2026-10-06). Enabled at the curator's spot before any installer runs when
+   * the player owns them; skipped, and never reported, when they do not.
+   */
+  optionalOwnedMasters?: string[];
 };
 
 /**

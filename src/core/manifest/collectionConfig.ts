@@ -221,6 +221,13 @@ export type CollectionConfig = {
   presentation?: PresentationConfig;
   /** Optional README markdown body. Written as `README.md` in the package. */
   readme?: string;
+  /**
+   * Creations the collection supports but does not require (owner,
+   * 2026-10-06): plugin file names, e.g. "ghoulification.esm". Owned ones are
+   * enabled before any installer runs; missing ones are skipped silently. A
+   * Creation a required plugin needs as a master stays required.
+   */
+  optionalCreations?: string[];
   /** Optional CHANGELOG markdown body. Written as `CHANGELOG.md`. */
   changelog?: string;
   /**
@@ -809,6 +816,12 @@ function parseAndValidate(raw: string, configPath: string): CollectionConfig {
   if (obj.readme !== undefined && typeof obj.readme !== "string") {
     errors.push("readme, when present, must be a string.");
   }
+  if (
+    obj.optionalCreations !== undefined &&
+    (!Array.isArray(obj.optionalCreations) || obj.optionalCreations.some((c) => typeof c !== "string"))
+  ) {
+    errors.push("optionalCreations, when present, must be a list of plugin file names.");
+  }
   if (obj.changelog !== undefined && typeof obj.changelog !== "string") {
     errors.push("changelog, when present, must be a string.");
   }
@@ -852,6 +865,9 @@ function parseAndValidate(raw: string, configPath: string): CollectionConfig {
     ...(externalDependencies !== undefined ? { externalDependencies } : {}),
   };
   if (typeof obj.readme === "string") config.readme = obj.readme;
+  if (Array.isArray(obj.optionalCreations)) {
+    config.optionalCreations = (obj.optionalCreations as string[]).map((c) => c.trim()).filter((c) => c !== "");
+  }
   if (typeof obj.changelog === "string") config.changelog = obj.changelog;
   if (typeof obj.lastBuiltVersion === "string") {
     config.lastBuiltVersion = obj.lastBuiltVersion;
