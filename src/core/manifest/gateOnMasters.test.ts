@@ -122,3 +122,21 @@ describe("gateOnMasters — optional Creations", () => {
     expect(result.warnings.join("\n")).toMatch(/dbdhomeaw\.esp is listed as an optional Creation, but Required\.esp/);
   });
 });
+
+describe("gateOnMasters — a Creation copied into Data by hand", () => {
+  it("is still a Creation when the curator lists it as optional, though no game catalog names it", async () => {
+    await fsp.writeFile(path.join(gameDir, "Data", "Ivy - Ghoul Patch.esp"), plugin(["Fallout4.esm", "ghoulification.esm"]));
+    const result = await gateOnMasters({
+      gameId: "fallout4",
+      gameDir,
+      pluginsTxtContent: "*Ivy - Ghoul Patch.esp\n",
+      mods: [{ optional: true, stagingFiles: [{ path: "Ivy - Ghoul Patch.esp" }] }],
+      creations: new Set(),
+      optionalPlugins: new Set(["ivy - ghoul patch.esp"]),
+      optionalCreations: ["Ghoulification.esm"],
+    });
+    expect(result.refusal).toBeUndefined();
+    expect(result.userOwnedMasters).toEqual([]);
+    expect(result.optionalOwnedMasters).toEqual(["ghoulification.esm"]);
+  });
+});

@@ -166,7 +166,13 @@ export async function gateOnMasters(args: {
     pluginsWithMasters,
     gameId,
     args.mods === undefined ? undefined : pluginsProvidedBy(args.mods),
-    args.creations,
+    // A name the curator lists as an optional Creation IS one, whatever the
+    // game's catalogs say: a Creation copied into Data by hand is in neither
+    // (Ivy Rev 10, 2026-10-06, refused as a missing master on 0.2.43).
+    new Set([
+      ...(args.creations ?? []),
+      ...(args.optionalCreations ?? []).map((c) => c.trim().toLowerCase()).filter((c) => c !== ""),
+    ]),
   );
   const checkedNothing = masterCheck.checked === 0;
   const learnedNothing = checkedNothing || masterCheck.unreadable.length >= masterCheck.checked;
