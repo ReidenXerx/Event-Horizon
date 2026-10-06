@@ -478,10 +478,34 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
     });
     notes.push(verdict.note);
     readsPluginState = verdict.pluginStateDependencies ?? [];
+    // A patch hub has no steps at all, so it always lands here: its plugin
+    // conditions are read the same way (Ivy's Creation Club Patches).
+    let noChoiceConditions: { unmet: ConditionedFile[]; held: ConditionedFile[] } = { unmet: [], held: [] };
+    if (input.pluginState !== undefined) {
+      try {
+        const raw = await input.readEntry(input.archivePath, configEntry);
+        if (raw === undefined) throw new Error("the FOMOD script could not be read");
+        const parsed = await parseModuleConfig(raw);
+        noChoiceConditions = pluginConditionsFromReplay({
+          script: parsed.script,
+          replay: replayFomod(parsed.script, []),
+          listing,
+          configEntry,
+          staged,
+          key,
+          pluginState: input.pluginState,
+          onError: (msg) => notes.push(msg),
+        });
+      } catch (err) {
+        notes.push(`Plugin conditions could not be read: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
     return withDeps({
       ...withLeads,
       depth: "containment",
       notes,
+      ...(noChoiceConditions.unmet.length > 0 ? { installerConditionUnmet: noChoiceConditions.unmet } : {}),
+      ...(noChoiceConditions.held.length > 0 ? { installerConditionHeld: noChoiceConditions.held } : {}),
       // Still true even when verified: the installer WILL run on the user's
       // machine. What changes is that we now have an answer to give it.
       promptsUser: true,
@@ -551,11 +575,37 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
        * report missing files.
        */
       notes.push("Replay confidence low; not reporting missing files.");
+      /**
+       * ─── BUT A PLUGIN CONDITION IS STILL READABLE ──────────────────────
+       * Every pattern with a <fileDependency> makes the replay "low", so the
+       * per-file conditions (0.2.40, and bundled mods in 0.2.45) were never
+       * computed for a real mod: Ivy's Creation Club Patches built with no
+       * condition on either patch (2026-10-06). When the ONLY thing the
+       * replay could not evaluate is such patterns, and each one's condition
+       * parsed in full, the conditions are exact: the patterns' files are
+       * exactly the ones the flag replay left out. Missing files are still
+       * not reported from here.
+       */
+      const lowConditions =
+        input.pluginState === undefined
+          ? { unmet: [], held: [] }
+          : pluginConditionsFromReplay({
+              script: parsed.script,
+              replay,
+              listing,
+              configEntry,
+              staged,
+              key,
+              pluginState: input.pluginState,
+              onError: (msg) => notes.push(msg),
+            });
       return withDeps({
         ...withLeads,
         depth: "containment",
         notes,
         ...unexplainedFacts(containment, listing),
+        ...(lowConditions.unmet.length > 0 ? { installerConditionUnmet: lowConditions.unmet } : {}),
+        ...(lowConditions.held.length > 0 ? { installerConditionHeld: lowConditions.held } : {}),
       });
     }
     expected = expandFomodPlan(replay.sources, listing, fomodRootOf(configEntry));
@@ -617,6 +667,48 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
 }
 
 /** Aggregate for logging and for the build summary. */
+/**
+ * ─── PLUGIN CONDITIONS FROM A REPLAY THE COMPARISON DOES NOT TRUST ──────
+ * Every <fileDependency> pattern makes the replay "low", so on that path the
+ * per-file conditions were never computed and a real patch hub built with
+ * none (Ivy's Creation Club Patches, 2026-10-06). When the ONLY thing the
+ * replay could not evaluate is such patterns, and each one's condition parsed
+ * in full, the conditions are exact: those patterns' files are exactly the
+ * ones the flag replay left out. Anything else unmodelled could place the same
+ * files another way, and then nothing is recorded.
+ */
+function pluginConditionsFromReplay(args: {
+  script: Awaited<ReturnType<typeof parseModuleConfig>>["script"];
+  replay: ReturnType<typeof replayFomod>;
+  listing: ArchiveListing;
+  configEntry: string;
+  staged: readonly StagedFileRef[];
+  key: (p: string) => string;
+  pluginState: (file: string) => PluginState;
+  onError: (msg: string) => void;
+}): { unmet: ConditionedFile[]; held: ConditionedFile[] } {
+  const onlyPluginConditions =
+    args.replay.warnings.every((w) => w.startsWith("Conditional pattern depends on ")) &&
+    args.script.conditionalPatterns.every((p) => p.unsupportedDependencies.length === 0 || p.condition !== undefined);
+  if (!onlyPluginConditions) return { unmet: [], held: [] };
+  try {
+    const root = fomodRootOf(args.configEntry);
+    const flagExpected = expandFomodPlan(args.replay.sources, args.listing, root);
+    return stagedByPluginCondition({
+      patterns: args.script.conditionalPatterns,
+      flags: args.replay.flags,
+      pluginState: args.pluginState,
+      expanded: (specs) => expandFomodPlan(specs, args.listing, root).files,
+      expectedKeys: new Set(flagExpected.files.map((f) => args.key(f.path))),
+      staged: args.staged.map((f) => f.path),
+      key: args.key,
+    });
+  } catch (err) {
+    args.onError(`Plugin conditions could not be read: ${err instanceof Error ? err.message : String(err)}`);
+    return { unmet: [], held: [] };
+  }
+}
+
 /**
  * Staged files that only a plugin-conditioned pattern creates, when every such
  * pattern's condition is false on these plugins. Flag-only patterns are left
