@@ -20,6 +20,8 @@
  */
 
 import { orphanEnabledIn } from "./orphanSharing";
+import { compareEhVersions } from "../../../core/manifest/minEventHorizon";
+import { EXTENSION_VERSION } from "../../version";
 import * as React from "react";
 import { EnvironmentCard, summarizeEnvironment } from "./EnvironmentCard";
 import { VersionMismatchPanel } from "./VersionMismatchPanel";
@@ -709,6 +711,27 @@ export interface PreviewStepProps {
 }
 
 /**
+ * The player's Event Horizon is older than the features this collection uses
+ * (owner poll, 2026-10-06): said plainly, with what to do, and never a block.
+ */
+function NeedsNewerEventHorizon(props: { needs: { version: string; why: string[] } | undefined }): JSX.Element | null {
+  const needs = props.needs;
+  if (needs === undefined || compareEhVersions(EXTENSION_VERSION, needs.version) >= 0) return null;
+  return (
+    <Callout tone="warning" title={`This collection needs Event Horizon ${needs.version} or newer. You have ${EXTENSION_VERSION}.`}>
+      <p>
+        It uses {needs.why.join(", ")}. An older Event Horizon installs them differently from what the curator
+        intended.
+      </p>
+      <p>
+        Update Event Horizon first (Vortex → Extensions, or its Nexus page), restart Vortex, then open this collection
+        again. You can also continue now.
+      </p>
+    </Callout>
+  );
+}
+
+/**
  * The collection's optional mods, each ticked unless the player unticks it
  * (owner, 2026-10-05). Shown only when the collection has some.
  */
@@ -1085,6 +1108,8 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
           </ul>
         </Section>
       )}
+
+      <NeedsNewerEventHorizon needs={plan.manifest.package.needsEventHorizon} />
 
       <OptionalMods
         mods={plan.manifest.mods}

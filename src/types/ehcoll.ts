@@ -145,6 +145,12 @@ export type PackageMetadata = {
    */
   strictMissingMods: boolean;
   /**
+   * The oldest Event Horizon that understands every feature this package
+   * uses, and those features in words (minEventHorizon.ts). The preview warns
+   * a player whose EH is older; it never blocks (owner poll, 2026-10-06).
+   */
+  needsEventHorizon?: { version: string; why: string[] };
+  /**
    * How thoroughly the curator captured per-mod file integrity data at
    * build time. Drives what the user-side {@link verifyModInstall} check
    * can do post-install:

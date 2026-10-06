@@ -372,6 +372,18 @@ function validatePackage(
     strictMissingMods,
     ...(description !== undefined ? { description } : {}),
     ...(verificationLevel !== undefined ? { verificationLevel } : {}),
+    // Advisory, read leniently: a shape this version does not know is no warning, never an error.
+    ...(isObject(obj.needsEventHorizon) &&
+    typeof (obj.needsEventHorizon as { version?: unknown }).version === "string"
+      ? {
+          needsEventHorizon: {
+            version: (obj.needsEventHorizon as { version: string }).version,
+            why: Array.isArray((obj.needsEventHorizon as { why?: unknown }).why)
+              ? ((obj.needsEventHorizon as { why: unknown[] }).why.filter((w) => typeof w === "string") as string[])
+              : [],
+          },
+        }
+      : {}),
   };
 }
 

@@ -19,6 +19,7 @@
  *    {@link BuildManifestResult.warnings} for the UI to surface.
  */
 
+import { neededEventHorizon } from "./minEventHorizon";
 import { recordDeploymentWinners } from "./deploymentWinners";
 import { publicNote } from "../curator/readProfile";
 import { shipsAsExternal } from "./shipsAsExternal";
@@ -503,6 +504,9 @@ export function buildManifest(input: BuildManifestInput): BuildManifestResult {
       ? { gameIni: input.gameIni }
       : {}),
   };
+
+  const needs = neededEventHorizon(manifest);
+  if (needs !== undefined) manifest.package.needsEventHorizon = needs;
 
   return { manifest, warnings };
 }
