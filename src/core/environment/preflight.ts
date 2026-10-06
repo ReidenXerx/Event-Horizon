@@ -34,6 +34,7 @@ import {
   decideOwnedMasters,
   decideProtectedLocation,
   decideSyncedFolder,
+  decideSettingsFolder,
   decideWinePrefix,
   type EnvironmentCheck,
   type IniLeftover,
@@ -79,6 +80,8 @@ export type PreflightFacts = {
    */
   ownedMasters?: { recorded: readonly string[] | undefined };
   wine: boolean;
+  /** Windows' real Documents folder (the known folder), as Vortex reports it. */
+  documentsPath?: string;
   /** Vortex's user folder (C:\users\<name> under Wine) — the settings paths above live inside it. */
   userProfileDir?: string;
   /** Under Wine: where the Linux side is, as Wine reports it. */
@@ -297,6 +300,31 @@ export async function runEnvironmentPreflight(
       launcher: report.winePrefix?.gameUserDir !== undefined ? report.winePrefix.game?.source : undefined,
     }),
   );
+
+  // Not under Wine: there the settings live in the prefix, checked above.
+  if (!facts.wine) {
+    const plainDocuments = facts.userProfileDir !== undefined ? path.join(facts.userProfileDir, "Documents") : undefined;
+    const docs = facts.documentsPath;
+    const iniDir = facts.iniDir;
+    const elsewhere =
+      plainDocuments !== undefined &&
+      docs !== undefined &&
+      iniDir !== undefined &&
+      iniDir.toLowerCase().startsWith(docs.toLowerCase()) &&
+      plainDocuments.toLowerCase() !== docs.toLowerCase()
+        ? path.join(plainDocuments, iniDir.slice(docs.length))
+        : undefined;
+    report.checks.push(
+      decideSettingsFolder({
+        gameName: facts.gameName,
+        iniDir,
+        plainDocuments,
+        documents: docs,
+        syncedRoots: facts.syncedRoots,
+        otherCopyExists: elsewhere !== undefined && (await isDirectory(elsewhere)),
+      }),
+    );
+  }
 
   if (gameDir === undefined || !dirExists) {
     logEnvironmentReport(report, options.context, Date.now() - startedAt);

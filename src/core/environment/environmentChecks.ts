@@ -42,6 +42,7 @@ export type EnvironmentCheckId =
   | "wine-prefix"
   | "protected-location"
   | "synced-folder"
+  | "settings-folder"
   | "owned-masters"
   | "launcher-ran"
   | "binary-imports"
@@ -351,6 +352,80 @@ export function decideSyncedFolder(input: {
       `${service} uploads everything in its folder, and Vortex links every file of every mod into the game folder — hundreds of thousands of files for a large collection. While it uploads, ${service} can lock files Vortex and the game need, and to free space it can replace files with online-only placeholders that have to download again before the game can read them.`,
     ],
     steps: moveSteps(input.gameName, input.store, input.stagingDir),
+  };
+}
+
+// ── 2b'. The game's settings and saves are not split by a cloud backup ──
+
+/**
+ * Where the game keeps its INIs, saves and script-extender logs
+ * (`Documents\My Games\<game>`), checked against cloud backup.
+ *
+ * OneDrive's "back up your Documents folder" moves the real Documents into
+ * OneDrive and leaves the old folder behind. The game then reads one copy
+ * while the player (or a guide, or a tool) edits the other: INI and MCM
+ * changes that never take effect. And OneDrive may turn the files into
+ * online-only placeholders, which the game can fail to read at load and
+ * character creation (azurestrand, Ivy, 2026-10-06, a Scaleform crash).
+ *
+ * A warning, never a block: the game works from OneDrive when the files are
+ * kept on the device, and only the player can say which copy is theirs.
+ */
+export function decideSettingsFolder(input: {
+  gameName: string;
+  /** The My Games folder the game uses, under Windows' real Documents. */
+  iniDir: string | undefined;
+  /** The plain `%USERPROFILE%\Documents`, which a backup leaves behind. */
+  plainDocuments: string | undefined;
+  /** Windows' real Documents folder (the known folder the game uses). */
+  documents: string | undefined;
+  syncedRoots: readonly SyncedRoot[];
+  /** Whether the same My Games folder ALSO exists under the plain Documents. */
+  otherCopyExists: boolean;
+}): EnvironmentCheck {
+  if (input.iniDir === undefined) {
+    return unknownCheck("settings-folder", `Could not tell where ${input.gameName} keeps its settings and saves.`);
+  }
+  const root = input.syncedRoots.find((r) => isInsideFolder(input.iniDir!, r.path));
+  const otherCopy =
+    input.otherCopyExists && input.plainDocuments !== undefined && input.documents !== undefined
+      ? `${input.plainDocuments}${input.iniDir.slice(input.documents.length)}`
+      : undefined;
+  if (root === undefined && otherCopy === undefined) {
+    return ok("settings-folder", `${input.gameName}'s settings and saves are in one place, outside cloud backup.`, [
+      `Folder: ${input.iniDir}`,
+    ]);
+  }
+  const lines = [`${input.gameName} reads its INI files, saves and script-extender logs from: ${input.iniDir}`];
+  if (root !== undefined) {
+    lines.push(
+      `That is inside your ${root.service} folder (${root.path}), usually because ${root.service} backs up your Documents folder. ${root.service} can turn these files into online-only placeholders that have to download before the game can read them, which can crash the game while it loads.`,
+    );
+  }
+  if (otherCopy !== undefined) {
+    lines.push(
+      `A second copy exists at ${otherCopy}. Edits made there (INI tweaks, MCM settings, a guide's instructions) never reach the game.`,
+    );
+  }
+  return {
+    id: "settings-folder",
+    status: "warning",
+    title:
+      root !== undefined
+        ? `${input.gameName}'s settings and saves are in your ${root.service} folder.`
+        : `${input.gameName} has two settings folders; it uses only one.`,
+    lines,
+    steps: [
+      ...(root?.service === "OneDrive"
+        ? [
+            "Open OneDrive settings → Sync and backup → Manage back up, and turn off backup for Documents. Or keep it, and right-click the My Games folder → Always keep on this device.",
+          ]
+        : []),
+      ...(otherCopy !== undefined
+        ? [`Keep only one My Games\\${input.iniDir.split(/[\\/]/).pop() ?? ""} folder: copy anything you changed into ${input.iniDir}, then rename the other one.`]
+        : []),
+      "Then start the game once from its launcher and check your settings.",
+    ],
   };
 }
 

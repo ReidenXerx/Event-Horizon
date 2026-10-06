@@ -76,6 +76,7 @@ describe("runEnvironmentPreflight", () => {
     expect(await statusOf(facts())).toEqual({
       "game-managed": "ok",
       "launcher-ran": "ok",
+      "settings-folder": "ok",
       "protected-location": "ok",
       "synced-folder": "ok",
       "binary-imports": "ok",
@@ -153,7 +154,7 @@ describe("runEnvironmentPreflight", () => {
     fs.unlinkSync(prefs);
     expect((await statusOf(facts(), false))["launcher-ran"]).toBe("blocked");
     const report = await runEnvironmentPreflight(facts({ discoveredPath: undefined }), { scanFolder: true, context: "test" });
-    expect(report.checks.map((c) => c.id)).toEqual(["game-managed", "launcher-ran"]);
+    expect(report.checks.map((c) => c.id)).toEqual(["game-managed", "launcher-ran", "settings-folder"]);
     expect(report.checks[0]?.status).toBe("blocked");
     expect(report.folder).toBeUndefined();
   });

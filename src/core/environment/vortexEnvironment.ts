@@ -159,6 +159,7 @@ export function gatherPreflightFacts(args: {
     ...(args.ownedMasters !== undefined ? { ownedMasters: args.ownedMasters } : {}),
     wine,
     ...(userProfileDir.length > 0 ? { userProfileDir } : {}),
+    ...(haveDocuments ? { documentsPath: documentsPath! } : {}),
     ...(wineHost !== undefined ? { wineHost } : {}),
   };
   ehLog("info", "environment.facts", {
