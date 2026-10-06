@@ -1172,7 +1172,7 @@ function validateStagingFiles(
       return;
     }
     // Optional and advisory: anything malformed is dropped, never an error.
-    const cond = obj.installerCondition as { needs?: unknown } | undefined;
+    const cond = obj.installerCondition as { needs?: unknown; all?: unknown } | undefined;
     const needs =
       isObject(cond) && Array.isArray(cond.needs)
         ? (cond.needs as unknown[]).filter((n): n is string => typeof n === "string" && n !== "")
@@ -1181,7 +1181,9 @@ function validateStagingFiles(
       path: filePath,
       size,
       ...(sha256Raw !== undefined ? { sha256: sha256Raw } : {}),
-      ...(needs.length > 0 ? { installerCondition: { needs } } : {}),
+      ...(needs.length > 0
+        ? { installerCondition: { needs, ...(isObject(cond) && cond.all === true ? { all: true as const } : {}) } }
+        : {}),
     });
   });
   return out;

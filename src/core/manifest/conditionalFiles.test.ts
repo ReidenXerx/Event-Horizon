@@ -12,6 +12,7 @@ import {
   evaluateCondition,
   installerConditionUnmet,
   pluginsGatedOff,
+  pluginWillBeActive,
   pluginsWanted,
   withGatedPluginsOff,
   type PluginState,
@@ -236,3 +237,133 @@ describe("a patch hub for Creations the player may not own", () => {
     ]);
   });
 });
+
+/**
+ * Ivy's Creation Club Patches, BUNDLED (Nexus removed the page, 2026-10-06):
+ * the Bounty patch needs the Creation AND Interesting NPCs; the Ghoul patch
+ * needs Ghoulification. The install applies these to the bundled files.
+ */
+describe("a bundled patch hub's conditions", () => {
+  const file = (f: string) => ({ source: f, destination: f, priority: 0, isFolder: false });
+  const patterns: FomodConditionalPattern[] = [
+    {
+      flagDependencies: {},
+      files: [file("Ivy - CC Bounty Hunter Patch.esp")],
+      unsupportedDependencies: ["fileDependency"],
+      condition: {
+        kind: "all",
+        terms: [
+          { kind: "file", file: "vchgs002fo4_bountyhunter.esl", state: "Active" },
+          { kind: "file", file: "3DNPC_FO4.esp", state: "Active" },
+        ],
+      },
+    },
+    {
+      flagDependencies: {},
+      files: [file("Ivy - CC Ghoulification Patch.esp")],
+      unsupportedDependencies: ["fileDependency"],
+      condition: { kind: "all", terms: [{ kind: "file", file: "ghoulification.esm", state: "Active" }] },
+    },
+  ];
+
+  it("records an And of two plugins as all, and a single plugin as any", () => {
+    const out = stagedByPluginCondition({
+      patterns,
+      flags: {},
+      pluginState: states(["vchgs002fo4_bountyhunter.esl", "3dnpc_fo4.esp", "ghoulification.esm"]),
+      expanded: (specs) => specs.map((s) => ({ path: s.destination ?? s.source })),
+      expectedKeys: new Set(),
+      staged: ["Ivy - CC Bounty Hunter Patch.esp", "Ivy - CC Ghoulification Patch.esp"],
+      key: (p) => p.toLowerCase(),
+    });
+    expect(out.held).toEqual([
+      { path: "Ivy - CC Bounty Hunter Patch.esp", needs: ["3DNPC_FO4.esp", "vchgs002fo4_bountyhunter.esl"], all: true },
+      { path: "Ivy - CC Ghoulification Patch.esp", needs: ["ghoulification.esm"] },
+    ]);
+  });
+
+  it("is unmet for an And when one plugin is missing, and for an Or only when all are", () => {
+    const has = (p: string): boolean => p === "vchgs002fo4_bountyhunter.esl";
+    expect(installerConditionUnmet(["3dnpc_fo4.esp", "vchgs002fo4_bountyhunter.esl"], has, true)).toBe(true);
+    expect(installerConditionUnmet(["3dnpc_fo4.esp", "vchgs002fo4_bountyhunter.esl"], has)).toBe(false);
+  });
+
+  it("knows a plugin will be active from the collection itself, not Vortex's state mid-install", () => {
+    const willBe = pluginWillBeActive({
+      order: [
+        { name: "3DNPC_FO4.esp", enabled: true },
+        { name: "vchgs002fo4_bountyhunter.esl", enabled: true },
+        { name: "ghoulification.esm", enabled: true },
+        { name: "Off.esp", enabled: false },
+      ],
+      mods: [
+        { compareKey: "nexus:1:1", state: { stagingFiles: [{ path: "3DNPC_FO4.esp" }] } },
+        { compareKey: "nexus:2:2", state: { stagingFiles: [{ path: "Off.esp" }] } },
+      ],
+      notInstalled: () => new Set(),
+      inData: (n) => n === "vchgs002fo4_bountyhunter.esl",
+    });
+    expect(willBe("3DNPC_FO4.esp")).toBe(true); // a collection mod ships it, installed later or not
+    expect(willBe("vchgs002fo4_bountyhunter.esl")).toBe(true); // owned
+    expect(willBe("ghoulification.esm")).toBe(false); // not owned
+    expect(willBe("Off.esp")).toBe(false); // the curator had it off
+  });
+
+  it("a plugin only an uninstalled optional mod ships will not be active", () => {
+    const out = new Set(["nexus:1:1"]);
+    const willBe = pluginWillBeActive({
+      order: [{ name: "3DNPC_FO4.esp", enabled: true }],
+      mods: [{ compareKey: "nexus:1:1", state: { stagingFiles: [{ path: "3DNPC_FO4.esp" }] } }],
+      notInstalled: () => out,
+      inData: () => true,
+    });
+    expect(willBe("3DNPC_FO4.esp")).toBe(false);
+  });
+
+  it("gates a BUNDLED mod's patch whose condition this player does not meet", () => {
+    const mods = [
+      {
+        source: { kind: "external", bundled: true },
+        state: {
+          stagingFiles: [
+            { path: "Ivy - CC Bounty Hunter Patch.esp", installerCondition: { needs: ["3dnpc_fo4.esp", "vchgs002fo4_bountyhunter.esl"], all: true as const } },
+            { path: "Ivy - CC Ghoulification Patch.esp", installerCondition: { needs: ["ghoulification.esm"] } },
+          ],
+        },
+      },
+    ];
+    const active = (p: string): boolean => p === "3dnpc_fo4.esp" || p === "ghoulification.esm";
+    expect([...pluginsGatedOff(mods, active)]).toEqual(["ivy - cc bounty hunter patch.esp"]);
+  });
+
+  it("carries all through a parse", () => {
+    const m = JSON.parse(manifestWith([{ path: "a.esp", size: 1, installerCondition: { needs: ["x.esp", "y.esp"], all: true } }]));
+    const { manifest } = parseManifest(JSON.stringify(m));
+    expect(manifest.mods[0]!.state!.stagingFiles![0]!.installerCondition).toEqual({ needs: ["x.esp", "y.esp"], all: true });
+  });
+});
+
+function manifestWith(stagingFiles: unknown[]): string {
+  return JSON.stringify({
+    schemaVersion: 2,
+    package: { id: "00000000-0000-4000-8000-000000000000", name: "t", version: "1.0.0", author: "a", createdAt: "2026-01-01T00:00:00.000Z", strictMissingMods: false },
+    game: { id: "fallout4", version: "1.11.240", versionPolicy: "exact" },
+    vortex: { version: "2.6.3", deploymentMethod: "hardlink", requiredExtensions: [] },
+    mods: [
+      {
+        name: "t",
+        compareKey: "nexus:1:2",
+        source: { kind: "nexus", gameDomain: "fallout4", modId: 1, fileId: 2, archiveName: "t.zip", sha256: "a".repeat(64) },
+        install: { fomodSelections: [] },
+        state: { enabled: true, installOrder: 0, deploymentPriority: 0, stagingFiles },
+      },
+    ],
+    rules: [],
+    plugins: { order: [] },
+    loadOrder: [],
+    userlist: { plugins: [], groups: [] },
+    iniTweaks: [],
+    gameIni: { files: [] },
+    externalDependencies: [],
+  });
+}

@@ -643,6 +643,8 @@ export function collectMirrorPayload(
 export function applySelfCheckFindings(
   mods: readonly AuditorMod[],
   reports: readonly SelfCheckReport[],
+  /** Bundled mods' plugin-conditioned files, read off their FOMOD (see runSelfChecks). */
+  bundledConditions?: ReadonlyMap<string, ReadonlyArray<{ path: string; needs: string[]; all?: true }>>,
 ): AuditorMod[] {
   const verifiedEmpty = new Set(
     reports.filter((r) => r.emptySelectionVerified === true).map((r) => r.modId),
@@ -668,10 +670,13 @@ export function applySelfCheckFindings(
         (r) =>
           [
             r.modId,
-            new Map([...(r.installerConditionHeld ?? []), ...(r.installerConditionUnmet ?? [])].map((c) => [c.path, c.needs] as const)),
+            new Map([...(r.installerConditionHeld ?? []), ...(r.installerConditionUnmet ?? [])].map((c) => [c.path, c] as const)),
           ] as const,
       ),
   );
+  for (const [modId, files] of bundledConditions ?? []) {
+    if (files.length > 0) conditionByMod.set(modId, new Map(files.map((c) => [c.path, c] as const)));
+  }
 
   if (verifiedEmpty.size > 0) {
     ehLog("info", "build.empty-selection-verified", { mods: verifiedEmpty.size });
@@ -708,8 +713,10 @@ export function applySelfCheckFindings(
     ...(conditionByMod.has(m.id) && m.stagingFiles !== undefined
       ? {
           stagingFiles: m.stagingFiles.map((f) => {
-            const needs = conditionByMod.get(m.id)!.get(f.path);
-            return needs !== undefined ? { ...f, installerCondition: { needs } } : f;
+            const c = conditionByMod.get(m.id)!.get(f.path);
+            return c !== undefined
+              ? { ...f, installerCondition: { needs: c.needs, ...(c.all === true ? { all: true as const } : {}) } }
+              : f;
           }),
         }
       : {}),
@@ -2083,6 +2090,7 @@ export async function runBuildPipeline(
    * could not run, and empty means every mirrored file ships.
    */
   let selfCheckReports: readonly SelfCheckReport[] = [];
+  let selfCheckBundledConditions: ReadonlyMap<string, ReadonlyArray<{ path: string; needs: string[]; all?: true }>> = new Map();
   let selfCheckArchives: ReadonlyMap<string, string> = new Map();
   try {
     // Bundled mods ship the staging folder itself, so what ships IS their
@@ -2117,6 +2125,7 @@ export async function runBuildPipeline(
     postProcessingCandidates = selfCheck.postProcessingCandidates;
     selfCheckReports = selfCheck.reports;
     selfCheckArchives = selfCheck.archiveByModId;
+    selfCheckBundledConditions = selfCheck.bundledConditions ?? new Map();
 
     // A tool's `.bak`/`.tmp` leftovers that no archive can produce
     // (generatedFiles.ts): out of the package, so no player is ever expected
@@ -2353,7 +2362,7 @@ export async function runBuildPipeline(
    * Applied here instead, from the reports the check produced, so a failure in
    * the reporting half cannot strip facts out of the package.
    */
-  mods = applySelfCheckFindings(mods, selfCheckReports);
+  mods = applySelfCheckFindings(mods, selfCheckReports, selfCheckBundledConditions);
 
   onProgress?.({ phase: "capturing-deployment" });
   const deploymentManifests = await captureDeploymentManifests(

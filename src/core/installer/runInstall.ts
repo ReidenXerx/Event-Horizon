@@ -158,6 +158,7 @@ import {
 } from "./optionalMods";
 import {
   activePluginsFromState,
+  pluginWillBeActive,
   describeNeeds,
   installerConditionUnmet,
   pluginsGatedOff,
@@ -957,6 +958,16 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
    * exist, so absent files never read as drift and a changed one still does.
    */
   const optionalFullLists = new Map<string, EhcollStagingFile[]>();
+  /** See {@link pluginWillBeActive}: judges a BUNDLED mod's condition-gated files. */
+  const willBeActive = pluginWillBeActive({
+    order: plan.manifest.plugins.order,
+    mods: plan.manifest.mods,
+    notInstalled: () => new Set([...optionalSkipped, ...optionalNotInstalled.map((o) => o.compareKey)]),
+    inData: (name) => {
+      const dir = gameDataDirFor(api, plan.manifest.game.id);
+      return dir !== undefined && existsSync(path.join(dir, name));
+    },
+  });
   let userlistApplication: UserlistApplicationReceipt =
     emptyUserlistApplication();
   const verifications: ModVerificationReceipt[] = [];
@@ -1787,6 +1798,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             }),
           bundledPool,
           extractorBrokenReason,
+          willBeActive,
         });
         // Clear the prompts that are wrong to answer mid-install: "Enable all"
         // per multi-plugin mod and "Deployment necessary" (see
@@ -2277,16 +2289,26 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         const recordedFiles = manifestEntry?.state.stagingFiles;
         // Only for a mod its own installer lays down: a bundled or mirrored mod
         // carries the curator's files, so the file is there and is checked.
-        const carriesCuratorFiles =
-          manifestEntry?.state.mirrored === true ||
-          (manifestEntry?.source as { bundled?: boolean } | undefined)?.bundled === true;
+        // A mirrored mod carries the curator's files. A bundled one had its
+        // condition-gated files dropped at install by the collection's own
+        // answer, so it is judged by that same answer here.
+        const carriesCuratorFiles = manifestEntry?.state.mirrored === true;
+        const isBundled = (manifestEntry?.source as { bundled?: boolean } | undefined)?.bundled === true;
         const conditionNotMet = carriesCuratorFiles
           ? []
           : recordedFiles?.filter(
             (f) =>
               f.installerCondition !== undefined &&
-              installerConditionUnmet(f.installerCondition.needs, playerPluginActive),
+              installerConditionUnmet(
+                f.installerCondition.needs,
+                isBundled ? willBeActive : playerPluginActive,
+                f.installerCondition.all === true,
+              ),
           ) ?? [];
+        if (conditionNotMet.length > 0 && recordedFiles !== undefined) {
+          // The receipt's path fingerprint keeps the full list: see optionalFullLists.
+          optionalFullLists.set(installEntry.compareKey, recordedFiles);
+        }
         let expectedFiles =
           conditionNotMet.length > 0
             ? recordedFiles!.filter((f) => !conditionNotMet.includes(f))
@@ -2756,6 +2778,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             !installEntry.fromDecision.endsWith("already-installed") ||
             ownedByUs.has(installEntry.vortexModId),
           onTempArchive: (tempDir) => tempArchivesToCleanup.push(tempDir),
+          willBeActive,
         });
 
         /**
@@ -5054,6 +5077,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
                 actual: info.actual,
               }),
             extractorBrokenReason,
+            willBeActive,
           });
           if (entry === undefined) {
             carryForward.push(failed);
@@ -5967,6 +5991,60 @@ export function adoptIfNowInstalled(args: {
 // Per-decision execution
 // ===========================================================================
 
+/**
+ * ─── A BUNDLED MOD'S INSTALLER LOGIC, APPLIED BY US ────────────────────
+ * A bundled mod ships the curator's files with no installer, so the FOMOD's
+ * "only with this plugin active" never runs on the player's side: every
+ * patch the curator had arrived, including one for a Creation the player does
+ * not own, whose missing master stops the game. The build recorded those
+ * conditions; here the files whose condition this player does not meet are
+ * removed from the mod's staging folder, right after Vortex unpacked it and
+ * before anything deploys (owner, 2026-10-06: "auto check does user have
+ * these cc plugins or not"). Our own install, so NS-2 is not in play.
+ */
+async function dropUnmetBundledFiles(args: {
+  api: types.IExtensionApi;
+  gameId: string;
+  vortexModId: string;
+  mod: EhcollMod;
+  willBeActive?: (plugin: string) => boolean;
+  onNotice: (line: string) => void;
+}): Promise<void> {
+  const isActive = args.willBeActive;
+  if (isActive === undefined) return;
+  const gated = (args.mod.state.stagingFiles ?? []).filter(
+    (f) =>
+      f.installerCondition !== undefined &&
+      installerConditionUnmet(f.installerCondition.needs, isActive, f.installerCondition.all === true),
+  );
+  if (gated.length === 0) return;
+  const root = stagingRootForModId(args.api.getState(), args.gameId, args.vortexModId);
+  if (root === undefined) {
+    ehLog("warn", "install.bundled-conditions.no-staging", { mod: args.mod.name, files: gated.length });
+    return;
+  }
+  const fsp = await import("fs/promises");
+  const dropped: string[] = [];
+  for (const f of gated) {
+    try {
+      await fsp.rm(path.join(root, ...f.path.split("/")), { force: true });
+      dropped.push(f.path);
+    } catch (err) {
+      ehLog("warn", "install.bundled-conditions.rm-failed", { mod: args.mod.name, path: f.path, err });
+    }
+  }
+  ehLog("info", "install.bundled-conditions.dropped", {
+    mod: args.mod.name,
+    dropped: gated.map((f) => ({ path: f.path, needs: f.installerCondition!.needs, all: f.installerCondition!.all === true })),
+  });
+  if (dropped.length > 0) {
+    args.onNotice(
+      `${args.mod.name}: ${dropped.length} file(s) left out because they need plugins you don't have ` +
+        `(${describeNeeds(gated[0]!.installerCondition!.needs)}${gated[0]!.installerCondition!.all === true ? ", all of them" : ""}). Expected, not a failure.`,
+    );
+  }
+}
+
 async function executeDecision(args: {
   ctx: DriverContext;
   resolution: ModResolution;
@@ -5995,6 +6073,12 @@ async function executeDecision(args: {
    * the cold path (synchronous extract).
    */
   bundledPool?: BundledPrefetchPool;
+  /**
+   * Whether a plugin will be active once the collection is in: decides which
+   * of a BUNDLED mod's condition-gated files this player gets. Absent = keep
+   * every file (recovery paths that cannot know).
+   */
+  willBeActive?: (plugin: string) => boolean;
   /**
    * Answers "is the extractor itself broken?", asked only when an archive
    * listing has already failed. Threaded from {@link runInstallImpl} rather
@@ -6089,6 +6173,14 @@ async function executeDecision(args: {
       // Track the temp **directory**, not the file: cherry-picked
       // entries can have nested paths inside the dir.
       onTempArchive(result.tempDir);
+      await dropUnmetBundledFiles({
+        api: ctx.api,
+        gameId: manifest.game.id,
+        vortexModId: result.vortexModId,
+        mod: manifestEntry,
+        ...(args.willBeActive !== undefined ? { willBeActive: args.willBeActive } : {}),
+        onNotice: args.onNotice,
+      });
       // And released now. Vortex holds its own copy once the install is done,
       // and each of these is a full uncompressed copy of a mod: kept to the end
       // of the run, every bundled mod sat on the temp drive at once. The
@@ -7902,6 +7994,8 @@ async function tryRecoverFailedMod(args: {
    * removes it at the end of the run like every other one.
    */
   onTempArchive?: (p: string) => void;
+  /** See executeDecision: a bundled repair drops the same condition-gated files. */
+  willBeActive?: (plugin: string) => boolean;
 }): Promise<RecoverResult> {
   const {
     ctx,
@@ -8063,6 +8157,7 @@ async function tryRecoverFailedMod(args: {
        * of space mid-install.
        */
       onTempArchive: onTempArchive ?? ((p) => void p),
+      ...(args.willBeActive !== undefined ? { willBeActive: args.willBeActive } : {}),
       onSkip: () => {
         /* should not happen on a retry — install arm only */
       },

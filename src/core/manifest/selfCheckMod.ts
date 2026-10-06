@@ -36,7 +36,7 @@ import type { OmissionLead } from "./omissionLeads";
 import { expandFomodPlan, fomodRootOf } from "./expandFomodPlan";
 import type { RecordedStep } from "./fomodReplay";
 import { replayFomod, type FomodConditionalPattern } from "./fomodReplay";
-import { evaluateCondition, pluginsWanted, type PluginState } from "./conditionalFiles";
+import { conditionNeedsAll, evaluateCondition, pluginsWanted, type PluginState } from "./conditionalFiles";
 import { parseModuleConfig } from "./parseModuleConfig";
 import type {
   ArchiveVerificationResult,
@@ -66,14 +66,14 @@ export type SelfCheckReport = {
    * curator's own plugins (e.g. left over from an older install). Each keeps
    * the plugins it needs, any one of which would make the installer create it.
    */
-  installerConditionUnmet?: Array<{ path: string; needs: string[] }>;
+  installerConditionUnmet?: ConditionedFile[];
   /**
    * Staged files only a plugin-conditioned pattern creates, whose condition
    * HOLDS on the curator's plugins: a CC patch hub installs its patch for the
    * curator, who owns the Creation, and must not be judged missing for a
    * player who does not (Ivy CC patches, 2026-10-05).
    */
-  installerConditionHeld?: Array<{ path: string; needs: string[] }>;
+  installerConditionHeld?: ConditionedFile[];
   modId: string;
   modName: string;
   depth: SelfCheckDepth;
@@ -515,8 +515,8 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
   }
 
   let expected;
-  let conditionUnmet: Array<{ path: string; needs: string[] }> = [];
-  let conditionHeld: Array<{ path: string; needs: string[] }> = [];
+  let conditionUnmet: ConditionedFile[] = [];
+  let conditionHeld: ConditionedFile[] = [];
   try {
     const parsed = await parseModuleConfig(raw);
     // Whatever the replay concludes, the script has now been read and its
@@ -640,20 +640,24 @@ export function stagedByPluginCondition(args: {
   expectedKeys: ReadonlySet<string>;
   staged: readonly string[];
   key: (p: string) => string;
-}): { unmet: Array<{ path: string; needs: string[] }>; held: Array<{ path: string; needs: string[] }> } {
+}): { unmet: ConditionedFile[]; held: ConditionedFile[] } {
   const unexpected = new Map<string, string>();
   for (const p of args.staged) if (!args.expectedKeys.has(args.key(p))) unexpected.set(args.key(p), p);
   if (unexpected.size === 0) return { unmet: [], held: [] };
   const produced = new Set<string>();
   const needsByKey = new Map<string, Set<string>>();
   const heldNeedsByKey = new Map<string, Set<string>>();
+  /** Files whose every contributing pattern is an And over plugins. Any other pattern makes it "any". */
+  const allByKey = new Map<string, boolean>();
   for (const pattern of args.patterns) {
     if (pattern.condition === undefined || pattern.unsupportedDependencies.length === 0) continue;
     const holds = evaluateCondition(pattern.condition, args.flags, args.pluginState);
     const wanted = pluginsWanted(pattern.condition);
+    const isAll = conditionNeedsAll(pattern.condition);
     for (const f of args.expanded(pattern.files)) {
       const k = args.key(f.path);
       if (!unexpected.has(k)) continue;
+      allByKey.set(k, (allByKey.get(k) ?? true) && isAll);
       if (holds) {
         produced.add(k);
         const held = heldNeedsByKey.get(k) ?? new Set<string>();
@@ -667,17 +671,25 @@ export function stagedByPluginCondition(args: {
     }
   }
   const byPath = (a: { path: string }, b: { path: string }): number => (a.path < b.path ? -1 : 1);
+  const entry = (k: string, needs: Set<string>): ConditionedFile => ({
+    path: unexpected.get(k)!,
+    needs: [...needs].sort(),
+    ...(allByKey.get(k) === true ? { all: true as const } : {}),
+  });
   return {
     unmet: [...needsByKey.entries()]
       .filter(([k, needs]) => !produced.has(k) && needs.size > 0)
-      .map(([k, needs]) => ({ path: unexpected.get(k)!, needs: [...needs].sort() }))
+      .map(([k, needs]) => entry(k, needs))
       .sort(byPath),
     held: [...heldNeedsByKey.entries()]
       .filter(([, needs]) => needs.size > 0)
-      .map(([k, needs]) => ({ path: unexpected.get(k)!, needs: [...needs].sort() }))
+      .map(([k, needs]) => entry(k, needs))
       .sort(byPath),
   };
 }
+
+/** A staged file only plugin-conditioned patterns create, and what it needs. */
+export type ConditionedFile = { path: string; needs: string[]; all?: true };
 
 export function summarizeSelfChecks(reports: SelfCheckReport[]): {
   replayed: number;

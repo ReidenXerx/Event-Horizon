@@ -55,8 +55,18 @@ export function pluginsWanted(c: FomodCondition): string[] {
 export function installerConditionUnmet(
   needs: readonly string[],
   isActive: (plugin: string) => boolean,
+  /** Every plugin must be active (an And pattern), not any one. */
+  all?: boolean,
 ): boolean {
-  return needs.length > 0 && !needs.some((p) => isActive(p.toLowerCase()));
+  if (needs.length === 0) return false;
+  return all === true
+    ? !needs.every((p) => isActive(p.toLowerCase()))
+    : !needs.some((p) => isActive(p.toLowerCase()));
+}
+
+/** Whether a condition is an And over two or more plugins, which `all` records. */
+export function conditionNeedsAll(c: FomodCondition): boolean {
+  return c.kind === "all" && c.terms.filter((t) => t.kind === "file").length >= 2;
 }
 
 /** The plugins Vortex has enabled, from its `loadOrder` state, lowercased. */
@@ -75,7 +85,7 @@ type ConditionMod = {
   state: {
     mirrored?: boolean;
     optional?: true;
-    stagingFiles?: ReadonlyArray<{ path: string; installerCondition?: { needs: string[] } }>;
+    stagingFiles?: ReadonlyArray<{ path: string; installerCondition?: { needs: string[]; all?: true } }>;
   };
 };
 
@@ -104,8 +114,10 @@ export function pluginsGatedOff(
 ): Set<string> {
   const out = new Set<string>();
   for (const m of mods) {
-    const carriesCuratorFiles =
-      m.state.mirrored === true || (m.source as { bundled?: boolean } | undefined)?.bundled === true;
+    // A mirrored mod carries the curator's files. A BUNDLED one no longer
+    // does for condition-gated files: the install drops the ones this
+    // player's conditions rule out (2026-10-06).
+    const carriesCuratorFiles = m.state.mirrored === true;
     for (const f of m.state.stagingFiles ?? []) {
       if (!/\.(esp|esm|esl)$/i.test(f.path)) continue;
       const name = f.path.split(/[\\/]/).pop()!.toLowerCase();
@@ -114,7 +126,7 @@ export function pluginsGatedOff(
         continue;
       }
       if (carriesCuratorFiles || f.installerCondition === undefined) continue;
-      if (!installerConditionUnmet(f.installerCondition.needs, isActive)) continue;
+      if (!installerConditionUnmet(f.installerCondition.needs, isActive, f.installerCondition.all === true)) continue;
       out.add(name);
     }
   }
@@ -132,6 +144,41 @@ export function withGatedPluginsOff<T extends { name: string; enabled: boolean }
 ): T[] {
   if (gated.size === 0) return [...order];
   return order.map((p) => (p.enabled && gated.has(p.name.toLowerCase()) ? { ...p, enabled: false } : p));
+}
+
+/**
+ * Will this plugin be active once the collection is installed? The
+ * collection's own answer, not Vortex's live list (which, mid-install, has
+ * not enabled plugins of mods installed later yet): the curator had it
+ * enabled, and either a collection mod this run installs ships it, or the
+ * player has the file (a Creation they own, switched on before the mods).
+ */
+export function pluginWillBeActive(args: {
+  order: ReadonlyArray<{ name: string; enabled: boolean }>;
+  mods: ReadonlyArray<{ compareKey: string; state: { stagingFiles?: ReadonlyArray<{ path: string }> } }>;
+  /** compareKeys this run does not install (unticked or failed optional mods); read on every call. */
+  notInstalled: () => ReadonlySet<string>;
+  inData: (plugin: string) => boolean;
+}): (plugin: string) => boolean {
+  const enabled = new Set(args.order.filter((p) => p.enabled).map((p) => p.name.toLowerCase()));
+  const providers = new Map<string, string[]>();
+  for (const m of args.mods) {
+    for (const f of m.state.stagingFiles ?? []) {
+      if (!/\.(esp|esm|esl)$/i.test(f.path)) continue;
+      const name = f.path.split(/[\\/]/).pop()!.toLowerCase();
+      providers.set(name, [...(providers.get(name) ?? []), m.compareKey]);
+    }
+  }
+  return (plugin) => {
+    const key = plugin.toLowerCase();
+    if (!enabled.has(key)) return false;
+    const by = providers.get(key);
+    if (by !== undefined) {
+      const out = args.notInstalled();
+      return by.some((k) => !out.has(k));
+    }
+    return args.inData(key);
+  };
 }
 
 /** "needs A.esp" / "needs one of A.esp, B.esp and 24 more". */

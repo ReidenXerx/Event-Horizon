@@ -104,12 +104,12 @@ describe("the pipeline applies them where a reporting failure cannot skip them",
     // GP-7: a source-text test that stops matching reports coverage it does
     // not have.
     expect(source).toContain("const selfCheckOp = beginOp(");
-    expect(source).toContain("mods = applySelfCheckFindings(mods, selfCheckReports);");
+    expect(source).toContain("mods = applySelfCheckFindings(mods, selfCheckReports, selfCheckBundledConditions);");
   });
 
   it("calls it AFTER the self-check's catch, not inside the try", () => {
     const tryEnd = source.indexOf("    // A self-check problem is never a build problem.");
-    const call = source.indexOf("mods = applySelfCheckFindings(mods, selfCheckReports);");
+    const call = source.indexOf("mods = applySelfCheckFindings(mods, selfCheckReports, selfCheckBundledConditions);");
     expect(tryEnd).toBeGreaterThan(-1);
     expect(call).toBeGreaterThan(tryEnd);
   });

@@ -43,7 +43,7 @@ import { ehLog } from "../logging/ehLog";
 import { detectCaseSensitivity } from "../paths";
 import { getEventHorizonRoot } from "../paths/appDataPaths";
 import { installRootFor, stagingRootFromFolder } from "../stagingPath";
-import type { SelfCheckReport } from "./selfCheckMod";
+import type { ConditionedFile, SelfCheckReport } from "./selfCheckMod";
 import type { UnexplainedFile } from "./unexplainedFiles";
 import { selfCheckMod, summarizeSelfChecks } from "./selfCheckMod";
 import {
@@ -916,6 +916,13 @@ export type SelfCheckRunResult = {
    * that could land somewhere else.
    */
   archiveByModId: ReadonlyMap<string, string>;
+  /**
+   * Bundled mods' files their FOMOD creates only with certain plugins active,
+   * by mod id. A bundled mod ships the curator's files with no installer, so
+   * the install applies these itself: a patch for a Creation the player does
+   * not own is dropped (owner, 2026-10-06, Ivy's Creation Club Patches).
+   */
+  bundledConditions?: ReadonlyMap<string, ConditionedFile[]>;
 };
 
 /**
@@ -1235,6 +1242,52 @@ export async function runSelfChecks(
     }
   });
   for (const r of slots) if (r !== undefined) reports.push(r);
+
+  /**
+   * ─── BUNDLED MODS: THEIR FOMOD'S PLUGIN CONDITIONS, NOTHING ELSE ────────
+   * Not compared (their staging is what ships), but their installer is read
+   * for one fact: which files it creates only when a plugin is active. Kept
+   * out of `reports`, so none of the comparison's findings can come from them.
+   */
+  const bundledConditions = new Map<string, ConditionedFile[]>();
+  for (const mod of shipsOwnBytes === undefined ? [] : mods.filter((m) => shipsOwnBytes(m))) {
+    if (opts?.signal?.aborted === true) break;
+    const archivePath = resolveModArchivePath(state, mod, gameId) ?? (await recoverArchive(mod));
+    if (archivePath === undefined) continue;
+    try {
+      const staged = await stagedWithChecksums({
+        mod,
+        installRoot,
+        isExternal: false,
+        crcCache,
+        onSizeOnly: () => undefined,
+        ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
+      });
+      const r = await selfCheckMod({
+        sevenZip,
+        modId: mod.id,
+        modName: mod.name,
+        archivePath,
+        hasArchiveRecord: mod.archiveId !== undefined || mod.recoveredDownloadId !== undefined,
+        staged,
+        recordedChoices: mod.fomodSelections ?? [],
+        readEntry,
+        ...(caseMode !== undefined ? { caseMode } : {}),
+        ...(pluginState !== undefined ? { pluginState } : {}),
+        ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
+      });
+      const files = [...(r.installerConditionHeld ?? []), ...(r.installerConditionUnmet ?? [])];
+      if (files.length > 0) {
+        bundledConditions.set(mod.id, files);
+        ehLog("info", "selfcheck.bundled-conditions", {
+          mod: mod.name,
+          files: files.map((f) => ({ path: f.path, needs: f.needs, all: f.all === true })),
+        });
+      }
+    } catch (err) {
+      ehLog("warn", "selfcheck.bundled-conditions-failed", { mod: mod.name, err });
+    }
+  }
 
   /**
    * ─── AND A MOD NEVER REACHED IS NOT A MOD THAT PASSED ─────────────────
@@ -1648,6 +1701,7 @@ export async function runSelfChecks(
     postProcessingCandidates,
     mirrorable,
     archiveByModId,
+    ...(bundledConditions.size > 0 ? { bundledConditions } : {}),
   };
 }
 

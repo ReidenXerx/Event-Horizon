@@ -734,7 +734,16 @@ export type EhcollStagingFile = {
    * installed because its condition is not met, rather than that the mod
    * could not be reproduced. Optional: older clients ignore it.
    */
-  installerCondition?: { needs: string[] };
+  installerCondition?: {
+    needs: string[];
+    /**
+     * EVERY plugin in `needs` must be active, not any one of them: the FOMOD
+     * pattern was an And (Ivy's Bounty Hunter patch needs the Creation AND
+     * Interesting NPCs). Absent = any one, which is how every older package
+     * reads.
+     */
+    all?: true;
+  };
 };
 
 export type ModUiAttributes = {
