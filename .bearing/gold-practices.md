@@ -577,3 +577,20 @@ collision sphere A-35 had enlarged (1.2 → 1.7) on purpose: players got 0.61 in
 0.77, an entrance about 20% tighter; fixed in builder 1.0.3 (A-41). Found only when the collection
 check disabled the dev instance. Same day, Silhouette's release zip carried 68 third-party presets
 generated on the owner's machine (S-74).*
+
+## PP-16 — A helper's unit tests prove the helper, not that the real path ever reaches it
+
+A feature built as a pure helper plus a call site gets tested at the helper, because that is cheap and
+deterministic. The tests pass, the feature ships, and nothing checks that the call site is reached by
+the inputs the feature exists for. An early return above the call, a confidence gate, or an "if this
+is unusual, give up" branch can mean the helper runs for every case except the real one.
+
+For a feature that exists for one real input, write at least one test through the real entry point
+with that input's actual shape (the curator's script, the player's file), and assert the end result,
+not the helper's return value.
+
+*Scar: 2026-10-06. Per-file plugin conditions (0.2.40) were unit-tested on `stagedByPluginCondition`
+and never recorded for a single real mod: every `<fileDependency>` pattern makes the FOMOD replay
+"low confidence", and both low-confidence exits in `selfCheckMod` returned before the call. Ivy 1.0.40
+built with a plain file list on both CC patches. Found from the build log, fixed in 0.2.46 with a test
+through `selfCheckMod` using Ivy's script.*
