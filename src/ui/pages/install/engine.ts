@@ -641,6 +641,8 @@ async function checkEnvironment(
       externalDependencies: manifest.externalDependencies,
       ...(manifest.gameIni !== undefined ? { gameIni: manifest.gameIni } : {}),
       ownedMasters: { recorded: manifest.game.userOwnedMasters },
+      // An update of the collection already installed keeps MCM's player settings.
+      keepPlayerSettings: (await readReceipt(getVortexUserDataPath(), manifest.package.id)) !== undefined,
     });
     return await runEnvironmentPreflight(facts, {
       scanFolder: true,

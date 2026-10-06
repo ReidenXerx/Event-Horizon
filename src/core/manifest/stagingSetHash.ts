@@ -1,6 +1,6 @@
 import * as crypto from "crypto";
 
-import { isVolatileFile } from "../volatileFiles";
+import { skipsVerification } from "../volatileFiles";
 import { toPosix } from "../paths";
 
 import type { EhcollStagingFile } from "../../types/ehcoll";
@@ -75,7 +75,7 @@ export function computeStagingSetHash(
   // Before the emptiness check, not after: a mod whose ONLY staged file is a
   // log has no stable set to hash, and `undefined` is the honest answer rather
   // than a hash of nothing.
-  const stable = files.filter((f) => !isVolatileFile(f.path));
+  const stable = files.filter((f) => !skipsVerification(f.path));
 
   if (stable.length === 0) {
     return undefined;
@@ -152,7 +152,7 @@ export function computeStagingSetHash(
 export function computeStagingPathSetHash(
   files: readonly EhcollStagingFile[],
 ): string | undefined {
-  const stable = files.filter((f) => !isVolatileFile(f.path));
+  const stable = files.filter((f) => !skipsVerification(f.path));
   if (stable.length === 0) return undefined;
 
   const sorted = stable

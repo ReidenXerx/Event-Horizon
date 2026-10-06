@@ -101,6 +101,8 @@ export function gatherPreflightFacts(args: {
   gameIni?: EhcollGameIni;
   /** An install's collection: `{ recorded: manifest.game.userOwnedMasters }`. */
   ownedMasters?: { recorded: readonly string[] | undefined };
+  /** The collection is already installed here (an update): keep MCM's player settings. */
+  keepPlayerSettings?: boolean;
 }): PreflightFacts {
   const { state, gameId } = args;
   const discovery = readDiscovery(state, gameId);
@@ -160,6 +162,7 @@ export function gatherPreflightFacts(args: {
     wine,
     ...(userProfileDir.length > 0 ? { userProfileDir } : {}),
     ...(haveDocuments ? { documentsPath: documentsPath! } : {}),
+    ...(args.keepPlayerSettings === true ? { keepPlayerSettings: true } : {}),
     ...(wineHost !== undefined ? { wineHost } : {}),
   };
   ehLog("info", "environment.facts", {

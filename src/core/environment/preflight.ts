@@ -82,6 +82,8 @@ export type PreflightFacts = {
   wine: boolean;
   /** Windows' real Documents folder (the known folder), as Vortex reports it. */
   documentsPath?: string;
+  /** An update of the collection already installed: the folder scan keeps MCM's player settings. */
+  keepPlayerSettings?: boolean;
   /** Vortex's user folder (C:\users\<name> under Wine) — the settings paths above live inside it. */
   userProfileDir?: string;
   /** Under Wine: where the Linux side is, as Wine reports it. */
@@ -414,6 +416,7 @@ export async function runEnvironmentPreflight(
   if (options.scanFolder) {
     report.folder = await scanGameFolder({
       gameDir,
+      ...(facts.keepPlayerSettings === true ? { keepPlayerSettings: true } : {}),
       ...(settings.localGameDir !== undefined ? { localGameDir: settings.localGameDir } : {}),
       declared: facts.declared,
       ...(facts.executable !== undefined ? { executable: facts.executable } : {}),

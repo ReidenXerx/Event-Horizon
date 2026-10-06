@@ -50,7 +50,7 @@ import { ehLog } from "../logging/ehLog";
 import { segmentsOf, toPosix } from "../paths";
 import { scriptExtenderLoaders } from "../manifest/externalDependencies";
 import { listZipEntries, readZipEntry } from "../manifest/readZip";
-import { isVolatileFile } from "../volatileFiles";
+import { isPlayerSettingsFile, isVolatileFile } from "../volatileFiles";
 import { rootDllOwnership } from "./binaryImports";
 import {
   parseAppManifest,
@@ -157,6 +157,12 @@ export function classifyGameFolder(input: {
   declared: ReadonlySet<string>;
   /** Lower-case root DLL names that belong to a tool beside the game (binaryImports.rootDllOwnership). */
   toolOwned?: ReadonlySet<string>;
+  /**
+   * An update of the collection already installed: MCM's player settings and
+   * keybinds stay where they are (owner poll, 2026-10-06). Another collection
+   * still gets them offered for cleaning.
+   */
+  keepPlayerSettings?: boolean;
 }): GameFolderReport {
   const { entries, vanilla, deployed, creations, declared, toolOwned } = input;
   const counts: Record<FileClass, number> = {
@@ -191,6 +197,7 @@ export function classifyGameFolder(input: {
     else if (isCreation(lower, creations)) cls = "creation";
     else if (!lower.includes("/") && toolOwned?.has(lower) === true) cls = "tool";
     else if (!isOnLoadSurface(lower)) cls = "not-loaded";
+    else if (isPlayerSettingsFile(lower)) cls = input.keepPlayerSettings === true ? "volatile" : "unmanaged";
     else if (isVolatileFile(lower)) cls = "volatile";
     else cls = "unmanaged";
 
@@ -672,6 +679,8 @@ export type GameFolderScan = {
 
 export async function scanGameFolder(args: {
   gameDir: string;
+  /** See classifyGameFolder: an update of the installed collection keeps MCM's player settings. */
+  keepPlayerSettings?: boolean;
   localGameDir?: string;
   /** Lower-case paths, relative to the game root, of declared prerequisites. */
   declared: ReadonlySet<string>;
@@ -745,6 +754,7 @@ export async function scanGameFolder(args: {
     creations,
     declared: args.declared,
     toolOwned: new Set(toolOwned.keys()),
+    ...(args.keepPlayerSettings === true ? { keepPlayerSettings: true } : {}),
   });
   return {
     report,

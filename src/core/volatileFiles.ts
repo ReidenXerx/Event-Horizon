@@ -153,6 +153,29 @@ export function volatileReason(relPath: string): VolatileReason | undefined {
   return undefined;
 }
 
+/**
+ * MCM's player settings: `MCM/Settings/<mod>.ini`, `MCM/Settings/Keybinds.json`
+ * and MCM Helper's `MCM/Config/<mod>/settings.ini`, with or without `Data/`.
+ *
+ * NOT volatile: a curator's tuned settings ship in bundles and mirrors like
+ * any file. Only judging a player's install skips them (see skipsVerification).
+ */
+export function isPlayerSettingsFile(relPath: string): boolean {
+  const p = relPath.replace(/\\/g, "/").toLowerCase();
+  return /(^|\/)mcm\/(settings\/[^/]+\.(ini|json)|config\/[^/]+\/settings\.ini)$/.test(p);
+}
+
+/**
+ * Files a check of the PLAYER's install does not judge: what a runtime writes,
+ * plus MCM's player settings and keybinds. A mod that ships its own copy gets
+ * the player's in-game edits through the hardlink, and a changed copy is the
+ * player's choice, never damage to repair (alasdairn, Ivy, 2026-10-06: every
+ * update wiped his keybinds; owner poll).
+ */
+export function skipsVerification(relPath: string): boolean {
+  return isVolatileFile(relPath) || isPlayerSettingsFile(relPath);
+}
+
 /** True when this path is written by the runtime or the OS, not by a mod. */
 export function isVolatileFile(relPath: string): boolean {
   return volatileReason(relPath) !== undefined;

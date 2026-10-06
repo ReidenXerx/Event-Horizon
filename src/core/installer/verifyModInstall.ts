@@ -7,7 +7,7 @@ import {
   toPosix,
   type CaseMode,
 } from "../paths";
-import { isVolatileFile, volatileReason } from "../volatileFiles";
+import { skipsVerification, volatileReason } from "../volatileFiles";
 import * as path from "path";
 
 import { selectors } from "@nexusmods/vortex-api";
@@ -271,8 +271,8 @@ export async function verifyModInstall(
    * record these files, and dropping them only from the on-disk side would
    * turn every one of them into a `missing` instead of a `sizeMismatch`.
    */
-  const onDisk = onDiskAll.filter((f) => !isVolatileFile(f.relativePath));
-  const expectedVerifiable = expectedFiles.filter((f) => !isVolatileFile(f.path));
+  const onDisk = onDiskAll.filter((f) => !skipsVerification(f.relativePath));
+  const expectedVerifiable = expectedFiles.filter((f) => !skipsVerification(f.path));
 
   const skippedOnDisk = onDiskAll.length - onDisk.length;
   const skippedExpected = expectedFiles.length - expectedVerifiable.length;
@@ -284,9 +284,9 @@ export async function verifyModInstall(
       fromManifest: skippedExpected,
       fromDisk: skippedOnDisk,
       examples: expectedFiles
-        .filter((f) => isVolatileFile(f.path))
+        .filter((f) => skipsVerification(f.path))
         .slice(0, 5)
-        .map((f) => ({ path: f.path, why: volatileReason(f.path) })),
+        .map((f) => ({ path: f.path, why: volatileReason(f.path) ?? "player-settings" })),
     });
   }
 

@@ -1149,9 +1149,17 @@ class InstallSession {
         gameId,
         gameName: facts.gameName,
         quarantineFolder: quarantineRootFor(gameDir),
-        scan: () =>
+        scan: async () =>
           scanGameFolder({
             gameDir,
+            // An update of the collection already installed keeps the
+            // player's MCM settings and keybinds (owner poll, 2026-10-06).
+            ...((await (await import("../../../core/installLedger")).readReceipt(
+              (await import("../../../core/paths")).getVortexUserDataPath(),
+              manifest.package.id,
+            )) !== undefined
+              ? { keepPlayerSettings: true }
+              : {}),
             ...(facts.localGameDir !== undefined ? { localGameDir: facts.localGameDir } : {}),
             declared: facts.declared,
             ...(facts.executable !== undefined ? { executable: facts.executable } : {}),
