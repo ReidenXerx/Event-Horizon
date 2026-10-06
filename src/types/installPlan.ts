@@ -63,6 +63,11 @@ import type { VersionMismatch } from "../core/resolver/versionMismatch";
  */
 export type UserSideState = {
   /**
+   * The player's remembered "Keep my version" choices for THIS collection,
+   * by collection-mod compareKey (playerVariants.ts).
+   */
+  variantChoices?: ReadonlyMap<string, { nexusModId: number; nexusFileId: number }>;
+  /**
    * The Vortex `gameId` the user has active. Compared against
    * `manifest.game.id` — mismatch produces a categorical
    * compatibility error (the plan refuses to proceed).
@@ -929,7 +934,9 @@ export type ExternalMissingDecision = {
 export type ConflictRecommendation =
   | "replace-existing"
   | "keep-existing"
-  | "manual-review";
+  | "manual-review"
+  /** The player chose this file of the mod's Nexus page in the Doctor ("Keep my version"); kept, no question. */
+  | "player-variant";
 
 // ---------------------------------------------------------------------------
 // External-dependency decisions

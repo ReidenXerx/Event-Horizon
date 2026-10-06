@@ -50,6 +50,7 @@ export function healNeedsManifest(action: HealAction): boolean {
     case "switch-profile":
     case "enable-mods":
     case "repin-plugin-order":
+    case "keep-player-versions":
     // The receipt carries each plugin's name and the curator's flag, which is
     // everything the repair needs. Requiring the .ehcoll would hide the button
     // from exactly the user whose game has stopped starting.
@@ -96,6 +97,9 @@ export function healNeedsConfirmation(action: HealAction): boolean {
   switch (action) {
     case "restore-light-flags":
     case "reinstall-mods":
+    // A choice, not a repair: it changes what Event Horizon treats as the
+    // collection's mod from now on, so it says so before it is made.
+    case "keep-player-versions":
       return true;
     case "redeploy-winners":
     case "reapply-rules":
@@ -179,6 +183,16 @@ export function describeHeal(action: HealAction): {
           "Close the game and any xEdit or LOOT windows first — a plugin " +
           "another program is holding open cannot be changed.",
         confirm: "Restore flags",
+      };
+    case "keep-player-versions":
+      return {
+        title: "Keep your own versions?",
+        body:
+          "Event Horizon will treat the files you chose (another file of the same mod, like 4k textures) as the " +
+          "collection's, stop reporting the collection's files as missing, and keep yours enabled on future " +
+          "updates. They count as your mods, so uninstalling the collection never removes them. If the curator " +
+          "changes one of those mods later, the new file installs and you can choose again.",
+        confirm: "Keep mine",
       };
     case "switch-profile":
       return {

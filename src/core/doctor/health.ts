@@ -43,6 +43,7 @@ import {
   type OrderStanding,
 } from "./loadOrderStatus";
 import { judgeRecordedLightFlags } from "../manifest/pluginCapability";
+import { findPlayerVariants, type PoolNexusMod } from "../installer/playerVariants";
 
 export type HealthCheckId =
   /**
@@ -54,6 +55,8 @@ export type HealthCheckId =
   | "profile"
   | "mods-present"
   | "mods-enabled"
+  /** A collection mod replaced by another file of the same Nexus page the player enabled (playerVariants.ts). */
+  | "player-variants"
   | "staging"
   | "plugin-order"
   | "plugin-light-flags"
@@ -110,7 +113,9 @@ export type HealAction =
   | "restore-light-flags"
   | "switch-profile"
   /** Re-apply the collection's mod rules, then deploy, so each contested file goes to the mod the curator's did. */
-  | "redeploy-winners";
+  | "redeploy-winners"
+  /** Let the player's own file of a collection mod's Nexus page stand for it (owner poll, 2026-10-06). */
+  | "keep-player-versions";
 
 export interface HealthCheck {
   id: HealthCheckId;
@@ -131,6 +136,8 @@ export interface HealthCheck {
 
 /** Everything the checks need, gathered from Vortex by the caller. */
 export interface HealthObservations {
+  /** Every mod of the game with its Nexus ids, for the player-variants check. Undefined: not read. */
+  poolNexus?: PoolNexusMod[];
   /** The script-extender side of the game folder, for the installed game version (nativeOnDisk.ts). */
   nativeOnDisk?: NativeOnDisk;
   /**
@@ -564,6 +571,34 @@ export function evaluateHealth(
         }
       : {}),
   });
+
+  // ── the player's own versions ──────────────────────────────────────────
+  // Shown only when there is something to say: a collection mod missing or
+  // off while another file of the same Nexus page is enabled. Offered, never
+  // assumed: only the player knows a same-page file is a variant (owner poll,
+  // 2026-10-06). The mods-present card still offers the reinstall instead.
+  if (!modsUnreadable && obs.enabledModIds !== undefined && obs.poolNexus !== undefined) {
+    const variants = findPlayerVariants({
+      receiptMods: receipt.mods,
+      pool: obs.poolNexus,
+      enabled: new Set(obs.enabledModIds),
+    });
+    if (variants.length > 0) {
+      const n = variants.length;
+      checks.push({
+        id: "player-variants",
+        title: "Your own versions",
+        status: "drifted",
+        summary:
+          `${n} collection mod${n === 1 ? " is" : "s are"} replaced by another file of the same mod that you ` +
+          `enabled (for example 4k textures instead of 2k). Keep yours, and Event Horizon stops reporting ` +
+          `${n === 1 ? "it" : "them"} and keeps your file on updates.`,
+        detail: detailList(variants.map((v) => `${v.name}: you use "${v.variant.name}"`)),
+        affectedCount: n,
+        heal: { action: "keep-player-versions", label: `Keep your version${n === 1 ? "" : "s"}` },
+      });
+    }
+  }
 
   // ── mods enabled ─────────────────────────────────────────────────────
   // Only meaningful for mods that are actually present; a missing mod being

@@ -535,6 +535,8 @@ export function selectConflictResolutions(
   return bundle.plan.modResolutions.filter((r) => {
     // An optional mod the player unticked is not installed: nothing to ask.
     if (r.optional === true && unticked.has(r.compareKey)) return false;
+    // The player already chose their own file of this mod in the Doctor.
+    if ((r.decision as { recommendation?: string }).recommendation === "player-variant") return false;
     const k = r.decision.kind;
     return (
       k === "nexus-version-diverged" ||

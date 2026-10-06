@@ -601,6 +601,26 @@ function resolveNexusMod(
   }
   const { modId, fileId, sha256, archiveName, gameDomain } = mod.source;
 
+  // The player chose their own file of this Nexus page in the Doctor ("Keep
+  // my version"): kept in every mode, fresh profile included, through the
+  // keep-existing path. Tied to this collection mod's identity, so a curator
+  // change (a new compareKey) lets the new file install.
+  const chosen = userState.variantChoices?.get(mod.compareKey);
+  if (chosen !== undefined && chosen.nexusModId === modId) {
+    const mine = userState.installedMods.find(
+      (m) => String(m.nexusModId) === String(modId) && String(m.nexusFileId) === String(chosen.nexusFileId),
+    );
+    if (mine !== undefined) {
+      return {
+        kind: "nexus-version-diverged",
+        existingModId: mine.id,
+        existingFileId: chosen.nexusFileId,
+        requiredFileId: fileId,
+        recommendation: "player-variant",
+      };
+    }
+  }
+
   const exact = findInstalledByNexusExact(userState.installedMods, modId, fileId, sha256);
   if (exact) {
     return { kind: "nexus-already-installed", existingModId: exact.id };
@@ -1054,10 +1074,12 @@ function summarize(input: {
       willInstallSilently++;
     }
     if (
-      k === "nexus-version-diverged" ||
-      k === "nexus-bytes-diverged" ||
-      k === "external-bytes-diverged" ||
-      k === "external-prompt-user"
+      (k === "nexus-version-diverged" ||
+        k === "nexus-bytes-diverged" ||
+        k === "external-bytes-diverged" ||
+        k === "external-prompt-user") &&
+      // The player's remembered "Keep my version" asks nothing.
+      !((r.decision as { recommendation?: string }).recommendation === "player-variant")
     ) {
       needsUserConfirmation++;
     }

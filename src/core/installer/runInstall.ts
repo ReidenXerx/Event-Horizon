@@ -6199,7 +6199,12 @@ async function executeDecision(args: {
     case "nexus-version-diverged":
     case "nexus-bytes-diverged":
     case "external-bytes-diverged": {
-      const choice = ctx.decisions.conflictChoices?.[compareKey];
+      // The player's remembered "Keep my version" is already their answer.
+      const choice =
+        ctx.decisions.conflictChoices?.[compareKey] ??
+        ((decision as { recommendation?: string }).recommendation === "player-variant"
+          ? ({ kind: "keep-existing" } as const)
+          : undefined);
       if (!choice) {
         // Preflight should have caught this; defensive fallback.
         throw new Error(
@@ -6328,6 +6333,8 @@ async function executeDivergedChoice(args: {
       enabledInProfile: true,
     });
 
+    // The player's own remembered choice is not a skip worth a warning.
+    if ((decision as { recommendation?: string }).recommendation === "player-variant") return undefined;
     // Surface in skippedMods too — the user-facing summary still
     // wants to say "we did not install the manifest's version of X."
     onSkip({
@@ -6855,6 +6862,7 @@ function collectMissingConflictChoices(
   for (const r of resolutions) {
     if (!needsConflictChoice(r.decision)) continue;
     if (r.optional === true && unticked.has(r.compareKey)) continue;
+    if ((r.decision as { recommendation?: string }).recommendation === "player-variant") continue;
     if (decisions.conflictChoices?.[r.compareKey] === undefined) {
       out.push({ name: r.name, kind: r.decision.kind });
     }

@@ -14,6 +14,7 @@
  * 2026-09-15, so this is now the only copy.
  */
 
+import { readVariantChoices } from "../../../core/installer/playerVariants";
 import { resumeCandidates } from "../../../core/installer/resumeSources";
 import { discoveredStore } from "../../../core/comparePlugins";
 import { selectors, util } from "@nexusmods/vortex-api";
@@ -292,6 +293,7 @@ export async function runLoadingPipeline(args: {
     receipt,
     availableDownloads,
     externalDependencyState: undefined,
+    variantChoices: await readVariantChoices(manifest.package.id),
   });
 
   const installTarget = pickInstallTarget(
@@ -543,6 +545,7 @@ export async function runLoadingPipelineWithReceipt(args: {
     receipt,
     availableDownloads,
     externalDependencyState: undefined,
+    variantChoices: await readVariantChoices(manifest.package.id),
   });
 
   const installTarget = pickInstallTarget(

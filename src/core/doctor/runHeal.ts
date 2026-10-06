@@ -704,6 +704,35 @@ async function healImpl(
       };
     }
 
+    case "keep-player-versions": {
+      const { findPlayerVariants, applyPlayerVariants, saveVariantChoices } = await import(
+        "../installer/playerVariants"
+      );
+      const { readPoolNexus, readEnabledModIdsFor } = await import("./gather");
+      const { writeReceipt } = await import("../installLedger");
+      const { getVortexUserDataPath } = await import("../paths");
+      const state = api.getState();
+      const pool = readPoolNexus(state, gameId) ?? [];
+      // Recomputed from now, not trusted from the card: the player may have
+      // switched files since the Doctor looked.
+      const variants = findPlayerVariants({
+        receiptMods: receipt.mods,
+        pool,
+        enabled: new Set(readEnabledModIdsFor(state, receipt.vortexProfileId) ?? []),
+      });
+      if (variants.length === 0) {
+        return { kind: "blocked", reason: "None of the collection's mods is replaced by another file of the same mod any more." };
+      }
+      await writeReceipt(getVortexUserDataPath(), applyPlayerVariants(receipt, variants, pool));
+      await saveVariantChoices(receipt.packageId, variants);
+      return {
+        kind: "done",
+        summary: `Kept your version of ${variants.length} mod${variants.length === 1 ? "" : "s"}: ${variants
+          .map((v) => v.variant.name)
+          .slice(0, 3)
+          .join(", ")}${variants.length > 3 ? " and more" : ""}.`,
+      };
+    }
     case "reinstall-mods": {
       if (deps.ehcollPath === undefined) {
         return { kind: "blocked", reason: MISSING_PACKAGE };

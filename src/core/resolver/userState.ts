@@ -123,6 +123,8 @@ export type BuildUserSideStateInput = {
    * — resolver emits `not-verified` for every dep when omitted.
    */
   externalDependencyState?: ExternalDependencyVerification[];
+  /** See {@link UserSideState.variantChoices}. */
+  variantChoices?: ReadonlyMap<string, { nexusModId: number; nexusFileId: number }>;
 };
 
 export function buildUserSideState(
@@ -141,6 +143,7 @@ export function buildUserSideState(
     availableDownloads: input.availableDownloads,
     externalDependencyState: input.externalDependencyState,
     previousInstall: previousInstallFromReceipt(input.receipt),
+    ...(input.variantChoices !== undefined && input.variantChoices.size > 0 ? { variantChoices: input.variantChoices } : {}),
   };
 }
 

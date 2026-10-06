@@ -62,6 +62,35 @@ function readProfileIds(state: unknown, gameId: string): string[] | undefined {
  * mods are missing" and offers an hour-long reinstall. A readable table with
  * no entry for this game is a real, if grim, answer and stays `[]`.
  */
+/** Every mod of the game with its Nexus ids, name and install time; undefined when the table is unreadable. */
+export function readPoolNexus(state: unknown, gameId: string): import("../installer/playerVariants").PoolNexusMod[] | undefined {
+  const table = (state as { persistent?: { mods?: Record<string, Record<string, { attributes?: Record<string, unknown> }>> } })
+    ?.persistent?.mods;
+  if (table === null || table === undefined || typeof table !== "object") return undefined;
+  const mods = table[gameId] ?? {};
+  return Object.entries(mods).map(([id, m]) => {
+    const a = m?.attributes ?? {};
+    const num = (v: unknown): number | undefined => {
+      const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+      return Number.isFinite(n) ? n : undefined;
+    };
+    const name =
+      [a["customFileName"], a["logicalFileName"], a["name"]].find((v): v is string => typeof v === "string" && v !== "") ?? id;
+    return {
+      vortexModId: id,
+      name,
+      ...(num(a["modId"]) !== undefined ? { modId: num(a["modId"])! } : {}),
+      ...(num(a["fileId"]) !== undefined ? { fileId: num(a["fileId"])! } : {}),
+      ...(a["installTime"] !== undefined ? { installTime: a["installTime"] } : {}),
+    };
+  });
+}
+
+/** The mod ids a profile has enabled, for heals that recompute from now. */
+export function readEnabledModIdsFor(state: unknown, profileId: string): string[] | undefined {
+  return readEnabledModIds(state, profileId);
+}
+
 function readInstalledModIds(
   state: unknown,
   gameId: string,
@@ -395,6 +424,7 @@ export async function gatherObservations(
     existingProfileIds: readProfileIds(state, gameId),
     activeProfileId,
     installedModIds: readInstalledModIds(state, gameId),
+    ...(readPoolNexus(state, gameId) !== undefined ? { poolNexus: readPoolNexus(state, gameId)! } : {}),
     enabledModIds: readEnabledModIds(state, receiptProfileId),
     driftedCompareKeys: opts.driftedCompareKeys,
     currentPluginOrder,
