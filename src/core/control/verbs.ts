@@ -2767,6 +2767,7 @@ export const VERBS: Record<string, Verb> = {
       if (body["ifExisting"] === "replace") {
         await askOwner(api, {
           action: "replace an installed mod in every profile",
+          kind: "replace-install",
           lines: [
             nexus !== undefined
               ? `Nexus mod ${String(nexus.modId)}, file ${String(nexus.fileId)}`

@@ -37,6 +37,12 @@ export function setConsentTimeoutForTests(ms: number): void {
 export type ConsentRequest = {
   /** Short, after "An agent wants to": "remove 3 mods". */
   action: string;
+  /**
+   * `replace-install`: the one question the owner may switch off on its own
+   * ("Auto-allow agent replace installs", owner 2026-10-07). Every other
+   * request always asks while askFirst is on.
+   */
+  kind?: "replace-install";
   /** Exactly what will happen, one line each: mod names, folders. */
   lines: string[];
   /** What cannot be undone, in one sentence. */
@@ -47,8 +53,19 @@ const SHOWN = 25;
 
 /** Asks the person at the machine. Resolves on Allow; throws owner-denied / owner-no-answer otherwise. */
 export async function askOwner(api: types.IExtensionApi, req: ConsentRequest): Promise<{ asked: boolean }> {
-  if (!loadPreferences().controlChannel.askFirst) {
+  const prefs = loadPreferences().controlChannel;
+  if (!prefs.askFirst) {
     ehLog("info", "control.consent.skipped", { action: req.action, reason: "askFirst off" });
+    return { asked: false };
+  }
+  if (req.kind === "replace-install" && prefs.autoAllowReplace) {
+    // Logged with what was replaced: the recent-operations entry records the
+    // install itself, this records that nobody was asked.
+    ehLog("info", "control.consent.auto-allowed", {
+      action: req.action,
+      lines: req.lines.slice(0, SHOWN),
+      reason: "auto-allow replace installs is on",
+    });
     return { asked: false };
   }
   if (api.showDialog === undefined) {

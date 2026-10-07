@@ -29,6 +29,8 @@ export type ControlStatus = {
   enabled: boolean;
   /** Vortex asks before an agent removes mods, purges or moves the game. */
   askFirst: boolean;
+  /** Replacing an installed mod with an agent's install is allowed without asking. */
+  autoAllowReplace: boolean;
   running: boolean;
   port?: number;
   infoFile: string;
@@ -85,6 +87,7 @@ export function getControlStatus(): ControlStatus {
   const out: ControlStatus = {
     enabled: loadPreferences().controlChannel.enabled,
     askFirst: loadPreferences().controlChannel.askFirst,
+    autoAllowReplace: loadPreferences().controlChannel.autoAllowReplace,
     running: server !== undefined,
     infoFile: controlInfoFile(),
   };
@@ -162,6 +165,13 @@ async function stop(): Promise<void> {
 export function startControlChannelIfEnabled(api: types.IExtensionApi): void {
   if (!loadPreferences().controlChannel.enabled) return;
   transition = transition.then(() => start(api)).then(emit);
+}
+
+/** Owner-only (the Agents page): allow agent replace installs without the per-mod click. No verb calls this. */
+export function setAgentAutoAllowReplace(autoAllowReplace: boolean): void {
+  updatePreferences((p) => ({ ...p, controlChannel: { ...p.controlChannel, autoAllowReplace } }));
+  ehLog("info", "control.auto-allow-replace", { autoAllowReplace });
+  emit();
 }
 
 /** Whether Vortex asks the person at the PC before an agent removes mods, purges or moves the game. */

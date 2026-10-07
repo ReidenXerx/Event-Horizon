@@ -18,6 +18,7 @@ import {
   getControlStatus,
   onControlStatus,
   setAgentAskFirst,
+  setAgentAutoAllowReplace,
   setControlChannelEnabled,
   type ControlStatus,
 } from "../../core/control/controlService";
@@ -90,6 +91,11 @@ export function AgentsPage(props: AgentsPageProps = {}): JSX.Element {
     setStatus(getControlStatus());
   };
 
+  const toggleAutoAllowReplace = (): void => {
+    setAgentAutoAllowReplace(!status.autoAllowReplace);
+    setStatus(getControlStatus());
+  };
+
   const copyPath = async (): Promise<void> => {
     setCopied(await writeToClipboard(status.infoFile));
   };
@@ -134,6 +140,18 @@ export function AgentsPage(props: AgentsPageProps = {}): JSX.Element {
                   : "Agents remove mods, purge and move the game without asking you. Turn this back on unless the agent is your own."}
               </span>
             </div>
+            {status.askFirst && (
+              <div className="eh-row">
+                <Button intent="ghost" size="sm" onClick={toggleAutoAllowReplace}>
+                  {status.autoAllowReplace ? "Ask for replace installs" : "Auto-allow replace installs"}
+                </Button>
+                <span className="eh-muted">
+                  {status.autoAllowReplace
+                    ? "When an agent installs a newer version over a mod you have (a collection update run), it goes ahead without asking. Removing, purging and moving the game still ask. Each one is logged."
+                    : "Vortex asks before an agent replaces an installed mod with the version it installs. Turn this on for an update run so you are not asked once per mod."}
+                </span>
+              </div>
+            )}
             <div className="eh-stack eh-stack--sm">
               <span className="eh-small eh-muted">Agents find the port and token in</span>
               <div className="eh-row">
