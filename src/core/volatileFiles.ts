@@ -108,6 +108,18 @@ const OS_ARTIFACTS: ReadonlyMap<string, VolatileReason> = new Map([
 /** Ours, by construction, and never content. See `eh-case-probe`. */
 const EH_PROBE = /^ehcaseprobe-[a-z0-9]+\.tmp$/;
 
+/**
+ * Files a script-extender plugin GENERATES beside itself, by exact name.
+ *
+ * `addictol_snct.ini`: Addictol 1.7.1 ships it EMPTY (0 bytes) and fills it at
+ * runtime with sound-category values for the current load order
+ * (`[Fallout4.esm] 000876BD = 0.65`), through the hardlink into staging. Ivy
+ * Rev 13 recorded the curator's 545-byte copy and told a player (leadsheet,
+ * 2026-10-08) Addictol "could not be reproduced". Named, not a pattern: other
+ * `.ini` files there are authored settings a player should get byte for byte.
+ */
+const PLUGIN_GENERATED = new Set(["addictol_snct.ini"]);
+
 /** A file directly inside SKSE/F4SE/NVSE/FOSE/OBSE `Plugins`, from the mod's root. */
 const SCRIPT_EXTENDER_PLUGINS = /^(?:data\/)?(?:skse|f4se|nvse|fose|obse)\/plugins\/[^/]+$/i;
 
@@ -147,6 +159,8 @@ export function volatileReason(relPath: string): VolatileReason | undefined {
   if (name.endsWith(".trace") && SCRIPT_EXTENDER_PLUGINS.test(relPath.replace(/\\/g, "/"))) return "runtime-trace";
   /** Same scope as `.trace`: directly in a script extender's `Plugins` folder, where the evidence is. */
   if (name.endsWith(".mem") && SCRIPT_EXTENDER_PLUGINS.test(relPath.replace(/\\/g, "/"))) return "runtime-state";
+
+  if (PLUGIN_GENERATED.has(name) && SCRIPT_EXTENDER_PLUGINS.test(relPath.replace(/\\/g, "/"))) return "runtime-state";
 
   if (EH_PROBE.test(name)) return "eh-case-probe";
 

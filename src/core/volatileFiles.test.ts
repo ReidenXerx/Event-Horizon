@@ -120,6 +120,15 @@ describe("script-extender runtime traces", () => {
     expect(volatileReason("textures/thing.mem")).toBeUndefined();
   });
 
+  it("skips the sound-category file Addictol generates for the load order", () => {
+    // Ivy Rev 13 (leadsheet, 2026-10-08): shipped empty, filled at runtime.
+    expect(volatileReason("F4SE/Plugins/Addictol_SNCT.ini")).toBe("runtime-state");
+    expect(volatileReason("Data\\F4SE\\Plugins\\addictol_snct.ini")).toBe("runtime-state");
+    // Authored settings beside it are still verified.
+    expect(volatileReason("F4SE/Plugins/Addictol.ini")).toBeUndefined();
+    expect(volatileReason("Addictol_SNCT.ini")).toBeUndefined();
+  });
+
   it("still verifies a .trace anywhere else, and anything else in Plugins", () => {
     expect(volatileReason("meshes/debug/shape.trace")).toBeUndefined();
     expect(volatileReason("F4SE/Plugins/Sub/deep.trace")).toBeUndefined();
