@@ -1052,6 +1052,15 @@ function validateInstallState(
     ...(mirrored !== undefined ? { mirrored } : {}),
     ...(enabledINITweaks !== undefined ? { enabledINITweaks } : {}),
     ...(stagingFiles !== undefined ? { stagingFiles } : {}),
+    // Lenient: only skipped by checks, never written, so a bad entry is dropped.
+    ...(Array.isArray(obj.volatileFiles) &&
+    obj.volatileFiles.some((p: unknown) => typeof p === "string" && isSafeRelativePath(p))
+      ? {
+          volatileFiles: (obj.volatileFiles as unknown[]).filter(
+            (p): p is string => typeof p === "string" && isSafeRelativePath(p),
+          ),
+        }
+      : {}),
     ...(mirrorFromArchive !== undefined ? { mirrorFromArchive } : {}),
     ...(mirrorFromArchiveAt !== undefined && Object.keys(mirrorFromArchiveAt).length > 0
       ? { mirrorFromArchiveAt }

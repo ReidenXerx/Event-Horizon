@@ -90,7 +90,9 @@ export type VolatileReason =
    * file; its contents are whatever the last session typed. Measured
    * 2026-10-04 on Ivy 1.0.39: the build's only unexplained file for the mod.
    */
-  | "runtime-state";
+  | "runtime-state"
+  /** A file the curator declared generated for each machine (`externalMods[id].volatileFiles`). */
+  | "curator-declared";
 
 /** Filenames that are written by the OS, never by a mod. Compared lowercased. */
 const OS_ARTIFACTS: ReadonlyMap<string, VolatileReason> = new Map([
@@ -109,16 +111,50 @@ const OS_ARTIFACTS: ReadonlyMap<string, VolatileReason> = new Map([
 const EH_PROBE = /^ehcaseprobe-[a-z0-9]+\.tmp$/;
 
 /**
- * Files a script-extender plugin GENERATES beside itself, by exact name.
+ * ─── FILES A CURATOR DECLARED, NOT FILES THIS MODULE KNOWS ─────────────────
+ * A mod that GENERATES a file for one machine is the curator's knowledge, not
+ * a rule for every game: Addictol 1.7.1 ships `F4SE/Plugins/Addictol_SNCT.ini`
+ * empty and fills it at runtime for the load order, and Ivy Rev 13 told a
+ * player (leadsheet, 2026-10-08) Addictol "could not be reproduced". Owner,
+ * 2026-10-09: a per-mod list in the collection config, not names hard-coded
+ * here (`externalMods[id].volatileFiles`).
  *
- * `addictol_snct.ini`: Addictol 1.7.1 ships it EMPTY (0 bytes) and fills it at
- * runtime with sound-category values for the current load order
- * (`[Fallout4.esm] 000876BD = 0.65`), through the hardlink into staging. Ivy
- * Rev 13 recorded the curator's 545-byte copy and told a player (leadsheet,
- * 2026-10-08) Addictol "could not be reproduced". Named, not a pattern: other
- * `.ini` files there are authored settings a player should get byte for byte.
+ * The build declares them before it records anything; a package carries them
+ * (`state.volatileFiles`), and reading one declares them on the player's side.
+ * Held as ONE set of mod-relative paths rather than per mod, because the
+ * identity pass hashes a player's mods before it knows which collection mod
+ * each one is; a declared path names the generated file in whichever mod has
+ * it. Persisted by `declaredVolatileStore`, so a check without a package at
+ * hand (the Doctor, an update check) still honours it.
  */
-const PLUGIN_GENERATED = new Set(["addictol_snct.ini"]);
+const declared = new Set<string>();
+
+/** How a declared path is compared: forward slashes, lowercased, no leading "./" or "/". */
+export function declaredKey(relPath: string): string {
+  return relPath.replace(/\\/g, "/").replace(/^(\.\/|\/)+/, "").toLowerCase();
+}
+
+/** Add curator-declared paths; returns how many were new. */
+export function declareVolatileFiles(paths: Iterable<string>): number {
+  let added = 0;
+  for (const p of paths) {
+    const k = declaredKey(p);
+    if (k.length === 0 || declared.has(k)) continue;
+    declared.add(k);
+    added += 1;
+  }
+  return added;
+}
+
+/** Every declared path, as compared. */
+export function declaredVolatileFiles(): string[] {
+  return [...declared].sort();
+}
+
+/** Tests only. */
+export function clearDeclaredVolatileFilesForTests(): void {
+  declared.clear();
+}
 
 /** A file directly inside SKSE/F4SE/NVSE/FOSE/OBSE `Plugins`, from the mod's root. */
 const SCRIPT_EXTENDER_PLUGINS = /^(?:data\/)?(?:skse|f4se|nvse|fose|obse)\/plugins\/[^/]+$/i;
@@ -160,9 +196,9 @@ export function volatileReason(relPath: string): VolatileReason | undefined {
   /** Same scope as `.trace`: directly in a script extender's `Plugins` folder, where the evidence is. */
   if (name.endsWith(".mem") && SCRIPT_EXTENDER_PLUGINS.test(relPath.replace(/\\/g, "/"))) return "runtime-state";
 
-  if (PLUGIN_GENERATED.has(name) && SCRIPT_EXTENDER_PLUGINS.test(relPath.replace(/\\/g, "/"))) return "runtime-state";
-
   if (EH_PROBE.test(name)) return "eh-case-probe";
+
+  if (declared.size > 0 && declared.has(declaredKey(relPath))) return "curator-declared";
 
   return undefined;
 }

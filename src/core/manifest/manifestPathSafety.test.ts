@@ -90,6 +90,13 @@ describe("the files a mirrored mod leaves to its own archive", () => {
     );
   });
 
+  it("keeps the files a curator declared generated, dropping one outside the mod's folder", () => {
+    const { manifest } = parseManifest(
+      withMod({ ...BASE_STATE, volatileFiles: ["F4SE/Plugins/Addictol_SNCT.ini", "../../evil.ini"] }),
+    );
+    expect(manifest.mods[0]!.state.volatileFiles).toEqual(["F4SE/Plugins/Addictol_SNCT.ini"]);
+  });
+
   describe("and where a MOVED one sits in the archive", () => {
     const movedWith = (at: unknown): string =>
       withMod({

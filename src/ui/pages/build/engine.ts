@@ -165,6 +165,8 @@ import {
 import type { ExternalHint } from "../../../core/manifest/externalHints";
 import { getCollectionsConfigDir, getCollectionsDir, getVortexUserDataPath, pathKey } from "../../../core/paths";
 import { beginOp, ehLog } from "../../../core/logging/ehLog";
+import { rememberDeclaredVolatileFiles } from "../../../core/declaredVolatileStore";
+import { declaredKey } from "../../../core/volatileFiles";
 import type {
   SupportedGameId,
   VerificationLevel,
@@ -464,7 +466,15 @@ function declarationsFor(
   entry: ExternalModConfigEntry | undefined,
   mod: AuditorMod,
 ): AuditorMod {
-  if (entry?.postProcessed !== true && entry?.mirrored !== true && entry?.optional !== true) return mod;
+  if (entry === undefined) return mod;
+  if (
+    entry?.postProcessed !== true &&
+    entry?.mirrored !== true &&
+    entry?.optional !== true &&
+    (entry?.volatileFiles?.length ?? 0) === 0
+  ) {
+    return mod;
+  }
 
   /**
    * ─── AN INCOMPLETE CAPTURE REVOKES A STORED "MIRROR" ANSWER (NS-2) ──────
@@ -495,8 +505,23 @@ function declarationsFor(
    */
   const stillMirrored = choiceFromEntry(entry) === "mirror" && !captureIncomplete;
 
+  /**
+   * Files the curator declared generated for each machine. Declared for the
+   * whole build before capture (so they were never recorded); dropped here
+   * too, for a list captured before the declaration was added.
+   */
+  const volatileFiles = entry.volatileFiles ?? [];
+  const declared = new Set(volatileFiles.map(declaredKey));
   return {
     ...mod,
+    ...(volatileFiles.length > 0
+      ? {
+          volatileFiles,
+          ...(mod.stagingFiles !== undefined
+            ? { stagingFiles: mod.stagingFiles.filter((f) => !declared.has(declaredKey(f.path))) }
+            : {}),
+        }
+      : {}),
     ...(entry.postProcessed === true ? { postProcessed: true } : {}),
     ...(stillMirrored ? { mirrored: true } : {}),
     ...(entry.optional === true
@@ -1620,6 +1645,16 @@ export async function runBuildPipeline(
     overrides,
     mods,
   }));
+
+  // Files the curator declared generated for each machine: declared before
+  // anything is recorded, so capture, bundling and the self-check skip them.
+  {
+    const declaredByCurator = Object.values(collectionConfig.externalMods).flatMap((e) => e.volatileFiles ?? []);
+    if (declaredByCurator.length > 0) {
+      rememberDeclaredVolatileFiles(declaredByCurator);
+      ehLog("info", "build.volatile.declared", { files: declaredByCurator });
+    }
+  }
 
   checkAbort();
   onProgress?.({ phase: "writing-config" });

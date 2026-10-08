@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { isVolatileFile, volatileReason } from "./volatileFiles";
+import { clearDeclaredVolatileFilesForTests, declareVolatileFiles, isVolatileFile, volatileReason } from "./volatileFiles";
 
 describe("files nothing installs", () => {
   it("excludes a script-extender plugin log", () => {
@@ -120,13 +120,17 @@ describe("script-extender runtime traces", () => {
     expect(volatileReason("textures/thing.mem")).toBeUndefined();
   });
 
-  it("skips the sound-category file Addictol generates for the load order", () => {
-    // Ivy Rev 13 (leadsheet, 2026-10-08): shipped empty, filled at runtime.
-    expect(volatileReason("F4SE/Plugins/Addictol_SNCT.ini")).toBe("runtime-state");
-    expect(volatileReason("Data\\F4SE\\Plugins\\addictol_snct.ini")).toBe("runtime-state");
-    // Authored settings beside it are still verified.
+  it("skips a file only once a curator declares it generated for each machine", () => {
+    // Addictol's sound-category file (Ivy Rev 13, leadsheet, 2026-10-08): the
+    // curator's knowledge, declared in the collection config, not a rule here.
+    clearDeclaredVolatileFilesForTests();
+    expect(volatileReason("F4SE/Plugins/Addictol_SNCT.ini")).toBeUndefined();
+    expect(declareVolatileFiles(["F4SE/Plugins/Addictol_SNCT.ini", "f4se\\plugins\\addictol_snct.ini"])).toBe(1);
+    expect(volatileReason("F4SE\\Plugins\\addictol_snct.ini")).toBe("curator-declared");
+    // Exactly that path: an authored file beside it, or the same name elsewhere, is still verified.
     expect(volatileReason("F4SE/Plugins/Addictol.ini")).toBeUndefined();
-    expect(volatileReason("Addictol_SNCT.ini")).toBeUndefined();
+    expect(volatileReason("Data/F4SE/Plugins/Addictol_SNCT.ini")).toBeUndefined();
+    clearDeclaredVolatileFilesForTests();
   });
 
   it("still verifies a .trace anywhere else, and anything else in Plugins", () => {

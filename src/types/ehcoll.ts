@@ -691,6 +691,14 @@ export type ModInstallState = {
    * "missing files on user side" as the only hard failure (with retry).
    */
   stagingFiles?: EhcollStagingFile[];
+  /**
+   * Files the curator declared generated for each machine
+   * (`externalMods[id].volatileFiles`), paths relative to the mod's folder.
+   * Never in `stagingFiles`; a player's checks skip them (`volatileFiles.ts`).
+   * Since 0.2.61: an older Event Horizon compares them and can report the mod
+   * as not reproduced.
+   */
+  volatileFiles?: string[];
 };
 
 /**

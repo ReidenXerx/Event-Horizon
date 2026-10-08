@@ -56,6 +56,7 @@ import type { DownloadMode, ExternalHint } from "./externalHints";
 import type { PackageFormat } from "./packageFileName";
 import { readPresentationConfig, type PresentationConfig } from "../presentation/presentation";
 import { beginOp, ehLog } from "../logging/ehLog";
+import { isSafeRelativePath } from "../safeRelativePath";
 import type { NexusCollectionLink } from "../nexus/collectionUpload";
 
 // ---------------------------------------------------------------------------
@@ -156,6 +157,14 @@ export type ExternalModConfigEntry = {
    * the mod, the collection simply stops carrying it.
    */
   dropped?: boolean;
+  /**
+   * Files this mod GENERATES for each machine, relative to its folder: the
+   * build does not record them and a player's checks skip them (owner,
+   * 2026-10-09). E.g. Addictol's `F4SE/Plugins/Addictol_SNCT.ini`, shipped
+   * empty and filled at runtime for the load order. Only for such files: a
+   * settings file the curator tuned must keep shipping.
+   */
+  volatileFiles?: string[];
   /**
    * An OPTIONAL mod (owner, 2026-10-05). The install preview lists it ticked;
    * the player may untick it, and a failed download skips it. Either way the
@@ -1084,6 +1093,21 @@ const EXTERNAL_MOD_FIELDS: {
     return raw;
   },
   optionalNote: (raw, path, errors) => expectStringField(raw, path, errors),
+  volatileFiles: (raw, path, errors) => {
+    if (!Array.isArray(raw)) {
+      errors.push(`${path} must be a list of file paths relative to the mod's folder.`);
+      return undefined;
+    }
+    const out: string[] = [];
+    raw.forEach((p, i) => {
+      if (typeof p !== "string" || !isSafeRelativePath(p.replace(/\\/g, "/"))) {
+        errors.push(`${path}[${i}] must be a file path inside the mod's folder, like "F4SE/Plugins/Example.ini".`);
+        return;
+      }
+      out.push(p.replace(/\\/g, "/"));
+    });
+    return out;
+  },
   dropped: (raw, path, errors) => {
     if (typeof raw !== "boolean") {
       errors.push(`${path} must be a boolean.`);

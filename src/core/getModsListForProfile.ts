@@ -104,6 +104,8 @@ export type AuditorMod = {
   postProcessed?: boolean;
   /** Optional in the collection; overlaid from the collection config. See `ExternalModConfigEntry.optional`. */
   optional?: boolean;
+  /** Files the curator declared generated for each machine (collection config). */
+  volatileFiles?: string[];
   /** The curator's one-line note for an optional mod. */
   optionalNote?: string;
   /**
