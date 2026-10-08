@@ -248,6 +248,35 @@ async function healImpl(
     return busy;
   }
 
+  /**
+   * ─── A DIAGNOSIS OLDER THAN THE INSTALL ON DISK IS NOT ACTED ON ───────
+   * The Doctor holds the receipt it read when it looked. An install or
+   * update since then wrote a newer one, and a repair working from the old
+   * copy acts on the previous revision: "Keep your versions" wrote it back
+   * over the new receipt, "Enable" switched on mods the update had dropped.
+   * Refused, and the page reads the receipts again.
+   */
+  const onDisk = await import("../installLedger")
+    .then(async ({ readReceipt }) => readReceipt((await import("../paths")).getVortexUserDataPath(), receipt.packageId))
+    .catch(() => undefined);
+  if (
+    onDisk !== undefined &&
+    (onDisk.installedAt !== receipt.installedAt || onDisk.packageVersion !== receipt.packageVersion)
+  ) {
+    ehLog("warn", "doctor.heal.refused", {
+      action,
+      why: "stale-receipt",
+      looked: { version: receipt.packageVersion, installedAt: receipt.installedAt },
+      onDisk: { version: onDisk.packageVersion, installedAt: onDisk.installedAt },
+    });
+    return {
+      kind: "blocked",
+      reason:
+        `${receipt.packageName} was installed again (${onDisk.packageVersion}) since the Doctor looked. ` +
+        `It has checked again: look at the cards once more before repairing.`,
+    };
+  }
+
   switch (action) {
     case "switch-profile": {
       const { switchToProfile } = await import("../installer/profile");

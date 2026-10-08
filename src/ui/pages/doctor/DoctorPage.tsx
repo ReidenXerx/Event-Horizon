@@ -425,6 +425,9 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
           });
           if (outcome.kind === "blocked") {
             toast({ intent: "warning", message: outcome.reason });
+            // A refusal can be "the receipt changed since you looked": read it again.
+            reloadReceipts();
+            setTick((n) => n + 1);
             return;
           }
           if (outcome.kind === "handoff") {
