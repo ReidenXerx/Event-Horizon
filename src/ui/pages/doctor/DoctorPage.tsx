@@ -80,6 +80,18 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
   const [pkgUnavailable, setPkgUnavailable] = React.useState<string | undefined>(undefined);
   const [tick, setTick] = React.useState(0);
   /**
+   * Bumped after a repair: the receipts are read from disk again.
+   *
+   * A repair can rewrite the receipt itself ("Keep your versions" points the
+   * collection's mod at the player's file). Re-diagnosing against the copy
+   * read when the page opened kept the card up after a successful click
+   * (alasdairn, Ivy Rev 13, 2026-10-08): the choice was saved, the page said
+   * nothing had changed.
+   */
+  const [receiptsVersion, setReceiptsVersion] = React.useState(0);
+  /** The collection to stay on when the receipts are read again. */
+  const keepSelection = React.useRef<{ packageId: string; profileId: string | undefined } | undefined>(undefined);
+  /**
    * Both buttons ran with no sign they had started — reported as "we didn't
    * show that process started and for user its kinda do nothing". A gather
    * takes 4–16ms, so a spinner alone would flash by unseen; `checkedAt` is
@@ -117,7 +129,11 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
           activeProfileId = undefined;
         }
         if (!alive) return;
-        const first = pickDoctorReceipt(receipts, activeProfileId);
+        const wanted = keepSelection.current;
+        const first =
+          (wanted !== undefined
+            ? receipts.find((r) => r.packageId === wanted.packageId && r.vortexProfileId === wanted.profileId)
+            : undefined) ?? pickDoctorReceipt(receipts, activeProfileId);
         if (first === undefined) {
           setLoaded(undefined);
           setLoadError(undefined);
@@ -143,11 +159,22 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
     return (): void => {
       alive = false;
     };
-  }, [api]);
+  }, [api, receiptsVersion]);
+
+  const reloadReceipts = React.useCallback((): void => {
+    if (loaded !== undefined) {
+      keepSelection.current = { packageId: loaded.selected.packageId, profileId: loaded.selected.vortexProfileId };
+    }
+    setReceiptsVersion((n) => n + 1);
+  }, [loaded]);
 
   // ── find the package (for the deep scan and manifest-backed cures) ────
+  /** The receipt the package was last looked for: re-reading receipts after a repair must not fetch it again. */
+  const pkgSearchedFor = React.useRef<string | undefined>(undefined);
   React.useEffect(() => {
     if (loaded === undefined) return;
+    const searchKey = `${loaded.selected.packageId}|${loaded.selected.packageVersion}|${loaded.selected.vortexProfileId}`;
+    if (pkgSearchedFor.current === searchKey) return;
     let alive = true;
     setPkg(undefined);
     setPkgSearched(false);
@@ -185,6 +212,7 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
         });
         if (found.kind !== "ready") {
           if (alive) {
+            pkgSearchedFor.current = searchKey;
             setPkgFetching(undefined);
             setPkgUnavailable(found.reason);
             setPkgSearched(true);
@@ -198,6 +226,7 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
         setPkgUnavailable(undefined);
         setPkg({ path: found.path, manifest: result.manifest });
         setPkgSearched(true);
+        pkgSearchedFor.current = searchKey;
       } catch {
         // A package we cannot read is the same situation as one we cannot
         // find: the cures that need it stay disabled and say why. Not an
@@ -406,7 +435,8 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
           }
           toast({ intent: "success", message: outcome.summary });
           // Re-diagnose: the user should see the verdict change, not be told
-          // it did.
+          // it did. Against the receipt as the repair left it.
+          reloadReceipts();
           setTick((n) => n + 1);
         } catch (err) {
           reportError(err, {
@@ -418,7 +448,7 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
         }
       })();
     },
-    [api, loaded, pkg, props, reportError, toast],
+    [api, loaded, pkg, props, reloadReceipts, reportError, toast],
   );
 
   // ── keep as is ───────────────────────────────────────────────────────
@@ -528,10 +558,11 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
         setBusyCheckId(undefined);
         setRepairingAll(false);
         // Re-diagnose so the verdicts show what the run changed.
+        reloadReceipts();
         setTick((n) => n + 1);
       }
     })();
-  }, [api, loaded, pkg, props, repairPlan, toast]);
+  }, [api, loaded, pkg, props, reloadReceipts, repairPlan, toast]);
 
   const pickPackage = React.useCallback(() => {
     void (async (): Promise<void> => {
