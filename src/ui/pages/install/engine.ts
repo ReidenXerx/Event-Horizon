@@ -812,7 +812,10 @@ async function hashInstalledArchives(
   state: Parameters<typeof enrichModsWithArchiveHashes>[0],
   gameId: string,
   mods: Parameters<typeof enrichModsWithArchiveHashes>[2],
-  options: { signal?: AbortSignal | undefined; onProgress: NonNullable<Parameters<typeof enrichModsWithArchiveHashes>[3]>["onProgress"] },
+  options: {
+    signal?: AbortSignal | undefined;
+    onProgress: NonNullable<Parameters<typeof enrichModsWithArchiveHashes>[3]>["onProgress"];
+  },
 ): ReturnType<typeof enrichModsWithArchiveHashes> {
   const { loadArchiveHashCache, makeHashLookup, mergeHashes, saveArchiveHashCache } = await import(
     "../../../core/archiveHashCache"
@@ -820,11 +823,31 @@ async function hashInstalledArchives(
   const ehDir = path.join(getVortexUserDataPath(), "event-horizon");
   const cache = await loadArchiveHashCache(ehDir);
   const reuse = makeHashLookup(cache);
+  /**
+   * Saved DURING the pass too, at most once a minute: when a read stalls the
+   * screen asks for a Vortex restart (owner, 2026-10-08), and a restart never
+   * reaches the `finally` below. What was hashed before it is kept.
+   */
+  let lastSave = Date.now();
+  let saving = false;
+  const saveSoFar = (): void => {
+    if (saving || reuse.added.size === 0 || Date.now() - lastSave < 60_000) return;
+    saving = true;
+    lastSave = Date.now();
+    void saveArchiveHashCache(ehDir, mergeHashes(cache, reuse.added, new Date().toISOString()))
+      .catch((err) => ehLog("warn", "install.hash-cache.save-failed", { err: String(err) }))
+      .finally(() => {
+        saving = false;
+      });
+  };
   try {
     return await enrichModsWithArchiveHashes(state, gameId, mods, {
       hashCache: reuse.lookup,
       ...(options.signal !== undefined ? { signal: options.signal } : {}),
-      ...(options.onProgress !== undefined ? { onProgress: options.onProgress } : {}),
+      onProgress: (done, total, mod) => {
+        saveSoFar();
+        options.onProgress?.(done, total, mod);
+      },
     });
   } finally {
     // Whatever was hashed is kept, finished or stopped: the next open reuses it.

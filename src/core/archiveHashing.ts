@@ -209,6 +209,27 @@ export async function enrichModsWithArchiveHashes(
     signal,
     hashCache,
   } = options;
+  /**
+   * ─── A STALL IS SAID, BY FILE ───────────────────────────────────────
+   * A read that never returns (a cloud-only placeholder, an antivirus lock,
+   * a drive gone to sleep) left the pass at 10/1021 for half an hour with
+   * nothing in the log to name the file (ladiesnightmare9420, Ivy Rev 12,
+   * 2026-10-08). Never a failure on a timer and never a skip (owner): the
+   * log names what is in flight, and the screen asks for a Vortex restart.
+   */
+  const inFlight = new Map<string, { size: number; since: number }>();
+  let lastProgressAt = Date.now();
+  const STALL_MS = 120_000;
+  const stallTimer = setInterval(() => {
+    if (Date.now() - lastProgressAt < STALL_MS || inFlight.size === 0) return;
+    ehLog("warn", "archive-hash.stalled", {
+      quietMs: Date.now() - lastProgressAt,
+      inFlight: [...inFlight.entries()].map(([p, f]) => ({ path: p, size: f.size, ms: Date.now() - f.since })),
+      hint: "a file whose read does not return: cloud placeholder, antivirus lock, sleeping or failing drive",
+    });
+    lastProgressAt = Date.now();
+  }, 30_000);
+  (stallTimer as { unref?: () => void }).unref?.();
 
   let done = 0;
   // Batch-level counters ONLY — this runs over hundreds of thousands of
@@ -256,7 +277,12 @@ export async function enrichModsWithArchiveHashes(
                 archiveSha256 = cached;
                 cacheHits += 1;
               } else {
-                archiveSha256 = await hashFileSha256(archivePath, signal);
+                inFlight.set(archivePath, { size: stat.size, since: Date.now() });
+                try {
+                  archiveSha256 = await hashFileSha256(archivePath, signal);
+                } finally {
+                  inFlight.delete(archivePath);
+                }
                 hashed += 1;
                 if (key !== undefined) {
                   hashCache!.set(key, archiveSha256);
@@ -277,6 +303,7 @@ export async function enrichModsWithArchiveHashes(
         }
 
         done += 1;
+        lastProgressAt = Date.now();
         onProgress?.(done, mods.length, mod);
 
         return archiveSha256 !== undefined ? { ...mod, archiveSha256 } : mod;
@@ -284,6 +311,7 @@ export async function enrichModsWithArchiveHashes(
       signal,
     );
 
+    clearInterval(stallTimer);
     ehLog("info", "archive-hash.batch.ok", {
       mods: mods.length,
       hashed,
@@ -294,6 +322,7 @@ export async function enrichModsWithArchiveHashes(
     });
     return result;
   } catch (err) {
+    clearInterval(stallTimer);
     const aborted = isAbort(err);
     ehLog(aborted ? "warn" : "error", "archive-hash.batch.fail", {
       mods: mods.length,

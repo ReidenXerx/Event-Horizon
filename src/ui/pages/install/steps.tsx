@@ -513,6 +513,13 @@ export function LoadingStep(props: {
   hashCurrent?: string;
   onCancel?: () => void;
 }): JSX.Element {
+  // A pass that has not moved for two minutes is said, with the way out.
+  const [stalled, setStalled] = React.useState(false);
+  React.useEffect(() => {
+    setStalled(false);
+    const t = setTimeout(() => setStalled(true), 120_000);
+    return (): void => clearTimeout(t);
+  }, [props.hashDone, props.phase]);
   const phaseIdx =
     Object.keys(LOADING_PHASE_LABELS).indexOf(props.phase);
   const totalPhases = Object.keys(LOADING_PHASE_LABELS).length;
@@ -542,7 +549,20 @@ export function LoadingStep(props: {
           currentItem={props.hashCurrent}
           onCancel={props.onCancel}
         />
-      ) : (
+      ) : null}
+      {isHashing && total > 0 && stalled && (
+        <Callout tone="warning" title="This has not moved for two minutes. Restart Vortex.">
+          <p>
+            Reading {props.hashCurrent ?? "one archive"} is not finishing. Close Vortex completely, start it again, and
+            open the collection again: what was already hashed is kept, so it carries on from here.
+          </p>
+          <p className="eh-muted">
+            If it stops on the same file again, that file is usually not really on this PC (OneDrive "online-only"),
+            held by an antivirus, or on a drive that went to sleep.
+          </p>
+        </Callout>
+      )}
+      {isHashing && total > 0 ? null : (
         <div className="eh-progress-panel">
           <ProgressRing value={ratio} size={88} />
           <div className="eh-fill eh-stack eh-stack--xs">
