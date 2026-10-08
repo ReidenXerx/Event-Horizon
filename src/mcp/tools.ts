@@ -299,7 +299,7 @@ export const TOOLS: ToolSpec[] = [
     name: "mods_rename",
     verb: "mods.rename",
     mutates: true,
-    description: "Set the name a mod shows in Vortex (its customFileName attribute); a collection build uses it. \"\" clears it. No deploy needed.",
+    description: "Rename a mod: sets Vortex's customFileName (Mods tab) and name (what a collection build writes). \"\" undoes it. No deploy needed.",
     properties: { id: str("Mod id from mods_find."), name: str("The new display name, or \"\" to clear it.") },
     required: ["id", "name"],
   },

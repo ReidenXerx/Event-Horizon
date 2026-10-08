@@ -2108,11 +2108,13 @@ export const VERBS: Record<string, Verb> = {
   },
 
   /**
-   * Sets the name a mod shows in Vortex's Mods tab: Vortex's own
-   * `customFileName` attribute, the same field its "rename" writes, and the
-   * first one a collection build reads (Fallout-collection, Ivy Rev 13: a
-   * dev build archive named "Servitron-dev+2"). Files, ids and rules are
-   * untouched; an empty name clears it back to the archive's own.
+   * Sets a mod's name in BOTH places that show it: `customFileName`, what
+   * Vortex's Mods tab shows and its own rename writes, and `name`, which is
+   * what a collection build writes into the manifest (mods[].name and
+   * source.archiveName). Writing only the first left Ivy 1.0.43 shipping
+   * "Servitron-dev+2" (Fallout-collection, Ivy Rev 13). The first rename keeps
+   * the original `name` in `ehNameBeforeRename`; an empty name clears the
+   * rename and puts that back. Files, ids and rules are untouched.
    */
   "mods.rename": {
     mutates: true,
@@ -2125,14 +2127,38 @@ export const VERBS: Record<string, Verb> = {
       const name = raw.trim();
       if (name.length > 200) throw new ControlError("bad-request", `"name" is ${name.length} characters; at most 200.`);
       enforce(guardKnownMods({ requested: [id], pool: new Set(Object.keys(modPool(api, gameId))) }));
-      const previousName = modName(modPool(api, gameId)[id]!);
-      api.store?.dispatch(actions.setModAttribute(gameId, id, "customFileName", name === "" ? undefined : name));
+      const before = modPool(api, gameId)[id]!;
+      const previousName = modName(before);
+      const original = str(before.attributes?.["ehNameBeforeRename"]);
+      const set = (key: string, value: unknown): void => {
+        api.store?.dispatch(actions.setModAttribute(gameId, id, key, value));
+      };
+      if (name === "") {
+        set("customFileName", undefined);
+        if (original !== undefined) {
+          set("name", original);
+          set("ehNameBeforeRename", undefined);
+        }
+      } else {
+        if (original === undefined && str(before.attributes?.["name"]) !== undefined) {
+          set("ehNameBeforeRename", before.attributes!["name"]);
+        }
+        set("customFileName", name);
+        set("name", name);
+      }
       const now = modPool(api, gameId)[id];
       const stored = str(now?.attributes?.["customFileName"]);
-      if (stored !== (name === "" ? undefined : name)) {
+      const storedName = str(now?.attributes?.["name"]);
+      const applied = name === "" ? stored === undefined && (original === undefined || storedName === original) : stored === name && storedName === name;
+      if (!applied) {
         throw new ControlError("not-applied", `Vortex did not apply the new name for ${id}.`, 500);
       }
-      return { id, previousName, name: now !== undefined ? modName(now) : name, verified: { customFileName: stored ?? null } };
+      return {
+        id,
+        previousName,
+        name: now !== undefined ? modName(now) : name,
+        verified: { customFileName: stored ?? null, name: storedName ?? null },
+      };
     },
     describe: (b) => `renamed ${String(b["previousName"])} to ${String(b["name"])}`,
   },

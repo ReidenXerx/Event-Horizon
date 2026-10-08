@@ -38,6 +38,7 @@ vi.mock("../manifest/runSelfChecks", () => ({ makeReadEntry: () => async () => B
 
 import { isProcessRunning } from "./gameProcess";
 import { answerFor, runVerb, setSettleWindowsForTests, VERBS } from "./verbs";
+import { getModsForGame } from "../getModsListForProfile";
 
 const running = isProcessRunning as unknown as ReturnType<typeof vi.fn>;
 
@@ -1214,16 +1215,24 @@ describe("diagnose.setup: findings an agent can act on", () => {
 });
 
 describe("mods.rename (Fallout-collection, Ivy Rev 13)", () => {
-  it("sets Vortex's customFileName and reads it back", async () => {
+  it("sets customFileName AND name, the one the build writes into the manifest", async () => {
     const r = (await run("mods.rename", { id: "a", name: "  Servitron 1.1.0 " })) as any;
-    expect(v.state.persistent.mods.fallout4.a.attributes.customFileName).toBe("Servitron 1.1.0");
+    const a = v.state.persistent.mods.fallout4.a.attributes;
+    expect(a.customFileName).toBe("Servitron 1.1.0");
+    expect(a.name).toBe("Servitron 1.1.0");
     expect(r).toMatchObject({ id: "a", previousName: "Mod A", name: "Servitron 1.1.0" });
+    const [listed] = getModsForGame(v.state as never, "fallout4").filter((m) => m.id === "a");
+    expect(listed!.name).toBe("Servitron 1.1.0");
   });
 
-  it("clears the name with an empty string", async () => {
+  it("an empty string undoes it, back to the original name, even after two renames", async () => {
     await run("mods.rename", { id: "a", name: "Servitron 1.1.0" });
+    await run("mods.rename", { id: "a", name: "Servitron 1.2.0" });
     const r = (await run("mods.rename", { id: "a", name: "" })) as any;
-    expect(v.state.persistent.mods.fallout4.a.attributes.customFileName).toBeUndefined();
+    const a = v.state.persistent.mods.fallout4.a.attributes;
+    expect(a.customFileName).toBeUndefined();
+    expect(a.name).toBe("Mod A");
+    expect(a.ehNameBeforeRename).toBeUndefined();
     expect(r.name).toBe("Mod A");
   });
 
