@@ -1020,6 +1020,15 @@ function validateInstallState(
           `${path}.mirrorFromArchive`,
           errors,
         );
+  const mirrorFromArchiveAt =
+    obj.mirrorFromArchiveAt === undefined
+      ? undefined
+      : validateMirrorFromArchiveAt(
+          obj.mirrorFromArchiveAt,
+          mirrorFromArchive,
+          `${path}.mirrorFromArchiveAt`,
+          errors,
+        );
 
   if (
     enabled === undefined ||
@@ -1044,6 +1053,9 @@ function validateInstallState(
     ...(enabledINITweaks !== undefined ? { enabledINITweaks } : {}),
     ...(stagingFiles !== undefined ? { stagingFiles } : {}),
     ...(mirrorFromArchive !== undefined ? { mirrorFromArchive } : {}),
+    ...(mirrorFromArchiveAt !== undefined && Object.keys(mirrorFromArchiveAt).length > 0
+      ? { mirrorFromArchiveAt }
+      : {}),
     ...(nativePlugins !== undefined && nativePlugins.length > 0 ? { nativePlugins } : {}),
     // Advisory, like the list itself: anything but an explicit true is ignored.
     ...(obj.nativePluginsIncomplete === true ? { nativePluginsIncomplete: true as const } : {}),
@@ -1120,6 +1132,43 @@ function validateMirrorFromArchive(
     }
     out.push(p);
   });
+  return out;
+}
+
+/**
+ * Validate `mirrorFromArchiveAt`: staged path → archive entry, for files
+ * `mirrorFromArchive` already names.
+ *
+ * Both sides decide a write: the key where the file lands, the value which
+ * entry is extracted into a temp folder. So the key must be a claimed file and
+ * both must be relative paths that stay inside their folder.
+ */
+function validateMirrorFromArchiveAt(
+  raw: unknown,
+  claimed: string[] | undefined,
+  path: string,
+  errors: string[],
+): Record<string, string> | undefined {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    errors.push(`${path} must be an object of staged path → archive entry.`);
+    return undefined;
+  }
+  const allowed = new Set(claimed ?? []);
+  const out: Record<string, string> = {};
+  for (const [staged, entry] of Object.entries(raw as Record<string, unknown>)) {
+    if (!allowed.has(staged)) {
+      errors.push(`${path} names "${staged}", which is not in this mod's mirrorFromArchive.`);
+      continue;
+    }
+    if (typeof entry !== "string" || !isSafeRelativePath(entry)) {
+      errors.push(
+        `${path}["${staged}"] must be a relative archive path — got ` +
+          `${typeof entry === "string" ? `"${entry}" (${unsafePathReason(entry)})` : typeof entry}.`,
+      );
+      continue;
+    }
+    out[staged] = entry;
+  }
   return out;
 }
 

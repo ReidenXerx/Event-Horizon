@@ -2623,7 +2623,11 @@ export async function runBuildPipeline(
     mods = mods.map((m) => {
       const p = provisions.get(m.id);
       return p?.kind === "proven" && p.provided.length > 0
-        ? { ...m, mirrorFromArchive: p.provided }
+        ? {
+            ...m,
+            mirrorFromArchive: p.provided,
+            ...(p.movedFrom !== undefined ? { mirrorFromArchiveAt: p.movedFrom } : {}),
+          }
         : m;
     });
     provisionOp.ok(summarizeProvisions(mods, provisions));

@@ -18,6 +18,13 @@ describe("neededEventHorizon", () => {
     expect(neededEventHorizon(manifest([mod({})]))).toBeUndefined();
   });
 
+  it("needs 0.2.56 for files a mirrored mod moved", () => {
+    const needs = neededEventHorizon(
+      manifest([mod({ mirrored: true, mirrorFromArchive: ["T/CoTaP/a.dds"], mirrorFromArchiveAt: { "T/CoTaP/a.dds": "T/a.dds" } })]),
+    );
+    expect(needs).toEqual({ version: "0.2.56", why: ["mod files the curator moved to another folder"] });
+  });
+
   it("takes the newest feature used, and names each one", () => {
     const needs = neededEventHorizon(
       manifest(

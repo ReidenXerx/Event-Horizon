@@ -119,6 +119,8 @@ export type AuditorMod = {
    * and copied into the manifest; see `mirrorPayload.ts`.
    */
   mirrorFromArchive?: string[];
+  /** Of those, files the archive holds at another path: staged path → entry. */
+  mirrorFromArchiveAt?: Record<string, string>;
   /**
    * What this mod's script-extender plugins declare about game versions,
    * read at capture time. Copied into the manifest; see

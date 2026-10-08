@@ -89,6 +89,34 @@ describe("the files a mirrored mod leaves to its own archive", () => {
       /relative path inside the mod/,
     );
   });
+
+  describe("and where a MOVED one sits in the archive", () => {
+    const movedWith = (at: unknown): string =>
+      withMod({
+        ...BASE_STATE,
+        mirrored: true,
+        stagingFiles: STAGED,
+        mirrorFromArchive: ["Tools/Author.exe"],
+        mirrorFromArchiveAt: at,
+      });
+
+    it("survives a real parse", () => {
+      const { manifest } = parseManifest(movedWith({ "Tools/Author.exe": "Bin/Author.exe" }));
+      expect(manifest.mods[0]!.state.mirrorFromArchiveAt).toEqual({ "Tools/Author.exe": "Bin/Author.exe" });
+    });
+
+    it("REJECTS a file mirrorFromArchive does not claim", () => {
+      expect(() => parseManifest(movedWith({ "Tools/Other.exe": "Bin/Author.exe" }))).toThrow(
+        /not in this mod's mirrorFromArchive/,
+      );
+    });
+
+    it("REJECTS an archive entry that escapes the folder it is extracted into", () => {
+      expect(() => parseManifest(movedWith({ "Tools/Author.exe": "../../evil.exe" }))).toThrow(
+        /relative archive path/,
+      );
+    });
+  });
 });
 
 describe("a staging path from a stranger's package", () => {

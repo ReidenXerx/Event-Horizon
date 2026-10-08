@@ -606,6 +606,17 @@ export type ModInstallState = {
    */
   mirrorFromArchive?: string[];
   /**
+   * Files of `mirrorFromArchive` the archive holds at ANOTHER path, because
+   * the curator moved them: staged path → the archive entry holding its bytes.
+   * The mirror extracts exactly that entry to the staged path, checked
+   * against the recorded sha256.
+   *
+   * Since 0.2.56. An older Event Horizon looks for these at the staged path,
+   * finds nothing, and names the files as not mirrored; the preview warns
+   * such a player first (`minEventHorizon.ts`).
+   */
+  mirrorFromArchiveAt?: Record<string, string>;
+  /**
    * What each script-extender plugin in this mod declares about the game
    * versions it runs on, read from the DLL at build time.
    *

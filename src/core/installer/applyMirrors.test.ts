@@ -314,6 +314,44 @@ describe("a file the package leaves to the mod's own archive", () => {
     expect(await readFile(join(staging, "Data", "x.esp"))).toEqual(STOCK);
   });
 
+  it("puts a MOVED file at the curator's path from the entry the build named, and drops the old copy", async () => {
+    // CoTaP (Ivy Rev 14): the archive installs Textures/actors/face.dds; the
+    // curator's folder has it under Textures/CoTaP/ and no preset plugin.
+    await writeFile(ehcoll, makeZip([{ name: "unrelated", data: CLEANED }]));
+    await writeFile(
+      modZip(),
+      makeZip([
+        { name: "Textures/actors/face.dds", data: STOCK },
+        { name: "Preset01.esp", data: CLEANED },
+      ]),
+    );
+    await mkdir(join(staging, "Textures", "actors"), { recursive: true });
+    await writeFile(join(staging, "Textures", "actors", "face.dds"), STOCK);
+    await writeFile(join(staging, "Preset01.esp"), CLEANED);
+
+    const outcome = await applyMirrorPlan({
+      stagingRoot: staging,
+      ehcollPath: ehcoll,
+      plan: planMirror({
+        target: [{ path: "Textures/CoTaP/actors/face.dds", size: STOCK.length, sha256: sha(STOCK) }],
+        current: [
+          { path: "Textures/actors/face.dds", size: STOCK.length, sha256: sha(STOCK) },
+          { path: "Preset01.esp", size: CLEANED.length, sha256: sha(CLEANED) },
+        ],
+      }),
+      fromArchive: {
+        paths: new Set(["Textures/CoTaP/actors/face.dds"]),
+        at: new Map([["Textures/CoTaP/actors/face.dds", "Textures/actors/face.dds"]]),
+        archivePath: modZip(),
+      },
+    });
+
+    expect(outcome).toMatchObject({ restored: 1, removed: 2, failures: [], fromArchive: { wanted: 1, restored: 1 } });
+    expect(await readFile(join(staging, "Textures", "CoTaP", "actors", "face.dds"))).toEqual(STOCK);
+    expect(existsSync(join(staging, "Textures", "actors", "face.dds"))).toBe(false);
+    expect(existsSync(join(staging, "Preset01.esp"))).toBe(false);
+  });
+
   it("extracts with 7-Zip, in one run, from an archive that is not a ZIP", async () => {
     await writeFile(ehcoll, makeZip([{ name: "unrelated", data: STOCK }]));
     const archivePath = join(dir, "mod.7z");
@@ -353,19 +391,23 @@ describe("a file the package leaves to the mod's own archive", () => {
         target: [
           { path: "Data/x.esp", size: STOCK.length, sha256: sha(STOCK) },
           { path: "Data/y.esp", size: SECOND.length, sha256: sha(SECOND) },
+          // The curator's copy of y.esp in a second folder: the same entry, extracted once.
+          { path: "Data/Moved/y2.esp", size: SECOND.length, sha256: sha(SECOND) },
         ],
         current: [],
       }),
       fromArchive: {
-        paths: new Set(["Data/x.esp", "Data/y.esp"]),
+        paths: new Set(["Data/x.esp", "Data/y.esp", "Data/Moved/y2.esp"]),
+        at: new Map([["Data/Moved/y2.esp", "Wrap/Data/y.esp"]]),
         archivePath,
         sevenZip,
       },
     });
 
-    expect(outcome).toMatchObject({ restored: 2, failures: [] });
+    expect(outcome).toMatchObject({ restored: 3, failures: [] });
     expect(extractions).toEqual([["Wrap/Data/x.esp", "Wrap/Data/y.esp"]]);
     expect(await readFile(join(staging, "Data", "y.esp"))).toEqual(SECOND);
+    expect(await readFile(join(staging, "Data", "Moved", "y2.esp"))).toEqual(SECOND);
   });
 
   it("tells the user how many files came from the mod's own archive", () => {

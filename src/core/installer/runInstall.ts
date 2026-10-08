@@ -3983,6 +3983,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             ? {
                 fromArchive: {
                   paths: new Set(leftToArchive),
+                  at: new Map(Object.entries(mod.state.mirrorFromArchiveAt ?? {})),
                   archivePath: archivePathForMod(
                     ctx.api,
                     plan.manifest.game.id,

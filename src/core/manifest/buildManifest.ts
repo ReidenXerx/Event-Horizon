@@ -788,6 +788,12 @@ function buildModInstallState(
     ...(mod.mirrored === true && (mod.mirrorFromArchive?.length ?? 0) > 0
       ? { mirrorFromArchive: mod.mirrorFromArchive }
       : {}),
+    ...(mod.mirrored === true &&
+    (mod.mirrorFromArchive?.length ?? 0) > 0 &&
+    mod.mirrorFromArchiveAt !== undefined &&
+    Object.keys(mod.mirrorFromArchiveAt).length > 0
+      ? { mirrorFromArchiveAt: mod.mirrorFromArchiveAt }
+      : {}),
     // Only when the mod has script-extender plugins — most do not, and an
     // empty list on 1,500 mods says nothing.
     ...((mod.nativePlugins?.length ?? 0) > 0

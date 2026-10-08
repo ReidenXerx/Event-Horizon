@@ -20,9 +20,15 @@
  * An archive entry with the file's size and CRC-32, AT the file's path: the
  * entry's path is the staged path, or ends with it at a folder boundary — how
  * an installer that strips a wrapper folder, or a FOMOD `<folder
- * destination="">`, places it. The same bytes elsewhere in the archive are not
- * enough: they say nothing about where an install puts them, so a file the
- * curator moved still ships.
+ * destination="">`, places it.
+ *
+ * Or the same bytes at ANOTHER path: a file the curator moved (CoTaP for
+ * CoTaP Standalone, Ivy Rev 14: Textures/actors/** under Textures/CoTaP/).
+ * Where an install puts those bytes does not matter for these, because the
+ * mirror never waits for the install to produce them: the build records the
+ * entry (`state.mirrorFromArchiveAt`) and the user's mirror extracts exactly
+ * that entry to the curator's path. Before 0.2.56 such a file shipped whole,
+ * re-hosting the author's bytes (NS-5).
  *
  * CRC-32 because it is what an archive's header already records, so the proof
  * costs one read of the curator's file and no extraction. It is not
@@ -48,6 +54,7 @@ import * as path from "path";
 
 import type { EhcollStagingFile } from "../../types/ehcoll";
 import { pathKey, segmentsOf } from "../paths";
+import { isSafeRelativePath } from "../safeRelativePath";
 
 import type { ArchiveEntry, ArchiveListing } from "./archiveContents";
 import type { SelfCheckReport } from "./selfCheckMod";
@@ -68,6 +75,11 @@ export function entrySitsAt(entryPath: string, stagedPath: string): boolean {
 export type ArchiveProvision = {
   /** Staged paths the archive provides, spelled exactly as in `stagingFiles`. */
   provided: string[];
+  /**
+   * Of `provided`, the files the archive holds at ANOTHER path: staged path →
+   * the archive entry with its bytes. Absent when there are none.
+   */
+  movedFrom?: Record<string, string>;
   /** Files a same-size entry at their path made worth reading. */
   compared: number;
   /** Of those, files that could not be read — and so ship. */
@@ -97,38 +109,51 @@ export async function findFilesTheArchiveProvides(args: {
   }
 
   const out: ArchiveProvision = { provided: [], compared: 0, unreadable: 0 };
-  // Which staged files have a same-size entry at the same place: only those need a checksum.
+  // Which staged files have a same-size entry anywhere: only those need a checksum.
   const work = args.staged.flatMap((file) => {
     // Without a hash the user's side could not check the archive's copy — and
     // packaging refuses a mirrored mod with such a file anyway.
     if (file.sha256 === undefined) return [];
-    const candidates = (bySize.get(file.size) ?? []).filter((e) =>
-      entrySitsAt(e.path, file.path),
-    );
-    return candidates.length === 0 ? [] : [{ file, candidates }];
+    const sameSize = bySize.get(file.size) ?? [];
+    if (sameSize.length === 0) return [];
+    const here = sameSize.filter((e) => entrySitsAt(e.path, file.path));
+    // A moved file is taken from the entry by name, so it must be one the
+    // user's side can extract into a temp folder.
+    const elsewhere = sameSize.filter((e) => !here.includes(e) && isSafeRelativePath(e.path));
+    return [{ file, here, elsewhere }];
   });
   // Checksummed several at once (the hash pool does them on every core);
   // `provided` keeps the staged order either way.
+  type Verdict = { kind: "provided"; from?: string } | { kind: "differs" | "unreadable" | "skipped" };
   const verdicts = await pMap(
     work,
     Math.max(1, getDefaultHashConcurrency()),
-    async ({ file, candidates }): Promise<"provided" | "differs" | "unreadable" | "skipped"> => {
-      if (args.signal?.aborted === true) return "skipped";
+    async ({ file, here, elsewhere }): Promise<Verdict> => {
+      if (args.signal?.aborted === true) return { kind: "skipped" };
       let crc: string;
       try {
         crc = (await args.crcOf(file.path)).toLowerCase();
       } catch {
-        return "unreadable";
+        return { kind: "unreadable" };
       }
-      return candidates.some((e) => e.crc!.toLowerCase() === crc) ? "provided" : "differs";
+      if (here.some((e) => e.crc!.toLowerCase() === crc)) return { kind: "provided" };
+      // The first in archive order, so the same archive always names the same entry.
+      const moved = elsewhere.find((e) => e.crc!.toLowerCase() === crc);
+      return moved !== undefined ? { kind: "provided", from: moved.path } : { kind: "differs" };
     },
   );
+  const movedFrom: Record<string, string> = {};
   verdicts.forEach((v, i) => {
-    if (v === "skipped") return;
+    if (v.kind === "skipped") return;
     out.compared += 1;
-    if (v === "unreadable") out.unreadable += 1;
-    if (v === "provided") out.provided.push(work[i]!.file.path);
+    if (v.kind === "unreadable") out.unreadable += 1;
+    if (v.kind === "provided") {
+      const staged = work[i]!.file.path;
+      out.provided.push(staged);
+      if (v.from !== undefined) movedFrom[staged] = v.from;
+    }
   });
+  if (Object.keys(movedFrom).length > 0) out.movedFrom = movedFrom;
   return out;
 }
 
@@ -264,6 +289,7 @@ export function summarizeProvisions(
       mod: mod.name,
       staged: p.staged,
       fromArchive: p.provided.length,
+      ...(p.movedFrom !== undefined ? { moved: Object.keys(p.movedFrom).length } : {}),
       compared: p.compared,
       ...(p.unreadable > 0 ? { unreadable: p.unreadable } : {}),
     });

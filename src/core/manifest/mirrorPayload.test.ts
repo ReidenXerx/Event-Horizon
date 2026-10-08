@@ -83,11 +83,50 @@ describe("which files the archive provides", () => {
     expect(r.compared).toBe(1);
   });
 
-  it("ships a file whose bytes the archive holds at another path", async () => {
-    // The curator moved it. Nothing says an install puts those bytes here.
+  it("leaves a MOVED file to the archive, naming the entry that holds its bytes", async () => {
+    // CoTaP for CoTaP Standalone (Ivy Rev 14): Textures/actors/** moved under
+    // Textures/CoTaP/. The user's mirror extracts that exact entry, so where an
+    // install would put it does not matter.
+    const r = await findFilesTheArchiveProvides({
+      staged: [{ path: "Textures/CoTaP/actors/face.dds", size: PLUGIN.length, sha256: SHA }],
+      listing: listing([{ path: "Textures/actors/face.dds", data: PLUGIN }]),
+      crcOf: onDisk({ "Textures/CoTaP/actors/face.dds": PLUGIN }),
+    });
+    expect(r).toEqual({
+      provided: ["Textures/CoTaP/actors/face.dds"],
+      movedFrom: { "Textures/CoTaP/actors/face.dds": "Textures/actors/face.dds" },
+      compared: 1,
+      unreadable: 0,
+    });
+  });
+
+  it("prefers the entry at the file's own path over the same bytes elsewhere", async () => {
     const r = await findFilesTheArchiveProvides({
       staged: [{ path: "Data/x.esp", size: PLUGIN.length, sha256: SHA }],
-      listing: listing([{ path: "Optional/y.esp", data: PLUGIN }]),
+      listing: listing([
+        { path: "Optional/x.esp", data: PLUGIN },
+        { path: "Data/x.esp", data: PLUGIN },
+      ]),
+      crcOf: onDisk({ "Data/x.esp": PLUGIN }),
+    });
+    expect(r.provided).toEqual(["Data/x.esp"]);
+    expect(r.movedFrom).toBeUndefined();
+  });
+
+  it("ships a moved file the curator also edited", async () => {
+    const r = await findFilesTheArchiveProvides({
+      staged: [{ path: "Textures/CoTaP/x.esp", size: CLEANED.length, sha256: SHA }],
+      listing: listing([{ path: "Textures/x.esp", data: PLUGIN }]),
+      crcOf: onDisk({ "Textures/CoTaP/x.esp": CLEANED }),
+    });
+    expect(r.provided).toEqual([]);
+    expect(r.movedFrom).toBeUndefined();
+  });
+
+  it("never names an entry that escapes the folder it is extracted into", async () => {
+    const r = await findFilesTheArchiveProvides({
+      staged: [{ path: "Data/x.esp", size: PLUGIN.length, sha256: SHA }],
+      listing: listing([{ path: "../x.esp", data: PLUGIN }]),
       crcOf: onDisk({ "Data/x.esp": PLUGIN }),
     });
     expect(r.provided).toEqual([]);

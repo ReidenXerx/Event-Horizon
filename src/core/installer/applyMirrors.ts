@@ -135,6 +135,12 @@ export async function applyMirrorPlan(args: {
    */
   fromArchive?: {
     paths: ReadonlySet<string>;
+    /**
+     * Of `paths`, files the curator MOVED: the archive entry holding each
+     * one's bytes (`state.mirrorFromArchiveAt`). Every other path is looked
+     * for at its own place in the archive.
+     */
+    at?: ReadonlyMap<string, string>;
     archivePath: string | undefined;
     /** Injection point for tests; defaults to Vortex's own 7-Zip. */
     sevenZip?: SevenZipApi;
@@ -194,6 +200,7 @@ export async function applyMirrorPlan(args: {
       stagingRoot,
       archivePath: leftToArchive.archivePath,
       restores: fromArchive,
+      ...(leftToArchive.at !== undefined ? { at: leftToArchive.at } : {}),
       ...(leftToArchive.sevenZip !== undefined
         ? { sevenZip: leftToArchive.sevenZip }
         : {}),
@@ -416,10 +423,13 @@ async function restoreFromModArchive(args: {
   stagingRoot: string;
   archivePath: string | undefined;
   restores: readonly MirrorRestore[];
+  at?: ReadonlyMap<string, string>;
   sevenZip?: SevenZipApi;
   signal?: AbortSignal;
 }): Promise<ArchiveRestore> {
   const { stagingRoot, archivePath, restores, signal } = args;
+  /** Where in the archive a restore's bytes sit: the recorded entry for a moved file. */
+  const sourceOf = (want: MirrorRestore): string => args.at?.get(want.path) ?? want.path;
   const out: ArchiveRestore = { restored: 0, failures: [] };
   if (archivePath === undefined) {
     for (const want of restores) {
@@ -451,7 +461,7 @@ async function restoreFromModArchive(args: {
           (e) =>
             !e.isDirectory &&
             e.uncompressedSize === want.size &&
-            entrySitsAt(normalizeArchivePath(e.name), want.path),
+            entrySitsAt(normalizeArchivePath(e.name), sourceOf(want)),
         );
         if (candidates.length === 0) {
           reasons.set(want.path, NOT_IN_ARCHIVE);
@@ -479,6 +489,7 @@ async function restoreFromModArchive(args: {
       const taken = await extractWithSevenZip({
         archivePath,
         restores: viaSevenZip,
+        sourceOf,
         dest: path.join(tempDir, "7z"),
         ...(args.sevenZip !== undefined ? { sevenZip: args.sevenZip } : {}),
         ...(signal !== undefined ? { signal } : {}),
@@ -558,6 +569,7 @@ async function listZipIfNamesCertain(
 async function extractWithSevenZip(args: {
   archivePath: string;
   restores: readonly MirrorRestore[];
+  sourceOf: (want: MirrorRestore) => string;
   dest: string;
   sevenZip?: SevenZipApi;
   signal?: AbortSignal;
@@ -602,7 +614,7 @@ async function extractWithSevenZip(args: {
         // Joined onto a temp folder below; an entry above it is not a file
         // this mod installs.
         isSafeRelativePath(e.path) &&
-        entrySitsAt(e.path, want.path),
+        entrySitsAt(e.path, args.sourceOf(want)),
     );
     candidatesOf.set(want.path, candidates);
     if (candidates.length === 0) reasons.set(want.path, NOT_IN_ARCHIVE);
