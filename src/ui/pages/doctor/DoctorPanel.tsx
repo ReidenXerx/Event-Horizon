@@ -294,9 +294,12 @@ function CheckCard(props: {
                   : (unavailable ?? check.heal.label)}
           </Button>
         )}
-        {isProblem && props.onKeep !== undefined && (
+        {isProblem && props.onKeep !== undefined && check.id !== "player-variants" && (
           // The player's own choice (a mod removed, one added, another game
-          // version): remembered for exactly this finding.
+          // version): remembered for exactly this finding. Not on "Your own
+          // versions": there "Keep your versions" IS that choice, and a plain
+          // "Keep as is" beside it only hid the card while the next update
+          // brought the collection's files back (alasdairn, 2026-10-08).
           <Button
             intent="ghost"
             size="sm"
