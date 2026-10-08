@@ -67,6 +67,7 @@ import {
   type ShownPresentation,
 } from "../../../core/presentation/presentationCache";
 import { ehLog } from "../../../core/logging/ehLog";
+import * as path from "path";
 import type { RuntimeFinding } from "../../../core/runtime/detectRuntimes";
 import type { EnvironmentReport } from "../../../core/environment/preflight";
 
@@ -227,17 +228,12 @@ export async function runLoadingPipeline(args: {
    */
   const rawMods = getModsForGame(state, activeGameId, activeProfileId);
   events.onPhase("hashing-mods", rawMods.length);
-  const archiveHashed = await enrichModsWithArchiveHashes(
-    state,
-    activeGameId,
-    rawMods,
-    {
-      signal,
-      onProgress: (done, total, mod) => {
-        events.onHashProgress?.(done, total, mod.name);
-      },
+  const archiveHashed = await hashInstalledArchives(state, activeGameId, rawMods, {
+    signal,
+    onProgress: (done, total, mod) => {
+      events.onHashProgress?.(done, total, mod.name);
     },
-  );
+  });
 
   // ── 4b. staging-set-hash enrichment ──────────────────────────────
   // Cheap no-op when the manifest has no archive-less external mods.
@@ -482,17 +478,12 @@ export async function runLoadingPipelineWithReceipt(args: {
    */
   const rawMods = getModsForGame(state, activeGameId, activeProfileId);
   events.onPhase("hashing-mods", rawMods.length);
-  const archiveHashed = await enrichModsWithArchiveHashes(
-    state,
-    activeGameId,
-    rawMods,
-    {
-      signal,
-      onProgress: (done, total, mod) => {
-        events.onHashProgress?.(done, total, mod.name);
-      },
+  const archiveHashed = await hashInstalledArchives(state, activeGameId, rawMods, {
+    signal,
+    onProgress: (done, total, mod) => {
+      events.onHashProgress?.(done, total, mod.name);
     },
-  );
+  });
 
   checkAbort();
   events.onPhase("hashing-staging");
@@ -803,5 +794,45 @@ function incomingRevisionOf(
     )?.revisionNumber;
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * ─── HASH WITH THE SAME PERSISTENT CACHE THE BUILD USES ──────────────────
+ * The install preview hashed every installed mod's archive from scratch on
+ * every open: a re-run after a failed install, a resume, every update. For a
+ * 1,021-mod collection that is tens of gigabytes read again to learn hashes
+ * that did not change (ladiesnightmare9420, Ivy Rev 12, 2026-10-08: "Hashing
+ * your installed mods" at 10/1021 on the re-run). The build has kept a cache
+ * keyed by path, size, mtime AND ctime all along (archiveFileCacheKey); a hit
+ * is only possible for a file that has not been touched. Saved even when the
+ * rest of the install later fails, which is exactly when the re-run comes.
+ */
+async function hashInstalledArchives(
+  state: Parameters<typeof enrichModsWithArchiveHashes>[0],
+  gameId: string,
+  mods: Parameters<typeof enrichModsWithArchiveHashes>[2],
+  options: { signal?: AbortSignal | undefined; onProgress: NonNullable<Parameters<typeof enrichModsWithArchiveHashes>[3]>["onProgress"] },
+): ReturnType<typeof enrichModsWithArchiveHashes> {
+  const { loadArchiveHashCache, makeHashLookup, mergeHashes, saveArchiveHashCache } = await import(
+    "../../../core/archiveHashCache"
+  );
+  const ehDir = path.join(getVortexUserDataPath(), "event-horizon");
+  const cache = await loadArchiveHashCache(ehDir);
+  const reuse = makeHashLookup(cache);
+  try {
+    return await enrichModsWithArchiveHashes(state, gameId, mods, {
+      hashCache: reuse.lookup,
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
+      ...(options.onProgress !== undefined ? { onProgress: options.onProgress } : {}),
+    });
+  } finally {
+    // Whatever was hashed is kept, finished or stopped: the next open reuses it.
+    if (reuse.added.size > 0) {
+      await saveArchiveHashCache(ehDir, mergeHashes(cache, reuse.added, new Date().toISOString())).catch((err) =>
+        ehLog("warn", "install.hash-cache.save-failed", { err: String(err) }),
+      );
+    }
+    ehLog("info", "install.hash-cache", { reused: reuse.hits, added: reuse.added.size });
   }
 }
