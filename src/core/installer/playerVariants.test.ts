@@ -82,6 +82,26 @@ describe("the Doctor", () => {
     expect(card?.detail).toEqual(['VTAC Operative Gear: you use "VTAC 4k"']);
     expect(evaluateHealth(receipt, obs(["vtac-2k", "other"])).some((c) => c.id === "player-variants")).toBe(false);
   });
+
+  it("does not ALSO offer to enable or reinstall the collection's file the player replaced", () => {
+    // alasdairn, Ivy Rev 13: "Enable 3 mods" beside "Keep yours" put the 1k
+    // and the 4k LODs on at once.
+    const checks = evaluateHealth(receipt, obs(["vtac-4k", "other"]));
+    const enabledCard = checks.find((c) => c.id === "mods-enabled");
+    expect(enabledCard?.status).toBe("healthy");
+    expect(enabledCard?.heal).toBeUndefined();
+
+    const gone = { ...obs(["vtac-4k", "other"]), installedModIds: ["vtac-4k", "other"] } as HealthObservations;
+    const presentCard = evaluateHealth(receipt, gone).find((c) => c.id === "mods-present");
+    expect(presentCard?.status).toBe("healthy");
+    expect(presentCard?.heal).toBeUndefined();
+  });
+
+  it("still offers to enable the collection's file when nothing replaces it", () => {
+    const enabledCard = evaluateHealth(receipt, obs(["other"])).find((c) => c.id === "mods-enabled");
+    expect(enabledCard?.heal?.action).toBe("enable-mods");
+    expect(enabledCard?.detail).toEqual(["VTAC Operative Gear"]);
+  });
 });
 
 describe("an update after the choice", () => {

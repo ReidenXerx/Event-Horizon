@@ -306,9 +306,23 @@ async function healImpl(
         Object.keys(state.persistent?.mods?.[gameId] ?? {}),
       );
       const { enableModInProfile } = await import("../installer/profile");
+      // A collection mod the player replaced with another file of the same mod
+      // stays off: enabling it put both files on at once (alasdairn, Ivy Rev 13).
+      const [{ findPlayerVariants }, { readPoolNexus, readEnabledModIdsFor }] = await Promise.all([
+        import("../installer/playerVariants"),
+        import("./gather"),
+      ]);
+      const replaced = new Set(
+        findPlayerVariants({
+          receiptMods: receipt.mods,
+          pool: readPoolNexus(api.getState(), gameId) ?? [],
+          enabled: new Set(readEnabledModIdsFor(api.getState(), receipt.vortexProfileId) ?? []),
+        }).map((v) => v.compareKey),
+      );
       let enabled = 0;
       let absent = 0;
       for (const mod of receipt.mods) {
+        if (replaced.has(mod.compareKey)) continue;
         if (!installed.has(mod.vortexModId)) {
           absent += 1;
           continue;

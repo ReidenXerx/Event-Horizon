@@ -538,9 +538,21 @@ export function evaluateHealth(
   // An unreadable mod table would make every mod "missing"; see the field.
   const modsUnreadable = obs.installedModIds === undefined;
   const installed = new Set(obs.installedModIds ?? []);
+  /**
+   * Collection mods the player replaced with another file of the same mod.
+   * Only the "Your own versions" card speaks for these. Listing them here too
+   * offered "Enable" (and "Repair all") on the collection's file beside
+   * "Keep yours" on the player's, and pressing it left BOTH enabled
+   * (alasdairn, Ivy Rev 13: 1k and 4k LODs at once).
+   */
+  const variants =
+    !modsUnreadable && obs.enabledModIds !== undefined && obs.poolNexus !== undefined
+      ? findPlayerVariants({ receiptMods: receipt.mods, pool: obs.poolNexus, enabled: new Set(obs.enabledModIds) })
+      : [];
+  const replacedByPlayer = new Set(variants.map((v) => v.compareKey));
   const missing = modsUnreadable
     ? []
-    : receipt.mods.filter((m) => !installed.has(m.vortexModId));
+    : receipt.mods.filter((m) => !installed.has(m.vortexModId) && !replacedByPlayer.has(m.compareKey));
   checks.push({
     id: "mods-present",
     title: "Mods installed",
@@ -577,12 +589,7 @@ export function evaluateHealth(
   // off while another file of the same Nexus page is enabled. Offered, never
   // assumed: only the player knows a same-page file is a variant (owner poll,
   // 2026-10-06). The mods-present card still offers the reinstall instead.
-  if (!modsUnreadable && obs.enabledModIds !== undefined && obs.poolNexus !== undefined) {
-    const variants = findPlayerVariants({
-      receiptMods: receipt.mods,
-      pool: obs.poolNexus,
-      enabled: new Set(obs.enabledModIds),
-    });
+  {
     if (variants.length > 0) {
       const n = variants.length;
       checks.push({
@@ -608,7 +615,7 @@ export function evaluateHealth(
   const disabled = enabledUnreadable
     ? []
     : receipt.mods.filter(
-        (m) => installed.has(m.vortexModId) && !enabled.has(m.vortexModId),
+        (m) => installed.has(m.vortexModId) && !enabled.has(m.vortexModId) && !replacedByPlayer.has(m.compareKey),
       );
   checks.push({
     id: "mods-enabled",
