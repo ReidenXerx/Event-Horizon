@@ -70,6 +70,7 @@ const META: Record<string, Meta> = {
   purge: { badge: "PURGE", doing: () => "Purging the game folder" },
   "mods.setEnabled": { badge: "MODS", doing: (b) => `${b["enabled"] ? "Enabling" : "Disabling"} ${ids(b)} mod(s)` },
   "mods.remove": { badge: "REMOVE", doing: (b) => `Removing ${ids(b)} mod(s)` },
+  "mods.rename": { badge: "MODS", doing: (b) => `Renaming ${String(b["id"])} to ${String(b["name"])}` },
   "mods.rule": { badge: "RULE", doing: (b) => `Setting ${String(b["source"])} ${String(b["type"] ?? "rule")} ${String(b["reference"])}` },
   "plugins.rule": { badge: "LOOT", doing: (b) => `LOOT rule: ${String(b["name"])} ${String(b["type"])} ${String(b["reference"])}` },
   "plugins.setGroup": { badge: "LOOT", doing: (b) => `Moving ${String(b["name"])} to group ${String(b["group"])}` },

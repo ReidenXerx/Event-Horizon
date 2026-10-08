@@ -2107,6 +2107,36 @@ export const VERBS: Record<string, Verb> = {
     describe: (b) => `${b["enabled"] ? "enabled" : "disabled"} ${(b["modIds"] as unknown[]).length} mod(s)`,
   },
 
+  /**
+   * Sets the name a mod shows in Vortex's Mods tab: Vortex's own
+   * `customFileName` attribute, the same field its "rename" writes, and the
+   * first one a collection build reads (Fallout-collection, Ivy Rev 13: a
+   * dev build archive named "Servitron-dev+2"). Files, ids and rules are
+   * untouched; an empty name clears it back to the archive's own.
+   */
+  "mods.rename": {
+    mutates: true,
+    run: async (api, body) => {
+      const gameId = activeGame(api);
+      const id = str(body["id"]);
+      if (id === undefined) throw new ControlError("bad-request", `"id" (a mod id from mods_find) is required.`);
+      const raw = body["name"];
+      if (typeof raw !== "string") throw new ControlError("bad-request", `"name" (string) is required; "" clears it.`);
+      const name = raw.trim();
+      if (name.length > 200) throw new ControlError("bad-request", `"name" is ${name.length} characters; at most 200.`);
+      enforce(guardKnownMods({ requested: [id], pool: new Set(Object.keys(modPool(api, gameId))) }));
+      const previousName = modName(modPool(api, gameId)[id]!);
+      api.store?.dispatch(actions.setModAttribute(gameId, id, "customFileName", name === "" ? undefined : name));
+      const now = modPool(api, gameId)[id];
+      const stored = str(now?.attributes?.["customFileName"]);
+      if (stored !== (name === "" ? undefined : name)) {
+        throw new ControlError("not-applied", `Vortex did not apply the new name for ${id}.`, 500);
+      }
+      return { id, previousName, name: now !== undefined ? modName(now) : name, verified: { customFileName: stored ?? null } };
+    },
+    describe: (b) => `renamed ${String(b["previousName"])} to ${String(b["name"])}`,
+  },
+
   /** The last restore points, newest first: what each was taken before, and when. */
   "restorePoints.list": {
     mutates: false,

@@ -139,6 +139,10 @@ export const actions = {
   // Carries its arguments, because WHICH profile a mod is enabled in is the
   // whole question: enablement is per-profile, and a resume that enabled mods
   // in the wrong profile looked exactly like installing them disabled.
+  setModAttribute: (gameId: string, modId: string, key: string, value: unknown) => ({
+    type: "STUB_SET_MOD_ATTRIBUTE",
+    payload: { gameId, modId, key, value },
+  }),
   setModEnabled: (profileId: string, modId: string, enabled: boolean) => ({
     type: "STUB_SET_MOD_ENABLED",
     payload: { profileId, modId, enabled },

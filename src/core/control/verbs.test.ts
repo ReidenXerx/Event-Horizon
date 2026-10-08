@@ -159,6 +159,10 @@ function fakeVortex() {
         return () => listeners.delete(l);
       },
       dispatch: (a: { type: string; payload: any }) => {
+        if (a.type === "STUB_SET_MOD_ATTRIBUTE") {
+          const m = state.persistent.mods[a.payload.gameId][a.payload.modId];
+          m.attributes = { ...(m.attributes ?? {}), [a.payload.key]: a.payload.value };
+        }
         if (a.type === "STUB_SET_MOD_ENABLED") {
           state.persistent.profiles[a.payload.profileId].modState[a.payload.modId] = { enabled: a.payload.enabled };
         }
@@ -1206,6 +1210,32 @@ describe("diagnose.setup: findings an agent can act on", () => {
     expect(r.plugins).toMatchObject({ active: 3, full: 3, light: 0 });
     // Errors come first.
     expect(r.findings[0].severity).toBe("error");
+  });
+});
+
+describe("mods.rename (Fallout-collection, Ivy Rev 13)", () => {
+  it("sets Vortex's customFileName and reads it back", async () => {
+    const r = (await run("mods.rename", { id: "a", name: "  Servitron 1.1.0 " })) as any;
+    expect(v.state.persistent.mods.fallout4.a.attributes.customFileName).toBe("Servitron 1.1.0");
+    expect(r).toMatchObject({ id: "a", previousName: "Mod A", name: "Servitron 1.1.0" });
+  });
+
+  it("clears the name with an empty string", async () => {
+    await run("mods.rename", { id: "a", name: "Servitron 1.1.0" });
+    const r = (await run("mods.rename", { id: "a", name: "" })) as any;
+    expect(v.state.persistent.mods.fallout4.a.attributes.customFileName).toBeUndefined();
+    expect(r.name).toBe("Mod A");
+  });
+
+  it("refuses an unknown id and a missing name", async () => {
+    await expect(run("mods.rename", { id: "nope", name: "X" })).rejects.toMatchObject({ code: "unknown-mods" });
+    await expect(run("mods.rename", { id: "a" })).rejects.toMatchObject({ code: "bad-request" });
+  });
+
+  it("says so when Vortex does not apply it", async () => {
+    const dispatch = v.api.store.dispatch;
+    v.api.store.dispatch = (a: any) => (a.type === "STUB_SET_MOD_ATTRIBUTE" ? undefined : dispatch(a));
+    await expect(run("mods.rename", { id: "a", name: "X" })).rejects.toMatchObject({ code: "not-applied" });
   });
 });
 
