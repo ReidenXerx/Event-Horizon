@@ -179,12 +179,12 @@ export type ExternalModConfigEntry = {
   /**
    * One version of a mod the collection offers in several (owner, 2026-10-09:
    * Ivy FaceGen 2048 / 1024). Mods with the same `group` are alternatives: the
-   * player installs exactly one, the first by default, the `lowEnd` one on a
+   * player installs exactly one: the `default` one (else the first), the `lowEnd` one on a
    * Steam Deck / Proton install, and their pick is remembered. Install every
    * version in Vortex (a rule decides which one your own game uses). Implies
    * optional.
    */
-  variant?: { group: string; label: string; lowEnd?: boolean };
+  variant?: { group: string; label: string; lowEnd?: boolean; default?: boolean };
   /** Free-form text shown to the user when the mod isn't bundled. */
   instructions?: string;
   /**
@@ -1103,7 +1103,7 @@ const EXTERNAL_MOD_FIELDS: {
   },
   optionalNote: (raw, path, errors) => expectStringField(raw, path, errors),
   variant: (raw, path, errors) => {
-    const v = raw as { group?: unknown; label?: unknown; lowEnd?: unknown } | null;
+    const v = raw as { group?: unknown; label?: unknown; lowEnd?: unknown; default?: unknown } | null;
     if (
       typeof v !== "object" ||
       v === null ||
@@ -1111,12 +1111,18 @@ const EXTERNAL_MOD_FIELDS: {
       v.group.trim() === "" ||
       typeof v.label !== "string" ||
       v.label.trim() === "" ||
-      (v.lowEnd !== undefined && typeof v.lowEnd !== "boolean")
+      (v.lowEnd !== undefined && typeof v.lowEnd !== "boolean") ||
+      (v.default !== undefined && typeof v.default !== "boolean")
     ) {
-      errors.push(`${path} must be { "group": "<name>", "label": "<what this version is>", "lowEnd"?: true }.`);
+      errors.push(`${path} must be { "group": "<name>", "label": "<what this version is>", "lowEnd"?: true, "default"?: true }.`);
       return undefined;
     }
-    return { group: v.group.trim(), label: v.label.trim(), ...(v.lowEnd === true ? { lowEnd: true } : {}) };
+    return {
+      group: v.group.trim(),
+      label: v.label.trim(),
+      ...(v.lowEnd === true ? { lowEnd: true } : {}),
+      ...(v.default === true ? { default: true } : {}),
+    };
   },
   volatileFiles: (raw, path, errors) => {
     if (!Array.isArray(raw)) {

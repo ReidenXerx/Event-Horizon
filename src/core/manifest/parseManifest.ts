@@ -1057,6 +1057,7 @@ function validateInstallState(
             group: (obj.variant as { group: string }).group,
             label: (obj.variant as { label: string }).label,
             ...((obj.variant as { lowEnd?: unknown }).lowEnd === true ? { lowEnd: true as const } : {}),
+            ...((obj.variant as { default?: unknown }).default === true ? { default: true as const } : {}),
           },
         }
       : {}),

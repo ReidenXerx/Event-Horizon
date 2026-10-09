@@ -109,7 +109,7 @@ export type AuditorMod = {
   /** The curator's one-line note for an optional mod. */
   optionalNote?: string;
   /** One version of a mod offered in several (collection config `variant`). */
-  variant?: { group: string; label: string; lowEnd?: true };
+  variant?: { group: string; label: string; lowEnd?: true; default?: true };
   /**
    * The curator asked for this mod's staging folder to be reproduced exactly.
    *

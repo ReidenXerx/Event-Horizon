@@ -674,7 +674,7 @@ export type ModInstallState = {
    * alongside `optional: true`, so an Event Horizon before 0.2.62 offers each
    * as a plain optional mod. See `core/installer/variantGroups.ts`.
    */
-  variant?: { group: string; label: string; lowEnd?: true };
+  variant?: { group: string; label: string; lowEnd?: true; default?: true };
   /**
    * Snapshot of the curator's staging folder for this mod, captured at
    * build time. Used by the user-side {@link verifyModInstall} check to

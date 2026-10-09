@@ -534,6 +534,7 @@ function declarationsFor(
             group: entry.variant.group,
             label: entry.variant.label,
             ...(entry.variant.lowEnd === true ? { lowEnd: true as const } : {}),
+            ...(entry.variant.default === true ? { default: true as const } : {}),
           },
         }
       : {}),

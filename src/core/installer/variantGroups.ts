@@ -23,9 +23,9 @@ import * as path from "path";
 import { ehLog } from "../logging/ehLog";
 import { getEventHorizonDir } from "../paths/appDataPaths";
 
-export type ModVariant = { group: string; label: string; lowEnd?: true };
+export type ModVariant = { group: string; label: string; lowEnd?: true; default?: true };
 
-export type VariantMember = { compareKey: string; name: string; label: string; lowEnd: boolean };
+export type VariantMember = { compareKey: string; name: string; label: string; lowEnd: boolean; isDefault: boolean };
 
 type VariantMod = { compareKey: string; name: string; state?: { variant?: ModVariant } };
 
@@ -36,7 +36,13 @@ export function variantGroupsOf(mods: readonly VariantMod[]): Map<string, Varian
     const v = m.state?.variant;
     if (v === undefined) continue;
     const members = out.get(v.group) ?? [];
-    members.push({ compareKey: m.compareKey, name: m.name, label: v.label, lowEnd: v.lowEnd === true });
+    members.push({
+      compareKey: m.compareKey,
+      name: m.name,
+      label: v.label,
+      lowEnd: v.lowEnd === true,
+      isDefault: v.default === true,
+    });
     out.set(v.group, members);
   }
   return out;
@@ -44,7 +50,10 @@ export function variantGroupsOf(mods: readonly VariantMod[]): Map<string, Varian
 
 /**
  * Which member of each group is picked: the remembered label when the group
- * still has it; else the low-end one on low-end hardware; else the first.
+ * still has it; else the low-end one on low-end hardware; else the one the
+ * curator marked `default`; else the first in manifest order (an order the
+ * build decides, which is why `default` exists: Ivy Rev 15's rule put 1024
+ * before 2048).
  */
 export function defaultVariantPicks(
   groups: ReadonlyMap<string, readonly VariantMember[]>,
@@ -58,6 +67,7 @@ export function defaultVariantPicks(
     const pick =
       (label !== undefined ? members.find((m) => m.label === label) : undefined) ??
       (lowEndHardware ? members.find((m) => m.lowEnd) : undefined) ??
+      members.find((m) => m.isDefault) ??
       members[0]!;
     picks.set(group, pick);
   }

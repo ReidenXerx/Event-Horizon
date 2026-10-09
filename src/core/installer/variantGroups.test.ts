@@ -54,6 +54,17 @@ describe("which version is picked", () => {
     expect(unpickedKeys(groups, defaultVariantPicks(groups, remembered, true))).toEqual(["ext:1024"]);
   });
 
+  it("takes the curator's default over manifest order, below the remembered and the Deck pick", () => {
+    // Ivy Rev 15: the after-rule put 1024 first in the manifest; 2048 is the PC default.
+    const ordered = variantGroupsOf([
+      { compareKey: "ext:1024", name: "1024", state: { variant: { group: "Ivy FaceGen", label: "1024", lowEnd: true as const } } },
+      { compareKey: "ext:2048", name: "2048", state: { variant: { group: "Ivy FaceGen", label: "2048", default: true as const } } },
+    ]);
+    expect(defaultVariantPicks(ordered, new Map(), false).get("Ivy FaceGen")!.label).toBe("2048");
+    expect(defaultVariantPicks(ordered, new Map(), true).get("Ivy FaceGen")!.label).toBe("1024");
+    expect(defaultVariantPicks(ordered, new Map([["Ivy FaceGen", "1024"]]), false).get("Ivy FaceGen")!.label).toBe("1024");
+  });
+
   it("falls back when the remembered version is gone from the collection", () => {
     const remembered = new Map([["Ivy FaceGen", "4096"]]);
     expect(defaultVariantPicks(groups, remembered, false).get("Ivy FaceGen")!.label).toBe("2048");
