@@ -111,55 +111,45 @@ const OS_ARTIFACTS: ReadonlyMap<string, VolatileReason> = new Map([
 const EH_PROBE = /^ehcaseprobe-[a-z0-9]+\.tmp$/;
 
 /**
- * ─── FILES A CURATOR DECLARED, NOT FILES THIS MODULE KNOWS ─────────────────
+ * ─── FILES A CURATOR DECLARED, PER MOD ─────────────────────────────────────
  * A mod that GENERATES a file for one machine is the curator's knowledge, not
  * a rule for every game: Addictol 1.7.1 ships `F4SE/Plugins/Addictol_SNCT.ini`
  * empty and fills it at runtime for the load order, and Ivy Rev 13 told a
  * player (leadsheet, 2026-10-08) Addictol "could not be reproduced". Owner,
  * 2026-10-09: a per-mod list in the collection config, not names hard-coded
- * here (`externalMods[id].volatileFiles`).
+ * here (`externalMods[id].volatileFiles`, carried as `state.volatileFiles`).
  *
- * The build declares them before it records anything; a package carries them
- * (`state.volatileFiles`), and reading one declares them on the player's side.
- * Held as ONE set of mod-relative paths rather than per mod, because the
- * identity pass hashes a player's mods before it knows which collection mod
- * each one is; a declared path names the generated file in whichever mod has
- * it. Persisted by `declaredVolatileStore`, so a check without a package at
- * hand (the Doctor, an update check) still honours it.
+ * PER MOD, passed by whoever checks that mod. 0.2.61 held one set for every
+ * mod, and Meridia showed why that is wrong: four of its mods ship
+ * `SKSE/Plugins/OBody_presetDistributionConfig.json`, one of them the
+ * curator's tuned copy, and declaring the path generated for GT Softbody
+ * would have stopped all four shipping it.
  */
-const declared = new Set<string>();
+export type DeclaredVolatile = ReadonlySet<string>;
 
 /** How a declared path is compared: forward slashes, lowercased, no leading "./" or "/". */
 export function declaredKey(relPath: string): string {
   return relPath.replace(/\\/g, "/").replace(/^(\.\/|\/)+/, "").toLowerCase();
 }
 
-/** Add curator-declared paths; returns how many were new. */
-export function declareVolatileFiles(paths: Iterable<string>): number {
-  let added = 0;
-  for (const p of paths) {
-    const k = declaredKey(p);
-    if (k.length === 0 || declared.has(k)) continue;
-    declared.add(k);
-    added += 1;
-  }
-  return added;
+/** One mod's declared list as compared, or undefined when it declares none. */
+export function declaredSet(paths: readonly string[] | undefined): DeclaredVolatile | undefined {
+  if (paths === undefined || paths.length === 0) return undefined;
+  return new Set(paths.map(declaredKey).filter((k) => k.length > 0));
 }
 
-/** Every declared path, as compared. */
-export function declaredVolatileFiles(): string[] {
-  return [...declared].sort();
-}
-
-/** Tests only. */
-export function clearDeclaredVolatileFilesForTests(): void {
-  declared.clear();
+/** The declared list of the manifest mod with this compareKey. */
+export function declaredFor(
+  mods: ReadonlyArray<{ compareKey: string; state?: { volatileFiles?: string[] } }>,
+  compareKey: string,
+): DeclaredVolatile | undefined {
+  return declaredSet(mods.find((m) => m.compareKey === compareKey)?.state?.volatileFiles);
 }
 
 /** A file directly inside SKSE/F4SE/NVSE/FOSE/OBSE `Plugins`, from the mod's root. */
 const SCRIPT_EXTENDER_PLUGINS = /^(?:data\/)?(?:skse|f4se|nvse|fose|obse)\/plugins\/[^/]+$/i;
 
-export function volatileReason(relPath: string): VolatileReason | undefined {
+export function volatileReason(relPath: string, declared?: DeclaredVolatile): VolatileReason | undefined {
   // Separator-agnostic: staging paths arrive with "/" from the manifest and
   // "\" from a Windows walk, and a rule that only matches one of them is a
   // rule that works on the build side and not the install side.
@@ -198,7 +188,7 @@ export function volatileReason(relPath: string): VolatileReason | undefined {
 
   if (EH_PROBE.test(name)) return "eh-case-probe";
 
-  if (declared.size > 0 && declared.has(declaredKey(relPath))) return "curator-declared";
+  if (declared !== undefined && declared.has(declaredKey(relPath))) return "curator-declared";
 
   return undefined;
 }
@@ -222,11 +212,14 @@ export function isPlayerSettingsFile(relPath: string): boolean {
  * player's choice, never damage to repair (alasdairn, Ivy, 2026-10-06: every
  * update wiped his keybinds; owner poll).
  */
-export function skipsVerification(relPath: string): boolean {
-  return isVolatileFile(relPath) || isPlayerSettingsFile(relPath);
+export function skipsVerification(relPath: string, declared?: DeclaredVolatile): boolean {
+  return isVolatileFile(relPath, declared) || isPlayerSettingsFile(relPath);
 }
 
-/** True when this path is written by the runtime or the OS, not by a mod. */
-export function isVolatileFile(relPath: string): boolean {
-  return volatileReason(relPath) !== undefined;
+/**
+ * True when this path is written by the runtime or the OS, not by a mod, or
+ * the curator declared it generated for this mod (`declared`).
+ */
+export function isVolatileFile(relPath: string, declared?: DeclaredVolatile): boolean {
+  return volatileReason(relPath, declared) !== undefined;
 }

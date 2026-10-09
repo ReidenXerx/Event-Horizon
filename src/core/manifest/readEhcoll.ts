@@ -61,7 +61,6 @@ import {
   listZipEntries as readZipCentralDirectory,
 } from "./readZip";
 import type { SevenZipApi, SevenZipListEntry } from "./sevenZip";
-import { rememberDeclaredVolatileFiles, volatileFilesOf } from "../declaredVolatileStore";
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -238,9 +237,6 @@ export async function readEhcoll(
       const parsed = parseManifest(raw);
       manifest = parsed.manifest;
       parseWarnings = parsed.warnings;
-      // Files this package's curator declared generated for each machine:
-      // every check from here on (and in later sessions) skips them.
-      rememberDeclaredVolatileFiles(volatileFilesOf(manifest));
       ehLog("info", "ehcoll.read.manifest.ok", {
         file: zipName,
         mods: manifest.mods.length,

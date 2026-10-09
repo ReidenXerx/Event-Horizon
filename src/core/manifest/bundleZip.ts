@@ -35,7 +35,7 @@ import type { Readable, Writable } from "stream";
 
 import { AbortError } from "../../utils/abortError";
 import { toPosix } from "../paths";
-import { isVolatileFile } from "../volatileFiles";
+import { isVolatileFile, type DeclaredVolatile } from "../volatileFiles";
 import { archiveFormatOfFile, type ArchiveFormat } from "./archiveInside";
 import { crc32File, crc32Update, type ZipReader } from "./readZip";
 import { walkStagingFolder, type UnreadablePath } from "./stagingFileWalker";
@@ -89,6 +89,8 @@ export async function listBundleFolder(
   root: string,
   signal?: AbortSignal,
   onLeftOut?: (file: { path: string; format: ArchiveFormat }) => void,
+  /** Files the curator declared generated for this mod: not part of its bundle. */
+  declared?: DeclaredVolatile,
 ): Promise<BundleListing[]> {
   const unreadable: UnreadablePath[] = [];
   const walked = await walkStagingFolder(root, signal, (entry) => unreadable.push(entry));
@@ -101,7 +103,7 @@ export async function listBundleFolder(
   }
   const kept: BundleListing[] = [];
   for (const f of walked) {
-    if (isVolatileFile(f.relativePath)) continue;
+    if (isVolatileFile(f.relativePath, declared)) continue;
     if (signal?.aborted === true) throw new AbortError("Cancelled");
     const format = await archiveFormatOfFile(f.absolutePath).catch(() => undefined);
     if (format !== undefined) {

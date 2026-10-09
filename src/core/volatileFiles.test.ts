@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { clearDeclaredVolatileFilesForTests, declareVolatileFiles, isVolatileFile, volatileReason } from "./volatileFiles";
+import { declaredFor, declaredSet, isVolatileFile, volatileReason } from "./volatileFiles";
 
 describe("files nothing installs", () => {
   it("excludes a script-extender plugin log", () => {
@@ -120,17 +120,29 @@ describe("script-extender runtime traces", () => {
     expect(volatileReason("textures/thing.mem")).toBeUndefined();
   });
 
-  it("skips a file only once a curator declares it generated for each machine", () => {
+  it("skips a file only for the mod whose curator declared it generated", () => {
     // Addictol's sound-category file (Ivy Rev 13, leadsheet, 2026-10-08): the
     // curator's knowledge, declared in the collection config, not a rule here.
-    clearDeclaredVolatileFilesForTests();
-    expect(volatileReason("F4SE/Plugins/Addictol_SNCT.ini")).toBeUndefined();
-    expect(declareVolatileFiles(["F4SE/Plugins/Addictol_SNCT.ini", "f4se\\plugins\\addictol_snct.ini"])).toBe(1);
-    expect(volatileReason("F4SE\\Plugins\\addictol_snct.ini")).toBe("curator-declared");
+    const addictol = declaredSet(["F4SE/Plugins/Addictol_SNCT.ini"]);
+    expect(volatileReason("F4SE\\Plugins\\addictol_snct.ini", addictol)).toBe("curator-declared");
     // Exactly that path: an authored file beside it, or the same name elsewhere, is still verified.
-    expect(volatileReason("F4SE/Plugins/Addictol.ini")).toBeUndefined();
-    expect(volatileReason("Data/F4SE/Plugins/Addictol_SNCT.ini")).toBeUndefined();
-    clearDeclaredVolatileFilesForTests();
+    expect(volatileReason("F4SE/Plugins/Addictol.ini", addictol)).toBeUndefined();
+    expect(volatileReason("Data/F4SE/Plugins/Addictol_SNCT.ini", addictol)).toBeUndefined();
+    // Another mod, with no declaration of its own, still verifies the same path.
+    expect(volatileReason("F4SE/Plugins/Addictol_SNCT.ini")).toBeUndefined();
+  });
+
+  it("keeps a declaration to its own mod when several mods ship the same path", () => {
+    // Meridia (2026-10-09): four mods ship SKSE/Plugins/OBody_presetDistributionConfig.json,
+    // one of them the curator's tuned copy. GT Softbody's copy is the one OBody rewrites.
+    const mods = [
+      { compareKey: "gt-softbody", state: { volatileFiles: ["SKSE/plugins/OBody_presetDistributionConfig.json"] } },
+      { compareKey: "meridia-settings", state: {} },
+    ];
+    const path = "SKSE/Plugins/OBody_presetDistributionConfig.json";
+    expect(isVolatileFile(path, declaredFor(mods, "gt-softbody"))).toBe(true);
+    expect(isVolatileFile(path, declaredFor(mods, "meridia-settings"))).toBe(false);
+    expect(declaredSet([])).toBeUndefined();
   });
 
   it("still verifies a .trace anywhere else, and anything else in Plugins", () => {

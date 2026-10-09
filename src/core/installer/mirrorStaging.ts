@@ -39,7 +39,7 @@
  */
 
 import type { EhcollStagingFile } from "../../types/ehcoll";
-import { isVolatileFile } from "../volatileFiles";
+import { isVolatileFile, type DeclaredVolatile } from "../volatileFiles";
 
 import { type CaseMode, pathKey } from "../paths";
 
@@ -107,6 +107,8 @@ export function planMirror(args: {
    * package was built on.
    */
   caseMode?: CaseMode;
+  /** Files the curator declared generated for this mod: never restored or removed. */
+  declaredVolatile?: DeclaredVolatile;
 }): MirrorPlan {
   const { target, current } = args;
   const mode: CaseMode = args.caseMode ?? "insensitive";
@@ -202,7 +204,7 @@ export function planMirror(args: {
      * so the loop above never sees it. That is correct: a runtime rewrites it
      * on its own, and shipping the curator's copy of a log would be noise.
      */
-    .filter((file) => !isVolatileFile(file.path))
+    .filter((file) => !isVolatileFile(file.path, args.declaredVolatile))
     .map((file) => file.path);
 
   if (extra.length === 0) {

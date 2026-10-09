@@ -47,6 +47,7 @@ import { isAbort } from "../../utils/abortError";
 import * as fs from "fs";
 import * as fsp from "fs/promises";
 import { ehLog } from "../logging/ehLog";
+import { declaredSet } from "../volatileFiles";
 import * as os from "os";
 import * as path from "path";
 
@@ -86,6 +87,8 @@ export type BundleSpec = {
   sha256: string;
   /** The mod, for messages. */
   modName: string;
+  /** Files the curator declared generated for this mod, not part of its bundle. */
+  volatileFiles?: string[];
 };
 
 export type MirrorFileSpec = {
@@ -727,7 +730,7 @@ async function listBundles(
     if (signal?.aborted) throw new AbortError("Packaging cancelled by user");
     let files: BundleListing[];
     try {
-      files = await listBundleFolder(spec.rootDir, signal);
+      files = await listBundleFolder(spec.rootDir, signal, undefined, declaredSet(spec.volatileFiles));
     } catch (err) {
       if (isAbort(err, signal)) throw err;
       ehLog("error", "package.bundle.unreadable", {
@@ -902,7 +905,7 @@ async function stageBundles(
     // Made even when nothing was staged: a mod emptied since it was measured is
     // then a mismatch that says so, not a missing folder that says something else.
     await fsp.mkdir(root, { recursive: true });
-    const staged = await listBundleFolder(root, signal);
+    const staged = await listBundleFolder(root, signal, undefined, declaredSet(spec.volatileFiles));
     // One read of each file serves both checks: the CRC its zip entry records,
     // and the SHA-256 the manifest records for it.
     const digests: Array<{ crc32: number; sha256: string }> = [];

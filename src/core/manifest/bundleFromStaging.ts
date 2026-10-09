@@ -53,6 +53,7 @@ import { selectors, types } from "@nexusmods/vortex-api";
 
 import { isAbort } from "../../utils/abortError";
 import { beginOp, ehLog } from "../logging/ehLog";
+import { declaredSet } from "../volatileFiles";
 import {
   bundleRecordName,
   isLegacyBundleArchive,
@@ -86,6 +87,8 @@ export type MeasuredBundle = {
   rootDir: string;
   /** sha256 of the canonical bundle zip those files make — see bundleZip.ts. */
   sha256: string;
+  /** Files the curator declared generated for this mod, left out of the bundle. */
+  volatileFiles?: string[];
   /** Size of that zip: roughly what the package carries, and what an install writes back. */
   bytes: number;
   files: number;
@@ -307,9 +310,14 @@ export async function measureBundledMods(args: {
           cacheable: recordPath !== undefined,
         });
         let archivesLeftOut = 0;
-        const listing = await listBundleFolder(stagingDir, options.signal, () => {
-          archivesLeftOut += 1;
-        });
+        const listing = await listBundleFolder(
+          stagingDir,
+          options.signal,
+          () => {
+            archivesLeftOut += 1;
+          },
+          declaredSet(mod.volatileFiles),
+        );
         if (listing.length === 0) {
           fail(
             archivesLeftOut > 0
@@ -364,6 +372,7 @@ export async function measureBundledMods(args: {
         modName: mod.name,
         rootDir: stagingDir,
         sha256: measured.sha256,
+        ...((mod.volatileFiles?.length ?? 0) > 0 ? { volatileFiles: mod.volatileFiles } : {}),
         bytes: measured.bytes,
         files: measured.files,
         ...(hit !== undefined ? { reused: true } : {}),

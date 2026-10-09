@@ -160,6 +160,7 @@ export function resolveBundles(
         rootDir: bundle.rootDir,
         sha256: bundle.sha256,
         modName: mod.name,
+        ...(bundle.volatileFiles !== undefined ? { volatileFiles: bundle.volatileFiles } : {}),
       });
       continue;
     }

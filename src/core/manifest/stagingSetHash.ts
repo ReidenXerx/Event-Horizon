@@ -1,6 +1,6 @@
 import * as crypto from "crypto";
 
-import { skipsVerification } from "../volatileFiles";
+import { skipsVerification, type DeclaredVolatile } from "../volatileFiles";
 import { toPosix } from "../paths";
 
 import type { EhcollStagingFile } from "../../types/ehcoll";
@@ -71,11 +71,13 @@ import type { EhcollStagingFile } from "../../types/ehcoll";
  */
 export function computeStagingSetHash(
   files: readonly EhcollStagingFile[],
+  /** Files the curator declared generated for THIS mod (see volatileFiles.ts). */
+  declared?: DeclaredVolatile,
 ): string | undefined {
   // Before the emptiness check, not after: a mod whose ONLY staged file is a
   // log has no stable set to hash, and `undefined` is the honest answer rather
   // than a hash of nothing.
-  const stable = files.filter((f) => !skipsVerification(f.path));
+  const stable = files.filter((f) => !skipsVerification(f.path, declared));
 
   if (stable.length === 0) {
     return undefined;
@@ -151,8 +153,9 @@ export function computeStagingSetHash(
  */
 export function computeStagingPathSetHash(
   files: readonly EhcollStagingFile[],
+  declared?: DeclaredVolatile,
 ): string | undefined {
-  const stable = files.filter((f) => !skipsVerification(f.path));
+  const stable = files.filter((f) => !skipsVerification(f.path, declared));
   if (stable.length === 0) return undefined;
 
   const sorted = stable

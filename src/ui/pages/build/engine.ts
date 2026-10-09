@@ -165,7 +165,6 @@ import {
 import type { ExternalHint } from "../../../core/manifest/externalHints";
 import { getCollectionsConfigDir, getCollectionsDir, getVortexUserDataPath, pathKey } from "../../../core/paths";
 import { beginOp, ehLog } from "../../../core/logging/ehLog";
-import { rememberDeclaredVolatileFiles } from "../../../core/declaredVolatileStore";
 import { declaredKey } from "../../../core/volatileFiles";
 import type {
   SupportedGameId,
@@ -1660,14 +1659,13 @@ export async function runBuildPipeline(
     mods,
   }));
 
-  // Files the curator declared generated for each machine: declared before
-  // anything is recorded, so capture, bundling and the self-check skip them.
+  // Files the curator declared generated for each machine: each mod drops its
+  // own from what it records (declarationsFor), never another mod's.
   {
-    const declaredByCurator = Object.values(collectionConfig.externalMods).flatMap((e) => e.volatileFiles ?? []);
-    if (declaredByCurator.length > 0) {
-      rememberDeclaredVolatileFiles(declaredByCurator);
-      ehLog("info", "build.volatile.declared", { files: declaredByCurator });
-    }
+    const declaredByCurator = Object.entries(collectionConfig.externalMods)
+      .filter(([, e]) => (e.volatileFiles?.length ?? 0) > 0)
+      .map(([id, e]) => ({ mod: id, files: e.volatileFiles }));
+    if (declaredByCurator.length > 0) ehLog("info", "build.volatile.declared", { mods: declaredByCurator });
   }
 
   checkAbort();

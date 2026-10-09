@@ -15,7 +15,6 @@ import {
 import { probeNexusAccount } from "./core/installer/checkNexusAccount";
 import { EXTENSION_VERSION } from "./ui/version";
 import { claimSingleInstance, duplicateNotice } from "./core/singleInstance";
-import { loadDeclaredVolatileFiles } from "./core/declaredVolatileStore";
 
 /**
  * Symbol id of the Event Horizon glyph inside our SVG sprite.
@@ -75,9 +74,6 @@ function init(context: types.IExtensionContext): boolean {
     });
     return true;
   }
-
-  // Curator-declared generated files from every package read before.
-  loadDeclaredVolatileFiles();
 
   const exportModsAction = createExportModsAction(context);
   const compareModsAction = createCompareModsAction(context);

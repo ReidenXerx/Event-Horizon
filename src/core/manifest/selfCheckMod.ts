@@ -25,7 +25,7 @@
  * unusual setup must not be blocked, only informed.
  */
 
-import { isVolatileFile } from "../volatileFiles";
+import { isVolatileFile, type DeclaredVolatile } from "../volatileFiles";
 import type { SevenZipApi } from "./sevenZip";
 import type { ArchiveListing } from "./archiveContents";
 import { listArchiveContents } from "./archiveContents";
@@ -208,6 +208,8 @@ export type SelfCheckInput = {
   hasArchiveRecord?: boolean;
   /** The curator's staging folder contents. */
   staged: StagedFileRef[];
+  /** Files the curator declared generated for this mod: never missing. */
+  declaredVolatile?: DeclaredVolatile;
   /** Vortex's recorded FOMOD choices; empty when the install had no branching. */
   recordedChoices: RecordedStep[];
   /**
@@ -434,6 +436,7 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
      * user side can replay it unattended.
      */
     const verdict = await verifyEmptySelection({
+      ...(input.declaredVolatile !== undefined ? { declaredVolatile: input.declaredVolatile } : {}),
       readEntry: input.readEntry,
       archivePath: input.archivePath,
       configEntry,
@@ -648,7 +651,7 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
    */
   const missing = expected.files
     .filter((f) => !stagedPaths.has(key(f.path)))
-    .filter((f) => !isVolatileFile(f.path))
+    .filter((f) => !isVolatileFile(f.path, input.declaredVolatile))
     .map((f) => f.path);
 
   return withDeps({
@@ -842,6 +845,7 @@ export function summarizeSelfChecks(reports: SelfCheckReport[]): {
  * ──────────────────────────────────────────────────────────────────────
  */
 async function verifyEmptySelection(input: {
+  declaredVolatile?: DeclaredVolatile;
   readEntry: (archivePath: string, entryPath: string) => Promise<Buffer | undefined>;
   archivePath: string;
   configEntry: string;
@@ -923,7 +927,7 @@ async function verifyEmptySelection(input: {
     // Same rule as the replayed `missing` above: a log or desktop.ini the
     // archive happens to carry is not evidence about what was ticked.
     const missing = [...predicted].filter(
-      (p) => !actual.has(p) && !isVolatileFile(p),
+      (p) => !actual.has(p) && !isVolatileFile(p, input.declaredVolatile),
     );
     /**
      * ─── A TICKED BOX CAN ONLY ADD A FILE FROM THE ARCHIVE ───────────────

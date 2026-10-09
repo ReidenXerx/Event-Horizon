@@ -8,6 +8,7 @@ import type { EhcollManifest } from "../../types/ehcoll";
 import { ehLog } from "../logging/ehLog";
 import { AbortError } from "../../utils/abortError";
 import { computeStagingSetHash } from "../manifest/stagingSetHash";
+import { declaredSet } from "../volatileFiles";
 import { bundledArchiveFileName } from "../installer/modInstall";
 import { alongsideInstallName } from "../installer/installAlongside";
 import {
@@ -132,6 +133,7 @@ export async function enrichInstalledModsWithStagingSetHashes(
 ): Promise<AuditorMod[]> {
   const { hashConcurrency, onProgress, onWarn, signal } = options;
   const startedAt = Date.now();
+  const declaredAnywhere = declaredSet(manifest.mods.flatMap((m) => m.state?.volatileFiles ?? []));
   ehLog("info", "resolver.staging-hashes.start", {
     gameId,
     manifestMods: manifest.mods.length,
@@ -298,7 +300,9 @@ export async function enrichInstalledModsWithStagingSetHashes(
           onWarn?.(mod, `${relPath}: ${err.message}`);
         },
       );
-      const setHash = computeStagingSetHash(stagingFiles);
+      // A pool mod is not mapped to a collection mod yet, so the files any mod
+      // of this collection declares generated are left out of its identity hash.
+      const setHash = computeStagingSetHash(stagingFiles, declaredAnywhere);
       if (setHash !== undefined) {
         mod.stagingSetHash = setHash;
         enriched += 1;

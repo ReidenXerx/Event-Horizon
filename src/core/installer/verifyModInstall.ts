@@ -7,7 +7,7 @@ import {
   toPosix,
   type CaseMode,
 } from "../paths";
-import { skipsVerification, volatileReason } from "../volatileFiles";
+import { skipsVerification, volatileReason, type DeclaredVolatile } from "../volatileFiles";
 import * as path from "path";
 
 import { selectors } from "@nexusmods/vortex-api";
@@ -87,6 +87,8 @@ export type VerifyModInstallInput = {
    * a `"skip"` result.
    */
   expectedFiles: EhcollStagingFile[] | undefined;
+  /** Files the curator declared generated for this mod (`state.volatileFiles`): not judged. */
+  declaredVolatile?: DeclaredVolatile;
   /**
    * Manifest's `package.verificationLevel`. Drives the verify
    * mode:
@@ -271,8 +273,9 @@ export async function verifyModInstall(
    * record these files, and dropping them only from the on-disk side would
    * turn every one of them into a `missing` instead of a `sizeMismatch`.
    */
-  const onDisk = onDiskAll.filter((f) => !skipsVerification(f.relativePath));
-  const expectedVerifiable = expectedFiles.filter((f) => !skipsVerification(f.path));
+  const declared = input.declaredVolatile;
+  const onDisk = onDiskAll.filter((f) => !skipsVerification(f.relativePath, declared));
+  const expectedVerifiable = expectedFiles.filter((f) => !skipsVerification(f.path, declared));
 
   const skippedOnDisk = onDiskAll.length - onDisk.length;
   const skippedExpected = expectedFiles.length - expectedVerifiable.length;
@@ -284,9 +287,9 @@ export async function verifyModInstall(
       fromManifest: skippedExpected,
       fromDisk: skippedOnDisk,
       examples: expectedFiles
-        .filter((f) => skipsVerification(f.path))
+        .filter((f) => skipsVerification(f.path, declared))
         .slice(0, 5)
-        .map((f) => ({ path: f.path, why: volatileReason(f.path) ?? "player-settings" })),
+        .map((f) => ({ path: f.path, why: volatileReason(f.path, declared) ?? "player-settings" })),
     });
   }
 

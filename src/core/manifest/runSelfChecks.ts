@@ -40,6 +40,7 @@ import { resolveModArchivePath } from "../archiveHashing";
 import { findArchiveByHash } from "../findArchiveByHash";
 import type { AuditorMod } from "../getModsListForProfile";
 import { ehLog } from "../logging/ehLog";
+import { declaredSet } from "../volatileFiles";
 import { detectCaseSensitivity } from "../paths";
 import { getEventHorizonRoot } from "../paths/appDataPaths";
 import { installRootFor, stagingRootFromFolder } from "../stagingPath";
@@ -1212,6 +1213,7 @@ export async function runSelfChecks(
           sevenZip,
           modId: mod.id,
           modName: mod.name,
+          ...(mod.volatileFiles !== undefined ? { declaredVolatile: declaredSet(mod.volatileFiles) } : {}),
           archivePath,
           hasArchiveRecord:
             mod.archiveId !== undefined ||
@@ -1267,6 +1269,7 @@ export async function runSelfChecks(
         sevenZip,
         modId: mod.id,
         modName: mod.name,
+        ...(mod.volatileFiles !== undefined ? { declaredVolatile: declaredSet(mod.volatileFiles) } : {}),
         archivePath,
         hasArchiveRecord: mod.archiveId !== undefined || mod.recoveredDownloadId !== undefined,
         staged,

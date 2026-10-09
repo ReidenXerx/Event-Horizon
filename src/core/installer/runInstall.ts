@@ -143,6 +143,7 @@ import {
 } from "./attemptRecord";
 import { clearInstallMarker, writeInstallMarker } from "./installMarker";
 import { ehLog } from "../logging/ehLog";
+import { declaredFor, declaredSet } from "../volatileFiles";
 import { judgeReinstall } from "./judgeReinstall";
 import { applyMirrorPlan, describeMirrorOutcome } from "./applyMirrors";
 import { mirrorProvesTarget, planMirror } from "./mirrorStaging";
@@ -2405,6 +2406,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             gameId: plan.manifest.game.id,
             vortexModId: installEntry.vortexModId,
             expectedFiles,
+            declaredVolatile: declaredFor(plan.manifest.mods, installEntry.compareKey),
             level: declaredLevel,
             signal: ctx.abortSignal,
           });
@@ -2475,6 +2477,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               gameId: plan.manifest.game.id,
               vortexModId: installEntry.vortexModId,
               expectedFiles: present,
+              declaredVolatile: declaredFor(plan.manifest.mods, installEntry.compareKey),
               level: declaredLevel,
               signal: ctx.abortSignal,
             });
@@ -2881,6 +2884,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               gameId: plan.manifest.game.id,
               vortexModId: alongside.vortexModId,
               expectedFiles,
+              declaredVolatile: declaredFor(plan.manifest.mods, alongside.compareKey),
               level: declaredLevel,
               signal: ctx.abortSignal,
             }).catch(() => undefined);
@@ -3960,6 +3964,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           target: mod.state.stagingFiles ?? [],
           current,
           caseMode: await detectCaseSensitivity(stagingRoot),
+          ...(mod.state.volatileFiles !== undefined ? { declaredVolatile: declaredSet(mod.state.volatileFiles) } : {}),
         });
         if (
           options.purgeFirst &&
@@ -8259,6 +8264,7 @@ async function tryRecoverFailedMod(args: {
       gameId: ctx.plan.manifest.game.id,
       vortexModId: newEntry.vortexModId,
       expectedFiles,
+      declaredVolatile: declaredFor(ctx.plan.manifest.mods, newEntry.compareKey),
       level,
       signal: ctx.abortSignal,
     });
