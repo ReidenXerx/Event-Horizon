@@ -16,6 +16,7 @@ import { DashboardView, type DashboardMode, type DashboardViewModel } from "./Da
 import { toViewModel, useDashboardView } from "./useDashboardView";
 import { collectionStats, type CollectionStats } from "../../../core/nexus/collectionStats";
 import { LoadOrderBadge } from "../doctor/LoadOrderBadge";
+import { getInstallSession } from "../install/installSession";
 import { since } from "./summary";
 import type { EventHorizonRoute } from "../../routes";
 
@@ -112,6 +113,9 @@ export function DashboardPage(props: DashboardPageProps): JSX.Element {
     })();
   }, [api]);
 
+  // Before the early returns below: a hook must run on every render.
+  const running = useRunningInstall();
+
   if (error) {
     return (
       <div className="eh-page">
@@ -150,6 +154,7 @@ export function DashboardPage(props: DashboardPageProps): JSX.Element {
    * in as a slot, so the harness can still photograph the screen.
    */
   const heroReceipt = sources.data.receipts.find((r) => r.packageId === vm.hero?.packageId);
+  const installing = running !== undefined && running.packageId === vm.hero?.packageId ? running : undefined;
 
   return (
     <div className="eh-page">
@@ -160,6 +165,15 @@ export function DashboardPage(props: DashboardPageProps): JSX.Element {
             heroReceipt === undefined ? undefined : (
               <LoadOrderBadge receipt={heroReceipt} receipts={sources.data.receipts} />
             ),
+          ...(installing !== undefined
+            ? {
+                installing: (
+                  <Button size="sm" intent="ghost" onClick={(): void => props.onNavigate("install")}>
+                    Updating to {installing.version} now{installing.step !== undefined ? ` (${installing.step})` : ""}. See Install
+                  </Button>
+                ),
+              }
+            : {}),
         }}
         actions={{
           onMode: setMode,
@@ -183,4 +197,22 @@ export function DashboardPage(props: DashboardPageProps): JSX.Element {
       />
     </div>
   );
+}
+
+/**
+ * The install running for this collection right now, if any: its version and
+ * where it is. The Dashboard says so instead of offering the update again.
+ */
+function useRunningInstall(): { packageId: string; version: string; step?: string } | undefined {
+  const session = getInstallSession();
+  const [state, setState] = React.useState(() => session.getSnapshot().state);
+  React.useEffect(() => session.subscribe(() => setState(session.getSnapshot().state)), [session]);
+  if (state.kind !== "installing") return undefined;
+  const pkg = state.bundle.plan.manifest.package;
+  const p = state.progress;
+  return {
+    packageId: pkg.id,
+    version: pkg.version,
+    ...(p !== undefined && p.totalSteps > 0 ? { step: `${p.currentStep} of ${p.totalSteps}` } : {}),
+  };
 }

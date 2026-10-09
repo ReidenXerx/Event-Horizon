@@ -91,6 +91,13 @@ export interface DashboardViewModel {
 
 export interface DashboardSlots {
   /**
+   * Shown in the hero instead of "Update available" while an install of this
+   * collection is running. alasdairn (Ivy Rev 16, 2026-10-09) read the
+   * Dashboard mid-update: old revision, "Update available", nothing saying an
+   * update was under way, so it looked finished while Vortex still installed.
+   */
+  installing?: React.ReactNode;
+  /**
    * Rendered in the hero, beside Play.
    *
    * The load-order badge lives here: it watches Vortex's own state, works
@@ -249,9 +256,11 @@ function Hero(props: {
           </Button>
           {props.slots.loadOrder}
           <span className="eh-note">{health.caption}</span>
-          {hero.updateToRevision !== undefined && (
-            <Pill intent="warning">Update available: revision {hero.updateToRevision}</Pill>
-          )}
+          {props.slots.installing !== undefined
+            ? props.slots.installing
+            : hero.updateToRevision !== undefined && (
+                <Pill intent="warning">Update available: revision {hero.updateToRevision}</Pill>
+              )}
           {f.versionMismatch !== undefined && (
             <Pill intent="warning">
               Installed on {f.versionMismatch.installed}, built on {f.versionMismatch.required}
