@@ -471,7 +471,8 @@ function declarationsFor(
     entry?.mirrored !== true &&
     entry?.optional !== true &&
     entry?.variant === undefined &&
-    (entry?.volatileFiles?.length ?? 0) === 0
+    (entry?.volatileFiles?.length ?? 0) === 0 &&
+    (entry?.playerSettingsFiles?.length ?? 0) === 0
   ) {
     return mod;
   }
@@ -537,6 +538,8 @@ function declarationsFor(
           },
         }
       : {}),
+    ...((entry.playerSettingsFiles?.length ?? 0) > 0 ? { playerSettingsFiles: entry.playerSettingsFiles } : {}),
+    ...(entry.optional === true && entry.optionalFor === "handheld" ? { optionalFor: "handheld" as const } : {}),
     ...(entry.optional === true
       ? {
           optional: true,

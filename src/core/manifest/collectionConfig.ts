@@ -166,6 +166,18 @@ export type ExternalModConfigEntry = {
    */
   volatileFiles?: string[];
   /**
+   * Files this mod ships that the player changes later in a game menu (SPS's
+   * SPS_User.ini): they ship like any file, and a player's checks never flag
+   * the player's own changes. Unlike volatileFiles, they DO ship.
+   */
+  playerSettingsFiles?: string[];
+  /**
+   * Who an optional mod is for. "handheld": ticked at install only on a
+   * handheld PC (Steam Deck, ROG Ally, Legion Go, ...), unticked on a desktop
+   * (owner poll, 2026-10-09). Needs optional: true.
+   */
+  optionalFor?: "handheld";
+  /**
    * An OPTIONAL mod (owner, 2026-10-05). The install preview lists it ticked;
    * the player may untick it, and a failed download skips it. Either way the
    * collection stays healthy: nothing reports it absent. Installed, its absent
@@ -1123,6 +1135,28 @@ const EXTERNAL_MOD_FIELDS: {
       ...(v.lowEnd === true ? { lowEnd: true } : {}),
       ...(v.default === true ? { default: true } : {}),
     };
+  },
+  optionalFor: (raw, path, errors) => {
+    if (raw !== "handheld") {
+      errors.push(`${path} must be "handheld".`);
+      return undefined;
+    }
+    return raw;
+  },
+  playerSettingsFiles: (raw, path, errors) => {
+    if (!Array.isArray(raw)) {
+      errors.push(`${path} must be a list of file paths relative to the mod's folder.`);
+      return undefined;
+    }
+    const out: string[] = [];
+    raw.forEach((p, i) => {
+      if (typeof p !== "string" || !isSafeRelativePath(p.replace(/\\/g, "/"))) {
+        errors.push(`${path}[${i}] must be a file path inside the mod's folder, like "SKSE/Plugins/Example.ini".`);
+        return;
+      }
+      out.push(p.replace(/\\/g, "/"));
+    });
+    return out;
   },
   volatileFiles: (raw, path, errors) => {
     if (!Array.isArray(raw)) {

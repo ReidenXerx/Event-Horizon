@@ -29,3 +29,15 @@ export function looksLikeWine(): boolean {
   }
   return false;
 }
+
+/**
+ * Linux's DMI product name through Wine's Z: drive (Steam Deck: "Jupiter" LCD,
+ * "Galileo" OLED), or undefined outside Wine or when unreadable.
+ */
+export function linuxDmiProductName(): string | undefined {
+  try {
+    return fs.readFileSync("Z:\\sys\\devices\\virtual\\dmi\\id\\product_name", "utf8").trim();
+  } catch {
+    return undefined;
+  }
+}

@@ -808,7 +808,7 @@ function OptionalMods(props: {
   mods: ReadonlyArray<{
     compareKey: string;
     name: string;
-    state?: { optional?: true; optionalNote?: string; variant?: { group: string; label: string } };
+    state?: { optional?: true; optionalNote?: string; optionalFor?: "handheld"; variant?: { group: string; label: string } };
   }>;
   skipped: readonly string[];
   onToggle?: (compareKey: string, skipped: boolean) => void;
@@ -841,7 +841,16 @@ function OptionalMods(props: {
           <Checkbox
             key={m.compareKey}
             label={m.name}
-            {...(m.state?.optionalNote !== undefined ? { description: m.state.optionalNote } : {})}
+            {...(m.state?.optionalNote !== undefined || m.state?.optionalFor === "handheld"
+              ? {
+                  description: [
+                    m.state?.optionalNote,
+                    m.state?.optionalFor === "handheld" ? "For handheld PCs (Steam Deck, ROG Ally, …): ticked on one, unticked on a desktop." : undefined,
+                  ]
+                    .filter(Boolean)
+                    .join(" "),
+                }
+              : {})}
             checked={!skipped.has(m.compareKey)}
             disabled={props.onToggle === undefined}
             onChange={(): void => props.onToggle?.(m.compareKey, !skipped.has(m.compareKey))}

@@ -1068,6 +1068,15 @@ function validateInstallState(
     ...(enabledINITweaks !== undefined ? { enabledINITweaks } : {}),
     ...(stagingFiles !== undefined ? { stagingFiles } : {}),
     // Lenient: only skipped by checks, never written, so a bad entry is dropped.
+    ...(obj.optional === true && obj.optionalFor === "handheld" ? { optionalFor: "handheld" as const } : {}),
+    ...(Array.isArray(obj.playerSettingsFiles) &&
+    obj.playerSettingsFiles.some((p: unknown) => typeof p === "string" && isSafeRelativePath(p))
+      ? {
+          playerSettingsFiles: (obj.playerSettingsFiles as unknown[]).filter(
+            (p): p is string => typeof p === "string" && isSafeRelativePath(p),
+          ),
+        }
+      : {}),
     ...(Array.isArray(obj.volatileFiles) &&
     obj.volatileFiles.some((p: unknown) => typeof p === "string" && isSafeRelativePath(p))
       ? {

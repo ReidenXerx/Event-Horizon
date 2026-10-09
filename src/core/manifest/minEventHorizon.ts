@@ -53,6 +53,12 @@ export function neededEventHorizon(manifest: Pick<EhcollManifest, "mods" | "game
   if (mods.some((m) => m.state?.variant !== undefined)) {
     needs.push(["0.2.62", "a choice between versions of one mod"]);
   }
+  if (mods.some((m) => m.state?.optionalFor !== undefined)) {
+    needs.push(["0.2.66", "an optional mod for handheld PCs"]);
+  }
+  if (mods.some((m) => (m.state?.playerSettingsFiles?.length ?? 0) > 0)) {
+    needs.push(["0.2.66", "settings files you change in a game menu"]);
+  }
   if (mods.some((m) => (m.state?.volatileFiles?.length ?? 0) > 0)) {
     needs.push(["0.2.61", "mod files the game writes for your own setup"]);
   }

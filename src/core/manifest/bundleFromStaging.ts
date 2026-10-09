@@ -53,7 +53,7 @@ import { selectors, types } from "@nexusmods/vortex-api";
 
 import { isAbort } from "../../utils/abortError";
 import { beginOp, ehLog } from "../logging/ehLog";
-import { declaredSet } from "../volatileFiles";
+import { declaredSet, judgeSkipSet } from "../volatileFiles";
 import {
   bundleRecordName,
   isLegacyBundleArchive,
@@ -289,7 +289,7 @@ export async function measureBundledMods(args: {
        * case where an earlier record would be a guess rather than a fact. The
        * files are read then, and nothing is recorded.
        */
-      const contentKey = computeStagingSetHash(mod.stagingFiles ?? []);
+      const contentKey = computeStagingSetHash(mod.stagingFiles ?? [], judgeSkipSet(mod));
       const recordPath =
         contentKey === undefined
           ? undefined

@@ -23,6 +23,7 @@
  */
 
 import * as React from "react";
+import { judgeSkipFor } from "../../../core/volatileFiles";
 
 import { Button, Callout, Card, Field, Select } from "../../components";
 import { useApi } from "../../state";
@@ -372,6 +373,7 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
         const found = await findDriftedMods({
           candidates,
           manifestFilesFor: (key) => filesByKey.get(key),
+          judgeSkipFor: (key) => judgeSkipFor(pkg.manifest.mods, key),
           cacheDir: getVortexUserDataPath(),
           stagingRootFor: (vortexModId) => {
             // Identical to runInstall's callback, and now literally the

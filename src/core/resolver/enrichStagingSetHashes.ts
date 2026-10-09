@@ -133,7 +133,9 @@ export async function enrichInstalledModsWithStagingSetHashes(
 ): Promise<AuditorMod[]> {
   const { hashConcurrency, onProgress, onWarn, signal } = options;
   const startedAt = Date.now();
-  const declaredAnywhere = declaredSet(manifest.mods.flatMap((m) => m.state?.volatileFiles ?? []));
+  const declaredAnywhere = declaredSet(
+    manifest.mods.flatMap((m) => [...(m.state?.volatileFiles ?? []), ...(m.state?.playerSettingsFiles ?? [])]),
+  );
   ehLog("info", "resolver.staging-hashes.start", {
     gameId,
     manifestMods: manifest.mods.length,

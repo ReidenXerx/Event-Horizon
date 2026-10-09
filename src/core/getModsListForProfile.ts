@@ -106,10 +106,14 @@ export type AuditorMod = {
   optional?: boolean;
   /** Files the curator declared generated for each machine (collection config). */
   volatileFiles?: string[];
+  /** Files the player changes in a game menu: shipped, never judged (collection config). */
+  playerSettingsFiles?: string[];
   /** The curator's one-line note for an optional mod. */
   optionalNote?: string;
   /** One version of a mod offered in several (collection config `variant`). */
   variant?: { group: string; label: string; lowEnd?: true; default?: true };
+  /** Who an optional mod is for (collection config). */
+  optionalFor?: "handheld";
   /**
    * The curator asked for this mod's staging folder to be reproduced exactly.
    *

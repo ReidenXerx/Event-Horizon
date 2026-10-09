@@ -143,7 +143,7 @@ import {
 } from "./attemptRecord";
 import { clearInstallMarker, writeInstallMarker } from "./installMarker";
 import { ehLog } from "../logging/ehLog";
-import { declaredFor, declaredSet } from "../volatileFiles";
+import { declaredSet, judgeSkipFor, type DeclaredVolatile } from "../volatileFiles";
 import { judgeReinstall } from "./judgeReinstall";
 import { applyMirrorPlan, describeMirrorOutcome } from "./applyMirrors";
 import { mirrorProvesTarget, planMirror } from "./mirrorStaging";
@@ -376,6 +376,7 @@ async function detectDrift(args: {
     const found = await findDriftedMods({
       candidates,
       manifestFilesFor: (compareKey) => stagingFilesByKey.get(compareKey),
+      judgeSkipFor: (compareKey) => judgeSkipFor(ctx.plan.manifest.mods, compareKey),
       cacheDir: ctx.appDataPath,
       ...(ctx.abortSignal !== undefined ? { signal: ctx.abortSignal } : {}),
       stagingRootFor: (vortexModId) => {
@@ -425,6 +426,8 @@ function stagingSetHashFor(
   expectedFilesByCompareKey: ReadonlyMap<string, EhcollStagingFile[]>,
   /** An optional mod's full recorded list, when only part of it is here. */
   fullListByCompareKey?: ReadonlyMap<string, EhcollStagingFile[]>,
+  /** This mod's generated and player-settings files, left out like the build leaves them out. */
+  judgeSkip?: DeclaredVolatile,
 ): { stagingSetHash?: string; stagingSetPaths?: string } {
   if (!verifiedOkKeys.has(mod.compareKey)) return {};
   const files = expectedFilesByCompareKey.get(mod.compareKey);
@@ -433,7 +436,7 @@ function stagingSetHashFor(
   // collection was built "thorough". A "fast" package simply gets no drift
   // reference, which is the correct outcome: there is nothing to build one
   // from.
-  const hash = computeStagingSetHash(files);
+  const hash = computeStagingSetHash(files, judgeSkip);
   if (hash === undefined) return {};
   /**
    * WHICH files the hash was taken over, recorded beside it.
@@ -445,7 +448,7 @@ function stagingSetHashFor(
    * reads as "something edited this folder" about a folder nobody touched.
    * Kept together so that comparison can be made first.
    */
-  const paths = computeStagingPathSetHash(fullListByCompareKey?.get(mod.compareKey) ?? files);
+  const paths = computeStagingPathSetHash(fullListByCompareKey?.get(mod.compareKey) ?? files, judgeSkip);
   return {
     stagingSetHash: hash,
     ...(paths !== undefined ? { stagingSetPaths: paths } : {}),
@@ -2406,7 +2409,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             gameId: plan.manifest.game.id,
             vortexModId: installEntry.vortexModId,
             expectedFiles,
-            declaredVolatile: declaredFor(plan.manifest.mods, installEntry.compareKey),
+            declaredVolatile: judgeSkipFor(plan.manifest.mods, installEntry.compareKey),
             level: declaredLevel,
             signal: ctx.abortSignal,
           });
@@ -2477,7 +2480,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               gameId: plan.manifest.game.id,
               vortexModId: installEntry.vortexModId,
               expectedFiles: present,
-              declaredVolatile: declaredFor(plan.manifest.mods, installEntry.compareKey),
+              declaredVolatile: judgeSkipFor(plan.manifest.mods, installEntry.compareKey),
               level: declaredLevel,
               signal: ctx.abortSignal,
             });
@@ -2884,7 +2887,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               gameId: plan.manifest.game.id,
               vortexModId: alongside.vortexModId,
               expectedFiles,
-              declaredVolatile: declaredFor(plan.manifest.mods, alongside.compareKey),
+              declaredVolatile: judgeSkipFor(plan.manifest.mods, alongside.compareKey),
               level: declaredLevel,
               signal: ctx.abortSignal,
             }).catch(() => undefined);
@@ -7415,7 +7418,13 @@ function buildReceipt(args: {
       // the manifest says, so a hash derived from the manifest would be a
       // fiction, and one derived from disk would enshrine a broken install as
       // the reference. Absent means unknown; see InstallReceiptMod.
-      ...stagingSetHashFor(m, verifiedOkKeys, expectedFilesByCompareKey, args.optionalFullLists),
+      ...stagingSetHashFor(
+        m,
+        verifiedOkKeys,
+        expectedFilesByCompareKey,
+        args.optionalFullLists,
+        judgeSkipFor(args.ctx.plan.manifest.mods, m.compareKey),
+      ),
       // The user's own copy, which the alongside install switched off in this
       // profile. Uninstall reads it to switch that copy back on — without it
       // removing our copy leaves the user with NEITHER active.
@@ -8264,7 +8273,7 @@ async function tryRecoverFailedMod(args: {
       gameId: ctx.plan.manifest.game.id,
       vortexModId: newEntry.vortexModId,
       expectedFiles,
-      declaredVolatile: declaredFor(ctx.plan.manifest.mods, newEntry.compareKey),
+      declaredVolatile: judgeSkipFor(ctx.plan.manifest.mods, newEntry.compareKey),
       level,
       signal: ctx.abortSignal,
     });

@@ -30,6 +30,7 @@
  */
 
 import type { InstallReceiptMod } from "../../types/installLedger";
+import { judgeSkipSet, type DeclaredVolatile } from "../volatileFiles";
 import type { EhcollMod, EhcollStagingFile } from "../../types/ehcoll";
 import { ehLog } from "../logging/ehLog";
 import { computeStagingPathSetHash } from "../manifest/stagingSetHash";
@@ -99,7 +100,7 @@ export function selectDriftCandidates(args: {
       // Optional access deliberately: this whole module is a diagnostic that
       // must never fail an install, and a manifest entry with no `state` is
       // simply one with nothing recorded to compare.
-      computeStagingPathSetHash(m.state?.stagingFiles ?? []),
+      computeStagingPathSetHash(m.state?.stagingFiles ?? [], judgeSkipSet(m.state)),
     ]),
   );
 
@@ -186,6 +187,8 @@ export async function findDriftedMods(args: {
    * so both sides describe one set.
    */
   manifestFilesFor: (compareKey: string) => readonly EhcollStagingFile[] | undefined;
+  /** A mod's generated and player-settings files, left out like the receipt's hash left them out. */
+  judgeSkipFor?: (compareKey: string) => DeclaredVolatile | undefined;
   /** Where the user's hash cache lives. Omit to hash everything afresh. */
   cacheDir?: string;
   signal?: AbortSignal;
@@ -271,7 +274,7 @@ export async function findDriftedMods(args: {
         () => undefined,
         lookup,
       );
-      const actual = computeStagingSetHash(hashed);
+      const actual = computeStagingSetHash(hashed, args.judgeSkipFor?.(candidate.compareKey));
       // `undefined` means some file could not be hashed, so the set is not
       // describable — which is not the same as matching.
       if (actual !== undefined && actual !== candidate.expectedHash) {

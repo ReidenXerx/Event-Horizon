@@ -676,6 +676,12 @@ export type ModInstallState = {
    */
   variant?: { group: string; label: string; lowEnd?: true; default?: true };
   /**
+   * Who an optional mod is for: "handheld" starts it ticked only on a handheld
+   * PC (Steam Deck, ROG Ally, ...), unticked elsewhere (owner poll 2026-10-09).
+   * Absent: ticked for everyone. Since 0.2.66.
+   */
+  optionalFor?: "handheld";
+  /**
    * Snapshot of the curator's staging folder for this mod, captured at
    * build time. Used by the user-side {@link verifyModInstall} check to
    * detect Vortex's "lost file" / truncation / corruption bugs after a
@@ -706,6 +712,12 @@ export type ModInstallState = {
    * as not reproduced.
    */
   volatileFiles?: string[];
+  /**
+   * Files this mod ships that the player changes in a game menu (curator's
+   * `externalMods[id].playerSettingsFiles`): in `stagingFiles` and shipped,
+   * never judged on the player's side. Since 0.2.66.
+   */
+  playerSettingsFiles?: string[];
 };
 
 /**

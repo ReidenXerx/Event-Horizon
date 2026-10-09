@@ -70,6 +70,8 @@ export const MOD_INSTALL_STATE_FATES: {
   mirrorFromArchive: { kind: "applied", by: "core/installer/runInstall.ts" },
   mirrorFromArchiveAt: { kind: "applied", by: "core/installer/runInstall.ts" },
   volatileFiles: { kind: "applied", by: "core/volatileFiles.ts" },
+  playerSettingsFiles: { kind: "applied", by: "core/volatileFiles.ts" },
+  optionalFor: { kind: "applied", by: "ui/pages/install/variantChoice.ts" },
   variant: { kind: "applied", by: "core/installer/variantGroups.ts" },
   nativePlugins: { kind: "applied", by: "core/environment/nativePluginCompat.ts" },
   nativePluginsIncomplete: { kind: "applied", by: "core/resolver/versionMismatch.ts" },

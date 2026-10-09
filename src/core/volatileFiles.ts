@@ -138,6 +138,27 @@ export function declaredSet(paths: readonly string[] | undefined): DeclaredVolat
   return new Set(paths.map(declaredKey).filter((k) => k.length > 0));
 }
 
+/**
+ * What a check of a PLAYER's install leaves out for one mod: its generated
+ * files (`volatileFiles`) and its player settings (`playerSettingsFiles`,
+ * shipped like any file but changed by the player in a game menu, the per-mod
+ * twin of MCM's settings: Meridia - Handheld Settings' SPS_User.ini). The
+ * build side uses the same set for the staging-set hash, so both agree.
+ */
+export function judgeSkipSet(
+  state: { volatileFiles?: string[]; playerSettingsFiles?: string[] } | undefined,
+): DeclaredVolatile | undefined {
+  return declaredSet([...(state?.volatileFiles ?? []), ...(state?.playerSettingsFiles ?? [])]);
+}
+
+/** {@link judgeSkipSet} of the manifest mod with this compareKey. */
+export function judgeSkipFor(
+  mods: ReadonlyArray<{ compareKey: string; state?: { volatileFiles?: string[]; playerSettingsFiles?: string[] } }>,
+  compareKey: string,
+): DeclaredVolatile | undefined {
+  return judgeSkipSet(mods.find((m) => m.compareKey === compareKey)?.state);
+}
+
 /** The declared list of the manifest mod with this compareKey. */
 export function declaredFor(
   mods: ReadonlyArray<{ compareKey: string; state?: { volatileFiles?: string[] } }>,

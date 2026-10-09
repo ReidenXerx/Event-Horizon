@@ -20,6 +20,7 @@
  */
 
 import { neededEventHorizon } from "./minEventHorizon";
+import { judgeSkipSet } from "../volatileFiles";
 import { recordDeploymentWinners } from "./deploymentWinners";
 import { publicNote } from "../curator/readProfile";
 import { shipsAsExternal } from "./shipsAsExternal";
@@ -624,7 +625,7 @@ function buildExternalMod(
 ): ExternalEhcollMod | undefined {
   const archiveSha = mod.archiveSha256;
   const stagingSetHash = mod.stagingFiles
-    ? computeStagingSetHash(mod.stagingFiles)
+    ? computeStagingSetHash(mod.stagingFiles, judgeSkipSet(mod))
     : undefined;
   const wantsBundled = spec?.bundled ?? false;
 
@@ -785,6 +786,8 @@ function buildModInstallState(
     ...(mod.optional === true && mod.variant !== undefined ? { variant: mod.variant } : {}),
     ...(mod.mirrored === true ? { mirrored: true } : {}),
     ...((mod.volatileFiles?.length ?? 0) > 0 ? { volatileFiles: mod.volatileFiles } : {}),
+    ...((mod.playerSettingsFiles?.length ?? 0) > 0 ? { playerSettingsFiles: mod.playerSettingsFiles } : {}),
+    ...(mod.optional === true && mod.optionalFor === "handheld" ? { optionalFor: "handheld" as const } : {}),
     // Only for a mirrored mod: a claim about the payload means nothing for a
     // mod that has none.
     ...(mod.mirrored === true && (mod.mirrorFromArchive?.length ?? 0) > 0
