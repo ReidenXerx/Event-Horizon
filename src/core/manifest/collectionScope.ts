@@ -57,6 +57,8 @@ export type CollectionScope = {
   included: AuditorMod[];
   /** Excluded because the profile has them switched off. */
   excludedDisabled: AuditorMod[];
+  /** Switched off in the profile but shipped anyway: the curator marked them optional. */
+  includedDisabledOptional: AuditorMod[];
   /**
    * Vortex collections installed in this profile. Excluded outright — see
    * {@link scopeCollectionMods} for what they actually contain.
@@ -131,9 +133,14 @@ function groupBy(
  * yields an empty `included`, which the caller should treat as "nothing to
  * build" rather than as an error from here.
  */
-export function scopeCollectionMods(mods: AuditorMod[]): CollectionScope {
+export function scopeCollectionMods(
+  mods: AuditorMod[],
+  /** A disabled mod that ships anyway: one the curator marked optional. */
+  shipsWhenDisabled?: (mod: AuditorMod) => boolean,
+): CollectionScope {
   const included: AuditorMod[] = [];
   const excludedDisabled: AuditorMod[] = [];
+  const includedDisabledOptional: AuditorMod[] = [];
   const excludedCollections: AuditorMod[] = [];
   for (const mod of mods) {
     // A Vortex collection installed in the profile is a mod by Vortex's
@@ -146,12 +153,16 @@ export function scopeCollectionMods(mods: AuditorMod[]): CollectionScope {
     // there is no source archive to hash, ever.
     if (mod.modType === "collection") excludedCollections.push(mod);
     else if (mod.enabled) included.push(mod);
-    else excludedDisabled.push(mod);
+    else if (shipsWhenDisabled?.(mod) === true) {
+      included.push(mod);
+      includedDisabledOptional.push(mod);
+    } else excludedDisabled.push(mod);
   }
 
   return {
     included,
     excludedDisabled,
+    includedDisabledOptional,
     excludedCollections,
     // Exact identity — what buildManifest's compareKey rejects.
     collidingIdentities: groupBy(included, (m) =>

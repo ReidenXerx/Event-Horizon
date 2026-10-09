@@ -92,7 +92,8 @@ export const MOD_INSTALL_STATE_FATES: {
     why:
       "The driver enables every mod it installs, so a per-mod flag would only " +
       "matter for shipping a mod deliberately switched off — which the build " +
-      "excludes from the collection instead.",
+      "excludes from the collection instead, unless the curator marked it " +
+      "optional, and then a player who keeps it ticked wants it enabled.",
   },
   installOrder: {
     kind: "recorded-only",

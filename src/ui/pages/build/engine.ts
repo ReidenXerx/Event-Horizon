@@ -215,6 +215,11 @@ export interface BuildContext {
    */
   mods: AuditorMod[];
   /**
+   * Mods switched off in the profile and not shipped. Listed only so the
+   * Build page can make one optional; it ships from the next load of the page.
+   */
+  disabledMods?: Array<Pick<AuditorMod, "id" | "name" | "enabled">>;
+  /**
    * Prerequisites detected in the game folder that no mod accounts for — a
    * script extender, ENB, a preloader. Curator decides which to ship and what
    * to say about them; see `collectionConfig.externalDependencies`.
@@ -1014,13 +1019,52 @@ export async function loadBuildContext(
   // being shipped. Scoping here rather than later means the disabled ones are
   // never hashed, walked or verified — and it removes duplicate-identity
   // collisions for free, because the superseded copy is the disabled one.
+  const appDataPath = getVortexUserDataPath();
+  const configDir = getCollectionsConfigDir();
+
+  // Default to the collection this curator most recently built FOR THIS GAME,
+  // not a hard-coded "My Collection".
+  //
+  // The constant was a silent rollback: build "ivy", open a fresh draft, and
+  // the form says "My Collection" again — and, worse than the label, it loads
+  // that collection's config, so the bundle ticks, README and prerequisites
+  // just set on "ivy" are not the ones on screen. The name is the identity
+  // here (it picks the slug, which picks the config, which carries the
+  // packageId), so getting it wrong is not cosmetic.
+  let defaultName = opts?.nameOverride;
+  if (defaultName === undefined) {
+    try {
+      defaultName = pickDefaultCollectionName(
+        await listPublishedCollections(configDir),
+        gameId,
+      );
+    } catch {
+      defaultName = FALLBACK_COLLECTION_NAME;
+    }
+  }
+  const slug = slugify(defaultName);
+  const loaded = await loadOrCreateCollectionConfig({ configDir, slug });
+  let collectionConfig = loaded.config;
+
+  /**
+   * An OPTIONAL mod ships even when the curator keeps it switched off in their
+   * own profile (Meridia - Handheld Settings, 2026-10-09: the owner plays on
+   * the PC the collection is built from and must not get handheld caps). It is
+   * the player's choice either way, and a ticked one is installed and enabled.
+   */
   const profileMods = getModsForProfile(state, gameId, profileId);
-  const scope = scopeCollectionMods(profileMods);
+  const scope = scopeCollectionMods(profileMods, (m) => {
+    const entry = collectionConfig.externalMods[m.id];
+    return entry?.optional === true || entry?.variant !== undefined;
+  });
   const rawModsFromVortex = scope.included;
   op.step("mods-scoped", {
     inProfile: profileMods.length,
     enabled: rawModsFromVortex.length,
     excludedDisabled: scope.excludedDisabled.length,
+    ...(scope.includedDisabledOptional.length > 0
+      ? { includedDisabledOptional: scope.includedDisabledOptional.map((m) => m.name) }
+      : {}),
     collidingIdentities: scope.collidingIdentities.length,
     multipleEnabledInstalls: scope.multipleInstalls.length,
     ...(scope.multipleInstalls.length > 0
@@ -1153,32 +1197,6 @@ export async function loadBuildContext(
     });
   }
 
-  const appDataPath = getVortexUserDataPath();
-  const configDir = getCollectionsConfigDir();
-
-  // Default to the collection this curator most recently built FOR THIS GAME,
-  // not a hard-coded "My Collection".
-  //
-  // The constant was a silent rollback: build "ivy", open a fresh draft, and
-  // the form says "My Collection" again — and, worse than the label, it loads
-  // that collection's config, so the bundle ticks, README and prerequisites
-  // just set on "ivy" are not the ones on screen. The name is the identity
-  // here (it picks the slug, which picks the config, which carries the
-  // packageId), so getting it wrong is not cosmetic.
-  let defaultName = opts?.nameOverride;
-  if (defaultName === undefined) {
-    try {
-      defaultName = pickDefaultCollectionName(
-        await listPublishedCollections(configDir),
-        gameId,
-      );
-    } catch {
-      defaultName = FALLBACK_COLLECTION_NAME;
-    }
-  }
-  const slug = slugify(defaultName);
-  const loaded = await loadOrCreateCollectionConfig({ configDir, slug });
-  let collectionConfig = loaded.config;
 
   // What will ACTUALLY stop the manifest, now that both the disk and the cache
   // have had their say. The pre-hash probe above is an early estimate for the
@@ -1355,6 +1373,7 @@ export async function loadBuildContext(
     gameId: gameId as SupportedGameId,
     profileId,
     mods,
+    disabledMods: scope.excludedDisabled.map((m) => ({ id: m.id, name: m.name, enabled: false })),
     detectedDependencies,
     dependencyProvidedFiles,
     externalHints,

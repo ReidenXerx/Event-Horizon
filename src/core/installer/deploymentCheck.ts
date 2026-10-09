@@ -85,8 +85,14 @@ export async function checkDeployment(args: {
     report.findings = report.findings.filter(
       (f) =>
         !(
-          optional.has(f.expected) &&
-          (f.kind === "not-deployed" || (f.kind === "wrong-winner" && optionalLacks(f.expected, f.path)))
+          (optional.has(f.expected) &&
+            (f.kind === "not-deployed" || (f.kind === "wrong-winner" && optionalLacks(f.expected, f.path)))) ||
+          // An optional mod the player ticked winning a file: the curator may
+          // ship it switched off in their own game (Meridia - Handheld
+          // Settings over SPS's own ini), so their record names another winner.
+          (f.kind === "wrong-winner" &&
+            (f as { actualKey?: string }).actualKey !== undefined &&
+            optional.has((f as { actualKey?: string }).actualKey!))
         ),
     );
   }

@@ -102,6 +102,7 @@ import {
   warningTone,
 } from "./warningText";
 import { BuildDashboard } from "./BuildDashboard";
+import { OptionalModsCard } from "./OptionalModsCard";
 import { revealInFileManager } from "../../../core/revealPath";
 import type { ExternalHint } from "../../../core/manifest/externalHints";
 import {
@@ -1883,6 +1884,8 @@ export function FormPanel(props: FormPanelProps): JSX.Element {
           />
         )}
       </Card>
+
+      <OptionalModsCard mods={[...ctx.mods, ...(ctx.disabledMods ?? [])]} overrides={overrides} onChange={updateOverride} />
 
       {/*
         Facts, not a warning, and shown even when it is one line long.

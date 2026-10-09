@@ -41,6 +41,17 @@ describe("scopeCollectionMods", () => {
     expect(scope.excludedDisabled.map((m) => m.id)).toEqual(["b"]);
   });
 
+  it("ships a disabled mod the curator marked optional, and only that one", () => {
+    // Meridia - Handheld Settings (2026-10-09): off in the curator's own game.
+    const scope = scopeCollectionMods(
+      [mod({ id: "handheld", enabled: false }), mod({ id: "old", enabled: false }), mod({ id: "a" })],
+      (m) => m.id === "handheld",
+    );
+    expect(scope.included.map((m) => m.id)).toEqual(["handheld", "a"]);
+    expect(scope.includedDisabledOptional.map((m) => m.id)).toEqual(["handheld"]);
+    expect(scope.excludedDisabled.map((m) => m.id)).toEqual(["old"]);
+  });
+
   it("resolves an identity collision by scoping, with no tie-break needed", () => {
     // The real shape of all 7 build-blocking collisions: the same Nexus file
     // staged twice, the superseded copy switched off.
