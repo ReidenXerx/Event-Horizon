@@ -1,7 +1,7 @@
 # Changelog
 
 Everything that changed in Event Horizon, newest first, written for the people who use it. Since the first commit
-in April 2026 that is about 400 changes across 183 builds.
+in April 2026 that is about 400 changes across 184 builds.
 
 Until 0.1.0-alpha.149 builds were numbered `0.1.0-alpha.N`. From **0.1.151** the build number is the patch number:
 Vortex ignores everything after the dash when it decides whether an extension has an update, so an alpha number
@@ -9,6 +9,17 @@ could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
+
+## [0.2.62] — 2026-10-09
+
+### Install
+- **Choose a version**: a collection can offer a mod in several versions (for example 2048 or 1024 textures). You pick
+  one in the preview and only that one is downloaded. Your pick is kept on updates, and on a Steam Deck the lighter
+  version is picked for you.
+
+### For collection creators
+- New per-mod setting `variant: { group, label, lowEnd? }` in the collection config. Install every version in Vortex
+  and give them the same group.
 
 ## [0.2.61] — 2026-10-09
 
