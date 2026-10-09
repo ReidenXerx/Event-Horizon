@@ -669,6 +669,13 @@ export type ModInstallState = {
   /** The curator's one line for the preview list. */
   optionalNote?: string;
   /**
+   * One version of a mod the collection offers in several (Ivy FaceGen 2048 /
+   * 1024): the player installs exactly one member of each `group`. Always
+   * alongside `optional: true`, so an Event Horizon before 0.2.62 offers each
+   * as a plain optional mod. See `core/installer/variantGroups.ts`.
+   */
+  variant?: { group: string; label: string; lowEnd?: true };
+  /**
    * Snapshot of the curator's staging folder for this mod, captured at
    * build time. Used by the user-side {@link verifyModInstall} check to
    * detect Vortex's "lost file" / truncation / corruption bugs after a

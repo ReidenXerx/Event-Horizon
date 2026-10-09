@@ -90,6 +90,12 @@ describe("the files a mirrored mod leaves to its own archive", () => {
     );
   });
 
+  it("keeps a version of a mod only on an optional mod", () => {
+    const variant = { group: "Ivy FaceGen", label: "1024", lowEnd: true };
+    expect(parseManifest(withMod({ ...BASE_STATE, optional: true, variant })).manifest.mods[0]!.state.variant).toEqual(variant);
+    expect(parseManifest(withMod({ ...BASE_STATE, variant })).manifest.mods[0]!.state.variant).toBeUndefined();
+  });
+
   it("keeps the files a curator declared generated, dropping one outside the mod's folder", () => {
     const { manifest } = parseManifest(
       withMod({ ...BASE_STATE, volatileFiles: ["F4SE/Plugins/Addictol_SNCT.ini", "../../evil.ini"] }),

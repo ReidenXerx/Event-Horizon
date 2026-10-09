@@ -176,6 +176,15 @@ export type ExternalModConfigEntry = {
   optional?: boolean;
   /** One line shown next to an optional mod in the install preview: what it adds. */
   optionalNote?: string;
+  /**
+   * One version of a mod the collection offers in several (owner, 2026-10-09:
+   * Ivy FaceGen 2048 / 1024). Mods with the same `group` are alternatives: the
+   * player installs exactly one, the first by default, the `lowEnd` one on a
+   * Steam Deck / Proton install, and their pick is remembered. Install every
+   * version in Vortex (a rule decides which one your own game uses). Implies
+   * optional.
+   */
+  variant?: { group: string; label: string; lowEnd?: boolean };
   /** Free-form text shown to the user when the mod isn't bundled. */
   instructions?: string;
   /**
@@ -1093,6 +1102,22 @@ const EXTERNAL_MOD_FIELDS: {
     return raw;
   },
   optionalNote: (raw, path, errors) => expectStringField(raw, path, errors),
+  variant: (raw, path, errors) => {
+    const v = raw as { group?: unknown; label?: unknown; lowEnd?: unknown } | null;
+    if (
+      typeof v !== "object" ||
+      v === null ||
+      typeof v.group !== "string" ||
+      v.group.trim() === "" ||
+      typeof v.label !== "string" ||
+      v.label.trim() === "" ||
+      (v.lowEnd !== undefined && typeof v.lowEnd !== "boolean")
+    ) {
+      errors.push(`${path} must be { "group": "<name>", "label": "<what this version is>", "lowEnd"?: true }.`);
+      return undefined;
+    }
+    return { group: v.group.trim(), label: v.label.trim(), ...(v.lowEnd === true ? { lowEnd: true } : {}) };
+  },
   volatileFiles: (raw, path, errors) => {
     if (!Array.isArray(raw)) {
       errors.push(`${path} must be a list of file paths relative to the mod's folder.`);

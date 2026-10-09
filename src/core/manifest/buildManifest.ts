@@ -782,6 +782,7 @@ function buildModInstallState(
     ...(mod.optional === true
       ? { optional: true as const, ...(mod.optionalNote !== undefined ? { optionalNote: mod.optionalNote } : {}) }
       : {}),
+    ...(mod.optional === true && mod.variant !== undefined ? { variant: mod.variant } : {}),
     ...(mod.mirrored === true ? { mirrored: true } : {}),
     ...((mod.volatileFiles?.length ?? 0) > 0 ? { volatileFiles: mod.volatileFiles } : {}),
     // Only for a mirrored mod: a claim about the payload means nothing for a

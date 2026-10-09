@@ -50,6 +50,9 @@ export function neededEventHorizon(manifest: Pick<EhcollManifest, "mods" | "game
   if (mods.some((m) => Object.keys(m.state?.mirrorFromArchiveAt ?? {}).length > 0)) {
     needs.push(["0.2.56", "mod files the curator moved to another folder"]);
   }
+  if (mods.some((m) => m.state?.variant !== undefined)) {
+    needs.push(["0.2.62", "a choice between versions of one mod"]);
+  }
   if (mods.some((m) => (m.state?.volatileFiles?.length ?? 0) > 0)) {
     needs.push(["0.2.61", "mod files the game writes for your own setup"]);
   }

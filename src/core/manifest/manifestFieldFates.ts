@@ -70,6 +70,7 @@ export const MOD_INSTALL_STATE_FATES: {
   mirrorFromArchive: { kind: "applied", by: "core/installer/runInstall.ts" },
   mirrorFromArchiveAt: { kind: "applied", by: "core/installer/runInstall.ts" },
   volatileFiles: { kind: "applied", by: "core/declaredVolatileStore.ts" },
+  variant: { kind: "applied", by: "core/installer/variantGroups.ts" },
   nativePlugins: { kind: "applied", by: "core/environment/nativePluginCompat.ts" },
   nativePluginsIncomplete: { kind: "applied", by: "core/resolver/versionMismatch.ts" },
   enabledINITweaks: { kind: "applied", by: "core/installer/applyIniTweaks.ts" },

@@ -1046,6 +1046,20 @@ function validateInstallState(
     ...(postProcessed !== undefined ? { postProcessed } : {}),
     // Lenient: anything but an explicit true is a required mod, the safe reading.
     ...(obj.optional === true ? { optional: true as const } : {}),
+    // Lenient, like `optional`: a malformed one leaves a plain optional mod.
+    ...(obj.optional === true &&
+    typeof obj.variant === "object" &&
+    obj.variant !== null &&
+    typeof (obj.variant as { group?: unknown }).group === "string" &&
+    typeof (obj.variant as { label?: unknown }).label === "string"
+      ? {
+          variant: {
+            group: (obj.variant as { group: string }).group,
+            label: (obj.variant as { label: string }).label,
+            ...((obj.variant as { lowEnd?: unknown }).lowEnd === true ? { lowEnd: true as const } : {}),
+          },
+        }
+      : {}),
     ...(obj.optional === true && typeof obj.optionalNote === "string" && obj.optionalNote.trim() !== ""
       ? { optionalNote: obj.optionalNote.trim() }
       : {}),

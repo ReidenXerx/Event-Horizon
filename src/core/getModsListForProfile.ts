@@ -108,6 +108,8 @@ export type AuditorMod = {
   volatileFiles?: string[];
   /** The curator's one-line note for an optional mod. */
   optionalNote?: string;
+  /** One version of a mod offered in several (collection config `variant`). */
+  variant?: { group: string; label: string; lowEnd?: true };
   /**
    * The curator asked for this mod's staging folder to be reproduced exactly.
    *

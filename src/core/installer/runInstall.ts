@@ -946,9 +946,23 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
    * whose refresh timing would make an installed plugin read as absent.
    */
   const optionalAbsentPlugins = new Set<string>();
+  const pluginName = (p: string): string | undefined =>
+    /\.(esp|esm|esl)$/i.test(p) ? p.split(/[\\/]/).pop()!.toLowerCase() : undefined;
+  /**
+   * Plugins a PICKED version of a mod provides. Versions share their plugin
+   * (Ivy FaceGen 2048 and 1024 both ship Ivy FaceGen.esp): the one left out
+   * must not mark it absent, which would switch it off for the one installed.
+   */
+  const pickedVariantPlugins = new Set(
+    plan.manifest.mods
+      .filter((m) => m.state?.variant !== undefined && !optionalSkipped.has(m.compareKey))
+      .flatMap((m) => (m.state?.stagingFiles ?? []).map((f) => pluginName(f.path)))
+      .filter((n): n is string => n !== undefined),
+  );
   const notePluginsAbsent = (paths: Iterable<string>): void => {
     for (const p of paths) {
-      if (/\.(esp|esm|esl)$/i.test(p)) optionalAbsentPlugins.add(p.split(/[\\/]/).pop()!.toLowerCase());
+      const name = pluginName(p);
+      if (name !== undefined && !pickedVariantPlugins.has(name)) optionalAbsentPlugins.add(name);
     }
   };
   /**
@@ -1747,6 +1761,22 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           });
           optionalNotInstalled.push({ compareKey: resolution.compareKey, name: resolution.name, reason });
           notePluginsAbsent((manifestEntry.state.stagingFiles ?? []).map((f) => f.path));
+          /**
+           * A version the player did not pick, still installed from their
+           * previous pick (2048 → 1024): switched off, never removed, so the
+           * two do not fight over the same files and switching back is one
+           * more pick. Owner poll, 2026-10-09.
+           */
+          const existing = (resolution.decision as { existingModId?: string }).existingModId;
+          if (manifestEntry.state.variant !== undefined && existing !== undefined && optionalSkipped.has(resolution.compareKey)) {
+            disableModInProfile(api, activeProfileId, existing);
+            ehLog("info", "install.variant.switched-off", {
+              name: resolution.name,
+              group: manifestEntry.state.variant.group,
+              label: manifestEntry.state.variant.label,
+              vortexModId: existing,
+            });
+          }
           continue;
         }
       }

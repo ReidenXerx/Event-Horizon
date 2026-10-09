@@ -21,6 +21,7 @@
 
 import { orphanEnabledIn } from "./orphanSharing";
 import { compareEhVersions } from "../../../core/manifest/minEventHorizon";
+import { variantGroupsOf, type ModVariant } from "../../../core/installer/variantGroups";
 import { EXTENSION_VERSION } from "../../version";
 import * as React from "react";
 import { EnvironmentCard, summarizeEnvironment } from "./EnvironmentCard";
@@ -43,6 +44,7 @@ import {
   Page,
   Pill,
   ProgressRing,
+  Radio,
   Section,
   StatGrid,
   StatTile,
@@ -728,6 +730,8 @@ export interface PreviewStepProps {
   /** compareKeys of optional mods the player unticked. */
   optionalSkipped?: readonly string[];
   onToggleOptional?: (compareKey: string, skipped: boolean) => void;
+  /** Pick one version of a mod offered in several. */
+  onPickVariant?: (memberKeys: readonly string[], picked: string) => void;
 }
 
 /**
@@ -752,17 +756,67 @@ function NeedsNewerEventHorizon(props: { needs: { version: string; why: string[]
 }
 
 /**
+ * Mods the collection offers in several versions (Ivy FaceGen 2048 / 1024):
+ * one pick per group, pre-selected by variantChoice (remembered, or the
+ * low-end one on a Steam Deck / Proton install). Owner poll, 2026-10-09.
+ */
+function VersionChoices(props: {
+  mods: ReadonlyArray<{ compareKey: string; name: string; state?: { variant?: ModVariant } }>;
+  skipped: readonly string[];
+  onPick?: (memberKeys: readonly string[], picked: string) => void;
+}): JSX.Element | null {
+  const groups = variantGroupsOf(props.mods);
+  if (groups.size === 0) return null;
+  const skipped = new Set(props.skipped);
+  return (
+    <Section
+      title="Choose a version"
+      count={groups.size}
+      countIntent="neutral"
+      description="These mods come in more than one version. Only the one you pick is downloaded and installed, and your pick is kept on updates."
+    >
+      <div className="eh-stack eh-stack--sm">
+        {[...groups].map(([group, members]) => {
+          const keys = members.map((m) => m.compareKey);
+          return (
+            <div key={group} className="eh-stack eh-stack--xs" role="radiogroup" aria-label={group}>
+              <strong>{group}</strong>
+              {members.map((m) => (
+                <Radio
+                  key={m.compareKey}
+                  name={`eh-variant-${group}`}
+                  label={m.label}
+                  {...(m.lowEnd ? { description: "Recommended for Steam Deck and lower-end PCs." } : {})}
+                  checked={!skipped.has(m.compareKey)}
+                  disabled={props.onPick === undefined}
+                  onChange={(): void => props.onPick?.(keys, m.compareKey)}
+                />
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </Section>
+  );
+}
+
+/**
  * The collection's optional mods, each ticked unless the player unticks it
  * (owner, 2026-10-05). Shown only when the collection has some.
  */
 function OptionalMods(props: {
-  mods: ReadonlyArray<{ compareKey: string; name: string; state?: { optional?: true; optionalNote?: string } }>;
+  mods: ReadonlyArray<{
+    compareKey: string;
+    name: string;
+    state?: { optional?: true; optionalNote?: string; variant?: { group: string; label: string } };
+  }>;
   skipped: readonly string[];
   onToggle?: (compareKey: string, skipped: boolean) => void;
   /** Creations the collection supports but does not require. */
   creations?: readonly string[];
 }): JSX.Element | null {
-  const optional = props.mods.filter((m) => m.state?.optional === true);
+  // Versions of one mod are offered by VersionChoices, one pick per group.
+  const optional = props.mods.filter((m) => m.state?.optional === true && m.state.variant === undefined);
   const creations = props.creations ?? [];
   if (optional.length === 0 && creations.length === 0) return null;
   const skipped = new Set(props.skipped);
@@ -1130,6 +1184,12 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
       )}
 
       <NeedsNewerEventHorizon needs={plan.manifest.package.needsEventHorizon} />
+
+      <VersionChoices
+        mods={plan.manifest.mods}
+        skipped={props.optionalSkipped ?? []}
+        {...(props.onPickVariant !== undefined ? { onPick: props.onPickVariant } : {})}
+      />
 
       <OptionalMods
         mods={plan.manifest.mods}
@@ -2294,6 +2354,10 @@ export function ConfirmStep(props: ConfirmStepProps): JSX.Element {
   const isFresh = target.kind === "fresh-profile";
 
   const optionalSkipped = new Set(bundle.optionalSkipped ?? []);
+  // A version the player did not pick is not an optional mod they unticked; their pick is listed by name.
+  const untickedOptional = bundle.plan.manifest.mods.filter(
+    (m) => optionalSkipped.has(m.compareKey) && m.state?.variant === undefined,
+  ).length;
   const SILENT = new Set(["nexus-download", "external-use-bundled", "nexus-use-local-download", "external-use-local-download"]);
   const installCount =
     bundle.plan.summary.willInstallSilently -
@@ -2328,11 +2392,19 @@ export function ConfirmStep(props: ConfirmStepProps): JSX.Element {
           <li>
             <strong>Mods to install:</strong> {installCount}
           </li>
-          {optionalSkipped.size > 0 && (
+          {untickedOptional > 0 && (
             <li>
-              <strong>Optional mods you unticked:</strong> {optionalSkipped.size}
+              <strong>Optional mods you unticked:</strong> {untickedOptional}
             </li>
           )}
+          {[...variantGroupsOf(bundle.plan.manifest.mods)].map(([group, members]) => {
+            const pick = members.find((m) => !optionalSkipped.has(m.compareKey));
+            return pick === undefined ? null : (
+              <li key={group}>
+                <strong>{group}:</strong> {pick.label}
+              </li>
+            );
+          })}
           <li>
             <strong>Conflict decisions:</strong> {conflictCount}
           </li>

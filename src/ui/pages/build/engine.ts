@@ -471,6 +471,7 @@ function declarationsFor(
     entry?.postProcessed !== true &&
     entry?.mirrored !== true &&
     entry?.optional !== true &&
+    entry?.variant === undefined &&
     (entry?.volatileFiles?.length ?? 0) === 0
   ) {
     return mod;
@@ -524,6 +525,18 @@ function declarationsFor(
       : {}),
     ...(entry.postProcessed === true ? { postProcessed: true } : {}),
     ...(stillMirrored ? { mirrored: true } : {}),
+    // A version of a mod offered in several is optional underneath: the
+    // versions the player does not pick are absent the way an unticked one is.
+    ...(entry.variant !== undefined
+      ? {
+          optional: true,
+          variant: {
+            group: entry.variant.group,
+            label: entry.variant.label,
+            ...(entry.variant.lowEnd === true ? { lowEnd: true as const } : {}),
+          },
+        }
+      : {}),
     ...(entry.optional === true
       ? {
           optional: true,

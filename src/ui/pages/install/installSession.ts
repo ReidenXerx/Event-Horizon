@@ -52,6 +52,7 @@ import type { ConflictChoice, OrphanChoice } from "../../../types/installDriver"
 import type { FomodReplayMode } from "../../../core/installer/fomodReplayMode";
 import { blocksInstall as autoDeployBlocks } from "../../../core/installer/autoDeploy";
 import { blocksInstall as autoSortBlocks } from "../../../core/installer/autoSort";
+import { initialVariantSkips, rememberVariantPicks } from "./variantChoice";
 import { probeDeploymentMethod } from "../../../core/installer/probeDeployment";
 import {
   fillDefaultConflictChoices,
@@ -179,10 +180,14 @@ class InstallSession {
           return;
         }
 
+        // Versions of one mod: all but the remembered / hardware-fitting pick start left out.
+        const variantSkips = await initialVariantSkips(outcome.ehcoll.manifest).catch(() => []);
+        if (this.loadingController !== undefined) return;
         this.dispatch({
           type: "plan-ready",
           bundle: {
             zipPath,
+            ...(variantSkips.length > 0 ? { optionalSkipped: variantSkips } : {}),
             ehcoll: outcome.ehcoll,
             receipt: outcome.receipt,
             plan: outcome.plan,
@@ -367,10 +372,13 @@ class InstallSession {
         });
         if (this.loadingController !== controller) return;
         this.loadingController = undefined;
+        const variantSkips = await initialVariantSkips(outcome.ehcoll.manifest).catch(() => []);
+        if (this.loadingController !== undefined) return;
         this.dispatch({
           type: "plan-ready",
           bundle: {
             zipPath: carry.zipPath,
+            ...(variantSkips.length > 0 ? { optionalSkipped: variantSkips } : {}),
             ehcoll: outcome.ehcoll,
             receipt: outcome.receipt,
             plan: outcome.plan,
@@ -530,6 +538,13 @@ class InstallSession {
   /** Tick or untick an optional mod in the preview. */
   setOptionalSkipped(compareKey: string, skipped: boolean): void {
     this.dispatch({ type: "set-optional-skipped", compareKey, skipped });
+  }
+
+  /** Pick one version of a mod offered in several: every other member of its group is left out. */
+  pickVariant(memberKeys: readonly string[], picked: string): void {
+    for (const key of memberKeys) {
+      this.dispatch({ type: "set-optional-skipped", compareKey: key, skipped: key !== picked });
+    }
   }
 
   /** The "I understand" tick on a game-version mismatch. */
@@ -931,6 +946,7 @@ class InstallSession {
     const controller = new AbortController();
     this.installController = controller;
     const startState = this.state;
+    rememberVariantPicks(startState.bundle.ehcoll.manifest, startState.bundle.optionalSkipped ?? []);
 
     this.dispatch({ type: "start-install" });
 
