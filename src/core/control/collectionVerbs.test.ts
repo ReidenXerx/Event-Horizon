@@ -14,6 +14,9 @@ const h = vi.hoisted(() => ({
   manifests: new Map<string, any>(),
   built: [] as Array<{ fullPath: string }>,
   own: [] as Array<{ slug: string; name: string }>,
+  /** Answers for the next lookups, in order, before falling back to `own`. */
+  ownSeq: [] as Array<Array<{ slug: string; name: string }>>,
+  lookups: 0,
   upload: vi.fn(),
   remember: vi.fn(async () => true),
   ctx: undefined as any,
@@ -51,7 +54,10 @@ vi.mock("../manifest/readEhcoll", () => ({
 vi.mock("../../ui/pages/build/publishedDetails", () => ({ findBuiltPackages: async () => h.built }));
 vi.mock("../nexus/collectionUpload", () => ({
   isLoggedInToNexus: () => true,
-  listOwnNexusCollections: async () => h.own,
+  listOwnNexusCollections: async () => {
+    h.lookups += 1;
+    return h.ownSeq.length > 0 ? h.ownSeq.shift()! : h.own;
+  },
   uploadToNexusCollection: h.upload,
   nexusCollectionUrl: (l: { slug: string }, rev?: number) => `https://next.nexusmods.com/fallout4/collections/${l.slug}/revisions/${rev}`,
 }));
@@ -66,7 +72,7 @@ vi.mock("../../ui/pages/build/engine", () => ({
   validateCuratorInput: (c: { version: string }) => (/^\d+\.\d+\.\d+$/.test(c.version) ? undefined : "Version must be x.y.z."),
 }));
 
-import { compareVersion, guardBinding, guardVersion } from "./collectionVerbs";
+import { compareVersion, guardBinding, guardVersion, setUploadLookupWaitForTests } from "./collectionVerbs";
 import { VERBS } from "./verbs";
 
 const IVY = "0456490d-525b-49e3-92d2-5c6e617990be";
@@ -215,6 +221,28 @@ describe("collection.upload: a draft, only where this package belongs", () => {
   it("refuses when the caller expected a different collection", async () => {
     h.built = [{ fullPath: manifest("ivy.ehcoll", IVY, "Ivy's Panties - Event Horizon") }];
     expect(await code(run("collection.upload", { name: "x", collection: "abc123" }))).toBe("wrong-collection");
+  });
+
+  it("asks Nexus again when the collection is not listed yet, right after Vortex starts", async () => {
+    // Ivy Rev 14 (2026-10-09): not found on the first try, found minutes later.
+    setUploadLookupWaitForTests(0);
+    h.lookups = 0;
+    h.built = [{ fullPath: manifest("ivy.ehcoll", IVY, "Ivy's Panties - Event Horizon") }];
+    h.ownSeq = [[], []];
+    h.upload.mockResolvedValue(ok);
+    const r = await run("collection.upload", { name: "x" });
+    expect(r).toMatchObject({ status: "draft" });
+    expect(h.lookups).toBe(3);
+  });
+
+  it("still refuses, after asking a few times, a collection the account really does not have", async () => {
+    setUploadLookupWaitForTests(0);
+    h.lookups = 0;
+    h.built = [{ fullPath: manifest("ivy.ehcoll", IVY, "Ivy's Panties - Event Horizon") }];
+    h.ownSeq = [[], [], [], []];
+    expect(await code(run("collection.upload", { name: "x" }))).toBe("collection-not-found");
+    expect(h.lookups).toBe(4);
+    expect(h.upload).not.toHaveBeenCalled();
   });
 
   it("reports a failed upload as a failure", async () => {

@@ -187,6 +187,14 @@ async function revisionChangelog(
   };
 }
 
+/** How many times collection.upload asks Nexus for the account's collections, and how long between. */
+const UPLOAD_LOOKUP_ATTEMPTS = 4;
+let uploadLookupWaitMs = 15_000;
+/** Tests only. */
+export function setUploadLookupWaitForTests(ms: number): void {
+  uploadLookupWaitMs = ms;
+}
+
 export const COLLECTION_VERBS = {
   /** Every collection config on this machine: name, package id, last build, Nexus binding. */
   "collection.list": {
@@ -322,9 +330,27 @@ export const COLLECTION_VERBS = {
       const bindingProblem = guardBinding({ packageId: m.package.id, target: { id: link.id, slug: link.slug }, bindings: await bindings() });
       if (bindingProblem !== undefined) throw new ControlError("stale-binding", bindingProblem, 409);
 
-      const own = await up.listOwnNexusCollections(api, m.game.id);
-      const live = own.find((c) => c.slug === link.slug);
-      if (live === undefined) throw new ControlError("collection-not-found", `Nexus does not list collection ${link.slug} among this account's collections.`, 409);
+      /**
+       * Asked again before giving up: right after Vortex starts, its Nexus
+       * session can answer before it is fully signed in, and the list comes
+       * back without the collection (Ivy Rev 14, 2026-10-09: not found on the
+       * first try, found minutes later).
+       */
+      let own = await up.listOwnNexusCollections(api, m.game.id);
+      let live = own.find((c) => c.slug === link.slug);
+      for (let attempt = 2; live === undefined && attempt <= UPLOAD_LOOKUP_ATTEMPTS; attempt++) {
+        ehLog("warn", "control.collection-upload.lookup-retry", { slug: link.slug, listed: own.length, attempt });
+        await new Promise((r) => setTimeout(r, uploadLookupWaitMs));
+        own = await up.listOwnNexusCollections(api, m.game.id);
+        live = own.find((c) => c.slug === link.slug);
+      }
+      if (live === undefined) {
+        throw new ControlError(
+          "collection-not-found",
+          `Nexus does not list collection ${link.slug} among this account's collections (${own.length} listed, asked ${UPLOAD_LOOKUP_ATTEMPTS} times).`,
+          409,
+        );
+      }
       if (live.name !== m.package.name && body["allowNameMismatch"] !== true) {
         throw new ControlError(
           "name-mismatch",
