@@ -477,7 +477,8 @@ function declarationsFor(
     entry?.optional !== true &&
     entry?.variant === undefined &&
     (entry?.volatileFiles?.length ?? 0) === 0 &&
-    (entry?.playerSettingsFiles?.length ?? 0) === 0
+    (entry?.playerSettingsFiles?.length ?? 0) === 0 &&
+    (entry?.iniTweaks?.length ?? 0) === 0
   ) {
     return mod;
   }
@@ -544,6 +545,15 @@ function declarationsFor(
         }
       : {}),
     ...((entry.playerSettingsFiles?.length ?? 0) > 0 ? { playerSettingsFiles: entry.playerSettingsFiles } : {}),
+    // Ticked on a player's install, never in the curator's Vortex (see collectionConfig iniTweaks).
+    ...((entry.iniTweaks?.length ?? 0) > 0
+      ? {
+          enabledINITweaks: [
+            ...mod.enabledINITweaks,
+            ...entry.iniTweaks!.filter((t) => !mod.enabledINITweaks.some((e) => e.toLowerCase() === t.toLowerCase())),
+          ],
+        }
+      : {}),
     ...(entry.optional === true && entry.optionalFor === "handheld" ? { optionalFor: "handheld" as const } : {}),
     ...(entry.optional === true
       ? {

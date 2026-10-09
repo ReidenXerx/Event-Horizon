@@ -172,6 +172,15 @@ export type ExternalModConfigEntry = {
    */
   playerSettingsFiles?: string[];
   /**
+   * INI tweaks (file names in the mod's "INI Tweaks" folder) to tick on a
+   * PLAYER's install, without ticking them in the curator's Vortex. Vortex
+   * bakes a ticked tweak into the curator's own INIs even when the mod is
+   * switched off, and the build then ships those values as everyone's base
+   * settings (Meridia - Handheld Settings, 2026-10-09). Recorded with the
+   * curator's own ticks in `enabledINITweaks`.
+   */
+  iniTweaks?: string[];
+  /**
    * Who an optional mod is for. "handheld": ticked at install only on a
    * handheld PC (Steam Deck, ROG Ally, Legion Go, ...), unticked on a desktop
    * (owner poll, 2026-10-09). Needs optional: true.
@@ -1142,6 +1151,13 @@ const EXTERNAL_MOD_FIELDS: {
       return undefined;
     }
     return raw;
+  },
+  iniTweaks: (raw, path, errors) => {
+    if (!Array.isArray(raw) || raw.some((n) => typeof n !== "string" || n.trim() === "" || /[\\/]/.test(n))) {
+      errors.push(`${path} must be a list of INI tweak file names (no folders), like "Grass [SkyrimPrefs].ini".`);
+      return undefined;
+    }
+    return raw.map((n: string) => n.trim());
   },
   playerSettingsFiles: (raw, path, errors) => {
     if (!Array.isArray(raw)) {
