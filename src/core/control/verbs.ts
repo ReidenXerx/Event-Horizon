@@ -2163,6 +2163,71 @@ export const VERBS: Record<string, Verb> = {
     describe: (b) => `renamed ${String(b["previousName"])} to ${String(b["name"])}`,
   },
 
+  /**
+   * Ticks or unticks a mod's Vortex INI tweaks (the files in its "INI Tweaks"
+   * folder), exactly as the mod's INI Tweaks tab does. A build records the
+   * ticks as `enabledINITweaks`, and an install ticks them for players
+   * (Skyrim-collection, Meridia - Handheld Settings, 2026-10-09: the owner was
+   * away and the tab needs a click). Names are checked against the folder
+   * when it can be read; the reply lists what is ticked now.
+   *
+   *   { id, enable?: [names], disable?: [names] }
+   */
+  "mods.iniTweaks": {
+    mutates: true,
+    run: async (api, body) => {
+      const gameId = activeGame(api);
+      const id = str(body["id"]);
+      if (id === undefined) throw new ControlError("bad-request", `"id" (a mod id from mods_find) is required.`);
+      const names = (key: string): string[] =>
+        Array.isArray(body[key]) ? (body[key] as unknown[]).filter((n): n is string => typeof n === "string" && n.trim() !== "") : [];
+      const enable = names("enable");
+      const disable = names("disable");
+      if (enable.length + disable.length === 0) {
+        throw new ControlError("bad-request", `Send "enable" and/or "disable": lists of INI tweak file names.`);
+      }
+      enforce(guardKnownMods({ requested: [id], pool: new Set(Object.keys(modPool(api, gameId))) }));
+      const mod = modPool(api, gameId)[id]!;
+      // What the mod's folder offers, when it can be read: a misspelt name is
+      // refused instead of ticking a tweak that does not exist.
+      const root = (selectors as unknown as { installPathForGame?: (s: unknown, g: string) => string }).installPathForGame?.(
+        api.getState(),
+        gameId,
+      );
+      let available: string[] | undefined;
+      if (root !== undefined && mod.installationPath !== undefined) {
+        try {
+          const dir = fs
+            .readdirSync(path.join(root, mod.installationPath), { withFileTypes: true })
+            .find((d) => d.isDirectory() && d.name.toLowerCase() === "ini tweaks");
+          if (dir !== undefined) available = fs.readdirSync(path.join(root, mod.installationPath, dir.name));
+        } catch {
+          available = undefined;
+        }
+      }
+      if (available !== undefined) {
+        const unknown = [...enable, ...disable].filter((n) => !available!.some((a) => a.toLowerCase() === n.toLowerCase()));
+        if (unknown.length > 0) {
+          throw new ControlError("unknown-tweaks", `Not in ${modName(mod)}'s INI Tweaks folder: ${unknown.join(", ")}.`, 400, { available });
+        }
+      }
+      const spelled = (n: string): string => available?.find((a) => a.toLowerCase() === n.toLowerCase()) ?? n;
+      const set = (actions as unknown as {
+        setINITweakEnabled: (gameId: string, modId: string, tweak: string, enabled: boolean) => unknown;
+      }).setINITweakEnabled;
+      for (const n of enable) api.store?.dispatch(set(gameId, id, spelled(n), true) as never);
+      for (const n of disable) api.store?.dispatch(set(gameId, id, spelled(n), false) as never);
+      const now = ((modPool(api, gameId)[id] as { enabledINITweaks?: unknown } | undefined)?.enabledINITweaks ?? []) as string[];
+      const has = (n: string): boolean => now.some((t) => t.toLowerCase() === spelled(n).toLowerCase());
+      const notApplied = [...enable.filter((n) => !has(n)), ...disable.filter((n) => has(n))];
+      if (notApplied.length > 0) {
+        throw new ControlError("not-applied", `Vortex did not apply: ${notApplied.join(", ")}.`, 500, { enabled: now });
+      }
+      return { id, name: modName(mod), enabled: now, ...(available !== undefined ? { available } : {}) };
+    },
+    describe: (b) => `INI tweaks on ${String(b["name"] ?? b["id"])}: ${((b["enabled"] as unknown[]) ?? []).length} ticked`,
+  },
+
   /** The last restore points, newest first: what each was taken before, and when. */
   "restorePoints.list": {
     mutates: false,

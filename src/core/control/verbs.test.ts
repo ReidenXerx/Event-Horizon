@@ -160,6 +160,13 @@ function fakeVortex() {
         return () => listeners.delete(l);
       },
       dispatch: (a: { type: string; payload: any }) => {
+        if (a.type === "STUB_SET_INI_TWEAK_ENABLED") {
+          const m = state.persistent.mods[a.payload.gameId][a.payload.modId];
+          const now = new Set<string>(m.enabledINITweaks ?? []);
+          if (a.payload.enabled) now.add(a.payload.tweak);
+          else now.delete(a.payload.tweak);
+          m.enabledINITweaks = [...now];
+        }
         if (a.type === "STUB_SET_MOD_ATTRIBUTE") {
           const m = state.persistent.mods[a.payload.gameId][a.payload.modId];
           m.attributes = { ...(m.attributes ?? {}), [a.payload.key]: a.payload.value };
@@ -1211,6 +1218,27 @@ describe("diagnose.setup: findings an agent can act on", () => {
     expect(r.plugins).toMatchObject({ active: 3, full: 3, light: 0 });
     // Errors come first.
     expect(r.findings[0].severity).toBe("error");
+  });
+});
+
+describe("mods.iniTweaks (Skyrim-collection, Meridia - Handheld Settings)", () => {
+  it("ticks and unticks a mod's INI tweaks and says what is ticked now", async () => {
+    const r = (await run("mods.iniTweaks", { id: "a", enable: ["Grass [SkyrimPrefs].ini", "Trees [Skyrim].ini"] })) as any;
+    expect(r.enabled).toEqual(["Grass [SkyrimPrefs].ini", "Trees [Skyrim].ini"]);
+    const r2 = (await run("mods.iniTweaks", { id: "a", disable: ["Trees [Skyrim].ini"] })) as any;
+    expect(r2.enabled).toEqual(["Grass [SkyrimPrefs].ini"]);
+    expect(v.state.persistent.mods.fallout4.a.enabledINITweaks).toEqual(["Grass [SkyrimPrefs].ini"]);
+  });
+
+  it("refuses an unknown mod and an empty request", async () => {
+    await expect(run("mods.iniTweaks", { id: "nope", enable: ["x.ini"] })).rejects.toMatchObject({ code: "unknown-mods" });
+    await expect(run("mods.iniTweaks", { id: "a" })).rejects.toMatchObject({ code: "bad-request" });
+  });
+
+  it("says so when Vortex does not apply it", async () => {
+    const dispatch = v.api.store.dispatch;
+    v.api.store.dispatch = (a: any) => (a.type === "STUB_SET_INI_TWEAK_ENABLED" ? undefined : dispatch(a));
+    await expect(run("mods.iniTweaks", { id: "a", enable: ["x.ini"] })).rejects.toMatchObject({ code: "not-applied" });
   });
 });
 

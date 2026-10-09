@@ -304,6 +304,18 @@ export const TOOLS: ToolSpec[] = [
     required: ["id", "name"],
   },
   {
+    name: "mods_ini_tweaks",
+    verb: "mods.iniTweaks",
+    mutates: true,
+    description: "Tick or untick a mod's Vortex INI tweaks (files in its \"INI Tweaks\" folder); a collection build records the ticks. Then deploy.",
+    properties: {
+      id: str("Mod id from mods_find."),
+      enable: strings("Tweak file names to tick, e.g. \"Grass [SkyrimPrefs].ini\"."),
+      disable: strings("Tweak file names to untick."),
+    },
+    required: ["id"],
+  },
+  {
     name: "mods_remove",
     verb: "mods.remove",
     mutates: true,
