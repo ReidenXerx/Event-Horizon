@@ -78,6 +78,15 @@ describe("a Steam player on a GOG-built Skyrim collection", () => {
     expect(storeLines(r.warnings)).toEqual([]);
   });
 
+  it("with no recorded player version: still names only the GOG-only build", () => {
+    const u = user("skyrimse", "1.6.1179.0", "steam") as unknown as Record<string, unknown>;
+    delete u.gameVersion;
+    const r = resolveCompatibility(manifest("skyrimse", "1.6.1179.0", "gog"), u as unknown as UserSideState);
+    const text = storeLines(r.warnings).join("\n");
+    expect(text).toContain("JContainers GOG");
+    expect(text).not.toContain("Engine Fixes");
+  });
+
   it("falls back to the heuristic for a package with no plugin data", () => {
     const r = resolveCompatibility(
       manifest("skyrimse", "1.6.1179.0", "gog", false),
@@ -87,6 +96,28 @@ describe("a Steam player on a GOG-built Skyrim collection", () => {
     // The heuristic names both — it cannot tell them apart.
     expect(text).toContain("JContainers GOG");
     expect(text).toContain("Engine Fixes");
+  });
+});
+
+describe("the script extender itself", () => {
+  it("is named in the judged list: its loader is built per store and carries no plugin data", () => {
+    const m = manifest("skyrimse", "1.6.1179.0", "gog") as unknown as { mods: unknown[] };
+    m.mods.push({
+      name: "SKSE64 GOG",
+      compareKey: "nexus:3:3",
+      state: {
+        enabled: true,
+        stagingFiles: [
+          { path: "skse64_loader.exe", size: 1 },
+          { path: "skse64_1_6_1179.dll", size: 1 },
+        ],
+      },
+    });
+    const r = resolveCompatibility(m as unknown as EhcollManifest, user("skyrimse", "1.6.1179.0", "steam"));
+    const text = storeLines(r.warnings).join("\n");
+    expect(text).toContain("SKSE64 GOG");
+    expect(text).toContain("JContainers GOG");
+    expect(text).not.toContain("Engine Fixes");
   });
 });
 

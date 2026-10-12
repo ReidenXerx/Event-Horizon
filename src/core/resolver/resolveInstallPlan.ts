@@ -56,7 +56,11 @@
 
 import { gameVersionGuidance } from "./gameVersionGuidance";
 import { assessVersionMismatch, describeVersionMismatch } from "./versionMismatch";
-import { describeJudgedStoreMismatch, describeStoreMismatch } from "../manifest/storeCompatibility";
+import {
+  describeJudgedStoreMismatch,
+  describeStoreMismatch,
+  scriptExtenderRuntimeMods,
+} from "../manifest/storeCompatibility";
 import { looksLikeWine } from "../proton";
 import { bundleFolderInPackage } from "../manifest/bundleLayout";
 import type {
@@ -259,11 +263,20 @@ export function resolveCompatibility(
     manifest.game.id === "skyrimse" &&
     curatorStore !== userStore &&
     measuredStores.has(curatorStore) &&
-    measuredStores.has(userStore) &&
-    userState.gameVersion !== undefined;
+    measuredStores.has(userStore);
+  /*
+   * An unrecorded player version is judged at the curator's: the version line
+   * above already says it could not be compared, and leadsheet (Meridia,
+   * 2026-10-12, Steam, no version in Vortex) got the heuristic's 258 mods
+   * instead of the handful that really are GOG-only.
+   */
   const sameVersionStore =
     storeJudgeable && versionMismatch === undefined
-      ? assessVersionMismatch({ manifest, installed: userState.gameVersion!, store: userState.store })
+      ? assessVersionMismatch({
+          manifest,
+          installed: userState.gameVersion ?? manifest.game.version,
+          store: userState.store,
+        })
       : undefined;
   if (versionMismatch !== undefined) {
     /**
@@ -286,7 +299,12 @@ export function resolveCompatibility(
       ...describeJudgedStoreMismatch({
         curatorStore: manifest.game.store!,
         userStore: userState.store!,
-        swapLines: describeVersionMismatch(sameVersionStore).swapLines,
+        swapLines: [
+          ...scriptExtenderRuntimeMods(manifest.mods).map(
+            (m) => `${m.name} — the script extender itself (${m.dlls.join(", ")}) is built per store`,
+          ),
+          ...describeVersionMismatch(sameVersionStore).swapLines,
+        ],
         unjudged: sameVersionStore.plugins.unknown.length,
       }),
     );

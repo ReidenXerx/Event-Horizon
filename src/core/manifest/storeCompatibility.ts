@@ -112,6 +112,23 @@ export function scriptExtenderMods(
 }
 
 /**
+ * Mods that ship the script extender itself (`skse64_loader.exe`,
+ * `skse64_1_6_1179.dll`): built per store, and never in a package's plugin
+ * data, so the judged list has to add them. Meridia 1.0.29 judged 7 plugins
+ * and left out its SKSE64 GOG, the one the game does not start without.
+ */
+export function scriptExtenderRuntimeMods(mods: readonly EhcollMod[]): ScriptExtenderMod[] {
+  const out: ScriptExtenderMod[] = [];
+  for (const mod of mods) {
+    const files = (mod.state.stagingFiles ?? [])
+      .map((f) => basenameOf(toPosix(f.path)))
+      .filter((b) => EXTENDER_BINARY.test(b) && /\.(exe|dll)$/i.test(b));
+    if (files.length > 0) out.push({ name: mod.name, dlls: files });
+  }
+  return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+/**
  * What the user is told when the stores differ.
  *
  * Returns `[]` when there is nothing to say — same store, unknown store on
