@@ -87,6 +87,18 @@ describe("a Steam player on a GOG-built Skyrim collection", () => {
     expect(text).not.toContain("Engine Fixes");
   });
 
+  it("with no recorded player version: judges at Steam's own build, so a plugin listing 1.6.1170 is fine", () => {
+    const both: EhcollNativePlugin = { ...gogOnly, path: "SKSE/Plugins/FasterCellLookup.dll", runtimes: ["1.6.1170", "1.6.1179.1"] };
+    const m = manifest("skyrimse", "1.6.1179.0", "gog") as unknown as { mods: unknown[] };
+    m.mods.push(mod("Faster Cell Lookup", "nexus:4:4", both.path, [both]));
+    const u = user("skyrimse", "1.6.1179.0", "steam") as unknown as Record<string, unknown>;
+    delete u.gameVersion;
+    const r = resolveCompatibility(m as unknown as EhcollManifest, u as unknown as UserSideState);
+    const text = storeLines(r.warnings).join("\n");
+    expect(text).toContain("JContainers GOG");
+    expect(text).not.toContain("Faster Cell Lookup");
+  });
+
   it("falls back to the heuristic for a package with no plugin data", () => {
     const r = resolveCompatibility(
       manifest("skyrimse", "1.6.1179.0", "gog", false),

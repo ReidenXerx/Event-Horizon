@@ -182,8 +182,14 @@ export function describeJudgedStoreMismatch(args: {
   swapLines: readonly string[];
   /** Plugins whose DLL could not be read at build time: not judged either way. */
   unjudged: number;
+  /** The game version judged against when Vortex recorded none: said, not passed off as read. */
+  assumedVersion?: string;
 }): string[] {
-  const { curatorStore, userStore, swapLines, unjudged } = args;
+  const { curatorStore, userStore, swapLines, unjudged, assumedVersion } = args;
+  const assumedLine =
+    assumedVersion !== undefined
+      ? [`With no game version recorded, this assumes ${userStore}'s newest build, ${assumedVersion}.`]
+      : [];
   const unjudgedLine =
     unjudged > 0
       ? [
@@ -196,6 +202,7 @@ export function describeJudgedStoreMismatch(args: {
       `This collection was built on the ${curatorStore} version of the game and you are on ` +
         `${userStore}. None of the script-extender plugins checked is built only for ` +
         `${curatorStore}, so nothing needs re-downloading for that.`,
+      ...assumedLine,
       ...unjudgedLine,
     ];
   }
@@ -206,6 +213,7 @@ export function describeJudgedStoreMismatch(args: {
       `${curatorStore}. Re-download ${swapLines.length === 1 ? "it" : "each"} from its mod page and ` +
       `pick the ${userStore} build:`,
     ...swapLines.map((l) => `  • ${l}`),
+    ...assumedLine,
     ...unjudgedLine,
     `Everything else in the collection is unaffected.`,
   ];

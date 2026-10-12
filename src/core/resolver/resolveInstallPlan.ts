@@ -265,16 +265,19 @@ export function resolveCompatibility(
     measuredStores.has(curatorStore) &&
     measuredStores.has(userStore);
   /*
-   * An unrecorded player version is judged at the curator's: the version line
-   * above already says it could not be compared, and leadsheet (Meridia,
-   * 2026-10-12, Steam, no version in Vortex) got the heuristic's 258 mods
-   * instead of the handful that really are GOG-only.
+   * An unrecorded player version is judged at the newest build THEIR store
+   * ships: the version line above already says it could not be compared, and
+   * leadsheet (Meridia, 2026-10-12, Steam, no version in Vortex) got the
+   * heuristic's 258 mods instead of the handful that really are GOG-only.
+   * Not at the curator's version: Steam never shipped 1.6.1179, and judging
+   * there flagged Faster Cell Lookup, which lists Steam's 1.6.1170.
    */
+  const storeBuild: Record<string, string> = { steam: "1.6.1170.0", gog: "1.6.1179.0" };
   const sameVersionStore =
     storeJudgeable && versionMismatch === undefined
       ? assessVersionMismatch({
           manifest,
-          installed: userState.gameVersion ?? manifest.game.version,
+          installed: userState.gameVersion ?? storeBuild[userStore] ?? manifest.game.version,
           store: userState.store,
         })
       : undefined;
@@ -306,6 +309,7 @@ export function resolveCompatibility(
           ...describeVersionMismatch(sameVersionStore).swapLines,
         ],
         unjudged: sameVersionStore.plugins.unknown.length,
+        ...(userState.gameVersion === undefined ? { assumedVersion: sameVersionStore.installed } : {}),
       }),
     );
   } else {
