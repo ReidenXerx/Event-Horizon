@@ -60,6 +60,7 @@ import {
   describeJudgedStoreMismatch,
   describeStoreMismatch,
   scriptExtenderRuntimeMods,
+  storePickedMods,
 } from "../manifest/storeCompatibility";
 import { looksLikeWine } from "../proton";
 import { bundleFolderInPackage } from "../manifest/bundleLayout";
@@ -298,16 +299,20 @@ export function resolveCompatibility(
      * the 245-vs-6 failure this feature exists to end.
      */
   } else if (sameVersionStore?.plugins !== undefined) {
+    const judged = [
+      ...scriptExtenderRuntimeMods(manifest.mods).map(
+        (m) => `${m.name} — the script extender itself (${m.dlls.join(", ")}) is built per store`,
+      ),
+      ...describeVersionMismatch(sameVersionStore).swapLines,
+    ];
+    const picked = storePickedMods(manifest.mods, curatorStore, userStore, storeBuild[userStore])
+      .filter((p) => !judged.some((l) => l.startsWith(`${p.name} — `)))
+      .map((p) => `${p.name} — its installer was answered "${p.choice}"; pick the ${userState.store} option instead`);
     warnings.push(
       ...describeJudgedStoreMismatch({
         curatorStore: manifest.game.store!,
         userStore: userState.store!,
-        swapLines: [
-          ...scriptExtenderRuntimeMods(manifest.mods).map(
-            (m) => `${m.name} — the script extender itself (${m.dlls.join(", ")}) is built per store`,
-          ),
-          ...describeVersionMismatch(sameVersionStore).swapLines,
-        ],
+        swapLines: [...judged, ...picked],
         unjudged: sameVersionStore.plugins.unknown.length,
         ...(userState.gameVersion === undefined ? { assumedVersion: sameVersionStore.installed } : {}),
       }),

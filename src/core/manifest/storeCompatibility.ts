@@ -129,6 +129,42 @@ export function scriptExtenderRuntimeMods(mods: readonly EhcollMod[]): ScriptExt
 }
 
 /**
+ * Mods whose recorded FOMOD pick names the curator's store and not the
+ * player's build: the store lives in the installer answer, not the DLL.
+ * Save and Load Accelerator (Meridia, 2026-10-12) ships a signature-scanning
+ * DLL that declares no runtime, and its "Skyrim AE v1.6.1179 (GOG)" pick is
+ * the only place the store shows. A pick naming both builds ("SSE
+ * v1.6.1170/1.6.1179(GOG)") is not one.
+ */
+export function storePickedMods(
+  mods: readonly EhcollMod[],
+  curatorStore: string,
+  userStore: string,
+  userBuild: string | undefined,
+): Array<{ name: string; choice: string }> {
+  const names = (s: string, word: string): boolean => new RegExp(`(^|[^a-z])${word}([^a-z]|$)`, "i").test(s);
+  const build = userBuild?.replace(/\.0$/, "");
+  const out: Array<{ name: string; choice: string }> = [];
+  for (const mod of mods) {
+    for (const step of mod.install?.fomodSelections ?? []) {
+      const hit = step.groups
+        .flatMap((g) => g.choices)
+        .find(
+          (c) =>
+            names(c.name, curatorStore) &&
+            !names(c.name, userStore) &&
+            (build === undefined || !c.name.includes(build)),
+        );
+      if (hit !== undefined) {
+        out.push({ name: mod.name, choice: hit.name });
+        break;
+      }
+    }
+  }
+  return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+/**
  * What the user is told when the stores differ.
  *
  * Returns `[]` when there is nothing to say — same store, unknown store on

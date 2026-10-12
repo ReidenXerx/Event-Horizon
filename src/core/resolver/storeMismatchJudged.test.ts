@@ -133,6 +133,25 @@ describe("the script extender itself", () => {
   });
 });
 
+describe("a store chosen in the installer, not the DLL", () => {
+  const picked = (name: string, compareKey: string, choice: string) => ({
+    ...mod(name, compareKey, "SKSE/Plugins/x.dll", [independent]),
+    install: { fomodSelections: [{ name: "Version", groups: [{ name: "Game", choices: [{ idx: 0, name: choice }] }] }] },
+  });
+
+  it("names a pick for the curator's store only, never one that covers the player's build too", () => {
+    const m = manifest("skyrimse", "1.6.1179.0", "gog") as unknown as { mods: unknown[] };
+    m.mods.push(picked("SLACK", "nexus:5:5", "Skyrim AE v1.6.1179 (GOG); SKSE64 v2.2.6 (GOG)"));
+    m.mods.push(picked("Race Compatibility", "nexus:6:6", 'SSE v1.6.1170/1.6.1179(GOG) ("Anniversary Edition")'));
+    m.mods.push(picked("Catalogue", "nexus:7:7", "Catalogue of dogs"));
+    const r = resolveCompatibility(m as unknown as EhcollManifest, user("skyrimse", "1.6.1179.0", "steam"));
+    const text = storeLines(r.warnings).join("\n");
+    expect(text).toContain('SLACK — its installer was answered "Skyrim AE v1.6.1179 (GOG)');
+    expect(text).not.toContain("Race Compatibility");
+    expect(text).not.toContain("Catalogue");
+  });
+});
+
 describe("where the judgement cannot see the store", () => {
   it("keeps the heuristic on Fallout 4, whose plugins carry no store marker", () => {
     const r = resolveCompatibility(manifest("fallout4", "1.10.163.0", "gog"), user("fallout4", "1.10.163.0", "steam"));
