@@ -1,7 +1,7 @@
 # Changelog
 
 Everything that changed in Event Horizon, newest first, written for the people who use it. Since the first commit
-in April 2026 that is about 400 changes across 192 builds.
+in April 2026 that is about 400 changes across 193 builds.
 
 Until 0.1.0-alpha.149 builds were numbered `0.1.0-alpha.N`. From **0.1.151** the build number is the patch number:
 Vortex ignores everything after the dash when it decides whether an extension has an update, so an alpha number
@@ -9,6 +9,12 @@ could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
+
+## [0.2.71] — 2026-10-12
+
+### Install
+- A Steam player on a GOG-built collection is told only the mods that really need the Steam build (7 for Meridia,
+  SKSE itself included), not every mod with an SKSE plugin, even when Vortex has no game version recorded.
 
 ## [0.2.70] — 2026-10-09
 
