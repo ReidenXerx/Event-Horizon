@@ -3005,12 +3005,33 @@ export const VERBS: Record<string, Verb> = {
           });
         }
       }
+      /*
+       * "enable": false has to undo Vortex's own "enable mods after install"
+       * automation, which switched Meridia - Handheld Settings on in the
+       * curator's profile (Skyrim-collection, 2026-10-12) while this reply
+       * said enabled:false. Checked again after a beat in case the
+       * automation lands after the install resolves; the reply is read back.
+       */
+      if (!enable && profileId !== undefined) {
+        for (const waitMs of [0, 750]) {
+          if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs));
+          if (enabledMap(api, profileId)[vortexModId]?.enabled === true) {
+            api.store?.dispatch(actions.setModEnabled(profileId, vortexModId, false));
+          }
+        }
+        if (enabledMap(api, profileId)[vortexModId]?.enabled === true) {
+          throw new ControlError("disable-unverified", `Mod ${vortexModId} installed, but Vortex kept it enabled.`, 500, {
+            vortexModId,
+            installed: true,
+          });
+        }
+      }
       return {
         gameId,
         vortexModId,
         name: modName(m),
         version: str(m.attributes?.["version"]),
-        enabled: enable,
+        enabled: profileId !== undefined ? enabledMap(api, profileId)[vortexModId]?.enabled === true : enable,
         deployNeeded: true,
         ...(picks !== undefined ? { installer: answered ?? { note: "no FOMOD wizard opened; the picks were not needed" } } : {}),
         verified: { inPool: true, state: m.state, enabledIn: enable ? profileId : undefined },
