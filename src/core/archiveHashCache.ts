@@ -233,6 +233,37 @@ function isCurrentFileKey(key: string): boolean {
   return key.split("|").length === 4;
 }
 
+/**
+ * The newest ctime recorded per path, for telling the one live `file:` key of
+ * a path from the ones a later write replaced.
+ *
+ * ctime only moves forward (`utimes` cannot set it), and a hardlink deploy
+ * moves it on every staged file, so each rebuild after a deploy added a fresh
+ * key per file and kept the old one. Ivy's cache, 2026-10-13: 1.09M `file:`
+ * keys over 561k paths, up to 12 per path, 366 MB — and the save of it ran
+ * the renderer out of memory. An older-ctime key for a path is as UNREACHABLE
+ * as a pre-ctime one, so it is dropped on the same grounds; a file that is
+ * merely gone keeps its key.
+ */
+function latestCtimeByPath(keys: Iterable<string>): Map<string, number> {
+  const latest = new Map<string, number>();
+  for (const key of keys) {
+    if (!key.startsWith("file:")) continue;
+    const cut = key.lastIndexOf("|");
+    const filePath = key.slice(0, key.indexOf("|"));
+    const ctime = Number(key.slice(cut + 1));
+    const seen = latest.get(filePath);
+    if (seen === undefined || ctime > seen) latest.set(filePath, ctime);
+  }
+  return latest;
+}
+
+function isSupersededFileKey(key: string, latest: ReadonlyMap<string, number>): boolean {
+  if (!key.startsWith("file:")) return false;
+  const newest = latest.get(key.slice(0, key.indexOf("|")));
+  return newest !== undefined && Number(key.slice(key.lastIndexOf("|") + 1)) < newest;
+}
+
 export async function loadArchiveHashCache(
   dataDir: string,
 ): Promise<ArchiveHashCache> {
@@ -265,6 +296,8 @@ export async function loadArchiveHashCache(
   const clean: Record<string, CachedArchiveHash> = {};
   let dropped = 0;
   let staleShape = 0;
+  let superseded = 0;
+  const latest = latestCtimeByPath(Object.keys(entries).filter(isCurrentFileKey));
   for (const [key, value] of Object.entries(entries as Record<string, unknown>)) {
     const entry = value as Partial<CachedArchiveHash> | undefined;
     if (!isHex64(entry?.sha256)) {
@@ -275,6 +308,10 @@ export async function loadArchiveHashCache(
       // A `file:` key from before ctime joined the fingerprint. It can never
       // be matched again, so keeping it is pure weight — see below.
       staleShape += 1;
+      continue;
+    }
+    if (isSupersededFileKey(key, latest)) {
+      superseded += 1;
       continue;
     }
     clean[key] = {
@@ -297,6 +334,7 @@ export async function loadArchiveHashCache(
   }
   ehLog("info", "hash-cache.load.ok", {
     staleShape,
+    superseded,
     entries: Object.keys(clean).length,
     dropped,
     ms: Date.now() - startedAt,
@@ -308,18 +346,38 @@ export async function saveArchiveHashCache(
   dataDir: string,
   cache: ArchiveHashCache,
 ): Promise<void> {
-  const op = beginOp("hash-cache.save", {
-    entries: Object.keys(cache.entries).length,
-  });
+  const keys = Object.keys(cache.entries);
+  const op = beginOp("hash-cache.save", { entries: keys.length });
   try {
     await fsp.mkdir(dataDir, { recursive: true });
     const target = path.join(dataDir, ARCHIVE_HASH_CACHE_FILE);
     const tmp = `${target}.tmp`;
+    // A build adds this run's keys beside the ones they replace.
+    const latest = latestCtimeByPath(keys);
+    // Written a slice at a time, never as one string: a single stringify of a
+    // 366 MB cache is what ran the renderer out of memory (Ivy, 2026-10-13).
     // Write-then-rename: a build interrupted mid-save must not leave a truncated
     // cache that the next run silently reads as "no hashes".
-    await fsp.writeFile(tmp, `${JSON.stringify(cache, null, 2)}\n`, "utf8");
+    const file = await fsp.open(tmp, "w");
+    let written = 0;
+    try {
+      await file.write(`{"schemaVersion":1,"entries":{`);
+      const SLICE = 5000;
+      for (let i = 0; i < keys.length; i += SLICE) {
+        const lines: string[] = [];
+        for (const key of keys.slice(i, i + SLICE)) {
+          if (isSupersededFileKey(key, latest)) continue;
+          lines.push(`${written === 0 && lines.length === 0 ? "" : ","}\n${JSON.stringify(key)}:${JSON.stringify(cache.entries[key])}`);
+        }
+        written += lines.length;
+        if (lines.length > 0) await file.write(lines.join(""));
+      }
+      await file.write("\n}}\n");
+    } finally {
+      await file.close();
+    }
     await fsp.rename(tmp, target);
-    op.ok();
+    op.ok({ written, superseded: keys.length - written });
   } catch (err) {
     op.fail(err);
     throw err;

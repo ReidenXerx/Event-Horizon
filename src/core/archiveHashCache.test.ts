@@ -261,6 +261,45 @@ describe("persistence", () => {
     expect(Object.keys(loaded.entries)).toEqual(["good"]);
   });
 
+  it("keeps only the newest-ctime key of a path; an older one can never match again", async () => {
+    /**
+     * A hardlink deploy moves every staged file's ctime, so each rebuild after
+     * a deploy added a key per file beside the dead one. Ivy, 2026-10-13: 1.09M
+     * keys over 561k paths, 366 MB, and the save ran the renderer out of memory.
+     */
+    const old = archiveFileCacheKey("C:/st/a.dds", 10, 1000, 2000);
+    const older = archiveFileCacheKey("C:/st/a.dds", 10, 1000, 1500);
+    const live = archiveFileCacheKey("C:/st/a.dds", 10, 1000, 3000);
+    const other = archiveFileCacheKey("C:/st/b.dds", 10, 1000, 1000);
+    fs.writeFileSync(
+      path.join(dir, ARCHIVE_HASH_CACHE_FILE),
+      JSON.stringify({
+        schemaVersion: 1,
+        entries: Object.fromEntries([old, older, live, other].map((k) => [k, { sha256: SHA_A, recoveredAt: "t" }])),
+      }),
+    );
+    const back = await loadArchiveHashCache(dir);
+    expect(Object.keys(back.entries).sort()).toEqual([live, other].sort());
+
+    // And on save, where this run's keys sit beside the ones they replace.
+    const newer = archiveFileCacheKey("C:/st/a.dds", 10, 1000, 4000);
+    await saveArchiveHashCache(dir, mergeHashes(back, new Map([[newer, SHA_B]]), "t2"));
+    const again = await loadArchiveHashCache(dir);
+    expect(Object.keys(again.entries).sort()).toEqual([newer, other].sort());
+    expect(again.entries[newer]!.sha256).toBe(SHA_B);
+  });
+
+  it("writes valid JSON for many entries, keeping nexus keys", async () => {
+    let cache = emptyArchiveHashCache();
+    const added = new Map<string, string>();
+    for (let i = 0; i < 12_001; i += 1) added.set(archiveFileCacheKey(`C:/st/${i}"q.dds`, i, 1, 2), SHA_A);
+    cache = mergeHashes(rememberArchiveHash(cache, { nexusModId: 1, nexusFileId: 2, sha256: SHA_B, at: "t" }), added, "t");
+    await saveArchiveHashCache(dir, cache);
+    const parsed = JSON.parse(fs.readFileSync(path.join(dir, ARCHIVE_HASH_CACHE_FILE), "utf8"));
+    expect(Object.keys(parsed.entries)).toHaveLength(12_002);
+    await expect(loadArchiveHashCache(dir)).resolves.toEqual(cache);
+  });
+
   it("does not leave a truncated cache if a write is interrupted", async () => {
     // Written to a temp name and renamed, so readers never see a partial file.
     await saveArchiveHashCache(dir, emptyArchiveHashCache());
