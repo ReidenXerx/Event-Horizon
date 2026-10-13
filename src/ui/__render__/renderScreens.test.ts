@@ -77,6 +77,8 @@ import { DiskCleanupView } from "../pages/curator/DiskCleanupView";
 import { PluginsView } from "../pages/curator/PluginsView";
 import { InstallPlanModal } from "../pages/curator/InstallPlanModal";
 import { LoadOrderCard } from "../pages/doctor/LoadOrderCard";
+import { ModsOutsideCard } from "../pages/doctor/ModsOutsideCard";
+import { modsOutsideCollection } from "../../core/doctor/modsOutsideCollection";
 import { assessLoadOrder, previewRepin } from "../../core/doctor/loadOrderStatus";
 import { DownloadsView } from "../pages/curator/DownloadsView";
 import { planCleanup } from "../../core/curator/cleanupPlan";
@@ -1758,6 +1760,36 @@ describe("render", () => {
         autoSortOn: true,
         busy: false,
         onReapply: () => undefined,
+      }),
+    );
+  });
+
+  // A helper's first question: what else is enabled in this profile.
+  it("doctor — mods not from this collection", () => {
+    const rm = (vortexModId: string, compareKey: string, name: string) =>
+      ({ vortexModId, compareKey, source: "nexus" as const, name, installedAt: "t" });
+    const on = { enabled: true };
+    write(
+      "doctor-mods-outside",
+      React.createElement(ModsOutsideCard, {
+        packageName: "Meridia's Panties",
+        found: modsOutsideCollection({
+          receipt: {
+            mods: [rm("m1", "nexus:3863:1", "SkyUI"), rm("m2", "nexus:266:1", "Unofficial Skyrim Special Edition Patch")],
+            retiredMods: [{ vortexModId: "m9", compareKey: "nexus:100:1", name: "Old Lighting", retiredInVersion: "1.0.21" }],
+          },
+          mods: {
+            m1: { attributes: { modId: 3863, logicalFileName: "SkyUI" } },
+            m2: { attributes: { modId: 266 } },
+            k1: { attributes: { modId: 266, customFileName: "USSEP 4.3.6" } },
+            x1: { attributes: { modId: 1137, logicalFileName: "Immersive Armors" } },
+            x2: { attributes: { modId: 29624, logicalFileName: "Lanterns of Skyrim II" } },
+            x3: { attributes: { name: "my own tweaks" } },
+            m9: { attributes: { modId: 100, logicalFileName: "Old Lighting" } },
+          },
+          modState: { m1: on, m2: on, k1: on, x1: on, x2: on, x3: on, m9: on },
+        }),
+        onCopy: () => undefined,
       }),
     );
   });

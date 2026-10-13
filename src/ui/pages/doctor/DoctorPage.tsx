@@ -44,6 +44,9 @@ import type { EhcollManifest } from "../../../types/ehcoll";
 import { stagingRootForModId } from "../../../core/stagingPath";
 import { EnvironmentTools } from "./EnvironmentTools";
 import { LoadOrderCard } from "./LoadOrderCard";
+import { ModsOutsideCard } from "./ModsOutsideCard";
+import { describeModsOutsideCollection, modsOutsideCollection, type VortexModLike } from "../../../core/doctor/modsOutsideCollection";
+import { writeToClipboard } from "../../clipboard";
 import { baselineOf, previewRepin } from "../../../core/doctor/loadOrderStatus";
 import { pickDoctorReceipt } from "../../../core/doctor/pickReceipt";
 import { disableAutoSort, readsAutoSort } from "../../../core/installer/autoSort";
@@ -692,6 +695,35 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
           }}
         />
       )}
+
+      {obs !== undefined &&
+        ((): JSX.Element => {
+          // Read at render, like the auto-sort setting: the list follows Vortex as mods are switched on and off.
+          const r = loaded.selected;
+          const persistent = (api.getState() as unknown as {
+            persistent?: {
+              mods?: Record<string, Record<string, VortexModLike>>;
+              profiles?: Record<string, { modState?: Record<string, { enabled?: boolean }> }>;
+            };
+          }).persistent;
+          const found = modsOutsideCollection({
+            receipt: r,
+            otherReceipts: loaded.receipts.filter((o) => o.vortexProfileId === r.vortexProfileId && o.packageId !== r.packageId),
+            mods: persistent?.mods?.[r.gameId] ?? {},
+            modState: persistent?.profiles?.[r.vortexProfileId]?.modState ?? {},
+          });
+          return (
+            <ModsOutsideCard
+              packageName={r.packageName}
+              found={found}
+              onCopy={(): void => {
+                void writeToClipboard(describeModsOutsideCollection(r.packageName, found)).then((ok) =>
+                  toast(ok ? { intent: "success", message: "Copied the list." } : { intent: "danger", message: "Could not reach the clipboard." }),
+                );
+              }}
+            />
+          );
+        })()}
 
       {checks === undefined ? (
         <Card title="Collection Doctor">
