@@ -1,7 +1,7 @@
 # Changelog
 
 Everything that changed in Event Horizon, newest first, written for the people who use it. Since the first commit
-in April 2026 that is about 400 changes across 201 builds.
+in April 2026 that is about 400 changes across 202 builds.
 
 Until 0.1.0-alpha.149 builds were numbered `0.1.0-alpha.N`. From **0.1.151** the build number is the patch number:
 Vortex ignores everything after the dash when it decides whether an extension has an update, so an alpha number
@@ -9,6 +9,16 @@ could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
+
+## [0.2.80] — 2026-10-17
+
+### Disk cleanup
+- Two download records pointing at one file: the cleanup no longer offers the second one for deletion while the
+  first is in use. Deleting it would have deleted the archive that mod uses.
+
+### Agents
+- An agent can run the disk cleanup: see what could go, with the evidence, and remove chosen old installs and
+  archives by id. Archives a mod still uses are refused.
 
 ## [0.2.79] — 2026-10-16
 
