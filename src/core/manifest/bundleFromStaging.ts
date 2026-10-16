@@ -53,8 +53,9 @@ import { selectors, types } from "@nexusmods/vortex-api";
 
 import { isAbort } from "../../utils/abortError";
 import { beginOp, ehLog } from "../logging/ehLog";
-import { declaredSet, judgeSkipSet } from "../volatileFiles";
+import { declaredSet } from "../volatileFiles";
 import {
+  bundleContentKey,
   bundleRecordName,
   isLegacyBundleArchive,
   recordMatches,
@@ -67,7 +68,6 @@ import {
   listBundleFolder,
   writeBundleZip,
 } from "./bundleZip";
-import { computeStagingSetHash } from "./stagingSetHash";
 import { declaresAlternatives } from "./omissionLeads";
 import type { SevenZipApi } from "./sevenZip";
 import { hasInstallerScript, predictBasicPlacement } from "./vortexPlacement";
@@ -289,7 +289,7 @@ export async function measureBundledMods(args: {
        * case where an earlier record would be a guess rather than a fact. The
        * files are read then, and nothing is recorded.
        */
-      const contentKey = computeStagingSetHash(mod.stagingFiles ?? [], judgeSkipSet(mod));
+      const contentKey = bundleContentKey(mod.stagingFiles ?? [], declaredSet(mod.volatileFiles));
       const recordPath =
         contentKey === undefined
           ? undefined

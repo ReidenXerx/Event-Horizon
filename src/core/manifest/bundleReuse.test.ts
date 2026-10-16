@@ -25,7 +25,7 @@ import {
   type MeasuredBundle,
 } from "./bundleFromStaging";
 import { bundleFilesFromListing, listBundleFolder, writeBundleZip } from "./bundleZip";
-import { computeStagingSetHash } from "./stagingSetHash";
+import { bundleContentKey } from "./bundleCache";
 import type { AuditorMod } from "../getModsListForProfile";
 import type { CollectionConfig } from "./collectionConfig";
 
@@ -93,7 +93,7 @@ const records = (): string[] =>
 
 /** The record for `lods(sha)`: keyed by the hash of the staging SET, not of its one file. */
 const recordNameFor = (sha: string): string =>
-  `lods-${computeStagingSetHash(lods(sha).stagingFiles ?? [])!}.bundle.json`;
+  `lods-${bundleContentKey(lods(sha).stagingFiles ?? [])!}.bundle.json`;
 
 describe("measuring a bundled mod", () => {
   it("names the mod by the zip its staging files make", async () => {
@@ -150,7 +150,7 @@ describe("measuring a bundled mod", () => {
   });
 
   it("keeps no record when the staging set carries no hashes to key it on", async () => {
-    // `computeStagingSetHash` refuses a partial capture, and refusing is right:
+    // `bundleContentKey` refuses a partial capture, and refusing is right:
     // reuse would then be a guess about files nobody measured.
     await run(lods(undefined));
     const second = await run(lods(undefined));

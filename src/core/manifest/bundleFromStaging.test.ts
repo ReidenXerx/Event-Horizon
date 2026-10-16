@@ -3,6 +3,7 @@
  * place. 188 files in the source archive, 179 in staging — 12 removed, 3 added.
  * It built, shipped, and would have handed every user the original archive.
  */
+import * as crypto from "crypto";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -496,6 +497,41 @@ describe("measureBundledMods", () => {
     expect(out.failed).toEqual([
       { modId: "nopath", modName: "No Path", reason: expect.stringMatching(/no staging folder/) },
     ]);
+  });
+
+  it("measures again when only a settings file the bundle ships has changed", async () => {
+    // Meridia - Keybinds, 2026-10-16: two settings INIs restored in place, the
+    // record came back for the old bytes, and packaging refused every build
+    // after. The record's key has to cover every file the bundle carries.
+    const dir = path.join(staging, "keys");
+    fs.mkdirSync(path.join(dir, "MCM", "Config", "PhotoMode"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "keys.esp"), "plugin");
+    const ini = path.join(dir, "MCM", "Config", "PhotoMode", "settings.ini");
+    const sha = (p: string): string => crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+    const measure = async () => {
+      const stagingFiles = ["keys.esp", "MCM/Config/PhotoMode/settings.ini"].map((rel) => {
+        const full = path.join(dir, rel);
+        return { path: rel, size: fs.statSync(full).size, sha256: sha(full) };
+      });
+      const out = await measureBundledMods({
+        state: {} as never,
+        gameId: "skyrimse",
+        mods: [mod({ id: "keys", name: "Keybinds", installationPath: "keys", stagingFiles } as never)],
+        config: config({ keys: { bundled: true } }),
+        workDir: workDir(),
+        isExternal: () => true,
+      });
+      return out.bundles[0]!;
+    };
+
+    fs.writeFileSync(ini, "rewritten by the game, much longer than the shipped one");
+    const first = await measure();
+    expect((await measure()).reused).toBe(true);
+
+    fs.writeFileSync(ini, "restored");
+    const second = await measure();
+    expect(second.reused).not.toBe(true);
+    expect(second.sha256).not.toBe(first.sha256);
   });
 
   it("refuses a mod whose staging folder holds nothing to ship", async () => {

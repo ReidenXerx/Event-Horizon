@@ -9,13 +9,13 @@
  * v1.0.8 after v1.0.7 would pay minutes to learn a hash they already had.
  *
  * ─── THE KEY IS THE CONTENT, NOT THE MOD ───────────────────────────────
- * The key is `computeStagingSetHash`: the same set of files with the same
- * contents, in any order, on any machine. The canonical zip is made of
- * exactly that — paths and bytes, nothing else — so a record found under a
- * key describes those files and no others.
+ * The key is `bundleContentKey`: the same set of files with the same
+ * contents, in any order, on any machine — exactly the files the canonical zip
+ * is made of, and it is made of paths and bytes, nothing else — so a record
+ * found under a key describes those files and no others.
  *
- * That function returns `undefined` when any staged file lacks a sha256, and
- * that is exactly the case where reuse would be a guess. No key, no record.
+ * That function returns `undefined` when any of those files lacks a sha256,
+ * and that is exactly the case where reuse would be a guess. No key, no record.
  *
  * ─── A RECORD IS TRUSTED FOR TIME, NEVER FOR CORRECTNESS ───────────────
  * Packaging hashes the files it actually stages and refuses a bundle that
@@ -31,7 +31,41 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import * as crypto from "crypto";
 import * as path from "path";
+
+import { isVolatileFile, type DeclaredVolatile } from "../volatileFiles";
+import { toPosix } from "../paths";
+import type { EhcollStagingFile } from "../../types/ehcoll";
+
+/**
+ * The key of a bundle record: exactly the files the bundle zip carries.
+ *
+ * NOT `computeStagingSetHash`. That one judges a PLAYER's install, so it
+ * leaves out MCM settings and the mod's declared player settings, and a bundle
+ * ships them (the curator's tuned copy). Keyed by it, a curator who changed
+ * only those files got the old record back, and packaging, which hashes what
+ * is really there, refused the build every time after (Meridia - Keybinds,
+ * 2026-10-16: two settings INIs restored in place).
+ *
+ * Left out here is only what the bundle itself leaves out: runtime files and
+ * the curator's declared generated ones (`listBundleFolder`). `undefined` when
+ * any of the rest has no sha256: no key, no record.
+ */
+export function bundleContentKey(
+  files: readonly EhcollStagingFile[],
+  /** The mod's declared generated files, as `listBundleFolder` gets them. */
+  declared?: DeclaredVolatile,
+): string | undefined {
+  const kept = files.filter((f) => !isVolatileFile(f.path, declared));
+  if (kept.length === 0) return undefined;
+  if (kept.some((f) => typeof f.sha256 !== "string" || f.sha256.length !== 64)) return undefined;
+  const lines = kept.map((f) => `${toPosix(f.path)}|${f.size}|${f.sha256!}\n`).sort();
+  const hasher = crypto.createHash("sha256");
+  hasher.update("bundle-files\n");
+  for (const line of lines) hasher.update(line);
+  return hasher.digest("hex");
+}
 
 /** What a bundle turned out to be, the last time exactly these files were measured. */
 export type CachedBundle = {
