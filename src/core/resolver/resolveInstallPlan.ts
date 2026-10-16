@@ -719,6 +719,7 @@ function resolveNexusMod(
  *
  *   1. archive-sha match installed (cheap, archive-authoritative) → already-installed
  *   2. staging-set-hash match installed (fallback for archive-less) → already-installed
+ *  2b. this collection's receipt names a pool mod for the compareKey → already-installed
  *   3. download with matching archive sha                          → use-local-download
  *   4. bundled in the .ehcoll                                      → use-bundled
  *   5. strict mode + nothing else                                  → missing
@@ -784,6 +785,25 @@ function resolveExternalMod(
         existingModId: installedByStaging.id,
       };
     }
+  }
+
+  /**
+   * Rung 2b: our own receipt. The previous install of THIS collection put a
+   * mod here for exactly this compareKey, and it is still in the pool.
+   *
+   * Rungs 1 and 2 can both be blind to it: the archive is gone from the
+   * downloads folder (deleted to save space), and a mod whose only files are
+   * player settings (an MCM settings ini) has no staging-set hash at all,
+   * because those files are left out of it on purpose. Ivy's bundled
+   * "Knockout - Player KO Balanced" is one MCM ini, unchanged from 1.0.33 to
+   * 1.0.50, and an update still installed a second copy beside it (leadsheet,
+   * 2026-10-17). The receipt is identity evidence the player's disk cannot
+   * erase. Integrity is the verify pass's question, as it is for every rung
+   * (NS-4).
+   */
+  const ours = findInstalledByLineage(userState.installedMods, mod.compareKey, userState.previousInstall?.packageId);
+  if (ours) {
+    return { kind: "external-already-installed", existingModId: ours.id };
   }
 
   // Rung 3: archive-sha matches a download in Vortex's cache.
@@ -1287,6 +1307,35 @@ function findInstalledBySha(
  * identity unknown," not "different bytes" — same conservative
  * convention as `archiveSha256`.
  */
+/**
+ * The pool mod the previous install of this collection recorded for this
+ * compareKey. Lineage tags come only from this package's latest receipt
+ * (userState.ts `projectInstalledMods`), so a match is this collection's own
+ * record, never a name guess. Two matches (a twin left by an older update)
+ * prefer the enabled one, then the newer install.
+ */
+function findInstalledByLineage(
+  installed: InstalledMod[],
+  compareKey: string,
+  packageId: string | undefined,
+): InstalledMod | undefined {
+  const hits = installed.filter((m) => {
+    const tag = m.eventHorizonInstall;
+    if (tag === undefined || packageId === undefined) return false;
+    if (tag.collectionPackageId !== packageId || tag.originalCompareKey !== compareKey) return false;
+    // Vortex reuses mod ids: installed again after we recorded it is someone else's install at our id.
+    const vortexTime = m.installTime === undefined ? NaN : Date.parse(m.installTime);
+    const recorded = Date.parse(tag.installedAt);
+    return !(Number.isFinite(vortexTime) && Number.isFinite(recorded) && vortexTime > recorded + REINSTALL_GRACE_MS);
+  });
+  if (hits.length <= 1) return hits[0];
+  return [...hits].sort(
+    (a, b) =>
+      Number(b.enabled === true) - Number(a.enabled === true) ||
+      (b.installTime ?? "").localeCompare(a.installTime ?? ""),
+  )[0];
+}
+
 function findInstalledByStagingSetHash(
   installed: InstalledMod[],
   stagingSetHash: string,
