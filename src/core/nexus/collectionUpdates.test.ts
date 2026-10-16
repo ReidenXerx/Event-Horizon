@@ -137,4 +137,12 @@ describe("game version of a new revision", () => {
     expect(gameVersionHold([], "1.10.163")).toBeUndefined();
     expect(gameVersionHold(["1.11.240.0"], undefined)).toBeUndefined();
   });
+
+  it("does not hold a Steam Skyrim player from a GOG curator's revision of the same release", () => {
+    // leadsheet, Meridia Rev 12 (2026-10-16): built on GOG 1.6.1179, which is
+    // Steam's 1.6.1170 numbered apart.
+    expect(gameVersionHold(["1.6.1179.0"], "1.6.1170.0", "skyrimse")).toBeUndefined();
+    expect(gameVersionHold(["1.6.1179.0"], "1.6.640.0", "skyrimse")).toEqual({ required: "1.6.1179", installed: "1.6.640" });
+    expect(gameVersionHold(["1.6.1179.0"], "1.6.1170.0", "fallout4")).toBeDefined();
+  });
 });

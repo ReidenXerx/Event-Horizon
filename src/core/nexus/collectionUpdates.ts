@@ -15,6 +15,7 @@
 
 import type { types } from "@nexusmods/vortex-api";
 
+import { storeTwinsOf } from "../environment/storeBuilds";
 import { ehLog } from "../logging/ehLog";
 import type { InstallReceipt, InstallReceiptNexusCollection } from "../../types/installLedger";
 import { isLoggedInToNexus } from "./collectionUpload";
@@ -68,13 +69,18 @@ const shortVersion = (v: string): string => v.trim().replace(/^(\d+\.\d+\.\d+)\.
  * for: no policy (exact or minimum) lets an older game run it. A newer game is
  * left to the install-time soft block, which knows the policy; an unknown
  * version, or a revision with none recorded, is never held here.
+ *
+ * One release on two stores counts as the same game (`storeTwinsOf`): a GOG
+ * curator's Skyrim 1.6.1179 revision is not held from a Steam 1.6.1170 player.
  */
 export function gameVersionHold(
   required: readonly string[] | undefined,
   installed: string | undefined,
+  gameId?: string,
 ): { required: string; installed: string } | undefined {
   if (installed === undefined || required === undefined || required.length === 0) return undefined;
-  if (!required.every((r) => compareGameVersions(installed, r) === -1)) return undefined;
+  const runs = gameId === undefined ? required : required.flatMap((r) => [r, ...storeTwinsOf(gameId, r)]);
+  if (!runs.every((r) => compareGameVersions(installed, r) === -1)) return undefined;
   const lowest = [...required].sort((a, b) => compareGameVersions(a, b) ?? 0)[0]!;
   return { required: shortVersion(lowest), installed: shortVersion(installed) };
 }

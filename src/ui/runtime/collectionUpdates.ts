@@ -281,7 +281,7 @@ export async function withGameVersionHolds(
   const gameName =
     (util as unknown as { getGame?: (id: string) => { name?: string } | undefined }).getGame?.(gameId)?.name ?? "the game";
   return found.map((u) => {
-    const held = gameVersionHold(u.requiredGameVersions, installed);
+    const held = gameVersionHold(u.requiredGameVersions, installed, gameId);
     if (held === undefined) return u;
     const message =
       `${u.packageName} revision ${u.latestRevision} needs ${gameName} ${held.required}. ` +

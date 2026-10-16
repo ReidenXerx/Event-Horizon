@@ -20,6 +20,7 @@
  * `CollectionPayload`. Only fields that survive that conversion are written.
  */
 
+import { storeTwinsOf } from "../environment/storeBuilds";
 import { NEXUS_GAME_DOMAIN_BY_GAME_ID } from "../manifest/buildManifest";
 import type { EhcollManifest, EhcollMod } from "../../types/ehcoll";
 
@@ -87,10 +88,19 @@ export function toNexusCollectionInfo(manifest: EhcollManifest): NexusCollection
       domainName,
       // What Vortex sends is the installed game's version; a package that could
       // not detect one says "unknown", which is not a version to tell Nexus.
-      gameVersions: /^\d+(\.\d+)+$/.test(manifest.game.version) ? [manifest.game.version] : [],
+      // A release numbered apart per store is listed under every store's
+      // number, so an older Event Horizon does not hold the other store's
+      // players from the update (storeBuilds.ts).
+      gameVersions: nexusGameVersions(manifest.game.id, manifest.game.version),
     },
     mods: manifest.mods.map((mod) => toNexusCollectionMod(mod, domainName)),
   };
+}
+
+function nexusGameVersions(gameId: string, version: string): string[] {
+  if (!/^\d+(\.\d+)+$/.test(version)) return [];
+  const twins = storeTwinsOf(gameId, version);
+  return twins.length > 0 ? twins : [version];
 }
 
 function toNexusCollectionMod(mod: EhcollMod, collectionDomain: string): NexusCollectionMod {

@@ -84,8 +84,17 @@ describe("the collection's own details", () => {
       authorUrl: "",
       name: "Meridia's Panties",
       domainName: "skyrimspecialedition",
-      gameVersions: ["1.6.1170.0"],
+      gameVersions: ["1.6.1170.0", "1.6.1179.0"],
     });
+  });
+
+  it("lists Skyrim's last release under both stores' numbers, and any other version alone", () => {
+    const gog = manifestWith([]);
+    (gog.game as { version: string }).version = "1.6.1179.0";
+    expect(toNexusCollectionInfo(gog).info.gameVersions).toEqual(["1.6.1170.0", "1.6.1179.0"]);
+    const older = manifestWith([]);
+    (older.game as { version: string }).version = "1.6.640.0";
+    expect(toNexusCollectionInfo(older).info.gameVersions).toEqual(["1.6.640.0"]);
   });
 
   it("leaves the game version out when the package could not detect one", () => {

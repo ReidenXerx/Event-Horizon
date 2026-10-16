@@ -54,6 +54,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { STORE_BUILDS } from "../environment/storeBuilds";
 import { gameVersionGuidance } from "./gameVersionGuidance";
 import { assessVersionMismatch, describeVersionMismatch } from "./versionMismatch";
 import {
@@ -273,7 +274,7 @@ export function resolveCompatibility(
    * Not at the curator's version: Steam never shipped 1.6.1179, and judging
    * there flagged Faster Cell Lookup, which lists Steam's 1.6.1170.
    */
-  const storeBuild: Record<string, string> = { steam: "1.6.1170.0", gog: "1.6.1179.0" };
+  const storeBuild: Readonly<Record<string, string>> = STORE_BUILDS.skyrimse ?? {};
   const sameVersionStore =
     storeJudgeable && versionMismatch === undefined
       ? assessVersionMismatch({
