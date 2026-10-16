@@ -454,6 +454,104 @@ describe("ifExisting: Vortex's older-version dialog", () => {
   });
 });
 
+describe("pluginsChanged: Vortex's 'Plugin list changed outside Vortex' question", () => {
+  // As gamebryo-plugin-management opens it: question, these two buttons, anything but Keep reverts.
+  const ASKED = {
+    id: "plc1",
+    title: "Plugin list changed outside Vortex",
+    text: "Another tool or the game changed the plugin list files. Keep those changes or revert to the load order Vortex manages?",
+    actions: ["Revert", "Keep"],
+  };
+  const sortCalls = (): { count: number } => {
+    const calls = { count: 0 };
+    v.api.events.emit = (ev: string, ...args: unknown[]) => {
+      if (ev === "autosort-plugins") {
+        calls.count += 1;
+        (args[1] as (e: unknown) => void)(null);
+      }
+    };
+    return calls;
+  };
+
+  it("pluginsChanged.answer presses Keep and checks plugins.txt against Vortex's order", async () => {
+    let pressed = "";
+    void v.openDialog(ASKED).then((a) => (pressed = a));
+    disk.entries = [{ name: "A.esp", enabled: true }, { name: "B.esp", enabled: true }, { name: "C.esl", enabled: false }];
+    const r = (await run("pluginsChanged.answer", { answer: "keep" })) as any;
+    expect(pressed).toBe("Keep");
+    expect(r).toMatchObject({ pressed: "Keep", verified: { dialogClosed: true, pluginsTxtOrder: true } });
+  });
+
+  it("pluginsChanged.answer fails when plugins.txt still disagrees with Vortex", async () => {
+    void v.openDialog(ASKED);
+    disk.entries = [{ name: "B.esp", enabled: true }, { name: "A.esp", enabled: true }];
+    await expect(run("pluginsChanged.answer", { answer: "revert" })).rejects.toMatchObject({ code: "plugins-txt-order" });
+  });
+
+  it("pluginsChanged.answer says so when nothing is asking, and rejects an unknown answer", async () => {
+    await expect(run("pluginsChanged.answer", { answer: "keep" })).rejects.toMatchObject({ code: "no-plugins-changed-dialog" });
+    void v.openDialog(ASKED);
+    await expect(run("pluginsChanged.answer", { answer: "both" })).rejects.toMatchObject({ code: "bad-request" });
+    expect(v.closed).toEqual([]);
+  });
+
+  it("a plugin write refuses while the question is open, before writing anything (the IvyPanties false ok)", async () => {
+    const calls = sortCalls();
+    void v.openDialog(ASKED);
+    await expect(runVerb(v.api as any, "plugins.sort", {})).rejects.toMatchObject({
+      code: "plugins-changed-outside",
+      details: { pluginListChanged: { waiting: true }, vortex: { pluginListChanged: { answerWith: "pluginsChanged.answer" } } },
+    });
+    expect(calls.count).toBe(0);
+    expect(v.closed).toEqual([]);
+  });
+
+  it("pluginsChanged on the command answers an open question first, then runs it", async () => {
+    const calls = sortCalls();
+    let pressed = "";
+    void v.openDialog(ASKED).then((a) => (pressed = a));
+    const r = (await runVerb(v.api as any, "plugins.sort", { pluginsChanged: "revert" })) as any;
+    expect(pressed).toBe("Revert");
+    expect(calls.count).toBe(1);
+    expect(r.pluginsChangedAnswered).toMatchObject({ pressed: "Revert", verified: { dialogClosed: true } });
+  });
+
+  const deployAsking = () => {
+    v.api.events.emit = (ev: string, ...args: unknown[]) => {
+      if (ev === "deploy-mods") {
+        void v.openDialog(ASKED);
+        setTimeout(() => (args[0] as (e: unknown) => void)(null), 10);
+      }
+    };
+  };
+
+  it("a deploy that raised the question and left it open is not reported as a success", async () => {
+    deployAsking();
+    await expect(runVerb(v.api as any, "deploy", {})).rejects.toMatchObject({
+      code: "plugins-changed-outside",
+      details: { completed: expect.any(Object) },
+    });
+  });
+
+  it("a deploy told pluginsChanged answers the question when it opens", async () => {
+    deployAsking();
+    const r = (await runVerb(v.api as any, "deploy", { pluginsChanged: "keep" })) as any;
+    expect(v.closed).toEqual([{ id: "plc1", action: "Keep" }]);
+    expect(r.vortex.dialogsSeen).toEqual([expect.objectContaining({ answer: "Keep", answeredBy: "pluginsChanged" })]);
+  });
+
+  it("rejects an unknown pluginsChanged before doing anything", async () => {
+    await expect(runVerb(v.api as any, "deploy", { pluginsChanged: "maybe" })).rejects.toMatchObject({ code: "bad-request" });
+    expect(v.log).toEqual([]);
+  });
+
+  it("other verbs and other dialogs are left alone", () => {
+    expect(answerFor({ pluginsChanged: "keep" }, { ...ASKED, title: "Something else", text: "x" })).toBeUndefined();
+    expect(answerFor({ pluginsChanged: "keep" }, { ...ASKED, actions: ["Revert", "Accept"] })).toBeUndefined();
+    expect(answerFor({ ifExisting: "replace" }, { ...ASKED, text: ASKED.text })).toBeUndefined();
+  });
+});
+
 describe("conflicts + mods.rule", () => {
   const withConflict = () => {
     v.state.session = {

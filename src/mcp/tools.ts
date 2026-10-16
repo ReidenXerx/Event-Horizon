@@ -42,6 +42,11 @@ const picks = {
     required: ["group", "options"],
   },
 };
+const pluginsChanged = {
+  type: "string",
+  enum: ["keep", "revert"],
+  description: "If Vortex asks \"Plugin list changed outside Vortex\": keep (take the file's order) or revert (write Vortex's).",
+};
 const assume = bool("Only when you KNOW the game is closed and Event Horizon could not tell (code game-state-unknown).");
 
 export const TOOLS: ToolSpec[] = [
@@ -278,7 +283,7 @@ export const TOOLS: ToolSpec[] = [
     verb: "deploy",
     mutates: true,
     description: "Deploy the active profile so the game sees the current mods. Needed after installs, enables, disables and rules. The game must be closed.",
-    properties: { assumeGameClosed: assume },
+    properties: { assumeGameClosed: assume, pluginsChanged },
   },
   {
     name: "purge",
@@ -355,7 +360,7 @@ export const TOOLS: ToolSpec[] = [
     verb: "plugins.setEnabled",
     mutates: true,
     description: "Switch plugins on or off by file name in the active profile.",
-    properties: { names: strings("Plugin file names."), enabled: bool("true to enable.") },
+    properties: { names: strings("Plugin file names."), enabled: bool("true to enable."), pluginsChanged },
     required: ["names", "enabled"],
   },
   {
@@ -366,6 +371,7 @@ export const TOOLS: ToolSpec[] = [
     properties: {
       order: { type: "array", items: { type: "object", properties: { name: { type: "string" }, enabled: { type: "boolean" } }, required: ["name", "enabled"] } },
       sort: bool("Let LOOT sort afterwards instead of keeping the order exactly."),
+      pluginsChanged,
     },
     required: ["order"],
   },
@@ -374,7 +380,7 @@ export const TOOLS: ToolSpec[] = [
     verb: "plugins.sort",
     mutates: true,
     description: "Sort the load order with LOOT now, and report what moved.",
-    properties: {},
+    properties: { pluginsChanged },
   },
   {
     name: "plugins_set_group",
@@ -422,6 +428,17 @@ export const TOOLS: ToolSpec[] = [
       files: { type: "object", description: "Answers per file path: {\"<path>\": \"revert\"}." },
       cancel: bool("Cancel instead: the waiting deploy or purge is cancelled."),
     },
+  },
+  {
+    name: "plugins_changed_answer",
+    verb: "pluginsChanged.answer",
+    mutates: true,
+    description:
+      "Answer Vortex's \"Plugin list changed outside Vortex\" question (a reply with code plugins-changed-outside means " +
+      "it is open; until answered Vortex writes no plugins.txt). keep: Vortex takes the file's order; revert: Vortex " +
+      "writes its own. Then checks plugins.txt matches Vortex's order.",
+    properties: { answer: { type: "string", enum: ["keep", "revert"] } },
+    required: ["answer"],
   },
   {
     name: "profile_switch",

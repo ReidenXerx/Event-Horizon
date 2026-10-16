@@ -59,6 +59,10 @@ const META: Record<string, Meta> = {
     badge: "CHANGES",
     doing: (b) => (b["cancel"] === true ? "Cancelling at External Changes" : `Answering External Changes (${String(b["all"] ?? "per file")})`),
   },
+  "pluginsChanged.answer": {
+    badge: "PLUGINS",
+    doing: (b) => `Answering "Plugin list changed outside Vortex" (${String(b["answer"])})`,
+  },
   install: {
     badge: "INSTALL",
     doing: (b) => {

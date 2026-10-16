@@ -355,6 +355,20 @@ export const REINSTALL_TITLE = "Install options";
 export const REINSTALL_TEXT = "is already installed on your system";
 export const VARIANT_NAME_TITLE = "Install options - Name mod variant";
 
+/**
+ * gamebryo-plugin-management's question when plugins.txt changed on disk
+ * (its loadOrder persistor's external-change callback, read out of
+ * bundledPlugins/gamebryo-plugin-management/index.cjs). Buttons "Revert" and
+ * "Keep"; anything but Keep reverts. While it is open Vortex writes no
+ * plugins.txt: a sort, apply or deploy changes Vortex's state and the file
+ * keeps the old order (IvyPanties - AE, 2026-10-16).
+ */
+export const PLUGINS_CHANGED_TITLE = "Plugin list changed outside Vortex";
+export const PLUGINS_CHANGED_ACTION: Record<string, string> = { keep: "Keep", revert: "Revert" };
+
+/** Verbs whose result depends on Vortex writing plugins.txt. */
+const PLUGINS_TXT_WRITERS = new Set(["plugins.setEnabled", "plugins.apply", "plugins.sort", "deploy"]);
+
 type RawDialog = {
   id: string;
   type?: string;
@@ -394,10 +408,16 @@ export type AnswerPolicy = {
   variantName?: string;
   /** The caller sent its own installer choices: do not let the old mod's pre-fill them. */
   ownChoices?: boolean;
+  /** "keep" or "revert" for the "Plugin list changed outside Vortex" question. */
+  pluginsChanged?: string;
 };
 
 /** What to press for this dialog under the caller's policy, or undefined to leave it to the user. */
 export function answerFor(policy: AnswerPolicy, d: RawDialog): DialogAnswer | undefined {
+  if (d.title === PLUGINS_CHANGED_TITLE) {
+    const label = policy.pluginsChanged === undefined ? undefined : PLUGINS_CHANGED_ACTION[policy.pluginsChanged];
+    return label !== undefined && d.actions.includes(label) ? { label } : undefined;
+  }
   const ifExisting = policy.ifExisting;
   if (ifExisting === undefined || ifExisting === "ask") return undefined;
   // A Vortex that renamed its buttons gets no answer rather than a wrong one.
@@ -425,7 +445,7 @@ export function answerFor(policy: AnswerPolicy, d: RawDialog): DialogAnswer | un
   return undefined;
 }
 
-type SeenDialog = { type?: string; title?: string; text: string; answer?: string; answeredBy?: "ifExisting" };
+type SeenDialog = { type?: string; title?: string; text: string; answer?: string; answeredBy?: "ifExisting" | "pluginsChanged" };
 
 /**
  * Watches the store while a command runs: records every dialog that opens
@@ -461,7 +481,7 @@ function watchDialogs(
       const answer = answerFor(policy, d);
       if (answer !== undefined) {
         entry.answer = answer.label + (answer.input?.["variant"] === true ? " (variant)" : answer.input?.["replace"] === true ? " (replace)" : typeof answer.input?.["variant"] === "string" ? ` (${String(answer.input["variant"])})` : "");
-        entry.answeredBy = "ifExisting";
+        entry.answeredBy = d.title === PLUGINS_CHANGED_TITLE ? "pluginsChanged" : "ifExisting";
         // Not from inside the store listener: dispatching there re-enters it.
         setTimeout(() => api.closeDialog?.(d.id, answer.label, answer.input ?? {}), 0);
       }
@@ -470,6 +490,49 @@ function watchDialogs(
   // A Redux store; the typings trim ThunkStore to dispatch/getState.
   const unsubscribe = (api.store as unknown as { subscribe?: (fn: () => void) => () => void } | undefined)?.subscribe?.(check);
   return { seen, installers, stop: () => unsubscribe?.() };
+}
+
+function pluginsChangedDialog(api: types.IExtensionApi): RawDialog | undefined {
+  return rawDialogs(api).find((d) => d.title === PLUGINS_CHANGED_TITLE);
+}
+
+function pluginsChangedError(verb: string, completed?: Record<string, unknown>): ControlError {
+  return new ControlError(
+    "plugins-changed-outside",
+    `Vortex is asking "${PLUGINS_CHANGED_TITLE}" (Keep or Revert) and writes no plugins.txt until it is answered` +
+      (completed !== undefined ? `: the ${verb} ran, but plugins.txt may still have the old order` : "") +
+      `. Answer with pluginsChanged.answer (keep: Vortex takes the file's order; revert: Vortex writes its own), ` +
+      `or send "pluginsChanged": "keep"|"revert" with the command.`,
+    409,
+    { pluginListChanged: { waiting: true, answerWith: "pluginsChanged.answer" }, ...(completed !== undefined ? { completed } : {}) },
+  );
+}
+
+/**
+ * Presses Keep or Revert on the plugin-list question, then reads plugins.txt
+ * back against Vortex's order: after either answer the two should agree.
+ */
+async function answerPluginsChanged(api: types.IExtensionApi, answer: string): Promise<Record<string, unknown>> {
+  const label = PLUGINS_CHANGED_ACTION[answer];
+  if (label === undefined) throw new ControlError("bad-request", `"answer" must be "keep" or "revert".`);
+  const d = pluginsChangedDialog(api);
+  if (d === undefined) {
+    throw new ControlError("no-plugins-changed-dialog", `Vortex is not asking "${PLUGINS_CHANGED_TITLE}".`, 409);
+  }
+  if (!d.actions.includes(label)) {
+    throw new ControlError("dialog-changed", `The dialog's buttons are ${d.actions.join(", ")}; none is "${label}".`, 409);
+  }
+  api.closeDialog?.(d.id, label, {});
+  if (!(await settle(() => rawDialogs(api).every((x) => x.id !== d.id), 5000))) {
+    throw new ControlError("answer-unverified", `The "${PLUGINS_CHANGED_TITLE}" dialog is still open.`, 500);
+  }
+  await waitForQuietPlugins(api);
+  // Order only: Creations and the game's own masters are never in plugins.txt, so an "enabled" check would misfire.
+  const order = [...readPluginList(api.getState())]
+    .sort((a, b) => (a.loadOrder ?? 0) - (b.loadOrder ?? 0))
+    .map((p) => ({ name: p.name, enabled: false }));
+  const disk = await pluginsTxtOnDisk(api, activeGame(api), order);
+  return { answer, pressed: label, pluginsTxt: disk, verified: { dialogClosed: true, pluginsTxtOrder: disk["read"] === true && disk["outOfOrder"] === 0 } };
 }
 
 // ─── restore points ────────────────────────────────────────────────────────
@@ -532,11 +595,16 @@ export async function runVerb(api: types.IExtensionApi, name: string, body: Verb
   if (ifExisting !== undefined && ifExisting !== "ask" && IF_EXISTING_ACTION[ifExisting] === undefined) {
     throw new ControlError("bad-request", `"ifExisting" must be "alongside", "replace" or "ask".`);
   }
+  const pluginsChanged = body["pluginsChanged"] === undefined ? undefined : String(body["pluginsChanged"]);
+  if (pluginsChanged !== undefined && PLUGINS_CHANGED_ACTION[pluginsChanged] === undefined) {
+    throw new ControlError("bad-request", `"pluginsChanged" must be "keep" or "revert".`);
+  }
   const before = new Set(notices(api).map((n) => n.id));
   const policy: AnswerPolicy = {
     ...(ifExisting !== undefined ? { ifExisting } : {}),
     ...(str(body["variantName"]) !== undefined ? { variantName: str(body["variantName"])! } : {}),
     ownChoices: body["choices"] !== undefined,
+    ...(pluginsChanged !== undefined ? { pluginsChanged } : {}),
   };
   const watch = verb.mutates ? watchDialogs(api, policy) : undefined;
   const activity = (): Record<string, unknown> => ({
@@ -548,11 +616,25 @@ export async function runVerb(api: types.IExtensionApi, name: string, body: Verb
     openDialogs: openDialogs(api).map(({ type, title, text }) => ({ type, title, text })),
     ...(readFomod(api.getState()) !== undefined ? { openInstaller: fomodSummary(readFomod(api.getState())) } : {}),
     ...(externalChanges(api) !== undefined ? { externalChanges: externalChanges(api) } : {}),
+    ...(pluginsChangedDialog(api) !== undefined ? { pluginListChanged: { waiting: true, answerWith: "pluginsChanged.answer" } } : {}),
   });
+  const writesPluginsTxt = PLUGINS_TXT_WRITERS.has(name);
   const restorePoint = verb.restorePoint === true ? takeRestorePoint(api, name) : undefined;
   try {
+    // Already asking before the command: answer it first when told how, else say so instead of a write that cannot land.
+    let answeredFirst: Record<string, unknown> | undefined;
+    if (writesPluginsTxt && pluginsChangedDialog(api) !== undefined) {
+      if (pluginsChanged === undefined) throw pluginsChangedError(name);
+      answeredFirst = await answerPluginsChanged(api, pluginsChanged);
+    }
     const result = await verb.run(api, body);
-    const withPoint = restorePoint !== undefined ? { ...result, restorePoint } : result;
+    const withPoint = {
+      ...result,
+      ...(restorePoint !== undefined ? { restorePoint } : {}),
+      ...(answeredFirst !== undefined ? { pluginsChangedAnswered: answeredFirst } : {}),
+    };
+    // Asked during the command and left unanswered: Vortex held back plugins.txt, so this is not a success.
+    if (writesPluginsTxt && pluginsChangedDialog(api) !== undefined) throw pluginsChangedError(name, withPoint);
     return verb.mutates ? { ...withPoint, vortex: activity() } : withPoint;
   } catch (err) {
     if (err instanceof ControlError) {
@@ -1712,6 +1794,34 @@ export const VERBS: Record<string, Verb> = {
       return { moduleName: view.moduleName, cancelled: true, verified: { closed: true } };
     },
     describe: (_b, r) => `cancelled the ${String(r["moduleName"] ?? "FOMOD")} installer`,
+  },
+
+  /**
+   * Answers "Plugin list changed outside Vortex" (Keep or Revert), then checks
+   * plugins.txt and Vortex's order agree.
+   *
+   *   { answer: "keep"|"revert" }
+   *
+   * Runs beside the queue: nothing else writes plugins.txt until it is answered.
+   */
+  "pluginsChanged.answer": {
+    mutates: true,
+    queue: false,
+    restorePoint: true,
+    run: async (api, body) => {
+      const r = await answerPluginsChanged(api, String(body["answer"] ?? ""));
+      const disk = r["pluginsTxt"] as Record<string, unknown>;
+      if (disk["read"] === true && Number(disk["outOfOrder"]) > 0) {
+        throw new ControlError(
+          "plugins-txt-order",
+          `Answered ${String(r["pressed"])}, but plugins.txt has ${String(disk["outOfOrder"])} plugins out of Vortex's order.`,
+          500,
+          { pluginsTxt: disk },
+        );
+      }
+      return r;
+    },
+    describe: (b) => `answered "Plugin list changed outside Vortex" with ${String(b["answer"])}`,
   },
 
   /**
