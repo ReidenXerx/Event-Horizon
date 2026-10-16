@@ -1099,6 +1099,104 @@ describe("mods.setEnabled / mods.remove", () => {
   });
 });
 
+describe("cleanup.plan / cleanup.run (Fallout-collection, 2026-10-16)", () => {
+  /** An old install `c` holding d3, an orphan d4 with no Nexus id; `a` still holds d1. */
+  const setup = () => {
+    v.state.persistent.mods.fallout4.a.archiveId = "d1";
+    v.state.persistent.mods.fallout4.c = {
+      id: "c",
+      state: "installed",
+      archiveId: "d3",
+      attributes: { name: "Mod A old", version: "0.9", modId: 12, fileId: 10 },
+    };
+    v.state.persistent.downloads.files.d3 = { localPath: "a-old.zip", state: "finished", game: ["fallout4"], size: 300 };
+    v.state.persistent.downloads.files.d4 = { localPath: "loose.zip", state: "finished", game: ["fallout4"], size: 400 };
+    const removedDownloads: string[] = [];
+    const emit = v.api.events.emit;
+    v.api.events.emit = (ev: string, ...args: unknown[]) => {
+      if (ev === "remove-download") {
+        removedDownloads.push(String(args[0]));
+        delete v.state.persistent.downloads.files[String(args[0])];
+        (args[1] as (e: unknown) => void)(null);
+        return;
+      }
+      emit(ev, ...args);
+    };
+    return removedDownloads;
+  };
+  const removing = (actuallyRemove: boolean) =>
+    vi.spyOn(util, "removeMods").mockImplementation((async (_api: unknown, _g: string, ids: string[]) => {
+      if (actuallyRemove) for (const id of ids) delete v.state.persistent.mods.fallout4[id];
+    }) as never);
+
+  it("cleanup.plan sorts the archives and never offers a referenced one", async () => {
+    setup();
+    const r = (await run("cleanup.plan")) as any;
+    expect(r.archives.noNexusId.archives.map((a: any) => a.downloadId)).toEqual(["d4"]);
+    expect(r.archives.referenced).toBe(2); // d1 held by a, d3 held by c
+    const offered = ["superseded", "samePageInstalled", "noInstall", "noNexusId"].flatMap((k) =>
+      r.archives[k].archives.map((a: any) => a.downloadId),
+    );
+    expect(offered).not.toContain("d1");
+    expect(offered).not.toContain("d3");
+  });
+
+  it("cleanup.plan sets apart an old install still enabled in another profile", async () => {
+    setup();
+    for (const m of ["a", "c"]) v.state.persistent.mods.fallout4[m].attributes.logicalFileName = "Mod A main";
+    v.state.persistent.profiles.ae.modState.c = { enabled: true };
+    const r = (await run("cleanup.plan")) as any;
+    expect(r.oldInstalls.proven).toEqual([]);
+    expect(r.oldInstalls.provenButEnabled).toEqual([
+      expect.objectContaining({ modId: "c", enabledIn: ["Ivy AE"], supersededBy: expect.objectContaining({ modId: "a" }) }),
+    ]);
+  });
+
+  it("removes the installs first, then deletes their archives through Vortex's remove-download", async () => {
+    const gone = setup();
+    const remove = removing(true);
+    const r = (await run("cleanup.run", { removeMods: ["c"], deleteArchives: ["d3", "d4"] })) as any;
+    expect(remove).toHaveBeenCalledWith(v.api, "fallout4", ["c"]);
+    expect(gone).toEqual(["d3", "d4"]);
+    expect(r).toMatchObject({ removed: [{ id: "c" }], bytesFreed: 700, verified: { downloadsGone: ["d3", "d4"] } });
+  });
+
+  it("keeps an archive whose removal failed, deletes the rest, and says so", async () => {
+    const gone = setup();
+    removing(false);
+    await expect(run("cleanup.run", { removeMods: ["c"], deleteArchives: ["d3", "d4"] })).rejects.toMatchObject({
+      code: "cleanup-incomplete",
+      details: { notRemoved: [{ id: "c" }], skipped: [{ downloadId: "d3" }], deleted: [{ downloadId: "d4" }] },
+    });
+    expect(gone).toEqual(["d4"]);
+    expect(v.state.persistent.downloads.files.d3).toBeDefined();
+  });
+
+  it("refuses the whole request when an archive is still held, changing nothing", async () => {
+    const gone = setup();
+    const remove = removing(true);
+    await expect(run("cleanup.run", { removeMods: ["c"], deleteArchives: ["d1", "d4"] })).rejects.toMatchObject({
+      code: "cleanup-refused",
+      details: { problems: [expect.stringContaining("still the archive of Mod A")] },
+    });
+    expect(remove).not.toHaveBeenCalled();
+    expect(gone).toEqual([]);
+  });
+
+  it("asks the owner once, listing removals and deletions, and stops on a no", async () => {
+    const gone = setup();
+    const remove = removing(true);
+    consent.answer = "Deny";
+    await expect(runVerb(v.api as never, "cleanup.run", { removeMods: ["c"], deleteArchives: ["d4"] })).rejects.toMatchObject({
+      code: "owner-denied",
+    });
+    expect(consent.asked).toHaveLength(1);
+    expect(consent.asked[0]!.text).toContain("Delete loose.zip");
+    expect(remove).not.toHaveBeenCalled();
+    expect(gone).toEqual([]);
+  });
+});
+
 describe("Vortex's External Changes dialog (skyrim-collection, 2026-09-27)", () => {
   /** A deploy that stops on the dialog, as Vortex's does, and the dialog's two buttons. */
   function pauseDeployOnExternalChanges(kind = "refchange") {

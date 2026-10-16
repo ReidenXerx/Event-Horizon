@@ -405,8 +405,18 @@ export function planCleanup(args: {
   const staleLinked: { entry: DownloadEntry }[] = [];
   let keptReferenced = 0;
 
+  /**
+   * Two download records can name ONE file (measured on the Skyrim profile,
+   * 2026-10-16: four pairs, OStim 7.5c among them). Deleting the orphan
+   * record deletes that file, and with it the archive the other record's mod
+   * still uses. So a file any kept record names is kept, whatever record asks.
+   */
+  const referencedFiles = new Set(
+    downloads.filter((d) => stillReferenced.has(d.id)).map((d) => sameFileKey(d.fileName)),
+  );
+
   for (const entry of downloads) {
-    if (stillReferenced.has(entry.id)) {
+    if (stillReferenced.has(entry.id) || referencedFiles.has(sameFileKey(entry.fileName))) {
       keptReferenced += 1;
       continue;
     }
@@ -470,6 +480,11 @@ export function planCleanup(args: {
     staleLinkedBytes: staleLinked.reduce((n, o) => n + o.entry.bytes, 0),
     keptReferenced,
   };
+}
+
+/** A download's file as the disk sees it: Windows paths ignore case and slash direction. */
+export function sameFileKey(fileName: string): string {
+  return fileName.replace(/\\/g, "/").toLowerCase();
 }
 
 /** Bytes as something a person reads. */

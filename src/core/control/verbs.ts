@@ -57,7 +57,12 @@ import { getEventHorizonDir, getVortexUserDataPath } from "../paths/appDataPaths
 import { iniLocationFor } from "../manifest/gameIni";
 import { readPluginList } from "../curator/pluginPool";
 import { readCuratorMods } from "../curator/readProfile";
-import { vortexReportsUpdate } from "../curator/profileActions";
+import { vortexReportsUpdate, type CuratorMod } from "../curator/profileActions";
+import { findSupersededMods, formatSize } from "../curator/cleanupPlan";
+import { bucketArchives, checkCleanupRequest, type ArchiveBucket } from "../curator/cleanupSelection";
+import { readDownloads } from "../curator/runCleanup";
+import { getModArchivePath } from "../archiveHashing";
+import { ehLog } from "../logging/ehLog";
 import { collectDistinctModTypes } from "../deploymentManifest";
 import { isProcessRunning } from "./gameProcess";
 import { guardGameClosed, guardKnownMods, guardSetGamePath, type GuardResult } from "./guards";
@@ -219,6 +224,16 @@ async function ownership(gameId: string, modIds: readonly string[]): Promise<Rec
     for (const m of r.retiredMods ?? []) ours.add(m.vortexModId);
   }
   return Object.fromEntries(modIds.map((id) => [id, ours.has(id) ? "eh-installed" : "not-eh"]));
+}
+
+/** The game's mods as the Curator page reads them, enabled per the active profile. */
+function curatorMods(api: types.IExtensionApi, gameId: string): CuratorMod[] {
+  const enabled = new Set(
+    Object.entries(enabledMap(api, activeProfileId(api)))
+      .filter(([, s]) => s?.enabled === true)
+      .map(([id]) => id),
+  );
+  return readCuratorMods(api.getState(), gameId, enabled);
 }
 
 function modName(m: ModRecord): string {
@@ -2423,6 +2438,195 @@ export const VERBS: Record<string, Verb> = {
       };
     },
     describe: (_b, r) => `restored the setup from ${String((r["restoredTo"] as { at?: unknown } | undefined)?.at ?? "a restore point")}`,
+  },
+
+  /**
+   * What disk cleanup could remove, with the evidence for each: old installs
+   * another install supersedes, and every archive no mod points at, sorted by
+   * how sure that is. Read-only; `cleanup.run` acts on ids from here.
+   */
+  "cleanup.plan": {
+    mutates: false,
+    run: async (api) => {
+      const gameId = activeGame(api);
+      const mods = curatorMods(api, gameId);
+      // `enabled` is the active profile's; another profile of this game may still use the old copy.
+      const gameProfiles = Object.values(profiles(api)).filter((p) => p.gameId === gameId);
+      const enabledIn = (id: string): string[] =>
+        gameProfiles.filter((p) => p.modState?.[id]?.enabled === true).map((p) => p.name ?? p.id);
+      const side = (m: CuratorMod): Record<string, unknown> => ({
+        modId: m.id,
+        name: m.name,
+        version: m.version,
+        enabledIn: enabledIn(m.id),
+      });
+      const old = findSupersededMods(mods).map((r) => ({
+        ...side(r.mod),
+        archiveId: r.mod.archiveId,
+        supersededBy: side(r.supersededBy),
+        evidence: r.evidence,
+        inUse: enabledIn(r.mod.id).length > 0,
+      }));
+      const buckets = bucketArchives(mods, readDownloads(api.getState(), gameId));
+      const group = (b: ArchiveBucket): Record<string, unknown> => {
+        const list = buckets.filter((x) => x.bucket === b);
+        return {
+          count: list.length,
+          bytes: list.reduce((n, x) => n + x.entry.bytes, 0),
+          archives: list.map(({ entry: e }) => ({
+            downloadId: e.id,
+            fileName: e.fileName,
+            bytes: e.bytes,
+            ...(e.nexusModId !== undefined ? { nexusModId: e.nexusModId } : {}),
+            ...(e.nexusFileId !== undefined ? { nexusFileId: e.nexusFileId } : {}),
+            ...(e.logicalFileName !== undefined ? { logicalFileName: e.logicalFileName } : {}),
+          })),
+        };
+      };
+      return {
+        gameId,
+        oldInstalls: {
+          proven: old.filter((o) => o.evidence !== "same-page-only" && !o.inUse),
+          provenButEnabled: old.filter((o) => o.evidence !== "same-page-only" && o.inUse),
+          samePageOnly: old.filter((o) => o.evidence === "same-page-only"),
+        },
+        archives: {
+          superseded: group("superseded"),
+          samePageInstalled: group("samePageInstalled"),
+          noInstall: group("noInstall"),
+          noNexusId: group("noNexusId"),
+          staleLinked: group("staleLinked"),
+          referenced: buckets.filter((x) => x.bucket === "referenced").length,
+        },
+        note:
+          "superseded: a strictly newer version of the same file is installed. samePageInstalled: its page has an " +
+          "install, but not a newer version of this file (a newer download, another file): review. noInstall: nothing " +
+          "from its page is installed. noNexusId: nothing to compare. staleLinked and referenced are never deleted. " +
+          "provenButEnabled: the old copy is enabled in some profile (enabledIn), so it is in use. samePageOnly " +
+          "installs share a page and nothing else: not evidence.",
+      };
+    },
+  },
+
+  /**
+   * Removes the named installs, then deletes the named archives through
+   * Vortex's own remove-download. Exact ids, all or nothing: an unknown id, an
+   * archive a remaining mod still points at, or an installed mod's own file
+   * refuses the whole request. After the removals each archive is checked
+   * again on the real state, so one whose removal failed is kept.
+   *
+   *   { removeMods?: [modId], deleteArchives?: [downloadId], assumeGameClosed? }
+   */
+  "cleanup.run": {
+    mutates: true,
+    restorePoint: true,
+    run: async (api, body) => {
+      const gameId = activeGame(api);
+      const list = (key: string): string[] => {
+        const v = body[key] ?? [];
+        if (!Array.isArray(v) || v.some((x) => typeof x !== "string" || x === "")) {
+          throw new ControlError("bad-request", `"${key}" must be an array of ids.`);
+        }
+        return [...new Set(v as string[])];
+      };
+      const removeIds = list("removeMods");
+      const archiveIds = list("deleteArchives");
+      if (removeIds.length + archiveIds.length === 0) {
+        throw new ControlError("bad-request", `Send "removeMods" and/or "deleteArchives" (ids from cleanup.plan).`);
+      }
+      const request = checkCleanupRequest({
+        mods: curatorMods(api, gameId),
+        downloads: readDownloads(api.getState(), gameId),
+        removeModIds: removeIds,
+        deleteArchiveIds: archiveIds,
+      });
+      if (request.problems.length > 0) {
+        throw new ControlError("cleanup-refused", `Nothing was changed. ${request.problems.join(" ")}`, 400, {
+          problems: request.problems,
+        });
+      }
+      if (removeIds.length > 0) await guardClosed(api, gameId, body);
+      const owner = await ownership(gameId, removeIds);
+      const bytes = request.deletions.reduce((n, d) => n + d.entry.bytes, 0);
+      await askOwner(api, {
+        action:
+          `clean up: remove ${removeIds.length} mod${removeIds.length === 1 ? "" : "s"} and delete ` +
+          `${archiveIds.length} archive${archiveIds.length === 1 ? "" : "s"} (${formatSize(bytes)})`,
+        lines: [
+          ...request.removals.map((m) => `Remove ${m.name}${owner[m.id] === "eh-installed" ? " (installed by a collection)" : ""}`),
+          ...request.deletions.map((d) => `Delete ${d.entry.fileName} (${d.bucket})`),
+        ],
+        consequence: "Removed mods leave the staging folder. Deleted archives are gone; getting one back means downloading it again.",
+      });
+      ehLog("info", "cleanup.agent.start", { gameId, removeMods: removeIds.length, deleteArchives: archiveIds.length, bytesPlanned: bytes });
+
+      const removed: Array<{ id: string; name: string; owner: string | undefined }> = [];
+      const notRemoved: Array<{ id: string; name: string }> = [];
+      if (removeIds.length > 0) {
+        await uninstallMods(api, { gameId, modIds: removeIds }).catch((err: unknown) =>
+          ehLog("warn", "cleanup.agent.remove-error", { err }),
+        );
+        const pool = modPool(api, gameId);
+        for (const m of request.removals) {
+          if (pool[m.id] === undefined) removed.push({ id: m.id, name: m.name, owner: owner[m.id] });
+          else notRemoved.push({ id: m.id, name: m.name });
+        }
+      }
+
+      // The premise again, on what Vortex now holds: a removal that failed still references its archive.
+      const now = checkCleanupRequest({
+        mods: curatorMods(api, gameId),
+        downloads: readDownloads(api.getState(), gameId),
+        removeModIds: [],
+        deleteArchiveIds: archiveIds,
+      });
+      const free = new Set(now.deletions.map((d) => d.entry.id));
+      const deleted: Array<{ downloadId: string; fileName: string; bytes: number }> = [];
+      const skipped: Array<{ downloadId: string; fileName: string; why: string }> = [];
+      const failed: Array<{ downloadId: string; fileName: string; why: string }> = [];
+      for (const d of request.deletions) {
+        const e = d.entry;
+        if (!free.has(e.id)) {
+          skipped.push({ downloadId: e.id, fileName: e.fileName, why: "a mod still points at it (its removal did not happen)" });
+          continue;
+        }
+        const file = getModArchivePath(api.getState(), e.id, gameId);
+        try {
+          await new Promise<void>((resolve, reject) =>
+            api.events.emit("remove-download", e.id, (err?: Error | null) => (err ? reject(err) : resolve()), { silent: true, confirmed: true }),
+          );
+        } catch (err) {
+          failed.push({ downloadId: e.id, fileName: e.fileName, why: String((err as Error)?.message ?? err) });
+          continue;
+        }
+        const recordGone = readDownloads(api.getState(), gameId).every((x) => x.id !== e.id);
+        const fileGone = file === undefined || !fs.existsSync(file);
+        if (recordGone && fileGone) deleted.push({ downloadId: e.id, fileName: e.fileName, bytes: e.bytes });
+        else failed.push({ downloadId: e.id, fileName: e.fileName, why: !fileGone ? `the file is still at ${file}` : "Vortex still lists the download" });
+      }
+      const bytesFreed = deleted.reduce((n, x) => n + x.bytes, 0);
+      ehLog("info", "cleanup.agent.done", {
+        removed: removed.length,
+        notRemoved: notRemoved.map((m) => m.name),
+        deleted: deleted.length,
+        skipped: skipped.map((s) => s.fileName),
+        failed: failed.map((f) => `${f.fileName}: ${f.why}`),
+        bytesFreed,
+      });
+      const outcome = { gameId, removed, notRemoved, deleted, skipped, failed, bytesFreed, deployNeeded: removed.length > 0 };
+      if (notRemoved.length + skipped.length + failed.length > 0) {
+        throw new ControlError(
+          "cleanup-incomplete",
+          `${notRemoved.length} removal(s) did not happen, ${skipped.length} archive(s) kept because of that, ` +
+            `${failed.length} deletion(s) failed. Everything else is done.`,
+          500,
+          outcome,
+        );
+      }
+      return { ...outcome, verified: { goneFromPool: removed.map((m) => m.id), downloadsGone: deleted.map((d) => d.downloadId) } };
+    },
+    describe: (_b, r) =>
+      `cleaned up: removed ${(r["removed"] as unknown[]).length} mod(s), deleted ${(r["deleted"] as unknown[]).length} archive(s)`,
   },
 
   "mods.remove": {

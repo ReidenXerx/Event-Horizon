@@ -55,10 +55,17 @@ const mod = (
   };
 };
 
+/**
+ * Each download record gets its OWN file: Vortex's name ends in the download
+ * timestamp, so two records of one file differ there. Two records sharing one
+ * name is a real state too (the planner keeps both while either is in use),
+ * and a test about it passes `fileName` itself.
+ */
+let stamp = 0;
 const dl = (id: string, over: Partial<DownloadEntry> = {}): DownloadEntry => {
   const merged = { id, bytes: 1024 ** 3, ...over };
   return {
-    fileName: named(merged.nexusModId, "the-file"),
+    fileName: merged.nexusModId === undefined ? `${id}.7z` : named(merged.nexusModId, "the-file").replace("1700000000", String(1700000000 + ++stamp)),
     ...merged,
   };
 };

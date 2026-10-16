@@ -430,6 +430,30 @@ export const TOOLS: ToolSpec[] = [
     },
   },
   {
+    name: "cleanup_plan",
+    verb: "cleanup.plan",
+    mutates: false,
+    description:
+      "What disk cleanup could remove: old installs another install supersedes (proven, or same page only, which is " +
+      "not evidence), and every archive no mod points at, sorted into superseded / samePageInstalled / noInstall / " +
+      "noNexusId with bytes. Archives a mod points at are never offered. Read-only.",
+    properties: {},
+  },
+  {
+    name: "cleanup_run",
+    verb: "cleanup.run",
+    mutates: true,
+    description:
+      "Remove the named installs, then delete the named archives through Vortex's own remove-download. Exact ids from " +
+      "cleanup_plan, all or nothing: an unknown id or an archive a remaining mod still points at refuses the whole " +
+      "request. An archive whose install could not be removed is kept. Asks the user first. Then deploy.",
+    properties: {
+      removeMods: strings("Mod ids to remove (oldInstalls from cleanup_plan, or any you chose)."),
+      deleteArchives: strings("Download ids to delete."),
+      assumeGameClosed: assume,
+    },
+  },
+  {
     name: "plugins_changed_answer",
     verb: "pluginsChanged.answer",
     mutates: true,

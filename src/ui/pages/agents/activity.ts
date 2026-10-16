@@ -59,6 +59,13 @@ const META: Record<string, Meta> = {
     badge: "CHANGES",
     doing: (b) => (b["cancel"] === true ? "Cancelling at External Changes" : `Answering External Changes (${String(b["all"] ?? "per file")})`),
   },
+  "cleanup.plan": { badge: "READ", doing: () => "Reading what cleanup could remove", read: true },
+  "cleanup.run": {
+    badge: "CLEANUP",
+    doing: (b) =>
+      `Cleaning up: ${Array.isArray(b["removeMods"]) ? (b["removeMods"] as unknown[]).length : 0} mod(s), ` +
+      `${Array.isArray(b["deleteArchives"]) ? (b["deleteArchives"] as unknown[]).length : 0} archive(s)`,
+  },
   "pluginsChanged.answer": {
     badge: "PLUGINS",
     doing: (b) => `Answering "Plugin list changed outside Vortex" (${String(b["answer"])})`,
