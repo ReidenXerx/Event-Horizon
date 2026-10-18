@@ -3219,6 +3219,9 @@ export const VERBS: Record<string, Verb> = {
        * agent cannot see. Live, 2026-09-27: two wizards waited on the owner.
        */
       const mustLook = choices === undefined && picks === undefined && !unattended && body["interactive"] !== true;
+      // Who was enabled before, so "enable": false can undo Vortex switching an older version off.
+      const profileBefore = activeProfileId(api);
+      const enabledBefore = profileBefore === undefined ? {} : { ...enabledMap(api, profileBefore) };
       let answered: Record<string, unknown> | undefined;
       let archiveId: string | undefined;
       if (nexus !== undefined) {
@@ -3340,7 +3343,28 @@ export const VERBS: Record<string, Verb> = {
           });
         }
       }
+      /*
+       * Installing another file of a mod page "alongside" is Vortex's "Update
+       * current profile": it switches the older version OFF here. With
+       * "enable": false that leaves neither on (Skyrim-collection, 2026-10-18:
+       * the disabled Steam Honed Metal switched the GOG one off). So a mod
+       * this install turned off is turned back on.
+       */
+      const restoredEnabled: string[] = [];
+      if (!enable && profileId !== undefined && profileId === profileBefore) {
+        const pool = modPool(api, gameId);
+        for (const [id, before] of Object.entries(enabledBefore)) {
+          if (id === vortexModId || before?.enabled !== true || pool[id] === undefined) continue;
+          if (enabledMap(api, profileId)[id]?.enabled === true) continue;
+          api.store?.dispatch(actions.setModEnabled(profileId, id, true));
+          if (enabledMap(api, profileId)[id]?.enabled === true) restoredEnabled.push(id);
+        }
+        if (restoredEnabled.length > 0) {
+          ehLog("info", "control.install.restored-enabled", { vortexModId, restoredEnabled });
+        }
+      }
       return {
+        ...(restoredEnabled.length > 0 ? { restoredEnabled } : {}),
         gameId,
         vortexModId,
         name: modName(m),

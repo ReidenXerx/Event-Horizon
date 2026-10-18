@@ -1031,6 +1031,45 @@ describe("install and the FOMOD question", () => {
     expect(r.installer.applied).toEqual([{ step: "Main", group: "Main", options: ["PRP"] }]);
   });
 
+  it("enable:false turns back on a mod Vortex switched off during the install (Steam Honed Metal beside the GOG one)", async () => {
+    withDownload();
+    v.state.persistent.mods.fallout4.gog = { id: "gog", state: "installed", attributes: { name: "Honed Metal GOG" } };
+    v.state.persistent.profiles.og.modState.gog = { enabled: true };
+    const handlers = new Map<string, (...a: unknown[]) => void>();
+    const on = v.api.events.on;
+    v.api.events.on = (ev: string, fn: (...a: unknown[]) => void) => {
+      handlers.set(ev, fn);
+      on(ev, fn);
+    };
+    v.api.events.emit = (ev: string, ...args: unknown[]) => {
+      if (ev === "start-install-download") {
+        v.state.session = {
+          notifications: { notifications: [], dialogs: [] },
+          fomod: { installer: { dialog: { activeInstanceId: "w1", instances: { w1: { info: { moduleName: "Necessity" }, state: {
+            currentStep: 0,
+            installSteps: [{ id: 0, name: "Main", visible: true, optionalFileGroups: { group: [{ id: 0, name: "Main", type: "SelectExactlyOne",
+              options: [{ id: 0, name: "Base", selected: true }, { id: 1, name: "PRP", selected: false }] }] } }],
+          } } } } } },
+        };
+      }
+      const dlg = v.state.session?.fomod?.installer?.dialog;
+      if (ev === "fomod-installer-select-w1") {
+        for (const o of dlg.instances.w1.state.installSteps[0].optionalFileGroups.group[0].options) o.selected = (args[2] as number[]).includes(o.id);
+      }
+      if (ev === "fomod-installer-continue-w1" && args[0] === "finish") {
+        dlg.activeInstanceId = null;
+        v.state.persistent.mods.fallout4.nec = { id: "nec", state: "installed", attributes: { name: "Honed Metal Steam" } };
+        // Vortex's "Update current profile": the older version goes off here.
+        v.state.persistent.profiles.og.modState.gog = { enabled: false };
+        setTimeout(() => handlers.get("did-install-mod")?.("fallout4", "nec", "nec"), 5);
+      }
+    };
+    const r = (await run("install", { archiveId: "nec", picks: [{ group: "Main", options: ["PRP"] }], enable: false })) as any;
+    expect(r.enabled).toBe(false);
+    expect(r.restoredEnabled).toEqual(["gog"]);
+    expect(v.state.persistent.profiles.og.modState.gog).toEqual({ enabled: true });
+  });
+
   it("refuses picks together with recorded choices", async () => {
     await expect(run("install", { archiveId: "nec", picks: [], choices: { type: "fomod", options: [] } })).rejects.toMatchObject({ code: "bad-request" });
   });
