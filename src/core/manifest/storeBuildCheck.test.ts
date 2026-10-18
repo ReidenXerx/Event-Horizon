@@ -121,6 +121,22 @@ describe("the build proves each store build", () => {
     expect(c.refusals).toEqual([expect.stringContaining('"JContainers" is marked as the Steam build')]);
   });
 
+  it("checks the script extender itself by its runtime DLL's name", () => {
+    const skse = (name: string, key: string, store: "steam" | "gog", file: string): Mod => {
+      const m = mod(name, key, { store, group: "SKSE" });
+      (m.state as { stagingFiles?: unknown }).stagingFiles = [{ path: file, size: 1 }, { path: "skse64_loader.exe", size: 1 }];
+      return m;
+    };
+    const right = checkStoreBuilds(
+      meridia([skse("SKSE GOG", "e:1", "gog", "skse64_1_6_1179.dll"), skse("SKSE", "e:2", "steam", "skse64_1_6_1170.dll")]),
+    );
+    expect(right.refusals).toEqual([]);
+    const swapped = checkStoreBuilds(
+      meridia([skse("SKSE GOG", "e:1", "gog", "skse64_1_6_1179.dll"), skse("SKSE", "e:2", "steam", "skse64_1_6_1179.dll")]),
+    );
+    expect(swapped.refusals).toEqual([expect.stringContaining("ships skse64_1_6_1179.dll, the script extender for 1.6.1179")]);
+  });
+
   it("reports, without refusing, untagged plugins Steam players still swap by hand", () => {
     const papyrus = mod("PapyrusUtil GOG", "nexus:5:5", { dll: declares("SKSE/Plugins/PapyrusUtil.dll", [GOG]) });
     const c = checkStoreBuilds(meridia([JC_GOG, JC_STEAM, papyrus]));

@@ -38,6 +38,23 @@ export type StoreBuildCheck = {
 
 const label = (s: GameStore): string => (s === "gog" ? "GOG" : "Steam");
 
+/** `skse64_1_6_1170.dll` / `f4se_1_10_163.dll` at any depth: the game build each extender runtime is for. */
+function extenderRuntimeBuilds(files: ReadonlyArray<{ path: string }>): Array<{ file: string; version: string }> {
+  const out: Array<{ file: string; version: string }> = [];
+  for (const f of files) {
+    const base = f.path.split(/[\\/]/).pop() ?? "";
+    const m = /^(?:skse64|f4se)_(\d+)_(\d+)_(\d+)\.dll$/i.exec(base);
+    if (m !== null) out.push({ file: base, version: `${m[1]}.${m[2]}.${m[3]}` });
+  }
+  return out;
+}
+
+/** "1.6.1170" and "1.6.1170.0" are one build. */
+const sameBuild = (a: string, b: string): boolean => {
+  const norm = (v: string): string => v.split(".").slice(0, 3).join(".");
+  return norm(a) === norm(b);
+};
+
 export function checkStoreBuilds(manifest: Pick<EhcollManifest, "game" | "mods" | "rules">): StoreBuildCheck {
   const out: StoreBuildCheck = { refusals: [], warnings: [], judged: [] };
   const tagged = new Set(manifest.mods.map((m) => m.state.variant?.store).filter((s): s is GameStore => s !== undefined));
@@ -74,6 +91,17 @@ export function checkStoreBuilds(manifest: Pick<EhcollManifest, "game" | "mods" 
     out.judged.push({ store, version, runtime, loads: j.loads, cannotLoad: j.cannotLoad.length });
 
     const taggedNames = new Set(mods.filter((m) => m.state.variant?.store === store).map((m) => m.name));
+    // The script extender itself is no plugin and declares nothing, but its
+    // runtime DLL is named for the game build it runs: skse64_1_6_1170.dll.
+    for (const m of mods.filter((x) => x.state.variant?.store === store)) {
+      for (const built of extenderRuntimeBuilds(m.state.stagingFiles ?? [])) {
+        if (sameBuild(built.version, version)) continue;
+        out.refusals.push(
+          `"${m.name}" is marked as the ${label(store)} build, but ships ${built.file}, the script extender for ` +
+            `${built.version}; ${label(store)}'s build is ${version}.`,
+        );
+      }
+    }
     for (const f of j.cannotLoad.filter((f) => taggedNames.has(f.mod))) {
       out.refusals.push(
         `"${f.mod}" is marked as the ${label(store)} build, but ${f.path} cannot load on ${label(store)} ${version}: ${f.why}.`,
