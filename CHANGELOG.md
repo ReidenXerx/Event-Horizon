@@ -1,7 +1,7 @@
 # Changelog
 
 Everything that changed in Event Horizon, newest first, written for the people who use it. Since the first commit
-in April 2026 that is about 400 changes across 203 builds.
+in April 2026 that is about 400 changes across 204 builds.
 
 Until 0.1.0-alpha.149 builds were numbered `0.1.0-alpha.N`. From **0.1.151** the build number is the patch number:
 Vortex ignores everything after the dash when it decides whether an extension has an update, so an alpha number
@@ -9,6 +9,13 @@ could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
+
+## [0.2.82] — 2026-10-18
+
+### Collections
+- A collection can ship Steam and GOG builds of a mod. Event Horizon installs the ones for your game's store, and
+  asks which store it is when Vortex does not know. Steam players no longer swap those mods by hand.
+- Curators: the build refuses a mod marked as one store's build if its plugin does not support that store.
 
 ## [0.2.81] — 2026-10-17
 
