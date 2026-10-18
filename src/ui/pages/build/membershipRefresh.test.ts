@@ -116,6 +116,20 @@ describe("refreshProfileMembership (the wiring, not just the diff)", () => {
     expect(out.warnings).toHaveLength(1);
   });
 
+  it("keeps a switched-off optional or version mod the context scoped in (Meridia 1.0.32's Steam builds)", async () => {
+    const steam = mod("Honed Metal+2", { enabled: false });
+    const plainOff = mod("turned-off", { enabled: false });
+    const known = [mod("a"), steam];
+    const out = await refreshProfileMembership({
+      ...base,
+      known,
+      readProfileMods: () => [mod("a"), steam, plainOff],
+      shipsWhenDisabled: (m) => m.id === "Honed Metal+2",
+    });
+    expect(out.mods.map((m) => m.id)).toEqual(["a", "Honed Metal+2"]);
+    expect(out.removedNames).toEqual([]);
+  });
+
   it("stays silent and returns the snapshot untouched when nothing moved", async () => {
     const known = [mod("a"), mod("b")];
     const out = await refreshProfileMembership({

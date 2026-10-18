@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import type { EhcollManifest, EhcollNativePlugin } from "../../types/ehcoll";
 import {
   defaultVariantPicks,
+  filesEveryGroupProvides,
   modsForStore,
   storeGroupProblems,
   unpickedKeys,
@@ -98,6 +99,16 @@ describe("which build a player gets", () => {
   it("modsForStore drops the other store's builds and keeps everything on an unknown store", () => {
     expect(modsForStore(mods, "Steam").map((m) => m.name)).toEqual(["JContainers", "A texture pack"]);
     expect(modsForStore(mods, undefined)).toHaveLength(4);
+  });
+
+  it("a plugin every member ships reaches every player only when each store has a build", () => {
+    const files = new Map([
+      ["nexus:1:1", ["honedmetal.esp", "gog-only.esp"]],
+      ["nexus:1:2", ["honedmetal.esp"]],
+      ["nexus:2:2", ["racemenu-gogfix.esp"]],
+    ]);
+    const provided = filesEveryGroupProvides(variantGroupsOf(mods), (k) => files.get(k) ?? []);
+    expect([...provided]).toEqual(["honedmetal.esp"]);
   });
 
   it("an older Event Horizon is told it needs 0.2.82", () => {

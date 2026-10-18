@@ -61,6 +61,36 @@ export function isStoreGroup(members: readonly VariantMember[]): boolean {
 }
 
 /**
+ * Does every player get one member of this group? A version choice always
+ * installs one; store builds only when each store has a build. Meridia 1.0.32
+ * (Skyrim-collection, 2026-10-18): both Honed Metal builds ship HonedMetal.esp,
+ * and the master check called it optional because every member is.
+ */
+export function groupAlwaysInstalls(members: readonly VariantMember[]): boolean {
+  if (members.length === 0) return false;
+  if (!isStoreGroup(members)) return true;
+  return GAME_STORES.every((s) => members.some((m) => m.store === s));
+}
+
+/**
+ * Files every player gets from version groups, whichever member: the ones
+ * each member of an always-installed group ships. `filesOf` names a member's
+ * files by its compareKey, compared as given.
+ */
+export function filesEveryGroupProvides(
+  groups: ReadonlyMap<string, readonly VariantMember[]>,
+  filesOf: (compareKey: string) => readonly string[],
+): Set<string> {
+  const out = new Set<string>();
+  for (const members of groups.values()) {
+    if (!groupAlwaysInstalls(members)) continue;
+    const [first, ...rest] = members.map((m) => new Set(filesOf(m.compareKey)));
+    for (const f of first!) if (rest.every((s) => s.has(f))) out.add(f);
+  }
+  return out;
+}
+
+/**
  * The mods a player on `store` gets, as far as store builds go: every mod but
  * the builds tagged for another store. An unknown store keeps them all, which
  * is what every check did before store builds existed.

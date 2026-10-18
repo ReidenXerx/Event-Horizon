@@ -55,6 +55,7 @@ import {
   discoveredStore,
   getCurrentPluginsTxtPath,
 } from "../../../core/comparePlugins";
+import { filesEveryGroupProvides, variantGroupsOf } from "../../../core/installer/variantGroups";
 import { buildManifest } from "../../../core/manifest/buildManifest";
 import { buildOutputFileName, type PackageFormat } from "../../../core/manifest/packageFileName";
 import { prepareChangelog, type PreparedChangelog } from "./buildChangelog";
@@ -1064,10 +1065,7 @@ export async function loadBuildContext(
    * the player's choice either way, and a ticked one is installed and enabled.
    */
   const profileMods = getModsForProfile(state, gameId, profileId);
-  const scope = scopeCollectionMods(profileMods, (m) => {
-    const entry = collectionConfig.externalMods[m.id];
-    return entry?.optional === true || entry?.variant !== undefined;
-  });
+  const scope = scopeCollectionMods(profileMods, (m) => shipsWhenDisabled(collectionConfig, m));
   const rawModsFromVortex = scope.included;
   op.step("mods-scoped", {
     inProfile: profileMods.length,
@@ -1660,6 +1658,7 @@ export async function runBuildPipeline(
     profileId: context.profileId,
     known: mods,
     signal,
+    shipsWhenDisabled: (m) => shipsWhenDisabled(context.collectionConfig, m),
   });
   mods = membership.mods;
   if (membership.warnings.length > 0) {
@@ -2635,6 +2634,13 @@ export async function runBuildPipeline(
           .map((f) => f.path.split(/[\\/]/).pop()!.toLowerCase())
           .filter((n) => plugin.test(n));
       const required = new Set(mods.filter((m) => m.optional !== true).flatMap(names));
+      // A plugin every member of a version group ships reaches every player,
+      // though each member is optional underneath (Honed Metal's two store builds).
+      const byId = new Map(mods.map((m) => [m.id, m]));
+      const groups = variantGroupsOf(
+        mods.map((m) => ({ compareKey: m.id, name: m.name, ...(m.variant !== undefined ? { state: { variant: m.variant } } : {}) })),
+      );
+      for (const n of filesEveryGroupProvides(groups, (id) => names(byId.get(id)!))) required.add(n);
       return new Set(mods.filter((m) => m.optional === true).flatMap(names).filter((n) => !required.has(n)));
     })(),
     ...(collectionConfig.optionalCreations !== undefined ? { optionalCreations: collectionConfig.optionalCreations } : {}),
@@ -3313,6 +3319,12 @@ function resolveVortexVersion(state: types.IState): string {
   return app?.appVersion ?? app?.version ?? "unknown";
 }
 
+/** Optional and version mods ship even when switched off in the curator's profile. */
+function shipsWhenDisabled(config: CollectionConfig, mod: { id: string }): boolean {
+  const entry = config.externalMods[mod.id];
+  return entry?.optional === true || entry?.variant !== undefined;
+}
+
 /**
  * Which mods the profile has enabled RIGHT NOW, reconciled against the set the
  * build context was opened with.
@@ -3339,6 +3351,13 @@ export async function refreshProfileMembership(args: {
     gameId: string,
     profileId: string,
   ) => AuditorMod[];
+  /**
+   * Mods that ship though switched off (optional and version mods), the same
+   * test the build context scoped with. Without it the refresh dropped every
+   * one of them as "disabled since the form opened": Meridia 1.0.32 lost its
+   * nine Steam builds, and the master check then refused HonedMetal.esp.
+   */
+  shipsWhenDisabled?: (mod: AuditorMod) => boolean;
 }): Promise<{
   mods: AuditorMod[];
   warnings: string[];
@@ -3351,7 +3370,7 @@ export async function refreshProfileMembership(args: {
   let fresh: AuditorMod[];
   try {
     const read = args.readProfileMods ?? getModsForProfile;
-    fresh = scopeCollectionMods(read(state, gameId, profileId)).included;
+    fresh = scopeCollectionMods(read(state, gameId, profileId), args.shipsWhenDisabled).included;
   } catch {
     // Re-reading is an improvement, not a precondition. If Vortex's state
     // cannot be read here, build what the form was opened with rather than
