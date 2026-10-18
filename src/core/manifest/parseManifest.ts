@@ -1058,6 +1058,9 @@ function validateInstallState(
             label: (obj.variant as { label: string }).label,
             ...((obj.variant as { lowEnd?: unknown }).lowEnd === true ? { lowEnd: true as const } : {}),
             ...((obj.variant as { default?: unknown }).default === true ? { default: true as const } : {}),
+            ...((obj.variant as { store?: unknown }).store === "steam" || (obj.variant as { store?: unknown }).store === "gog"
+              ? { store: (obj.variant as { store: "steam" | "gog" }).store }
+              : {}),
           },
         }
       : {}),

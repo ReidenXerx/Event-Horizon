@@ -673,8 +673,10 @@ export type ModInstallState = {
    * 1024): the player installs exactly one member of each `group`. Always
    * alongside `optional: true`, so an Event Horizon before 0.2.62 offers each
    * as a plain optional mod. See `core/installer/variantGroups.ts`.
+   * `store` (0.2.82): this member is the build for that store; the player's
+   * store picks it, and a group of store builds is never offered as a choice.
    */
-  variant?: { group: string; label: string; lowEnd?: true; default?: true };
+  variant?: { group: string; label: string; lowEnd?: true; default?: true; store?: "steam" | "gog" };
   /**
    * Who an optional mod is for: "handheld" starts it ticked only on a handheld
    * PC (Steam Deck, ROG Ally, ...), unticked elsewhere (owner poll 2026-10-09).

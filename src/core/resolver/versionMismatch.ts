@@ -32,6 +32,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { modsForStore } from "../installer/variantGroups";
 import type { EhcollManifest, GameVersionPolicy } from "../../types/ehcoll";
 import {
   extenderApiFor,
@@ -146,8 +147,9 @@ export function assessVersionMismatch(args: {
   }
 
   const target: NativeTarget = { runtime, api };
+  // Store builds for another store never reach this game (variantGroups.ts).
   const j = judgeCollection({
-    mods: manifest.mods.map((m) => ({
+    mods: modsForStore(manifest.mods, args.store).map((m) => ({
       name: m.name,
       compareKey: m.compareKey,
       ...(m.state.nativePlugins !== undefined ? { nativePlugins: m.state.nativePlugins } : {}),

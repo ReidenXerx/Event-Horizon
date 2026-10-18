@@ -177,17 +177,20 @@ export function describeStoreMismatch(args: {
   curatorStore: string | undefined;
   userStore: string | undefined;
   mods: readonly EhcollMod[];
+  /** Mods Event Horizon installs in the player's store's build (curator-tagged). */
+  storeBuilds?: number;
 }): string[] {
   const { curatorStore, userStore } = args;
   if (curatorStore === undefined || userStore === undefined) return [];
   if (curatorStore.toLowerCase() === userStore.toLowerCase()) return [];
 
   const affected = scriptExtenderMods(args.mods);
-  if (affected.length === 0) return [];
+  if (affected.length === 0) return storeBuildsLine(args.storeBuilds, userStore);
 
   const names = affected.map((m) => m.name);
   const shown = names.slice(0, 15);
   return [
+    ...storeBuildsLine(args.storeBuilds, userStore),
     `This collection was built on the ${curatorStore} version of the game and ` +
       `you are on ${userStore}. The two ship the same version number but ` +
       `different executables, so script-extender plugins (.dll files) built ` +
@@ -220,8 +223,11 @@ export function describeJudgedStoreMismatch(args: {
   unjudged: number;
   /** The game version judged against when Vortex recorded none: said, not passed off as read. */
   assumedVersion?: string;
+  /** Mods Event Horizon installs in the player's store's build (curator-tagged). */
+  storeBuilds?: number;
 }): string[] {
   const { curatorStore, userStore, swapLines, unjudged, assumedVersion } = args;
+  const builtLine = storeBuildsLine(args.storeBuilds, userStore);
   const assumedLine =
     assumedVersion !== undefined
       ? [`With no game version recorded, this assumes ${userStore}'s newest build, ${assumedVersion}.`]
@@ -238,6 +244,7 @@ export function describeJudgedStoreMismatch(args: {
       `This collection was built on the ${curatorStore} version of the game and you are on ` +
         `${userStore}. None of the script-extender plugins checked is built only for ` +
         `${curatorStore}, so nothing needs re-downloading for that.`,
+      ...builtLine,
       ...assumedLine,
       ...unjudgedLine,
     ];
@@ -249,8 +256,18 @@ export function describeJudgedStoreMismatch(args: {
       `${curatorStore}. Re-download ${swapLines.length === 1 ? "it" : "each"} from its mod page and ` +
       `pick the ${userStore} build:`,
     ...swapLines.map((l) => `  • ${l}`),
+    ...builtLine,
     ...assumedLine,
     ...unjudgedLine,
     `Everything else in the collection is unaffected.`,
+  ];
+}
+
+/** "Event Horizon installs the Steam builds of 6 mods for you", or nothing. */
+function storeBuildsLine(count: number | undefined, userStore: string): string[] {
+  if (count === undefined || count === 0) return [];
+  return [
+    `The curator added ${userStore} builds of ${count} mod${count === 1 ? "" : "s"}; Event Horizon installs ` +
+      `${count === 1 ? "it" : "those"} for you instead of the other store's.`,
   ];
 }

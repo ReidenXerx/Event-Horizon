@@ -21,7 +21,15 @@
 
 import { orphanEnabledIn } from "./orphanSharing";
 import { compareEhVersions } from "../../../core/manifest/minEventHorizon";
-import { variantGroupsOf, type ModVariant } from "../../../core/installer/variantGroups";
+import {
+  GAME_STORES,
+  hasStoreBuilds,
+  isStoreGroup,
+  modsForStore,
+  variantGroupsOf,
+  type GameStore,
+  type ModVariant,
+} from "../../../core/installer/variantGroups";
 import { EXTENSION_VERSION } from "../../version";
 import * as React from "react";
 import { EnvironmentCard, summarizeEnvironment } from "./EnvironmentCard";
@@ -732,6 +740,8 @@ export interface PreviewStepProps {
   onToggleOptional?: (compareKey: string, skipped: boolean) => void;
   /** Pick one version of a mod offered in several. */
   onPickVariant?: (memberKeys: readonly string[], picked: string) => void;
+  /** The player's answer to "which store is your game from?" (store builds, store unknown). */
+  onPickStore?: (store: GameStore) => void;
 }
 
 /**
@@ -755,6 +765,49 @@ function NeedsNewerEventHorizon(props: { needs: { version: string; why: string[]
   );
 }
 
+const storeName = (s: GameStore): string => (s === "gog" ? "GOG" : "Steam");
+
+/**
+ * Mods the collection ships in Steam and GOG builds (owner, 2026-10-18): the
+ * game's store picks them. Said, not offered, when Vortex knows the store;
+ * asked when it does not, and Continue waits for the answer.
+ */
+function StoreBuilds(props: {
+  mods: ReadonlyArray<{ compareKey: string; name: string; state?: { variant?: ModVariant } }>;
+  gameStore: { pick: GameStore; detected: boolean } | undefined;
+  onPickStore?: (store: GameStore) => void;
+}): JSX.Element | null {
+  if (!hasStoreBuilds(props.mods)) return null;
+  const store = props.gameStore;
+  const count = (s: GameStore): number => modsForStore(props.mods, s).filter((m) => m.state?.variant?.store === s).length;
+  const description =
+    store?.detected === true
+      ? `Your game is the ${storeName(store.pick)} version, so Event Horizon installs the ${storeName(store.pick)} ` +
+        `builds of ${count(store.pick)} mod${count(store.pick) === 1 ? "" : "s"} and leaves out the other store's.`
+      : "Some mods come in a Steam build and a GOG build, and only the one for your copy of the game works. " +
+        "Vortex did not say which store your game is from: pick it below.";
+  return (
+    <Section title="Steam or GOG" description={description}>
+      {store?.detected !== true && (
+        <div className="eh-stack eh-stack--xs" role="radiogroup" aria-label="Which store is your game from?">
+          <strong>Which store is your game from?</strong>
+          {GAME_STORES.map((s) => (
+            <Radio
+              key={s}
+              name={"game-store"}
+              label={storeName(s)}
+              description={`Installs the ${storeName(s)} builds of ${count(s)} mod${count(s) === 1 ? "" : "s"}.`}
+              checked={store?.pick === s}
+              disabled={props.onPickStore === undefined}
+              onChange={(): void => props.onPickStore?.(s)}
+            />
+          ))}
+        </div>
+      )}
+    </Section>
+  );
+}
+
 /**
  * Mods the collection offers in several versions (Ivy FaceGen 2048 / 1024):
  * one pick per group, pre-selected by variantChoice (remembered, or the
@@ -765,7 +818,8 @@ function VersionChoices(props: {
   skipped: readonly string[];
   onPick?: (memberKeys: readonly string[], picked: string) => void;
 }): JSX.Element | null {
-  const groups = variantGroupsOf(props.mods);
+  // Store builds are not a choice: StoreBuilds decides them by the game's store.
+  const groups = new Map([...variantGroupsOf(props.mods)].filter(([, members]) => !isStoreGroup(members)));
   if (groups.size === 0) return null;
   const skipped = new Set(props.skipped);
   return (
@@ -1024,6 +1078,7 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
     ],
     [...environment.blockers, ...accountBlocks],
     versionAcknowledged,
+    hasStoreBuilds(plan.manifest.mods) && bundle.gameStore === undefined,
   );
 
   // Enter = continue to decisions/review. Esc = bail. Off when focus
@@ -1193,6 +1248,12 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
       )}
 
       <NeedsNewerEventHorizon needs={plan.manifest.package.needsEventHorizon} />
+
+      <StoreBuilds
+        mods={plan.manifest.mods}
+        gameStore={bundle.gameStore}
+        {...(props.onPickStore !== undefined ? { onPickStore: props.onPickStore } : {})}
+      />
 
       <VersionChoices
         mods={plan.manifest.mods}
@@ -1391,6 +1452,8 @@ export function computeVerdict(
   environmentBlockers: readonly string[] = [],
   /** The "I understand" tick on a game-version mismatch. */
   versionAcknowledged = false,
+  /** The collection ships store builds and nobody has said which store the game is from. */
+  storeUnanswered = false,
 ): {
   headline: string;
   lines: string[];
@@ -1481,6 +1544,17 @@ export function computeVerdict(
     plan.summary.orphans > 0 ||
     accountLines.length > 0 ||
     mismatch !== undefined;
+
+  if (storeUnanswered) {
+    lines.unshift("Pick which store your game is from in \"Steam or GOG\" below: some mods come in a build for each.");
+    return {
+      headline: "Which store is your game from?",
+      lines,
+      color: "var(--eh-warning)",
+      tone: "warning",
+      canProceed: false,
+    };
+  }
 
   if (mismatch !== undefined && !versionAcknowledged) {
     return {

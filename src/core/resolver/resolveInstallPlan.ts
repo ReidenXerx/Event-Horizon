@@ -54,6 +54,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { modsForStore } from "../installer/variantGroups";
 import { STORE_BUILDS } from "../environment/storeBuilds";
 import { gameVersionGuidance } from "./gameVersionGuidance";
 import { assessVersionMismatch, describeVersionMismatch } from "./versionMismatch";
@@ -275,6 +276,15 @@ export function resolveCompatibility(
    * there flagged Faster Cell Lookup, which lists Steam's 1.6.1170.
    */
   const storeBuild: Readonly<Record<string, string>> = STORE_BUILDS.skyrimse ?? {};
+  /*
+   * Store builds (variantGroups.ts) are already the player's store's: the
+   * curator tagged them, so they are neither "built per store" swaps nor
+   * heuristic suspects. Only untagged mods can still need a hand swap.
+   */
+  const untaggedMods = manifest.mods.filter((m) => m.state.variant?.store === undefined);
+  const storeBuildCount = modsForStore(manifest.mods, userState.store).filter(
+    (m) => m.state.variant?.store !== undefined,
+  ).length;
   const sameVersionStore =
     storeJudgeable && versionMismatch === undefined
       ? assessVersionMismatch({
@@ -301,12 +311,12 @@ export function resolveCompatibility(
      */
   } else if (sameVersionStore?.plugins !== undefined) {
     const judged = [
-      ...scriptExtenderRuntimeMods(manifest.mods).map(
+      ...scriptExtenderRuntimeMods(untaggedMods).map(
         (m) => `${m.name} — the script extender itself (${m.dlls.join(", ")}) is built per store`,
       ),
       ...describeVersionMismatch(sameVersionStore).swapLines,
     ];
-    const picked = storePickedMods(manifest.mods, curatorStore, userStore, storeBuild[userStore])
+    const picked = storePickedMods(untaggedMods, curatorStore, userStore, storeBuild[userStore])
       .filter((p) => !judged.some((l) => l.startsWith(`${p.name} — `)))
       .map((p) => `${p.name} — its installer was answered "${p.choice}"; pick the ${userState.store} option instead`);
     warnings.push(
@@ -315,6 +325,7 @@ export function resolveCompatibility(
         userStore: userState.store!,
         swapLines: [...judged, ...picked],
         unjudged: sameVersionStore.plugins.unknown.length,
+        storeBuilds: storeBuildCount,
         ...(userState.gameVersion === undefined ? { assumedVersion: sameVersionStore.installed } : {}),
       }),
     );
@@ -323,7 +334,8 @@ export function resolveCompatibility(
       ...describeStoreMismatch({
         curatorStore: manifest.game.store,
         userStore: userState.store,
-        mods: manifest.mods,
+        mods: untaggedMods,
+        storeBuilds: storeBuildCount,
       }),
     );
   }

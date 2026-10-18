@@ -14,6 +14,16 @@
  * surprise), and on a Steam Deck / Proton install the version the curator
  * marks low-end is pre-selected. The player always sees every version and can
  * pick another.
+ *
+ * ─── STORE BUILDS (owner, 2026-10-18) ─────────────────────────────────
+ * Meridia is built on GOG Skyrim; a Steam player needs Steam builds of SKSE
+ * and five plugins, and must NOT get two GOG-only fixes. The curator installs
+ * both builds and tags each member with its `store`. A group whose members
+ * carry a store is not a choice: the member for the player's store is picked
+ * and every other is left out, so a group with only a GOG member installs
+ * nothing on Steam. A store Event Horizon cannot tell picks nothing until the
+ * player answers which store their game is from (owner's pick: ask, never
+ * guess the curator's store).
  * ──────────────────────────────────────────────────────────────────────
  */
 
@@ -23,9 +33,100 @@ import * as path from "path";
 import { ehLog } from "../logging/ehLog";
 import { getEventHorizonDir } from "../paths/appDataPaths";
 
-export type ModVariant = { group: string; label: string; lowEnd?: true; default?: true };
+/** The stores whose builds differ and that a curator can tag a version with. */
+export const GAME_STORES = ["steam", "gog"] as const;
+export type GameStore = (typeof GAME_STORES)[number];
 
-export type VariantMember = { compareKey: string; name: string; label: string; lowEnd: boolean; isDefault: boolean };
+/** Vortex's discovered store, as one Event Horizon can pick builds for; anything else is undefined. */
+export function asGameStore(store: string | undefined): GameStore | undefined {
+  const s = store?.toLowerCase();
+  return (GAME_STORES as readonly string[]).includes(s ?? "") ? (s as GameStore) : undefined;
+}
+
+export type ModVariant = { group: string; label: string; lowEnd?: true; default?: true; store?: GameStore };
+
+export type VariantMember = {
+  compareKey: string;
+  name: string;
+  label: string;
+  lowEnd: boolean;
+  isDefault: boolean;
+  /** The store this member is the build for; absent on an ordinary version. */
+  store?: GameStore;
+};
+
+/** A group of store builds: decided by the player's store, never offered as a choice. */
+export function isStoreGroup(members: readonly VariantMember[]): boolean {
+  return members.some((m) => m.store !== undefined);
+}
+
+/**
+ * The mods a player on `store` gets, as far as store builds go: every mod but
+ * the builds tagged for another store. An unknown store keeps them all, which
+ * is what every check did before store builds existed.
+ */
+export function modsForStore<M extends { state?: { variant?: ModVariant } }>(
+  mods: readonly M[],
+  store: string | undefined,
+): M[] {
+  const s = asGameStore(store);
+  if (s === undefined) return [...mods];
+  return mods.filter((m) => {
+    const tagged = m.state?.variant?.store;
+    return tagged === undefined || tagged === s;
+  });
+}
+
+/** Does any mod in the collection come in store builds? */
+export function hasStoreBuilds(mods: readonly { state?: { variant?: ModVariant } }[]): boolean {
+  return mods.some((m) => m.state?.variant?.store !== undefined);
+}
+
+/**
+ * The left-out keys of every store group for a player on `store`: each member
+ * not built for it. `undefined` (store not known yet) leaves out every member.
+ */
+export function storeGroupSkips(
+  groups: ReadonlyMap<string, readonly VariantMember[]>,
+  store: GameStore | undefined,
+): { storeKeys: string[]; skipped: string[] } {
+  const storeKeys: string[] = [];
+  const skipped: string[] = [];
+  for (const members of groups.values()) {
+    if (!isStoreGroup(members)) continue;
+    for (const m of members) {
+      storeKeys.push(m.compareKey);
+      if (store === undefined || m.store !== store) skipped.push(m.compareKey);
+    }
+  }
+  return { storeKeys, skipped };
+}
+
+/**
+ * Store-group shape problems, for the build: every member tagged, and at most
+ * one per store. A group mixing tagged and untagged members, or with two Steam
+ * builds, has no single right answer for a player.
+ */
+export function storeGroupProblems(groups: ReadonlyMap<string, readonly VariantMember[]>): string[] {
+  const out: string[] = [];
+  for (const [group, members] of groups) {
+    if (!isStoreGroup(members)) continue;
+    const untagged = members.filter((m) => m.store === undefined);
+    if (untagged.length > 0) {
+      out.push(
+        `Version group "${group}" mixes store builds with untagged versions (${untagged.map((m) => m.name).join(", ")}). ` +
+          `Give every member a "store", or none.`,
+      );
+    }
+    for (const store of GAME_STORES) {
+      const same = members.filter((m) => m.store === store);
+      if (same.length > 1) {
+        out.push(`Version group "${group}" has ${same.length} ${store} builds (${same.map((m) => m.name).join(", ")}); keep one.`);
+      }
+    }
+  }
+  return out;
+}
 
 type VariantMod = { compareKey: string; name: string; state?: { variant?: ModVariant } };
 
@@ -42,6 +143,7 @@ export function variantGroupsOf(mods: readonly VariantMod[]): Map<string, Varian
       label: v.label,
       lowEnd: v.lowEnd === true,
       isDefault: v.default === true,
+      ...(v.store !== undefined ? { store: v.store } : {}),
     });
     out.set(v.group, members);
   }
@@ -54,15 +156,24 @@ export function variantGroupsOf(mods: readonly VariantMod[]): Map<string, Varian
  * curator marked `default`; else the first in manifest order (an order the
  * build decides, which is why `default` exists: Ivy Rev 15's rule put 1024
  * before 2048).
+ *
+ * A store group is decided by `store` alone: its member for that store, or no
+ * pick at all (no build for this store, or the store is not known yet).
  */
 export function defaultVariantPicks(
   groups: ReadonlyMap<string, readonly VariantMember[]>,
   remembered: ReadonlyMap<string, string>,
   lowEndHardware: boolean,
+  store?: GameStore,
 ): Map<string, VariantMember> {
   const picks = new Map<string, VariantMember>();
   for (const [group, members] of groups) {
     if (members.length === 0) continue;
+    if (isStoreGroup(members)) {
+      const built = store === undefined ? undefined : members.find((m) => m.store === store);
+      if (built !== undefined) picks.set(group, built);
+      continue;
+    }
     const label = remembered.get(group);
     const pick =
       (label !== undefined ? members.find((m) => m.label === label) : undefined) ??
@@ -121,7 +232,8 @@ export async function saveVariantPicks(packageId: string, picks: ReadonlyMap<str
   if (picks.size === 0) return;
   try {
     const current = await readVariantPicks(packageId);
-    for (const [group, m] of picks) current.set(group, m.label);
+    // A store build is the game's fact, not a preference: nothing to remember.
+    for (const [group, m] of picks) if (m.store === undefined) current.set(group, m.label);
     const file = picksFile(packageId);
     await fsp.mkdir(path.dirname(file), { recursive: true });
     await fsp.writeFile(file, JSON.stringify({ picks: Object.fromEntries(current) }, null, 2), "utf8");

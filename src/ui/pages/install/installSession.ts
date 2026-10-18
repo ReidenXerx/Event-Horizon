@@ -52,7 +52,9 @@ import type { ConflictChoice, OrphanChoice } from "../../../types/installDriver"
 import type { FomodReplayMode } from "../../../core/installer/fomodReplayMode";
 import { blocksInstall as autoDeployBlocks } from "../../../core/installer/autoDeploy";
 import { blocksInstall as autoSortBlocks } from "../../../core/installer/autoSort";
-import { initialVariantSkips, rememberVariantPicks } from "./variantChoice";
+import { initialVariantSkips, rememberVariantPicks, skipsForStore } from "./variantChoice";
+import { asGameStore, type GameStore } from "../../../core/installer/variantGroups";
+import { discoveredStore } from "../../../core/comparePlugins";
 import { probeDeploymentMethod } from "../../../core/installer/probeDeployment";
 import {
   fillDefaultConflictChoices,
@@ -92,6 +94,19 @@ export type StaleReceiptResolution = "delete" | "keep" | "cancel";
 // ───────────────────────────────────────────────────────────────────────
 // Implementation
 // ───────────────────────────────────────────────────────────────────────
+
+/**
+ * The store Vortex discovered the game in, when it is one Event Horizon picks
+ * store builds for (Steam, GOG). Anything else, or no answer, is undefined and
+ * the preview asks the player.
+ */
+function storeOf(api: types.IExtensionApi, gameId: string): GameStore | undefined {
+  try {
+    return asGameStore(discoveredStore(api.getState(), gameId));
+  } catch {
+    return undefined;
+  }
+}
 
 class InstallSession {
   private state: WizardState = initialWizardState;
@@ -181,13 +196,15 @@ class InstallSession {
         }
 
         // Versions of one mod: all but the remembered / hardware-fitting pick start left out.
-        const variantSkips = await initialVariantSkips(outcome.ehcoll.manifest).catch(() => []);
+        const gameStore = storeOf(api, outcome.ehcoll.manifest.game.id);
+        const variantSkips = await initialVariantSkips(outcome.ehcoll.manifest, gameStore).catch(() => []);
         if (this.loadingController !== undefined) return;
         this.dispatch({
           type: "plan-ready",
           bundle: {
             zipPath,
             ...(variantSkips.length > 0 ? { optionalSkipped: variantSkips } : {}),
+            ...(gameStore !== undefined ? { gameStore: { pick: gameStore, detected: true } } : {}),
             ehcoll: outcome.ehcoll,
             receipt: outcome.receipt,
             plan: outcome.plan,
@@ -372,13 +389,15 @@ class InstallSession {
         });
         if (this.loadingController !== controller) return;
         this.loadingController = undefined;
-        const variantSkips = await initialVariantSkips(outcome.ehcoll.manifest).catch(() => []);
+        const gameStore = storeOf(api, outcome.ehcoll.manifest.game.id);
+        const variantSkips = await initialVariantSkips(outcome.ehcoll.manifest, gameStore).catch(() => []);
         if (this.loadingController !== undefined) return;
         this.dispatch({
           type: "plan-ready",
           bundle: {
             zipPath: carry.zipPath,
             ...(variantSkips.length > 0 ? { optionalSkipped: variantSkips } : {}),
+            ...(gameStore !== undefined ? { gameStore: { pick: gameStore, detected: true } } : {}),
             ehcoll: outcome.ehcoll,
             receipt: outcome.receipt,
             plan: outcome.plan,
@@ -545,6 +564,18 @@ class InstallSession {
     for (const key of memberKeys) {
       this.dispatch({ type: "set-optional-skipped", compareKey: key, skipped: key !== picked });
     }
+  }
+
+  /**
+   * The player's answer to "which store is your game from?", asked when
+   * Vortex could not say and the collection ships store builds.
+   */
+  pickStore(store: GameStore): void {
+    if (this.state.kind !== "preview") return;
+    const manifest = this.state.bundle.ehcoll.manifest;
+    const optionalSkipped = skipsForStore(manifest, this.state.bundle.optionalSkipped ?? [], store);
+    logFailure("info", "install.store.answered", { store, packageId: manifest.package.id });
+    this.dispatch({ type: "pick-store", store, optionalSkipped });
   }
 
   /** The "I understand" tick on a game-version mismatch. */

@@ -21,6 +21,7 @@ import {
   judgeCollection,
   runtimeIdFor,
 } from "../environment/nativePluginCompat";
+import { modsForStore } from "./variantGroups";
 
 export interface NativePluginSummary {
   loads: number;
@@ -47,7 +48,7 @@ export function nativePluginSummaryFor(args: {
   if (runtime === undefined || api === undefined) return undefined;
 
   const judged = judgeCollection({
-    mods: manifest.mods.map((m) => ({
+    mods: modsForStore(manifest.mods, args.store).map((m) => ({
       name: m.name,
       compareKey: m.compareKey,
       ...(m.state.nativePlugins !== undefined ? { nativePlugins: m.state.nativePlugins } : {}),

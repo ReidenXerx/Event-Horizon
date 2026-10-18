@@ -36,6 +36,7 @@ import type {
   UserConfirmedDecisions,
 } from "../../../types/installDriver";
 import type { FomodReplayMode } from "../../../core/installer/fomodReplayMode";
+import type { GameStore } from "../../../core/installer/variantGroups";
 import { DEFAULT_FOMOD_REPLAY_MODE } from "../../../core/installer/fomodReplayMode";
 import type { InstallPlan, OrphanedModDecision } from "../../../types/installPlan";
 import type { FormattedError } from "../../errors";
@@ -62,6 +63,13 @@ export interface PreviewBundle {
    * update).
    */
   optionalSkipped?: string[];
+  /**
+   * The store this install's store builds are picked for (variantGroups.ts):
+   * detected from Vortex, or answered by the player when Vortex could not
+   * say. Absent on a collection with store builds = not answered yet, and
+   * the preview holds Continue until it is.
+   */
+  gameStore?: { pick: GameStore; detected: boolean };
   zipPath: string;
   ehcoll: ReadEhcollResult;
   /**
@@ -280,6 +288,7 @@ export type WizardAction =
     }
   | { type: "set-fomod-mode"; mode: FomodReplayMode }
   | { type: "set-optional-skipped"; compareKey: string; skipped: boolean }
+  | { type: "pick-store"; store: GameStore; optionalSkipped: string[] }
   | { type: "back-from-confirm" }
   | { type: "ready-to-start" }
   | { type: "cancel-start" }
@@ -412,6 +421,13 @@ export function wizardReducer(
       if (action.skipped) now.add(action.compareKey);
       else now.delete(action.compareKey);
       return { ...state, bundle: { ...state.bundle, optionalSkipped: [...now].sort() } } as WizardState;
+    }
+    case "pick-store": {
+      if (state.kind !== "preview") return state;
+      return {
+        ...state,
+        bundle: { ...state.bundle, gameStore: { pick: action.store, detected: false }, optionalSkipped: action.optionalSkipped },
+      };
     }
     case "set-fomod-mode": {
       if (state.kind === "decisions") {

@@ -541,6 +541,7 @@ function declarationsFor(
             label: entry.variant.label,
             ...(entry.variant.lowEnd === true ? { lowEnd: true as const } : {}),
             ...(entry.variant.default === true ? { default: true as const } : {}),
+            ...(entry.variant.store !== undefined ? { store: entry.variant.store } : {}),
           },
         }
       : {}),
@@ -2845,8 +2846,10 @@ export async function runBuildPipeline(
     const runtime = runtimeIdFor(g.id, g.version, g.store);
     const api = extenderApiFor(g.id, g.version);
     if (runtime !== undefined && api !== undefined) {
+      const { modsForStore } = await import("../../../core/installer/variantGroups");
       const judgement = judgeCollection({
-        mods: manifest.mods.map((m) => ({
+        // The curator's game gets its own store's builds, never the other's.
+        mods: modsForStore(manifest.mods, g.store).map((m) => ({
           name: m.name,
           compareKey: m.compareKey,
           ...(m.state.nativePlugins !== undefined ? { nativePlugins: m.state.nativePlugins } : {}),
@@ -2876,6 +2879,28 @@ export async function runBuildPipeline(
       err,
       consequence: "no warning about plugins that cannot load; nothing else is affected",
     });
+  }
+
+  // ── 3b. Store builds: each one must declare its own store's runtime. ──
+  // A false "this is the Steam build" refuses the build: nobody on the team
+  // can launch it, so the DLL's own declaration is the only proof there is.
+  {
+    const { checkStoreBuilds } = await import("../../../core/manifest/storeBuildCheck");
+    const storeCheck = checkStoreBuilds(manifest);
+    if (storeCheck.judged.length > 0 || storeCheck.refusals.length > 0) {
+      ehLog(storeCheck.refusals.length > 0 ? "warn" : "info", "build.store-builds.checked", {
+        judged: storeCheck.judged,
+        refusals: storeCheck.refusals,
+        warnings: storeCheck.warnings.length,
+      });
+    }
+    if (storeCheck.refusals.length > 0) {
+      throw new BuildRefusedError(
+        "store-build-mismatch",
+        ["The collection's store builds do not match what they claim:", ...storeCheck.refusals.map((r) => `  • ${r}`)].join("\n"),
+      );
+    }
+    nativeWarnings.push(...storeCheck.warnings);
   }
 
   /**

@@ -53,6 +53,9 @@ export function neededEventHorizon(manifest: Pick<EhcollManifest, "mods" | "game
   if (mods.some((m) => m.state?.variant !== undefined)) {
     needs.push(["0.2.62", "a choice between versions of one mod"]);
   }
+  if (mods.some((m) => m.state?.variant?.store !== undefined)) {
+    needs.push(["0.2.82", "Steam and GOG builds picked for your game's store"]);
+  }
   if (mods.some((m) => m.state?.optionalFor !== undefined)) {
     needs.push(["0.2.66", "an optional mod for handheld PCs"]);
   }
