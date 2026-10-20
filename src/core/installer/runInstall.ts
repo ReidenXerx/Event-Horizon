@@ -211,7 +211,7 @@ import {
   getModsForGame,
   liveFomodSelections,
 } from "../getModsListForProfile";
-import { purgeGameDeployment } from "../environment/vortexEnvironment";
+import { gameDisplayName, purgeGameDeployment, readDiscovery } from "../environment/vortexEnvironment";
 import type { PluginOrderEntry } from "./checkPluginOrder";
 import { InstallStreaks } from "./installStreaks";
 import { getGameDirectory } from "../manifest/externalDependencies";
@@ -265,6 +265,7 @@ import {
   describeMissingDeploymentMethod,
   isDeploymentMethodMissing,
 } from "./deploymentMethod";
+import { describeGameNotManaged, isGameNotManaged } from "./gameNotManaged";
 import {
   classifyModFailure,
   describeSystemicFailure,
@@ -1894,6 +1895,36 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               atIndex: i + 1,
               total,
               wine: looksLikeWine(),
+            }),
+            installedSoFar: installedMods.map((m) => m.vortexModId),
+            failedMods,
+          };
+        }
+
+        // Same shape: Vortex has no folder for the game (moved, re-managed
+        // elsewhere), so it refuses every mod. Stop at the first and say so.
+        if (isGameNotManaged(err)) {
+          const gameId = ctx.plan.manifest.game.id;
+          const discovery = readDiscovery(api.getState(), gameId);
+          ehLog("error", "install.game-not-managed", {
+            i: i + 1,
+            total,
+            name: resolution.name,
+            gameId,
+            discovery,
+            activeGame: getActiveGameId(api.getState()),
+            installedSoFar: installedMods.length,
+          });
+          return {
+            kind: "failed",
+            phase,
+            partialProfileId: ehProfileId,
+            error: describeGameNotManaged({
+              modName: resolution.name,
+              atIndex: i + 1,
+              total,
+              gameName: gameDisplayName(api.getState(), gameId),
+              discoveredPath: discovery.path,
             }),
             installedSoFar: installedMods.map((m) => m.vortexModId),
             failedMods,
