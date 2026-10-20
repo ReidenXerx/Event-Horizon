@@ -42,7 +42,7 @@ fn the_manifest_typescript_produced_parses_here() {
     let outcome = parse(&valid()).expect("a manifest buildManifest emitted must parse");
     let m = outcome.manifest;
 
-    assert_eq!(m.schema_version, 1);
+    assert_eq!(m.schema_version, 2);
     assert_eq!(m.game.id, SupportedGameId::Fallout4);
     assert_eq!(m.game.version_policy, GameVersionPolicy::Exact);
     assert_eq!(m.mods.len(), 2);
@@ -79,7 +79,7 @@ fn parsing_is_stable_across_a_serde_round_trip() {
 #[test]
 fn an_unknown_schema_version_is_refused_immediately_and_alone() {
     let mut v = valid();
-    v["schemaVersion"] = json!(2);
+    v["schemaVersion"] = json!(3);
     // Break something else too - it must NOT be reported, because with an
     // unknown version we do not know what the rest of the document means.
     v["package"] = json!("not an object");
@@ -371,4 +371,202 @@ fn warnings_match_the_normative_typescript_implementation_exactly() {
          not behave as intended.",
     ];
     assert_eq!(outcome.warnings, expected, "diverged from the TypeScript side");
+}
+
+// ── Schema v2 ──────────────────────────────────────────────────────────────
+
+#[test]
+fn a_schema_1_package_is_refused_as_older_not_as_newer() {
+    let mut v = valid();
+    v["schemaVersion"] = json!(1);
+    let errors = errors_of(&v);
+    assert_eq!(errors.len(), 1, "{errors:#?}");
+    // "Update Event Horizon" is the wrong advice for a package OLDER than us.
+    assert!(errors[0].contains("older Event Horizon"), "{}", errors[0]);
+    assert!(!errors[0].contains("Update Event Horizon"), "{}", errors[0]);
+}
+
+#[test]
+fn a_future_schema_is_refused_with_update_advice() {
+    let mut v = valid();
+    v["schemaVersion"] = json!(3);
+    assert_error_mentioning(&v, "Update Event Horizon");
+}
+
+/// The first mod's install state, where every per-mod v2 field lives.
+fn state(v: &mut Value) -> &mut serde_json::Map<String, Value> {
+    v["mods"][0]["state"].as_object_mut().unwrap()
+}
+
+#[test]
+fn a_staging_path_that_escapes_the_mod_folder_is_refused() {
+    // Each is joined onto a folder we own and written into. The first lands
+    // in Vortex's own extension directory.
+    for (bad, why) in [
+        ("../../../../plugins/evil/index.js", "\"..\" segment"),
+        ("Data\\..\\..\\evil.dll", "\"..\" segment"),
+        ("/etc/passwd", "absolute"),
+        ("\\Windows\\evil.dll", "absolute"),
+        ("C:/Windows/evil.dll", "drive"),
+        ("Data/./a.esp", "\".\" segment"),
+        ("", "empty"),
+        ("Data/a\u{0}.esp", "NUL"),
+    ] {
+        let mut v = valid();
+        state(&mut v)["stagingFiles"][0]["path"] = json!(bad);
+        let errors = errors_of(&v);
+        assert!(
+            errors.iter().any(|e| e.contains("stagingFiles[0].path") && e.contains(why)),
+            "{bad:?} must be refused for {why}: {errors:#?}"
+        );
+    }
+}
+
+#[test]
+fn an_ordinary_nested_staging_path_is_accepted() {
+    let mut v = valid();
+    // `..` inside a NAME is not a `..` segment.
+    state(&mut v)["stagingFiles"][0]["path"] = json!("Data/Textures/a..b/c.dds");
+    parse(&v).expect("a nested relative path is what staging folders contain");
+}
+
+#[test]
+fn mirror_from_archive_naming_a_staged_file_is_kept() {
+    let mut v = valid();
+    state(&mut v).insert("mirrorFromArchive".into(), json!(["Data/a.esp"]));
+    let m = parse(&v).unwrap().manifest;
+    assert_eq!(m.mods[0].state.mirror_from_archive.as_deref(), Some(&["Data/a.esp".to_owned()][..]));
+}
+
+#[test]
+fn mirror_from_archive_naming_an_unstaged_file_is_refused() {
+    let mut v = valid();
+    state(&mut v).insert("mirrorFromArchive".into(), json!(["Data/not-staged.esp"]));
+    assert_error_mentioning(&v, "not among this mod's stagingFiles");
+}
+
+#[test]
+fn mirror_from_archive_escaping_the_mod_folder_is_refused() {
+    let mut v = valid();
+    state(&mut v).insert("mirrorFromArchive".into(), json!(["../a.esp"]));
+    assert_error_mentioning(&v, "mirrorFromArchive[0] must be a relative path");
+}
+
+#[test]
+fn mirror_from_archive_with_a_non_string_is_refused() {
+    let mut v = valid();
+    state(&mut v).insert("mirrorFromArchive".into(), json!(["Data/a.esp", 7]));
+    assert_error_mentioning(&v, "mirrorFromArchive[1] must be a string");
+    let mut v = valid();
+    state(&mut v).insert("mirrorFromArchive".into(), json!("Data/a.esp"));
+    assert_error_mentioning(&v, "mirrorFromArchive must be an array");
+}
+
+#[test]
+fn native_plugins_are_read_leniently_and_never_refuse() {
+    let mut v = valid();
+    state(&mut v).insert(
+        "nativePlugins".into(),
+        json!([
+            { "path": "SKSE/Plugins/a.dll", "extender": "skse", "kind": "declares",
+              "versionIndependent": false, "runtimes": ["1.6.1170"], "hasQuery": true },
+            { "path": "F4SE/Plugins/b.dll", "extender": "f4se", "kind": "query-only" },
+            // From a newer build: skipped, not an error.
+            { "path": "SKSE/Plugins/c.dll", "extender": "skse", "kind": "some-future-kind" },
+            { "path": "x.dll", "extender": "obse", "kind": "declares" },
+            { "extender": "skse", "kind": "declares" },
+            "not an object",
+            // `runtimes` with a non-string is dropped; the entry is kept.
+            { "path": "SKSE/Plugins/d.dll", "extender": "skse", "kind": "declares", "runtimes": ["1.6", 2] }
+        ]),
+    );
+    let outcome = parse(&v).expect("nativePlugins is advisory and must never refuse a package");
+    let native = outcome.manifest.mods[0].state.native_plugins.clone().unwrap();
+    assert_eq!(native.len(), 3, "{native:#?}");
+    assert_eq!(native[0].kind, NativePluginKind::Declares);
+    assert_eq!(native[0].runtimes.as_deref(), Some(&["1.6.1170".to_owned()][..]));
+    assert_eq!(native[0].has_query, Some(true));
+    assert_eq!(native[1].extender, NativeExtender::F4se);
+    assert_eq!(native[1].kind, NativePluginKind::QueryOnly);
+    assert_eq!(native[2].runtimes, None);
+}
+
+#[test]
+fn native_plugins_with_nothing_readable_reads_as_absent() {
+    for raw in [json!([]), json!([{ "kind": "nope" }]), json!("not an array"), json!(5)] {
+        let mut v = valid();
+        state(&mut v).insert("nativePlugins".into(), raw.clone());
+        let m = parse(&v).unwrap_or_else(|e| panic!("{raw} refused: {e}")).manifest;
+        assert_eq!(m.mods[0].state.native_plugins, None, "{raw}");
+    }
+}
+
+#[test]
+fn light_flag_bit_is_carried_so_starfield_flags_survive() {
+    for raw in [json!(256), json!(256.0), json!(512)] {
+        let mut v = valid();
+        v["plugins"]["lightFlagBit"] = raw.clone();
+        let m = parse(&v).unwrap_or_else(|e| panic!("{raw} refused: {e}")).manifest;
+        assert_eq!(m.plugins.light_flag_bit, Some(raw.as_f64().unwrap() as u32));
+    }
+    let m = parse(&valid()).unwrap().manifest;
+    assert_eq!(m.plugins.light_flag_bit, None, "absent stays absent: it MEANS 0x200");
+}
+
+#[test]
+fn a_light_flag_bit_that_is_not_one_bit_is_refused() {
+    for raw in [json!(0), json!(3), json!(-256), json!(256.5), json!("256"), json!(0x1_0000_0000u64)] {
+        let mut v = valid();
+        v["plugins"]["lightFlagBit"] = raw.clone();
+        let errors = errors_of(&v);
+        assert!(
+            errors.iter().any(|e| e.contains("plugins.lightFlagBit")),
+            "{raw} must be refused: {errors:#?}"
+        );
+    }
+}
+
+#[test]
+fn deployment_method_assumed_is_only_ever_true_or_absent() {
+    let mut v = valid();
+    v["vortex"]["deploymentMethodAssumed"] = json!(true);
+    assert_eq!(parse(&v).unwrap().manifest.vortex.deployment_method_assumed, Some(true));
+    for raw in [json!(false), json!("yes"), json!(1)] {
+        let mut v = valid();
+        v["vortex"]["deploymentMethodAssumed"] = raw.clone();
+        let m = parse(&v).unwrap_or_else(|e| panic!("{raw} refused: {e}")).manifest;
+        assert_eq!(m.vortex.deployment_method_assumed, None, "{raw}");
+    }
+}
+
+#[test]
+fn an_unreadable_changelog_or_presentation_never_refuses_a_package() {
+    // Display-only, read leniently on the TypeScript side and not modelled
+    // here yet. The property that must hold either way: they cannot stop an
+    // install.
+    let mut v = valid();
+    v["package"]["changelog"] = json!("garbage");
+    v["package"]["presentation"] = json!([1, 2, 3]);
+    parse(&v).expect("a changelog is for reading and must not stop an install");
+}
+
+#[test]
+fn every_v2_field_survives_a_serde_round_trip() {
+    let mut v = valid();
+    v["vortex"]["deploymentMethodAssumed"] = json!(true);
+    v["plugins"]["lightFlagBit"] = json!(256);
+    state(&mut v).insert("mirrorFromArchive".into(), json!(["Data/a.esp"]));
+    state(&mut v).insert(
+        "nativePlugins".into(),
+        json!([{ "path": "F4SE/Plugins/b.dll", "extender": "f4se", "kind": "query-only" }]),
+    );
+    let first = parse(&v).unwrap().manifest;
+    let json = serde_json::to_value(&first).unwrap();
+    // Spelled as TypeScript spells them, or the other side cannot read ours.
+    assert_eq!(json["vortex"]["deploymentMethodAssumed"], json!(true));
+    assert_eq!(json["plugins"]["lightFlagBit"], json!(256));
+    assert_eq!(json["mods"][0]["state"]["mirrorFromArchive"], json!(["Data/a.esp"]));
+    assert_eq!(json["mods"][0]["state"]["nativePlugins"][0]["kind"], json!("query-only"));
+    let second = parse_manifest(&json.to_string()).unwrap().manifest;
+    assert_eq!(first, second);
 }

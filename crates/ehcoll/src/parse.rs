@@ -10,8 +10,9 @@
 //!
 //! ─── TWO SEVERITY TIERS ─────────────────────────────────────────────────
 //! * **Errors** abort. Missing required fields, wrong types, bad enum values,
-//!   duplicate compareKeys, malformed SHA-256, unsupported gameId,
-//!   `schemaVersion != 1`. The installer cannot start without these.
+//!   duplicate compareKeys, malformed SHA-256, unsupported gameId, a staging
+//!   path that escapes the mod's folder, `schemaVersion != 2`. The installer
+//!   cannot start without these.
 //! * **Warnings** survive. A rule whose reference resolves to nothing is
 //!   structurally valid; the resolver skips it at install time.
 //!
@@ -79,6 +80,17 @@ pub fn parse_manifest(raw: &str) -> Result<ParseOutcome, ParseError> {
     // The gate. Wrong here means the rest is uninterpretable.
     match obj.get("schemaVersion").and_then(Value::as_u64) {
         Some(SCHEMA_VERSION) => {}
+        // Older than this reader, so "update Event Horizon" would be the
+        // wrong advice: the curator's newer package is what installs.
+        Some(ARCHIVES_INSIDE_SCHEMA) => {
+            return Err(ParseError::single(
+                "This collection package was built by an older Event Horizon, which \
+                 carried bundled mods as archives inside the package, and this version \
+                 reads only packages built without them. Download the collection's \
+                 current package to install it — or, if you are its curator, rebuild it \
+                 with this version of Event Horizon.",
+            ));
+        }
         _ => {
             let got = obj.get("schemaVersion").unwrap_or(&Value::Null);
             return Err(ParseError::single(format!(
@@ -469,6 +481,10 @@ fn validate_vortex(v: Option<&Value>, e: &mut Vec<String>) -> Option<VortexMetad
         ],
         e,
     );
+    // Optional, and never an error: only a literal `true` means "assumed".
+    // Anything else — absent, false, a typo'd type — reads as absent, which
+    // is what the TypeScript does.
+    let deployment_method_assumed = (o.get("deploymentMethodAssumed") == Some(&Value::Bool(true))).then_some(true);
     let items = arr_at(o.get("requiredExtensions"), "vortex.requiredExtensions", e)?;
     let mut exts = Vec::with_capacity(items.len());
     for (i, item) in items.iter().enumerate() {
@@ -480,7 +496,12 @@ fn validate_vortex(v: Option<&Value>, e: &mut Vec<String>) -> Option<VortexMetad
             exts.push(RequiredExtension { id, min_version });
         }
     }
-    Some(VortexMetadata { version: version?, deployment_method: method?, required_extensions: exts })
+    Some(VortexMetadata {
+        version: version?,
+        deployment_method: method?,
+        deployment_method_assumed,
+        required_extensions: exts,
+    })
 }
 
 fn validate_mods(v: Option<&Value>, e: &mut Vec<String>) -> Option<Vec<EhcollMod>> {
@@ -685,6 +706,20 @@ fn validate_install_state(v: Option<&Value>, path: &str, e: &mut Vec<String>) ->
                     let Some(fo) = obj_at(Some(item), &fp, e) else { continue };
                     let fpath = req_string(fo, "path", &fp, e);
                     let size = req_uint(fo, "size", &fp, e);
+                    // A `.ehcoll` comes from a stranger, and this path is
+                    // joined onto a folder we own so bytes can be written
+                    // into it. `../../../../plugins/evil/index.js` lands in
+                    // Vortex's own extension directory. An ERROR, not a
+                    // warning: no staging folder has an entry above itself.
+                    if let Some(p) = &fpath {
+                        if let Some(why) = unsafe_path_reason(p) {
+                            e.push(format!(
+                                "{fp}.path must be a relative path inside the mod's staging \
+                                 folder — {p:?} was rejected because {why}."
+                            ));
+                            continue;
+                        }
+                    }
                     let sha256 = opt_sha256(fo, "sha256", &fp, e);
                     if let (Some(p), Some(s)) = (fpath, size) {
                         files.push(EhcollStagingFile { path: p, size: s, sha256 });
@@ -695,6 +730,16 @@ fn validate_install_state(v: Option<&Value>, path: &str, e: &mut Vec<String>) ->
         },
     };
 
+    let mirror_from_archive = present(o.get("mirrorFromArchive")).and_then(|raw| {
+        validate_mirror_from_archive(raw, staging_files.as_deref(), &format!("{path}.mirrorFromArchive"), e)
+    });
+    // Read, not validated — deliberately unlike every other field here. This
+    // one only informs a warning, so a bad or unfamiliar entry is skipped and
+    // the package still opens. A future `kind` must not strand this reader.
+    let native_plugins = present(o.get("nativePlugins"))
+        .and_then(read_native_plugins)
+        .filter(|plugins| !plugins.is_empty());
+
     Some(ModInstallState {
         enabled: enabled?,
         install_order: install_order?,
@@ -704,7 +749,129 @@ fn validate_install_state(v: Option<&Value>, path: &str, e: &mut Vec<String>) ->
         enabled_ini_tweaks: opt_string_array(o, "enabledINITweaks", path, e),
         post_processed: opt_bool(o, "postProcessed", path, e),
         staging_files,
+        mirror_from_archive,
+        native_plugins,
     })
+}
+
+/// Why `p` is not a relative path that stays inside the folder it is joined
+/// to, or `None` when it is. A port of `unsafePathReason` in
+/// `src/core/paths/modPath.ts`, check for check and in the same order.
+fn unsafe_path_reason(p: &str) -> Option<&'static str> {
+    let b = p.as_bytes();
+    if p.is_empty() {
+        return Some("it is empty");
+    }
+    if b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' {
+        return Some("it names a drive");
+    }
+    if p.starts_with('/') || p.starts_with('\\') {
+        return Some("it is absolute");
+    }
+    // A NUL truncates the path at the syscall boundary on some platforms, so
+    // a name that looks safe here can address something else entirely.
+    if p.contains('\0') {
+        return Some("it contains a NUL byte");
+    }
+    for segment in p.split(['/', '\\']) {
+        match segment {
+            ".." => return Some("it contains a \"..\" segment"),
+            "." => return Some("it contains a \".\" segment"),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// `mirrorFromArchive`: files of this mod's `stagingFiles`.
+///
+/// Each one decides where the mirror reads a file from, so it is held to the
+/// staging list's own rule — a relative path inside the mod's folder — and
+/// to one more: it must BE one of the listed files. A name the list does not
+/// have is not a file the mirror could ever be asked for, and a package
+/// carrying one was not written by a build.
+///
+/// As in TypeScript, one non-string entry voids the whole list (and errors);
+/// an unsafe or unlisted path errors and is left out.
+fn validate_mirror_from_archive(
+    raw: &Value,
+    staging_files: Option<&[EhcollStagingFile]>,
+    path: &str,
+    e: &mut Vec<String>,
+) -> Option<Vec<String>> {
+    let Some(items) = raw.as_array() else {
+        e.push(format!("{path} must be an array, got {}.", describe(raw)));
+        return None;
+    };
+    let mut strings = Vec::with_capacity(items.len());
+    let mut all_strings = true;
+    for (i, item) in items.iter().enumerate() {
+        match item.as_str() {
+            Some(s) => strings.push(s),
+            None => {
+                e.push(format!("{path}[{i}] must be a string, got {}.", describe(item)));
+                all_strings = false;
+            }
+        }
+    }
+    if !all_strings {
+        return None;
+    }
+    let listed: std::collections::HashSet<&str> =
+        staging_files.unwrap_or_default().iter().map(|f| f.path.as_str()).collect();
+    let mut out = Vec::with_capacity(strings.len());
+    for (i, p) in strings.into_iter().enumerate() {
+        if let Some(why) = unsafe_path_reason(p) {
+            e.push(format!(
+                "{path}[{i}] must be a relative path inside the mod's staging folder — \
+                 {p:?} was rejected because {why}."
+            ));
+        } else if !listed.contains(p) {
+            e.push(format!("{path}[{i}] names {p:?}, which is not among this mod's stagingFiles."));
+        } else {
+            out.push(p.to_owned());
+        }
+    }
+    Some(out)
+}
+
+/// Lenient on purpose — see the call site. Entries it cannot read are dropped
+/// one at a time; nothing here can make a package unopenable. `None` when the
+/// value is not an array at all.
+fn read_native_plugins(raw: &Value) -> Option<Vec<EhcollNativePlugin>> {
+    let items = raw.as_array()?;
+    let mut out = Vec::new();
+    for item in items {
+        let Some(o) = item.as_object() else { continue };
+        let Some(path) = o.get("path").and_then(Value::as_str).filter(|p| !p.is_empty()) else {
+            continue;
+        };
+        let extender = match o.get("extender").and_then(Value::as_str) {
+            Some("skse") => NativeExtender::Skse,
+            Some("f4se") => NativeExtender::F4se,
+            _ => continue,
+        };
+        // An unknown kind is from a newer build. Skipping it is the point.
+        let kind = match o.get("kind").and_then(Value::as_str) {
+            Some("declares") => NativePluginKind::Declares,
+            Some("query-only") => NativePluginKind::QueryOnly,
+            Some("unreadable") => NativePluginKind::Unreadable,
+            _ => continue,
+        };
+        // `runtimes` is kept only when EVERY entry is a string, as in TS.
+        let runtimes = o.get("runtimes").and_then(Value::as_array).and_then(|rs| {
+            rs.iter().map(|r| r.as_str().map(str::to_owned)).collect::<Option<Vec<_>>>()
+        });
+        out.push(EhcollNativePlugin {
+            path: path.to_owned(),
+            extender,
+            kind,
+            version_independent: o.get("versionIndependent").and_then(Value::as_bool),
+            runtimes,
+            has_query: o.get("hasQuery").and_then(Value::as_bool),
+        });
+    }
+    Some(out)
 }
 
 fn validate_ui_attributes(v: Option<&Value>, path: &str, e: &mut Vec<String>) -> Option<ModUiAttributes> {
@@ -767,7 +934,25 @@ fn validate_plugins(v: Option<&Value>, e: &mut Vec<String>) -> Option<EhcollPlug
             order.push(EhcollPluginEntry { name, enabled, light });
         }
     }
-    Some(EhcollPlugins { order })
+    // Carried for the same reason `light` is: a dropped `lightFlagBit` reads
+    // as "a package from before flags were per game", which on Starfield
+    // refuses every flag the curator recorded.
+    let light_flag_bit = present(o.get("lightFlagBit")).and_then(|b| {
+        // JSON has one number type: `256.0` is an integer to TypeScript's
+        // `Number.isInteger`, so it must be one here too.
+        let bit = b.as_u64().or_else(|| b.as_f64().filter(|f| f.fract() == 0.0 && *f >= 0.0).map(|f| f as u64));
+        match bit {
+            Some(n) if n > 0 && n <= 0x8000_0000 && n.is_power_of_two() => Some(n as u32),
+            _ => {
+                e.push(format!(
+                    "plugins.lightFlagBit must be a single header bit (a power of two), got {}.",
+                    describe(b)
+                ));
+                None
+            }
+        }
+    });
+    Some(EhcollPlugins { order, light_flag_bit })
 }
 
 fn validate_load_order(v: Option<&Value>, e: &mut Vec<String>) -> Option<Vec<EhcollLoadOrderEntry>> {

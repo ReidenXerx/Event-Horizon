@@ -12,6 +12,8 @@
  * proof — it only covers fields this fixture populates — so it is worth
  * extending whenever the manifest grows.
  */
+import * as fs from "fs";
+import * as path from "path";
 import { describe, expect, it, afterEach } from "vitest";
 
 import { buildManifest } from "../../src/core/manifest/buildManifest";
@@ -169,5 +171,18 @@ describe("manifest round-trip", () => {
     const parsed = parseManifest(JSON.stringify(manifest)).manifest;
     // The real assertion: nothing the builder produced was eaten on the way in.
     expect(parsed).toEqual(JSON.parse(JSON.stringify(manifest)));
+
+    /**
+     * ─── THE RUST PORT'S COMPATIBILITY FIXTURE COMES FROM HERE ─────────
+     * `crates/ehcoll` reads this manifest as proof that Rust parses what
+     * TypeScript writes. Per spec/README.md it is GENERATED, never hand-
+     * written, so a schema change is followed by re-running this with
+     * EH_EMIT_SPEC_FIXTURE=1 rather than by editing JSON. Written only after
+     * the TypeScript round trip above has passed.
+     */
+    if (process.env.EH_EMIT_SPEC_FIXTURE === "1") {
+      const target = path.join(__dirname, "../../spec/fixtures/manifests/valid/roundtrip.json");
+      fs.writeFileSync(target, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+    }
   });
 });

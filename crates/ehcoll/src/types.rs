@@ -12,16 +12,35 @@
 //!
 //! ─── SERDE SETTINGS THAT ARE LOAD-BEARING ───────────────────────────────
 //! * Unknown fields are IGNORED, never rejected. The schema is additive by
-//!   contract: v1.x adds fields, and a v1.1 manifest must still parse in a
-//!   v1.0 reader. `deny_unknown_fields` here would break that guarantee.
+//!   contract: later revisions of a version add fields, and they must still
+//!   parse in an earlier reader of that version. `deny_unknown_fields` here
+//!   would break that guarantee.
+//!
+//! ─── NOT YET PORTED: `package.changelog`, `package.presentation` ────────
+//! Both are display-only and read LENIENTLY on the TypeScript side — a bad
+//! one is dropped with a warning and never refuses a package. Their readers
+//! (`changelog.ts`, `presentation.ts`) are large normalisers with nothing an
+//! install depends on, so this side does not model them yet: they are ignored
+//! like any unknown field, which keeps the one property that matters — they
+//! can never stop a package parsing.
 //! * `Option<T>` means the TypeScript `?`. Absent and `null` both read as
 //!   `None`, matching `undefined` on the other side.
 //! * Field names are camelCase to match the JSON exactly.
 
 use serde::{Deserialize, Serialize};
 
-/// Bumped only on breaking changes. The installer refuses unknown versions.
-pub const SCHEMA_VERSION: u64 = 1;
+/// Bumped only on breaking changes. The installer refuses every other version.
+///
+/// - 1: bundled mods shipped as archives, `bundled/<sha256>.<ext>`.
+/// - 2: bundled mods ship as their loose files, `bundled/<sha256>/<path>`,
+///   the sha being the canonical zip those files make (`bundleZip.ts`),
+///   because Nexus quarantines an upload with an archive inside it.
+pub const SCHEMA_VERSION: u64 = 2;
+
+/// The last schema whose packages carried bundled mods as archives. Refused
+/// with its own message, because "update Event Horizon" is the wrong advice
+/// for a package that is OLDER than the reader.
+pub const ARCHIVES_INSIDE_SCHEMA: u64 = 1;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -135,8 +154,16 @@ pub enum GameVersionPolicy {
 pub struct VortexMetadata {
     /// Warn-only on mismatch.
     pub version: String,
-    /// Informational. The user's own Vortex setting wins.
+    /// What the curator's machine was doing. Since 2026-09-18 the installer
+    /// REQUIRES hardlink on the player's side, so this decides nothing. Read
+    /// [`Self::deployment_method_assumed`] before comparing it.
     pub deployment_method: VortexDeploymentMethod,
+    /// `Some(true)` when the build could not read Vortex's activator setting
+    /// and wrote the required method rather than a fact. Only ever `true` or
+    /// absent: anything else in the JSON reads as absent, as it does in
+    /// TypeScript.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deployment_method_assumed: Option<bool>,
     /// Extensions the install REQUIRES. Missing one is refuse-to-install.
     pub required_extensions: Vec<RequiredExtension>,
 }
@@ -317,6 +344,69 @@ pub struct ModInstallState {
     /// are informational; only MISSING files are a hard failure.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub staging_files: Option<Vec<EhcollStagingFile>>,
+    /// Files of this MIRRORED mod the package does not carry, because the
+    /// mod's own archive installs these exact bytes at these paths. Each one
+    /// names an entry of `staging_files`, and is checked against its recorded
+    /// sha256 like every other write. Every other file of the mod rides at
+    /// `mirror/<sha256>`.
+    ///
+    /// Absent on packages built before 0.1.157, which carry every file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mirror_from_archive: Option<Vec<String>>,
+    /// What each script-extender plugin in this mod declares about the game
+    /// versions it runs on, read from the DLL at build time — the player has
+    /// none of these files at the plan step, when it matters.
+    ///
+    /// ADVISORY and read leniently: an entry the reader does not understand is
+    /// skipped, never an error, so a new `kind` cannot strand an older reader.
+    /// Never `Some(empty)`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_plugins: Option<Vec<EhcollNativePlugin>>,
+}
+
+/// One script-extender plugin, as its DLL describes itself.
+///
+/// Whether it LOADS is not recorded: that depends on the player's script
+/// extender too. Old-gen F4SE and SE-era SKSE call Query and ignore the
+/// version block; AE SKSE and next-gen F4SE read the block.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EhcollNativePlugin {
+    /// "/"-separated, relative to the mod's staging root, as in `stagingFiles`.
+    pub path: String,
+    pub extender: NativeExtender,
+    pub kind: NativePluginKind,
+    /// `declares` only: runs on any runtime its Address Library or
+    /// signatures cover.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version_independent: Option<bool>,
+    /// `declares` only: the runtimes it names, e.g. "1.6.1170".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtimes: Option<Vec<String>>,
+    /// `declares` only: also exports Query, so a Query-calling extender
+    /// loads it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_query: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NativeExtender {
+    Skse,
+    F4se,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NativePluginKind {
+    /// Exports the version block, so the runtimes are known.
+    Declares,
+    /// Exports only the old Query function, which decides at load time and
+    /// declares nothing a file reader can see.
+    QueryOnly,
+    /// Could not be parsed. Recorded rather than dropped, so "we could not
+    /// tell" stays visible instead of reading as "nothing to tell".
+    Unreadable,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -375,6 +465,16 @@ pub enum ModRuleType {
 #[serde(rename_all = "camelCase")]
 pub struct EhcollPlugins {
     pub order: Vec<EhcollPluginEntry>,
+    /// The TES4 header bit every `order[].light` was read from — 0x200, or
+    /// 0x100 on Starfield, where 0x200 is a different flag.
+    ///
+    /// Absent means 0x200: builds before this field read 0x200 for every
+    /// game, so their Starfield `light` values say nothing about light. The
+    /// installer applies recorded flags only where this bit IS the game's
+    /// light bit (`judgeRecordedLightFlags`). Dropping it here would refuse
+    /// every flag a Starfield curator recorded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub light_flag_bit: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
