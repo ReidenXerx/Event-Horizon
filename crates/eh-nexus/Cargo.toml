@@ -1,0 +1,25 @@
+[package]
+name = "eh-nexus"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+eh-identity = { workspace = true }
+eh-progress = { workspace = true }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+# TLS: rustls with the ring provider, verified against the SYSTEM trust store.
+# Not ureq's default: that bundles `webpki-roots`, whose CDLA-Permissive-2.0
+# licence is outside deny.toml's allow-list — and on Linux the distro's CA
+# store is the more correct answer anyway.
+ureq = { version = "3", default-features = false, features = ["rustls-no-provider", "platform-verifier"] }
+# No `gzip`: transparent decompression makes the byte count disagree with a
+# compressed Content-Length, failing good downloads as truncated, and mod
+# archives are already compressed.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"

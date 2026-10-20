@@ -1,0 +1,17 @@
+[package]
+name = "eh-package"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ehcoll = { workspace = true }
+eh-archive = { workspace = true }
+# Same backend and features as eh-archive, so one zip reader is linked.
+zip = { version = "8", default-features = false, features = ["deflate", "deflate64", "bzip2", "lzma", "zstd"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+serde_json = "1.0.151"

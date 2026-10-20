@@ -27,6 +27,8 @@ members = [
     "crates/eh-loadorder",
     "crates/eh-resolver",
     "crates/eh-deploy",
+    "crates/eh-nexus",
+    "crates/eh-library",
     "crates/eh-engine",
     "crates/eh-cli",
 ]
@@ -48,4 +50,6 @@ eh-plugin     = { path = "crates/eh-plugin" }
 eh-loadorder  = { path = "crates/eh-loadorder" }
 eh-resolver   = { path = "crates/eh-resolver" }
 eh-deploy     = { path = "crates/eh-deploy" }
+eh-nexus      = { path = "crates/eh-nexus" }
+eh-library    = { path = "crates/eh-library" }
 eh-engine     = { path = "crates/eh-engine" }

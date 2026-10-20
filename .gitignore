@@ -27,3 +27,7 @@ docs/ARCHITECTURE.gitnexus.md
 # --- rust backend ---
 /target
 **/*.rs.bk
+
+# Local secrets: NEXUSMODS_API_KEY for the Rust engine (crates/eh-nexus).
+.env
+.env.*

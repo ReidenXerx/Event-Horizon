@@ -15,4 +15,10 @@ eh-plugin = { workspace = true }
 eh-loadorder = { workspace = true }
 eh-resolver = { workspace = true }
 eh-deploy = { workspace = true }
+eh-nexus = { workspace = true }
+eh-library = { workspace = true }
 eh-progress = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+zip = { version = "8", default-features = false, features = ["deflate"] }

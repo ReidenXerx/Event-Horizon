@@ -7,5 +7,10 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+ehcoll = { workspace = true }
 eh-archive = { workspace = true }
+eh-identity = { workspace = true }
 eh-progress = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.27.0"

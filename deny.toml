@@ -11,6 +11,20 @@
 # `version = 2` means: anything not in `allow` FAILS. Adding to this list is
 # a deliberate act, which is the point.
 # ─────────────────────────────────────────────────────────────────────────
+[graph]
+# Check the dependency graph of the platforms we SHIP, not every target Rust
+# knows. Without this, a wasm32-only dependency fails the gate: ureq's
+# platform verifier pulls `webpki-root-certs` (CDLA-Permissive-2.0, the
+# Mozilla CA bundle) on wasm32 alone. Every crate linked into a real build is
+# still checked. Add a triple here before shipping to a new platform.
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+
 [licenses]
 version = 2
 confidence-threshold = 0.93
