@@ -17,6 +17,7 @@ eh-resolver = { workspace = true }
 eh-deploy = { workspace = true }
 eh-nexus = { workspace = true }
 eh-library = { workspace = true }
+eh-package = { workspace = true }
 eh-progress = { workspace = true }
 
 [dev-dependencies]

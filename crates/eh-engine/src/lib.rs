@@ -60,6 +60,88 @@ pub fn find_mod<'m>(manifest: &'m ehcoll::EhcollManifest, compare_key: &str) -> 
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// Packages
+// ───────────────────────────────────────────────────────────────────────────
+
+/// The package reader and its types, re-exported for shells.
+pub mod package {
+    pub use eh_package::*;
+}
+
+/// Read and validate a `.ehcoll` package.
+pub fn read_package(path: &Path) -> Result<eh_package::PackageRead, EngineError> {
+    eh_package::read_package(path).map_err(EngineError::Package)
+}
+
+/// What a package holds, and how much of it this engine can install today.
+#[derive(Debug, Clone)]
+pub struct PackageSummary {
+    pub name: String,
+    pub version: String,
+    pub author: String,
+    pub game: ehcoll::SupportedGameId,
+    pub verification_level: &'static str,
+    pub mods: usize,
+    /// Downloaded from Nexus.
+    pub nexus: usize,
+    /// Carried inside the package, loose under `bundled/`.
+    pub bundled: usize,
+    /// External and not bundled: the user supplies the archive.
+    pub user_supplied: usize,
+    /// Installed from the original archive, then corrected from `mirror/`.
+    pub mirrored: usize,
+    /// Mods whose every recorded file has a SHA-256: staging can be rebuilt
+    /// from the archive by content, without running any installer.
+    pub rebuildable: usize,
+    /// Names of mods that cannot be rebuilt that way, and why.
+    pub not_rebuildable: Vec<(String, &'static str)>,
+    pub warnings: Vec<String>,
+}
+
+/// Summarise a package that read cleanly.
+pub fn summarize_package(read: &eh_package::PackageRead) -> PackageSummary {
+    let m = &read.manifest;
+    let (mut nexus, mut bundled, mut user_supplied, mut mirrored, mut rebuildable) = (0, 0, 0, 0, 0);
+    let mut not_rebuildable = Vec::new();
+    for md in &m.mods {
+        match &md.source {
+            ehcoll::ModSource::Nexus(_) => nexus += 1,
+            ehcoll::ModSource::External(e) if e.bundled => bundled += 1,
+            ehcoll::ModSource::External(_) => user_supplied += 1,
+        }
+        if md.state.mirrored == Some(true) {
+            mirrored += 1;
+        }
+        match &md.state.staging_files {
+            None => not_rebuildable.push((md.name.clone(), "no file list recorded")),
+            Some(files) if files.iter().any(|f| f.sha256.is_none()) => {
+                not_rebuildable.push((md.name.clone(), "files recorded without hashes"))
+            }
+            Some(_) => rebuildable += 1,
+        }
+    }
+    PackageSummary {
+        name: m.package.name.clone(),
+        version: m.package.version.clone(),
+        author: m.package.author.clone(),
+        game: m.game.id,
+        verification_level: match m.package.verification_level {
+            Some(ehcoll::VerificationLevel::Thorough) => "thorough",
+            Some(ehcoll::VerificationLevel::Fast) => "fast",
+            Some(ehcoll::VerificationLevel::None) | None => "none",
+        },
+        mods: m.mods.len(),
+        nexus,
+        bundled,
+        user_supplied,
+        mirrored,
+        rebuildable,
+        not_rebuildable,
+        warnings: read.warnings.clone(),
+    }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // Nexus
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -272,6 +354,7 @@ pub enum EngineError {
     Incomplete { compare_key: String, missing: Vec<eh_fomod::MissingFile>, unhashed: Vec<String> },
     Library(eh_library::LibraryError),
     Nexus(eh_nexus::NexusError),
+    Package(eh_package::PackageError),
     /// This build supports [`MAX_INSTANCES`], and they exist.
     InstanceLimit(Vec<eh_library::InstanceId>),
     WrongGame {
@@ -295,6 +378,7 @@ impl std::fmt::Display for EngineError {
             ),
             Self::Library(e) => write!(f, "{e}"),
             Self::Nexus(e) => write!(f, "{e}"),
+            Self::Package(e) => write!(f, "{e}"),
             Self::InstanceLimit(ids) => write!(
                 f,
                 "this version supports {MAX_INSTANCES} instance(s), and {} exist: {}",

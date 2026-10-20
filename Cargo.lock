@@ -280,6 +280,7 @@ dependencies = [
  "eh-library",
  "eh-loadorder",
  "eh-nexus",
+ "eh-package",
  "eh-plugin",
  "eh-progress",
  "eh-resolver",
@@ -336,6 +337,17 @@ dependencies = [
  "serde_json",
  "tempfile",
  "ureq",
+]
+
+[[package]]
+name = "eh-package"
+version = "0.1.0"
+dependencies = [
+ "eh-archive",
+ "ehcoll",
+ "serde_json",
+ "tempfile",
+ "zip",
 ]
 
 [[package]]

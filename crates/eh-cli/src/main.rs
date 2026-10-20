@@ -65,6 +65,8 @@ fn usage() {
            nexus whoami              check the Nexus API key and say whose it is\n\
            nexus fetch <game> <modId> <fileId> <sha256> <dest-file>\n\
                                      download one file, verified (Premium key)\n\
+           package inspect <file.ehcoll>\n\
+                                     what a collection package holds, and what can be installed\n\
            instance create <name> <game> <game-dir>\n\
                                      one modpack on one game install (game: fallout4, skyrimse, ...)\n\
            instance list             the instances, their games and modpacks\n\
@@ -107,6 +109,13 @@ fn main() -> ExitCode {
             }
             _ => {
                 eprintln!("eh nexus <whoami | fetch>");
+                ExitCode::from(2)
+            }
+        },
+        Some("package") => match (args.next().as_deref(), args.next()) {
+            (Some("inspect"), Some(file)) => package_inspect(Path::new(&file)),
+            _ => {
+                eprintln!("eh package inspect <file.ehcoll>");
                 ExitCode::from(2)
             }
         },
@@ -238,6 +247,34 @@ fn split_sources(args: &[String]) -> (Vec<String>, Vec<String>) {
         }
     }
     (positional, sources)
+}
+
+fn package_inspect(path: &Path) -> ExitCode {
+    let read = match eh_engine::read_package(path) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("eh package inspect: {e}");
+            return ExitCode::from(65);
+        }
+    };
+    let s = eh_engine::summarize_package(&read);
+    println!("{} {} by {} — {}", s.name, s.version, s.author, s.game.as_str());
+    println!("verification level: {}", s.verification_level);
+    println!(
+        "{} mods: {} from Nexus, {} bundled, {} supplied by the user; {} mirrored",
+        s.mods, s.nexus, s.bundled, s.user_supplied, s.mirrored
+    );
+    println!("rebuildable by content (no installer run): {} of {}", s.rebuildable, s.mods);
+    for (name, why) in s.not_rebuildable.iter().take(20) {
+        println!("  not rebuildable: {name} ({why})");
+    }
+    if s.not_rebuildable.len() > 20 {
+        println!("  … and {} more", s.not_rebuildable.len() - 20);
+    }
+    for w in &s.warnings {
+        eprintln!("warning: {w}");
+    }
+    ExitCode::SUCCESS
 }
 
 fn library() -> Result<eh_engine::library::Library, ExitCode> {
