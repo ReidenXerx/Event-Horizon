@@ -26,6 +26,7 @@ import { selectors, util, type types } from "@nexusmods/vortex-api";
 
 import { listReceipts } from "../../core/installLedger";
 import { ehLog } from "../../core/logging/ehLog";
+import { checkZipHeaders, type ZipHeaderCheck } from "../../core/manifest/zipHeaderCheck";
 import { findCollectionUpdates, gameVersionHold, type CollectionUpdate } from "../../core/nexus/collectionUpdates";
 import { isLoggedInToNexus } from "../../core/nexus/collectionUpload";
 import { getVortexUserDataPath } from "../../core/paths/appDataPaths";
@@ -312,6 +313,8 @@ export type UpdateDeps = {
   resumeDownload?: (api: types.IExtensionApi, downloadId: string) => Promise<void>;
   /** How long to wait before resume number `attempt` (1-based). */
   resumeDelayMs?: (attempt: number) => number;
+  /** Reads the downloaded file's zip headers as 7-Zip will; absent = not checked. */
+  checkArchive?: (archivePath: string) => Promise<ZipHeaderCheck>;
 };
 
 /**
@@ -352,6 +355,7 @@ const defaultDeps: UpdateDeps = {
     return waitForVortexDownload(api, downloadId, signal, onProgress, options);
   },
   downloadDirFor: (api, gameId) => selectors.downloadPathForGame(api.getState(), gameId),
+  checkArchive: (archivePath) => checkZipHeaders(archivePath),
   openInstall: async (api, archivePath) => {
     const { getInstallSession } = await import("../pages/install/installSession");
     getInstallSession().pickFile(api, archivePath);
@@ -359,6 +363,25 @@ const defaultDeps: UpdateDeps = {
     api.events.emit("show-main-page", "event-horizon");
   },
 };
+
+/** What the player reads when the downloaded revision would not extract. */
+export function damagedRevisionMessage(
+  update: Pick<CollectionUpdate, "packageName" | "latestRevision">,
+  check: Exclude<ZipHeaderCheck, { ok: true }>,
+): string {
+  const what = `${update.packageName}, revision ${update.latestRevision}`;
+  if (check.kind === "unreadable") {
+    return (
+      `${what}: the downloaded file cannot be read, so it is probably incomplete. ` +
+      `Delete it in Vortex's Downloads tab, then press Update again. Nothing was changed.`
+    );
+  }
+  return (
+    `${what}: the file on Nexus is damaged (${check.bad} of ${check.entries} files in it have broken headers, ` +
+    `which Vortex's extractor refuses). Your download is fine and downloading it again will not help: ` +
+    `the curator has to publish a fixed revision. Nothing was changed; press Update when the next revision appears.`
+  );
+}
 
 const inFlight = new Set<string>();
 
@@ -404,6 +427,36 @@ export async function startCollectionUpdate(
       });
     });
     api.dismissNotification?.(progressId);
+    /**
+     * ─── A REVISION 7-ZIP WOULD REFUSE IS NAMED, NOT OPENED ─────────────
+     * Ivy Rev 23 (2026-10-21) went up with thousands of damaged headers. A
+     * player's download of it was byte-perfect and still met Vortex's
+     * "Archive damaged" dialog, and the natural fix — delete it and download
+     * again — fetched the same broken file. So the file is read the way 7-Zip
+     * reads it before anything opens it, and the player is told whose problem
+     * it is: a cut-off file is theirs to fetch again, a damaged one is the
+     * curator's to republish. A check that cannot run does not block.
+     */
+    if (deps.checkArchive !== undefined) {
+      let check: ZipHeaderCheck | undefined;
+      try {
+        check = await deps.checkArchive(archivePath);
+      } catch (err) {
+        ehLog("warn", "collection-update.check-skipped", { packageId: update.packageId, archivePath, error: String(err) });
+      }
+      if (check !== undefined && !check.ok) {
+        const message = damagedRevisionMessage(update, check);
+        ehLog("warn", "collection-update.damaged", {
+          packageId: update.packageId,
+          revision: update.latestRevision,
+          archivePath,
+          kind: check.kind,
+          ...(check.kind === "bad-headers" ? { bad: check.bad, entries: check.entries, examples: check.examples } : { reason: check.reason }),
+        });
+        api.sendNotification?.({ id: notifyId, type: "error", title: "Collection update stopped", message });
+        return "failed";
+      }
+    }
     /**
      * ─── CHECKED AGAIN, BECAUSE THE DOWNLOAD TOOK MINUTES ───────────────
      * The check before the download is the one that matters for "is it sane

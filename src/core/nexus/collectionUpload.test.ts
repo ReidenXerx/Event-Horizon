@@ -24,6 +24,12 @@ import {
 } from "./collectionUpload";
 import type { NexusCollectionInfo } from "./collectionPayload";
 
+// The package paths below are not files; the header check has its own tests.
+vi.mock("../manifest/zipHeaderCheck", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../manifest/zipHeaderCheck")>()),
+  checkZipHeaders: async () => ({ ok: true, entries: 1 }),
+}));
+
 const INFO: NexusCollectionInfo = {
   info: { author: "DuduPhudu", authorUrl: "", name: "Ivy's Panties", domainName: "fallout4", gameVersions: ["1.10.163.0"] },
   mods: [
@@ -85,6 +91,40 @@ describe("before anything is sent", () => {
     expect(isLoggedInToNexus({ confidential: { account: { nexus: { OAuthCredentials: {} } } } })).toBe(false);
     expect(isLoggedInToNexus(LOGGED_IN)).toBe(true);
     expect(isLoggedInToNexus({ persistent: { nexus: { userInfo: null } } })).toBe(false);
+  });
+
+  it("refuses a package 7-Zip would call damaged, and never asks Vortex to upload it (Ivy Rev 23)", async () => {
+    const submit = vi.fn();
+    const api = fakeApi({ handlers: { "submit-collection": submit } });
+    const outcome = await uploadToNexusCollection(api, {
+      info: INFO,
+      packagePath: "C:/out/ivy.zip",
+      checkPackage: async () => ({
+        ok: false,
+        kind: "bad-headers",
+        entries: 12418,
+        bad: 5595,
+        examples: [{ entry: "bundled/71c7/meshes/a.nif", problem: "2 ZIP64 fields in the local header (7-Zip reads the first)" }],
+      }),
+    });
+    expect(submit).not.toHaveBeenCalled();
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.failure.title).toBe("This package is damaged, so nothing was uploaded.");
+    expect(outcome.failure.details[0]).toContain("5595 of 12418 files");
+    expect(outcome.failure.details[1]).toMatch(/Build it again with Event Horizon/);
+  });
+
+  it("refuses a package whose index cannot be read", async () => {
+    const submit = vi.fn();
+    const api = fakeApi({ handlers: { "submit-collection": submit } });
+    const outcome = await uploadToNexusCollection(api, {
+      info: INFO,
+      packagePath: "C:/out/ivy.zip",
+      checkPackage: async () => ({ ok: false, kind: "unreadable", reason: "The archive is truncated." }),
+    });
+    expect(submit).not.toHaveBeenCalled();
+    if (!outcome.ok) expect(outcome.failure.title).toMatch(/cannot be read/);
   });
 });
 

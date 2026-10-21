@@ -265,6 +265,44 @@ describe("pressing Update", () => {
   });
 });
 
+describe("a downloaded revision Vortex's extractor would refuse (Ivy Rev 23, 2026-10-21)", () => {
+  it("names a file damaged on Nexus as the curator's to fix, and opens nothing", async () => {
+    const { api, notifications } = fakeApi({ revision: REVISION, urls: URLS });
+    const checked: string[] = [];
+    const d = {
+      ...deps(),
+      checkArchive: async (p: string) => {
+        checked.push(p);
+        return { ok: false as const, kind: "bad-headers" as const, entries: 12418, bad: 5595, examples: [] };
+      },
+    };
+    expect(await startCollectionUpdate(api, update("pkg-damaged"), d)).toBe("failed");
+    expect(checked).toEqual([path.join(DIR, "Ivy's Panties-rev13.zip")]);
+    expect(d.openInstall).not.toHaveBeenCalled();
+    const error = notifications.find((n) => n.type === "error");
+    expect(error?.title).toBe("Collection update stopped");
+    expect(String(error?.message)).toMatch(/revision 13: the file on Nexus is damaged \(5595 of 12418 files/);
+    expect(String(error?.message)).toMatch(/downloading it again will not help/);
+  });
+
+  it("tells the player to fetch a cut-off download again", async () => {
+    const { api, notifications } = fakeApi({ revision: REVISION, urls: URLS });
+    const d = { ...deps(), checkArchive: async () => ({ ok: false as const, kind: "unreadable" as const, reason: "truncated" }) };
+    expect(await startCollectionUpdate(api, update("pkg-cut"), d)).toBe("failed");
+    expect(d.openInstall).not.toHaveBeenCalled();
+    expect(String(notifications.find((n) => n.type === "error")?.message)).toMatch(/probably incomplete\. Delete it in Vortex's Downloads tab/);
+  });
+
+  it("opens a revision that reads clean, and does not let a check that cannot run block it", async () => {
+    const { api } = fakeApi({ revision: REVISION, urls: URLS });
+    const clean = { ...deps(), checkArchive: async () => ({ ok: true as const, entries: 3 }) };
+    expect(await startCollectionUpdate(api, update("pkg-clean"), clean)).toBe("opened");
+    const broken = { ...deps(), checkArchive: async (): Promise<never> => { throw new Error("EBUSY"); } };
+    expect(await startCollectionUpdate(api, update("pkg-nocheck"), broken)).toBe("opened");
+    expect(broken.openInstall).toHaveBeenCalled();
+  });
+});
+
 describe("what the checks found", () => {
   const answered = (...slugs: string[]) => new Set(slugs);
 

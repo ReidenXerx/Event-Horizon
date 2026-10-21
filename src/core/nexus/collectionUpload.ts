@@ -21,6 +21,7 @@ import type { types } from "@nexusmods/vortex-api";
 
 import { beginOp, ehLog } from "../logging/ehLog";
 import { isAbort } from "../../utils/abortError";
+import { checkZipHeaders, describeZipHeaderCheck, type ZipHeaderCheck } from "../manifest/zipHeaderCheck";
 import {
   countNexusCollectionMods,
   describeNexusPointer,
@@ -173,6 +174,8 @@ export function uploadToNexusCollection(
     target?: NexusCollectionLink;
     onProgress?: (transferred: number, total: number) => void;
     signal?: AbortSignal;
+    /** Reads the package's headers before anything is sent; tests replace it. */
+    checkPackage?: (packagePath: string, signal?: AbortSignal) => Promise<ZipHeaderCheck>;
   },
 ): Promise<NexusUploadOutcome> {
   const { info, target } = input;
@@ -203,6 +206,42 @@ export function uploadToNexusCollection(
     });
   }
 
+  /**
+   * ─── A PACKAGE 7-ZIP WOULD REFUSE NEVER LEAVES THIS MACHINE ─────────────
+   * Ivy Rev 23 (2026-10-21) was repacked outside Event Horizon and went up
+   * with thousands of damaged headers: it read fine in Python, and every
+   * player who updated got Vortex's "Archive damaged" dialog. Reading the
+   * headers costs under a second; a bad revision costs every player an
+   * update and the curator a new revision.
+   */
+  const check = input.checkPackage ?? checkZipHeaders;
+  return check(input.packagePath, input.signal).then(
+    (result): NexusUploadOutcome | Promise<NexusUploadOutcome> => {
+      if (result.ok) return submit();
+      op.fail(new Error("package damaged"), { kind: result.kind, ...(result.kind === "bad-headers" ? { bad: result.bad } : {}) });
+      return {
+        ok: false,
+        failure: {
+          kind: "failed",
+          title:
+            result.kind === "unreadable"
+              ? "This package cannot be read, so nothing was uploaded."
+              : "This package is damaged, so nothing was uploaded.",
+          details: [
+            describeZipHeaderCheck(result),
+            "Build it again with Event Horizon. A package repacked by another tool can open fine there and still fail in 7-Zip.",
+          ],
+        },
+      };
+    },
+    (err: unknown): NexusUploadOutcome => {
+      const failure = describeUploadError(input.signal?.aborted ? new Error("cancelled") : err, info, input.signal);
+      op.fail(err, { kind: failure.kind, stage: "package-check" });
+      return { ok: false, failure };
+    },
+  );
+
+  function submit(): Promise<NexusUploadOutcome> {
   return new Promise<NexusUploadOutcome>((resolve) => {
     let settled = false;
     /**
@@ -278,6 +317,11 @@ export function uploadToNexusCollection(
     };
     try {
       input.signal?.addEventListener("abort", onAbort, { once: true });
+      // Cancelled while the package was being checked: the event has passed.
+      if (input.signal?.aborted) {
+        onAbort();
+        return;
+      }
       armQuiet();
       api.events.emit(SUBMIT_EVENT, info, input.packagePath, target?.id, callback, {
         // Every byte Vortex reports re-arms the silence budget, and the
@@ -292,6 +336,7 @@ export function uploadToNexusCollection(
       callback(err);
     }
   });
+  }
 }
 
 function toOutcome(
