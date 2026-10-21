@@ -65,6 +65,8 @@ fn usage() {
            nexus whoami              check the Nexus API key and say whose it is\n\
            nexus fetch <game> <modId> <fileId> <sha256> <dest-file>\n\
                                      download one file, verified (Premium key)\n\
+           collection info <link>    which collection and revision a Nexus link names\n\
+           collection fetch <link>   download its package into the library (free accounts too)\n\
            package inspect <file.ehcoll>\n\
                                      what a collection package holds, and what can be installed\n\
            instance create <name> <game> <game-dir>\n\
@@ -109,6 +111,14 @@ fn main() -> ExitCode {
             }
             _ => {
                 eprintln!("eh nexus <whoami | fetch>");
+                ExitCode::from(2)
+            }
+        },
+        Some("collection") => match (args.next().as_deref(), args.next()) {
+            (Some("info"), Some(link)) => collection_info(&link),
+            (Some("fetch"), Some(link)) => collection_fetch(&link),
+            _ => {
+                eprintln!("eh collection <info | fetch> <link>");
                 ExitCode::from(2)
             }
         },
@@ -247,6 +257,72 @@ fn split_sources(args: &[String]) -> (Vec<String>, Vec<String>) {
         }
     }
     (positional, sources)
+}
+
+fn gigabytes(n: u64) -> String {
+    format!("{:.1} GB", n as f64 / 1e9)
+}
+
+fn print_revision(r: &eh_engine::nexus::CollectionRevision) {
+    println!(
+        "{} — {} revision {} ({}){}",
+        r.collection_name,
+        r.game_domain,
+        r.revision_number,
+        r.slug,
+        if r.adult { ", adult" } else { "" }
+    );
+    if let (Some(n), Some(size)) = (r.mod_count, r.mods_total_size) {
+        println!("{n} mods, {} of mod files", gigabytes(size));
+    }
+}
+
+fn collection_info(link: &str) -> ExitCode {
+    let client = match nexus_client() {
+        Ok(c) => c,
+        Err(code) => return code,
+    };
+    match eh_engine::collection_info(&client, link) {
+        Ok(r) => {
+            print_revision(&r);
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("eh collection info: {e}");
+            ExitCode::from(69)
+        }
+    }
+}
+
+fn collection_fetch(link: &str) -> ExitCode {
+    let (client, lib) = match (nexus_client(), library()) {
+        (Ok(c), Ok(l)) => (c, l),
+        (Err(code), _) | (_, Err(code)) => return code,
+    };
+    let progress = render::for_environment();
+    let task = progress.task("collection package", None, Unit::Bytes);
+    match eh_engine::fetch_collection(&client, &lib, link, &task) {
+        Ok(f) => {
+            task.done();
+            print_revision(&f.revision);
+            match &f.via {
+                Some(cdn) => println!("package: {} via {cdn} -> {}", gigabytes(f.bytes), f.path.display()),
+                None => println!("package: already stored -> {}", f.path.display()),
+            }
+            let s = eh_engine::summarize_package(&f.package);
+            println!(
+                "{} mods: {} from Nexus, {} bundled, {} supplied by the user; {} mirrored",
+                s.mods, s.nexus, s.bundled, s.user_supplied, s.mirrored
+            );
+            println!("rebuildable by content (no installer run): {} of {}", s.rebuildable, s.mods);
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            task.failed(e.to_string());
+            eprintln!("eh collection fetch: {e}");
+            ExitCode::from(69)
+        }
+    }
 }
 
 fn package_inspect(path: &Path) -> ExitCode {

@@ -138,11 +138,22 @@ pub fn read_package(path: &Path) -> Result<PackageRead, PackageError> {
         let link_file = entries
             .iter()
             .any(|e| e.name.rsplit('/').next().map(str::to_ascii_lowercase).as_deref() == Some(LINK_FILE_NAME));
+        // Rust-only branch: the TypeScript reader is never handed an ordinary
+        // Vortex collection (Vortex's own installer claims those first), but a
+        // collection LINK can name one, and "not a valid package" would read
+        // as a damaged download rather than the wrong kind of collection.
+        let vortex_collection = entries.iter().any(|e| e.name == "collection.json");
         return Err(PackageError::one(if link_file {
             format!(
                 "\"{zip_name}\" is a collection's link file, not its package: it holds {LINK_FILE_NAME} \
                  and no manifest.json. Paste the link written inside it into \"Or paste the \
                  collection's link\" on the Install page."
+            )
+        } else if vortex_collection {
+            format!(
+                "\"{zip_name}\" is an ordinary Vortex collection, not an Event Horizon one: it has \
+                 collection.json and no manifest.json. Event Horizon installs only collections \
+                 built with Event Horizon."
             )
         } else {
             format!(

@@ -225,3 +225,9 @@ fn a_cut_short_download_is_called_incomplete_not_corrupt() {
 fn a_missing_file_says_so() {
     assert_error(Path::new("/nonexistent/x.ehcoll"), "No file at");
 }
+
+#[test]
+fn an_ordinary_vortex_collection_is_named_as_one() {
+    let p = pkg(&[("collection.json", br#"{"info":{},"mods":[{"name":"x"}]}"#), ("bundled/x.7z", b"z")]);
+    assert_error(&p.path, "is an ordinary Vortex collection, not an Event Horizon one");
+}

@@ -1,5 +1,6 @@
 //! The Nexus Mods REST API, and downloading what it points at.
 
+use crate::collection::{CollectionLink, CollectionRevision, GqlRevision, REVISION_QUERY};
 use crate::key::ApiKey;
 use eh_identity::{is_sha256_hex, sha256_file, HashingWriter};
 use eh_progress::Task;
@@ -100,6 +101,9 @@ pub enum NexusError {
     /// NOT retried on another mirror: the file Nexus serves is different,
     /// and a second copy of it would be just as wrong.
     HashMismatch { file: String, expected: String, got: String },
+    /// A complete download the caller's check refused — e.g. a collection
+    /// file that is not a readable package. Not retried on another mirror.
+    Rejected { file: String, why: String },
 }
 
 impl fmt::Display for NexusError {
@@ -132,6 +136,7 @@ impl fmt::Display for NexusError {
                 }
                 Ok(())
             }
+            Self::Rejected { file, why } => write!(f, "{file}: the downloaded file was refused: {why}"),
             Self::HashMismatch { file, expected, got } => write!(
                 f,
                 "{file}: Nexus served different bytes than the collection names \
@@ -233,23 +238,128 @@ impl Client {
             fs::create_dir_all(parent)?;
         }
 
-        let mut links = self.download_links(file)?;
+        let links = self.download_links(file)?;
+        self.fetch_via(links, dest, task, &|_, sha| {
+            if sha == expected_sha256 {
+                Ok(())
+            } else {
+                Err(NexusError::HashMismatch {
+                    file: file.to_string(),
+                    expected: expected_sha256.to_owned(),
+                    got: sha.to_owned(),
+                })
+            }
+        })
+    }
+
+    /// Which revision of a collection a link names, and where its file is.
+    /// Without a revision in the link, the latest published one.
+    pub fn collection_revision(&self, link: &CollectionLink) -> Result<CollectionRevision, NexusError> {
+        let mut variables = serde_json::json!({ "slug": link.slug, "viewAdultContent": true });
+        if let Some(r) = link.revision {
+            variables["revision"] = serde_json::json!(r);
+        }
+        let data = self.graphql(REVISION_QUERY, variables)?;
+        let raw = data.get("collectionRevision").cloned().unwrap_or(serde_json::Value::Null);
+        if raw.is_null() {
+            return Err(NexusError::NotFound(format!("{link}")));
+        }
+        let r: GqlRevision = serde_json::from_value(raw)
+            .map_err(|e| NexusError::Unexpected(format!("collectionRevision: {e}")))?;
+        if let Some(domain) = &link.game_domain {
+            if !domain.eq_ignore_ascii_case(&r.collection.game.domain_name) {
+                return Err(NexusError::Unexpected(format!(
+                    "the link says {domain}, but collection {} is for {}",
+                    link.slug, r.collection.game.domain_name
+                )));
+            }
+        }
+        Ok(CollectionRevision {
+            slug: link.slug.clone(),
+            collection_id: r.collection.id,
+            collection_name: r.collection.name,
+            game_domain: r.collection.game.domain_name,
+            revision_id: r.id,
+            revision_number: r.revision_number,
+            download_link: r.download_link,
+            adult: r.adult_content,
+            mod_count: r.mod_count,
+            mods_total_size: r.total_size.and_then(|s| s.parse().ok()),
+        })
+    }
+
+    /// The download mirrors for a collection revision's file.
+    pub fn collection_download_links(&self, rev: &CollectionRevision) -> Result<Vec<CdnLink>, NexusError> {
+        // The key goes to this path, so it must be a path on the API host and
+        // nothing that could make it another host.
+        let p = rev.download_link.as_str();
+        if !p.starts_with('/') || p.starts_with("//") || p.contains("://") || p.chars().any(|c| c.is_control() || c == ' ') {
+            return Err(NexusError::Unexpected(format!("refusing an odd download link path {p:?}")));
+        }
+        #[derive(serde::Deserialize)]
+        struct Links {
+            download_links: Option<Vec<CdnLink>>,
+            download_link: Option<CdnLink>,
+        }
+        let body = self.api_get(p, false)?;
+        let l: Links = serde_json::from_str(&body)
+            .map_err(|e| NexusError::Unexpected(format!("collection download_link: {e}")))?;
+        let links: Vec<CdnLink> = l.download_links.unwrap_or_default().into_iter().chain(l.download_link).collect();
+        if links.is_empty() {
+            return Err(NexusError::Unexpected(format!("{}: no download mirrors offered", rev.slug)));
+        }
+        Ok(links)
+    }
+
+    /// Download a collection revision's file to `dest`.
+    ///
+    /// Nexus publishes no hash for it, so `check` decides what counts as the
+    /// right file — for an Event Horizon collection, "it reads as a package".
+    /// The file is renamed into place only once `check` passes, so a file at
+    /// `dest` has passed it, and is reused when it still does: a published
+    /// revision's file never changes.
+    pub fn fetch_collection(
+        &self,
+        rev: &CollectionRevision,
+        dest: &Path,
+        task: &Task,
+        check: &dyn Fn(&Path) -> Result<(), String>,
+    ) -> Result<Fetched, NexusError> {
+        if dest.is_file() && check(dest).is_ok() {
+            let (sha, bytes) = sha256_file(dest, None)?;
+            return Ok(Fetched { path: dest.to_path_buf(), sha256: sha, bytes, via: None });
+        }
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let label = format!("{} revision {}", rev.slug, rev.revision_number);
+        let links = self.collection_download_links(rev)?;
+        self.fetch_via(links, dest, task, &|part, _| {
+            check(part).map_err(|why| NexusError::Rejected { file: label.clone(), why })
+        })
+    }
+
+    /// Try each mirror in turn until one delivers a complete file, then let
+    /// `accept` judge it. A refusal from `accept` is final: another mirror
+    /// would serve the same file. Nothing is left at `dest` unless accepted.
+    fn fetch_via(
+        &self,
+        mut links: Vec<CdnLink>,
+        dest: &Path,
+        task: &Task,
+        accept: &dyn Fn(&Path, &str) -> Result<(), NexusError>,
+    ) -> Result<Fetched, NexusError> {
         // Stable: the preferred CDN first, the rest in the API's own order.
         links.sort_by_key(|l| l.short_name != PREFERRED_CDN);
-
         let part = part_path(dest);
         let mut failures = Vec::new();
         for link in &links {
             task.message(format!("downloading via {}", link.short_name));
             match self.download_to(&link.uri, &part, task) {
                 Ok((sha, bytes)) => {
-                    if sha != expected_sha256 {
+                    if let Err(e) = accept(&part, &sha) {
                         let _ = fs::remove_file(&part);
-                        return Err(NexusError::HashMismatch {
-                            file: file.to_string(),
-                            expected: expected_sha256.to_owned(),
-                            got: sha,
-                        });
+                        return Err(e);
                     }
                     fs::rename(&part, dest)?;
                     return Ok(Fetched {
@@ -268,6 +378,42 @@ impl Client {
         Err(NexusError::AllMirrorsFailed(failures))
     }
 
+    /// POST a GraphQL query to `/v2/graphql` with the key, and return `data`.
+    /// GraphQL reports failures inside a 200; those become errors here.
+    fn graphql(&self, query: &str, variables: serde_json::Value) -> Result<serde_json::Value, NexusError> {
+        let body = serde_json::json!({ "query": query, "variables": variables }).to_string();
+        let resp = self
+            .api
+            .post(format!("{}/v2/graphql", self.base))
+            .header("apikey", self.key.expose())
+            .header("Application-Name", APP_NAME)
+            .header("Application-Version", APP_VERSION)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .send(body.as_str())
+            .map_err(|e| NexusError::Transport(e.to_string()))?;
+        let (status, text, limits) = read_api_response(resp)?;
+        if let Ok(mut slot) = self.limits.lock() {
+            *slot = Some(limits.clone());
+        }
+        let v: serde_json::Value = match status {
+            200..=299 => serde_json::from_str(&text).map_err(|e| NexusError::Unexpected(format!("graphql: {e}")))?,
+            _ => return Err(map_status(status, &text, false, limits)),
+        };
+        if let Some(errors) = v.get("errors").and_then(|e| e.as_array()).filter(|e| !e.is_empty()) {
+            let first = &errors[0];
+            let message = first.get("message").and_then(|m| m.as_str()).unwrap_or("GraphQL error").to_owned();
+            let code = first.pointer("/extensions/code").and_then(|c| c.as_str()).unwrap_or("");
+            return Err(match code {
+                "NOT_FOUND" => NexusError::NotFound(message),
+                "UNAUTHENTICATED" => NexusError::InvalidKey(message),
+                "FORBIDDEN" => NexusError::Forbidden(message),
+                _ => NexusError::Unexpected(format!("graphql: {message}")),
+            });
+        }
+        Ok(v.get("data").cloned().unwrap_or(serde_json::Value::Null))
+    }
+
     /// GET an API path with the key. `is_download_link` decides what a 403
     /// means: on a download link it is Nexus's Premium-only rule.
     fn api_get(&self, path: &str, is_download_link: bool) -> Result<String, NexusError> {
@@ -281,26 +427,13 @@ impl Client {
             .header("Accept", "application/json")
             .call()
             .map_err(|e| NexusError::Transport(e.to_string()))?;
-        let limits = rate_limits_of(&resp);
+        let (status, body, limits) = read_api_response(resp)?;
         if let Ok(mut slot) = self.limits.lock() {
             *slot = Some(limits.clone());
         }
-        let status = resp.status().as_u16();
-        let body = resp
-            .into_body()
-            .read_to_string()
-            .map_err(|e| NexusError::Transport(e.to_string()))?;
         match status {
             200..=299 => Ok(body),
-            401 => Err(NexusError::InvalidKey(message_of(&body))),
-            403 if is_download_link => Err(NexusError::NotPremium(message_of(&body))),
-            403 => Err(NexusError::Forbidden(message_of(&body))),
-            404 => Err(NexusError::NotFound(message_of(&body))),
-            429 => Err(NexusError::RateLimited(limits)),
-            300..=399 => Err(NexusError::Unexpected(format!(
-                "HTTP {status} redirect from the API; not followed, so the key stays with Nexus"
-            ))),
-            _ => Err(NexusError::Http { status, message: message_of(&body) }),
+            _ => Err(map_status(status, &body, is_download_link, limits)),
         }
     }
 
@@ -350,6 +483,29 @@ impl Client {
             }
         }
         Ok((sha, bytes))
+    }
+}
+
+fn read_api_response(resp: Response<Body>) -> Result<(u16, String, RateLimits), NexusError> {
+    let limits = rate_limits_of(&resp);
+    let status = resp.status().as_u16();
+    let body = resp.into_body().read_to_string().map_err(|e| NexusError::Transport(e.to_string()))?;
+    Ok((status, body, limits))
+}
+
+/// What a non-2xx API status means. `is_download_link` decides what a 403
+/// means: on a MOD's download link it is Nexus's Premium-only rule.
+fn map_status(status: u16, body: &str, is_download_link: bool, limits: RateLimits) -> NexusError {
+    match status {
+        401 => NexusError::InvalidKey(message_of(body)),
+        403 if is_download_link => NexusError::NotPremium(message_of(body)),
+        403 => NexusError::Forbidden(message_of(body)),
+        404 => NexusError::NotFound(message_of(body)),
+        429 => NexusError::RateLimited(limits),
+        300..=399 => NexusError::Unexpected(format!(
+            "HTTP {status} redirect from the API; not followed, so the key stays with Nexus"
+        )),
+        _ => NexusError::Http { status, message: message_of(body) },
     }
 }
 

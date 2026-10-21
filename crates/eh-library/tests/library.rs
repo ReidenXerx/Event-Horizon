@@ -137,3 +137,19 @@ fn mod_folder_names_are_portable_and_never_collide() {
     let hostile = mod_dir_name("../../etc");
     assert!(!hostile.contains('/') && !hostile.starts_with('.'), "{hostile}");
 }
+
+#[test]
+fn a_collection_revision_has_one_place_and_a_hostile_name_has_none() {
+    let w = world();
+    assert_eq!(
+        w.lib.package_path("skyrimspecialedition", "ecb76c", 15).unwrap(),
+        w.lib.root().join("packages/skyrimspecialedition/ecb76c/r15.ehcoll")
+    );
+    assert_ne!(
+        w.lib.package_path("skyrimspecialedition", "ecb76c", 14).unwrap(),
+        w.lib.package_path("skyrimspecialedition", "ecb76c", 15).unwrap()
+    );
+    for (game, slug, rev) in [("..", "x", 1), ("sse", "../x", 1), ("sse", "a/b", 1), ("sse", "", 1), ("sse", "x", 0)] {
+        assert!(w.lib.package_path(game, slug, rev).is_err(), "{game}/{slug}/{rev}");
+    }
+}

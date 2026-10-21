@@ -172,6 +172,79 @@ pub fn fetch_nexus_mod(
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// Collections
+// ───────────────────────────────────────────────────────────────────────────
+
+/// The game a Nexus domain names, among the games manifests support. The
+/// Nexus domain is not the game id: `skyrimse` is `skyrimspecialedition`.
+pub fn game_of_nexus_domain(domain: &str) -> Option<ehcoll::SupportedGameId> {
+    use ehcoll::SupportedGameId::*;
+    match domain.to_ascii_lowercase().as_str() {
+        "skyrimspecialedition" => Some(Skyrimse),
+        "fallout3" => Some(Fallout3),
+        "newvegas" => Some(Falloutnv),
+        "fallout4" => Some(Fallout4),
+        "starfield" => Some(Starfield),
+        _ => None,
+    }
+}
+
+/// What a collection link names, without downloading anything.
+pub fn collection_info(
+    client: &eh_nexus::Client,
+    link: &str,
+) -> Result<eh_nexus::CollectionRevision, EngineError> {
+    let link = eh_nexus::parse_collection_link(link).map_err(EngineError::Link)?;
+    client.collection_revision(&link).map_err(EngineError::Nexus)
+}
+
+/// A collection's package, downloaded and read.
+#[derive(Debug, Clone)]
+pub struct FetchedCollection {
+    pub revision: eh_nexus::CollectionRevision,
+    pub path: std::path::PathBuf,
+    /// Where it came from, or `None` when the stored copy was reused.
+    pub via: Option<String>,
+    pub bytes: u64,
+    pub package: eh_package::PackageRead,
+}
+
+/// Download the package a collection link names into the library, and read
+/// it. Works with a free account: only mod files need Premium.
+///
+/// The file counts as downloaded only once it reads as an Event Horizon
+/// package — so a stored one is never half a file — and only a package for
+/// the game the collection is listed under is returned.
+pub fn fetch_collection(
+    client: &eh_nexus::Client,
+    library: &eh_library::Library,
+    link: &str,
+    task: &Task,
+) -> Result<FetchedCollection, EngineError> {
+    let revision = collection_info(client, link)?;
+    let game = game_of_nexus_domain(&revision.game_domain)
+        .ok_or_else(|| EngineError::UnsupportedGame(revision.game_domain.clone()))?;
+    let dest = library
+        .package_path(&revision.game_domain, &revision.slug, revision.revision_number)
+        .map_err(EngineError::Library)?;
+    let fetched = client
+        .fetch_collection(&revision, &dest, task, &|p| {
+            eh_package::read_package(p).map(|_| ()).map_err(|e| e.to_string())
+        })
+        .map_err(EngineError::Nexus)?;
+    let package = read_package(&fetched.path)?;
+    if package.manifest.game.id != game {
+        return Err(EngineError::Unexpected(format!(
+            "collection {} is listed for {}, but its package is for {}",
+            revision.slug,
+            game.as_str(),
+            package.manifest.game.id.as_str()
+        )));
+    }
+    Ok(FetchedCollection { revision, path: fetched.path, via: fetched.via, bytes: fetched.bytes, package })
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // Library and instances
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -355,6 +428,10 @@ pub enum EngineError {
     Library(eh_library::LibraryError),
     Nexus(eh_nexus::NexusError),
     Package(eh_package::PackageError),
+    Link(eh_nexus::LinkError),
+    /// A Nexus game this build has no manifest support for.
+    UnsupportedGame(String),
+    Unexpected(String),
     /// This build supports [`MAX_INSTANCES`], and they exist.
     InstanceLimit(Vec<eh_library::InstanceId>),
     WrongGame {
@@ -379,6 +456,9 @@ impl std::fmt::Display for EngineError {
             Self::Library(e) => write!(f, "{e}"),
             Self::Nexus(e) => write!(f, "{e}"),
             Self::Package(e) => write!(f, "{e}"),
+            Self::Link(e) => write!(f, "{e}"),
+            Self::UnsupportedGame(d) => write!(f, "Event Horizon does not support the Nexus game {d:?}"),
+            Self::Unexpected(m) => write!(f, "{m}"),
             Self::InstanceLimit(ids) => write!(
                 f,
                 "this version supports {MAX_INSTANCES} instance(s), and {} exist: {}",

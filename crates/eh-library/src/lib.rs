@@ -10,6 +10,7 @@
 //! <root>/                          $EH_HOME, else $XDG_DATA_HOME/event-horizon,
 //!                                  else ~/.local/share/event-horizon
 //!   archives/<sha256>              downloads, shared by EVERY instance
+//!   packages/<game>/<slug>/r<n>.ehcoll   collection files, one per revision
 //!   instances/<id>/
 //!     instance.json                what this instance is
 //!     package/                     the collection package it installs
@@ -216,6 +217,7 @@ impl Library {
         let root = root.into();
         fs::create_dir_all(root.join("archives")).map_err(|e| LibraryError::io(&root, e))?;
         fs::create_dir_all(root.join("instances")).map_err(|e| LibraryError::io(&root, e))?;
+        fs::create_dir_all(root.join("packages")).map_err(|e| LibraryError::io(&root, e))?;
         Ok(Self { root })
     }
 
@@ -229,6 +231,21 @@ impl Library {
             return Err(LibraryError::BadHash(sha256.to_owned()));
         }
         Ok(self.root.join("archives").join(sha256))
+    }
+
+    /// Where a collection revision's file lives. A published revision never
+    /// changes, so `(game, slug, revision)` names it exactly; a later revision
+    /// is a different file beside it. Both names come from a link and from the
+    /// API, so they are held to [a-z0-9] before they become a path.
+    pub fn package_path(&self, game_domain: &str, slug: &str, revision: u32) -> Result<PathBuf, LibraryError> {
+        let plain = |s: &str| {
+            !s.is_empty() && s.len() <= 64 && s.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        };
+        let (game, slug) = (game_domain.to_ascii_lowercase(), slug.to_ascii_lowercase());
+        if !plain(&game) || !plain(&slug) || revision == 0 {
+            return Err(LibraryError::BadPackageName(format!("{game_domain}/{slug} revision {revision}")));
+        }
+        Ok(self.root.join("packages").join(game).join(slug).join(format!("r{revision}.ehcoll")))
     }
 
     /// Every instance, sorted by id. A damaged `instance.json` is an error,
@@ -330,6 +347,7 @@ pub enum LibraryError {
     NoHome,
     BadId(String),
     BadHash(String),
+    BadPackageName(String),
     IdTaken(InstanceId),
     NoSuchInstance(InstanceId),
     NoGameDir(PathBuf),
@@ -355,6 +373,7 @@ impl fmt::Display for LibraryError {
                  up to 64 characters, not starting with '-'"
             ),
             Self::BadHash(s) => write!(f, "{s:?} is not a lowercase 64-character SHA-256"),
+            Self::BadPackageName(s) => write!(f, "{s:?} cannot name a stored collection file"),
             Self::IdTaken(id) => write!(f, "an instance named {id} already exists"),
             Self::NoSuchInstance(id) => write!(f, "there is no instance named {id}"),
             Self::NoGameDir(p) => write!(f, "{} is not a folder", p.display()),

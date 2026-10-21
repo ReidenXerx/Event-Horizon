@@ -8,7 +8,7 @@
 use eh_nexus::{ApiKey, Client, NexusError, NexusFile};
 use eh_progress::{Progress, Unit};
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 
@@ -16,8 +16,10 @@ const KEY: &str = "test-key-not-real";
 
 #[derive(Clone, Debug)]
 struct Seen {
+    method: String,
     path: String,
     headers: HashMap<String, String>,
+    body: String,
 }
 
 struct Reply {
@@ -52,6 +54,7 @@ impl Fake {
                 if reader.read_line(&mut line).is_err() {
                     continue;
                 }
+                let method = line.split_whitespace().next().unwrap_or("").to_owned();
                 let path = line.split_whitespace().nth(1).unwrap_or("").to_owned();
                 let mut headers = HashMap::new();
                 loop {
@@ -63,7 +66,11 @@ impl Fake {
                         headers.insert(k.trim().to_ascii_lowercase(), v.trim().to_owned());
                     }
                 }
-                log.lock().unwrap().push(Seen { path: path.clone(), headers });
+                let len: usize = headers.get("content-length").and_then(|v| v.parse().ok()).unwrap_or(0);
+                let mut body = vec![0u8; len];
+                let _ = reader.read_exact(&mut body);
+                let body = String::from_utf8_lossy(&body).into_owned();
+                log.lock().unwrap().push(Seen { method, path: path.clone(), headers, body });
                 let r = route(&me, &path);
                 let mut head = format!(
                     "HTTP/1.1 {} X\r\nContent-Length: {}\r\nConnection: close\r\n",
@@ -289,4 +296,161 @@ fn a_malformed_expected_hash_is_refused_before_any_request() {
     let err = client(&fake).fetch(&file(), "ABC", &dir.path().join("a.7z"), &task()).unwrap_err();
     assert!(matches!(err, NexusError::BadExpectedHash(_)));
     assert!(fake.seen().is_empty());
+}
+
+// ── collections ────────────────────────────────────────────────────────────
+
+use eh_nexus::{parse_collection_link, CollectionRevision};
+
+const REVISION_JSON: &str = r#"{"data":{"collectionRevision":{"id":813212,"revisionNumber":15,
+  "downloadLink":"/v2/collections/510746/revisions/813212/download_link","adultContent":true,
+  "modCount":1777,"totalSize":"74038709982",
+  "collection":{"id":510746,"name":"Meridia's Panties - Event Horizon","game":{"domainName":"skyrimspecialedition"}}}}}"#;
+
+const PACKAGE: &[u8] = b"PK pretend package bytes";
+
+fn collection_server() -> Fake {
+    Fake::start(|base, path| match path {
+        "/v2/graphql" => reply(200, REVISION_JSON),
+        "/v2/collections/510746/revisions/813212/download_link" => reply(
+            200,
+            format!(r#"{{"download_links":[{{"name":"Nexus CDN","short_name":"Nexus CDN","URI":"{base}/cdn/c.zip?sig=1"}}]}}"#),
+        ),
+        p if p.starts_with("/cdn/") => reply(200, PACKAGE),
+        _ => reply(404, ""),
+    })
+}
+
+fn revision(c: &Client, link: &str) -> Result<CollectionRevision, NexusError> {
+    c.collection_revision(&parse_collection_link(link).unwrap())
+}
+
+#[test]
+fn a_collection_link_resolves_to_its_revision_by_graphql() {
+    let fake = collection_server();
+    let r = revision(&client(&fake), "https://www.nexusmods.com/games/skyrimspecialedition/collections/ecb76c").unwrap();
+    assert_eq!((r.revision_number, r.collection_id, r.revision_id), (15, 510746, 813212));
+    assert_eq!(r.mods_total_size, Some(74_038_709_982), "the API sends this as a string");
+    assert_eq!(r.game_domain, "skyrimspecialedition");
+    let seen = &fake.seen()[0];
+    assert_eq!((seen.method.as_str(), seen.path.as_str()), ("POST", "/v2/graphql"));
+    assert_eq!(seen.headers.get("apikey").map(String::as_str), Some(KEY));
+    let body: serde_json::Value = serde_json::from_str(&seen.body).unwrap();
+    assert_eq!(body["variables"]["slug"], "ecb76c");
+    assert_eq!(body["variables"]["viewAdultContent"], true);
+    assert!(body["variables"].get("revision").is_none(), "no revision asked = the latest");
+}
+
+#[test]
+fn a_pinned_revision_is_asked_for_by_number() {
+    let fake = collection_server();
+    revision(&client(&fake), "nxm://skyrimspecialedition/collections/ecb76c/revisions/14").unwrap();
+    let body: serde_json::Value = serde_json::from_str(&fake.seen()[0].body).unwrap();
+    assert_eq!(body["variables"]["revision"], 14);
+}
+
+#[test]
+fn an_unknown_collection_is_not_found() {
+    let fake = Fake::start(|_, _| {
+        reply(200, r#"{"errors":[{"message":"Collection not found","extensions":{"code":"NOT_FOUND"}}],"data":null}"#)
+    });
+    assert!(matches!(revision(&client(&fake), "zzzzzz9"), Err(NexusError::NotFound(m)) if m.contains("not found")));
+}
+
+#[test]
+fn a_link_for_one_game_naming_another_games_collection_is_refused() {
+    let fake = collection_server();
+    let err = revision(&client(&fake), "https://www.nexusmods.com/games/fallout4/collections/ecb76c").unwrap_err();
+    assert!(err.to_string().contains("is for skyrimspecialedition"), "{err}");
+}
+
+#[test]
+fn a_download_link_that_could_leave_the_api_host_is_never_followed() {
+    for odd in ["https://evil.example/steal", "//evil.example/steal", "/v2/x\nHost: evil"] {
+        let mut r = revision(&client(&collection_server()), "ecb76c").unwrap();
+        r.download_link = odd.into();
+        let fake = Fake::start(|_, _| reply(200, "[]"));
+        let err = client(&fake).collection_download_links(&r).unwrap_err();
+        assert!(matches!(err, NexusError::Unexpected(_)), "{odd:?}: {err}");
+        assert!(fake.seen().is_empty(), "{odd:?} reached a server");
+    }
+}
+
+#[test]
+fn a_collection_file_is_kept_only_once_the_check_accepts_it_and_then_reused() {
+    let fake = collection_server();
+    let c = client(&fake);
+    let r = revision(&c, "ecb76c").unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("packages/r15.ehcoll");
+    let checked = std::sync::atomic::AtomicUsize::new(0);
+    let check = |p: &std::path::Path| {
+        checked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if std::fs::read(p).unwrap() == PACKAGE { Ok(()) } else { Err("not a package".to_owned()) }
+    };
+    let got = c.fetch_collection(&r, &dest, &task(), &check).unwrap();
+    assert_eq!((got.via.as_deref(), std::fs::read(&dest).unwrap()), (Some("Nexus CDN"), PACKAGE.to_vec()));
+    // The download-link GET carries the key; the CDN GET does not.
+    let seen = fake.seen();
+    assert!(seen.iter().any(|s| s.path.ends_with("/download_link") && s.headers.contains_key("apikey")));
+    assert!(seen.iter().filter(|s| s.path.starts_with("/cdn/")).all(|s| !s.headers.contains_key("apikey")));
+
+    let before = fake.seen().len();
+    let again = c.fetch_collection(&r, &dest, &task(), &check).unwrap();
+    assert_eq!(again.via, None, "a stored revision that still passes is reused");
+    assert_eq!(fake.seen().len(), before, "and costs no request");
+}
+
+#[test]
+fn a_collection_file_the_check_refuses_is_not_kept() {
+    let fake = collection_server();
+    let c = client(&fake);
+    let r = revision(&c, "ecb76c").unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("r15.ehcoll");
+    let err = c.fetch_collection(&r, &dest, &task(), &|_| Err("has collection.json and no manifest.json".into())).unwrap_err();
+    assert!(matches!(&err, NexusError::Rejected { why, .. } if why.contains("no manifest.json")), "{err}");
+    assert!(!dest.exists() && !dir.path().join("r15.ehcoll.eh-part").exists());
+}
+
+#[test]
+fn a_single_download_link_answer_is_read_too() {
+    let fake = Fake::start(|base, path| match path {
+        "/v2/graphql" => reply(200, REVISION_JSON),
+        p if p.ends_with("/download_link") => reply(
+            200,
+            format!(r#"{{"download_link":{{"name":"Nexus CDN","short_name":"Nexus CDN","URI":"{base}/cdn/c.zip"}}}}"#),
+        ),
+        _ => reply(404, ""),
+    });
+    let c = client(&fake);
+    let links = c.collection_download_links(&revision(&c, "ecb76c").unwrap()).unwrap();
+    assert_eq!(links.len(), 1);
+}
+
+#[test]
+fn a_refused_collection_download_is_not_blamed_on_premium() {
+    // Collections are not Premium-gated; a 403 here means something else
+    // (e.g. adult content not enabled on the account), and must say so.
+    let fake = Fake::start(|_, path| match path {
+        "/v2/graphql" => reply(200, REVISION_JSON),
+        _ => reply(403, r#"{"message":"Adult content is not enabled"}"#),
+    });
+    let c = client(&fake);
+    let err = c.collection_download_links(&revision(&c, "ecb76c").unwrap()).unwrap_err();
+    assert!(matches!(&err, NexusError::Forbidden(m) if m.contains("Adult")), "{err}");
+}
+
+#[test]
+fn a_stored_collection_file_that_no_longer_passes_is_downloaded_again() {
+    let fake = collection_server();
+    let c = client(&fake);
+    let r = revision(&c, "ecb76c").unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("r15.ehcoll");
+    std::fs::write(&dest, b"damaged on disk").unwrap();
+    let check = |p: &std::path::Path| if std::fs::read(p).unwrap() == PACKAGE { Ok(()) } else { Err("bad".to_owned()) };
+    let got = c.fetch_collection(&r, &dest, &task(), &check).unwrap();
+    assert_eq!(got.via.as_deref(), Some("Nexus CDN"));
+    assert_eq!(std::fs::read(&dest).unwrap(), PACKAGE);
 }
