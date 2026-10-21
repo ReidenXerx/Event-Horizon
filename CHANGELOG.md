@@ -1,7 +1,7 @@
 # Changelog
 
 Everything that changed in Event Horizon, newest first, written for the people who use it. Since the first commit
-in April 2026 that is about 400 changes across 209 builds.
+in April 2026 that is about 400 changes across 210 builds.
 
 Until 0.1.0-alpha.149 builds were numbered `0.1.0-alpha.N`. From **0.1.151** the build number is the patch number:
 Vortex ignores everything after the dash when it decides whether an extension has an update, so an alpha number
@@ -9,6 +9,13 @@ could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
+
+## [0.2.88] — 2026-10-21
+
+### Collections
+- Uploading: a package whose zip headers 7-Zip would refuse is not uploaded, and the reason is shown.
+- Updating: a downloaded revision Vortex could not extract is named instead of opened, saying whether the file
+  on Nexus is damaged (wait for the next revision) or the download was cut off (download it again).
 
 ## [0.2.87] — 2026-10-21
 
