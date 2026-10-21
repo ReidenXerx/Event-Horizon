@@ -160,6 +160,73 @@ describe("downloading a newer revision", () => {
   });
 });
 
+describe("a download Vortex fails with a timeout (Ivy Rev 23, 2026-10-21)", () => {
+  const timedOut = (): Error => new Error("Vortex reported the download as failed: Request timed out");
+
+  it("is resumed in place and the update goes on", async () => {
+    const { api } = fakeApi({ revision: REVISION, urls: URLS });
+    const resumed: string[] = [];
+    let waits = 0;
+    const archivePath = await downloadRevision(api, update(), deps({
+      waitForDownload: async () => {
+        waits += 1;
+        if (waits <= 2) throw timedOut();
+        return { localPath: "Ivy's Panties-rev13.zip" };
+      },
+      resumeDownload: async (_api, id) => void resumed.push(id),
+      resumeDelayMs: () => 0,
+    }), () => undefined);
+    expect(resumed).toEqual(["dl-new", "dl-new"]);
+    expect(archivePath).toBe(path.join(DIR, "Ivy's Panties-rev13.zip"));
+  });
+
+  it("gives up after four resumes and says why", async () => {
+    const { api } = fakeApi({ revision: REVISION, urls: URLS });
+    const resumed: string[] = [];
+    await expect(downloadRevision(api, update(), deps({
+      waitForDownload: async () => {
+        throw timedOut();
+      },
+      resumeDownload: async (_api, id) => void resumed.push(id),
+      resumeDelayMs: () => 0,
+    }), () => undefined)).rejects.toThrow(/Request timed out/);
+    expect(resumed).toHaveLength(4);
+  });
+
+  it("never resumes a failure that is not the connection", async () => {
+    const { api } = fakeApi({ revision: REVISION, urls: URLS });
+    const resumed: string[] = [];
+    await expect(downloadRevision(api, update(), deps({
+      waitForDownload: async () => {
+        throw new Error("Vortex reported the download as failed: Server returned 403");
+      },
+      resumeDownload: async (_api, id) => void resumed.push(id),
+      resumeDelayMs: () => 0,
+    }), () => undefined)).rejects.toThrow(/403/);
+    expect(resumed).toEqual([]);
+  });
+
+  it("resumes the failed record when Vortex failed it before it was found in the list", async () => {
+    const { api } = fakeApi({
+      revision: REVISION,
+      urls: URLS,
+      files: { "dl-failed": { state: "failed", modInfo: { nexus: { ids: { collectionSlug: "tumkz9", revisionNumber: 13 } } } } },
+      startDownload: (_call, cb) => cb(new Error("Request timed out")),
+    });
+    const waited: string[] = [];
+    await downloadRevision(api, update(), deps({
+      waitForDownload: async (_api, id) => {
+        waited.push(id);
+        if (waited.length === 1) throw timedOut();
+        return { localPath: "Ivy's Panties-rev13.zip" };
+      },
+      resumeDownload: async () => undefined,
+      resumeDelayMs: () => 0,
+    }), () => undefined);
+    expect(waited).toEqual(["dl-failed", "dl-failed"]);
+  });
+});
+
 describe("pressing Update", () => {
   it("opens Event Horizon's install on the downloaded revision", async () => {
     const { api } = fakeApi({ revision: REVISION, urls: URLS });

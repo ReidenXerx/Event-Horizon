@@ -308,7 +308,43 @@ export type UpdateDeps = {
   ) => Promise<{ localPath?: unknown }>;
   downloadDirFor: (api: types.IExtensionApi, gameId: string) => string | undefined;
   openInstall: (api: types.IExtensionApi, archivePath: string) => Promise<void>;
+  /** Restart a failed Vortex download where it stopped. */
+  resumeDownload?: (api: types.IExtensionApi, downloadId: string) => Promise<void>;
+  /** How long to wait before resume number `attempt` (1-based). */
+  resumeDelayMs?: (attempt: number) => number;
 };
+
+/**
+ * ─── A TIMED-OUT TRANSFER IS RESUMED, NOT REPORTED ──────────────────────
+ * Vortex fails a download with "Request timed out" when the server sends
+ * nothing for a while, which a freshly published revision of a multi-GB
+ * collection does while Nexus's CDN is still fetching it. A player pressed
+ * Update three times and got the same failure at 0% each time (Ivy Rev 23,
+ * 2026-10-21). Vortex can resume a failed download in place, keeping what it
+ * already has, so the update does that a few times, waiting longer each time,
+ * before it says anything.
+ */
+const RESUMES = 4;
+const RESUME_DELAYS_MS = [15_000, 60_000, 120_000, 300_000];
+
+function isRetryableTransferFailure(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String((err as { message?: unknown })?.message ?? err);
+  return /timed out|ETIMEDOUT|ECONNRESET|socket hang up/i.test(msg);
+}
+
+async function resumeVortexDownload(api: types.IExtensionApi, downloadId: string): Promise<void> {
+  // Vortex answers the callback when the transfer ENDS; the wait that
+  // follows reads the outcome from its download list, as for a new one.
+  api.events.emit("resume-download", downloadId, () => undefined);
+  // The state leaves "failed" once Vortex has taken the resume; reading it
+  // before then would report the old failure again.
+  const until = Date.now() + 15_000;
+  while (Date.now() < until) {
+    const d = downloadFiles(api)[downloadId] as { state?: unknown } | undefined;
+    if (d === undefined || d.state !== "failed") return;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+}
 
 const defaultDeps: UpdateDeps = {
   waitForDownload: async (api, downloadId, signal, onProgress, options) => {
@@ -477,10 +513,7 @@ export async function downloadRevision(
    */
   const already = findRevisionDownload(api, fileName, slug, modInfo.nexus.ids.revisionNumber);
   if (already !== undefined) {
-    const download = await deps.waitForDownload(api, already, new AbortController().signal, onProgress, {
-      fileName,
-      retry: "press Update again",
-    });
+    const download = await waitResuming(api, already, deps, onProgress, fileName);
     const dir = deps.downloadDirFor(api, update.gameId);
     if (typeof dir !== "string" || dir === "" || typeof download.localPath !== "string") {
       throw new Error("Vortex did not say where it saved the download. Look in its Downloads tab.");
@@ -553,19 +586,51 @@ export async function downloadRevision(
     const files = (api.getState() as { persistent?: { downloads?: { files?: Record<string, { localPath?: unknown }> } } })
       ?.persistent?.downloads?.files ?? {};
     const existing = e?.name === "AlreadyDownloaded" ? Object.keys(files).find((id) => files[id]?.localPath === e.fileName) : undefined;
-    if (existing === undefined) throw err;
-    downloadId = existing;
+    // Failed before it was found in the list: the failed record is resumed below.
+    const failed = existing === undefined && isRetryableTransferFailure(err)
+      ? findRevisionDownload(api, fileName, slug, modInfo.nexus.ids.revisionNumber, { includeFailed: true })
+      : undefined;
+    if (existing === undefined && failed === undefined) throw err;
+    downloadId = existing ?? failed!;
   }
 
-  const download = await deps.waitForDownload(api, downloadId, new AbortController().signal, onProgress, {
-    fileName,
-    retry: "press Update again",
-  });
+  const download = await waitResuming(api, downloadId, deps, onProgress, fileName);
   const dir = deps.downloadDirFor(api, update.gameId);
   if (typeof dir !== "string" || dir === "" || typeof download.localPath !== "string") {
     throw new Error("Vortex did not say where it saved the download. Look in its Downloads tab.");
   }
   return path.join(dir, download.localPath);
+}
+
+async function waitResuming(
+  api: types.IExtensionApi,
+  downloadId: string,
+  deps: Pick<UpdateDeps, "waitForDownload" | "resumeDownload" | "resumeDelayMs">,
+  onProgress: (received: number, total: number | undefined) => void,
+  fileName: string,
+): Promise<{ localPath?: unknown }> {
+  const resume = deps.resumeDownload ?? resumeVortexDownload;
+  const delayFor = deps.resumeDelayMs ?? ((n: number) => RESUME_DELAYS_MS[n - 1] ?? 300_000);
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await deps.waitForDownload(api, downloadId, new AbortController().signal, onProgress, {
+        fileName,
+        retry: "press Update again",
+      });
+    } catch (err) {
+      if (attempt > RESUMES || !isRetryableTransferFailure(err)) throw err;
+      const waitMs = delayFor(attempt);
+      ehLog("warn", "collection-update.resuming", {
+        downloadId,
+        attempt,
+        of: RESUMES,
+        waitMs,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      await new Promise((r) => setTimeout(r, waitMs));
+      await resume(api, downloadId);
+    }
+  }
 }
 
 type DownloadRecord = {
@@ -586,11 +651,12 @@ function findRevisionDownload(
   fileName: string,
   slug: string,
   revisionNumber: unknown,
+  opts: { includeFailed?: boolean } = {},
 ): string | undefined {
   const files = downloadFiles(api) as Record<string, DownloadRecord & { state?: unknown; fileTime?: unknown }>;
   const matches = Object.keys(files).filter((id) => {
     const d = files[id]!;
-    if (d.state === "failed") return false;
+    if (d.state === "failed" && opts.includeFailed !== true) return false;
     if (typeof d.localPath === "string" && d.localPath.toLowerCase() === fileName.toLowerCase()) return true;
     const ids = d.modInfo?.nexus?.ids;
     return ids?.collectionSlug === slug && ids?.revisionNumber === revisionNumber;
