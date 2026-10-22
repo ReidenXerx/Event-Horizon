@@ -46,7 +46,14 @@ export function describeDownload(args: {
   url?: string;
   mode?: DownloadMode;
   expectedFilename?: string;
+  /** The curator's note for this mod. The card shows it above these steps. */
+  instructions?: string;
 }): Guidance {
+  // 2026-10-22: the card never showed the note, so a Tumblr page with two
+  // downloads got the first one and a "NOT the file" warning. With a note on
+  // screen, the steps defer to it instead of naming a file the page may not
+  // call that way.
+  const hasNote = args.instructions !== undefined && args.instructions.trim().length > 0;
   const named =
     args.expectedFilename !== undefined && args.expectedFilename.length > 0
       ? `"${args.expectedFilename}"`
@@ -57,8 +64,11 @@ export function describeDownload(args: {
       action: "",
       canOpen: false,
       steps: [
-        `This collection does not record a download link for this mod — the ` +
-          `curator's notes above are what there is to go on.`,
+        hasNote
+          ? `This collection does not record a download link for this mod — the ` +
+            `curator's note above is what there is to go on.`
+          : `This collection records no download link or note for this mod — look ` +
+            `it up by its name.`,
         `Once you have ${named}, pick it below and Event Horizon installs it ` +
           `the way the curator had it.`,
       ],
@@ -71,8 +81,10 @@ export function describeDownload(args: {
       action: "Open the link",
       canOpen: true,
       steps: [
-        `The curator marked this one as needing a manual download — read ` +
-          `their notes above before following the link.`,
+        hasNote
+          ? `The curator marked this one as needing a manual download — read ` +
+            `their note above before following the link.`
+          : `The curator marked this one as needing a manual download.`,
         `Download ${named}, then pick it below.`,
       ],
     };
@@ -96,7 +108,10 @@ export function describeDownload(args: {
     steps: [
       `Opens in your own browser, signed in as you — not in a window inside ` +
         `Vortex.`,
-      `Download ${named} from the page, then pick it below.`,
+      hasNote
+        ? `Download the file the curator's note above names — a page can offer ` +
+          `several, and only that one is right — then pick it below.`
+        : `Download ${named} from the page, then pick it below.`,
       `Event Horizon takes it from there, including the installer options the ` +
         `curator chose.`,
     ],

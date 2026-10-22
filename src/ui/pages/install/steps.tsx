@@ -1756,6 +1756,7 @@ function ExternalDownloadGuide(props: {
   url?: string;
   mode?: "direct" | "browse" | "manual";
   expectedFilename?: string;
+  instructions?: string;
 }): JSX.Element {
   // Whether the last attempt to open the link actually reached a browser.
   //
@@ -1767,16 +1768,28 @@ function ExternalDownloadGuide(props: {
   // result would leave someone clicking a button that does nothing, with no
   // way to tell that from a slow browser.
   const [openFailed, setOpenFailed] = React.useState(false);
+  const note =
+    props.instructions !== undefined && props.instructions.trim().length > 0
+      ? props.instructions.trim()
+      : undefined;
   const guide = describeDownload({
     ...(props.url !== undefined ? { url: props.url } : {}),
     ...(props.mode !== undefined ? { mode: props.mode } : {}),
     ...(props.expectedFilename !== undefined
       ? { expectedFilename: props.expectedFilename }
       : {}),
+    ...(note !== undefined ? { instructions: note } : {}),
   });
 
   return (
     <div className="eh-stack eh-stack--sm eh-inset">
+      {/* The curator's note comes first: it says WHICH download on the page
+          is the right one, and the steps below defer to it. */}
+      {note !== undefined && (
+        <Callout tone="info" title="The curator's note">
+          <p className="eh-body">{note}</p>
+        </Callout>
+      )}
       {guide.canOpen && props.url !== undefined && (
         <div className="eh-row">
           <span className="eh-mono eh-fill">{props.url}</span>
@@ -1879,13 +1892,16 @@ function ConflictRow(props: {
         ok: check.kind === "matches",
         text:
           check.kind === "matches"
-            ? "This is the file the collection was built from."
+            ? "This is the file the collection was built from: its content matches the " +
+              "curator's download, whatever it is called."
             : check.kind === "unknown"
               ? `Could not check this file: ${check.why}`
-              : `This is NOT the file the collection was built from. The curator built with ` +
-                `"${decision.expectedFilename}". Yours will still be installed, but anything the ` +
-                `curator changed inside this mod may not fit it — if the page has been updated ` +
-                `since, ask them before relying on it.`,
+              : // Compared by content (SHA-256), never by name — say so, or a
+                // differently named download reads as the reason (2026-10-22).
+                `This is NOT the file the collection was built from: its content differs from ` +
+                `the curator's download (compared by content, not by name). Yours will still be ` +
+                `installed, but anything the curator changed inside this mod may not fit it. ` +
+                `If the page offers several downloads, check the curator's note for the right one.`,
       });
     } catch {
       setIdentity(undefined);
@@ -1970,6 +1986,7 @@ function ConflictRow(props: {
           url={decision.url}
           mode={decision.downloadMode}
           expectedFilename={decision.expectedFilename}
+          {...(decision.instructions !== undefined ? { instructions: decision.instructions } : {})}
         />
       )}
 

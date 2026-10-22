@@ -70,6 +70,34 @@ describe("describeDownload", () => {
     expect(said).not.toMatch(/""/);
   });
 
+  it("defers to the curator's note on a page with several downloads (Ivy MoreHairstyles-Beards, 2026-10-22)", () => {
+    // The page offered MiscHairstyle1.6 first; the note says take the SECOND
+    // download. Naming "MoreHairstyles-Beards" as if the page called it that
+    // sent a tester to the first one.
+    const g = describeDownload({
+      url: "https://fo4-mischairstyle.tumblr.com/post/139169515871",
+      mode: "browse",
+      expectedFilename: "MoreHairstyles-Beards",
+      instructions: "take the SECOND download at the bottom (MoreHairstyles-Beards.rar)",
+    });
+    const said = g.steps.join(" ");
+    expect(said).toMatch(/curator's note above/);
+    expect(said).not.toMatch(/"MoreHairstyles-Beards"/);
+  });
+
+  it("never points at a note above when there is none", () => {
+    for (const mode of ["browse", "manual", undefined] as const) {
+      for (const url of ["https://e.com/a", undefined]) {
+        const g = describeDownload({
+          ...(url !== undefined ? { url } : {}),
+          ...(mode !== undefined ? { mode } : {}),
+          instructions: "   ",
+        });
+        expect(g.steps.join(" "), `${String(mode)} ${String(url)}`).not.toMatch(/above/);
+      }
+    }
+  });
+
   it("always ends by telling them to pick the file", () => {
     // Every branch has to land on the same next action, or the flow dead-ends
     // at "you now have a file" with no idea what to do with it.
