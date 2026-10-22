@@ -69,6 +69,196 @@ pub fn find_mod<'m>(manifest: &'m ehcoll::EhcollManifest, compare_key: &str) -> 
 // Packages
 // ───────────────────────────────────────────────────────────────────────────
 
+/// The deployment planner and its types, re-exported for shells.
+pub mod deploy {
+    pub use eh_deploy::*;
+}
+
+/// A deployment plan, and what still stands between it and the game.
+#[derive(Debug, Clone)]
+pub struct DeployPreview {
+    pub collection: String,
+    pub game: ehcoll::SupportedGameId,
+    pub game_dir: std::path::PathBuf,
+    pub plan: eh_deploy::DeployPlan,
+    /// Mods the plan deploys whose staging is not built from their current
+    /// files yet — `eh install` first.
+    pub unstaged: Vec<String>,
+    /// compareKey → name, for showing people mods rather than keys.
+    pub names: std::collections::HashMap<String, String>,
+}
+
+impl DeployPreview {
+    /// A mod's name, or its key when the manifest has no such mod.
+    pub fn name<'a>(&'a self, key: &'a str) -> &'a str {
+        self.names.get(key).map(String::as_str).unwrap_or(key)
+    }
+}
+
+/// Plan the deployment of the collection an instance has installed. Reads
+/// nothing in the game folder and writes nothing anywhere.
+pub fn deploy_preview(instance: &eh_library::Instance) -> Result<DeployPreview, EngineError> {
+    let (manifest, _) = instance_manifest(instance)?;
+    let plan = eh_deploy::plan(manifest.game.id, &manifest.mods, &manifest.rules).map_err(EngineError::Plan)?;
+    let by_key: std::collections::HashMap<&str, &ehcoll::EhcollMod> =
+        manifest.mods.iter().map(|m| (m.compare_key.as_str(), m)).collect();
+    let unstaged = plan
+        .order
+        .iter()
+        .filter(|k| {
+            let fp = install::fingerprint(by_key[k.as_str()]);
+            fp.is_none() || instance.staged_fingerprint(k) != fp || !instance.staging_dir_for(k).is_dir()
+        })
+        .cloned()
+        .collect();
+    Ok(DeployPreview {
+        collection: manifest.package.name.clone(),
+        game: manifest.game.id,
+        game_dir: instance.config().game_dir.clone(),
+        names: manifest.mods.iter().map(|m| (m.compare_key.clone(), m.name.clone())).collect(),
+        plan,
+        unstaged,
+    })
+}
+
+/// Pre-flight: check the plan against the real game folder. Reads the game
+/// folder; the only write is a hardlink test file, removed at once.
+pub fn deploy_check(instance: &eh_library::Instance) -> Result<(DeployPreview, eh_deploy::Preflight), EngineError> {
+    let preview = deploy_preview(instance)?;
+    let staging_of = |k: &str| instance.staging_dir_for(k);
+    // Files an earlier Event Horizon deployment placed — including one that
+    // stopped halfway — are replaced, never mistaken for foreign files.
+    let record = eh_deploy::Store::new(instance.dir()).load().map_err(EngineError::Apply)?;
+    let ours = eh_deploy::ours(&record, &instance.config().game_dir);
+    let check = eh_deploy::preflight(
+        &preview.plan,
+        &eh_deploy::Layout {
+            game: preview.game,
+            game_dir: &instance.config().game_dir,
+            staging_root: &instance.staging_root(),
+            staging_of: &staging_of,
+            ours: &ours,
+        },
+    );
+    Ok((preview, check))
+}
+
+/// What deploying did.
+#[derive(Debug, Clone)]
+pub struct Deployed {
+    pub applied: eh_deploy::Applied,
+    /// What an earlier deployment placed that this plan no longer has —
+    /// taken out, its backups put back.
+    pub pruned: eh_deploy::Purged,
+    /// Whether this run finished one that had been interrupted.
+    pub resumed: bool,
+}
+
+/// Deploy the instance's collection into its game folder, as hardlinks.
+/// Refuses unless every mod is staged and pre-flight is clear.
+pub fn deploy(instance: &eh_library::Instance, task: &Task) -> Result<Deployed, EngineError> {
+    let _lock = instance.lock().map_err(EngineError::Library)?;
+    let store = eh_deploy::Store::new(instance.dir());
+    let resumed = store.interrupted();
+    let (preview, check) = deploy_check(instance)?;
+    if !preview.unstaged.is_empty() {
+        return Err(EngineError::NotStaged(preview.unstaged.len()));
+    }
+    let game_dir = &instance.config().game_dir;
+    let backups = backups_root(instance);
+    let applied = eh_deploy::apply(&preview.plan, &check, game_dir, &backups, &store, task).map_err(EngineError::Apply)?;
+    // Then what the plan no longer has: out, with its backups put back.
+    let keep: std::collections::BTreeSet<String> = check
+        .placed
+        .iter()
+        .map(|p| p.dest.strip_prefix(game_dir).unwrap_or(&p.dest).to_string_lossy().replace('\\', "/"))
+        .collect();
+    let pruned = eh_deploy::prune(&store, game_dir, &backups, &keep).map_err(EngineError::Purge)?;
+    Ok(Deployed { applied, pruned, resumed })
+}
+
+fn backups_root(instance: &eh_library::Instance) -> std::path::PathBuf {
+    instance.staging_root().join(".eh-backups")
+}
+
+/// Take the whole deployment out of the game folder and put every backed-up
+/// file back. Checks every backup before changing anything.
+pub fn purge(instance: &eh_library::Instance) -> Result<eh_deploy::Purged, EngineError> {
+    let _lock = instance.lock().map_err(EngineError::Library)?;
+    let store = eh_deploy::Store::new(instance.dir());
+    if !store.has_deployment() {
+        return Ok(eh_deploy::Purged::default());
+    }
+    eh_deploy::purge(&store, &instance.config().game_dir, &backups_root(instance)).map_err(EngineError::Purge)
+}
+
+/// What `eh verify` found.
+#[derive(Debug, Clone)]
+pub struct VerifyReport {
+    pub verified: eh_deploy::Verified,
+    /// Mods whose staged files are themselves wrong: they must be staged
+    /// again from their archives (see [`forget_for_restage`]).
+    pub restage: Vec<String>,
+    /// compareKey → name.
+    pub names: std::collections::HashMap<String, String>,
+}
+
+/// The integrity pass (NS-4): check every planned file against the
+/// curator's record — in the game folder when deployed, else in staging.
+/// Reads only; writes nothing anywhere.
+pub fn verify(instance: &eh_library::Instance, quick: bool, task: &Task) -> Result<VerifyReport, EngineError> {
+    let (manifest, _) = instance_manifest(instance)?;
+    let preview = deploy_preview(instance)?;
+    let mut expected_by: std::collections::HashMap<(&str, &str), eh_deploy::Expected> = std::collections::HashMap::new();
+    for m in &manifest.mods {
+        for f in m.state.staging_files.as_deref().unwrap_or_default() {
+            expected_by.insert(
+                (m.compare_key.as_str(), f.path.as_str()),
+                eh_deploy::Expected { size: f.size, sha256: f.sha256.clone() },
+            );
+        }
+    }
+    let expected = |k: &str, p: &str| expected_by.get(&(k, p)).cloned();
+    let staging_of = |k: &str| instance.staging_dir_for(k);
+    let store = eh_deploy::Store::new(instance.dir());
+    let verified = if store.has_deployment() {
+        let record = store.load().map_err(EngineError::Apply)?;
+        let nobody = std::collections::BTreeSet::new();
+        let located = eh_deploy::locate(
+            &preview.plan,
+            &eh_deploy::Layout {
+                game: preview.game,
+                game_dir: &instance.config().game_dir,
+                staging_root: &instance.staging_root(),
+                staging_of: &staging_of,
+                ours: &nobody,
+            },
+        );
+        eh_deploy::verify_deployment(&preview.plan, &located, &record, &instance.config().game_dir, &expected, quick, task)
+    } else {
+        eh_deploy::verify_staging(&preview.plan, &staging_of, &expected, quick, task)
+    };
+    // Outside a deployment, any wrong or missing staged file means restage.
+    let mut restage: Vec<String> = verified
+        .findings
+        .iter()
+        .filter(|f| f.needs_restage() || !verified.deployment)
+        .map(|f| f.mod_key.clone())
+        .collect();
+    restage.sort();
+    restage.dedup();
+    Ok(VerifyReport { verified, restage, names: preview.names })
+}
+
+/// Forget the staging receipts of `mods`, so the next `eh install` stages
+/// them again from their archives instead of trusting what is there.
+pub fn forget_for_restage(instance: &eh_library::Instance, mods: &[String]) -> Result<usize, EngineError> {
+    for k in mods {
+        instance.forget_staged(k).map_err(EngineError::Library)?;
+    }
+    Ok(mods.len())
+}
+
 /// The manifest types, re-exported so a shell needs only the engine.
 pub mod manifest {
     pub use ehcoll::*;
@@ -464,6 +654,11 @@ pub enum EngineError {
     Library(eh_library::LibraryError),
     Nexus(eh_nexus::NexusError),
     Package(eh_package::PackageError),
+    Plan(eh_deploy::PlanError),
+    Apply(eh_deploy::ApplyError),
+    Purge(eh_deploy::PurgeError),
+    /// Mods the plan deploys are not staged yet.
+    NotStaged(usize),
     Link(eh_nexus::LinkError),
     /// The instance has not installed a package yet, so it has no mods.
     NoPackageYet(String),
@@ -507,6 +702,10 @@ impl std::fmt::Display for EngineError {
             Self::Library(e) => write!(f, "{e}"),
             Self::Nexus(e) => write!(f, "{e}"),
             Self::Package(e) => write!(f, "{e}"),
+            Self::Plan(e) => write!(f, "{e}"),
+            Self::Apply(e) => write!(f, "{e}"),
+            Self::Purge(e) => write!(f, "{e}"),
+            Self::NotStaged(n) => write!(f, "{n} mods are not staged yet; run `eh install` first. Nothing was changed."),
             Self::Link(e) => write!(f, "{e}"),
             Self::NoPackageYet(i) => write!(
                 f,

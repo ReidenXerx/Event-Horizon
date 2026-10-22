@@ -266,7 +266,12 @@ dependencies = [
 name = "eh-deploy"
 version = "0.1.0"
 dependencies = [
+ "eh-identity",
  "eh-progress",
+ "ehcoll",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

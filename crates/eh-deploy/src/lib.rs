@@ -20,6 +20,23 @@
 //! and reproducibility is this project's entire thesis. Prefer resolving case
 //! at the link, and keep staging a faithful record of what was installed.
 //!
-//! STATUS: skeleton. No behaviour yet.
+//! STATUS: all 5 parts — plan, pre-flight, apply (journaled hardlinks,
+//! backups), purge and redeploy, verify. Decided
+//! 2026-10-22: a file we did not put at a target is backed up and restored
+//! on purge (Vortex's way); no hardlink possible ⇒ refuse, never copy.
 
 #![forbid(unsafe_code)]
+
+pub mod apply;
+pub mod plan;
+pub mod preflight;
+pub mod purge;
+pub mod verify;
+
+pub use purge::{prune, purge, PurgeError, Purged};
+pub use verify::{verify_deployment, verify_staging, Expected, Finding, FindingKind, Verified};
+
+pub use apply::{apply, ours, Applied, ApplyError, BackupEntry, DeployedFile, Record, Store, RECORD_FORMAT};
+
+pub use plan::{plan, target_of, Conflict, DeployPlan, PlanError, PlannedFile, Target, UnresolvedRule};
+pub use preflight::{game_executable, locate, preflight, Blocker, Layout, Placed, Preflight, ToBackUp};

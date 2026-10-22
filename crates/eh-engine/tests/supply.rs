@@ -257,3 +257,17 @@ fn a_bundled_mod_is_never_the_users_to_download_even_when_not_yet_staged() {
     w.inst.forget_staged(&format!("external:{BUNDLE}")).unwrap();
     assert!(!w.missing_names().contains(&"Bundled Fix".to_owned()));
 }
+
+#[test]
+fn the_deploy_preview_names_mods_that_are_not_staged_yet() {
+    let mut w = world();
+    let p = eh_engine::deploy_preview(&w.inst).unwrap();
+    assert_eq!(p.plan.order.len(), 4);
+    assert_eq!(p.unstaged.len(), 3, "only the bundled mod is staged: {:?}", p.unstaged);
+    for (name, bytes) in [("a.zip", anim()), ("b.zip", armor("light")), ("c.zip", armor("heavy"))] {
+        w.user_file(name, &bytes);
+    }
+    feed_folder(&w.lib, &w.inst, &w.dir.path().join("Downloads"), &task()).unwrap();
+    w.reinstall();
+    assert!(eh_engine::deploy_preview(&w.inst).unwrap().unstaged.is_empty());
+}

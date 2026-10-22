@@ -60,7 +60,9 @@ fn unpack(archive: &Path, dest: &Path) -> ExitCode {
 fn usage() {
     eprintln!(
         "eh <subcommand>\n\n\
-           verify <package.ehcoll>   check archives against recorded hashes\n\
+           verify [--quick] [--fix]  check every deployed (or staged) file against the curator's\n\
+                                     hashes; --quick checks sizes only; --fix marks mods with\n\
+                                     wrong files to be staged again by `eh install`\n\
            unpack <archive> <dest>   extract a zip/7z archive\n\
            nexus whoami              check the Nexus API key and say whose it is\n\
            nexus fetch <game> <modId> <fileId> <sha256> <dest-file>\n\
@@ -81,6 +83,12 @@ fn usage() {
            feed <folder>             take every file in a folder that a mod is waiting for\n\
                                      (<mod> is a name, part of one, a compare key, or a number\n\
                                       from `eh missing`; add --instance <name> with several)\n\
+           deploy --dry-run [--conflicts]\n\
+                                     show what deploying would put where, and who wins each conflict\n\
+           deploy --yes              hardlink the collection into the game folder (files already\n\
+                                     there are backed up first; files a new revision dropped are\n\
+                                     taken out again)\n\
+           purge --yes               take the whole deployment out and put every backup back\n\
            stage <instance> <manifest.json> <compareKey> <archive> [--source <dir>]...\n\
                                      rebuild one mod's staging from its archive, by content\n\
            demo-progress             exercise the loader (development aid)\n\n\
@@ -93,8 +101,13 @@ fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         Some("verify") => {
-            eprintln!("eh verify: not implemented yet (Stage 1 skeleton).");
-            ExitCode::from(70)
+            let rest: Vec<String> = args.collect();
+            let (flags, instance) = split_instance(&rest);
+            verify_cmd(
+                instance.as_deref(),
+                flags.iter().any(|f| f == "--quick"),
+                flags.iter().any(|f| f == "--fix"),
+            )
         }
         Some("unpack") => {
             let (Some(archive), Some(dest)) = (args.next(), args.next()) else {
@@ -174,6 +187,33 @@ fn main() -> ExitCode {
                     ExitCode::from(2)
                 }
             }
+        }
+        Some("deploy") => {
+            let rest: Vec<String> = args.collect();
+            let (flags, instance) = split_instance(&rest);
+            let dry = flags.iter().any(|f| f == "--dry-run");
+            let yes = flags.iter().any(|f| f == "--yes");
+            let all = flags.iter().any(|f| f == "--conflicts");
+            match (dry, yes) {
+                (true, _) => deploy_dry_run(instance.as_deref(), all),
+                (false, true) => deploy_cmd(instance.as_deref()),
+                (false, false) => {
+                    eprintln!(
+                        "eh deploy writes into the game folder. See what it would do with `eh deploy --dry-run`, \
+                         then run `eh deploy --yes`."
+                    );
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("purge") => {
+            let rest: Vec<String> = args.collect();
+            let (flags, instance) = split_instance(&rest);
+            if !flags.iter().any(|f| f == "--yes") {
+                eprintln!("eh purge takes every deployed file out of the game folder and puts backups back. Run `eh purge --yes`.");
+                return ExitCode::from(2);
+            }
+            purge_cmd(instance.as_deref())
         }
         Some("feed") => {
             let rest: Vec<String> = args.collect();
@@ -303,6 +343,16 @@ fn split_sources(args: &[String]) -> (Vec<String>, Vec<String>) {
 
 fn gigabytes(n: u64) -> String {
     format!("{:.1} GB", n as f64 / 1e9)
+}
+
+/// A size in the unit that reads naturally: 21 bytes, 3.4 MB, 74.0 GB.
+fn human_size(n: u64) -> String {
+    match n {
+        0..=999 => format!("{n} bytes"),
+        1_000..=999_999 => format!("{:.1} KB", n as f64 / 1e3),
+        1_000_000..=999_999_999 => format!("{:.1} MB", n as f64 / 1e6),
+        _ => gigabytes(n),
+    }
 }
 
 fn print_revision(r: &eh_engine::nexus::CollectionRevision) {
@@ -655,6 +705,295 @@ fn feed_folder_cmd(dir: &Path, instance: Option<&str>) -> ExitCode {
             eprintln!("eh feed: {e}");
             ExitCode::from(65)
         }
+    }
+}
+
+fn deploy_dry_run(instance: Option<&str>, all_conflicts: bool) -> ExitCode {
+    let lib = match library() {
+        Ok(l) => l,
+        Err(code) => return code,
+    };
+    let (preview, check) = match pick_instance(&lib, instance).and_then(|i| eh_engine::deploy_check(&i).map_err(|e| e.to_string())) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("eh deploy: {e}");
+            return ExitCode::from(65);
+        }
+    };
+    let p = &preview.plan;
+    let in_dir = |t: eh_engine::deploy::Target| p.files.iter().filter(|f| f.target == t).count();
+    let (data, root) = (in_dir(eh_engine::deploy::Target::ModPath), in_dir(eh_engine::deploy::Target::GameRoot));
+    println!("{} → {}", preview.collection, preview.game_dir.display());
+    println!(
+        "  {} mods in order, {} files: {data} into {}/, {root} into the game folder",
+        p.order.len(),
+        p.files.len(),
+        eh_engine::deploy::Target::ModPath.relative_dir(preview.game)
+    );
+    let by_order = p.conflicts.iter().filter(|c| c.by_install_order).count();
+    println!(
+        "  {} files are provided by more than one mod: {} decided by the curator's rules, {} by install order",
+        p.conflicts.len(),
+        p.conflicts.len() - by_order,
+        by_order
+    );
+    let shown: Vec<_> = p.conflicts.iter().filter(|c| all_conflicts || c.by_install_order).collect();
+    for c in shown.iter().take(if all_conflicts { usize::MAX } else { 10 }) {
+        println!(
+            "    {}{}  ← {} (over {}){}",
+            if c.target == eh_engine::deploy::Target::GameRoot { "[game] " } else { "" },
+            c.path,
+            preview.name(&c.winner),
+            c.losers.iter().map(|l| preview.name(l)).collect::<Vec<_>>().join(", "),
+            if c.by_install_order { "  [install order]" } else { "" }
+        );
+    }
+    if !all_conflicts && by_order > 10 {
+        println!("    … {} more decided by install order (--conflicts lists every conflict)", by_order - 10);
+    }
+    if !p.fully_overridden.is_empty() {
+        let names: Vec<&str> = p.fully_overridden.iter().map(|k| preview.name(k)).collect();
+        println!("  {} mods lose every one of their files to others: {}", names.len(), names.join(", "));
+    }
+    if !p.unresolved_rules.is_empty() {
+        println!("  {} rules could not be placed:", p.unresolved_rules.len());
+        for u in p.unresolved_rules.iter().take(5) {
+            println!("    {} → {}: {}", preview.name(&u.source), u.reference, u.why);
+        }
+    }
+    println!("  not deployed: {} disabled", p.disabled.len());
+    for (key, t) in &p.unsupported {
+        println!("  BLOCKS DEPLOYMENT: {} has mod type {t:?}, which this build cannot place", preview.name(key));
+    }
+    for key in &p.no_file_list {
+        println!("  BLOCKS DEPLOYMENT: {} has no recorded file list", preview.name(key));
+    }
+    if !preview.unstaged.is_empty() {
+        println!("  {} mods are not staged yet — run `eh install` first", preview.unstaged.len());
+    }
+    print_check(&check);
+    println!("dry run: the game folder was read, not changed (a test link was made and removed)");
+    if p.is_deployable() && preview.unstaged.is_empty() && check.is_clear() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(75)
+    }
+}
+
+fn deploy_cmd(instance: Option<&str>) -> ExitCode {
+    let lib = match library() {
+        Ok(l) => l,
+        Err(code) => return code,
+    };
+    let inst = match pick_instance(&lib, instance) {
+        Ok(i) => i,
+        Err(e) => {
+            eprintln!("eh deploy: {e}");
+            return ExitCode::from(65);
+        }
+    };
+    let progress = render::for_environment();
+    let task = progress.task("deploy", None, Unit::Files);
+    match eh_engine::deploy(&inst, &task) {
+        Ok(d) => {
+            task.done();
+            if d.resumed {
+                println!("finished a deployment that had been interrupted");
+            }
+            let a = &d.applied;
+            println!(
+                "{} files linked into the game, {} already in place, {} backed up, {} folders created",
+                a.linked, a.already_in_place, a.backed_up, a.created_dirs
+            );
+            if a.backed_up > 0 {
+                println!("  backups are in {}", inst.staging_root().join(".eh-backups").display());
+            }
+            let p = &d.pruned;
+            if p.removed + p.restored > 0 {
+                println!(
+                    "  no longer in the collection: {} files taken out, {} original files put back",
+                    p.removed, p.restored
+                );
+            }
+            print_left_alone(&p.left_alone);
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            task.failed("not deployed");
+            eprintln!("eh deploy: {e}");
+            ExitCode::from(65)
+        }
+    }
+}
+
+fn verify_cmd(instance: Option<&str>, quick: bool, fix: bool) -> ExitCode {
+    use eh_engine::deploy::FindingKind::*;
+    let lib = match library() {
+        Ok(l) => l,
+        Err(code) => return code,
+    };
+    let inst = match pick_instance(&lib, instance) {
+        Ok(i) => i,
+        Err(e) => {
+            eprintln!("eh verify: {e}");
+            return ExitCode::from(65);
+        }
+    };
+    let progress = render::for_environment();
+    let task = progress.task("verify", None, Unit::Files);
+    let report = match eh_engine::verify(&inst, quick, &task) {
+        Ok(r) => {
+            task.done();
+            r
+        }
+        Err(e) => {
+            task.failed("not verified");
+            eprintln!("eh verify: {e}");
+            return ExitCode::from(65);
+        }
+    };
+    let v = &report.verified;
+    let name = |k: &str| report.names.get(k).cloned().unwrap_or_else(|| k.to_owned());
+    println!(
+        "{}: {} of {} files as the curator had them{}",
+        if v.deployment { "game folder" } else { "staging (nothing deployed yet)" },
+        v.ok,
+        v.checked,
+        if quick { " (sizes only)" } else { "" }
+    );
+    if v.size_only > 0 && !quick {
+        println!("  {} files have no recorded hash and were checked by size only", v.size_only);
+    }
+    for f in v.findings.iter().take(30) {
+        let what = match &f.kind {
+            Missing => "missing".to_owned(),
+            NotOurs => "replaced by something Event Horizon did not put there".to_owned(),
+            Outdated => "an older staging of the mod — run `eh deploy --yes`".to_owned(),
+            WrongSize { expected, got } => format!("wrong size ({got} bytes, the curator's has {expected})"),
+            WrongBytes { .. } => "different bytes from the curator's".to_owned(),
+        };
+        println!("  {} — {}  [{}]", f.path.display(), what, name(&f.mod_key));
+    }
+    if v.findings.len() > 30 {
+        println!("  … and {} more", v.findings.len() - 30);
+    }
+    for p in &v.stale {
+        println!("  {} is still deployed but no longer in the collection — `eh deploy --yes` takes it out", p.display());
+    }
+    for b in &v.blockers {
+        println!("  cannot check: {}", describe_blocker(b));
+    }
+    if !report.restage.is_empty() {
+        let names: Vec<String> = report.restage.iter().map(|k| name(k)).collect();
+        println!("  {} mods have wrong files in staging itself: {}", names.len(), names.join(", "));
+        if fix {
+            match eh_engine::forget_for_restage(&inst, &report.restage) {
+                Ok(n) => println!(
+                    "  marked {n} mods to be staged again: run `eh install {}`, then `eh deploy --yes`",
+                    inst.id()
+                ),
+                Err(e) => eprintln!("eh verify: {e}"),
+            }
+        } else {
+            println!("  run `eh verify --fix` to have `eh install` stage them again from their archives");
+        }
+    }
+    if v.is_clean() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    }
+}
+
+fn print_left_alone(paths: &[std::path::PathBuf]) {
+    if paths.is_empty() {
+        return;
+    }
+    println!("  {} files were changed by someone else after deploying, so they were left in place:", paths.len());
+    for p in paths.iter().take(10) {
+        println!("    {}", p.display());
+    }
+}
+
+fn purge_cmd(instance: Option<&str>) -> ExitCode {
+    let lib = match library() {
+        Ok(l) => l,
+        Err(code) => return code,
+    };
+    let inst = match pick_instance(&lib, instance) {
+        Ok(i) => i,
+        Err(e) => {
+            eprintln!("eh purge: {e}");
+            return ExitCode::from(65);
+        }
+    };
+    match eh_engine::purge(&inst) {
+        Ok(p) => {
+            println!(
+                "{} files taken out of the game folder, {} original files put back, {} folders removed",
+                p.removed, p.restored, p.folders_removed
+            );
+            print_left_alone(&p.left_alone);
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("eh purge: {e}");
+            ExitCode::from(65)
+        }
+    }
+}
+
+/// A pre-flight problem in plain words, with what to do about it.
+fn describe_blocker(b: &eh_engine::deploy::Blocker) -> String {
+    use eh_engine::deploy::Blocker::*;
+    match b {
+        NotTheGameFolder { looked_for } => {
+            format!("this is not the game's folder: there is no {looked_for} in it. Check the instance's game folder.")
+        }
+        MissingTarget(p) => format!("{} does not exist; is the game fully installed?", p.display()),
+        DifferentMounts { staging, target } => format!(
+            "staging ({}) and the game ({}) are on different drives or mounts, so files cannot be hardlinked. \
+             Put the instance's staging folder on the game's drive.",
+            staging.display(),
+            target.display()
+        ),
+        NoHardlinks { target, why } => format!(
+            "the drive holding {} cannot hold hardlinks ({why}) — exFAT and FAT cannot. Event Horizon \
+             deploys with hardlinks only; move the game to an ext4, btrfs or NTFS drive.",
+            target.display()
+        ),
+        NotWritable { target, why } => format!("{} cannot be written to: {why}", target.display()),
+        VortexDeployed { record, files } => format!(
+            "Vortex has {files} files deployed here ({}). Purge them in Vortex first (Mods → Purge), \
+             so two managers do not fight over the same files.",
+            record.display()
+        ),
+        InTheWay(p) => format!("{} is in the way: a file where a folder must go, or the other way round", p.display()),
+        CaseTwins(paths) => format!(
+            "these folders differ only in case, and the game sees only one of them: {}. Merge them into one first.",
+            paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", ")
+        ),
+    }
+}
+
+fn print_check(check: &eh_engine::deploy::Preflight) {
+    if !check.to_back_up.is_empty() {
+        let bytes: u64 = check.to_back_up.iter().map(|b| b.size).sum();
+        println!(
+            "  {} files already in the game folder would be replaced; they are backed up first and put back on purge ({}):",
+            check.to_back_up.len(),
+            human_size(bytes)
+        );
+        for b in check.to_back_up.iter().take(10) {
+            println!("    {}", b.path.display());
+        }
+        if check.to_back_up.len() > 10 {
+            println!("    … and {} more", check.to_back_up.len() - 10);
+        }
+    }
+    for b in &check.blockers {
+        let line = describe_blocker(b);
+        println!("  BLOCKS DEPLOYMENT: {line}");
     }
 }
 
