@@ -72,6 +72,15 @@ fn usage() {
            instance create <name> <game> <game-dir>\n\
                                      one modpack on one game install (game: fallout4, skyrimse, ...)\n\
            instance list             the instances, their games and modpacks\n\
+           install <instance> [<package.ehcoll | collection link>]\n\
+                                     download and stage every mod (Premium key for Nexus mods);\n\
+                                     without a package, continue the one installed last\n\
+           missing                   mods you have to download yourself, numbered\n\
+           download <mod>            open that mod's download page (alias: open)\n\
+           feed <mod> <file>         take the file you downloaded for a mod\n\
+           feed <folder>             take every file in a folder that a mod is waiting for\n\
+                                     (<mod> is a name, part of one, a compare key, or a number\n\
+                                      from `eh missing`; add --instance <name> with several)\n\
            stage <instance> <manifest.json> <compareKey> <archive> [--source <dir>]...\n\
                                      rebuild one mod's staging from its archive, by content\n\
            demo-progress             exercise the loader (development aid)\n\n\
@@ -144,6 +153,39 @@ fn main() -> ExitCode {
                 ExitCode::from(2)
             }
         },
+        Some("install") => match (args.next(), args.next()) {
+            (Some(instance), what) => install(&instance, what.as_deref()),
+            _ => {
+                eprintln!("eh install <instance> [<package.ehcoll | collection link>]");
+                ExitCode::from(2)
+            }
+        },
+        Some("missing") => {
+            let rest: Vec<String> = args.collect();
+            let (_, instance) = split_instance(&rest);
+            missing_cmd(instance.as_deref())
+        }
+        Some("download") | Some("open") => {
+            let rest: Vec<String> = args.collect();
+            match split_instance(&rest) {
+                (q, instance) if q.len() == 1 => download_cmd(&q[0], instance.as_deref()),
+                _ => {
+                    eprintln!("eh download <mod> [--instance <name>]");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("feed") => {
+            let rest: Vec<String> = args.collect();
+            match split_instance(&rest) {
+                (q, instance) if q.len() == 1 => feed_folder_cmd(Path::new(&q[0]), instance.as_deref()),
+                (q, instance) if q.len() == 2 => feed_cmd(&q[0], Path::new(&q[1]), instance.as_deref()),
+                _ => {
+                    eprintln!("eh feed <mod> <file>   or   eh feed <folder>   [--instance <name>]");
+                    ExitCode::from(2)
+                }
+            }
+        }
         Some("stage") => {
             let rest: Vec<String> = args.collect();
             let (positional, sources) = split_sources(&rest);
@@ -421,6 +463,301 @@ fn instance_list() -> ExitCode {
     }
 }
 
+/// Pull `--instance <name>` out of an argument list.
+fn split_instance(args: &[String]) -> (Vec<String>, Option<String>) {
+    let (mut rest, mut instance) = (Vec::new(), None);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if a == "--instance" {
+            instance = it.next().cloned();
+        } else {
+            rest.push(a.clone());
+        }
+    }
+    (rest, instance)
+}
+
+/// The instance a command means: the one named, or the only one there is.
+fn pick_instance(lib: &eh_engine::library::Library, named: Option<&str>) -> Result<eh_engine::library::Instance, String> {
+    if let Some(name) = named {
+        return eh_engine::library::InstanceId::new(name).and_then(|id| lib.instance(&id)).map_err(|e| e.to_string());
+    }
+    let mut all = lib.instances().map_err(|e| e.to_string())?;
+    match all.len() {
+        1 => Ok(all.remove(0)),
+        0 => Err("there are no instances yet; create one with `eh instance create`".into()),
+        _ => Err(format!(
+            "there are several instances ({}); say which with --instance <name>",
+            all.iter().map(|i| i.id().to_string()).collect::<Vec<_>>().join(", ")
+        )),
+    }
+}
+
+fn missing_cmd(instance: Option<&str>) -> ExitCode {
+    let lib = match library() {
+        Ok(l) => l,
+        Err(code) => return code,
+    };
+    let inst = match pick_instance(&lib, instance) {
+        Ok(i) => i,
+        Err(e) => {
+            eprintln!("eh missing: {e}");
+            return ExitCode::from(65);
+        }
+    };
+    match eh_engine::missing(&lib, &inst) {
+        Ok(list) if list.is_empty() => {
+            println!("nothing to supply: every mod you download yourself is in place");
+            ExitCode::SUCCESS
+        }
+        Ok(list) => {
+            for (i, w) in list.iter().enumerate() {
+                println!("{:>3}. {}  — save as \"{}\"", i + 1, w.name, w.expected_filename);
+                if let Some(url) = &w.url {
+                    println!("       {url}");
+                }
+            }
+            println!("open a page with `eh download <number>`, then `eh feed <number> <file>`");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("eh missing: {e}");
+            ExitCode::from(65)
+        }
+    }
+}
+
+/// Only web pages are opened. The link comes from a manifest a stranger
+/// wrote, and handing `file://` or a custom scheme to the desktop's opener
+/// would run whatever handler that scheme has.
+fn open_in_browser(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    if !(lower.starts_with("https://") || lower.starts_with("http://")) {
+        return false;
+    }
+    let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+    std::process::Command::new(opener)
+        .arg(url)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .is_ok()
+}
+
+fn download_cmd(query: &str, instance: Option<&str>) -> ExitCode {
+    let lib = match library() {
+        Ok(l) => l,
+        Err(code) => return code,
+    };
+    let found = pick_instance(&lib, instance).and_then(|inst| {
+        let (manifest, _) = eh_engine::instance_manifest(&inst).map_err(|e| e.to_string())?;
+        let list = eh_engine::missing(&lib, &inst).map_err(|e| e.to_string())?;
+        let m = eh_engine::find_mod_by_query(&manifest, &list, query).map_err(|e| e.to_string())?;
+        Ok((m.clone(), list))
+    });
+    let (m, _) = match found {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("eh download: {e}");
+            return ExitCode::from(65);
+        }
+    };
+    let eh_engine::manifest::ModSource::External(src) = &m.source else {
+        println!("{} comes from Nexus; `eh install` downloads it for you.", m.name);
+        return ExitCode::SUCCESS;
+    };
+    if src.bundled {
+        println!("{} is carried inside the collection; there is nothing to download.", m.name);
+        return ExitCode::SUCCESS;
+    }
+    println!("{}", m.name);
+    println!("  save as:  {}", src.expected_filename);
+    if let Some(sha) = &src.sha256 {
+        println!("  sha256:   {sha}");
+    }
+    if let Some(text) = &src.instructions {
+        println!("  curator:  {text}");
+    }
+    match &src.url {
+        Some(url) if open_in_browser(url) => println!("  opened:   {url}"),
+        Some(url) => println!("  page:     {url}  (open it yourself)"),
+        None => println!("  the curator gave no link; follow their note above"),
+    }
+    println!("then: eh feed \"{}\" <the file you downloaded>", m.name);
+    ExitCode::SUCCESS
+}
+
+fn feed_cmd(query: &str, file: &Path, instance: Option<&str>) -> ExitCode {
+    let lib = match library() {
+        Ok(l) => l,
+        Err(code) => return code,
+    };
+    let progress = render::for_environment();
+    let result = pick_instance(&lib, instance).and_then(|inst| {
+        let (manifest, package_dir) = eh_engine::instance_manifest(&inst).map_err(|e| e.to_string())?;
+        let list = eh_engine::missing(&lib, &inst).map_err(|e| e.to_string())?;
+        let m = eh_engine::find_mod_by_query(&manifest, &list, query).map_err(|e| e.to_string())?;
+        let task = progress.task(&m.name, None, Unit::Bytes);
+        let fed = eh_engine::feed(&lib, &inst, &package_dir, m, file, &task).map_err(|e| e.to_string());
+        match &fed {
+            Ok(_) => task.done(),
+            Err(_) => task.failed("not taken"),
+        }
+        Ok((m.name.clone(), inst.id().to_string(), fed?))
+    });
+    match result {
+        Ok((name, inst, eh_engine::Fed::Matches)) => {
+            println!("{name}: this is the collection's archive. Run `eh install {inst}` to stage it.");
+            ExitCode::SUCCESS
+        }
+        Ok((name, inst, eh_engine::Fed::Equivalent { files, .. })) => {
+            println!(
+                "{name}: not the collection's archive, but it holds all {files} files the curator \
+                 installed, byte for byte, so it was taken. Run `eh install {inst}` to stage it."
+            );
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("eh feed: {e}");
+            ExitCode::from(65)
+        }
+    }
+}
+
+fn feed_folder_cmd(dir: &Path, instance: Option<&str>) -> ExitCode {
+    if !dir.is_dir() {
+        eprintln!("eh feed: {} is not a folder; to feed one file, name its mod: eh feed <mod> <file>", dir.display());
+        return ExitCode::from(2);
+    }
+    let lib = match library() {
+        Ok(l) => l,
+        Err(code) => return code,
+    };
+    let progress = render::for_environment();
+    let task = progress.task(dir.display().to_string(), None, Unit::Bytes);
+    let result = pick_instance(&lib, instance)
+        .and_then(|inst| eh_engine::feed_folder(&lib, &inst, dir, &task).map(|r| (inst, r)).map_err(|e| e.to_string()));
+    match result {
+        Ok((inst, r)) => {
+            task.done();
+            println!("{} file(s) checked, {} mod(s) found:", r.files_hashed, r.matched.len());
+            for name in &r.matched {
+                println!("  + {name}");
+            }
+            if !r.matched.is_empty() {
+                println!("run `eh install {}` to stage them", inst.id());
+            }
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            task.failed("failed");
+            eprintln!("eh feed: {e}");
+            ExitCode::from(65)
+        }
+    }
+}
+
+fn install(instance: &str, what: Option<&str>) -> ExitCode {
+    let lib = match library() {
+        Ok(l) => l,
+        Err(code) => return code,
+    };
+    let mut inst = match eh_engine::library::InstanceId::new(instance).and_then(|id| lib.instance(&id)) {
+        Ok(i) => i,
+        Err(e) => {
+            eprintln!("eh install: {e}");
+            return ExitCode::from(65);
+        }
+    };
+    // A key is optional: a collection whose mods are all bundled needs none.
+    let client = eh_engine::nexus::load_api_key().ok().map(|(key, source)| {
+        eprintln!("using the Nexus API key from {source}");
+        eh_engine::nexus::Client::new(key)
+    });
+    let progress = render::for_environment();
+    let what: String = match what {
+        Some(w) => w.to_owned(),
+        None => match inst.config().package.as_ref().and_then(|p| p.file.clone()) {
+            Some(f) if f.is_file() => f.display().to_string(),
+            Some(f) => {
+                eprintln!("eh install: the package installed last, {}, is gone; name it again", f.display());
+                return ExitCode::from(66);
+            }
+            None => {
+                eprintln!("eh install: {instance} has no package yet; name one: eh install {instance} <package or link>");
+                return ExitCode::from(2);
+            }
+        },
+    };
+    let what = what.as_str();
+    let package = if Path::new(what).is_file() {
+        Path::new(what).to_path_buf()
+    } else {
+        let Some(client) = &client else {
+            eprintln!("eh install: {what:?} is not a file, and fetching a collection link needs a Nexus API key");
+            return ExitCode::from(78);
+        };
+        let task = progress.task("collection package", None, Unit::Bytes);
+        match eh_engine::fetch_collection(client, &lib, what, &task) {
+            Ok(f) => {
+                task.done();
+                f.path
+            }
+            Err(e) => {
+                task.failed(e.to_string());
+                eprintln!("eh install: {e}");
+                return ExitCode::from(69);
+            }
+        }
+    };
+    let task = progress.task("install", None, Unit::Steps);
+    match eh_engine::install_package(client.as_ref(), &lib, &mut inst, &package, &task) {
+        Ok(r) => {
+            task.done();
+            println!(
+                "{} staged now, {} already staged, {} failed, {} need the archive from you",
+                r.staged.len(),
+                r.already_staged.len(),
+                r.failed.len(),
+                r.needs_user.len()
+            );
+            for f in &r.failed {
+                println!("  failed: {} — {}", f.name, f.why);
+            }
+            for n in &r.needs_user {
+                let mut line = format!("  needs: {} (\"{}\"", n.name, n.expected_filename);
+                if let Some(sha) = &n.sha256 {
+                    line.push_str(&format!(", sha256 {sha}"));
+                }
+                line.push(')');
+                if let Some(url) = &n.url {
+                    line.push_str(&format!(" — {url}"));
+                }
+                println!("{line}");
+            }
+            if !r.needs_user.is_empty() {
+                println!(
+                    "  `eh download <mod>` opens each page; `eh feed <mod> <file>` takes the file; then `eh install {instance}`"
+                );
+            }
+            if let Some(why) = &r.stopped {
+                println!("stopped: {why}");
+            }
+            if r.is_complete() {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(75)
+            }
+        }
+        Err(e) => {
+            task.failed(e.to_string());
+            eprintln!("eh install: {e}");
+            ExitCode::from(65)
+        }
+    }
+}
+
 fn stage(instance: &str, manifest: &Path, key: &str, archive: &Path, sources: &[String]) -> ExitCode {
     let lib = match library() {
         Ok(l) => l,
@@ -519,4 +856,17 @@ fn demo_progress() {
     broken.failed("archive is damaged - no reader could open it");
 
     run.done();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::open_in_browser;
+
+    #[test]
+    fn only_web_pages_from_a_manifest_are_handed_to_the_desktop() {
+        // A refused link returns before anything is spawned.
+        for url in ["file:///home/user/.ssh/id_rsa", "steam://run/1", "javascript:alert(1)", "smb://host/share", "/etc/passwd"] {
+            assert!(!open_in_browser(url), "{url}");
+        }
+    }
 }

@@ -90,7 +90,7 @@ fn instance_names_are_safe_folder_names() {
 fn an_instance_round_trips_through_its_file_including_its_package() {
     let w = world();
     let mut i = w.lib.create_instance(InstanceConfig::new(id("fo4"), SupportedGameId::Fallout4, w.fo4.clone())).unwrap();
-    i.set_package(PackageRef { id: "uuid-1".into(), name: "Ivy".into(), version: "1.2.0".into() }).unwrap();
+    i.set_package(PackageRef::named("uuid-1", "Ivy", "1.2.0")).unwrap();
     let back = w.lib.instance(&id("fo4")).unwrap();
     assert_eq!(back.config(), i.config());
     assert_eq!(back.config().game_dir, fs::canonicalize(&w.fo4).unwrap());
@@ -120,7 +120,7 @@ fn an_instance_file_moved_to_another_folder_is_refused() {
 fn downloads_are_one_shared_store_keyed_by_hash() {
     let w = world();
     let sha = "a".repeat(64);
-    assert_eq!(w.lib.archive_path(&sha).unwrap(), w.lib.root().join("archives").join(&sha));
+    assert_eq!(w.lib.archive_path(&sha).unwrap(), w.lib.root().join("downloads").join(&sha));
     assert!(w.lib.archive_path("../../etc/passwd").is_err());
     assert!(w.lib.archive_path(&sha.to_uppercase()).is_err());
 }
@@ -152,4 +152,33 @@ fn a_collection_revision_has_one_place_and_a_hostile_name_has_none() {
     for (game, slug, rev) in [("..", "x", 1), ("sse", "../x", 1), ("sse", "a/b", 1), ("sse", "", 1), ("sse", "x", 0)] {
         assert!(w.lib.package_path(game, slug, rev).is_err(), "{game}/{slug}/{rev}");
     }
+}
+
+#[test]
+fn one_run_holds_an_instance_and_a_dead_runs_lock_is_taken_over() {
+    let w = world();
+    let i = w.lib.create_instance(InstanceConfig::new(id("fo4"), SupportedGameId::Fallout4, w.fo4.clone())).unwrap();
+    let held = i.lock().unwrap();
+    // A live process (pid 1 always is) holding it: refused.
+    fs::write(i.dir().join(".lock"), "1").unwrap();
+    assert!(matches!(i.lock(), Err(LibraryError::Locked { pid: 1, .. })));
+    // A process that is gone: taken over.
+    fs::write(i.dir().join(".lock"), "4294967294").unwrap();
+    let again = i.lock().unwrap();
+    drop(held);
+    drop(again);
+    assert!(!i.dir().join(".lock").exists(), "released on drop");
+}
+
+#[test]
+fn receipts_live_beside_staging_never_inside_it() {
+    let w = world();
+    let i = w.lib.create_instance(InstanceConfig::new(id("fo4"), SupportedGameId::Fallout4, w.fo4.clone())).unwrap();
+    assert_eq!(i.staged_fingerprint("nexus:1:2"), None);
+    i.record_staged("nexus:1:2", "abc").unwrap();
+    assert_eq!(i.staged_fingerprint("nexus:1:2").as_deref(), Some("abc"));
+    assert!(!i.staging_dir_for("nexus:1:2").exists(), "nothing written into staging");
+    i.forget_staged("nexus:1:2").unwrap();
+    i.forget_staged("nexus:1:2").unwrap(); // idempotent
+    assert_eq!(i.staged_fingerprint("nexus:1:2"), None);
 }

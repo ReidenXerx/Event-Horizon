@@ -37,7 +37,7 @@ use std::path::{Path, PathBuf};
 /// Typically the extracted archive, plus — for a mirrored mod — the package's
 /// `mirror/` files. File NAMES play no part: two entries with one hash are
 /// the same bytes, and either will do.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ContentIndex {
     by_hash: HashMap<String, Source>,
     files: u64,

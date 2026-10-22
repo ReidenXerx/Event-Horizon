@@ -9,13 +9,15 @@
 //! ```text
 //! <root>/                          $EH_HOME, else $XDG_DATA_HOME/event-horizon,
 //!                                  else ~/.local/share/event-horizon
-//!   archives/<sha256>              downloads, shared by EVERY instance
+//!   downloads/<sha256>             downloaded mod archives, shared by EVERY instance
 //!   packages/<game>/<slug>/r<n>.ehcoll   collection files, one per revision
 //!   instances/<id>/
 //!     instance.json                what this instance is
 //!     package/                     the collection package it installs
 //!     staging/<mod>/               one folder per mod (unless staging_dir says otherwise)
+//!     receipts/<mod>               what each staged folder was built from
 //!     work/                        scratch, e.g. unpacked archives
+//!     .lock                        held while an install runs
 //! ```
 //!
 //! ─── DOWNLOADS ARE STORED BY HASH ───────────────────────────────────────
@@ -99,6 +101,21 @@ pub struct PackageRef {
     pub id: String,
     pub name: String,
     pub version: String,
+    /// The package file last installed, so a run can continue without being
+    /// handed it again. Absent before the first install.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<PathBuf>,
+    /// That file's SHA-256 — also the name of its unpacked folder under
+    /// `package/`, where the manifest is read from without reopening the zip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+}
+
+impl PackageRef {
+    /// Just the identity, before anything is installed.
+    pub fn named(id: impl Into<String>, name: impl Into<String>, version: impl Into<String>) -> Self {
+        Self { id: id.into(), name: name.into(), version: version.into(), file: None, sha256: None }
+    }
 }
 
 /// What `instance.json` holds.
@@ -163,6 +180,89 @@ impl Instance {
         self.staging_root().join(mod_dir_name(compare_key))
     }
 
+    /// Where the receipt for a mod's staging folder lives. Beside staging, not
+    /// in it: anything inside a mod's staging folder gets deployed.
+    fn receipt_path(&self, compare_key: &str) -> PathBuf {
+        self.dir.join("receipts").join(mod_dir_name(compare_key))
+    }
+
+    /// The fingerprint a mod's staging folder was built from, if it was.
+    pub fn staged_fingerprint(&self, compare_key: &str) -> Option<String> {
+        fs::read_to_string(self.receipt_path(compare_key)).ok().map(|s| s.trim().to_owned())
+    }
+
+    /// Record that a mod's staging folder now holds what `fingerprint` names.
+    pub fn record_staged(&self, compare_key: &str, fingerprint: &str) -> Result<(), LibraryError> {
+        let file = self.receipt_path(compare_key);
+        let dir = file.parent().expect("receipts/<name> has a parent");
+        fs::create_dir_all(dir).map_err(|e| LibraryError::io(dir, e))?;
+        let tmp = file.with_extension("eh-part");
+        fs::write(&tmp, format!("{fingerprint}\n")).map_err(|e| LibraryError::io(&tmp, e))?;
+        fs::rename(&tmp, &file).map_err(|e| LibraryError::io(&file, e))
+    }
+
+    /// Forget a mod's receipt — before its staging folder is rebuilt, so a
+    /// crash mid-rebuild never leaves a receipt naming a half-built folder.
+    pub fn forget_staged(&self, compare_key: &str) -> Result<(), LibraryError> {
+        let file = self.receipt_path(compare_key);
+        match fs::remove_file(&file) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(LibraryError::io(&file, e)),
+        }
+    }
+
+    fn supplied_path(&self, compare_key: &str) -> PathBuf {
+        self.dir.join("supplied").join(mod_dir_name(compare_key))
+    }
+
+    /// The SHA-256 of an archive the user supplied for a mod when it is NOT
+    /// the archive the collection names, but provably holds every file the
+    /// curator staged. An archive that matches needs no entry: its name is
+    /// its hash.
+    pub fn supplied_sha(&self, compare_key: &str) -> Option<String> {
+        fs::read_to_string(self.supplied_path(compare_key)).ok().map(|s| s.trim().to_owned())
+    }
+
+    pub fn record_supplied(&self, compare_key: &str, sha256: &str) -> Result<(), LibraryError> {
+        let file = self.supplied_path(compare_key);
+        let dir = file.parent().expect("supplied/<name> has a parent");
+        fs::create_dir_all(dir).map_err(|e| LibraryError::io(dir, e))?;
+        let tmp = file.with_extension("eh-part");
+        fs::write(&tmp, format!("{sha256}\n")).map_err(|e| LibraryError::io(&tmp, e))?;
+        fs::rename(&tmp, &file).map_err(|e| LibraryError::io(&file, e))
+    }
+
+    /// Hold this instance for one run. A lock left by a process that is gone
+    /// — a crash, a power cut — is taken over; one held by a live process is
+    /// refused, because two runs staging one instance lose files.
+    pub fn lock(&self) -> Result<InstanceLock, LibraryError> {
+        let file = self.dir.join(".lock");
+        for _ in 0..2 {
+            match fs::OpenOptions::new().write(true).create_new(true).open(&file) {
+                Ok(mut f) => {
+                    use std::io::Write;
+                    let _ = write!(f, "{}", std::process::id());
+                    return Ok(InstanceLock { file });
+                }
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                    let holder = fs::read_to_string(&file).ok().and_then(|s| s.trim().parse::<u32>().ok());
+                    match holder {
+                        Some(pid) if pid != std::process::id() && process_alive(pid) => {
+                            return Err(LibraryError::Locked { instance: self.config.id.clone(), pid })
+                        }
+                        // Ours, gone, or unreadable: stale.
+                        _ => {
+                            let _ = fs::remove_file(&file);
+                        }
+                    }
+                }
+                Err(e) => return Err(LibraryError::io(&file, e)),
+            }
+        }
+        Err(LibraryError::io(&file, io::Error::other("could not take the lock")))
+    }
+
     /// Record which collection this instance installs.
     pub fn set_package(&mut self, package: PackageRef) -> Result<(), LibraryError> {
         let mut next = self.config.clone();
@@ -170,6 +270,28 @@ impl Instance {
         write_config(&self.dir, &next)?;
         self.config = next;
         Ok(())
+    }
+}
+
+/// Held while a run uses an instance; released when dropped.
+#[derive(Debug)]
+pub struct InstanceLock {
+    file: PathBuf,
+}
+
+impl Drop for InstanceLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.file);
+    }
+}
+
+/// Whether a process id is running. Linux answers through `/proc`; elsewhere
+/// a lock is assumed live, which errs toward refusing rather than racing.
+fn process_alive(pid: u32) -> bool {
+    if cfg!(target_os = "linux") {
+        Path::new("/proc").join(pid.to_string()).exists()
+    } else {
+        true
     }
 }
 
@@ -215,7 +337,7 @@ impl Library {
     /// Open (creating if needed) the library at `root`.
     pub fn open(root: impl Into<PathBuf>) -> Result<Self, LibraryError> {
         let root = root.into();
-        fs::create_dir_all(root.join("archives")).map_err(|e| LibraryError::io(&root, e))?;
+        fs::create_dir_all(root.join("downloads")).map_err(|e| LibraryError::io(&root, e))?;
         fs::create_dir_all(root.join("instances")).map_err(|e| LibraryError::io(&root, e))?;
         fs::create_dir_all(root.join("packages")).map_err(|e| LibraryError::io(&root, e))?;
         Ok(Self { root })
@@ -230,7 +352,7 @@ impl Library {
         if !eh_identity::is_sha256_hex(sha256) {
             return Err(LibraryError::BadHash(sha256.to_owned()));
         }
-        Ok(self.root.join("archives").join(sha256))
+        Ok(self.root.join("downloads").join(sha256))
     }
 
     /// Where a collection revision's file lives. A published revision never
@@ -353,6 +475,8 @@ pub enum LibraryError {
     NoGameDir(PathBuf),
     GameDirTaken { game_dir: PathBuf, by: InstanceId },
     UnknownFormat(PathBuf, Option<u64>),
+    /// Another live process holds the instance.
+    Locked { instance: InstanceId, pid: u32 },
     Corrupt(PathBuf, String),
 }
 
@@ -389,6 +513,10 @@ impl fmt::Display for LibraryError {
                 p.display()
             ),
             Self::Corrupt(p, why) => write!(f, "{}: {why}", p.display()),
+            Self::Locked { instance, pid } => write!(
+                f,
+                "instance {instance} is in use by another Event Horizon run (process {pid}); wait for it to finish"
+            ),
         }
     }
 }

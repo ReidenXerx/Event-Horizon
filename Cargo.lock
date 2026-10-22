@@ -285,6 +285,7 @@ dependencies = [
  "eh-progress",
  "eh-resolver",
  "ehcoll",
+ "serde_json",
  "tempfile",
  "zip",
 ]

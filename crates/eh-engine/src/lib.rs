@@ -27,6 +27,12 @@
 
 #![forbid(unsafe_code)]
 
+mod install;
+mod supply;
+
+pub use install::{install_package, InstallReport, ModFailure, NeedsUser};
+pub use supply::{feed, feed_folder, find_mod_by_query, instance_manifest, missing, Fed, FedFolder, Wanted};
+
 use eh_progress::Task;
 use std::path::Path;
 
@@ -62,6 +68,11 @@ pub fn find_mod<'m>(manifest: &'m ehcoll::EhcollManifest, compare_key: &str) -> 
 // ───────────────────────────────────────────────────────────────────────────
 // Packages
 // ───────────────────────────────────────────────────────────────────────────
+
+/// The manifest types, re-exported so a shell needs only the engine.
+pub mod manifest {
+    pub use ehcoll::*;
+}
 
 /// The package reader and its types, re-exported for shells.
 pub mod package {
@@ -325,11 +336,11 @@ pub fn stage_into_instance(
     // that failed must not tie the instance to a pack it holds nothing of.
     if instance.config().package.is_none() {
         instance
-            .set_package(eh_library::PackageRef {
-                id: manifest.package.id.clone(),
-                name: manifest.package.name.clone(),
-                version: manifest.package.version.clone(),
-            })
+            .set_package(eh_library::PackageRef::named(
+                manifest.package.id.clone(),
+                manifest.package.name.clone(),
+                manifest.package.version.clone(),
+            ))
             .map_err(EngineError::Library)?;
     }
     Ok(staged)
@@ -364,20 +375,45 @@ pub fn stage_mod(
     dest: &Path,
     task: &Task,
 ) -> Result<Staged, EngineError> {
+    stage_with(m, Some(archive), &eh_fomod::ContentIndex::new(), extra_sources, work, dest, task)
+}
+
+/// [`stage_mod`], generalised for the install loop: the archive is optional
+/// (a bundled mod's files come from the package), and `base` is an index the
+/// caller built once — the package's `mirror/` — instead of rehashing it for
+/// every mod.
+pub(crate) fn stage_with(
+    m: &ehcoll::EhcollMod,
+    archive: Option<&Path>,
+    base: &eh_fomod::ContentIndex,
+    extra_sources: &[&Path],
+    work: &Path,
+    dest: &Path,
+    task: &Task,
+) -> Result<Staged, EngineError> {
     let Some(files) = &m.state.staging_files else {
         return Err(EngineError::NoStagingRecord(m.compare_key.clone()));
     };
-    std::fs::create_dir_all(work).map_err(|e| EngineError::Io(work.to_path_buf(), e))?;
-    let unpacked = Unpacked::new(work).map_err(|e| EngineError::Io(work.to_path_buf(), e))?;
-
-    let extracting = task.child("extract", None, eh_progress::Unit::Files);
-    let extraction = eh_archive::extract(archive, &unpacked.0, &extracting).map_err(EngineError::Archive)?;
-    extracting.done();
-
-    let mut trees: Vec<&Path> = vec![&unpacked.0];
-    trees.extend_from_slice(extra_sources);
-    let plan = eh_fomod::plan_from_trees(files, &trees, task)
-        .map_err(|e| EngineError::Io(unpacked.0.clone(), e))?;
+    let mut index = base.clone();
+    let hashing = task.child("hash sources", None, eh_progress::Unit::Bytes);
+    let mut refused = 0;
+    // Held until staging is written: the extracted copy is a source.
+    let mut _unpacked = None;
+    if let Some(archive) = archive {
+        std::fs::create_dir_all(work).map_err(|e| EngineError::Io(work.to_path_buf(), e))?;
+        let unpacked = Unpacked::new(work).map_err(|e| EngineError::Io(work.to_path_buf(), e))?;
+        let extracting = task.child("extract", None, eh_progress::Unit::Files);
+        let extraction = eh_archive::extract(archive, &unpacked.0, &extracting).map_err(EngineError::Archive)?;
+        extracting.done();
+        refused = extraction.refused.len();
+        index.add_tree(&unpacked.0, &hashing).map_err(|e| EngineError::Io(unpacked.0.clone(), e))?;
+        _unpacked = Some(unpacked);
+    }
+    for tree in extra_sources {
+        index.add_tree(tree, &hashing).map_err(|e| EngineError::Io(tree.to_path_buf(), e))?;
+    }
+    hashing.done();
+    let plan = eh_fomod::plan(files, &index);
     if !plan.is_complete() {
         return Err(EngineError::Incomplete {
             compare_key: m.compare_key.clone(),
@@ -388,7 +424,7 @@ pub fn stage_mod(
     let writing = task.child("write staging", Some(plan.bytes()), eh_progress::Unit::Bytes);
     let applied = plan.apply(dest, &writing).map_err(EngineError::Reconstruct)?;
     writing.done();
-    Ok(Staged { files: applied.files, bytes: applied.bytes, refused_entries: extraction.refused.len() })
+    Ok(Staged { files: applied.files, bytes: applied.bytes, refused_entries: refused })
 }
 
 /// A scratch directory removed on drop, success or not.
@@ -429,6 +465,21 @@ pub enum EngineError {
     Nexus(eh_nexus::NexusError),
     Package(eh_package::PackageError),
     Link(eh_nexus::LinkError),
+    /// The instance has not installed a package yet, so it has no mods.
+    NoPackageYet(String),
+    NoSuchMod(String),
+    AmbiguousMod { query: String, candidates: Vec<(String, String)> },
+    /// The mod is not one the user supplies; the reason says where it comes from.
+    NotUserSupplied(String, &'static str),
+    /// The file cannot be opened as an archive.
+    Damaged(std::path::PathBuf, String),
+    /// A supplied archive that is not the collection's and lacks some of the
+    /// curator's files.
+    SuppliedDiffers { name: String, expected: Option<String>, actual: String, missing: Vec<String>, total: usize },
+    /// Nexus downloads are needed and there is no client (no key).
+    NoNexusClient,
+    /// Nexus downloads are needed and the account is not Premium.
+    PremiumRequired(String),
     /// A Nexus game this build has no manifest support for.
     UnsupportedGame(String),
     Unexpected(String),
@@ -457,6 +508,54 @@ impl std::fmt::Display for EngineError {
             Self::Nexus(e) => write!(f, "{e}"),
             Self::Package(e) => write!(f, "{e}"),
             Self::Link(e) => write!(f, "{e}"),
+            Self::NoPackageYet(i) => write!(
+                f,
+                "instance {i} has no collection installed yet; run `eh install {i} <package or link>` first"
+            ),
+            Self::NoSuchMod(q) => write!(f, "no mod in the collection matches {q:?}; `eh missing` lists the ones you can supply"),
+            Self::AmbiguousMod { query, candidates } => {
+                write!(f, "{query:?} matches {} mods — name one exactly, or use its number from `eh missing`:", candidates.len())?;
+                for (name, key) in candidates.iter().take(10) {
+                    write!(f, "\n  - {name}  ({key})")?;
+                }
+                if candidates.len() > 10 {
+                    write!(f, "\n  … and {} more", candidates.len() - 10)?;
+                }
+                Ok(())
+            }
+            Self::NotUserSupplied(name, why) => write!(f, "{name} is not one you supply: {why}"),
+            Self::Damaged(p, why) => write!(
+                f,
+                "{} cannot be opened as an archive ({why}); it is probably an incomplete download — download it again",
+                p.display()
+            ),
+            Self::SuppliedDiffers { name, expected, actual, missing, total } => {
+                write!(
+                    f,
+                    "this is not the archive the collection was built from for {name} (it has sha256 {actual}{}), \
+                     and it lacks {} of the {total} files the curator installed, so it was not taken. \
+                     It is probably a different version — look for the one the collection names.",
+                    expected.as_deref().map(|e| format!(", the collection names {e}")).unwrap_or_default(),
+                    missing.len()
+                )?;
+                for p in missing.iter().take(10) {
+                    write!(f, "\n  - missing {p}")?;
+                }
+                if missing.len() > 10 {
+                    write!(f, "\n  … and {} more", missing.len() - 10)?;
+                }
+                Ok(())
+            }
+            Self::NoNexusClient => write!(
+                f,
+                "this collection downloads mods from Nexus, and no Nexus API key is set (see `eh nexus whoami`)"
+            ),
+            Self::PremiumRequired(name) => write!(
+                f,
+                "this collection downloads mods from Nexus, and {name}'s account is not Premium. Nexus gives \
+                 mod managers direct download links for Premium accounts only, and Event Horizon \
+                 requires Premium for now."
+            ),
             Self::UnsupportedGame(d) => write!(f, "Event Horizon does not support the Nexus game {d:?}"),
             Self::Unexpected(m) => write!(f, "{m}"),
             Self::InstanceLimit(ids) => write!(
