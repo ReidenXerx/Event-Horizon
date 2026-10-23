@@ -24,6 +24,14 @@ export type DescribedOption = {
   type: string;
   /** Present when the type depends on conditions: each rule in words. */
   typeWhen?: Array<{ when: string; type: string }>;
+  /**
+   * What the type is on THIS setup, when the rules can be settled from the
+   * plugin list alone (annotateTypes). Absent when a rule needs a flag, a game
+   * version or a non-plugin file: those are left to the wizard, never guessed.
+   */
+  typeNow?: string;
+  /** Internal: the rules as XML, for annotateTypes. Not sent. */
+  typeRules?: Array<{ when: XmlElement; type: string }>;
   /** Flags this option sets when chosen (they drive later steps and conditional installs). */
   flags: Record<string, string>;
   files: number;
@@ -128,10 +136,15 @@ function describeOption(node: XmlElement, root: string, listing: readonly string
   const plain = attrNamed(childNamed(td, "type"), "name");
   const dep = childNamed(td, "dependencyType");
   const typeWhen: Array<{ when: string; type: string }> = [];
+  const typeRules: Array<{ when: XmlElement; type: string }> = [];
   for (const p of childrenNamed(childNamed(dep, "patterns"), "pattern")) {
-    const when = renderDependencies(childNamed(p, "dependencies"));
+    const node = childNamed(p, "dependencies");
+    const when = renderDependencies(node);
     const t = attrNamed(childNamed(p, "type"), "name");
-    if (when !== undefined && t !== undefined) typeWhen.push({ when, type: t });
+    if (when !== undefined && t !== undefined && node !== undefined) {
+      typeWhen.push({ when, type: t });
+      typeRules.push({ when: node, type: t });
+    }
   }
   const flags: Record<string, string> = {};
   for (const f of childrenNamed(childNamed(node, "conditionFlags"), "flag")) {
@@ -146,7 +159,7 @@ function describeOption(node: XmlElement, root: string, listing: readonly string
     ...(description ? { description: description.slice(0, 600) } : {}),
     ...(image !== undefined ? { image } : {}),
     type: plain ?? attrNamed(childNamed(dep, "defaultType"), "name") ?? "Optional",
-    ...(typeWhen.length > 0 ? { typeWhen } : {}),
+    ...(typeWhen.length > 0 ? { typeWhen, typeRules } : {}),
     flags,
     files,
     plugins,
@@ -246,8 +259,8 @@ export function annotateMasters(
 
 /** The description as sent: internal archive paths removed. */
 export function publicDescription(d: FomodDescription): FomodDescription {
-  const strip = <T extends { pluginEntries?: string[] }>(x: T): T => {
-    const { pluginEntries: _e, ...rest } = x;
+  const strip = <T extends { pluginEntries?: string[]; typeRules?: unknown }>(x: T): T => {
+    const { pluginEntries: _e, typeRules: _r, ...rest } = x;
     return rest as T;
   };
   return {
@@ -270,5 +283,100 @@ export function pluginSources(d: FomodDescription): Array<{ plugin: string; from
   const out: Array<{ plugin: string; from: string }> = d.requiredFiles.plugins.map((plugin) => ({ plugin, from: "required" }));
   for (const s of d.steps) for (const g of s.groups) for (const o of g.options) for (const plugin of o.plugins) out.push({ plugin, from: `${s.name} / ${g.name} / ${o.name}` });
   for (const c of d.conditionalInstalls) for (const plugin of c.plugins) out.push({ plugin, from: `when ${c.when}` });
+  return out;
+}
+
+const PLUGIN_FILE = /\.(esp|esm|esl)$/i;
+
+/**
+ * A dependency group settled from the plugin list: true, false, or undefined
+ * when any part of it needs something the list does not hold (a flag set by an
+ * earlier page, the game version, a non-plugin file). Three-valued, so an
+ * unknown part decides nothing it could not decide on its own.
+ *
+ * A plugin is Active when it is in the list and enabled, Inactive when it is in
+ * the list and disabled, Missing when it is not in the list.
+ */
+function settleDependencies(node: XmlElement, plugins: ReadonlyMap<string, boolean>): boolean | undefined {
+  const or = (attrNamed(node, "operator") ?? "And").toLowerCase() === "or";
+  let unknown = false;
+  for (const c of node.children) {
+    const n = c.name.toLowerCase();
+    let v: boolean | undefined;
+    if (n === "filedependency") {
+      const file = (attrNamed(c, "file") ?? "").replace(/^.*[\\/]/, "").toLowerCase();
+      const want = (attrNamed(c, "state") ?? "Active").toLowerCase();
+      if (!PLUGIN_FILE.test(file)) v = undefined;
+      else {
+        const enabled = plugins.get(file);
+        const is = enabled === undefined ? "missing" : enabled ? "active" : "inactive";
+        v = want === "active" || want === "inactive" || want === "missing" ? is === want : undefined;
+      }
+    } else if (n === "dependencies") v = settleDependencies(c, plugins);
+    else if (n === "flagdependency" || n === "gamedependency" || n === "fommdependency") v = undefined;
+    else continue;
+    if (v === undefined) unknown = true;
+    else if (or && v) return true;
+    else if (!or && !v) return false;
+  }
+  return unknown ? undefined : !or;
+}
+
+/**
+ * Settles each conditional option type the way the wizard will: the first
+ * rule that holds wins, none holding means the default. A rule that cannot be
+ * settled before a holding one leaves the type unknown, because the wizard may
+ * stop there. Fallout-collection, 2026-10-24: a pick on a NotUsable option was
+ * only found out inside the wizard ("pick-unverified"), after Vortex had
+ * already switched the installed version off.
+ */
+export function annotateTypes(d: FomodDescription, plugins: ReadonlyMap<string, boolean>): FomodDescription {
+  return {
+    ...d,
+    steps: d.steps.map((s) => ({
+      ...s,
+      groups: s.groups.map((g) => ({
+        ...g,
+        options: g.options.map((o) => {
+          if (o.typeRules === undefined) return o;
+          for (const r of o.typeRules) {
+            const v = settleDependencies(r.when, plugins);
+            if (v === undefined) return o;
+            if (v) return { ...o, typeNow: r.type };
+          }
+          return { ...o, typeNow: o.type };
+        }),
+      })),
+    })),
+  };
+}
+
+/**
+ * Picks (by name) that land on an option NotUsable on this setup. Numeric
+ * picks name the live wizard's ids and are left to it.
+ */
+export function notUsablePicks(
+  d: FomodDescription,
+  picks: ReadonlyArray<{ group: string | number; options: ReadonlyArray<string | number>; step?: string | number }>,
+): Array<{ step: string; group: string; option: string; when?: string }> {
+  const same = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const out: Array<{ step: string; group: string; option: string; when?: string }> = [];
+  for (const pick of picks) {
+    if (typeof pick.group !== "string") continue;
+    for (const s of d.steps) {
+      if (pick.step !== undefined && (typeof pick.step === "number" ? pick.step !== s.index : !same(pick.step, s.name))) continue;
+      for (const g of s.groups) {
+        if (!same(g.name, pick.group)) continue;
+        for (const want of pick.options) {
+          if (typeof want !== "string") continue;
+          const o = g.options.find((x) => same(x.name, want));
+          if (o?.typeNow !== undefined && same(o.typeNow, "NotUsable")) {
+            const rule = o.typeWhen?.find((r) => same(r.type, "NotUsable"));
+            out.push({ step: s.name, group: g.name, option: o.name, ...(rule !== undefined ? { when: rule.when } : {}) });
+          }
+        }
+      }
+    }
+  }
   return out;
 }

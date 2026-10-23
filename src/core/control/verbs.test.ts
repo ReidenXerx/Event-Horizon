@@ -1070,6 +1070,36 @@ describe("install and the FOMOD question", () => {
     expect(v.state.persistent.profiles.og.modState.gog).toEqual({ enabled: true });
   });
 
+  it("a failed install turns back on the mod Vortex switched off before the wizard (Improved Hostile Factions, 2026-10-24)", async () => {
+    withDownload();
+    v.state.persistent.mods.fallout4.ihf = { id: "ihf", state: "installed", attributes: { name: "Improved Hostile Factions 2.1.0" } };
+    v.state.persistent.profiles.og.modState.ihf = { enabled: true };
+    let done: ((err?: Error) => void) | undefined;
+    v.api.events.emit = (ev: string, ...args: unknown[]) => {
+      if (ev === "fomod-installer-cancel-w1") {
+        v.state.session.fomod.installer.dialog.activeInstanceId = null;
+        done?.(new Error("canceled by user"));
+      }
+      if (ev === "start-install-download") {
+        done = args[2] as (err?: Error) => void;
+        // "Update current profile" is answered before the installer runs, and the old version goes off then.
+        v.state.persistent.profiles.og.modState.ihf = { enabled: false };
+        v.state.session = {
+          notifications: { notifications: [], dialogs: [] },
+          fomod: { installer: { dialog: { activeInstanceId: "w1", instances: { w1: { info: { moduleName: "IHF" }, state: {
+            currentStep: 0,
+            installSteps: [{ id: 0, name: "Main", visible: true, optionalFileGroups: { group: [{ id: 0, name: "Gunner Outfit Pack", type: "SelectAny",
+              options: [{ id: 0, name: "DTG", selected: false }] }] } }],
+          } } } } } },
+        };
+      }
+      // The wizard refuses the NotUsable option: nothing gets selected, and the cancel ends the install.
+    };
+    const err = await run("install", { archiveId: "nec", picks: [{ group: "Gunner Outfit Pack", options: ["DTG"] }], ifExisting: "alongside" }).catch((e) => e);
+    expect(err).toMatchObject({ code: "pick-unverified", details: { restoredEnabled: ["ihf"] } });
+    expect(v.state.persistent.profiles.og.modState.ihf).toEqual({ enabled: true });
+  }, 30000);
+
   it("refuses picks together with recorded choices", async () => {
     await expect(run("install", { archiveId: "nec", picks: [], choices: { type: "fomod", options: [] } })).rejects.toMatchObject({ code: "bad-request" });
   });

@@ -70,8 +70,10 @@ import { continueDirection, fomodSummary, pickAppliesTo, readFomod, resolvePick,
 import {
   allPluginEntries,
   annotateMasters,
+  annotateTypes,
   describeBasic,
   describeModuleConfig,
+  notUsablePicks,
   publicDescription,
   type BasicDescription,
   type FomodDescription,
@@ -1287,7 +1289,9 @@ async function readInstaller(api: types.IExtensionApi, archivePath: string, chec
   if (configEntry === undefined) return { description: describeBasic(paths), mastersChecked: false };
   const raw = await makeReadEntry(sevenZip)(archivePath, configEntry);
   if (raw === undefined) throw new ControlError("installer-unreadable", `Could not read ${configEntry} from the archive.`, 500);
-  const d = describeModuleConfig(decodeModuleConfig(raw), configEntry, paths);
+  // Option types that the plugin list settles (a patch NotUsable without its mod) are named up front.
+  const pluginStates = new Map(readPluginList(api.getState()).map((p) => [p.name.toLowerCase(), p.enabled === true]));
+  const d = annotateTypes(describeModuleConfig(decodeModuleConfig(raw), configEntry, paths), pluginStates);
   if (!checkMasters) return { description: d, mastersChecked: false };
 
   const entries = allPluginEntries(d).slice(0, 300);
@@ -1351,6 +1355,54 @@ async function withPicks<T>(
   const answered = await answering;
   if (answerError !== undefined) throw answerError;
   return { result, ...(answered !== undefined ? { answered } : {}) };
+}
+
+/**
+ * Turns back on every mod that was on before an install and is off now.
+ *
+ * Vortex's "Update current profile" (ifExisting "alongside") switches the
+ * installed version OFF as soon as the question is answered, BEFORE the
+ * installer runs (InstallManager, read in app.asar: `setModsEnabled(...,
+ * [existingMod.id], false)` in the INSTALL_ACTION branch). An install that
+ * then fails leaves neither version on: Fallout-collection, 2026-10-24, a
+ * NotUsable pick in Improved Hostile Factions' wizard left 2.1.0 disabled and
+ * three plugins without their master.
+ */
+function restoreEnabledBefore(
+  api: types.IExtensionApi,
+  gameId: string,
+  profileBefore: string | undefined,
+  enabledBefore: Record<string, { enabled?: boolean } | undefined>,
+  except?: string,
+): string[] {
+  const profileId = activeProfileId(api);
+  if (profileId === undefined || profileId !== profileBefore) return [];
+  const pool = modPool(api, gameId);
+  const restored: string[] = [];
+  for (const [id, before] of Object.entries(enabledBefore)) {
+    if (id === except || before?.enabled !== true || pool[id] === undefined) continue;
+    if (enabledMap(api, profileId)[id]?.enabled === true) continue;
+    api.store?.dispatch(actions.setModEnabled(profileId, id, true));
+    if (enabledMap(api, profileId)[id]?.enabled === true) restored.push(id);
+  }
+  return restored;
+}
+
+/** Picks that land on an option NotUsable on this setup; empty when the installer cannot be read. */
+async function notUsableFor(
+  api: types.IExtensionApi,
+  gameId: string,
+  archiveId: string,
+  picks: FomodPick[],
+): Promise<ReturnType<typeof notUsablePicks>> {
+  try {
+    const looked = await readInstaller(api, archivePathFor(api, gameId, archiveId), false);
+    return looked.description.kind === "fomod" ? notUsablePicks(looked.description, picks) : [];
+  } catch (err) {
+    // The wizard still checks every pick; this only saves a failed run.
+    ehLog("warn", "control.install.pick-precheck-skipped", { archiveId, error: err instanceof Error ? err.message : String(err) });
+    return [];
+  }
 }
 
 /** Does this FOMOD ask anything? (A script whose steps hold no groups installs without a question.) */
@@ -3224,83 +3276,113 @@ export const VERBS: Record<string, Verb> = {
       const enabledBefore = profileBefore === undefined ? {} : { ...enabledMap(api, profileBefore) };
       let answered: Record<string, unknown> | undefined;
       let archiveId: string | undefined;
-      if (nexus !== undefined) {
-        if (typeof nexus.modId !== "number" || typeof nexus.fileId !== "number") {
-          throw new ControlError("bad-request", `"nexus" needs numeric modId and fileId.`);
-        }
-        if (!unattended && asCopy === undefined && !mustLook) {
-          // Attended: Vortex asks about anything already installed, and ifExisting answers it.
-          const r = await withPicks(api, picks, () =>
-            installNexusViaApi(api, {
-              gameId,
-              nexusModId: nexus.modId as number,
-              nexusFileId: nexus.fileId as number,
-              ...(choices !== undefined ? { choices } : {}),
-              unattended,
-            }),
-          );
-          ({ vortexModId } = r.result);
-          answered = r.answered;
-        } else {
-          // Unattended or a copy: download first, so the silent-replace check below
-          // sees the archive BEFORE Vortex decides anything about it.
-          archiveId = await nexusDownloadOnly(api, gameId, nexus.modId, nexus.fileId);
-          if (archiveId === undefined) {
-            throw new ControlError("download-failed", `Vortex could not download ${nexus.modId}:${nexus.fileId}.`, 500);
+      try {
+        if (nexus !== undefined) {
+          if (typeof nexus.modId !== "number" || typeof nexus.fileId !== "number") {
+            throw new ControlError("bad-request", `"nexus" needs numeric modId and fileId.`);
           }
-        }
-      } else {
-        archiveId = need(body, "archiveId");
-      }
-      if (archiveId !== undefined) {
-        const collides = existingFor(api, gameId, archiveId);
-        /**
-         * ─── THE SILENT REPLACE ─────────────────────────────────────────────
-         * Installing an archive whose mod is already in the pool (the same
-         * archive, or one whose install name is already taken), unattended and
-         * with different choices, is what Vortex's queryUserReplace calls a
-         * DEPENDENCY reinstall: outside a collection session it picks
-         * "replace" with no dialog at all (read in app.asar), and replace
-         * swaps the mod in EVERY profile. Refused unless that is what the
-         * caller asked for; `asCopy` is the way to get a second copy.
-         */
-        if (collides.length > 0 && unattended && asCopy === undefined && body["ifExisting"] !== "replace") {
-          throw new ControlError(
-            "would-replace-everywhere",
-            `Mod ${collides.join(", ")} is already installed from this archive (or under its name). An unattended ` +
-              `reinstall makes Vortex REPLACE it in every profile, silently. Send "asCopy": "<label>" to install a ` +
-              `separate copy (no dialogs), drop "unattended" to be asked, or send "ifExisting": "replace" if replacing ` +
-              `everywhere is the intent.`,
-            409,
-            { existing: collides, archiveId },
-          );
-        }
-        if (mustLook) {
-          const looked = await readInstaller(api, archivePathFor(api, gameId, archiveId), body["checkMasters"] === true);
-          if (asksQuestions(looked.description)) {
-            throw new ControlError(
-              "needs-choices",
-              `This mod has a FOMOD installer and nothing says how to answer it. Re-send with "archiveId": "${archiveId}" and ` +
-                `"picks" (answered live: [{group, options, step?}], names from details.installer), or "choices" + "unattended" ` +
-                `(Vortex's recorded format), or "interactive": true to let the wizard open (answer it with fomod.answer).`,
-              409,
-              { archiveId, installer: publicDescription(looked.description), mastersChecked: looked.mastersChecked },
-            );
-          }
-        }
-        const archive = archiveId;
-        const r = await withPicks(api, picks, () =>
-          asCopy !== undefined
-            ? installFromCopy(api, gameId, archive, asCopy, choices, unattended)
-            : installFromExistingDownload(api, {
+          if (!unattended && asCopy === undefined && !mustLook) {
+            // Attended: Vortex asks about anything already installed, and ifExisting answers it.
+            const r = await withPicks(api, picks, () =>
+              installNexusViaApi(api, {
                 gameId,
-                archiveId: archive,
+                nexusModId: nexus.modId as number,
+                nexusFileId: nexus.fileId as number,
                 ...(choices !== undefined ? { choices } : {}),
                 unattended,
               }),
-        );
-        ({ vortexModId } = r.result);
-        answered = r.answered;
+            );
+            ({ vortexModId } = r.result);
+            answered = r.answered;
+          } else {
+            // Unattended or a copy: download first, so the silent-replace check below
+            // sees the archive BEFORE Vortex decides anything about it.
+            archiveId = await nexusDownloadOnly(api, gameId, nexus.modId, nexus.fileId);
+            if (archiveId === undefined) {
+              throw new ControlError("download-failed", `Vortex could not download ${nexus.modId}:${nexus.fileId}.`, 500);
+            }
+          }
+        } else {
+          archiveId = need(body, "archiveId");
+        }
+        if (archiveId !== undefined) {
+          const collides = existingFor(api, gameId, archiveId);
+          /**
+           * ─── THE SILENT REPLACE ─────────────────────────────────────────────
+           * Installing an archive whose mod is already in the pool (the same
+           * archive, or one whose install name is already taken), unattended and
+           * with different choices, is what Vortex's queryUserReplace calls a
+           * DEPENDENCY reinstall: outside a collection session it picks
+           * "replace" with no dialog at all (read in app.asar), and replace
+           * swaps the mod in EVERY profile. Refused unless that is what the
+           * caller asked for; `asCopy` is the way to get a second copy.
+           */
+          if (collides.length > 0 && unattended && asCopy === undefined && body["ifExisting"] !== "replace") {
+            throw new ControlError(
+              "would-replace-everywhere",
+              `Mod ${collides.join(", ")} is already installed from this archive (or under its name). An unattended ` +
+                `reinstall makes Vortex REPLACE it in every profile, silently. Send "asCopy": "<label>" to install a ` +
+                `separate copy (no dialogs), drop "unattended" to be asked, or send "ifExisting": "replace" if replacing ` +
+                `everywhere is the intent.`,
+              409,
+              { existing: collides, archiveId },
+            );
+          }
+          if (mustLook) {
+            const looked = await readInstaller(api, archivePathFor(api, gameId, archiveId), body["checkMasters"] === true);
+            if (asksQuestions(looked.description)) {
+              throw new ControlError(
+                "needs-choices",
+                `This mod has a FOMOD installer and nothing says how to answer it. Re-send with "archiveId": "${archiveId}" and ` +
+                  `"picks" (answered live: [{group, options, step?}], names from details.installer), or "choices" + "unattended" ` +
+                  `(Vortex's recorded format), or "interactive": true to let the wizard open (answer it with fomod.answer).`,
+                409,
+                { archiveId, installer: publicDescription(looked.description), mastersChecked: looked.mastersChecked },
+              );
+            }
+          }
+          const archive = archiveId;
+          if (picks !== undefined) {
+            const bad = await notUsableFor(api, gameId, archive, picks);
+            if (bad.length > 0) {
+              throw new ControlError(
+                "pick-not-usable",
+                `Nothing was installed: ${bad
+                  .map((b) => `"${b.option}" in "${b.group}" is NotUsable on this setup${b.when !== undefined ? ` (${b.when})` : ""}`)
+                  .join("; ")}. The wizard would refuse it. Pick another option, or install what it needs first.`,
+                409,
+                { archiveId: archive, notUsable: bad },
+              );
+            }
+          }
+          const r = await withPicks(api, picks, () =>
+            asCopy !== undefined
+              ? installFromCopy(api, gameId, archive, asCopy, choices, unattended)
+              : installFromExistingDownload(api, {
+                  gameId,
+                  archiveId: archive,
+                  ...(choices !== undefined ? { choices } : {}),
+                  unattended,
+                }),
+          );
+          ({ vortexModId } = r.result);
+          answered = r.answered;
+        }
+      } catch (err) {
+        const restoredEnabled = restoreEnabledBefore(api, gameId, profileBefore, enabledBefore);
+        if (restoredEnabled.length > 0) {
+          ehLog("warn", "control.install.failed-restored-enabled", {
+            restoredEnabled,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        if (err instanceof ControlError && restoredEnabled.length > 0) {
+          throw new ControlError(err.code, `${err.message} Mods Vortex switched off for this install were switched back on.`, err.status, {
+            ...err.details,
+            restoredEnabled,
+          });
+        }
+        throw err;
       }
       const m = modPool(api, gameId)[vortexModId];
       if (m === undefined || m.state !== "installed") {
@@ -3350,18 +3432,9 @@ export const VERBS: Record<string, Verb> = {
        * the disabled Steam Honed Metal switched the GOG one off). So a mod
        * this install turned off is turned back on.
        */
-      const restoredEnabled: string[] = [];
-      if (!enable && profileId !== undefined && profileId === profileBefore) {
-        const pool = modPool(api, gameId);
-        for (const [id, before] of Object.entries(enabledBefore)) {
-          if (id === vortexModId || before?.enabled !== true || pool[id] === undefined) continue;
-          if (enabledMap(api, profileId)[id]?.enabled === true) continue;
-          api.store?.dispatch(actions.setModEnabled(profileId, id, true));
-          if (enabledMap(api, profileId)[id]?.enabled === true) restoredEnabled.push(id);
-        }
-        if (restoredEnabled.length > 0) {
-          ehLog("info", "control.install.restored-enabled", { vortexModId, restoredEnabled });
-        }
+      const restoredEnabled = enable ? [] : restoreEnabledBefore(api, gameId, profileBefore, enabledBefore, vortexModId);
+      if (restoredEnabled.length > 0) {
+        ehLog("info", "control.install.restored-enabled", { vortexModId, restoredEnabled });
       }
       return {
         ...(restoredEnabled.length > 0 ? { restoredEnabled } : {}),

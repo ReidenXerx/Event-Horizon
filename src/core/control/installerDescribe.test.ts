@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { annotateMasters, describeBasic, describeModuleConfig, publicDescription, renderDependencies } from "./installerDescribe";
+import { annotateMasters, annotateTypes, describeBasic, describeModuleConfig, notUsablePicks, publicDescription, renderDependencies } from "./installerDescribe";
 import { parseXml } from "../manifest/miniXml";
 
 /** A patch hub the way the owner met one: patches for mods Ivy has, and one for a mod it does not. */
@@ -136,5 +136,34 @@ describe("describeBasic / renderDependencies", () => {
       '<dependencies operator="Or"><flagDependency flag="a" value="1"/><dependencies><fileDependency file="x.esm" state="Active"/><gameDependency version="1.10"/></dependencies></dependencies>',
     );
     expect(renderDependencies(node)).toBe('flag "a" is "1" or ("x.esm" is Active and game version ≥ 1.10)');
+  });
+});
+
+describe("annotateTypes / notUsablePicks (Improved Hostile Factions, 2026-10-24)", () => {
+  const d = describeModuleConfig(XML, "Hub/fomod/ModuleConfig.xml", LISTING);
+  const fr = (x: typeof d) => x.steps[1]!.groups[0]!.options[0]!;
+
+  it("settles a plugin rule: NotUsable while the plugin is missing, the default once it is there", () => {
+    expect(fr(annotateTypes(d, new Map())).typeNow).toBe("NotUsable");
+    expect(fr(annotateTypes(d, new Map([["factionreinforcements.esp", false]]))).typeNow).toBe("Optional");
+    expect(fr(annotateTypes(d, new Map([["factionreinforcements.esp", true]]))).typeNow).toBe("Optional");
+  });
+
+  it("leaves a rule on a flag unsettled rather than guessing", () => {
+    const xml = XML.replace('<fileDependency file="FactionReinforcements.esp" state="Missing"/>', '<flagDependency flag="ae" value="On"/>');
+    const flagged = describeModuleConfig(xml, "Hub/fomod/ModuleConfig.xml", LISTING);
+    expect(fr(annotateTypes(flagged, new Map())).typeNow).toBeUndefined();
+  });
+
+  it("names a pick that lands on a NotUsable option, with the reason, and passes a usable one", () => {
+    const typed = annotateTypes(d, new Map());
+    expect(notUsablePicks(typed, [{ group: "patches", options: ["faction reinforcements", "PRP"] }])).toEqual([
+      { step: "Patches", group: "Patches", option: "Faction Reinforcements", when: '"FactionReinforcements.esp" is Missing' },
+    ]);
+    expect(notUsablePicks(annotateTypes(d, new Map([["factionreinforcements.esp", true]])), [{ group: "Patches", options: ["Faction Reinforcements"] }])).toEqual([]);
+  });
+
+  it("keeps the raw rules out of what is sent", () => {
+    expect(JSON.stringify(publicDescription(annotateTypes(d, new Map())))).not.toContain("typeRules");
   });
 });
