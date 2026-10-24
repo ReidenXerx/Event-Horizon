@@ -1602,6 +1602,21 @@ function summariseCaptureWarnings(warnings: readonly string[]): string[] {
   ];
 }
 
+/**
+ * Thrown by a `checkOnly` run once every check that reads the curator's setup
+ * has run, before anything is packed. Carries what a real build would warn.
+ *
+ * A throw rather than a second return shape: the Build page never asks for a
+ * check, and widening the pipeline's result would make every caller handle a
+ * package that does not exist.
+ */
+export class BuildCheckStop extends Error {
+  constructor(readonly report: { warnings: string[]; modCount: number; ruleCount: number }) {
+    super("Build checked; nothing packed (checkOnly).");
+    this.name = "BuildCheckStop";
+  }
+}
+
 export async function runBuildPipeline(
   api: types.IExtensionApi,
   context: BuildContext,
@@ -1621,6 +1636,13 @@ export async function runBuildPipeline(
      * exactly as before.
      */
     onDecisions?: (candidates: PostProcessingCandidate[]) => Promise<void>;
+    /**
+     * Run every check, then stop before packing: throws BuildCheckStop with the
+     * warnings (Fallout-collection, 2026-10-25: the archive-restore check only
+     * ran inside a 9-minute real build). The collection's config is still
+     * saved, as at the start of any build.
+     */
+    checkOnly?: boolean;
   },
 ): Promise<BuildPipelineResult> {
   const op = beginOp("build.pipeline", {
@@ -2912,6 +2934,19 @@ export async function runBuildPipeline(
       );
     }
     nativeWarnings.push(...storeCheck.warnings);
+  }
+
+  if (opts?.checkOnly === true) {
+    const warnings = [
+      ...context.scopeWarnings,
+      ...bundleWarnings,
+      ...summariseCaptureWarnings(captureWarnings),
+      ...manifestWarnings,
+      ...selfCheckWarnings,
+      ...nativeWarnings,
+    ];
+    op.ok({ checkOnly: true, mods: manifest.mods.length, warnings: warnings.length });
+    throw new BuildCheckStop({ warnings, modCount: manifest.mods.length, ruleCount: manifest.rules.length });
   }
 
   /**

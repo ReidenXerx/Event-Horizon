@@ -514,6 +514,7 @@ export const TOOLS: ToolSpec[] = [
       gameVersion: str("Game version the collection needs (default: the installed game's)."),
       gameVersionPolicy: { type: "string", enum: ["exact", "minimum"] },
       dryRun: bool("Say what would be built without building."),
+      check: bool("With dryRun: run every build check (minutes, like a build) and return its warnings; nothing is packed."),
     },
     required: ["name", "version"],
   },

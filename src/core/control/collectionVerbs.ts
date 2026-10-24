@@ -216,7 +216,9 @@ export const COLLECTION_VERBS = {
    * existing collection's exact name (a new name is a new identity: allowNew).
    * Author, description, readme, changelog, per-mod decisions and package
    * format default to the collection's own records; `dryRun` stops before
-   * building and says what it would build.
+   * building and says what it would build. `dryRun` with `check: true` runs
+   * every build check (self-checks, conflicts, plugins) and stops before
+   * packing, returning the warnings a build would give.
    */
   "collection.build": {
     mutates: true,
@@ -272,7 +274,8 @@ export const COLLECTION_VERBS = {
         externalMods: ctx.externalMods.length,
         profileId: ctx.profileId,
       };
-      if (body["dryRun"] === true) return { dryRun: true, ...plan };
+      const checkOnly = body["dryRun"] === true && body["check"] === true;
+      if (body["dryRun"] === true && !checkOnly) return { dryRun: true, ...plan };
 
       getEHRuntime().setBuildBusy(true);
       ehLog("info", "control.build.start", plan);
@@ -284,7 +287,7 @@ export const COLLECTION_VERBS = {
           ...(cfg.lastPackageFormat !== undefined ? { packageFormat: cfg.lastPackageFormat } : {}),
           verificationLevel: "thorough",
           reverifyEverything: false,
-        });
+        }, checkOnly ? { checkOnly: true } : undefined);
         const m = await readManifest(result.outputPath);
         return {
           ...summarize(m, result.outputPath),
@@ -294,6 +297,9 @@ export const COLLECTION_VERBS = {
           verified: { packageId: m.package.id === cfg.packageId, version: m.package.version === version },
         };
       } catch (err) {
+        if (err instanceof Error && err.name === "BuildCheckStop") {
+          return { dryRun: true, checked: true, ...plan, ...(err as Error & { report: Record<string, unknown> }).report };
+        }
         if (err instanceof ControlError) throw err;
         const refused = err instanceof Error && err.name === "BuildRefusedError";
         throw new ControlError(refused ? "build-refused" : "build-failed", String((err as Error)?.message ?? err), refused ? 409 : 500);
@@ -301,7 +307,8 @@ export const COLLECTION_VERBS = {
         getEHRuntime().setBuildBusy(false);
       }
     },
-    describe: (b: Body, r: Record<string, unknown>): string => `built ${String(b["name"])} ${String(r["version"] ?? b["version"])}`,
+    describe: (b: Body, r: Record<string, unknown>): string =>
+      `${r["checked"] === true ? "checked" : r["dryRun"] === true ? "planned" : "built"} ${String(b["name"])} ${String(r["version"] ?? b["version"])}`,
   },
 
   /**

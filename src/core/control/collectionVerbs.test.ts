@@ -299,6 +299,18 @@ describe("collection.build", () => {
     expect(h.pipeline).not.toHaveBeenCalled();
   });
 
+  it("dryRun with check runs the build's checks and returns their warnings, packing nothing", async () => {
+    const stop = Object.assign(new Error("Build checked; nothing packed (checkOnly)."), {
+      name: "BuildCheckStop",
+      report: { warnings: ['"MTs-255 FPA Replacer" puts back 1 file …'], modCount: 3, ruleCount: 9 },
+    });
+    h.pipeline.mockRejectedValue(stop);
+    const r = await run("collection.build", { name: "Ivy", version: "1.0.42", dryRun: true, check: true });
+    expect(h.pipeline.mock.calls[0]![4]).toEqual({ checkOnly: true });
+    expect(r).toMatchObject({ dryRun: true, checked: true, packageId: IVY, ruleCount: 9, warnings: ['"MTs-255 FPA Replacer" puts back 1 file …'] });
+    expect(h.setBuildBusy.mock.calls).toEqual([[true], [false]]);
+  });
+
   it("builds with the collection's own decisions, keeps the previous description, and verifies the package", async () => {
     h.built = [{ fullPath: manifest("prev.ehcoll", IVY, "Ivy", "1.0.41") }];
     const out = manifest("ivy-1.0.42.ehcoll", IVY, "Ivy", "1.0.42");
