@@ -32,7 +32,7 @@
 
 import type { CapturedDeploymentManifest } from "../deploymentManifest";
 import type { EhcollDeploymentWinner, EhcollRule } from "../../types/ehcoll";
-import { conflictWinner } from "../environment/nativePluginCompat";
+import { conflictWinner, refersTo } from "../environment/nativePluginCompat";
 
 export type { EhcollDeploymentWinner };
 
@@ -246,6 +246,109 @@ export function describeDeployFindings(
   const lines = sorted.slice(0, maxGroups).map((g) => g.line(g.paths.length, g.paths.slice(0, 2).join(", ")));
   if (sorted.length > maxGroups) lines.push(`…and ${sorted.length - maxGroups} more`);
   return lines;
+}
+
+/**
+ * A rule the Doctor can add so a pair the collection's rules leave open
+ * resolves the way the creator's game did: `winner` deploys after `loser`.
+ *
+ * The case: Ivy Rev 26 shipped no rule between MTs-255 FPA Replacer and
+ * "Ivy - JNFA2026 Women Only", both shipping PersistantSubgraphInfoAndOffsetData.txt.
+ * The curator's Vortex happened to deploy JNFA's merged 3,804-line copy last; a
+ * player's deployed FPA's 368-line one, and no save would load (sudo_bluuuk,
+ * 2026-10-25). Re-applying the collection's rules could not change that.
+ */
+export type WinnerPin = { winner: string; loser: string; files: number };
+
+export type WinnerPinPlan = {
+  pins: WinnerPin[];
+  /** Pairs left alone, with the reason in words. */
+  skipped: Array<{ winner: string; loser: string; why: string }>;
+};
+
+/**
+ * Which "winner after loser" rules make the unruled wrong winners right.
+ *
+ * `playerWins(winner, loser)` answers whether the player's OWN Vortex rules
+ * already make `loser` win: that is their choice, and a second rule the other
+ * way would only make a cycle Vortex asks them to break.
+ */
+export function planWinnerPins(input: {
+  findings: readonly DeployFinding[];
+  rules: readonly EhcollRule[];
+  playerOrdersLoserLast?: (winner: string, loser: string) => boolean;
+}): WinnerPinPlan {
+  const counts = new Map<string, WinnerPin>();
+  for (const f of input.findings) {
+    if (f.kind !== "wrong-winner" || f.ruled === true || f.actualKey === undefined) continue;
+    const id = `${f.expected}\u0000${f.actualKey}`;
+    const pin = counts.get(id) ?? { winner: f.expected, loser: f.actualKey, files: 0 };
+    pin.files += 1;
+    counts.set(id, pin);
+  }
+  const keys = new Set<string>();
+  for (const p of counts.values()) keys.add(p.winner).add(p.loser);
+  for (const r of input.rules) keys.add(r.source);
+  const plan: WinnerPinPlan = { pins: [], skipped: [] };
+  const chosen: EhcollRule[] = [];
+  const sorted = [...counts.values()].sort((a, b) => b.files - a.files || (a.winner < b.winner ? -1 : 1));
+  for (const pin of sorted) {
+    const { winner, loser } = pin;
+    if (counts.has(`${loser}\u0000${winner}`)) {
+      plan.skipped.push({ winner, loser, why: "on the creator's game each of these two wins some of the files, which no rule between them can reproduce" });
+      continue;
+    }
+    // The collection's own rules already decide the pair for the OTHER mod:
+    // the creator's game did not follow its own rules there, and overruling
+    // the collection is not the Doctor's call.
+    if (conflictWinner([winner, loser], input.rules) === loser) {
+      plan.skipped.push({ winner, loser, why: "the collection's own rules put the other mod last" });
+      continue;
+    }
+    // Through any chain of mods, not just the pair: "a over b", "b over c" and
+    // then "c over a" is a cycle Vortex makes the player break by hand.
+    if (deploysAfter(loser, winner, [...input.rules, ...chosen], keys)) {
+      plan.skipped.push({ winner, loser, why: "a rule for it would close a loop with the collection's rules or another added one" });
+      continue;
+    }
+    if (input.playerOrdersLoserLast?.(winner, loser) === true) {
+      plan.skipped.push({ winner, loser, why: "a conflict rule of your own puts the other mod last" });
+      continue;
+    }
+    chosen.push({ type: "after", source: winner, reference: loser });
+    plan.pins.push(pin);
+  }
+  return plan;
+}
+
+/** Does `a` deploy after `b` through any chain of `before`/`after` rules among `keys`? */
+function deploysAfter(a: string, b: string, rules: readonly EhcollRule[], keys: ReadonlySet<string>): boolean {
+  const next = new Map<string, Set<string>>();
+  const edge = (from: string, to: string) => {
+    const set = next.get(from) ?? new Set<string>();
+    set.add(to);
+    next.set(from, set);
+  };
+  for (const r of rules) {
+    if (r.ignored === true) continue;
+    for (const k of keys) {
+      if (k === r.source || !refersTo(r.reference, k)) continue;
+      if (r.type === "after") edge(r.source, k);
+      else if (r.type === "before") edge(k, r.source);
+    }
+  }
+  const seen = new Set<string>([a]);
+  const queue = [a];
+  while (queue.length > 0) {
+    for (const n of next.get(queue.shift()!) ?? []) {
+      if (n === b) return true;
+      if (!seen.has(n)) {
+        seen.add(n);
+        queue.push(n);
+      }
+    }
+  }
+  return false;
 }
 
 /** Total recorded contested paths. */

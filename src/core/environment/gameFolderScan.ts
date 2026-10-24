@@ -665,8 +665,59 @@ export async function loadCreationAllowlist(
   return { names, stems, sources };
 }
 
+/** Sibling folders whose names differ only in letter case. */
+export type CaseSplit = {
+  /** The folder that holds them, relative to the game root ("" for the root). */
+  parent: string;
+  /** Each spelling with the files under it, most files first. */
+  spellings: Array<{ name: string; files: number }>;
+};
+
+/**
+ * Folders split by letter case: `Data/Meshes/gal` beside `Data/Meshes/Gal`.
+ *
+ * Windows cannot hold both, so the game only ever opens one of them. On Linux
+ * the filesystem can, and under Wine/Proton the game sees one and every file in
+ * the other is invisible (sudo_bluuuk, 2026-10-25: 9 pairs, 163 files — the
+ * eyelash face-morph file and 115 NPC hair meshes — and the game crashed).
+ * Only the topmost split of a branch is reported: children of two spellings
+ * are not siblings.
+ */
+export function findCaseSplitFolders(entries: ReadonlyArray<{ path: string }>): CaseSplit[] {
+  // parent (exact) → lowercased name → exact name → files under it
+  const byParent = new Map<string, Map<string, Map<string, number>>>();
+  for (const e of entries) {
+    const segs = e.path.split("/");
+    let parent = "";
+    for (let i = 0; i < segs.length - 1; i++) {
+      const name = segs[i]!;
+      const groups = byParent.get(parent) ?? new Map<string, Map<string, number>>();
+      byParent.set(parent, groups);
+      const spellings = groups.get(name.toLowerCase()) ?? new Map<string, number>();
+      groups.set(name.toLowerCase(), spellings);
+      spellings.set(name, (spellings.get(name) ?? 0) + 1);
+      parent = parent === "" ? name : `${parent}/${name}`;
+    }
+  }
+  const out: CaseSplit[] = [];
+  for (const [parent, groups] of byParent) {
+    for (const spellings of groups.values()) {
+      if (spellings.size < 2) continue;
+      out.push({
+        parent,
+        spellings: [...spellings]
+          .map(([name, files]) => ({ name, files }))
+          .sort((a, b) => b.files - a.files || (a.name < b.name ? -1 : 1)),
+      });
+    }
+  }
+  return out.sort((a, b) => (a.parent < b.parent ? -1 : a.parent > b.parent ? 1 : 0));
+}
+
 export type GameFolderScan = {
   report: GameFolderReport;
+  /** Sibling folders that differ only in case; absent from scans made before 0.2.91. */
+  caseSplits?: CaseSplit[];
   manifests: DeploymentManifestSummary[];
   /** Files Vortex currently has deployed, per its manifests. */
   deployedCount: number;
@@ -758,6 +809,7 @@ export async function scanGameFolder(args: {
   });
   return {
     report,
+    caseSplits: findCaseSplitFolders(walk.entries),
     manifests: deployment.manifests,
     deployedCount: deployment.manifests.reduce((n, m) => n + m.files, 0),
     unreadable: [...walk.unreadable, ...deployment.unreadable],

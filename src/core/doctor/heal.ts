@@ -249,6 +249,10 @@ export function describeHeal(action: HealAction): {
           "installed or removed. A conflict rule of your own is replaced only where it contradicts " +
           "the collection's on the same pair of mods." +
           NL2 +
+          "Where the collection sets no rule between two of its mods, one is added so the mod whose " +
+          "copy the creator's game uses deploys last, as it did there. A rule of your own that orders " +
+          "the pair is left alone." +
+          NL2 +
           "If a file still comes from another mod afterwards, that mod is not part of the " +
           "collection or is ordered by a rule of your own: switch it off or remove the rule.",
         confirm: "Re-apply and deploy",

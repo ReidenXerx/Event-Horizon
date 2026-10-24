@@ -202,7 +202,7 @@ export function judgePlugin(plugin: EhcollNativePlugin, target: NativeTarget): P
 }
 
 /** Does a rule's reference point at this mod? References may be partly pinned. */
-const refersTo = (reference: string, compareKey: string): boolean =>
+export const refersTo = (reference: string, compareKey: string): boolean =>
   reference === compareKey || compareKey.startsWith(`${reference}:`);
 
 /**

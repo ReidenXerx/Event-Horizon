@@ -23,7 +23,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
-import type { types } from "@nexusmods/vortex-api";
+import { actions, type types } from "@nexusmods/vortex-api";
 import { ehLog } from "../logging/ehLog";
 
 import type { EhcollManifest } from "../../types/ehcoll";
@@ -82,6 +82,68 @@ function resolveModMaps(receipt: InstallReceipt): {
   );
 
   return { modIdByCompareKey, modIdByNexusModId, ambiguousNexusModIds };
+}
+
+/**
+ * For a contested file whose two collection mods no collection rule orders,
+ * add "the creator's winner deploys after the other" (planWinnerPins), so the
+ * deploy that follows gives the game the creator's copy. Judged from the
+ * deployment as it is now, after the collection's own rules were re-applied.
+ */
+async function pinUnruledWinners(
+  api: types.IExtensionApi,
+  gameId: string,
+  receipt: InstallReceipt,
+  manifest: EhcollManifest,
+  modIdByCompareKey: ReadonlyMap<string, string>,
+): Promise<{ added: number; skipped: string[] }> {
+  const [{ checkDeployment }, { planWinnerPins }] = await Promise.all([
+    import("../installer/deploymentCheck"),
+    import("../manifest/deploymentWinners"),
+  ]);
+  const check = await checkDeployment({ api, gameId, manifest, mods: receipt.mods });
+  if (check.kind !== "checked") return { added: 0, skipped: [] };
+  const pool =
+    (api.getState() as { persistent?: { mods?: Record<string, Record<string, { rules?: Array<{ type?: unknown; reference?: { id?: unknown } }> }>> } })
+      .persistent?.mods?.[gameId] ?? {};
+  /** The player's own rule on either mod already makes `loser` deploy last. */
+  const playerOrdersLoserLast = (winner: string, loser: string): boolean => {
+    const w = modIdByCompareKey.get(winner);
+    const l = modIdByCompareKey.get(loser);
+    if (w === undefined || l === undefined) return false;
+    const refs = (id: string, type: string, other: string): boolean =>
+      (pool[id]?.rules ?? []).some((r) => r.type === type && r.reference?.id === other);
+    return refs(l, "after", w) || refs(w, "before", l);
+  };
+  const plan = planWinnerPins({ findings: check.findings, rules: manifest.rules ?? [], playerOrdersLoserLast });
+  const name = (key: string): string => receipt.mods.find((m) => m.compareKey === key)?.name ?? key;
+  let added = 0;
+  for (const pin of plan.pins) {
+    const winnerId = modIdByCompareKey.get(pin.winner);
+    const loserId = modIdByCompareKey.get(pin.loser);
+    if (winnerId === undefined || loserId === undefined) continue;
+    try {
+      api.store?.dispatch(
+        actions.addModRule(gameId, winnerId, {
+          type: "after",
+          reference: { id: loserId },
+          comment: `Event Horizon Doctor: wins over "${name(pin.loser)}" as on the collection creator's game`,
+        } as never),
+      );
+      added += 1;
+    } catch (err) {
+      ehLog("warn", "doctor.heal.pin-winner-failed", { winner: pin.winner, loser: pin.loser, err });
+    }
+  }
+  ehLog("info", "doctor.heal.pin-winners", {
+    added,
+    pins: plan.pins.map((p) => ({ winner: name(p.winner), loser: name(p.loser), files: p.files })),
+    skipped: plan.skipped.map((s) => ({ winner: name(s.winner), loser: name(s.loser), why: s.why })),
+  });
+  return {
+    added,
+    skipped: plan.skipped.map((s) => `"${name(s.winner)}" over "${name(s.loser)}" (${s.why})`),
+  };
 }
 
 /**
@@ -737,13 +799,19 @@ async function healImpl(
         ambiguousNexusModIds: maps.ambiguousNexusModIds,
         existingRulesBySourceModId: collectExistingRules(api, gameId, maps.modIdByCompareKey),
       });
+      const pinned = await pinUnruledWinners(api, gameId, receipt, deps.manifest, maps.modIdByCompareKey);
       const { deployAndWait } = await import("../installer/runInstall");
       await deployAndWait(api, receipt.vortexProfileId);
       return {
         kind: "done",
         summary:
-          `Re-applied ${result.applied} of ${deps.manifest.rules?.length ?? 0} collection rules and deployed. ` +
-          `Check again to see which shared files now come from the right mod.`,
+          `Re-applied ${result.applied} of ${deps.manifest.rules?.length ?? 0} collection rules` +
+          (pinned.added > 0
+            ? `, added ${pinned.added} rule${pinned.added === 1 ? "" : "s"} for pairs the collection leaves open`
+            : "") +
+          ` and deployed.` +
+          (pinned.skipped.length > 0 ? ` Left alone: ${pinned.skipped.slice(0, 3).join("; ")}.` : "") +
+          ` Check again to see which shared files now come from the right mod.`,
       };
     }
 

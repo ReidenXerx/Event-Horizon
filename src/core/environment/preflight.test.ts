@@ -82,6 +82,7 @@ describe("runEnvironmentPreflight", () => {
       "binary-imports": "ok",
       "ini-leftovers": "ok",
       "game-folder": "ok",
+      "folder-case": "ok",
     });
   });
 

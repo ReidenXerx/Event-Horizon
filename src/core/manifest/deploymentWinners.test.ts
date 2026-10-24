@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { describeDeployFindings, judgeDeployment, recordDeploymentWinners } from "./deploymentWinners";
+import { describeDeployFindings, judgeDeployment, planWinnerPins, recordDeploymentWinners, type DeployFinding } from "./deploymentWinners";
 import { deployWinnersCheck } from "../doctor/health";
 import { parseManifest } from "./parseManifest";
 
@@ -130,6 +130,54 @@ describe("the Doctor card", () => {
     expect(foreign.heal).toBeUndefined();
     const fixable = deployWinnersCheck({ kind: "checked", judgedPaths: 10, judgedWinners: 2, findings: [finding], lines: ["l"], fixable: true });
     expect(fixable.heal?.action).toBe("redeploy-winners");
+  });
+});
+
+describe("rules for pairs the collection leaves open (Ivy Rev 26, sudo_bluuuk 2026-10-25)", () => {
+  // MTs-255 FPA Replacer and "Ivy - JNFA2026 Women Only" both ship
+  // PersistantSubgraphInfoAndOffsetData.txt and no collection rule orders
+  // them: the creator's game got JNFA's merged copy, a player FPA's.
+  const wrong = (expected: string, actualKey: string, path: string, ruled = false): DeployFinding => ({
+    kind: "wrong-winner", modType: "", path, expected, actualKey, actualFolder: actualKey, ruled,
+  });
+  const fpa = wrong("k:jnfa", "k:fpa", "meshes/animtextdata/persistantsubgraphinfoandoffsetdata.txt");
+
+  it("makes the creator's winner deploy after the other mod, once per pair", () => {
+    const plan = planWinnerPins({ findings: [fpa, { ...fpa, path: "b.txt" }], rules: [] });
+    expect(plan.pins).toEqual([{ winner: "k:jnfa", loser: "k:fpa", files: 2 }]);
+    expect(plan.skipped).toEqual([]);
+  });
+
+  it("leaves pairs the collection's rules decide to the rule re-apply", () => {
+    expect(planWinnerPins({ findings: [wrong("k:jnfa", "k:fpa", "a", true)], rules: [] }).pins).toEqual([]);
+  });
+
+  it("never overrules the collection's own rule, the player's own rule, or a split pair", () => {
+    const collection = planWinnerPins({ findings: [fpa], rules: [{ type: "after", source: "k:fpa", reference: "k:jnfa" }] });
+    expect(collection.pins).toEqual([]);
+    expect(collection.skipped[0]?.why).toMatch(/collection's own rules/);
+    const player = planWinnerPins({ findings: [fpa], rules: [], playerOrdersLoserLast: (w, l) => w === "k:jnfa" && l === "k:fpa" });
+    expect(player.pins).toEqual([]);
+    expect(player.skipped[0]?.why).toMatch(/of your own/);
+    const split = planWinnerPins({ findings: [fpa, wrong("k:fpa", "k:jnfa", "c.txt")], rules: [] });
+    expect(split.pins).toEqual([]);
+    expect(split.skipped).toHaveLength(2);
+  });
+
+  it("does not chain new rules into a cycle", () => {
+    // a over b, b over c, then c over a would close the loop through the first two.
+    const plan = planWinnerPins({
+      findings: [wrong("k:a", "k:b", "1"), wrong("k:a", "k:b", "1b"), wrong("k:b", "k:c", "2"), wrong("k:c", "k:a", "3")],
+      rules: [],
+    });
+    expect(plan.pins.map((p) => `${p.winner}>${p.loser}`)).toEqual(["k:a>k:b", "k:b>k:c"]);
+    expect(plan.skipped.map((s) => s.winner)).toEqual(["k:c"]);
+  });
+
+  it("offers the repair on the card when only such pairs are wrong", () => {
+    const card = deployWinnersCheck({ kind: "checked", judgedPaths: 10, judgedWinners: 2, findings: [fpa], lines: ["l"], fixable: false, pinnable: true });
+    expect(card.heal?.action).toBe("redeploy-winners");
+    expect(card.summary).not.toMatch(/order it yourself/);
   });
 });
 

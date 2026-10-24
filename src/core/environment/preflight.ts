@@ -27,6 +27,7 @@ import type { EhcollExternalDependency } from "../../types/ehcoll";
 import { probeImportMismatches, type ImportProbe } from "./binaryImports";
 import {
   decideBinaryImports,
+  decideFolderCase,
   decideGameFolder,
   decideGameManaged,
   decideIniLeftovers,
@@ -424,6 +425,7 @@ export async function runEnvironmentPreflight(
       ...(options.signal !== undefined ? { signal: options.signal } : {}),
     });
     report.checks.push(decideGameFolder({ gameName: facts.gameName, scan: report.folder }));
+    report.checks.push(decideFolderCase({ gameName: facts.gameName, scan: report.folder }));
   }
 
   logEnvironmentReport(report, options.context, Date.now() - startedAt);

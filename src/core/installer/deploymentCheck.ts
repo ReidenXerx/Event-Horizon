@@ -23,6 +23,8 @@ export type DeployCheckResult =
       lines: string[];
       /** Some finding is a pair the collection's rules decide: re-applying them and deploying can fix it. */
       fixable: boolean;
+      /** Some finding is a pair no collection rule orders: the Doctor can add the rule the creator's game implies. */
+      pinnable?: boolean;
     };
 
 export async function checkDeployment(args: {
@@ -112,5 +114,6 @@ export async function checkDeployment(args: {
     findings: report.findings,
     lines: describeDeployFindings(report.findings, (k) => nameByKey.get(k) ?? k),
     fixable: report.findings.some((f) => f.kind === "wrong-winner" && f.ruled === true),
+    pinnable: report.findings.some((f) => f.kind === "wrong-winner" && f.ruled !== true && f.actualKey !== undefined),
   };
 }

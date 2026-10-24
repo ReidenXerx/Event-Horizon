@@ -303,14 +303,16 @@ export function deployWinnersCheck(obs: HealthObservations["deployWinners"]): He
       `${n} file${n === 1 ? "" : "s"} the collection ships ${n === 1 ? "comes" : "come"} from a different mod than on ` +
       `the creator's game, or ${n === 1 ? "is" : "are"} not deployed. Every mod's own files can be intact while the ` +
       `game uses another copy.` +
-      (obs.fixable
+      (obs.fixable || obs.pinnable === true
         ? ""
         : " The collection's rules do not decide these, so re-applying them would change nothing: switch the named mod off, or order it yourself."),
     detail: obs.lines,
     affectedCount: n,
-    ...(obs.fixable
-      ? { heal: { action: "redeploy-winners" as const, label: "Re-apply the collection's rules and deploy" } }
-      : {}),
+    ...(obs.pinnable === true
+      ? { heal: { action: "redeploy-winners" as const, label: "Make them come from the creator's mods and deploy" } }
+      : obs.fixable
+        ? { heal: { action: "redeploy-winners" as const, label: "Re-apply the collection's rules and deploy" } }
+        : {}),
   };
 }
 

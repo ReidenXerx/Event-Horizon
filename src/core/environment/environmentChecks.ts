@@ -47,6 +47,7 @@ export type EnvironmentCheckId =
   | "launcher-ran"
   | "binary-imports"
   | "game-folder"
+  | "folder-case"
   | "ini-leftovers";
 
 /**
@@ -795,6 +796,40 @@ export function decideGameFolder(input: {
     title: `The ${input.gameName} folder is not a clean game.`,
     lines: [...lines, ...presenceOnly, ...toolLines],
     steps,
+  };
+}
+
+// ── 5b. No folder split by letter case ───────────────────────────────────
+
+/**
+ * Two sibling folders that differ only in case (`gal` and `Gal`). The game
+ * opens one; under Wine/Proton every file in the other is invisible to it
+ * (sudo_bluuuk, 2026-10-25: 163 files, the eyelash face-morph file and 115 NPC
+ * hair meshes, and the game crashed until he merged them by hand).
+ */
+export function decideFolderCase(input: { gameName: string; scan: GameFolderScan }): EnvironmentCheck {
+  const splits = input.scan.caseSplits;
+  if (splits === undefined) return unknownCheck("folder-case", "Folder names were not compared by letter case.");
+  if (splits.length === 0) return ok("folder-case", `No folder in the ${input.gameName} folder is split by letter case.`);
+  const at = (parent: string, name: string) => (parent === "" ? name : `${parent}/${name}`);
+  const lines = splits.slice(0, 10).map(
+    (s) => `${s.spellings.map((v) => `${at(s.parent, v.name)} (${v.files} file${v.files === 1 ? "" : "s"})`).join(" and ")}`,
+  );
+  if (splits.length > 10) lines.push(`…and ${splits.length - 10} more.`);
+  const hidden = splits.reduce((n, s) => n + s.spellings.slice(1).reduce((m, v) => m + v.files, 0), 0);
+  return {
+    id: "folder-case",
+    status: "warning",
+    title: `${splits.length} folder${splits.length === 1 ? " is" : "s are"} split in two by letter case, so the game can miss up to ${hidden} file${hidden === 1 ? "" : "s"}.`,
+    lines: [
+      ...lines,
+      "Windows cannot hold two folders whose names differ only in case, and the game opens only one of each pair. " +
+        "On Linux (Wine/Proton) the files in the other one are invisible to it: missing meshes, face morphs or scripts, and crashes.",
+    ],
+    steps: [
+      "Close the game. For each pair, move the files of the smaller folder into the larger one (keep the larger one's copy where both have a file), then delete the empty folder.",
+      "Then deploy in Vortex and check again.",
+    ],
   };
 }
 
