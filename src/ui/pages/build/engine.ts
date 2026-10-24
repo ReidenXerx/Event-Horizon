@@ -2837,6 +2837,11 @@ export async function runBuildPipeline(
     bundledModIds: new Set(measuredBundles.map((b) => b.modId)),
     externalDependencies,
     ...(gameIniCapture.files.length > 0 ? { gameIni: { files: gameIniCapture.files } } : {}),
+    // What each archive puts back that its folder lacks: a player gets those
+    // files, the curator's game never sees them (Ivy Rev 26).
+    archiveRestoresByModId: new Map(
+      selfCheckReports.flatMap((r) => (r.archiveRestores !== undefined ? [[r.modId, r.archiveRestores] as const] : [])),
+    ),
   });
 
   // ── 3a. Will its script-extender plugins load on the curator's own game? ──

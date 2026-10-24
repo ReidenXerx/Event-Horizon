@@ -90,6 +90,31 @@ describe("selfCheckMod", () => {
     expect(r.missing).toEqual(["AAF/AM-otherData.xml"]);
   });
 
+  it("records what the archive puts back: the replay's exact path, or a plain archive's own path (Ivy Rev 26)", async () => {
+    // A player gets these files back; the build's conflict check needs them.
+    const replayed = await selfCheckMod({
+      sevenZip: sevenZip(ARCHIVE_ENTRIES),
+      modId: "m1", modName: "UAP",
+      archivePath: "a.7z",
+      staged: [{ path: "AAF/AM-actionData.xml", size: 430, crc: "11111111" }],
+      recordedChoices: CHOICES,
+      readEntry: readScript,
+    });
+    expect(replayed.archiveRestores).toEqual([{ path: "AAF/AM-otherData.xml", size: 431, exact: true }]);
+    const plain = await selfCheckMod({
+      sevenZip: sevenZip([
+        { name: "00 Main/Meshes/a.txt", size: 368, crc: "33333333" },
+        { name: "00 Main/Meshes/b.nif", size: 5, crc: "44444444" },
+      ]),
+      modId: "m2", modName: "FPA",
+      archivePath: "b.7z",
+      staged: [{ path: "Meshes/b.nif", size: 5, crc: "44444444" }],
+      recordedChoices: [],
+      readEntry: readScript,
+    });
+    expect(plain.archiveRestores).toEqual([{ path: "00 Main/Meshes/a.txt", size: 368, exact: false }]);
+  });
+
   it("reports nothing missing when staging is complete", async () => {
     const r = await selfCheckMod({
       sevenZip: sevenZip(ARCHIVE_ENTRIES),

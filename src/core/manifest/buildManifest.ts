@@ -22,6 +22,9 @@
 import { neededEventHorizon } from "./minEventHorizon";
 import { judgeSkipSet } from "../volatileFiles";
 import { recordDeploymentWinners } from "./deploymentWinners";
+import { describeArchiveRestoreConflicts, findArchiveRestoreConflicts } from "./archiveRestoreConflicts";
+import type { ArchiveRestore } from "./selfCheckMod";
+import { ehLog } from "../logging/ehLog";
 import { publicNote } from "../curator/readProfile";
 import { shipsAsExternal } from "./shipsAsExternal";
 
@@ -249,6 +252,12 @@ export type BuildManifestInput = {
    * by `captureGameIni`. Omitted when the build could not read them.
    */
   gameIni?: EhcollGameIni;
+
+  /**
+   * Per Vortex mod id: what its archive puts back that its staging folder
+   * lacks (the build's self-check). Feeds the archive-restore conflict warning.
+   */
+  archiveRestoresByModId?: ReadonlyMap<string, readonly ArchiveRestore[]>;
 };
 
 export type BuildManifestResult = {
@@ -508,6 +517,40 @@ export function buildManifest(input: BuildManifestInput): BuildManifestResult {
 
   const needs = neededEventHorizon(manifest);
   if (needs !== undefined) manifest.package.needsEventHorizon = needs;
+
+  if (input.archiveRestoresByModId !== undefined && input.archiveRestoresByModId.size > 0) {
+    const restoresByKey = new Map<string, readonly ArchiveRestore[]>();
+    for (const [id, restores] of input.archiveRestoresByModId) {
+      const key = compareKeyById.get(id);
+      if (key !== undefined) restoresByKey.set(key, restores);
+    }
+    const conflicts = findArchiveRestoreConflicts({
+      mods: mods.map((m) => ({
+        compareKey: m.compareKey,
+        name: m.name,
+        ...(m.state.modType !== undefined ? { modType: m.state.modType } : {}),
+        ...(m.state.enabled !== undefined ? { enabled: m.state.enabled } : {}),
+        installsFromArchive: m.state.mirrored !== true && !(m.source.kind === "external" && m.source.bundled),
+        files: m.state.stagingFiles ?? [],
+      })),
+      restoresByKey,
+      rules,
+    });
+    if (conflicts.length > 0) {
+      const nameOf = (k: string) => mods.find((m) => m.compareKey === k)?.name ?? k;
+      ehLog("warn", "build.archive-restore-conflicts", {
+        pairs: conflicts.length,
+        examples: conflicts.slice(0, 10).map((c) => ({
+          restorer: nameOf(c.restorer),
+          keeper: nameOf(c.keeper),
+          files: c.paths.length,
+          restorerWins: c.restorerWins,
+          e: c.paths[0],
+        })),
+      });
+      warnings.push(...describeArchiveRestoreConflicts(conflicts, nameOf));
+    }
+  }
 
   return { manifest, warnings };
 }

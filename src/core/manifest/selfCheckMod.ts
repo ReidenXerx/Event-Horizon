@@ -29,7 +29,7 @@ import { isVolatileFile, type DeclaredVolatile } from "../volatileFiles";
 import type { SevenZipApi } from "./sevenZip";
 import type { ArchiveListing } from "./archiveContents";
 import { listArchiveContents } from "./archiveContents";
-import { findOmissionLeads } from "./omissionLeads";
+import { findNotStaged, findOmissionLeads, isInstallerMetadata } from "./omissionLeads";
 import { findGeneratedFiles } from "./generatedFiles";
 import { type CaseMode, pathKey } from "../paths";
 import type { OmissionLead } from "./omissionLeads";
@@ -59,7 +59,24 @@ export type SelfCheckDepth =
   /** Nothing checked — no archive, unreadable, or no staging captured. */
   | "skipped";
 
+/**
+ * A file this mod's archive installs on a player's machine that the curator's
+ * folder does not have: the curator deleted it, or the installer's answers
+ * create it and it went missing. Either way the player gets it back.
+ *
+ * `exact` paths are where the install puts it (a replayed FOMOD); otherwise
+ * it is the ARCHIVE path, which may carry a wrapper folder Vortex strips, so a
+ * consumer matches it by its tail.
+ */
+export type ArchiveRestore = { path: string; size?: number; exact: boolean };
+
 export type SelfCheckReport = {
+  /**
+   * What the archive puts back that staging lacks (see ArchiveRestore).
+   * Absent when it cannot be known: no archive, or a FOMOD with no recorded
+   * answers to replay.
+   */
+  archiveRestores?: ArchiveRestore[];
   /**
    * Staged files the installer would NOT create now: they come only from
    * conditionalFileInstalls patterns whose plugin condition is false on the
@@ -398,8 +415,14 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
   const configEntry = findModuleConfigEntry(listing);
   if (configEntry === undefined) {
     notes.push("No FOMOD script in archive; expected file set unknown.");
+    // Vortex's basic installer installs every file of a plain archive, so an
+    // entry staging lacks comes back on a player's machine.
+    const archiveRestores = findNotStaged(listing, staged.map((f) => f.path))
+      .filter((e) => !isInstallerMetadata(e.path) && !isVolatileFile(e.path, input.declaredVolatile))
+      .map((e) => ({ path: e.path, ...(e.size !== undefined ? { size: e.size } : {}), exact: false }));
     return {
       ...withLeads,
+      ...(archiveRestores.length > 0 ? { archiveRestores } : {}),
       depth: "containment",
       notes,
       // Nothing to answer: every machine installs this archive the same way.
@@ -649,16 +672,22 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
    * advice to reinstall a mod that was fine. A finding that is wrong two
    * times in three teaches the curator to skip the third.
    */
-  const missing = expected.files
+  const missingFiles = expected.files
     .filter((f) => !stagedPaths.has(key(f.path)))
-    .filter((f) => !isVolatileFile(f.path, input.declaredVolatile))
-    .map((f) => f.path);
+    .filter((f) => !isVolatileFile(f.path, input.declaredVolatile));
+  const missing = missingFiles.map((f) => f.path);
+  const archiveRestores = missingFiles.map((f) => ({
+    path: f.path,
+    ...(f.entry.size !== undefined ? { size: f.entry.size } : {}),
+    exact: true,
+  }));
 
   return withDeps({
     ...withLeads,
     depth: "replayed",
     notes,
     missing,
+    ...(archiveRestores.length > 0 ? { archiveRestores } : {}),
     ...unexplainedFacts(containment, listing),
     expectedCount: expected.files.length,
     ...(conditionUnmet.length > 0 ? { installerConditionUnmet: conditionUnmet } : {}),

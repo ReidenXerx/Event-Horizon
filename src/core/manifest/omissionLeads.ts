@@ -122,7 +122,7 @@ export function declaresAlternatives(listing: {
  * matches. Indexed by basename so this stays near-linear rather than comparing
  * every archive entry against every staged file.
  */
-function findNotStaged(
+export function findNotStaged(
   listing: ArchiveListing,
   stagedPaths: readonly string[],
 ): ArchiveEntry[] {
@@ -146,7 +146,7 @@ function findNotStaged(
 }
 
 /** Installer metadata. Present in the archive, never installed. */
-function isInstallerMetadata(archivePath: string): boolean {
+export function isInstallerMetadata(archivePath: string): boolean {
   const lower = archivePath.toLowerCase();
   return lower.startsWith("fomod/") || lower.includes("/fomod/");
 }
