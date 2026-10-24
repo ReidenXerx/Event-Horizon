@@ -1,7 +1,7 @@
 # Changelog
 
 Everything that changed in Event Horizon, newest first, written for the people who use it. Since the first commit
-in April 2026 that is about 400 changes across 212 builds.
+in April 2026 that is about 400 changes across 213 builds.
 
 Until 0.1.0-alpha.149 builds were numbered `0.1.0-alpha.N`. From **0.1.151** the build number is the patch number:
 Vortex ignores everything after the dash when it decides whether an extension has an update, so an alpha number
@@ -9,6 +9,13 @@ could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
+
+## [0.2.91] — 2026-10-25
+
+### Doctor
+- "Which mod each file comes from": when two collection mods share a file and no collection rule orders them,
+  the repair adds the rule that gives the game the creator's copy, then deploys. Your own rules are left alone.
+- New check: folders split by letter case (`gal` beside `Gal`). On Linux the game misses the files in one of them.
 
 ## [0.2.90] — 2026-10-24
 
