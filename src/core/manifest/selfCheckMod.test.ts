@@ -113,6 +113,44 @@ describe("selfCheckMod", () => {
       readEntry: readScript,
     });
     expect(plain.archiveRestores).toEqual([{ path: "00 Main/Meshes/a.txt", size: 368, exact: false }]);
+    // With the game known, Vortex's own placement says where it lands.
+    const placed = await selfCheckMod({
+      sevenZip: sevenZip([
+        { name: "00 Main/Meshes/a.txt", size: 368, crc: "33333333" },
+        { name: "00 Main/Meshes/b.nif", size: 5, crc: "44444444" },
+      ]),
+      modId: "m2", modName: "FPA",
+      archivePath: "b.7z",
+      staged: [{ path: "Meshes/b.nif", size: 5, crc: "44444444" }],
+      recordedChoices: [],
+      readEntry: readScript,
+      gameId: "fallout4",
+    });
+    expect(placed.archiveRestores).toEqual([{ path: "Meshes/a.txt", size: 368, exact: true }]);
+  });
+
+  it("marks what an unreplayable installer may put back, and clears it once replayed", async () => {
+    const unknown = await selfCheckMod({
+      sevenZip: sevenZip(ARCHIVE_ENTRIES),
+      modId: "m1", modName: "x",
+      archivePath: "a.7z",
+      staged: [{ path: "AAF/AM-actionData.xml", size: 430, crc: "11111111" }],
+      recordedChoices: [],
+      readEntry: readScript,
+    });
+    expect(unknown.archiveRestores).toEqual([{ path: "20 Bodies/00 AM/AAF/AM-otherData.xml", size: 431, exact: false, maybe: true }]);
+    const complete = await selfCheckMod({
+      sevenZip: sevenZip(ARCHIVE_ENTRIES),
+      modId: "m1", modName: "UAP",
+      archivePath: "a.7z",
+      staged: [
+        { path: "AAF/AM-actionData.xml", size: 430, crc: "11111111" },
+        { path: "AAF/AM-otherData.xml", size: 431, crc: "22222222" },
+      ],
+      recordedChoices: CHOICES,
+      readEntry: readScript,
+    });
+    expect(complete.archiveRestores).toEqual([]);
   });
 
   it("reports nothing missing when staging is complete", async () => {

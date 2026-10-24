@@ -322,7 +322,7 @@ export function planWinnerPins(input: {
 }
 
 /** Does `a` deploy after `b` through any chain of `before`/`after` rules among `keys`? */
-function deploysAfter(a: string, b: string, rules: readonly EhcollRule[], keys: ReadonlySet<string>): boolean {
+export function deploysAfter(a: string, b: string, rules: readonly EhcollRule[], keys: ReadonlySet<string>): boolean {
   const next = new Map<string, Set<string>>();
   const edge = (from: string, to: string) => {
     const set = next.get(from) ?? new Set<string>();

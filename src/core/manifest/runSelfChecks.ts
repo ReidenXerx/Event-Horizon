@@ -1214,6 +1214,7 @@ export async function runSelfChecks(
           modId: mod.id,
           modName: mod.name,
           ...(mod.volatileFiles !== undefined ? { declaredVolatile: declaredSet(mod.volatileFiles) } : {}),
+          gameId,
           archivePath,
           hasArchiveRecord:
             mod.archiveId !== undefined ||
@@ -1270,6 +1271,7 @@ export async function runSelfChecks(
         modId: mod.id,
         modName: mod.name,
         ...(mod.volatileFiles !== undefined ? { declaredVolatile: declaredSet(mod.volatileFiles) } : {}),
+        gameId,
         archivePath,
         hasArchiveRecord: mod.archiveId !== undefined || mod.recoveredDownloadId !== undefined,
         staged,

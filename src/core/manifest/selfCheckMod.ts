@@ -30,6 +30,7 @@ import type { SevenZipApi } from "./sevenZip";
 import type { ArchiveListing } from "./archiveContents";
 import { listArchiveContents } from "./archiveContents";
 import { findNotStaged, findOmissionLeads, isInstallerMetadata } from "./omissionLeads";
+import { hasInstallerScript, predictBasicPlacement } from "./vortexPlacement";
 import { findGeneratedFiles } from "./generatedFiles";
 import { type CaseMode, pathKey } from "../paths";
 import type { OmissionLead } from "./omissionLeads";
@@ -68,7 +69,17 @@ export type SelfCheckDepth =
  * it is the ARCHIVE path, which may carry a wrapper folder Vortex strips, so a
  * consumer matches it by its tail.
  */
-export type ArchiveRestore = { path: string; size?: number; exact: boolean };
+export type ArchiveRestore = {
+  path: string;
+  size?: number;
+  exact: boolean;
+  /**
+   * The archive has an installer whose answers could not be replayed, so this
+   * is an entry the install MAY put back (Ivy Rev 26: ZaZOut4 was one of the
+   * four culprits and could not be replayed). Reported more softly.
+   */
+  maybe?: boolean;
+};
 
 export type SelfCheckReport = {
   /**
@@ -251,6 +262,8 @@ export type SelfCheckInput = {
   caseMode?: CaseMode;
   /** The curator's plugins, as a FOMOD condition asks about them. Without it, nothing is explained. */
   pluginState?: (file: string) => PluginState;
+  /** Vortex game id: where a script-less archive's files land (vortexPlacement.ts). */
+  gameId?: string;
 };
 
 /** Where a FOMOD script lives. Case varies in the wild (`fomod`, `FOMod`). */
@@ -406,23 +419,47 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
   // different matcher — see omissionLeads.ts. Returns nothing for archives with
   // a FOMOD script, which the replay below handles authoritatively instead.
   const omission = findOmissionLeads(listing, staged.map((f) => f.path));
+  const notStaged = findNotStaged(listing, staged.map((f) => f.path)).filter(
+    (e) => !isInstallerMetadata(e.path) && !isVolatileFile(e.path, input.declaredVolatile),
+  );
+  const restoreOf = (path: string, size: number | undefined, exact: boolean, maybe = false): ArchiveRestore => ({
+    path,
+    ...(size !== undefined ? { size } : {}),
+    exact,
+    ...(maybe ? { maybe: true } : {}),
+  });
+  // Replaced below wherever the install's own file set is known; for a FOMOD
+  // that cannot be replayed this is the honest answer: what it MAY put back.
+  const maybeRestores = notStaged.map((e) => restoreOf(e.path, e.size, false, true));
   const withLeads = {
     ...base,
     omissionLeads: omission.leads,
     ...(generated.length > 0 ? { generated } : {}),
+    ...(maybeRestores.length > 0 ? { archiveRestores: maybeRestores } : {}),
   };
 
   const configEntry = findModuleConfigEntry(listing);
   if (configEntry === undefined) {
     notes.push("No FOMOD script in archive; expected file set unknown.");
     // Vortex's basic installer installs every file of a plain archive, so an
-    // entry staging lacks comes back on a player's machine.
-    const archiveRestores = findNotStaged(listing, staged.map((f) => f.path))
-      .filter((e) => !isInstallerMetadata(e.path) && !isVolatileFile(e.path, input.declaredVolatile))
-      .map((e) => ({ path: e.path, ...(e.size !== undefined ? { size: e.size } : {}), exact: false }));
+    // entry staging lacks comes back on a player's machine — at the place
+    // Vortex's own placement rule puts it, when that is predictable.
+    const paths = listing.entries.map((e) => e.path);
+    const placement =
+      input.gameId !== undefined && !hasInstallerScript(paths) ? predictBasicPlacement(paths, input.gameId) : undefined;
+    const stagedKeys = new Set(staged.map((f) => key(f.path)));
+    const archiveRestores =
+      placement !== undefined && !placement.orderDependent
+        ? listing.entries.flatMap((e) => {
+            const dest = placement.destinations.get(e.path);
+            if (dest === undefined || stagedKeys.has(key(dest))) return [];
+            if (isInstallerMetadata(e.path) || isVolatileFile(dest, input.declaredVolatile)) return [];
+            return [restoreOf(dest, e.size, true)];
+          })
+        : notStaged.map((e) => restoreOf(e.path, e.size, false));
     return {
       ...withLeads,
-      ...(archiveRestores.length > 0 ? { archiveRestores } : {}),
+      archiveRestores,
       depth: "containment",
       notes,
       // Nothing to answer: every machine installs this archive the same way.
@@ -676,18 +713,15 @@ export async function selfCheckMod(input: SelfCheckInput): Promise<SelfCheckRepo
     .filter((f) => !stagedPaths.has(key(f.path)))
     .filter((f) => !isVolatileFile(f.path, input.declaredVolatile));
   const missing = missingFiles.map((f) => f.path);
-  const archiveRestores = missingFiles.map((f) => ({
-    path: f.path,
-    ...(f.entry.size !== undefined ? { size: f.entry.size } : {}),
-    exact: true,
-  }));
+  const archiveRestores = missingFiles.map((f) => restoreOf(f.path, f.entry.size, true));
 
   return withDeps({
     ...withLeads,
     depth: "replayed",
     notes,
     missing,
-    ...(archiveRestores.length > 0 ? { archiveRestores } : {}),
+    // Known now: drop the "may put back" default even when nothing comes back.
+    archiveRestores,
     ...unexplainedFacts(containment, listing),
     expectedCount: expected.files.length,
     ...(conditionUnmet.length > 0 ? { installerConditionUnmet: conditionUnmet } : {}),

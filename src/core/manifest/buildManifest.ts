@@ -535,6 +535,7 @@ export function buildManifest(input: BuildManifestInput): BuildManifestResult {
       })),
       restoresByKey,
       rules,
+      winners: deploymentWinners,
     });
     if (conflicts.length > 0) {
       const nameOf = (k: string) => mods.find((m) => m.compareKey === k)?.name ?? k;
