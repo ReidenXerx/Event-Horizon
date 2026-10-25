@@ -198,6 +198,7 @@ import {
   describePluginFlagRepair,
   type PluginFlagRepair,
 } from "./applyPluginLightFlags";
+import { judgeRecordedLightFlags } from "../manifest/pluginCapability";
 import { detectCaseSensitivity } from "../paths";
 import { describeSkippedFinishing } from "./finishingNotice";
 import {
@@ -2441,6 +2442,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             vortexModId: installEntry.vortexModId,
             expectedFiles,
             declaredVolatile: judgeSkipFor(plan.manifest.mods, installEntry.compareKey),
+            pendingLightFlags: pendingLightFlagsFor(plan.manifest),
             level: declaredLevel,
             signal: ctx.abortSignal,
           });
@@ -2512,6 +2514,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               vortexModId: installEntry.vortexModId,
               expectedFiles: present,
               declaredVolatile: judgeSkipFor(plan.manifest.mods, installEntry.compareKey),
+              pendingLightFlags: pendingLightFlagsFor(plan.manifest),
               level: declaredLevel,
               signal: ctx.abortSignal,
             });
@@ -2919,6 +2922,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               vortexModId: alongside.vortexModId,
               expectedFiles,
               declaredVolatile: judgeSkipFor(plan.manifest.mods, alongside.compareKey),
+              pendingLightFlags: pendingLightFlagsFor(plan.manifest),
               level: declaredLevel,
               signal: ctx.abortSignal,
             }).catch(() => undefined);
@@ -8305,6 +8309,7 @@ async function tryRecoverFailedMod(args: {
       vortexModId: newEntry.vortexModId,
       expectedFiles,
       declaredVolatile: judgeSkipFor(ctx.plan.manifest.mods, newEntry.compareKey),
+      pendingLightFlags: pendingLightFlagsFor(ctx.plan.manifest),
       level,
       signal: ctx.abortSignal,
     });
@@ -8363,6 +8368,31 @@ async function tryRecoverFailedMod(args: {
     newVortexModId: newEntry.vortexModId,
   });
   return { kind: "retry-failed", installEntry: newEntry };
+}
+
+/**
+ * The curator's light flag for each root-level plugin, for verification: the
+ * ESL flag step rewrites those AFTER each mod is verified, so a plugin that
+ * differs only by that bit is not a failure (Ivy Rev 26: four plugins "failed"
+ * and were byte-for-byte the curator's once the install finished). Undefined
+ * when the step cannot write this package's flags, so nothing is excused.
+ */
+const pendingLightFlagsCache = new WeakMap<object, ReturnType<typeof computePendingLightFlags>>();
+function pendingLightFlagsFor(manifest: EhcollManifest): ReturnType<typeof computePendingLightFlags> {
+  if (!pendingLightFlagsCache.has(manifest)) pendingLightFlagsCache.set(manifest, computePendingLightFlags(manifest));
+  return pendingLightFlagsCache.get(manifest);
+}
+function computePendingLightFlags(manifest: EhcollManifest) {
+  const verdict = judgeRecordedLightFlags(manifest.game.id, manifest.plugins.lightFlagBit);
+  if (!verdict.usable) return undefined;
+  const light = new Map<string, boolean>();
+  for (const p of manifest.plugins.order) if (p.light !== undefined) light.set(p.name.toLowerCase(), p.light);
+  if (light.size === 0) return undefined;
+  return {
+    capability: verdict.capability,
+    // Plugins load from the Data root, so only a path with no folder is one.
+    lightOf: (relativePath: string) => (/[\\/]/.test(relativePath) ? undefined : light.get(relativePath.toLowerCase())),
+  };
 }
 
 /**

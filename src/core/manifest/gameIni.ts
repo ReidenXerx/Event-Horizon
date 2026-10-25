@@ -151,6 +151,103 @@ export function machineOwnedKeys(): readonly string[] {
 }
 
 /**
+ * ─── THE PLAYER'S OWN PREFERENCES ──────────────────────────────────────
+ * Not hardware, and still not the collection's: how loud, how hard, what
+ * colour, which buttons. Ivy Rev 26 (alasdairn, 2026-10-25) set 15 of a
+ * player's Fallout4Prefs.ini values to the curator's — difficulty, crosshair,
+ * every volume slider — and `bFreebiesSeen 1→0`, which brings back the
+ * Creations "free items" box at the main menu.
+ *
+ * Unlike the machine list these are judged by SECTION as well as key, because
+ * the names alone are not distinctive (`fVal7`, `uID7`). `key: "*"` is the
+ * whole section; a trailing `*` is a prefix.
+ *
+ * {@link PERSONAL_RULES_VERSION} goes into every package built with this list,
+ * so an install knows the build already applied it — and applies it itself to
+ * packages built before it existed.
+ */
+const PERSONAL: ReadonlyArray<{ section: string; key: string }> = [
+  // Volume sliders and their ids
+  { section: "audiomenu", key: "*" },
+  // Launcher, Bethesda.net account ids, the Creations menu
+  { section: "launcher", key: "*" },
+  { section: "bethesda.net", key: "*" },
+  { section: "creationsmenu", key: "*" },
+  // Mouse, gamepad, run, invert, rumble
+  { section: "controls", key: "*" },
+  { section: "gameplay", key: "idifficulty" },
+  { section: "gameplay", key: "bshowfloatingquestmarkers" },
+  { section: "gameplay", key: "bshowquestmarkers" },
+  { section: "main", key: "bcrosshairenabled" },
+  { section: "main", key: "fhudopacity" },
+  { section: "main", key: "bsaveon*" },
+  { section: "savegame", key: "fautosaveeveryxmins" },
+  // Seen-it flags and store state: shipping 0 brings the popups back
+  { section: "general", key: "bfreebiesseen" },
+  { section: "general", key: "bincludedcontentmessageseen" },
+  { section: "general", key: "bupsellowned" },
+  { section: "general", key: "uimarketplaceupdatedhash" },
+  { section: "general", key: "bshowdownloadanniversarycontent" },
+  { section: "general", key: "bgamepadenable" },
+  { section: "general", key: "bpipboycompanionenabled" },
+  // HUD, subtitles, Pip-Boy and VATS colours
+  { section: "interface", key: "ihudcolor*" },
+  { section: "interface", key: "fhudopacity" },
+  { section: "interface", key: "bdialoguesubtitles" },
+  { section: "interface", key: "bgeneralsubtitles" },
+  { section: "interface", key: "bdialoguecameraenable" },
+  { section: "interface", key: "bshowcompass" },
+  { section: "interface", key: "uhudactiveeffectwidget" },
+  { section: "pipboy", key: "fpipboyeffectcolor*" },
+  { section: "vats", key: "fmodmenueffect*" },
+];
+
+/** Bumped whenever {@link PERSONAL} changes meaning. */
+export const PERSONAL_RULES_VERSION = 1;
+
+const ruleMatches = (rule: string, value: string): boolean =>
+  rule === "*" || (rule.endsWith("*") ? value.startsWith(rule.slice(0, -1)) : value === rule);
+
+/** Is this setting the player's own preference rather than the collection's? */
+export function isPersonalSetting(section: string, key: string): boolean {
+  const s = section.trim().toLowerCase();
+  const k = key.trim().toLowerCase();
+  return PERSONAL.some((r) => r.section.toLowerCase() === s && ruleMatches(r.key, k));
+}
+
+/**
+ * The curator's own trim, from the collection config: `File:Section:Key`
+ * patterns, `*` matching anything, case-insensitive
+ * (`Fallout4Prefs.ini:AudioMenu:*`, `*:General:bFreebiesSeen`).
+ *
+ * `exclude` leaves a setting out. `include` ships a setting the personal list
+ * would leave out. Exclude wins over include, and nothing ships a
+ * machine-owned key.
+ */
+export type GameIniFilter = { exclude?: string[]; include?: string[] };
+
+/** Why a pattern is not usable, or undefined when it is. */
+export function iniPatternProblem(pattern: string): string | undefined {
+  const parts = pattern.split(":");
+  if (parts.length !== 3 || parts.some((p) => p.trim() === "")) {
+    return `"${pattern}" is not File:Section:Key (use * for any part)`;
+  }
+  return undefined;
+}
+
+export function matchesIniPattern(pattern: string, fileName: string, section: string, key: string): boolean {
+  const parts = pattern.split(":");
+  if (parts.length !== 3) return false;
+  const glob = (p: string, v: string): boolean => {
+    const re = new RegExp(
+      `^${p.trim().toLowerCase().split("*").map((x) => x.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`,
+    );
+    return re.test(v.trim().toLowerCase());
+  };
+  return glob(parts[0]!, fileName) && glob(parts[1]!, section) && glob(parts[2]!, key);
+}
+
+/**
  * Parse INI text into ordered settings.
  *
  * Deliberately lossy in one direction and lossless in the other: comments and
@@ -323,16 +420,32 @@ export function iniLocationFor(
  * tuned their FOV should be told it will not travel, rather than discovering
  * it did not.
  */
-export function splitByOwnership(settings: readonly IniSetting[]): {
+export function splitByOwnership(
+  settings: readonly IniSetting[],
+  /** The file these came from and the curator's trim; without them only hardware is judged. */
+  scope?: { fileName: string; filter?: GameIniFilter },
+): {
   collection: IniSetting[];
   machine: IniSetting[];
+  /** The player's own preferences (difficulty, volume, HUD colours…). */
+  personal: IniSetting[];
+  /** Left out by the curator's `exclude`. */
+  excluded: IniSetting[];
 } {
   const collection: IniSetting[] = [];
   const machine: IniSetting[] = [];
+  const personal: IniSetting[] = [];
+  const excluded: IniSetting[] = [];
+  const matches = (patterns: string[] | undefined, s: IniSetting): boolean =>
+    scope !== undefined && (patterns ?? []).some((p) => matchesIniPattern(p, scope.fileName, s.section, s.key));
   for (const setting of settings) {
-    (isMachineOwned(setting.key) ? machine : collection).push(setting);
+    if (isMachineOwned(setting.key)) machine.push(setting);
+    else if (matches(scope?.filter?.exclude, setting)) excluded.push(setting);
+    else if (scope !== undefined && isPersonalSetting(setting.section, setting.key) && !matches(scope.filter?.include, setting)) {
+      personal.push(setting);
+    } else collection.push(setting);
   }
-  return { collection, machine };
+  return { collection, machine, personal, excluded };
 }
 
 /** What a build captured from the curator's INI files. */
@@ -340,6 +453,10 @@ export type GameIniCapture = {
   files: IniFileSnapshot[];
   /** Settings deliberately left behind, for telling the curator. */
   machineKept: IniSetting[];
+  /** The curator's own preferences, left behind the same way. */
+  personalKept?: IniSetting[];
+  /** How many settings the curator's `exclude` left out. */
+  curatorExcluded?: number;
   /** Files that were expected but absent — normal for `*Custom.ini`. */
   missing: string[];
 };
@@ -361,6 +478,8 @@ export async function captureGameIni(args: {
   documentsPath: string;
   /** Vortex's discovered store — My Games is store-specific. */
   store?: string;
+  /** The curator's trim from the collection config. */
+  filter?: GameIniFilter;
 }): Promise<GameIniCapture> {
   const empty: GameIniCapture = { files: [], machineKept: [], missing: [] };
   const location = iniLocationFor(args.gameId, args.documentsPath, args.store);
@@ -368,6 +487,8 @@ export async function captureGameIni(args: {
 
   const files: IniFileSnapshot[] = [];
   const machineKept: IniSetting[] = [];
+  const personalKept: IniSetting[] = [];
+  let curatorExcluded = 0;
   const missing: string[] = [];
 
   for (const fileName of location.files) {
@@ -378,26 +499,53 @@ export async function captureGameIni(args: {
       missing.push(fileName);
       continue;
     }
-    const { collection, machine } = splitByOwnership(parseIni(text));
+    const { collection, machine, personal, excluded } = splitByOwnership(parseIni(text), {
+      fileName,
+      ...(args.filter !== undefined ? { filter: args.filter } : {}),
+    });
     machineKept.push(...machine);
+    personalKept.push(...personal);
+    curatorExcluded += excluded.length;
     // A file whose settings are ALL machine-owned still counts as read; an
     // empty entry says "we looked and there was nothing to ship", which is
     // different from the file being absent.
     files.push({ fileName, settings: collection });
   }
 
-  return { files, machineKept, missing };
+  ehLog("info", "game-ini.captured-split", {
+    machine: machineKept.length,
+    personal: personalKept.length,
+    curatorExcluded,
+    filter: args.filter ?? null,
+  });
+  return { files, machineKept, personalKept, curatorExcluded, missing };
 }
 
 /** One line telling the curator what did not travel, or nothing to say. */
 export function describeMachineKept(capture: GameIniCapture): string[] {
-  if (capture.machineKept.length === 0) return [];
-  const names = [...new Set(capture.machineKept.map((s) => s.key))].sort();
-  return [
-    `${capture.machineKept.length} INI setting(s) describe your machine rather ` +
-      `than this collection and were NOT shipped: ${names.slice(0, 8).join(", ")}` +
-      `${names.length > 8 ? `, and ${names.length - 8} more` : ""}. ` +
-      `Whoever installs this keeps their own screen resolution, CPU thread ` +
-      `count, audio device and field of view.`,
-  ];
+  const out: string[] = [];
+  const list = (settings: readonly IniSetting[]): string => {
+    const names = [...new Set(settings.map((s) => s.section === "" ? s.key : `[${s.section}] ${s.key}`))].sort();
+    return `${names.slice(0, 8).join(", ")}${names.length > 8 ? `, and ${names.length - 8} more` : ""}`;
+  };
+  if (capture.machineKept.length > 0) {
+    out.push(
+      `${capture.machineKept.length} INI setting(s) describe your machine rather ` +
+        `than this collection and were NOT shipped: ${list(capture.machineKept)}. ` +
+        `Whoever installs this keeps their own screen resolution, CPU thread ` +
+        `count, audio device and field of view.`,
+    );
+  }
+  const personal = capture.personalKept ?? [];
+  if (personal.length > 0) {
+    out.push(
+      `${personal.length} INI setting(s) are your own preferences and were NOT shipped: ${list(personal)}. ` +
+        `Players keep their own difficulty, volume, controls and HUD colours. To ship one anyway, ` +
+        `add "File:Section:Key" to gameIni.include in the collection's config.`,
+    );
+  }
+  if ((capture.curatorExcluded ?? 0) > 0) {
+    out.push(`${capture.curatorExcluded} INI setting(s) were left out by the collection's gameIni.exclude list.`);
+  }
+  return out;
 }

@@ -39,8 +39,11 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { createHash } from "crypto";
+import * as fs from "fs";
 import * as fsp from "fs/promises";
 
+import { AbortError } from "../../utils/abortError";
 import { decodePluginFlags, type PluginCapability, type PluginFlags } from "./pluginCapability";
 
 export { pluginCapabilityFor, type PluginCapability, type PluginFlags } from "./pluginCapability";
@@ -179,6 +182,53 @@ export async function setPluginLightFlag(
   } finally {
     await handle.close().catch(() => undefined);
   }
+}
+
+/**
+ * The SHA-256 this plugin will have once its light flag is `light` — hashed
+ * with the header's light bit set that way, the file itself untouched.
+ *
+ * Verification runs right after each mod installs; the flag repair runs at the
+ * end of the install. So a plugin the curator re-flagged fails its check by
+ * exactly one bit that the same install is about to write (alasdairn's Ivy
+ * Rev 26: MoreBeards and three others, all "fail" and all fine). This answers
+ * "is that the only difference?" without writing anything.
+ *
+ * `undefined` when there is no answer: no light bit for this game, or the file
+ * is not a plugin.
+ */
+export async function sha256WithLightFlag(
+  filePath: string,
+  light: boolean,
+  capability: PluginCapability,
+  signal?: AbortSignal,
+): Promise<string | undefined> {
+  const bit = capability.lightFlagBit;
+  if (bit === undefined) return undefined;
+  const hash = createHash("sha256");
+  // The first chunk of a read stream is min(size, highWaterMark), so it holds
+  // the whole header whenever the file has one.
+  const stream = fs.createReadStream(filePath, { highWaterMark: 8 * 1024 * 1024 });
+  let first = true;
+  try {
+    for await (const chunk of stream as AsyncIterable<Buffer>) {
+      if (signal?.aborted === true) throw new AbortError();
+      if (first) {
+        first = false;
+        if (chunk.length < HEADER_BYTES || chunk.toString("latin1", 0, 4) !== "TES4") return undefined;
+        const head = Buffer.from(chunk.subarray(0, HEADER_BYTES));
+        const before = head.readUInt32LE(FLAGS_OFFSET);
+        head.writeUInt32LE((light ? before | bit : before & ~bit) >>> 0, FLAGS_OFFSET);
+        hash.update(head);
+        hash.update(chunk.subarray(HEADER_BYTES));
+        continue;
+      }
+      hash.update(chunk);
+    }
+  } finally {
+    stream.destroy();
+  }
+  return first ? undefined : hash.digest("hex");
 }
 
 /**

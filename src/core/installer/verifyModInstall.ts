@@ -27,6 +27,7 @@ import {
 import { getDefaultHashConcurrency } from "../manifest/stagingFileWalker";
 import { pMap } from "../../utils/pMap";
 import { ehLog } from "../logging/ehLog";
+import { sha256WithLightFlag, type PluginCapability } from "../manifest/pluginFlags";
 
 /**
  * Post-install integrity check.
@@ -89,6 +90,16 @@ export type VerifyModInstallInput = {
   expectedFiles: EhcollStagingFile[] | undefined;
   /** Files the curator declared generated for this mod (`state.volatileFiles`): not judged. */
   declaredVolatile?: DeclaredVolatile;
+  /**
+   * Plugins whose light flag this install rewrites AFTER verifying: the
+   * curator's flag per mod-relative path (undefined = not one of them). A
+   * plugin that differs from the curator's copy only by that bit is the
+   * curator's file once the flag step runs, so it verifies.
+   */
+  pendingLightFlags?: {
+    capability: PluginCapability;
+    lightOf: (relativePath: string) => boolean | undefined;
+  };
   /**
    * Manifest's `package.verificationLevel`. Drives the verify
    * mode:
@@ -364,6 +375,8 @@ export async function verifyModInstall(
   }
 
   const hashMismatches: VerifyFail["hashMismatches"] = [];
+  /** Differ from the curator's copy only by the light flag the install writes next. */
+  const flagPending: string[] = [];
   if (hashCandidates.length > 0) {
     const results = await pMap(
       hashCandidates,
@@ -372,6 +385,15 @@ export async function verifyModInstall(
         try {
           const actualSha = await hashFileSha256(item.actual.absolutePath, signal);
           if (actualSha !== item.expected.sha256) {
+            const pending = input.pendingLightFlags;
+            const light = pending?.lightOf(item.expected.path);
+            if (pending !== undefined && light !== undefined) {
+              const flagged = await sha256WithLightFlag(item.actual.absolutePath, light, pending.capability, signal);
+              if (flagged === item.expected.sha256) {
+                flagPending.push(item.expected.path);
+                return undefined;
+              }
+            }
             return {
               path: item.expected.path,
               expected: item.expected.sha256!,
@@ -406,6 +428,14 @@ export async function verifyModInstall(
     if (!expectedByPath.has(pathKey(f.relativePath, caseMode))) {
       extraFiles.push(f.relativePath);
     }
+  }
+
+  if (flagPending.length > 0) {
+    ehLog("info", "verify-install.flag-pending", {
+      vortexModId,
+      plugins: flagPending,
+      why: "the only difference is the light flag, which the ESL flag step sets to the curator's value",
+    });
   }
 
   const hasFailures =

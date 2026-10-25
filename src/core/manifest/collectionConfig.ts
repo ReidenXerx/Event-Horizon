@@ -57,6 +57,7 @@ import type { PackageFormat } from "./packageFileName";
 import { readPresentationConfig, type PresentationConfig } from "../presentation/presentation";
 import { beginOp, ehLog } from "../logging/ehLog";
 import { isSafeRelativePath } from "../safeRelativePath";
+import { iniPatternProblem, type GameIniFilter } from "./gameIni";
 import type { NexusCollectionLink } from "../nexus/collectionUpload";
 
 // ---------------------------------------------------------------------------
@@ -271,6 +272,12 @@ export type CollectionConfig = {
    * Creation a required plugin needs as a master stays required.
    */
   optionalCreations?: string[];
+  /**
+   * The curator's trim of the game INI settings a build ships (Fallout-collection,
+   * 2026-10-25): `File:Section:Key` patterns with `*`. `exclude` leaves a setting
+   * out; `include` ships one the player-preference list would leave out.
+   */
+  gameIni?: GameIniFilter;
   /** Optional CHANGELOG markdown body. Written as `CHANGELOG.md`. */
   changelog?: string;
   /**
@@ -868,6 +875,25 @@ function parseAndValidate(raw: string, configPath: string): CollectionConfig {
   if (obj.changelog !== undefined && typeof obj.changelog !== "string") {
     errors.push("changelog, when present, must be a string.");
   }
+  if (obj.gameIni !== undefined) {
+    const g = obj.gameIni as Record<string, unknown>;
+    if (typeof g !== "object" || g === null || Array.isArray(g)) {
+      errors.push("gameIni, when present, must be an object with exclude and/or include lists.");
+    } else {
+      for (const field of ["exclude", "include"] as const) {
+        const list = g[field];
+        if (list === undefined) continue;
+        if (!Array.isArray(list) || list.some((p) => typeof p !== "string")) {
+          errors.push(`gameIni.${field}, when present, must be a list of "File:Section:Key" patterns.`);
+          continue;
+        }
+        for (const p of list as string[]) {
+          const problem = iniPatternProblem(p);
+          if (problem !== undefined) errors.push(`gameIni.${field}: ${problem}.`);
+        }
+      }
+    }
+  }
   if (
     obj.lastBuiltVersion !== undefined &&
     typeof obj.lastBuiltVersion !== "string"
@@ -912,6 +938,13 @@ function parseAndValidate(raw: string, configPath: string): CollectionConfig {
     config.optionalCreations = (obj.optionalCreations as string[]).map((c) => c.trim()).filter((c) => c !== "");
   }
   if (typeof obj.changelog === "string") config.changelog = obj.changelog;
+  if (obj.gameIni !== undefined) {
+    const g = obj.gameIni as GameIniFilter;
+    config.gameIni = {
+      ...(g.exclude !== undefined ? { exclude: [...g.exclude] } : {}),
+      ...(g.include !== undefined ? { include: [...g.include] } : {}),
+    };
+  }
   if (typeof obj.lastBuiltVersion === "string") {
     config.lastBuiltVersion = obj.lastBuiltVersion;
   }

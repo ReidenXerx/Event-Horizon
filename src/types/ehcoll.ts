@@ -452,6 +452,13 @@ export type EhcollGameIniFile = {
 /** The curator's game configuration, as shipped. */
 export type EhcollGameIni = {
   files: EhcollGameIniFile[];
+  /**
+   * The version of the player-preference list (gameIni.ts PERSONAL) the build
+   * left out. Absent: built before it, so the install leaves those keys alone
+   * itself. Present: the build already judged them, and anything shipped that
+   * the list names is there because the curator included it.
+   */
+  personalRules?: number;
 };
 
 export type ModInstallSpec = {

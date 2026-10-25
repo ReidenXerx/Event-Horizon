@@ -2314,5 +2314,9 @@ function validateGameIni(
     out.push({ fileName, settings: parsedSettings });
   });
 
-  return { files: out };
+  const personalRules = (raw as Record<string, unknown>).personalRules;
+  return {
+    files: out,
+    ...(typeof personalRules === "number" && Number.isInteger(personalRules) ? { personalRules } : {}),
+  };
 }

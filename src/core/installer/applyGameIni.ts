@@ -33,7 +33,7 @@ import * as fsp from "fs/promises";
 import * as path from "path";
 
 import { ehLog, beginOp } from "../logging/ehLog";
-import { iniLocationFor, isMachineOwned } from "../manifest/gameIni";
+import { iniLocationFor, isMachineOwned, isPersonalSetting } from "../manifest/gameIni";
 import type { EhcollGameIni } from "../../types/ehcoll";
 import type { GameIniApplicationReceipt } from "../../types/installLedger";
 
@@ -236,7 +236,23 @@ export async function applyGameIni(args: {
     // nothing should be here — but this is the last point before someone
     // else's screen resolution gets written, and the cost of checking twice
     // is nothing next to the cost of being wrong once.
-    const assignments = file.settings.filter((s) => !isMachineOwned(s.key));
+    //
+    // A package built before the player-preference list (no `personalRules`)
+    // still carries the curator's difficulty, volumes and seen-it flags; they
+    // stay the player's here. A newer build already left them out, and any it
+    // shipped the curator included on purpose.
+    const judgedAtBuild = args.gameIni.personalRules !== undefined;
+    const personal = judgedAtBuild ? [] : file.settings.filter((s) => isPersonalSetting(s.section, s.key));
+    if (personal.length > 0) {
+      ehLog("info", "game-ini.personal-left-alone", {
+        file: file.fileName,
+        count: personal.length,
+        keys: personal.slice(0, 20).map((s) => `[${s.section}] ${s.key}`),
+      });
+    }
+    const assignments = file.settings.filter(
+      (s) => !isMachineOwned(s.key) && (judgedAtBuild || !isPersonalSetting(s.section, s.key)),
+    );
     if (assignments.length === 0) continue;
 
     const full = path.join(location.dir, file.fileName);
@@ -347,7 +363,8 @@ export function describeGameIniApplication(
       `This collection set ${receipt.appliedCount} game setting(s) in your INI ` +
         `files — things like uGridsToLoad, archive invalidation and LOD ` +
         `distances that its mods expect. Your screen resolution, CPU threads, ` +
-        `audio device and field of view were left alone. Change any of it back ` +
+        `audio device, field of view and your own preferences (difficulty, volume, ` +
+        `controls, HUD colours) were left alone. Change any of it back ` +
         `whenever you like: this is done once per version and never re-applied.`,
     );
     out.push(...receipt.changes.slice(0, 20));

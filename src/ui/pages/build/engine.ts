@@ -80,6 +80,7 @@ import type { PostProcessingCandidate } from "../../../core/manifest/runSelfChec
 import {
   captureGameIni,
   describeMachineKept,
+  PERSONAL_RULES_VERSION,
 } from "../../../core/manifest/gameIni";
 import {
   describeHashedCollisions,
@@ -2766,6 +2767,9 @@ export async function runBuildPipeline(
     ...(discoveredStore(state, gameId) !== undefined
       ? { store: discoveredStore(state, gameId)! }
       : {}),
+    // The curator's own trim, and the player-preference list: difficulty,
+    // volumes and seen-it flags stay each player's (Ivy Rev 26).
+    ...(collectionConfig.gameIni !== undefined ? { filter: collectionConfig.gameIni } : {}),
   }).catch(() => ({ files: [], machineKept: [], missing: [] }));
   bundleWarnings.push(...describeMachineKept(gameIniCapture));
   if (gameIniCapture.files.length > 0) {
@@ -2858,7 +2862,9 @@ export async function runBuildPipeline(
     // buildExternalMod's compareKey note.
     bundledModIds: new Set(measuredBundles.map((b) => b.modId)),
     externalDependencies,
-    ...(gameIniCapture.files.length > 0 ? { gameIni: { files: gameIniCapture.files } } : {}),
+    ...(gameIniCapture.files.length > 0
+      ? { gameIni: { files: gameIniCapture.files, personalRules: PERSONAL_RULES_VERSION } }
+      : {}),
     // What each archive puts back that its folder lacks: a player gets those
     // files, the curator's game never sees them (Ivy Rev 26).
     archiveRestoresByModId: new Map(
