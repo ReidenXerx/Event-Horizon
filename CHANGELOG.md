@@ -1,7 +1,7 @@
 # Changelog
 
 Everything that changed in Event Horizon, newest first, written for the people who use it. Since the first commit
-in April 2026 that is about 400 changes across 216 builds.
+in April 2026 that is about 400 changes across 217 builds.
 
 Until 0.1.0-alpha.149 builds were numbered `0.1.0-alpha.N`. From **0.1.151** the build number is the patch number:
 Vortex ignores everything after the dash when it decides whether an extension has an update, so an alpha number
@@ -9,6 +9,17 @@ could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
+
+## [0.2.95] — 2026-10-25
+
+### Installing
+- A collection no longer changes your own game preferences: difficulty, volumes, crosshair, controls, HUD colours
+  and the "seen it" flags stay yours, also for collections built earlier.
+- A plugin that differs from the curator's only by the light flag the install sets is no longer reported as failed.
+
+### Building
+- Your own INI preferences are left out of the package, and the collection's config can trim the INI further
+  with `gameIni.exclude` / `gameIni.include` (`File:Section:Key`, `*` allowed).
 
 ## [0.2.94] — 2026-10-25
 
