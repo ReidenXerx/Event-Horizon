@@ -13,6 +13,7 @@ import {
   captureGameIni,
   describeMachineKept,
   iniPatternProblem,
+  isMachineOwned,
   isPersonalSetting,
   matchesIniPattern,
   parseIni,
@@ -50,6 +51,15 @@ describe("isPersonalSetting", () => {
     expect(isPersonalSetting("Controls", "fMouseHeadingSensitivity")).toBe(true);
     expect(isPersonalSetting("Bethesda.net", "uPersistentUuidData0")).toBe(true);
     expect(isPersonalSetting("MAIN", "bSaveOnTravel")).toBe(true);
+  });
+});
+
+describe("isMachineOwned: window position and MSAA (Ivy 1.0.56, spilcam)", () => {
+  it("keeps iLocation X/Y and iMultiSample on the player's machine", () => {
+    for (const key of ["iLocation X", "iLocation Y", "iMultiSample", "bTopMostWindow", "bMaximizeWindow", "iPresentInterval"]) {
+      expect(isMachineOwned(key)).toBe(true);
+    }
+    expect(isMachineOwned("iLocationLimit")).toBe(false);
   });
 });
 

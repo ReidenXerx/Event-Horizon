@@ -113,6 +113,8 @@ const MACHINE_OWNED = [
   "btopmostwindow",
   "bmaximizewindow",
   "ipresentinterval", // VSync
+  "ilocation", // window position (iLocation X/Y): a curator's 0,0 put the game on another screen
+  "imultisample", // MSAA level: Ivy 1.0.56 shipped 16x, a fresh player crashed seconds in
   "iadapter",
   "sd3ddevice",
   "uidisplay",
