@@ -1,7 +1,7 @@
 # Changelog
 
 Everything that changed in Event Horizon, newest first, written for the people who use it. Since the first commit
-in April 2026 that is about 400 changes across 218 builds.
+in April 2026 that is about 400 changes across 219 builds.
 
 Until 0.1.0-alpha.149 builds were numbered `0.1.0-alpha.N`. From **0.1.151** the build number is the patch number:
 Vortex ignores everything after the dash when it decides whether an extension has an update, so an alpha number
@@ -9,6 +9,12 @@ could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
+
+## [0.2.97] — 2026-10-27
+
+### Load order
+- "Re-apply curator's order" keeps your own plugin rules: a rule that a collection plugin loads after one of
+  your mods (or yours after one of its) still holds afterwards.
 
 ## [0.2.96] — 2026-10-25
 
