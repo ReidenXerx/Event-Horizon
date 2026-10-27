@@ -70,9 +70,15 @@ function distinct(names: readonly string[]): string[] {
 }
 
 /**
- * The masters of the plugins the collection does NOT own, keyed by lowercased
- * name. Only those are needed: the curator's own plugins are placed in the
- * curator's tested order and never move for a user's plugin.
+ * What each plugin must load after, keyed by lowercased name: the masters of
+ * the plugins the collection does NOT own, plus the player's own LOOT rules
+ * ("load after") that involve one of those plugins.
+ *
+ * An entry for a plugin the collection DOES own lists only the player's
+ * plugins it must follow (a player's rule "WCLI_Vault111.esp after The Labour
+ * Exchange"). The collection's plugin still never moves; the player's plugin
+ * moves above it. Rules between two of the collection's own plugins are not
+ * listed: their order is the curator's.
  */
 export type UserPluginMasters = Readonly<Record<string, readonly string[]>>;
 
@@ -136,6 +142,17 @@ export function repinCuratorOrder(
  * plugins move: the collection's keep the curator's order, which is the whole
  * point of the re-pin. A plugin whose masters we could not read keeps LOOT's
  * slot, as before.
+ *
+ * ─── AND THE PLAYER'S OWN RULES HOLD TOO ────────────────────────────────────
+ * The same refill undid a player's LOOT rule. Reported 2026-10-27 (Vex, Ivy):
+ * a rule put WCLI_Vault111.esp after his own The Labour Exchange (both edit
+ * Vault 111, and WCLI warns in game when an editor of it loads later); Sort
+ * honoured it, and "Re-apply curator's order" put WCLI back above it. A rule
+ * that a player's plugin loads after another is kept like a master (the
+ * player's plugin moves down). A rule that one of the collection's plugins
+ * loads after a player's plugin moves the PLAYER's plugin up, to just above
+ * it, so the curator's order still stands. It does not move when that would
+ * put it above one of its own masters; no order satisfies both.
  */
 function keepMastersAbove(
   order: readonly string[],
@@ -143,22 +160,49 @@ function keepMastersAbove(
   userMasters: UserPluginMasters,
 ): string[] {
   const out = [...order];
-  // Each move lands a plugin strictly lower, so a master chain settles within
-  // one move per plugin; the cap only stops a master CYCLE (A needs B, B needs
-  // A), which no order satisfies and the game refuses anyway.
-  for (let moves = 0; moves < out.length; moves++) {
+  const isOwned = (name: string): boolean => owned.has(key(name));
+  const afterOf = (name: string): readonly string[] => userMasters[key(name)] ?? [];
+  /** "C after U" pairs that cannot hold without breaking U's own masters. */
+  const givenUp = new Set<string>();
+  // Each move settles one plugin against one constraint; the cap stops a
+  // CYCLE (A needs B, B needs A), which no order satisfies and the game
+  // refuses anyway.
+  for (let moves = 0; moves < out.length * 2; moves++) {
     const at = new Map(out.map((n, i) => [key(n), i] as const));
     const late = out.findIndex((name, i) => {
-      if (owned.has(key(name))) return false;
-      return (userMasters[key(name)] ?? []).some((m) => (at.get(key(m)) ?? -1) > i);
+      if (isOwned(name)) return false;
+      return afterOf(name).some((m) => (at.get(key(m)) ?? -1) > i);
     });
-    if (late === -1) return out;
-    const name = out[late]!;
-    const lastMaster = Math.max(...(userMasters[key(name)] ?? []).map((m) => at.get(key(m)) ?? -1));
-    out.splice(late, 1);
-    // The removal shifted the master up one, so its old index is now the slot
-    // right below it.
-    out.splice(lastMaster, 0, name);
+    if (late !== -1) {
+      const name = out[late]!;
+      const lastMaster = Math.max(...afterOf(name).map((m) => at.get(key(m)) ?? -1));
+      out.splice(late, 1);
+      // The removal shifted the master up one, so its old index is now the
+      // slot right below it.
+      out.splice(lastMaster, 0, name);
+      continue;
+    }
+    // A collection plugin the player ruled to load after one of theirs.
+    let raise: { from: number; to: number } | undefined;
+    for (let c = 0; c < out.length && raise === undefined; c++) {
+      const collectionPlugin = out[c]!;
+      if (!isOwned(collectionPlugin)) continue;
+      for (const theirs of afterOf(collectionPlugin)) {
+        const u = at.get(key(theirs));
+        if (u === undefined || u < c || isOwned(theirs)) continue;
+        const pair = `${key(collectionPlugin)}>${key(theirs)}`;
+        if (givenUp.has(pair)) continue;
+        if (afterOf(theirs).some((m) => (at.get(key(m)) ?? -1) >= c)) {
+          givenUp.add(pair);
+          continue;
+        }
+        raise = { from: u, to: c };
+        break;
+      }
+    }
+    if (raise === undefined) return out;
+    const [name] = out.splice(raise.from, 1);
+    out.splice(raise.to, 0, name!);
   }
   return out;
 }

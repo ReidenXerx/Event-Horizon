@@ -31,5 +31,28 @@ export async function readUserPluginMasters(
       // Unreadable is the same answer as unknown: LOOT's slot stands.
     }
   }
+  addPlayerRules(state, owned, out);
   return out;
+}
+
+/**
+ * The player's own LOOT "load after" rules (Vortex's `state.userlist`, which
+ * the Plugins tab writes and LOOT's Sort honours), for every rule with one of
+ * the player's plugins on either side. A rule between two of the collection's
+ * own plugins is left out: re-applying the curator's order means that order.
+ */
+function addPlayerRules(state: unknown, owned: ReadonlySet<string>, out: Record<string, string[]>): void {
+  const plugins = (state as { userlist?: { plugins?: unknown } } | undefined)?.userlist?.plugins;
+  if (!Array.isArray(plugins)) return;
+  for (const entry of plugins as Array<{ name?: unknown; after?: unknown }>) {
+    if (typeof entry?.name !== "string" || !Array.isArray(entry.after)) continue;
+    const self = key(entry.name);
+    for (const ref of entry.after as unknown[]) {
+      const name = typeof ref === "string" ? ref : (ref as { name?: unknown } | undefined)?.name;
+      if (typeof name !== "string" || name.trim() === "") continue;
+      if (owned.has(self) && owned.has(key(name))) continue;
+      const list = (out[self] ??= []);
+      if (!list.some((m) => key(m) === key(name))) list.push(name);
+    }
+  }
 }
