@@ -34,6 +34,7 @@ import { gameExecutable, purgeGameDeployment, readDiscovery } from "../environme
 import { getActiveGameId } from "../getModsListForProfile";
 import { deployAndWait } from "../installer/runInstall";
 import { switchToProfile } from "../installer/profile";
+import { deploymentInProgress } from "../installer/profileCleanup";
 import {
   installFromExistingDownload,
   installNexusViaApi,
@@ -190,6 +191,38 @@ async function gameRunning(api: types.IExtensionApi, gameId: string): Promise<{ 
   if (exe === undefined) return { running: undefined };
   const exeName = path.basename(exe);
   return { running: await isProcessRunning(exeName), exe: exeName };
+}
+
+/** What Vortex's deploy reports right now ("Deploying: <mod>", percent), if anything. */
+function deployProgress(api: types.IExtensionApi): { text?: string; percent?: number } | undefined {
+  const p = (api.getState() as { session?: { base?: { progress?: { profile?: { deploying?: { text?: unknown; percent?: unknown } } } } } })
+    ?.session?.base?.progress?.profile?.deploying;
+  if (p === undefined || p === null) return undefined;
+  return {
+    ...(typeof p.text === "string" ? { text: p.text } : {}),
+    ...(typeof p.percent === "number" ? { percent: p.percent } : {}),
+  };
+}
+
+const describeProgress = (p: { text?: string; percent?: number } | undefined): string =>
+  p === undefined ? "" : ` (${p.percent !== undefined ? `${p.percent}%` : "?"}${p.text !== undefined ? `: ${p.text}` : ""})`;
+
+/**
+ * Refuses a change that would queue behind a deployment Vortex is still
+ * running. Fallout-collection, 2026-10-28: a deploy outlived the verb's 1800 s
+ * wait and kept going in Vortex; a second deploy and then a mods.remove were
+ * sent behind it, and the remove sat for 50 minutes with nothing saying why.
+ */
+function guardNotDeploying(api: types.IExtensionApi, what: string): void {
+  if (!deploymentInProgress(api.getState())) return;
+  const progress = deployProgress(api);
+  throw new ControlError(
+    "vortex-deploying",
+    `Vortex is still deploying${describeProgress(progress)}, so ${what} would wait behind it. ` +
+      `Retry when that deployment ends.`,
+    409,
+    progress !== undefined ? { progress } : {},
+  );
 }
 
 async function guardClosed(api: types.IExtensionApi, gameId: string, body: VerbBody): Promise<void> {
@@ -708,7 +741,24 @@ export let PLUGIN_SETTLE_MS = 5000;
 async function deploy(api: types.IExtensionApi, gameId: string): Promise<Record<string, unknown>> {
   const profileId = activeProfileId(api);
   if (profileId === undefined) throw new ControlError("no-profile", "Vortex has no active profile.", 409);
-  await unlessExternalChanges(api, "deploy", gameId, deployAndWait(api, profileId));
+  guardNotDeploying(api, "another deploy");
+  try {
+    await unlessExternalChanges(api, "deploy", gameId, deployAndWait(api, profileId));
+  } catch (err) {
+    // The wait ended; Vortex's deploy did not. Say so, or the next verb is
+    // sent into a deployment nobody knows is still running.
+    if (deploymentInProgress(api.getState()) && /did not complete within/.test(String((err as Error)?.message ?? err))) {
+      const progress = deployProgress(api);
+      throw new ControlError(
+        "deploy-still-running",
+        `${String((err as Error).message)} Vortex is still deploying${describeProgress(progress)}; it was not stopped. ` +
+          `Wait for it to end before deploying, removing or purging.`,
+        504,
+        progress !== undefined ? { progress } : {},
+      );
+    }
+    throw err;
+  }
   return verifyDeploy(api, gameId, profileId);
 }
 
@@ -2690,6 +2740,7 @@ export const VERBS: Record<string, Verb> = {
       const pool = modPool(api, gameId);
       enforce(guardKnownMods({ requested: ids, pool: new Set(Object.keys(pool)) }));
       await guardClosed(api, gameId, body);
+      guardNotDeploying(api, "removing (Vortex undeploys a mod before deleting it)");
       const owner = await ownership(gameId, ids);
       const described = ids.map((id) => ({ id, name: modName(pool[id]!), owner: owner[id] }));
       await askOwner(api, {

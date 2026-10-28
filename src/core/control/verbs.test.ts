@@ -326,6 +326,23 @@ describe("verified outcomes", () => {
     });
   });
 
+  it("deploy and remove refuse, with Vortex's progress, while a deployment is still running", async () => {
+    // Fallout-collection 2026-10-28: a deploy outlived the 1800 s wait; a
+    // second deploy and a remove sent behind it sat for 50 minutes.
+    v.state.session.base = {
+      activity: { mods: ["deployment"] },
+      progress: { profile: { deploying: { text: "Deploying: FORTITUDE", percent: 50 } } },
+    };
+    const removeMods = vi.spyOn(util, "removeMods");
+    await expect(run("deploy")).rejects.toMatchObject({
+      code: "vortex-deploying",
+      message: expect.stringContaining("50%: Deploying: FORTITUDE"),
+    });
+    await expect(run("mods.remove", { modIds: ["a"] })).rejects.toMatchObject({ code: "vortex-deploying" });
+    expect(removeMods).not.toHaveBeenCalled();
+    expect(v.state.persistent.mods.fallout4.a).toBeDefined();
+  });
+
   it("remove fails, naming what did and did not go, when Vortex leaves a mod", async () => {
     vi.spyOn(util, "removeMods").mockImplementation((async () => {
       delete v.state.persistent.mods.fallout4.a; // b stays
