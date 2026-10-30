@@ -4501,6 +4501,32 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       notes: pluginOrderApplication.notes,
     });
 
+    // ── 7a+. the carried mods' plugins, ticked as they were ─────────────
+    // A new profile starts with only the collection's plugins on, so a
+    // carried mod came over switched on with its plugins off (alasdairn,
+    // 2026-10-31: ECV_Remnants.esp, SCOURGE). Only plugins of the carried
+    // mods: the collection's own plugins keep the curator's state above.
+    if (carried.length > 0 && (ctx.decisions.carryPluginsEnabled ?? []).length > 0) {
+      try {
+        const { readPluginList } = await import("../curator/pluginPool");
+        const wasOn = new Set(ctx.decisions.carryPluginsEnabled);
+        const carriedIds = new Set(carried);
+        const ticked: string[] = [];
+        for (const p of readPluginList(api.getState())) {
+          if (p.enabled || p.isNative || p.modId === undefined || !carriedIds.has(p.modId)) continue;
+          if (!wasOn.has(p.name.toLowerCase())) continue;
+          dispatchRaw(api, ACTION_SET_PLUGIN_ENABLED, { pluginName: p.name, enabled: true });
+          ticked.push(p.name);
+        }
+        ehLog("info", "install.own-mods.plugins-ticked", { ticked: ticked.length, names: ticked.slice(0, 50) });
+      } catch (err) {
+        ehLog("warn", "install.own-mods.plugins-unticked", {
+          err,
+          consequence: "the carried mods are on, their plugins may be off; tick them on the Plugins tab",
+        });
+      }
+    }
+
     // ── 7b0b. restore the curator's ESL / light flags ──────────────────
     //
     // Load-bearing, not cosmetic: regular plugins are addressed with one byte,

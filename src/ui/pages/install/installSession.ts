@@ -200,7 +200,7 @@ class InstallSession {
         // Versions of one mod: all but the remembered / hardware-fitting pick start left out.
         const gameStore = storeOf(api, outcome.ehcoll.manifest.game.id);
         const variantSkips = await initialVariantSkips(outcome.ehcoll.manifest, gameStore).catch(() => []);
-        const previousRevision = await previousRevisionChoices(api.getState(), outcome.ehcoll.manifest, outcome.plan, outcome.receipt);
+        const previousRevision = await previousRevisionChoices(api.getState(), outcome.ehcoll.manifest, outcome.plan, outcome.receipt, zipPath);
         if (this.loadingController !== undefined) return;
         this.dispatch({
           type: "plan-ready",
@@ -395,7 +395,7 @@ class InstallSession {
         this.loadingController = undefined;
         const gameStore = storeOf(api, outcome.ehcoll.manifest.game.id);
         const variantSkips = await initialVariantSkips(outcome.ehcoll.manifest, gameStore).catch(() => []);
-        const previousRevision = await previousRevisionChoices(api.getState(), outcome.ehcoll.manifest, outcome.plan, outcome.receipt);
+        const previousRevision = await previousRevisionChoices(api.getState(), outcome.ehcoll.manifest, outcome.plan, outcome.receipt, carry.zipPath);
         if (this.loadingController !== undefined) return;
         this.dispatch({
           type: "plan-ready",
@@ -1028,6 +1028,9 @@ class InstallSession {
             optionalSkipped: startState.bundle.optionalSkipped ?? [],
             ...(keptOff.length > 0 ? { keptOff } : {}),
             ...(carryOwnMods.length > 0 ? { carryOwnMods } : {}),
+            ...(carryOwnMods.length > 0 && prevChoices?.previousEnabledPlugins !== undefined
+              ? { carryPluginsEnabled: prevChoices.previousEnabledPlugins }
+              : {}),
           },
           abortSignal: controller.signal,
           onDeploymentPurged: (): void => {

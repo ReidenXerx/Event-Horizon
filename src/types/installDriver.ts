@@ -110,6 +110,11 @@ export type UserConfirmedDecisions = {
    * enabled in the previous revision's profile and go on in this one too.
    */
   carryOwnMods?: string[];
+  /**
+   * Lowercased plugin names ticked in the previous revision's profile. The
+   * plugins of the carried mods get the same ticks in the new profile.
+   */
+  carryPluginsEnabled?: string[];
 };
 
 /**
