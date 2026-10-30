@@ -640,8 +640,46 @@ function CollectionsList(props: CollectionsPageProps): JSX.Element {
         });
 
         if (target === undefined) {
-          // Not in the collections folder — it may never have been built on
-          // this machine. Ask rather than give up.
+          /**
+           * No kept copy and no file in the collections folder: fetch the
+           * installed revision from its page, as the Doctor does. Without this
+           * a player who installed from Nexus got a file picker over their
+           * Downloads folder asking for a package they never saw
+           * (.frenchkiwi, Ivy 1.0.56, 2026-10-30).
+           */
+          const [{ ensureCollectionPackage }, { getVortexUserDataPath }] = await Promise.all([
+            import("../runtime/ensurePackage"),
+            import("../../core/paths"),
+          ]);
+          const fetchingId = `eh-continue-fetch-${receipt.packageId}`;
+          const fetched = await ensureCollectionPackage({
+            api,
+            receipt,
+            appDataPath: getVortexUserDataPath(),
+            onDownloadProgress: (received, total) => {
+              api.sendNotification?.({
+                id: fetchingId,
+                type: "activity",
+                title: "Event Horizon",
+                message:
+                  total !== undefined && total > 0
+                    ? `Fetching ${receipt.packageName} again: ${Math.floor((received / total) * 100)}%`
+                    : `Fetching ${receipt.packageName} again…`,
+              });
+            },
+          }).finally(() => api.dismissNotification?.(fetchingId));
+          if (fetched.kind === "ready") {
+            target = { path: fetched.path, fileName: fetched.path, source: fetched.source === "kept" ? "kept" : "found" };
+          } else {
+            ehLog("warn", "continue-install.package-unavailable", {
+              packageId: receipt.packageId,
+              reason: fetched.reason,
+            });
+          }
+        }
+
+        if (target === undefined) {
+          // Installed from a file, or the fetch failed: ask rather than give up.
           const { pickEhcollFile } = await import("../../utils/utils");
           const picked = await pickEhcollFile(api);
           if (picked === undefined) return;
