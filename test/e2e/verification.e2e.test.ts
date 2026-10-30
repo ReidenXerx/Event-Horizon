@@ -401,11 +401,11 @@ describe("the curator's plugin order is pinned, then sorted", () => {
 });
 
 describe("the collection's rules are the ONLY rules", () => {
-  it("clears the user's own mod rules and LOOT list, through the real driver", async () => {
-    // A merged rule set exists on nobody's machine but this user's, and it
-    // changes what the game loads while failing nothing — every file verifies
-    // and the game still behaves differently from the curator's. So the
-    // collection's rules replace rather than join.
+  it("keeps the player's own mod rules and LOOT list, through the real driver", async () => {
+    // Until 0.2.101 every install cleared every rule in the game. alasdairn
+    // (Ivy, 2026-10-31): "every time we update, the rules we set get tossed".
+    // Approved: only rules BETWEEN two collection mods or plugins are
+    // replaced; a rule on the player's own mod, or on their own plugin, stays.
     world = makeWorld({ mods: [MOD] });
     const manifest = await packageFrom(world);
     const fake = makeFakeVortex({
@@ -433,22 +433,19 @@ describe("the collection's rules are the ONLY rules", () => {
 
     expect(result.kind, why(result)).toBe("success");
 
-    // Their mod rule was removed...
+    // Their mod rule stays...
     const removals = fake.dispatched.filter(
       (d) => (d as { type?: string })?.type === "STUB_REMOVE_MOD_RULE",
     );
-    expect(removals.length).toBeGreaterThan(0);
-    // ...and the LOOT userlist was cleared with Vortex's own action.
+    expect(removals).toEqual([]);
+    // ...and the LOOT userlist is not cleared.
     expect(
       fake.dispatched.some(
         (d) => (d as { type?: string })?.type === "CLEAR_USERLIST",
       ),
-    ).toBe(true);
-
-    // And the user is TOLD, with somewhere to recover from.
-    const notice = (result.rulesPurgeNotice ?? []).join(" ");
-    expect(notice).toMatch(/only ones in place/i);
-    expect(notice).toMatch(/rule-backups/);
+    ).toBe(false);
+    // Nothing of theirs was removed, so there is nothing to announce.
+    expect(result.rulesPurgeNotice).toBeUndefined();
   });
 
   it("leaves a backup file on disk before deleting anything", async () => {

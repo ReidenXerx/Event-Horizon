@@ -270,3 +270,39 @@ describe("the driver's safety interlock", () => {
     expect(steps).toMatch(/<RulesPurgeNotice[\s\S]{0,120}result\.rulesPurgeNotice/);
   });
 });
+
+describe("a scoped purge keeps the player's own rules (alasdairn, 2026-10-31)", () => {
+  it("removes only rules between two collection mods and LOOT rules between two collection plugins", () => {
+    const mods = {
+      cotap: { attributes: { logicalFileName: "CoTaP" }, rules: [{ type: "before", reference: { id: "teob" } }] },
+      teob: { attributes: { fileMD5: "md5-teob" }, rules: [{ type: "after", reference: { logicalFileName: "HisTextures" } }] },
+      his: { attributes: { logicalFileName: "HisTextures" }, rules: [{ type: "after", reference: { id: "cotap" } }] },
+      lady: { rules: [{ type: "after", reference: { fileMD5: "md5-teob" } }] },
+    };
+    const userlist = {
+      plugins: [
+        { name: "Collection.esp", after: ["Other Collection.esp", { name: "His Patch.esp" }] },
+        { name: "His Patch.esp", after: ["Collection.esp"] },
+      ],
+      groups: [],
+    };
+    const { api, dispatched } = fakeApi(stateWith(mods, userlist));
+    const snap = captureUserRuleState(api, "fallout4");
+    const result = purgeUserRuleState(api, "fallout4", snap, {
+      modIds: new Set(["cotap", "teob"]),
+      mods,
+      plugins: new Set(["collection.esp", "other collection.esp"]),
+    });
+
+    expect(result.modRulesRemoved).toBe(1); // cotap before teob
+    expect(result.modRulesKept).toBe(3); // teob -> his mod, his mod's, an outside mod's
+    expect(result.userlistRulesRemoved).toBe(1); // Collection.esp after Other Collection.esp
+    expect(result.userlistRulesKept).toBe(2);
+    expect(result.userlistCleared).toBe(false);
+    expect(dispatched.some((a) => a.type === "CLEAR_USERLIST")).toBe(false);
+    expect(dispatched.filter((a) => a.type === "REMOVE_USERLIST_RULE")).toEqual([
+      { type: "REMOVE_USERLIST_RULE", payload: { pluginId: "Collection.esp", reference: "Other Collection.esp", type: "after" } },
+    ]);
+    expect(describePurge(result, snap, "C:/backup.json")?.join(" ")).toContain("5 rule(s) on your own mods and plugins were kept");
+  });
+});

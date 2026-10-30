@@ -738,6 +738,10 @@ export interface PreviewStepProps {
   /** compareKeys of optional mods the player unticked. */
   optionalSkipped?: readonly string[];
   onToggleOptional?: (compareKey: string, skipped: boolean) => void;
+  /** "From your previous revision": keep a collection mod off (true) or switch it on. */
+  onKeepOff?: (compareKey: string, keep: boolean) => void;
+  /** "From your previous revision": carry one of the player's own mods into the new profile. */
+  onCarry?: (vortexModId: string, carry: boolean) => void;
   /** Pick one version of a mod offered in several. */
   onPickVariant?: (memberKeys: readonly string[], picked: string) => void;
   /** The player's answer to "which store is your game from?" (store builds, store unknown). */
@@ -858,6 +862,69 @@ function VersionChoices(props: {
  * The collection's optional mods, each ticked unless the player unticks it
  * (owner, 2026-10-05). Shown only when the collection has some.
  */
+/**
+ * What the player had in the previous revision (alasdairn, Ivy, 2026-10-31):
+ * collection mods they switched off stay off, their own mods come along.
+ * Both remembered for the next update.
+ */
+function PreviousRevisionChoicesView(props: {
+  choices: import("./previousRevision").PreviousRevisionChoices | undefined;
+  onKeepOff?: (compareKey: string, keep: boolean) => void;
+  onCarry?: (vortexModId: string, carry: boolean) => void;
+}): JSX.Element | null {
+  const c = props.choices;
+  if (c === undefined) return null;
+  return (
+    <Section
+      title="From your previous revision"
+      description="What you changed in the collection's last profile carries over. Untick anything you want back the collection's way."
+    >
+      <div className="eh-stack">
+        {c.keepOff.length > 0 && (
+          <div className="eh-stack eh-stack--sm">
+            <p className="eh-secondary">Collection mods you switched off: kept off.</p>
+            {c.keepOff.map((k) => (
+              <Checkbox
+                key={k.compareKey}
+                label={k.name}
+                checked={k.keep}
+                disabled={props.onKeepOff === undefined}
+                onChange={(): void => props.onKeepOff?.(k.compareKey, !k.keep)}
+              />
+            ))}
+          </div>
+        )}
+        {c.refused.length > 0 && (
+          <Callout tone="warning" title="Switched back on: other collection plugins need these">
+            <ul>
+              {c.refused.map((r) => (
+                <li key={r.compareKey}>
+                  {r.name}: needed by {r.neededBy.slice(0, 3).join(", ")}
+                  {r.neededBy.length > 3 ? ` and ${r.neededBy.length - 3} more` : ""}
+                </li>
+              ))}
+            </ul>
+          </Callout>
+        )}
+        {c.carry.length > 0 && (
+          <div className="eh-stack eh-stack--sm">
+            <p className="eh-secondary">Your own mods that were on: switched on in the new profile too.</p>
+            {c.carry.map((m) => (
+              <Checkbox
+                key={m.vortexModId}
+                label={m.name}
+                checked={m.carry}
+                disabled={props.onCarry === undefined}
+                onChange={(): void => props.onCarry?.(m.vortexModId, !m.carry)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </Section>
+  );
+}
+
 function OptionalMods(props: {
   mods: ReadonlyArray<{
     compareKey: string;
@@ -1259,6 +1326,12 @@ export function PreviewStep(props: PreviewStepProps): JSX.Element {
         mods={plan.manifest.mods}
         skipped={props.optionalSkipped ?? []}
         {...(props.onPickVariant !== undefined ? { onPick: props.onPickVariant } : {})}
+      />
+
+      <PreviousRevisionChoicesView
+        choices={bundle.previousRevision}
+        {...(props.onKeepOff !== undefined ? { onKeepOff: props.onKeepOff } : {})}
+        {...(props.onCarry !== undefined ? { onCarry: props.onCarry } : {})}
       />
 
       <OptionalMods

@@ -31,6 +31,8 @@
  *     button during installing.
  */
 
+import { previousRevisionChoices, saveCarrySkips } from "./previousRevision";
+import { saveKeptOff } from "../../../core/installer/keptOff";
 import { isAbort } from "../../../utils/abortError";
 import type { types } from "@nexusmods/vortex-api";
 
@@ -198,12 +200,14 @@ class InstallSession {
         // Versions of one mod: all but the remembered / hardware-fitting pick start left out.
         const gameStore = storeOf(api, outcome.ehcoll.manifest.game.id);
         const variantSkips = await initialVariantSkips(outcome.ehcoll.manifest, gameStore).catch(() => []);
+        const previousRevision = await previousRevisionChoices(api.getState(), outcome.ehcoll.manifest, outcome.plan, outcome.receipt);
         if (this.loadingController !== undefined) return;
         this.dispatch({
           type: "plan-ready",
           bundle: {
             zipPath,
             ...(variantSkips.length > 0 ? { optionalSkipped: variantSkips } : {}),
+            ...(previousRevision !== undefined ? { previousRevision } : {}),
             ...(gameStore !== undefined ? { gameStore: { pick: gameStore, detected: true } } : {}),
             ehcoll: outcome.ehcoll,
             receipt: outcome.receipt,
@@ -391,12 +395,14 @@ class InstallSession {
         this.loadingController = undefined;
         const gameStore = storeOf(api, outcome.ehcoll.manifest.game.id);
         const variantSkips = await initialVariantSkips(outcome.ehcoll.manifest, gameStore).catch(() => []);
+        const previousRevision = await previousRevisionChoices(api.getState(), outcome.ehcoll.manifest, outcome.plan, outcome.receipt);
         if (this.loadingController !== undefined) return;
         this.dispatch({
           type: "plan-ready",
           bundle: {
             zipPath: carry.zipPath,
             ...(variantSkips.length > 0 ? { optionalSkipped: variantSkips } : {}),
+            ...(previousRevision !== undefined ? { previousRevision } : {}),
             ...(gameStore !== undefined ? { gameStore: { pick: gameStore, detected: true } } : {}),
             ehcoll: outcome.ehcoll,
             receipt: outcome.receipt,
@@ -557,6 +563,16 @@ class InstallSession {
   /** Tick or untick an optional mod in the preview. */
   setOptionalSkipped(compareKey: string, skipped: boolean): void {
     this.dispatch({ type: "set-optional-skipped", compareKey, skipped });
+  }
+
+  /** "From your previous revision": keep a collection mod off, or switch it back on. */
+  setKeepOff(compareKey: string, keep: boolean): void {
+    this.dispatch({ type: "set-keep-off", compareKey, keep });
+  }
+
+  /** "From your previous revision": carry one of the player's own mods into the new profile, or not. */
+  setCarry(vortexModId: string, carry: boolean): void {
+    this.dispatch({ type: "set-carry", vortexModId, carry });
   }
 
   /** Pick one version of a mod offered in several: every other member of its group is left out. */
@@ -978,20 +994,40 @@ class InstallSession {
     this.installController = controller;
     const startState = this.state;
     rememberVariantPicks(startState.bundle.ehcoll.manifest, startState.bundle.optionalSkipped ?? []);
+    // "From your previous revision": what the player keeps off and carries, remembered for the next update.
+    const prevChoices = startState.bundle.previousRevision;
+    const keptOff = (prevChoices?.keepOff ?? []).filter((k) => k.keep).map((k) => k.compareKey);
+    const carryOwnMods = (prevChoices?.carry ?? []).filter((c) => c.carry).map((c) => c.vortexModId);
+    if (prevChoices !== undefined) {
+      const packageId = startState.bundle.ehcoll.manifest.package.id;
+      void saveKeptOff(packageId, keptOff);
+      void saveCarrySkips(packageId, prevChoices.carry.filter((c) => !c.carry).map((c) => c.vortexModId));
+    }
 
     this.dispatch({ type: "start-install" });
 
     void (async (): Promise<void> => {
+      // The run reads its own name for the package, so a download deleted
+      // mid-install cannot take the bundled mods with it (.frenchkiwi).
+      const { holdPackageForRun, releaseHeldPackage } = await import("../../../core/installer/packageStore");
+      const held = await holdPackageForRun(
+        startState.bundle.appDataPath,
+        startState.bundle.ehcoll.manifest.package.id,
+        startState.bundle.zipPath,
+      );
       try {
         const result = await runInstall({
           api,
           plan: startState.bundle.plan,
           ehcoll: startState.bundle.ehcoll,
-          ehcollZipPath: startState.bundle.zipPath,
+          ehcollZipPath: held?.path ?? startState.bundle.zipPath,
+          ...(held !== undefined ? { packageSourcePath: startState.bundle.zipPath } : {}),
           appDataPath: startState.bundle.appDataPath,
           decisions: {
             ...startState.decisions,
             optionalSkipped: startState.bundle.optionalSkipped ?? [],
+            ...(keptOff.length > 0 ? { keptOff } : {}),
+            ...(carryOwnMods.length > 0 ? { carryOwnMods } : {}),
           },
           abortSignal: controller.signal,
           onDeploymentPurged: (): void => {
@@ -1052,6 +1088,8 @@ class InstallSession {
             packageId: startState.bundle.plan.manifest.package.id,
           },
         });
+      } finally {
+        if (held !== undefined && held.path !== startState.bundle.zipPath) await releaseHeldPackage(held.path);
       }
     })();
   }

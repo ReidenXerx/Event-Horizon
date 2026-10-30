@@ -63,6 +63,8 @@ export interface PreviewBundle {
    * update).
    */
   optionalSkipped?: string[];
+  /** "From your previous revision": collection mods kept off, own mods carried (previousRevision.ts). */
+  previousRevision?: import("./previousRevision").PreviousRevisionChoices;
   /**
    * The store this install's store builds are picked for (variantGroups.ts):
    * detected from Vortex, or answered by the player when Vortex could not
@@ -288,6 +290,8 @@ export type WizardAction =
     }
   | { type: "set-fomod-mode"; mode: FomodReplayMode }
   | { type: "set-optional-skipped"; compareKey: string; skipped: boolean }
+  | { type: "set-keep-off"; compareKey: string; keep: boolean }
+  | { type: "set-carry"; vortexModId: string; carry: boolean }
   | { type: "pick-store"; store: GameStore; optionalSkipped: string[] }
   | { type: "back-from-confirm" }
   | { type: "ready-to-start" }
@@ -421,6 +425,17 @@ export function wizardReducer(
       if (action.skipped) now.add(action.compareKey);
       else now.delete(action.compareKey);
       return { ...state, bundle: { ...state.bundle, optionalSkipped: [...now].sort() } } as WizardState;
+    }
+    case "set-keep-off":
+    case "set-carry": {
+      if (state.kind !== "preview" && state.kind !== "decisions" && state.kind !== "confirm") return state;
+      const prev = state.bundle.previousRevision;
+      if (prev === undefined) return state;
+      const next =
+        action.type === "set-keep-off"
+          ? { ...prev, keepOff: prev.keepOff.map((k) => (k.compareKey === action.compareKey ? { ...k, keep: action.keep } : k)) }
+          : { ...prev, carry: prev.carry.map((c) => (c.vortexModId === action.vortexModId ? { ...c, carry: action.carry } : c)) };
+      return { ...state, bundle: { ...state.bundle, previousRevision: next } } as WizardState;
     }
     case "pick-store": {
       if (state.kind !== "preview") return state;

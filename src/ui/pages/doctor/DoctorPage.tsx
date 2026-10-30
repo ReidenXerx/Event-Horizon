@@ -265,6 +265,9 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
             reason: recordedLight.refused,
           });
         }
+        // Mods the player keeps off across updates are judged like left-out optional mods.
+        const keptOffMod = await import("../../../core/installer/keptOff");
+        const keptOffKeys = pkg !== undefined ? await keptOffMod.readKeptOff(pkg.manifest.package.id) : new Set<string>();
         const obs = await gatherObservations({
           api,
           gameId,
@@ -285,7 +288,7 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
           ...(pkg !== undefined
             ? {
                 deployCheck: {
-                  manifest: pkg.manifest,
+                  manifest: keptOffMod.markKeptOffOptional(pkg.manifest, keptOffKeys),
                   receiptMods: loaded.selected.mods.map((m) => ({
                     compareKey: m.compareKey,
                     vortexModId: m.vortexModId,

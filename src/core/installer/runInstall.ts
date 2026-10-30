@@ -83,6 +83,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { applyKeptOff } from "./keptOff";
 import { isAbort } from "../../utils/abortError";
 import { planInstallEpochs } from "../resolver/installEpochs";
 import { actions, types, util } from "@nexusmods/vortex-api";
@@ -682,6 +683,8 @@ export function buildAbortedResult(args: {
  * more than it saves.
  */
 export async function runInstall(ctx: DriverContext): Promise<InstallResult> {
+  // Collection mods the player keeps off run as left-out optional mods (keptOff.ts).
+  ctx = applyKeptOff(ctx);
   /**
    * ─── A THROW IS AN OUTCOME TOO ──────────────────────────────────────────
    * This used to be three lines with no `catch`, so any exception escaping
@@ -945,6 +948,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
   const optionalNotInstalled: OptionalNotInstalled[] = [];
   const optionalNotes: string[] = [];
   const optionalSkipped = new Set(ctx.decisions.optionalSkipped ?? []);
+  const keptOffKeys = new Set(ctx.decisions.keptOff ?? []);
   /**
    * Plugin files of optional mods that are not here: every plugin of one not
    * installed, and the plugins verification found absent in one that was.
@@ -1757,9 +1761,11 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         const unavailable =
           resolution.decision.kind === "nexus-unreachable" || resolution.decision.kind === "external-missing";
         if (optionalSkipped.has(resolution.compareKey) || unavailable) {
-          const reason = optionalSkipped.has(resolution.compareKey)
-            ? "not installed, you unticked it"
-            : "not installed, it is not available to download";
+          const reason = keptOffKeys.has(resolution.compareKey)
+            ? "kept off, as you had it"
+            : optionalSkipped.has(resolution.compareKey)
+              ? "not installed, you unticked it"
+              : "not installed, it is not available to download";
           ehLog("info", "install.optional.left-out", {
             name: resolution.name,
             compareKey: resolution.compareKey,
@@ -1774,7 +1780,10 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
            * more pick. Owner poll, 2026-10-09.
            */
           const existing = (resolution.decision as { existingModId?: string }).existingModId;
-          if (manifestEntry.state.variant !== undefined && existing !== undefined && optionalSkipped.has(resolution.compareKey)) {
+          if (keptOffKeys.has(resolution.compareKey) && existing !== undefined) {
+            disableModInProfile(api, activeProfileId, existing);
+            ehLog("info", "install.kept-off.switched-off", { name: resolution.name, vortexModId: existing });
+          } else if (manifestEntry.state.variant !== undefined && existing !== undefined && optionalSkipped.has(resolution.compareKey)) {
             disableModInProfile(api, activeProfileId, existing);
             ehLog("info", "install.variant.switched-off", {
               name: resolution.name,
@@ -3417,6 +3426,26 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       }),
     });
 
+    // ── 6-. the player's own mods from the previous revision ──────────
+    // A new revision gets a new profile, which starts with only the
+    // collection's mods on. The ones the player chose to carry go on here,
+    // before rules, plugin order and the deploy (alasdairn, 2026-10-31).
+    const carried: string[] = [];
+    {
+      const pool = (api.getState() as { persistent?: { mods?: Record<string, Record<string, unknown>> } }).persistent?.mods?.[plan.manifest.game.id] ?? {};
+      for (const id of ctx.decisions.carryOwnMods ?? []) {
+        if (pool[id] === undefined) continue;
+        enableModInProfile(api, activeProfileId, id);
+        carried.push(id);
+      }
+      if ((ctx.decisions.carryOwnMods ?? []).length > 0) {
+        ehLog("info", "install.own-mods.carried", { asked: ctx.decisions.carryOwnMods!.length, enabled: carried.length, ids: carried.slice(0, 50) });
+      }
+      if (carried.length > 0) {
+        optionalNotes.push(`${carried.length} of your own mod(s) from the previous revision switched on here too.`);
+      }
+    }
+
     // ── 6a. the user's own rules go first ───────────────────────────
     // Merging the collection's rules into whatever the user already had
     // produces an ordering that exists on nobody's machine but theirs, and
@@ -3452,8 +3481,20 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       });
     }
     if (ruleBackupPath !== undefined) {
-      const purge = purgeUserRuleState(api, plan.manifest.game.id, ruleSnapshot);
+      // Only rules between two of the collection's mods or plugins: the
+      // player's own rules stay (alasdairn, 2026-10-31, approved).
+      const modsNow = (api.getState() as { persistent?: { mods?: Record<string, Record<string, { attributes?: Record<string, unknown> }>> } })
+        .persistent?.mods?.[plan.manifest.game.id] ?? {};
+      const purge = purgeUserRuleState(api, plan.manifest.game.id, ruleSnapshot, {
+        modIds: new Set(installedMods.map((m) => m.vortexModId)),
+        mods: modsNow,
+        plugins: new Set(plan.manifest.plugins.order.map((p) => p.name.toLowerCase())),
+      });
       ehLog("info", "rules.purged", {
+        scoped: true,
+        modRulesKept: purge.modRulesKept,
+        userlistRulesRemoved: purge.userlistRulesRemoved,
+        userlistRulesKept: purge.userlistRulesKept,
         modRulesRemoved: purge.modRulesRemoved,
         modsTouched: purge.modsTouched,
         userlistCleared: purge.userlistCleared,
@@ -7236,7 +7277,7 @@ export async function deployAndWait(
 async function nexusRevisionOfPackageFile(ctx: DriverContext): Promise<InstallReceiptNexusCollection | undefined> {
   try {
     const state = ctx.api.getState();
-    const downloaded = nexusCollectionOfDownload(state, ctx.ehcollZipPath, (gameId) =>
+    const downloaded = nexusCollectionOfDownload(state, ctx.packageSourcePath ?? ctx.ehcollZipPath, (gameId) =>
       selectors.downloadPathForGame(state, gameId),
     );
     if (downloaded !== undefined) {

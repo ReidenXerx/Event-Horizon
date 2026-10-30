@@ -100,6 +100,16 @@ export type UserConfirmedDecisions = {
   versionMismatchAcknowledged?: { required: string; installed: string };
   /** compareKeys of OPTIONAL mods the player unticked in the preview. Asked fresh on every install. */
   optionalSkipped?: string[];
+  /**
+   * compareKeys of collection mods the player switched off and keeps off
+   * across this update (keptOff.ts). Left out like an unticked optional mod.
+   */
+  keptOff?: string[];
+  /**
+   * Vortex mod ids of the player's OWN mods (not the collection's) that were
+   * enabled in the previous revision's profile and go on in this one too.
+   */
+  carryOwnMods?: string[];
 };
 
 /**
@@ -192,6 +202,12 @@ export type DriverContext = {
    * {@link ehcoll} because `ReadEhcollResult` doesn't carry it.
    */
   ehcollZipPath: string;
+  /**
+   * The file the player picked or Vortex downloaded, when the run reads a
+   * held copy of it ({@link holdPackageForRun}). The Nexus revision is looked
+   * up by THIS path: Vortex's download record names the original.
+   */
+  packageSourcePath?: string;
   /** Absolute path of `util.getVortexPath("appData")`. Used for the receipt. */
   appDataPath: string;
   /** User's pre-resolved choices. Slice 6a: always empty. */

@@ -101,13 +101,15 @@ describe("the warning after the pre-install checks", () => {
     expect(driver.calls).toBe(0);
   });
 
-  it("starts the install only from the warning's Understood, and only once", () => {
+  it("starts the install only from the warning's Understood, and only once", async () => {
     const s = confirmSession();
     const v = vortex();
     s.startInstall(v.api);
     s.beginInstall(v.api);
     s.beginInstall(v.api);
     expect(stateOf(s).kind).toBe("installing");
+    // The run first takes its own hold on the package (packageStore.holdPackageForRun).
+    await settle();
     expect(driver.calls).toBe(1);
   });
 

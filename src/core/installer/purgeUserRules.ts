@@ -58,6 +58,11 @@ export type UserRuleSnapshot = {
 
 export type PurgeResult = {
   modRulesRemoved: number;
+  /** Rules left in place because they involve a mod or plugin the collection does not own (scoped purge). */
+  modRulesKept?: number;
+  /** Userlist rules removed one by one (scoped purge); the unscoped purge clears the whole list instead. */
+  userlistRulesRemoved?: number;
+  userlistRulesKept?: number;
   /** Mods that had at least one rule removed. */
   modsTouched: number;
   userlistCleared: boolean;
@@ -131,7 +136,15 @@ export function purgeUserRuleState(
   api: types.IExtensionApi,
   gameId: string,
   snapshot: UserRuleSnapshot,
+  /**
+   * What the collection owns. Given, only rules BETWEEN two of its mods, and
+   * LOOT rules between two of its plugins, are removed; the player's rules on
+   * their own mods and plugins stay (alasdairn, Ivy, 2026-10-31: every update
+   * tossed his rules; approved). Absent: the old whole-game clear.
+   */
+  scope?: PurgeScope,
 ): PurgeResult {
+  if (scope !== undefined) return purgeCollectionRules(api, gameId, snapshot, scope);
   const result: PurgeResult = {
     modRulesRemoved: 0,
     modsTouched: 0,
@@ -190,6 +203,21 @@ export function describePurge(
   snapshot: UserRuleSnapshot,
   backupPath: string | undefined,
 ): string[] | undefined {
+  if (result.modRulesKept !== undefined) {
+    const removed = result.modRulesRemoved + (result.userlistRulesRemoved ?? 0);
+    const kept = result.modRulesKept + (result.userlistRulesKept ?? 0);
+    if (removed === 0 && result.failures.length === 0) return undefined;
+    const lines = [
+      `Rules between the collection's own mods and plugins were replaced by the curator's ` +
+        `(${result.modRulesRemoved} mod rule(s), ${result.userlistRulesRemoved ?? 0} LOOT rule(s)).` +
+        (kept > 0 ? ` ${kept} rule(s) on your own mods and plugins were kept.` : ""),
+    ];
+    if (backupPath !== undefined) lines.push(`A copy of every rule as it was before was saved to: ${backupPath}`);
+    if (result.failures.length > 0) {
+      lines.push(`${result.failures.length} could not be removed: ${result.failures.slice(0, 3).join("; ")}`);
+    }
+    return lines;
+  }
   // Nothing of the user's was actually removed. Clearing an already-empty
   // userlist is a dispatch, not an event, and announcing it would tell someone
   // their rules were deleted when they had none — the kind of scary,
@@ -235,4 +263,92 @@ export function describePurge(
     );
   }
   return lines;
+}
+
+export type PurgeScope = {
+  /** Vortex mod ids of the collection's mods in this run. */
+  modIds: ReadonlySet<string>;
+  /** Vortex's mods for the game, to resolve what a rule's reference points at. */
+  mods: Readonly<Record<string, { attributes?: Record<string, unknown> } | undefined>>;
+  /** The collection's plugins, lowercased. */
+  plugins: ReadonlySet<string>;
+};
+
+/**
+ * The collection mod a rule's reference names, if it names one. A reference
+ * that cannot be resolved is the player's: kept.
+ */
+export function ruleTargetInCollection(reference: unknown, scope: PurgeScope): boolean {
+  if (reference === null || typeof reference !== "object") return false;
+  const ref = reference as Record<string, unknown>;
+  if (typeof ref.id === "string") return scope.modIds.has(ref.id);
+  const repo = ref.repo as { fileId?: unknown } | undefined;
+  for (const id of scope.modIds) {
+    const a = scope.mods[id]?.attributes ?? {};
+    if (typeof ref.fileMD5 === "string" && ref.fileMD5 !== "" && a.fileMD5 === ref.fileMD5) return true;
+    if (typeof ref.logicalFileName === "string" && ref.logicalFileName !== "" && a.logicalFileName === ref.logicalFileName) return true;
+    if (repo?.fileId !== undefined && a.fileId !== undefined && String(a.fileId) === String(repo.fileId)) return true;
+  }
+  return false;
+}
+
+const USERLIST_KINDS: ReadonlyArray<[string, string]> = [["after", "after"], ["req", "requires"], ["inc", "incompatible"]];
+
+function purgeCollectionRules(
+  api: types.IExtensionApi,
+  gameId: string,
+  snapshot: UserRuleSnapshot,
+  scope: PurgeScope,
+): PurgeResult {
+  const result: PurgeResult = {
+    modRulesRemoved: 0,
+    modRulesKept: 0,
+    modsTouched: 0,
+    userlistCleared: false,
+    userlistRulesRemoved: 0,
+    userlistRulesKept: 0,
+    failures: [],
+  };
+  const touched = new Set<string>();
+  for (const entry of snapshot.modRules) {
+    if (!scope.modIds.has(entry.modId) || !ruleTargetInCollection(entry.rule.reference, scope)) {
+      result.modRulesKept! += 1;
+      continue;
+    }
+    try {
+      api.store?.dispatch(actions.removeModRule(gameId, entry.modId, entry.rule as never));
+      result.modRulesRemoved += 1;
+      touched.add(entry.modId);
+    } catch (err) {
+      result.failures.push(`mod rule on "${entry.modId}": ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  result.modsTouched = touched.size;
+
+  // LOOT rules: only those with a collection plugin on BOTH sides. Group
+  // assignments are left: the collection sets its own plugins' groups anyway.
+  const store = api.store as unknown as { dispatch?: (action: { type: string; payload?: unknown }) => void };
+  const plugins = Array.isArray(snapshot.userlist.plugins) ? (snapshot.userlist.plugins as Array<Record<string, unknown>>) : [];
+  for (const p of plugins) {
+    const owner = typeof p.name === "string" ? p.name : undefined;
+    if (owner === undefined) continue;
+    for (const [field, type] of USERLIST_KINDS) {
+      const list = Array.isArray(p[field]) ? (p[field] as unknown[]) : [];
+      for (const ref of list) {
+        const target = typeof ref === "string" ? ref : (ref as { name?: unknown } | undefined)?.name;
+        if (typeof target !== "string") continue;
+        if (!scope.plugins.has(owner.toLowerCase()) || !scope.plugins.has(target.toLowerCase())) {
+          result.userlistRulesKept! += 1;
+          continue;
+        }
+        try {
+          store?.dispatch?.({ type: "REMOVE_USERLIST_RULE", payload: { pluginId: owner, reference: target, type } });
+          result.userlistRulesRemoved! += 1;
+        } catch (err) {
+          result.failures.push(`LOOT rule ${owner} -> ${target}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
+  }
+  return result;
 }

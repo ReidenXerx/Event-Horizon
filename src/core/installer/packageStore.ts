@@ -284,3 +284,64 @@ export async function clearStoredPackage(
     ehLog("info", "package-store.clear.failed", { packageId, err });
   }
 }
+
+/**
+ * ─── THE RUN READS ITS OWN COPY, NOT VORTEX'S DOWNLOAD ─────────────────
+ * .frenchkiwi, Ivy 1.0.56 (2026-10-31): the install started from Vortex's
+ * download of the collection, and 23 minutes in that file was gone. Every
+ * bundled mod after that point and every mirror restore failed with "No file
+ * at", and the receipt found no download to name the revision. Nothing in
+ * Event Horizon deleted it; the download folder is Vortex's and the player's.
+ *
+ * So the run holds its own name for the package for as long as it runs: a
+ * hard link where the two folders share a volume (instant, no space), a copy
+ * otherwise. A deleted download then removes one name of the file and the run
+ * keeps reading the other. Released when the run ends.
+ *
+ * Returns undefined when neither works; the run then reads the original, as
+ * before, and says so in the log.
+ */
+export async function holdPackageForRun(
+  appDataPath: string,
+  packageId: string,
+  sourcePath: string,
+): Promise<{ path: string; how: "link" | "copy" } | undefined> {
+  try {
+    const dir = path.join(getPackageStoreDir(appDataPath), "in-use");
+    const ext = path.extname(sourcePath) === "" ? ".ehcoll" : path.extname(sourcePath);
+    const dest = path.join(dir, `${packageId}${ext}`);
+    if (path.resolve(sourcePath).toLowerCase() === path.resolve(dest).toLowerCase()) {
+      return { path: dest, how: "link" };
+    }
+    await fsp.mkdir(dir, { recursive: true });
+    await fsp.rm(dest, { force: true });
+    let how: "link" | "copy" = "link";
+    try {
+      await fsp.link(sourcePath, dest);
+    } catch (err) {
+      ehLog("info", "package-hold.link-failed", { code: (err as NodeJS.ErrnoException)?.code, then: "copying" });
+      how = "copy";
+      const partial = `${dest}.partial`;
+      await fsp.rm(partial, { force: true });
+      await fsp.copyFile(sourcePath, partial);
+      await fsp.rename(partial, dest);
+    }
+    ehLog("info", "package-hold.ok", { packageId, how, from: sourcePath, held: dest });
+    return { path: dest, how };
+  } catch (err) {
+    ehLog("warn", "package-hold.failed", {
+      packageId,
+      from: sourcePath,
+      err,
+      consequence: "the run reads Vortex's download directly; deleting it mid-install fails the bundled mods",
+    });
+    return undefined;
+  }
+}
+
+/** Drop the run's own name for the package. Never throws. */
+export async function releaseHeldPackage(heldPath: string): Promise<void> {
+  await fsp.rm(heldPath, { force: true }).catch((err: unknown) => {
+    ehLog("info", "package-hold.release-failed", { heldPath, err });
+  });
+}
