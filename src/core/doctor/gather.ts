@@ -192,7 +192,7 @@ export interface GatherOptions {
    */
   deployCheck?: {
     manifest: Pick<EhcollManifest, "mods" | "rules" | "deployment">;
-    receiptMods: ReadonlyArray<{ compareKey: string; vortexModId: string; name: string }>;
+    receiptMods: ReadonlyArray<{ compareKey: string; vortexModId: string; name: string; ownership?: string }>;
   };
 }
 
@@ -420,6 +420,42 @@ export async function gatherObservations(
     }
   }
 
+  // Every mirrored mod's recorded files at their paths: names only, so cheap.
+  let mirrorLayout: HealthObservations["mirrorLayout"];
+  if (opts.deployCheck !== undefined) {
+    try {
+      const [{ mirrorLayoutTargets, checkMirrorLayout }, { walkStagingFolder }, { stagingRootForModId }] =
+        await Promise.all([
+          import("./mirrorLayout"),
+          import("../manifest/stagingFileWalker"),
+          import("../stagingPath"),
+        ]);
+      mirrorLayout = await checkMirrorLayout({
+        targets: mirrorLayoutTargets(opts.deployCheck.manifest.mods, opts.deployCheck.receiptMods),
+        stagingRootFor: (id) => stagingRootForModId(state, gameId, id),
+        list: async (root) => {
+          let incomplete = false;
+          const files = await walkStagingFolder(root, undefined, () => {
+            incomplete = true;
+          });
+          return incomplete ? undefined : files.map((f) => f.relativePath);
+        },
+      });
+      ehLog(mirrorLayout.kind === "checked" && mirrorLayout.findings.length > 0 ? "warn" : "info", "doctor.mirror-layout", {
+        ...(mirrorLayout.kind === "checked"
+          ? {
+              judged: mirrorLayout.judged,
+              skipped: mirrorLayout.skipped,
+              findings: mirrorLayout.findings.map((f) => ({ mod: f.name, missing: f.missing, of: f.of, examples: f.examples })),
+            }
+          : { why: mirrorLayout.why }),
+      });
+    } catch (err) {
+      ehLog("warn", "doctor.mirror-layout.unreadable", { err });
+      mirrorLayout = { kind: "not-checked", why: "the mods' folders could not be read." };
+    }
+  }
+
   const observations: HealthObservations = {
     existingProfileIds: readProfileIds(state, gameId),
     activeProfileId,
@@ -441,6 +477,7 @@ export async function gatherObservations(
       : {}),
     ...(nativeOnDisk !== undefined ? { nativeOnDisk } : {}),
     ...(deployWinners !== undefined ? { deployWinners } : {}),
+    ...(mirrorLayout !== undefined ? { mirrorLayout } : {}),
   };
   op.ok({
     // `undefined` here means the table was unreadable, not that it was empty

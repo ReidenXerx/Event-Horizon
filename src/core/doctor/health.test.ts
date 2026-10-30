@@ -55,6 +55,7 @@ const healthy = (over: Partial<HealthObservations> = {}): HealthObservations => 
   enabledModIds: ["m1", "m2", "m3"],
   driftedCompareKeys: [],
   deployWinners: { kind: "checked", judgedPaths: 12, judgedWinners: 3, findings: [], lines: [], fixable: false },
+  mirrorLayout: { kind: "checked", judged: 2, skipped: 0, findings: [] },
   currentPluginOrder: on("a.esp", "b.esp", "c.esp"),
   // Matches the recorded flags above. `c.esp` recorded none, so it is not
   // checked at all — absent is an unknown, never drift.

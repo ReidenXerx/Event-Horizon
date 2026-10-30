@@ -87,7 +87,9 @@ export type HealthCheckId =
    * Which mod's copy of each contested file the game gets, against the
    * curator's own deployment (deploymentWinners.ts).
    */
-  | "deploy-winners";
+  | "deploy-winners"
+  /** Every file the curator recorded for a mirrored mod is at its path (mirrorLayout.ts). */
+  | "mirror-layout";
 
 /**
  * Deliberately five states, not "pass/fail".
@@ -226,6 +228,11 @@ export interface HealthObservations {
    * "fine".
    */
   deployWinners?: import("../installer/deploymentCheck").DeployCheckResult;
+  /**
+   * Mirrored mods whose folder lacks files the curator recorded. Absent when
+   * the package was not found — "not checked", never "fine".
+   */
+  mirrorLayout?: import("./mirrorLayout").MirrorLayoutResult;
 }
 
 /**
@@ -313,6 +320,53 @@ export function deployWinnersCheck(obs: HealthObservations["deployWinners"]): He
       : obs.fixable
         ? { heal: { action: "redeploy-winners" as const, label: "Re-apply the collection's rules and deploy" } }
         : {}),
+  };
+}
+
+export function mirrorLayoutCheck(obs: HealthObservations["mirrorLayout"]): HealthCheck {
+  const base = { id: "mirror-layout" as const, title: "Curator's file layout" };
+  if (obs === undefined || obs.kind === "not-checked") {
+    return {
+      ...base,
+      status: "unknown",
+      summary:
+        obs === undefined
+          ? "Not checked: the collection's package was not found, and the check compares against it."
+          : `Not checked: ${obs.why}`,
+      detail: [],
+      affectedCount: 0,
+    };
+  }
+  if (obs.judged === 0 && obs.findings.length === 0) {
+    return {
+      ...base,
+      status: "not-applicable",
+      summary: "No mod in this collection is rearranged into the curator's layout.",
+      detail: [],
+      affectedCount: 0,
+    };
+  }
+  const n = obs.findings.length;
+  if (n === 0) {
+    return {
+      ...base,
+      status: "healthy",
+      summary: `All ${obs.judged} mod${obs.judged === 1 ? "" : "s"} the curator rearranged ${obs.judged === 1 ? "has" : "have"} every file where the curator put it.`,
+      detail: [],
+      affectedCount: 0,
+    };
+  }
+  return {
+    ...base,
+    status: "drifted",
+    summary:
+      `${n} mod${n === 1 ? " is" : "s are"} still laid out as ${n === 1 ? "its" : "their"} archive ships, not as the ` +
+      `curator arranged ${n === 1 ? "it" : "them"}. The game may load the wrong files, or plugins the collection does not use.`,
+    detail: obs.findings.map(
+      (f) => `${f.name}: ${f.missing} of ${f.of} files are not where the curator put them (e.g. ${f.examples[0] ?? "?"})`,
+    ),
+    affectedCount: n,
+    heal: { action: "reinstall-mods" as const, label: `Re-apply the curator's layout (${n} mod${n === 1 ? "" : "s"})` },
   };
 }
 
@@ -956,6 +1010,9 @@ export function evaluateHealth(
 
   // ── who wins each contested file ─────────────────────────────────────
   checks.push(deployWinnersCheck(obs.deployWinners));
+
+  // ── mirrored mods in the curator's layout ────────────────────────────
+  checks.push(mirrorLayoutCheck(obs.mirrorLayout));
 
   // ── mod rules ────────────────────────────────────────────────────────
   const appliedRules = receipt.rulesApplication?.appliedRuleCount;

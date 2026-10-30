@@ -290,6 +290,7 @@ function CollectionDoctor(props: DoctorPageProps): JSX.Element {
                     compareKey: m.compareKey,
                     vortexModId: m.vortexModId,
                     name: m.name,
+                    ...(m.ownership !== undefined ? { ownership: m.ownership } : {}),
                   })),
                 },
               }
