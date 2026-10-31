@@ -669,7 +669,7 @@ export async function runVerb(api: types.IExtensionApi, name: string, body: Verb
     ...(pluginsChangedDialog(api) !== undefined ? { pluginListChanged: { waiting: true, answerWith: "pluginsChanged.answer" } } : {}),
   });
   const writesPluginsTxt = PLUGINS_TXT_WRITERS.has(name);
-  const restorePoint = verb.restorePoint === true ? takeRestorePoint(api, name) : undefined;
+  const restorePoint = verb.restorePoint === true && body["dryRun"] !== true ? takeRestorePoint(api, name) : undefined;
   try {
     // Already asking before the command: answer it first when told how, else say so instead of a write that cannot land.
     let answeredFirst: Record<string, unknown> | undefined;
@@ -3302,6 +3302,29 @@ export const VERBS: Record<string, Verb> = {
       if (picks !== undefined && (choices !== undefined || unattended)) {
         throw new ControlError("bad-request", `"picks" answers the live wizard; send it without "choices" and "unattended".`);
       }
+      /**
+       * A dry run downloads and looks, and installs nothing. Before 0.2.103
+       * `dryRun` was ignored here, so every archive without a FOMOD really
+       * installed and was enabled (Fallout-collection, 2026-10-31: a --dry
+       * update check put in 7 Gecko ESLs, RobCo TD, SCOURGE patches...).
+       */
+      if (body["dryRun"] === true) {
+        const archive = await downloadFor(api, gameId, body);
+        const looked = await readInstaller(api, archivePathFor(api, gameId, archive), body["checkMasters"] === true);
+        const existing = existingFor(api, gameId, archive);
+        const notUsable = picks !== undefined ? await notUsableFor(api, gameId, archive, picks) : [];
+        return {
+          dryRun: true,
+          installed: false,
+          gameId,
+          archiveId: archive,
+          existing,
+          needsChoices: asksQuestions(looked.description) && choices === undefined && picks === undefined && !unattended,
+          ...(notUsable.length > 0 ? { notUsable } : {}),
+          mastersChecked: looked.mastersChecked,
+          installer: looked.description.kind === "fomod" ? publicDescription(looked.description) : looked.description,
+        };
+      }
       if (body["ifExisting"] === "replace") {
         await askOwner(api, {
           action: "replace an installed mod in every profile",
@@ -3499,7 +3522,8 @@ export const VERBS: Record<string, Verb> = {
         verified: { inPool: true, state: m.state, enabledIn: enable ? profileId : undefined },
       };
     },
-    describe: (_b, r) => `installed ${String(r["name"] ?? r["vortexModId"])}`,
+    describe: (_b, r) =>
+      r["dryRun"] === true ? `looked at download ${String(r["archiveId"])} (dry run, nothing installed)` : `installed ${String(r["name"] ?? r["vortexModId"])}`,
   },
 
   // Collection build + draft upload: no publish verb, ever (collectionVerbs.ts).

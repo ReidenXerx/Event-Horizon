@@ -1008,6 +1008,22 @@ describe("install and the FOMOD question", () => {
     expect(started).not.toHaveBeenCalled();
   });
 
+  // Fallout-collection, 2026-10-31: dryRun was ignored, so a --dry update check installed every plain archive.
+  it("dryRun looks and reports, and installs nothing even when it could install unattended", async () => {
+    withDownload();
+    v.state.persistent.mods.fallout4.a.archiveId = "nec";
+    const started = vi.fn();
+    v.api.events.emit = (ev: string) => (ev === "start-install-download" ? started() : undefined);
+    const r = (await run("install", { archiveId: "nec", unattended: true, choices: { type: "fomod", options: [] }, dryRun: true })) as any;
+    expect(r).toMatchObject({ dryRun: true, installed: false, archiveId: "nec", existing: ["a"], needsChoices: false });
+    expect(r.installer.moduleName).toBe("Necessity");
+    expect(r.restorePoint).toBeUndefined();
+    expect(started).not.toHaveBeenCalled();
+    const asked = (await run("install", { archiveId: "nec", dryRun: true })) as any;
+    expect(asked).toMatchObject({ dryRun: true, installed: false, needsChoices: true });
+    expect(started).not.toHaveBeenCalled();
+  });
+
   it("installer.describe returns the same tree without installing", async () => {
     withDownload();
     const r = (await run("installer.describe", { archiveId: "nec" })) as any;

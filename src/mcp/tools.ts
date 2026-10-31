@@ -276,6 +276,7 @@ export const TOOLS: ToolSpec[] = [
       ifExisting: { type: "string", enum: ["alongside", "replace", "ask"], description: "If an older version is installed: keep both (alongside), replace it in every profile, or let the user decide." },
       asCopy: str("Install a separate copy of an already-installed archive under this label."),
       checkMasters: bool("With needs-choices: also report options whose plugins need missing mods."),
+      dryRun: bool("Download and look only: report the installer, what is already installed from it, and whether picks are needed. Nothing is installed or enabled."),
     },
   },
   {
