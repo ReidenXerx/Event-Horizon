@@ -1,7 +1,7 @@
 # Changelog
 
 Everything that changed in Event Horizon, newest first, written for the people who use it. Since the first commit
-in April 2026 that is about 400 changes across 224 builds.
+in April 2026 that is about 400 changes across 225 builds.
 
 Until 0.1.0-alpha.149 builds were numbered `0.1.0-alpha.N`. From **0.1.151** the build number is the patch number:
 Vortex ignores everything after the dash when it decides whether an extension has an update, so an alpha number
@@ -9,6 +9,12 @@ could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
+
+## [0.2.103] — 2026-10-31
+
+### Agents
+- A dry run of the install command now only downloads and looks: it no longer installs and enables mods that
+  have no installer.
 
 ## [0.2.102] — 2026-10-31
 
