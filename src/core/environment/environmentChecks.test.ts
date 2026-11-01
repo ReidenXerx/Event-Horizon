@@ -15,6 +15,7 @@ import {
   decideLauncherRan,
   decideOwnedMasters,
   decideProtectedLocation,
+  decideScreenSize,
   decideSyncedFolder,
   decideWinePrefix,
   describeBlockedChecks,
@@ -593,5 +594,56 @@ describe("decideGameFolder — what it did not check, and what it left alone", (
     expect(c.status).toBe("ok");
     expect(c.lines.join("\n")).toMatch(/presence, not content/);
     expect(c.lines.join("\n")).toMatch(/flowchartx64\.dll \(CreationKit\.exe\)/);
+  });
+});
+
+describe("decideScreenSize", () => {
+  const prefsPath = "C:\\Users\\p\\Documents\\My Games\\Skyrim Special Edition\\SkyrimPrefs.ini";
+  const base = {
+    gameName: "Skyrim Special Edition",
+    prefsPath,
+    prefs: { width: 1920, height: 1080, fullScreen: false, borderless: true },
+    screen: { width: 2560, height: 1440 },
+  };
+
+  it("warns about a 1080p borderless window on a 1440p screen, naming both copies to fix", () => {
+    const profile = "C:\\Users\\p\\AppData\\Roaming\\Vortex\\skyrimse\\profiles\\abc\\SkyrimPrefs.ini";
+    const c = decideScreenSize({ ...base, profilePrefsPath: profile });
+    expect(c.status).toBe("warning");
+    expect(c.title).toBe("Skyrim Special Edition will open in a 1920x1080 window on your 2560x1440 screen.");
+    expect(c.lines[0]).toMatch(/^SkyrimPrefs\.ini sets iSize W=1920 and iSize H=1080, and the game runs in a window \(borderless\)/);
+    expect(c.steps[0]).toBe(`Open ${prefsPath} and, under [Display], set iSize W=2560 and iSize H=1440.`);
+    expect(c.steps[1]).toContain(profile);
+  });
+
+  it("is fine when the window matches the screen, or the game runs full screen", () => {
+    expect(decideScreenSize({ ...base, screen: { width: 1920, height: 1080 } }).status).toBe("ok");
+    expect(decideScreenSize({ ...base, prefs: { ...base.prefs, fullScreen: true } }).status).toBe("ok");
+  });
+
+  it("lets SSE Display Tweaks decide when it sets the window itself", () => {
+    const path = "D:\\Skyrim\\Data\\SKSE\\Plugins\\SSEDisplayTweaks.ini";
+    // Upscale stretches the small window to the screen.
+    expect(decideScreenSize({ ...base, tweaks: { path, borderless: true, borderlessUpscale: true } }).status).toBe("ok");
+    // Its Fullscreen beats the Prefs file's windowed setting.
+    expect(decideScreenSize({ ...base, tweaks: { path, fullscreen: true } }).status).toBe("ok");
+    // Meridia's shipped setup: borderless, no upscale — the Prefs size decides.
+    expect(
+      decideScreenSize({ ...base, tweaks: { path, fullscreen: false, borderless: true, borderlessUpscale: false } }).status,
+    ).toBe("warning");
+    // Its Resolution line overrides iSize, so that is the line to change.
+    const r = decideScreenSize({
+      ...base,
+      prefs: { ...base.prefs, width: 2560, height: 1440 },
+      tweaks: { path, resolution: { width: 1920, height: 1080 } },
+    });
+    expect(r.status).toBe("warning");
+    expect(r.steps).toEqual([`Open ${path} and set Resolution=2560x1440.`]);
+  });
+
+  it("never warns on what it could not read", () => {
+    expect(decideScreenSize({ ...base, screen: undefined }).status).toBe("unknown");
+    expect(decideScreenSize({ ...base, prefs: undefined }).status).toBe("unknown");
+    expect(decideScreenSize({ ...base, prefs: { fullScreen: false } }).status).toBe("unknown");
   });
 });

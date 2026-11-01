@@ -35,9 +35,12 @@ import {
   decideOwnedMasters,
   decideProtectedLocation,
   decideSyncedFolder,
+  decideScreenSize,
   decideSettingsFolder,
   decideWinePrefix,
+  type DisplayTweaks,
   type EnvironmentCheck,
+  type PrefsDisplay,
   type IniLeftover,
   type SyncedRoot,
 } from "./environmentChecks";
@@ -89,6 +92,10 @@ export type PreflightFacts = {
   userProfileDir?: string;
   /** Under Wine: where the Linux side is, as Wine reports it. */
   wineHost?: WineHost;
+  /** The screen Vortex is on, in real pixels. Absent: not read, and the screen-size check does not run. */
+  screen?: { width: number; height: number };
+  /** The active Vortex profile's own copy of the Prefs file, when the profile keeps local game settings. */
+  profilePrefsPath?: string;
 };
 
 export type EnvironmentReport = {
@@ -200,6 +207,70 @@ async function launcherWrotePrefs(prefsPath: string, hasLauncher: boolean | unde
   } catch {
     return undefined;
   }
+}
+
+/** A number or flag value without a trailing `; comment` or `# comment`. */
+const bare = (v: string | undefined): string | undefined => v?.split(/[;#]/)[0]?.trim();
+
+const intValue = (v: string | undefined): number | undefined => {
+  const t = bare(v);
+  if (t === undefined || !/^\d+$/.test(t)) return undefined;
+  return Number.parseInt(t, 10);
+};
+
+const boolValue = (v: string | undefined): boolean | undefined => {
+  const t = bare(v)?.toLowerCase();
+  if (t === "1" || t === "true") return true;
+  if (t === "0" || t === "false") return false;
+  return undefined;
+};
+
+/** The Prefs file's [Display] window lines. `undefined` when the file cannot be read. */
+async function readPrefsDisplay(prefsPath: string): Promise<PrefsDisplay | undefined> {
+  let settings;
+  try {
+    settings = parseIni(await fsp.readFile(prefsPath, "utf8"));
+  } catch {
+    return undefined;
+  }
+  const get = (key: string): string | undefined =>
+    settings.find((s) => s.section.toLowerCase() === "display" && s.key.trim().toLowerCase() === key)?.value;
+  const out: PrefsDisplay = {};
+  const width = intValue(get("isize w"));
+  const height = intValue(get("isize h"));
+  const fullScreen = boolValue(get("bfull screen"));
+  const borderless = boolValue(get("bborderless"));
+  if (width !== undefined) out.width = width;
+  if (height !== undefined) out.height = height;
+  if (fullScreen !== undefined) out.fullScreen = fullScreen;
+  if (borderless !== undefined) out.borderless = borderless;
+  return out;
+}
+
+/**
+ * SSE Display Tweaks' deployed INI, when the game has it. Its Fullscreen,
+ * Borderless and Resolution lines override the Prefs file, and
+ * BorderlessUpscale stretches a smaller window to the screen.
+ */
+async function readDisplayTweaks(gameDir: string): Promise<DisplayTweaks | undefined> {
+  const file = path.join(gameDir, "Data", "SKSE", "Plugins", "SSEDisplayTweaks.ini");
+  let settings;
+  try {
+    settings = parseIni(await fsp.readFile(file, "utf8"));
+  } catch {
+    return undefined;
+  }
+  const get = (key: string): string | undefined => settings.find((s) => s.key.trim().toLowerCase() === key)?.value;
+  const out: DisplayTweaks = { path: file };
+  const fullscreen = boolValue(get("fullscreen"));
+  const borderless = boolValue(get("borderless"));
+  const upscale = boolValue(get("borderlessupscale"));
+  const res = /^(\d+)\s*x\s*(\d+)$/i.exec(bare(get("resolution")) ?? "");
+  if (fullscreen !== undefined) out.fullscreen = fullscreen;
+  if (borderless !== undefined) out.borderless = borderless;
+  if (upscale !== undefined) out.borderlessUpscale = upscale;
+  if (res !== null) out.resolution = { width: Number(res[1]), height: Number(res[2]) };
+  return out;
 }
 
 /** `[Archive]` settings in the user's INIs that differ from the game's `<Game>_Default.ini`. */
@@ -351,6 +422,21 @@ export async function runEnvironmentPreflight(
       stagingDir: facts.stagingDir,
     }),
   );
+  // Only where the launcher writes the window size into the Prefs file, and only
+  // when the screen was read: a check that cannot know the screen says nothing.
+  if (facts.screen !== undefined && facts.hasLauncher === true && prefsExists) {
+    const tweaks = facts.gameId === "skyrimse" ? await readDisplayTweaks(gameDir) : undefined;
+    report.checks.push(
+      decideScreenSize({
+        gameName: facts.gameName,
+        prefsPath,
+        prefs: await readPrefsDisplay(prefsPath!),
+        tweaks,
+        screen: facts.screen,
+        profilePrefsPath: facts.profilePrefsPath,
+      }),
+    );
+  }
   if (facts.ownedMasters !== undefined) {
     const recorded = facts.ownedMasters.recorded;
     const data = recorded !== undefined && recorded.length > 0 ? await dataFolderNames(gameDir) : undefined;

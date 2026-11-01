@@ -94,6 +94,48 @@ export function collectionIniKeys(gameIni: EhcollGameIni | undefined): Set<strin
   return out;
 }
 
+/**
+ * The screen Vortex's window is on, in real pixels (the CSS size times the
+ * Windows scaling). Electron's `screen` module is main-process only, so this is
+ * the renderer's own view; on a multi-monitor desk it is the screen Vortex sits on.
+ */
+export function readScreenPixels(): { width: number; height: number } | undefined {
+  try {
+    const g = globalThis as { screen?: { width?: unknown; height?: unknown }; devicePixelRatio?: unknown };
+    const w = g.screen?.width;
+    const h = g.screen?.height;
+    const ratio = typeof g.devicePixelRatio === "number" && g.devicePixelRatio > 0 ? g.devicePixelRatio : 1;
+    if (typeof w !== "number" || typeof h !== "number" || w <= 0 || h <= 0) return undefined;
+    return { width: Math.round(w * ratio), height: Math.round(h * ratio) };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The active profile's own copy of the Prefs file, when that profile keeps local
+ * game settings: Vortex copies it over My Games when the profile is activated,
+ * so a fix made only in My Games comes undone.
+ */
+function profilePrefsPathFor(state: unknown, gameId: string, prefsPath: string | undefined): string | undefined {
+  if (prefsPath === undefined) return undefined;
+  try {
+    const s = state as {
+      settings?: { profiles?: { lastActiveProfile?: Record<string, unknown> } };
+      persistent?: { profiles?: Record<string, { gameId?: unknown; features?: Record<string, unknown> }> };
+    };
+    const id = s.settings?.profiles?.lastActiveProfile?.[gameId];
+    if (typeof id !== "string") return undefined;
+    const profile = s.persistent?.profiles?.[id];
+    if (profile?.gameId !== gameId || profile.features?.["local_game_settings"] !== true) return undefined;
+    const userData = (util as unknown as { getVortexPath?: (id: string) => string }).getVortexPath?.("userData");
+    if (typeof userData !== "string" || userData.length === 0) return undefined;
+    return path.join(userData, gameId, "profiles", id, path.basename(prefsPath));
+  } catch {
+    return undefined;
+  }
+}
+
 export function gatherPreflightFacts(args: {
   state: unknown;
   gameId: string;
@@ -141,6 +183,8 @@ export function gatherPreflightFacts(args: {
       return undefined;
     }
   });
+  const screen = readScreenPixels();
+  const profilePrefsPath = profilePrefsPathFor(state, gameId, prefsPath);
   const facts: PreflightFacts = {
     gameId,
     gameName: gameDisplayName(state, gameId),
@@ -164,6 +208,8 @@ export function gatherPreflightFacts(args: {
     ...(haveDocuments ? { documentsPath: documentsPath! } : {}),
     ...(args.keepPlayerSettings === true ? { keepPlayerSettings: true } : {}),
     ...(wineHost !== undefined ? { wineHost } : {}),
+    ...(screen !== undefined ? { screen } : {}),
+    ...(profilePrefsPath !== undefined ? { profilePrefsPath } : {}),
   };
   ehLog("info", "environment.facts", {
     gameId,
@@ -184,6 +230,8 @@ export function gatherPreflightFacts(args: {
     wine: facts.wine,
     userProfileDir,
     wineHost,
+    screen,
+    profilePrefsPath,
   });
   return facts;
 }

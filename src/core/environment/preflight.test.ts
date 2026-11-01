@@ -301,3 +301,28 @@ describe("declaredPrerequisitePaths", () => {
     expect(paths.has("enbseries.ini")).toBe(true);
   });
 });
+
+describe("the screen-size check", () => {
+  const screenCheck = async (f: PreflightFacts) =>
+    (await runEnvironmentPreflight(f, { scanFolder: false, context: "test" })).checks.find((c) => c.id === "screen-size");
+  const windowed = "[Display]\niSize W=1920\niSize H=1080\nbFull Screen=0\nbBorderless=1\n";
+
+  it("runs only when the screen was read, and warns when a windowed game is smaller", async () => {
+    expect(await screenCheck(facts())).toBeUndefined();
+    write(prefs, windowed);
+    const c = await screenCheck(facts({ screen: { width: 2560, height: 1440 } }));
+    expect(c?.status).toBe("warning");
+    expect(c?.steps[0]).toBe(`Open ${prefs} and, under [Display], set iSize W=2560 and iSize H=1440.`);
+    expect((await screenCheck(facts({ screen: { width: 1920, height: 1080 } })))?.status).toBe("ok");
+  });
+
+  it("reads SSE Display Tweaks' deployed INI for Skyrim, comments and all", async () => {
+    write(prefs, windowed);
+    const tweaks = path.join(game, "Data", "SKSE", "Plugins", "SSEDisplayTweaks.ini");
+    write(tweaks, "[Render]\nFullscreen = false\nBorderless = true\nBorderlessUpscale = true # stretch it\n#Resolution=1280x720\n");
+    const skyrim = facts({ gameId: "skyrimse", gameName: "Skyrim Special Edition", screen: { width: 2560, height: 1440 } });
+    expect((await screenCheck(skyrim))?.status).toBe("ok");
+    write(tweaks, "[Render]\nFullscreen = false\nBorderless = true\nBorderlessUpscale = false\n");
+    expect((await screenCheck(skyrim))?.status).toBe("warning");
+  });
+});

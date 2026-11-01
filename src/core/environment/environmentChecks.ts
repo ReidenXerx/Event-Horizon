@@ -25,6 +25,8 @@
  *                        the plugins need its Creation Club files as masters
  *  - game-folder         leftovers from earlier setups (gameFolderScan.ts)
  *  - ini-leftovers       archive-loading INI settings from earlier setups
+ *  - screen-size         a 1080p borderless window stuck in the top-left of a
+ *                        bigger screen (Meridia, 11-01)
  *
  * `blocked` stops an install. `warning` is shown and logged. `unknown` means a
  * probe could not run — never a block, because refusing a working install on a
@@ -48,7 +50,8 @@ export type EnvironmentCheckId =
   | "binary-imports"
   | "game-folder"
   | "folder-case"
-  | "ini-leftovers";
+  | "ini-leftovers"
+  | "screen-size";
 
 /**
  * `info` is shown but does not count as a problem: the check has something the
@@ -866,6 +869,93 @@ export function decideIniLeftovers(input: {
     steps: [
       "They change which archives and loose files the game loads, and probably come from an earlier mod setup. Keep them if you set them on purpose; otherwise remove them from the file named, or reset the INIs with a tool like BethINI.",
     ],
+  };
+}
+
+// ── Screen size ──────────────────────────────────────────────────────────
+
+/** The display lines of `<Game>Prefs.ini` [Display]. Absent: not set, or not a number. */
+export type PrefsDisplay = {
+  width?: number;
+  height?: number;
+  fullScreen?: boolean;
+  borderless?: boolean;
+};
+
+/** SSE Display Tweaks' own window settings, which win over the Prefs file when set. */
+export type DisplayTweaks = {
+  path: string;
+  fullscreen?: boolean;
+  borderless?: boolean;
+  borderlessUpscale?: boolean;
+  resolution?: { width: number; height: number };
+};
+
+/**
+ * A windowed game sized smaller (or larger) than the screen.
+ *
+ * The screen size is the player's, never the collection's (`isMachineOwned`), so
+ * Event Horizon does not write it. But a collection can ship a borderless setup
+ * (Meridia: SSE Display Tweaks Borderless=true, BorderlessUpscale=false), and then
+ * a Prefs file left at 1920x1080 draws a 1080p window stuck in the top-left of a
+ * 1440p screen (estaloreco, ~60% of the screen). Full screen scales and is fine.
+ * Warn only (owner, 11-01): the player sets their own size.
+ */
+export function decideScreenSize(input: {
+  gameName: string;
+  prefsPath: string | undefined;
+  prefs: PrefsDisplay | undefined;
+  tweaks?: DisplayTweaks | undefined;
+  /** The screen in real pixels; undefined when it could not be read. */
+  screen: { width: number; height: number } | undefined;
+  /** The active Vortex profile's own copy of the Prefs file, when the profile keeps one. */
+  profilePrefsPath?: string | undefined;
+}): EnvironmentCheck {
+  const { prefsPath, prefs, tweaks, screen } = input;
+  if (prefsPath === undefined || prefs === undefined) {
+    return unknownCheck("screen-size", `${input.gameName}'s window size could not be read.`);
+  }
+  if (screen === undefined) {
+    return unknownCheck("screen-size", "Your screen's resolution could not be read.");
+  }
+  const fullScreen = tweaks?.fullscreen ?? prefs.fullScreen;
+  if (fullScreen === true) {
+    return ok("screen-size", `${input.gameName} runs full screen.`);
+  }
+  const borderless = tweaks?.borderless ?? prefs.borderless;
+  if (borderless === true && tweaks?.borderlessUpscale === true) {
+    return ok("screen-size", `SSE Display Tweaks stretches ${input.gameName}'s window to the screen.`, [`Found: ${tweaks.path}`]);
+  }
+  const fromTweaks = tweaks?.resolution !== undefined;
+  const size =
+    tweaks?.resolution ??
+    (prefs.width !== undefined && prefs.height !== undefined ? { width: prefs.width, height: prefs.height } : undefined);
+  if (size === undefined) {
+    return unknownCheck("screen-size", `${input.gameName}'s window size is not set in its settings file.`, [`Read: ${prefsPath}`]);
+  }
+  const want = `${screen.width}x${screen.height}`;
+  if (size.width === screen.width && size.height === screen.height) {
+    return ok("screen-size", `${input.gameName}'s window matches your screen (${want}).`);
+  }
+  const have = `${size.width}x${size.height}`;
+  const file = basenameOf(prefsPath) || prefsPath;
+  const where = fromTweaks ? `SSE Display Tweaks sets Resolution=${have}` : `${file} sets iSize W=${size.width} and iSize H=${size.height}`;
+  const steps = fromTweaks
+    ? [`Open ${tweaks!.path} and set Resolution=${want}.`]
+    : [
+        `Open ${prefsPath} and, under [Display], set iSize W=${screen.width} and iSize H=${screen.height}.`,
+        input.profilePrefsPath !== undefined
+          ? `Your Vortex profile keeps its own copy of the game's settings and puts it back when the profile is activated: set the same two lines in ${input.profilePrefsPath}.`
+          : `If your Vortex profile keeps its own game settings, set the same two lines in the profile's copy of ${file} too.`,
+      ];
+  return {
+    id: "screen-size",
+    status: "warning",
+    title: `${input.gameName} will open in a ${have} window on your ${want} screen.`,
+    lines: [
+      `${where}, and the game runs in a window${borderless === true ? " (borderless)" : ""}, so it will not fill your screen: it sits in the top-left corner.`,
+    ],
+    steps,
   };
 }
 
