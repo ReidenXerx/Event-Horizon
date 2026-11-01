@@ -314,6 +314,15 @@ export class BuildManifestError extends Error {
  * Left as-is: this branch is about provenance, and the ids are stringified
  * into the compareKey either way.
  */
+function isNexusUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === "nexusmods.com" || host.endsWith(".nexusmods.com");
+  } catch {
+    return false;
+  }
+}
+
 function isNexusSourcedForManifest(mod: AuditorMod): boolean {
   return (
     mod.source === "nexus" &&
@@ -616,6 +625,32 @@ function buildModEntry(
   errors: string[],
   bundledModIds?: ReadonlySet<string>,
 ): EhcollMod | undefined {
+  /**
+   * ─── TWO SOURCES FOR ONE MOD: REFUSE, DO NOT PICK ───────────────────
+   * Meridia 1.0.34 (11-01): a DynDOLOD output installed from a local zip
+   * carried Nexus ids 6502:16394, which Vortex had attached by itself
+   * (Steel Sword Improved, a 2016 file; Nexus knows no file with the zip's
+   * md5). Its config entry held the curator's own pixeldrain link. The build
+   * took the Nexus ids, silently dropped the link, and every player's install
+   * of that mod failed. A download link off Nexus on a Nexus-identified mod
+   * is a contradiction only the curator can settle.
+   */
+  if (
+    isNexusSourcedForManifest(mod) &&
+    spec?.treatAsExternal !== true &&
+    spec?.url !== undefined &&
+    !isNexusUrl(spec.url)
+  ) {
+    errors.push(
+      `Mod ${label(mod)} has Nexus ids ${mod.nexusModId}:${mod.nexusFileId} in Vortex, ` +
+        `but its collection config gives it a download link off Nexus (${spec.url}). ` +
+        `The build would ship the Nexus file and ignore the link. If the Nexus ids are ` +
+        `wrong (Vortex can attach them to a local archive by itself), set ` +
+        `"treatAsExternal": true on its config entry; if the mod really comes from ` +
+        `Nexus, remove the url.`,
+    );
+    return undefined;
+  }
   if (!shipsAsExternal(isNexusSourcedForManifest(mod), spec)) {
     if (!mod.archiveSha256) {
       errors.push(
