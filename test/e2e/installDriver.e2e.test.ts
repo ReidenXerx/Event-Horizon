@@ -512,6 +512,13 @@ describe("install driver, end to end", () => {
     // However the driver classifies it, the refusal must reach the result and
     // the run must end. Silence here is a 90-second stall in the real app.
     expect(JSON.stringify(result)).toMatch(/installer said no/);
+    // The headline names the mod WITH its reason, and the phase is where it
+    // failed. "writing-receipt" sent a player and support hunting a receipt
+    // problem (leadsheet, Meridia 1.0.34, 11-01).
+    const failed = result as { kind: string; phase?: string; error?: string };
+    expect(failed.kind).toBe("failed");
+    expect(failed.phase).toBe("installing-mods");
+    expect(failed.error).toMatch(/could not be: .+ \(.*installer said no.*\)/);
   });
 
   it("retries a mod whose installer refused, once the collection is deployed", async () => {

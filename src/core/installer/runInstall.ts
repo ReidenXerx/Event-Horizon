@@ -5634,13 +5634,19 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     }));
 
     const deferredFailure = (receiptPath?: string): InstallResult => {
+      // Each name WITH its reason. The card showed names only, so a player
+      // whose one mod failed (leadsheet 11-01, a 2.5 GB direct-link archive)
+      // had nothing to act on and the curator nothing to check.
       const names = failedMods
         .slice(0, 5)
-        .map((f) => f.name)
-        .join(", ");
+        .map((f) => `${f.name} (${f.error.replace(/[.\s]+$/, "")})`)
+        .join("; ");
       return {
         kind: "failed",
-        phase: "writing-receipt",
+        // The mods failed while INSTALLING. This return comes after the
+        // receipt is written, and labelling it "writing-receipt" sent
+        // players and support looking for a receipt problem that is not there.
+        phase: "installing-mods",
         partialProfileId: ehProfileId,
         error:
           `${installedMods.length} of ${total} mods installed, but ` +
