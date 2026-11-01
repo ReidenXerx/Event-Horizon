@@ -2732,6 +2732,55 @@ describe("render", () => {
     );
   });
 
+  it("done — the user's own FOMOD picks are not sent to their antivirus", () => {
+    // hyniosys 11-01: chose 4K textures and other sound sets while reviewing
+    // each installer, and the row read "114 truncated" under AV advice.
+    const result = {
+      kind: "success",
+      profileName: "Ivy 2 v1.0.10",
+      installTargetMode: "fresh-profile",
+      durationMs: 60_000,
+      installedModIds: ["m0"],
+      installedMods: [{ compareKey: "k0", name: "Armored Leotard", fromDecision: "nexus-download" }],
+      removedMods: [],
+      carriedMods: [],
+      skippedMods: [],
+      verifications: [
+        {
+          kind: "fail",
+          vortexModId: "v0",
+          compareKey: "k0",
+          name: "Armored Leotard",
+          level: "thorough",
+          expectedFileCount: 293,
+          missingFileCount: 1,
+          sizeMismatchCount: 114,
+          hashMismatchCount: 0,
+          examples: [{ bucket: "size", path: "Textures/Apal/Army_d.dds" }],
+          retryAttempted: true,
+          failReason: "own-installer-answers",
+        },
+      ],
+      rulesApplication: RULES,
+      userlistApplication: USERLIST,
+    } as never;
+
+    const html = write(
+      "done-own-answers",
+      React.createElement(DoneStep, {
+        result,
+        bundle,
+        onStartOver: () => undefined,
+        onGoCollections: () => undefined,
+        onSwitchProfile: () => undefined,
+      } as never),
+    );
+    expect(html).toContain("your installer answers differ from the collection");
+    expect(html).toContain("1 not installed, 114 different of 293");
+    expect(html).not.toContain("AV history");
+    expect(html).not.toContain("reinstall did not help");
+  });
+
   it("done — a collection too old to carry checksums", () => {
     /**
      * The screen that used to render NOTHING. Every mod is a

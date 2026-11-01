@@ -645,8 +645,14 @@ export type ModVerificationFailReceipt = {
    * or corrupt files... The most common cause is antivirus quarantining
    * files; check your AV history". The user was sent to hunt corruption that
    * does not exist, and the one fact that would have helped appeared nowhere.
+   *
+   * `"own-installer-answers"`: the files DO differ, but the user chose to
+   * review each installer and this mod has a FOMOD, so the difference is most
+   * likely their own picks (4K instead of 2K reads as "truncated", an option
+   * not taken as "missing"). The retry reopens the same dialog and lands the
+   * same picks. hyniosys 11-01 was sent to their antivirus history for this.
    */
-  failReason?: "stale-installer-options";
+  failReason?: "stale-installer-options" | "own-installer-answers";
   /**
    * ─── DELETED: retrySucceeded ──────────────────────────────────────────
    * It was a REQUIRED field constructed at exactly one site with the literal

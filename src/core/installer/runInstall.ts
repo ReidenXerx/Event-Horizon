@@ -3104,6 +3104,43 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           continue;
         }
 
+        /**
+         * ─── THE USER'S OWN FOMOD PICKS ARE NOT A DEFECT ─────────────────
+         * In "review each installer" mode the retry reopens the mod's dialog,
+         * the user picks the same options again, and the same files land. So a
+         * FOMOD mod that still differs here most likely carries the answers
+         * the user chose: 4K textures where the collection has 2K read as
+         * "truncated", an option not taken as "missing". The counts stay on
+         * the row; the antivirus advice and the curator report do not apply.
+         */
+        const supervised =
+          ctx.decisions.fomodReplayMode !== undefined &&
+          !isUnattended(ctx.decisions.fomodReplayMode);
+        const hasFomod =
+          manifestEntry?.install?.installerType === "fomod" ||
+          (manifestEntry?.install?.fomodSelections?.length ?? 0) > 0;
+        if (supervised && hasFomod) {
+          ehLog("info", "verify.own-installer-answers", {
+            mod: installEntry.name,
+            compareKey: installEntry.compareKey,
+            missing: verifyResult.missingFiles.length,
+            resized: verifyResult.sizeMismatches.length,
+            differing: verifyResult.hashMismatches.length,
+            why: "review-each-installer mode on a FOMOD mod: the user's own picks",
+          });
+          verifications.push(
+            buildFailReceipt({
+              installEntry: installedMods[i]!,
+              verifyResult,
+              level: declaredLevel === "thorough" ? "thorough" : "fast",
+              retryAttempted: retried.kind !== "not-eligible",
+              modRemoved: retried.kind === "errored" && retried.modRemoved,
+              failReason: "own-installer-answers",
+            }),
+          );
+          continue;
+        }
+
         curatorReports.push(
           buildCuratorReport({
             packageName: plan.manifest.package.name,
@@ -8487,7 +8524,7 @@ function buildFailReceipt(args: {
    * defect is its FOMOD answers is rendered as "0 missing, 0 truncated,
    * 0 corrupt" under prose blaming antivirus.
    */
-  failReason?: "stale-installer-options";
+  failReason?: "stale-installer-options" | "own-installer-answers";
 }): ModVerificationReceipt {
   const { installEntry, verifyResult, level, retryAttempted } = args;
   const modRemoved = args.modRemoved === true;

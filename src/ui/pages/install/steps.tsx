@@ -4228,7 +4228,7 @@ function IntegritySection(props: {
               not exist, and the one fact that would have helped appeared
               nowhere on the screen.
             */}
-            {fails.some((f) => f.failReason !== "stale-installer-options") && (
+            {fails.some((f) => f.failReason === undefined) && (
               <>
                 These mods extracted with missing or corrupt files even after
                 an automatic reinstall. The most common cause is antivirus
@@ -4250,6 +4250,19 @@ function IntegritySection(props: {
                 files you have.
               </>
             )}
+            {fails.some((f) => f.failReason === "own-installer-answers") && (
+              <>
+                {" "}
+                Mods marked <em>your installer answers differ</em> below are
+                ones where you reviewed the installer yourself. Picking other
+                options than the collection (4K textures instead of 2K, another
+                sound or animation set) lands other files: a different
+                resolution shows as truncated, an option you did not take as
+                missing. If you chose those options on purpose, nothing is
+                wrong. If you changed nothing on one of them, reinstall it in
+                Vortex&apos;s Mods tab and keep the collection&apos;s answers.
+              </>
+            )}
           </p>
           <ul className="eh-list eh-list--spaced">
             {fails.map((f) => (
@@ -4266,6 +4279,13 @@ function IntegritySection(props: {
                       — installer options differ from the collection&apos;s;
                       all {f.expectedFileCount} recorded file(s) verified
                       {f.retryAttempted ? "; reinstall did not help" : ""}
+                    </>
+                  ) : f.failReason === "own-installer-answers" ? (
+                    <>
+                      — your installer answers differ from the collection&apos;s:{" "}
+                      {f.missingFileCount} not installed,{" "}
+                      {f.sizeMismatchCount + f.hashMismatchCount} different of{" "}
+                      {f.expectedFileCount}
                     </>
                   ) : (
                     <>
