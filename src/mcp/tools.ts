@@ -273,7 +273,15 @@ export const TOOLS: ToolSpec[] = [
       nexus,
       archiveId: str("A download id."),
       picks,
-      ifExisting: { type: "string", enum: ["alongside", "replace", "ask"], description: "If an older version is installed: keep both (alongside), replace it in every profile, or let the user decide." },
+      ifExisting: {
+        type: "string",
+        enum: ["alongside", "replace", "ask"],
+        description:
+          "If an older version is installed: keep both (alongside), replace it in every profile, or let the user decide. " +
+          "replace installs the new file first and swaps it onto the old mod's id only once it is installed, so a failed or " +
+          "cancelled install leaves the old mod as it was. Several possible targets (same archive, same name, same Nexus page) = replace-target-unclear: send replaceModId.",
+      },
+      replaceModId: str('With ifExisting "replace": the installed mod to replace (its id from mods.find). Needed when several could be meant.'),
       asCopy: str("Install a separate copy of an already-installed archive under this label."),
       checkMasters: bool("With needs-choices: also report options whose plugins need missing mods."),
       dryRun: bool("Download and look only: report the installer, what is already installed from it, and whether picks are needed. Nothing is installed or enabled."),

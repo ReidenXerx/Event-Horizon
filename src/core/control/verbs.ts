@@ -91,6 +91,7 @@ import {
   readChanges,
 } from "./externalChanges";
 import { askOwner } from "./ownerConsent";
+import { enabledAfterReplace, mergeReplacement, pickReplaceTarget, readEnabled, type EnabledByProfile, type PoolMod } from "./safeReplace";
 import { judgeCrash, parseCrashLog, type Owner } from "./diagnose";
 import {
   loadRestorePoints,
@@ -405,6 +406,9 @@ export const REINSTALL_TITLE = "Install options";
 export const REINSTALL_TEXT = "is already installed on your system";
 export const VARIANT_NAME_TITLE = "Install options - Name mod variant";
 
+/** The body key runVerb hands the install verb its throwaway variant name under. */
+const REPLACE_LABEL = "__replaceLabel";
+
 /**
  * gamebryo-plugin-management's question when plugins.txt changed on disk
  * (its loadOrder persistor's external-change callback, read out of
@@ -650,9 +654,17 @@ export async function runVerb(api: types.IExtensionApi, name: string, body: Verb
     throw new ControlError("bad-request", `"pluginsChanged" must be "keep" or "revert".`);
   }
   const before = new Set(notices(api).map((n) => n.id));
+  /*
+   * An install with "replace" never lets Vortex replace: Vortex removes the
+   * old mod before its installer runs (safeReplace.ts). Its questions are
+   * answered "alongside", under a throwaway variant name, and the install verb
+   * moves the new mod onto the old one's id once it is installed.
+   */
+  const replaceLabel = name === "install" && ifExisting === "replace" && body["dryRun"] !== true ? `eh-replace-${Date.now().toString(36)}` : undefined;
+  if (replaceLabel !== undefined) body = { ...body, [REPLACE_LABEL]: replaceLabel };
   const policy: AnswerPolicy = {
-    ...(ifExisting !== undefined ? { ifExisting } : {}),
-    ...(str(body["variantName"]) !== undefined ? { variantName: str(body["variantName"])! } : {}),
+    ...(ifExisting !== undefined ? { ifExisting: replaceLabel !== undefined ? "alongside" : ifExisting } : {}),
+    ...(replaceLabel !== undefined ? { variantName: replaceLabel } : str(body["variantName"]) !== undefined ? { variantName: str(body["variantName"])! } : {}),
     ownChoices: body["choices"] !== undefined,
     ...(pluginsChanged !== undefined ? { pluginsChanged } : {}),
   };
@@ -916,6 +928,235 @@ function existingFor(api: types.IExtensionApi, gameId: string, archiveId: string
   return Object.values(modPool(api, gameId))
     .filter((m) => m.state === "installed" && (m.archiveId === archiveId || (base !== undefined && m.id.toLowerCase() === base)))
     .map((m) => m.id);
+}
+
+/** Puts every profile's on/off back to `before`, except for `skip`; a mod switched on since then goes off. */
+function restoreEnabled(api: types.IExtensionApi, gameId: string, before: EnabledByProfile, skip: readonly string[] = []): string[] {
+  const restored: string[] = [];
+  const now = readEnabled(api, gameId);
+  for (const [profileId, was] of Object.entries(before)) {
+    const is = now[profileId] ?? {};
+    for (const id of new Set([...Object.keys(was), ...Object.keys(is)])) {
+      if (skip.includes(id) || (was[id] === true) === (is[id] === true)) continue;
+      api.store?.dispatch(actions.setModEnabled(profileId, id, was[id] === true));
+      restored.push(id);
+    }
+  }
+  return [...new Set(restored)];
+}
+
+/**
+ * `"ifExisting": "replace"` (safeReplace.ts): install the file as a mod of its
+ * own, and only then remove the target and move the new mod onto its id.
+ * Anything that fails before the target is removed leaves it untouched.
+ */
+async function installReplacing(
+  api: types.IExtensionApi,
+  a: {
+    gameId: string;
+    body: VerbBody;
+    choices: VortexInstallerChoices | undefined;
+    unattended: boolean;
+    picks: FomodPick[] | undefined;
+    label: string;
+    replaceModId: string | undefined;
+  },
+): Promise<Record<string, unknown>> {
+  const { gameId, body, choices, unattended, picks, label } = a;
+  const archiveId = await downloadFor(api, gameId, body);
+  const dl = (api.getState() as unknown as {
+    persistent?: { downloads?: { files?: Record<string, { localPath?: string; modInfo?: { nexus?: { ids?: { modId?: unknown } } } }> } };
+  }).persistent?.downloads?.files?.[archiveId];
+  const nexus = body["nexus"] as { modId?: unknown } | undefined;
+  const pageId = typeof nexus?.modId === "number" ? nexus.modId : Number(dl?.modInfo?.nexus?.ids?.modId);
+  const pool = modPool(api, gameId);
+  const target = pickReplaceTarget({
+    pool,
+    archiveId,
+    ...(dl?.localPath !== undefined ? { archiveBase: path.basename(dl.localPath, path.extname(dl.localPath)).toLowerCase() } : {}),
+    ...(Number.isFinite(pageId) && pageId > 0 ? { nexusModId: pageId } : {}),
+    ...(a.replaceModId !== undefined ? { replaceModId: a.replaceModId } : {}),
+  });
+  if (target.kind === "missing") {
+    throw new ControlError("no-such-mod", `"replaceModId" ${target.id} is not an installed ${gameId} mod. Nothing was installed.`, 404, { archiveId });
+  }
+  const activeBefore = activeProfileId(api);
+  if (target.kind === "unclear") {
+    const on = enabledMap(api, activeBefore);
+    throw new ControlError(
+      "replace-target-unclear",
+      `Several installed mods could be the one to replace: ${target.candidates
+        .map((c) => `${c.id} (${c.why})`)
+        .join(", ")}. Nothing was installed. Re-send with "replaceModId" naming the one to replace.`,
+      409,
+      {
+        archiveId,
+        candidates: target.candidates.map((c) => ({ ...modSummary(pool[c.id]!, on[c.id]?.enabled === true), why: c.why })),
+      },
+    );
+  }
+  const mustLook = choices === undefined && picks === undefined && !unattended && body["interactive"] !== true;
+  if (mustLook) {
+    const looked = await readInstaller(api, archivePathFor(api, gameId, archiveId), body["checkMasters"] === true);
+    if (asksQuestions(looked.description)) {
+      throw new ControlError(
+        "needs-choices",
+        `This mod has a FOMOD installer and nothing says how to answer it. Re-send with "archiveId": "${archiveId}" and ` +
+          `"picks", or "choices" + "unattended", or "interactive": true. Nothing was installed or replaced.`,
+        409,
+        { archiveId, installer: publicDescription(looked.description), mastersChecked: looked.mastersChecked },
+      );
+    }
+  }
+  if (picks !== undefined) {
+    const bad = await notUsableFor(api, gameId, archiveId, picks);
+    if (bad.length > 0) {
+      throw new ControlError(
+        "pick-not-usable",
+        `Nothing was installed or replaced: ${bad.map((b) => `"${b.option}" in "${b.group}" is NotUsable on this setup`).join("; ")}.`,
+        409,
+        { archiveId, notUsable: bad },
+      );
+    }
+  }
+  const old = target.kind === "target" ? pool[target.id]! : undefined;
+  const why = target.kind === "target" ? target.why : undefined;
+  if (old !== undefined) {
+    await askOwner(api, {
+      action: "replace an installed mod in every profile",
+      kind: "replace-install",
+      lines: [`Replace: ${modName(old)} (${old.id})`, `With download ${archiveId}`],
+      consequence: "The version installed now is replaced everywhere, not only in the active profile.",
+    });
+  }
+  const before = readEnabled(api, gameId);
+  // Unattended, an archive Vortex already knows is a silent replace (queryUserReplace's dependency branch): install a copy instead.
+  const viaCopy = unattended && existingFor(api, gameId, archiveId).length > 0;
+  let freshId: string;
+  let answered: Record<string, unknown> | undefined;
+  try {
+    const r = await withPicks(api, picks, () =>
+      viaCopy
+        ? installFromCopy(api, gameId, archiveId, label, choices, unattended)
+        : installFromExistingDownload(api, { gameId, archiveId, ...(choices !== undefined ? { choices } : {}), unattended }),
+    );
+    freshId = r.result.vortexModId;
+    answered = r.answered;
+    const m = modPool(api, gameId)[freshId];
+    if (m === undefined || m.state !== "installed") {
+      throw new ControlError("install-unverified", `Vortex finished the install, but mod ${freshId} is ${m === undefined ? "not in the pool" : `in state "${String(m.state)}"`}.`, 500, {
+        vortexModId: freshId,
+      });
+    }
+    if (old !== undefined && (freshId === old.id || modPool(api, gameId)[old.id]?.state !== "installed")) {
+      throw new ControlError("replaced-by-vortex", `Vortex replaced ${old.id} itself instead of installing alongside it.`, 500, { vortexModId: freshId });
+    }
+  } catch (err) {
+    const restoredEnabled = restoreEnabled(api, gameId, before);
+    ehLog("warn", "control.install.replace-failed", { target: old?.id, restoredEnabled, error: err instanceof Error ? err.message : String(err) });
+    const note = old !== undefined && modPool(api, gameId)[old.id]?.state === "installed" ? ` ${old.id} was not touched.` : "";
+    if (err instanceof ControlError) {
+      throw new ControlError(err.code, `${err.message}${note}`, err.status, { ...err.details, ...(restoredEnabled.length > 0 ? { restoredEnabled } : {}) });
+    }
+    throw new ControlError("install-failed", `${String((err as Error)?.message ?? err)}.${note}`, 500, restoredEnabled.length > 0 ? { restoredEnabled } : {});
+  }
+
+  const enableArg = body["enable"] === undefined ? undefined : body["enable"] !== false;
+  if (old === undefined) {
+    // Nothing installed was this mod: a plain install, and whatever Vortex switched off goes back on.
+    const restoredEnabled = restoreEnabled(api, gameId, before, [freshId]);
+    const profileId = activeProfileId(api);
+    if (profileId !== undefined) api.store?.dispatch(actions.setModEnabled(profileId, freshId, enableArg !== false));
+    const m = modPool(api, gameId)[freshId]!;
+    return {
+      gameId,
+      vortexModId: freshId,
+      name: modName(m),
+      version: str(m.attributes?.["version"]),
+      replaced: null,
+      enabled: enabledMap(api, profileId)[freshId]?.enabled === true,
+      deployNeeded: true,
+      ...(restoredEnabled.length > 0 ? { restoredEnabled } : {}),
+      ...(picks !== undefined ? { installer: answered ?? { note: "no FOMOD wizard opened; the picks were not needed" } } : {}),
+      verified: { inPool: true, state: m.state },
+    };
+  }
+
+  const fresh = JSON.parse(JSON.stringify(modPool(api, gameId)[freshId])) as PoolMod;
+  const was = JSON.parse(JSON.stringify(old)) as PoolMod;
+  try {
+    await uninstallMods(api, { gameId, modIds: [was.id] });
+    if (modPool(api, gameId)[was.id] !== undefined) throw new Error(`${was.id} is still in Vortex's mod list`);
+  } catch (err) {
+    restoreEnabled(api, gameId, before, [freshId]);
+    for (const profileId of Object.keys(before)) api.store?.dispatch(actions.setModEnabled(profileId, freshId, false));
+    throw new ControlError(
+      "replace-incomplete",
+      `The new file installed as ${freshId}, but Vortex could not remove ${was.id}: ${String((err as Error)?.message ?? err)}. ` +
+        `${was.id} stays as it was in every profile and ${freshId} is switched off.`,
+      500,
+      { installedAs: freshId, target: was.id },
+    );
+  }
+  // The new files move into the old mod's folder name, now free, as Vortex's own replace leaves them.
+  let installationPath = fresh.installationPath ?? freshId;
+  const root = installRootFor(api.getState(), gameId);
+  if (root !== undefined && was.installationPath !== undefined && was.installationPath !== installationPath) {
+    const to = path.join(root, was.installationPath);
+    if (!fs.existsSync(to)) {
+      try {
+        fs.renameSync(path.join(root, installationPath), to);
+        installationPath = was.installationPath;
+      } catch (err) {
+        ehLog("warn", "control.install.replace-folder-kept", { freshId, folder: installationPath, error: String((err as Error)?.message ?? err) });
+      }
+    }
+  }
+  const copyArchive = viaCopy && fresh.archiveId !== archiveId ? fresh.archiveId : undefined;
+  const entry = mergeReplacement(was, fresh, { installationPath, archiveId, ...(viaCopy ? { label } : {}) });
+  api.store?.dispatch(actions.addMod(gameId, entry as unknown as types.IMod));
+  api.store?.dispatch(actions.removeMod(gameId, freshId));
+  const forget = (actions as unknown as { forgetMod?: (p: string, m: string) => unknown }).forgetMod;
+  const after = readEnabled(api, gameId);
+  for (const profileId of Object.keys(after)) {
+    if (typeof forget === "function" && freshId in after[profileId]!) api.store?.dispatch(forget(profileId, freshId) as never);
+  }
+  const activeNow = activeProfileId(api);
+  for (const w of enabledAfterReplace({
+    before,
+    after,
+    targetId: was.id,
+    freshId,
+    ...(activeNow !== undefined ? { activeProfileId: activeNow } : {}),
+    ...(enableArg !== undefined ? { enable: enableArg } : {}),
+  })) {
+    api.store?.dispatch(actions.setModEnabled(w.profileId, w.modId, w.enabled));
+  }
+  if (copyArchive !== undefined) {
+    // The copy was only there to keep Vortex from matching the archive; the mod points at the original.
+    await new Promise<void>((resolve) =>
+      api.events.emit("remove-download", copyArchive, () => resolve(), { silent: true, confirmed: true }),
+    ).catch(() => undefined);
+  }
+  const m = modPool(api, gameId)[was.id];
+  if (m === undefined || m.state !== "installed" || modPool(api, gameId)[freshId] !== undefined) {
+    throw new ControlError("replace-unverified", `The swap onto ${was.id} did not read back: ${m === undefined ? "it is not in the pool" : `state "${String(m.state)}"`}.`, 500, {
+      target: was.id,
+      installedAs: freshId,
+    });
+  }
+  ehLog("info", "control.install.replaced", { target: was.id, why, freshId, folder: installationPath, viaCopy });
+  return {
+    gameId,
+    vortexModId: was.id,
+    name: modName(m),
+    version: str(m.attributes?.["version"]),
+    replaced: { id: was.id, why, previousVersion: str(was.attributes?.["version"]) ?? null, installedAs: freshId, folder: installationPath },
+    enabled: enabledMap(api, activeNow)[was.id]?.enabled === true,
+    deployNeeded: true,
+    ...(picks !== undefined ? { installer: answered ?? { note: "no FOMOD wizard opened; the picks were not needed" } } : {}),
+    verified: { inPool: true, state: m.state, sameId: true, freshGone: true },
+  };
 }
 
 function modSummary(m: ModRecord, enabled: boolean, owner?: string): Record<string, unknown> {
@@ -3325,18 +3566,15 @@ export const VERBS: Record<string, Verb> = {
           installer: looked.description.kind === "fomod" ? publicDescription(looked.description) : looked.description,
         };
       }
+      const replaceModId = str(body["replaceModId"]);
+      if (replaceModId !== undefined && body["ifExisting"] !== "replace") {
+        throw new ControlError("bad-request", `"replaceModId" says which mod "ifExisting": "replace" replaces; send both.`);
+      }
       if (body["ifExisting"] === "replace") {
-        await askOwner(api, {
-          action: "replace an installed mod in every profile",
-          kind: "replace-install",
-          lines: [
-            nexus !== undefined
-              ? `Nexus mod ${String(nexus.modId)}, file ${String(nexus.fileId)}`
-              : `Download ${String(body["archiveId"] ?? "")}`,
-            "If a version of it is already installed, every profile moves to this one, including other installs of the game.",
-          ],
-          consequence: "The version installed now is replaced everywhere, not only in the active profile.",
-        });
+        if (asCopy !== undefined) throw new ControlError("bad-request", `"asCopy" installs a second copy; it does not go with "ifExisting": "replace".`);
+        // runVerb names the throwaway variant and answers Vortex "alongside" with it.
+        const label = str(body[REPLACE_LABEL]) ?? `eh-replace-${Date.now().toString(36)}`;
+        return installReplacing(api, { gameId, body, choices, unattended, picks, label, replaceModId });
       }
       /**
        * Nobody said how to answer a FOMOD (no choices, no picks, not
