@@ -43,6 +43,29 @@ describe("the game version at Play", () => {
     expect(decide("1.10.984.0", "unknown")).toBeUndefined();
   });
 
+  it("never refuses Steam 1.6.1170 for a GOG 1.6.1179 build: one release (kaleidfang21, Meridia Rev 18)", () => {
+    const skyrim = (installed: string, required: string, store: string) =>
+      decidePlayGameVersion({
+        gameId: "skyrimse",
+        gameName: "Skyrim Special Edition",
+        collectionName: "Meridia's Panties",
+        requirement: { required, policy: "exact" },
+        installed,
+        store,
+      });
+    const steam = skyrim("1.6.1170.0", "1.6.1179.0", "steam");
+    expect(steam?.sameRelease).toBe(true);
+    expect(steam?.steps).toEqual([]);
+    expect(JSON.stringify(steam)).not.toMatch(/Move/);
+    expect(skyrim("1.6.1179.0", "1.6.1170.0", "gog")?.sameRelease).toBe(true);
+    // A real mismatch names the build the player's own store ships.
+    const old = skyrim("1.6.640.0", "1.6.1179.0", "steam");
+    expect(old?.sameRelease).toBeUndefined();
+    expect(old?.steps[0]).toBe("Move Skyrim Special Edition to 1.6.1170.0, then press Play again.");
+    expect(JSON.stringify(old)).not.toMatch(/1\.6\.1179/);
+    expect(skyrim("1.6.640.0", "1.6.1179.0", "gog")?.steps[0]).toMatch(/to 1\.6\.1179\.0,/);
+  });
+
   it("holds a minimum requirement as a minimum", () => {
     expect(decide("1.6.1179.0", "1.6.640.0", "minimum")).toBeUndefined();
     const older = decide("1.5.97.0", "1.6.640.0", "minimum");
@@ -97,11 +120,12 @@ describe("a mismatch the player accepted at install (owner poll, 2026-09-28)", (
     });
 
   it("is marked acknowledged when the game is still the version they accepted", () => {
-    expect(withAck("1.6.1170.0", { required: "1.6.1179", installed: "1.6.1170" })?.acknowledged).toBe(true);
+    // Not Steam 1.6.1170: that is the same release, never refused (sameRelease).
+    expect(withAck("1.6.640.0", { required: "1.6.1179", installed: "1.6.640" })?.acknowledged).toBe(true);
   });
 
   it("stays a plain refusal when the game changed after the install", () => {
-    const r = withAck("1.6.1170.0", { required: "1.6.1179.0", installed: "1.6.640.0" });
+    const r = withAck("1.6.640.0", { required: "1.6.1179.0", installed: "1.5.97.0" });
     expect(r).toBeDefined();
     expect(r!.acknowledged).toBeUndefined();
   });

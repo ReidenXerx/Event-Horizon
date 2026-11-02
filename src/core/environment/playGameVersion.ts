@@ -23,6 +23,7 @@ import { listReceipts } from "../installLedger";
 import { ehLog } from "../logging/ehLog";
 import { resolveGameVersion } from "../resolver/userState";
 import { compareVersions, gameVersionGuidance } from "../resolver/gameVersionGuidance";
+import { STORE_BUILDS, storeTwinsOf } from "./storeBuilds";
 import type { InstallReceipt, InstallReceiptGameVersion } from "../../types/installLedger";
 
 export type PlayVersionRefusal = {
@@ -38,6 +39,13 @@ export type PlayVersionRefusal = {
   acknowledged?: true;
   /** The collection it is about, for remembering a "Start anyway". Set by checkPlayGameVersion. */
   packageId?: string;
+  /**
+   * The game is the same release on another store (Steam 1.6.1170 for a GOG
+   * 1.6.1179 build, `storeTwinsOf`): never refused on the number. Play still
+   * checks the game folder for DLLs made for another version, and starts
+   * without a word when there are none.
+   */
+  sameRelease?: true;
 };
 
 /** Whether the game at `installed` may be started for a collection that requires `required`. */
@@ -56,11 +64,29 @@ export function decidePlayGameVersion(input: {
   if (installed === undefined || installed.trim() === "" || required.trim() === "" || required === "unknown") {
     return undefined;
   }
-  const cmp = compareVersions(installed, required);
   // Trailing zeros are the same build ("1.10.163" is "1.10.163.0"); a version
   // that cannot be compared is only refused when it is not the same text.
-  const fits = policy === "exact" ? (cmp === undefined ? installed.trim() === required.trim() : cmp === 0) : cmp === undefined || cmp >= 0;
-  if (fits) return undefined;
+  const fitsOne = (target: string): boolean => {
+    const cmp = compareVersions(installed, target);
+    return policy === "exact" ? (cmp === undefined ? installed.trim() === target.trim() : cmp === 0) : cmp === undefined || cmp >= 0;
+  };
+  if (fitsOne(required)) return undefined;
+  // One release, numbered apart per store (kaleidfang21, Meridia Rev 18, Steam
+  // 1.6.1170 on a GOG 1.6.1179 build): the collection-update hold has treated
+  // these as one game since 0.2.77, and Play told him to move to a build Steam
+  // never shipped.
+  const twins = storeTwinsOf(input.gameId, required);
+  if (twins.some(fitsOne)) {
+    return {
+      sameRelease: true,
+      title: `${input.gameName} ${installed} is the same release as ${required}, which ${input.collectionName} was built on, but some files in your game folder are for another game version.`,
+      lines: [],
+      steps: [],
+    };
+  }
+  // The build to move to is the player's store's number for that release.
+  const storeTarget = input.store !== undefined && twins.length > 0 ? STORE_BUILDS[input.gameId]?.[input.store.toLowerCase()] : undefined;
+  const target = storeTarget ?? required;
   const ack = input.acknowledgedAtInstall;
   const acknowledged =
     ack !== undefined &&
@@ -68,13 +94,13 @@ export function decidePlayGameVersion(input: {
     compareVersions(ack.installed, installed) === 0;
   return {
     ...(acknowledged ? { acknowledged: true as const } : {}),
-    title: `${input.gameName} is version ${installed}, but ${input.collectionName} was built for ${required}${policy === "minimum" ? " or newer" : ""}.`,
+    title: `${input.gameName} is version ${installed}, but ${input.collectionName} was built for ${target}${policy === "minimum" ? " or newer" : ""}.`,
     lines: [
       "The script extender and the collection's plugins only work with the game version the collection was built for, so the game would close or crash on start.",
-      ...gameVersionGuidance({ gameId: input.gameId, required, installed, retry: "press Play again" }),
+      ...gameVersionGuidance({ gameId: input.gameId, required: target, installed, retry: "press Play again" }),
     ],
     steps: [
-      `Move ${input.gameName} to ${required}, then press Play again.`,
+      `Move ${input.gameName} to ${target}, then press Play again.`,
       ...(input.store === "steam"
         ? [
             `Stop Steam updating it again: right-click ${input.gameName} → Properties → Updates → "Only update this game when I launch it", and start the game from Event Horizon's Play.`,
@@ -160,7 +186,8 @@ export async function checkPlayGameVersion(args: {
     required: receipt.gameVersion.required,
     policy: receipt.gameVersion.policy,
     installed: installed ?? "unknown",
-    verdict: refusal !== undefined ? "refused" : installed === undefined ? "unknown" : "ok",
+    verdict:
+      refusal?.sameRelease === true ? "same-release" : refusal !== undefined ? "refused" : installed === undefined ? "unknown" : "ok",
   });
   return refusal;
 }

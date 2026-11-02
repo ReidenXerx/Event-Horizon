@@ -84,6 +84,8 @@ async function playOnAnotherVersion(
   };
 
   if (onDisk === undefined) {
+    // Same release on another store: the number was never the problem.
+    if (refusal.sameRelease === true) return true;
     if (refusal.acknowledged !== true) return false;
     const answer = await api.showDialog?.(
       "question",
@@ -98,7 +100,8 @@ async function playOnAnotherVersion(
   // Positive evidence only: "nothing wrong found" in a folder with no script
   // extender for this version is not a folder set up for it.
   if (card.status === "healthy" && onDisk.extender.present) {
-    ehLog("info", "play.game-version.folder-matches", { gameId, installed: onDisk.gameVersion });
+    ehLog("info", "play.game-version.folder-matches", { gameId, installed: onDisk.gameVersion, sameRelease: refusal.sameRelease === true });
+    if (refusal.sameRelease === true) return true;
     api.sendNotification?.({
       type: "info",
       title: `Started on ${onDisk.gameVersion}`,
