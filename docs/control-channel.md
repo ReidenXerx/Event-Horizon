@@ -105,7 +105,7 @@ All of them act on Vortex's **active game**.
 
 | Verb | Body | Does, and verifies |
 |---|---|---|
-| `deploy` | `assumeGameClosed?` | Deploys the active profile. Verifies the "needs deploying" flag is cleared and the manifests read. |
+| `deploy` | `assumeGameClosed?`, `pluginsChanged?`, `volatile?` | Deploys the active profile. Verifies the "needs deploying" flag is cleared and the manifests read. |
 | `purge` | `assumeGameClosed?` | Purges the game folder. Verifies zero files are left deployed. |
 | `mods.setEnabled` | `modIds[]`, `enabled`, `profileId?` | Enables or disables by exact id and verifies each change in the profile. It does not deploy. |
 | `mods.remove` | `modIds[]`, `assumeGameClosed?` | Uninstalls by exact id and verifies each mod is gone from the pool. `removed` lists them with `owner`. |
@@ -275,6 +275,9 @@ Now:
 - Each file lists `change` (in words), `kind` (Vortex's: `refchange`, `valchange`, `deleted`, `srcdeleted`), `choices`,
   `current` (Vortex's preselected answer), and `sameFile` when it can tell: `true` means the game-folder file and the
   staged file are one hardlinked file, so whatever changed one changed both.
+- `deploy` takes `volatile: "revert"|"save"|"newer"`: when EVERY changed file is in a collection config's
+  `volatileFiles` for its mod (`externalMods[<mod id>]`), the deploy answers them all with it, finishes and reports
+  `autoAnswered`. Otherwise it stops as above, and `declaredVolatile: true` marks the files that are declared.
 
 | Change | `revert` | `save` | `newer` |
 |---|---|---|---|

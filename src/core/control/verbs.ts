@@ -54,7 +54,7 @@ import { ACTION_SET_AUTOSORT_ENABLED, readsAutoSort } from "../installer/autoSor
 import { countMods, deployBudgetMs } from "../installer/timeBudgets";
 import { looksLikeWine } from "../proton/detect";
 import { listReceipts } from "../installLedger";
-import { getEventHorizonDir, getVortexUserDataPath } from "../paths/appDataPaths";
+import { getCollectionsConfigDir, getEventHorizonDir, getVortexUserDataPath } from "../paths/appDataPaths";
 import { iniLocationFor } from "../manifest/gameIni";
 import { readPluginList } from "../curator/pluginPool";
 import { readCuratorMods } from "../curator/readProfile";
@@ -84,12 +84,17 @@ import { ControlError } from "./controlError";
 import { COLLECTION_VERBS } from "./collectionVerbs";
 import { installRootFor } from "../stagingPath";
 import {
+  CHOICE_WORDS,
+  type Choice,
   clickDialogButton,
+  type DeclaredLookup,
   describeExternalChanges,
   locateDefault,
   planAnswer,
   readChanges,
+  volatileAnswer,
 } from "./externalChanges";
+import { declaredSet } from "../volatileFiles";
 import { askOwner } from "./ownerConsent";
 import { enabledAfterReplace, mergeReplacement, pickReplaceTarget, readEnabled, type EnabledByProfile, type PoolMod } from "./safeReplace";
 import { judgeCrash, parseCrashLog, type Owner } from "./diagnose";
@@ -319,7 +324,36 @@ function modIdBySource(api: types.IExtensionApi): (source: string) => string | u
 }
 
 /** Vortex's External Changes dialog as an agent reads it, or undefined when it is not open. */
-function externalChanges(api: types.IExtensionApi): Record<string, unknown> | undefined {
+/**
+ * Every collection config's declared generated files, by Vortex mod id
+ * (`externalMods[modId].volatileFiles`). Read loosely: a config this cannot
+ * parse declares nothing, it is never an error here.
+ */
+async function readDeclaredVolatile(): Promise<DeclaredLookup> {
+  const byMod = new Map<string, Set<string>>();
+  const dir = getCollectionsConfigDir();
+  const names = await fs.promises.readdir(dir).catch(() => [] as string[]);
+  for (const name of names) {
+    if (!name.endsWith(".json") || name.startsWith(".")) continue;
+    try {
+      const raw = JSON.parse(await fs.promises.readFile(path.join(dir, name), "utf8")) as { externalMods?: unknown };
+      if (!isRecord(raw.externalMods)) continue;
+      for (const [modId, entry] of Object.entries(raw.externalMods as Record<string, unknown>)) {
+        const list = isRecord(entry) ? (entry as { volatileFiles?: unknown }).volatileFiles : undefined;
+        const set = Array.isArray(list) ? declaredSet(list.filter((p): p is string => typeof p === "string")) : undefined;
+        if (set === undefined) continue;
+        const into = byMod.get(modId) ?? new Set<string>();
+        for (const k of set) into.add(k);
+        byMod.set(modId, into);
+      }
+    } catch {
+      continue;
+    }
+  }
+  return (modId) => byMod.get(modId);
+}
+
+function externalChanges(api: types.IExtensionApi, declared?: DeclaredLookup): Record<string, unknown> | undefined {
   const state = api.getState();
   if (readChanges(state).length === 0) return undefined;
   const gameId = getActiveGameId(state) ?? "";
@@ -332,7 +366,30 @@ function externalChanges(api: types.IExtensionApi): Record<string, unknown> | un
   } catch {
     deployRoot = undefined;
   }
-  return describeExternalChanges(state, modIdBySource(api), locateDefault(installRootFor(state, gameId), deployRoot));
+  return describeExternalChanges(state, modIdBySource(api), locateDefault(installRootFor(state, gameId), deployRoot), declared);
+}
+
+/**
+ * A deploy given `volatile` that Vortex stopped on External Changes: answers
+ * `word` when every changed file is one a collection config declares
+ * generated for its mod, else stops as before with those files marked.
+ */
+async function answerVolatile(api: types.IExtensionApi, word: Choice, stopped: ControlError): Promise<Record<string, unknown>> {
+  const declared = await readDeclaredVolatile();
+  const changes = readChanges(api.getState());
+  const answer = volatileAnswer(changes, word, modIdBySource(api), declared);
+  if (answer === undefined) {
+    const shown = externalChanges(api, declared);
+    throw new ControlError(
+      "external-changes",
+      `${stopped.message} Not answered with "${word}": only files a collection config lists in volatileFiles for their mod ` +
+        `are answered by the deploy, and some here are not (declaredVolatile marks the ones that are).`,
+      409,
+      { ...(stopped.details ?? {}), externalChanges: shown },
+    );
+  }
+  const result = await answerExternalChanges(api, answer);
+  return { ...result, autoAnswered: { answer: word, files: Object.keys(answer.files) } };
 }
 
 /**
@@ -772,6 +829,89 @@ async function deploy(api: types.IExtensionApi, gameId: string): Promise<Record<
     throw err;
   }
   return verifyDeploy(api, gameId, profileId);
+}
+
+/**
+ * Answers the External Changes dialog, then waits for the deploy or purge
+ * behind it and verifies it. The externalChanges.answer verb, and a deploy
+ * given `volatile`, both end here.
+ */
+async function answerExternalChanges(api: types.IExtensionApi, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const changes = readChanges(api.getState());
+  if (changes.length === 0) {
+    throw new ControlError("no-external-changes", "Vortex is not showing its External Changes dialog.", 409);
+  }
+  const shown = externalChanges(api);
+  const run = pausedRun;
+  if (body["cancel"] === true) {
+    if (!clickDialogButton("cancel")) {
+      throw new ControlError("dialog-not-shown", "The External Changes dialog is not on screen to cancel.", 409, { externalChanges: shown });
+    }
+    const closed = await settle(() => readChanges(api.getState()).length === 0, 10000);
+    if (!closed) throw new ControlError("cancel-unverified", "The External Changes dialog is still open.", 500);
+    pausedRun = undefined;
+    return { cancelled: true, [run?.kind ?? "deploy"]: "cancelled by Vortex", verified: { dialogClosed: true } };
+  }
+  const idOf = modIdBySource(api);
+  const plan = planAnswer(
+    changes,
+    {
+      ...(str(body["all"]) !== undefined ? { all: str(body["all"])! } : {}),
+      ...(isRecord(body["mods"]) ? { mods: body["mods"] as Record<string, string> } : {}),
+      ...(isRecord(body["files"]) ? { files: body["files"] as Record<string, string> } : {}),
+    },
+    idOf,
+  );
+  if (plan.problems.length > 0) {
+    throw new ControlError("bad-answer", plan.problems.join(" "), 400, { externalChanges: shown });
+  }
+  for (const a of plan.actions) dispatchRaw(api, "SET_EXTERNAL_CHANGE_ACTION", { filePaths: a.filePaths, action: a.action });
+  const want = new Map(plan.actions.flatMap((a) => a.filePaths.map((f) => [f, a.action] as const)));
+  const applied = await settle(() =>
+    readChanges(api.getState()).every((c) => !want.has(c.filePath) || c.action === want.get(c.filePath)),
+  );
+  if (!applied) {
+    throw new ControlError("answer-unverified", "Vortex did not take the answers.", 500, { externalChanges: externalChanges(api) });
+  }
+  const deletions = readChanges(api.getState()).filter((c) => c.action === "delete").length;
+  if (!clickDialogButton("confirm")) {
+    throw new ControlError("dialog-not-shown", "The External Changes dialog is not on screen to confirm.", 409, {
+      externalChanges: externalChanges(api),
+    });
+  }
+  // More than one deletion: Vortex asks "Confirm deletion" [Back, Continue]. Deleting was the answer given.
+  if (deletions > 1) {
+    const asked = await settle(() => openDialogs(api).some((d) => d.title === "Confirm deletion"), 5000);
+    const d = openDialogs(api).find((x) => x.title === "Confirm deletion");
+    if (asked && d !== undefined) api.closeDialog?.(d.id, "Continue", {});
+  }
+  const closed = await settle(() => readChanges(api.getState()).length === 0, 15000);
+  if (!closed) {
+    throw new ControlError("confirm-unverified", "The External Changes dialog is still open after Confirm.", 500, {
+      externalChanges: externalChanges(api),
+    });
+  }
+  pausedRun = undefined;
+  const answered = { answered: changes.length, applied: plan.actions };
+  if (run === undefined) {
+    // Opened by a deploy the channel did not start (the user's, or an install's): it carries on by itself.
+    return { ...answered, note: "Vortex carries on with the deploy it was running.", verified: { dialogClosed: true } };
+  }
+  // The run may have given up while it waited (its own time budget); the read-back below decides.
+  await Promise.race([run.done.catch(() => undefined), new Promise((r) => setTimeout(r, budget(api)))]);
+  const profileId = activeProfileId(api);
+  if (run.kind === "purge") {
+    const left = await deployedFileCount(api, run.gameId);
+    if (left !== 0) {
+      throw new ControlError("purge-incomplete", `After the answer, ${String(left)} files are still deployed.`, 500, {
+        deployedFilesAfter: left,
+      });
+    }
+    return { ...answered, purge: "finished", verified: { dialogClosed: true, deployedFilesAfter: 0 } };
+  }
+  if (profileId === undefined) throw new ControlError("no-profile", "Vortex has no active profile.", 409);
+  const deployed = await verifyDeploy(api, run.gameId, profileId);
+  return { ...answered, deploy: "finished", ...deployed, verified: { dialogClosed: true, ...(deployed["verified"] as object) } };
 }
 
 /** Reads the deploy back: files in the manifests, and Vortex no longer asking for one. */
@@ -2195,81 +2335,7 @@ export const VERBS: Record<string, Verb> = {
     mutates: true,
     queue: false,
     run: async (api, body) => {
-      const changes = readChanges(api.getState());
-      if (changes.length === 0) {
-        throw new ControlError("no-external-changes", "Vortex is not showing its External Changes dialog.", 409);
-      }
-      const shown = externalChanges(api);
-      const run = pausedRun;
-      if (body["cancel"] === true) {
-        if (!clickDialogButton("cancel")) {
-          throw new ControlError("dialog-not-shown", "The External Changes dialog is not on screen to cancel.", 409, { externalChanges: shown });
-        }
-        const closed = await settle(() => readChanges(api.getState()).length === 0, 10000);
-        if (!closed) throw new ControlError("cancel-unverified", "The External Changes dialog is still open.", 500);
-        pausedRun = undefined;
-        return { cancelled: true, [run?.kind ?? "deploy"]: "cancelled by Vortex", verified: { dialogClosed: true } };
-      }
-      const idOf = modIdBySource(api);
-      const plan = planAnswer(
-        changes,
-        {
-          ...(str(body["all"]) !== undefined ? { all: str(body["all"])! } : {}),
-          ...(isRecord(body["mods"]) ? { mods: body["mods"] as Record<string, string> } : {}),
-          ...(isRecord(body["files"]) ? { files: body["files"] as Record<string, string> } : {}),
-        },
-        idOf,
-      );
-      if (plan.problems.length > 0) {
-        throw new ControlError("bad-answer", plan.problems.join(" "), 400, { externalChanges: shown });
-      }
-      for (const a of plan.actions) dispatchRaw(api, "SET_EXTERNAL_CHANGE_ACTION", { filePaths: a.filePaths, action: a.action });
-      const want = new Map(plan.actions.flatMap((a) => a.filePaths.map((f) => [f, a.action] as const)));
-      const applied = await settle(() =>
-        readChanges(api.getState()).every((c) => !want.has(c.filePath) || c.action === want.get(c.filePath)),
-      );
-      if (!applied) {
-        throw new ControlError("answer-unverified", "Vortex did not take the answers.", 500, { externalChanges: externalChanges(api) });
-      }
-      const deletions = readChanges(api.getState()).filter((c) => c.action === "delete").length;
-      if (!clickDialogButton("confirm")) {
-        throw new ControlError("dialog-not-shown", "The External Changes dialog is not on screen to confirm.", 409, {
-          externalChanges: externalChanges(api),
-        });
-      }
-      // More than one deletion: Vortex asks "Confirm deletion" [Back, Continue]. Deleting was the answer given.
-      if (deletions > 1) {
-        const asked = await settle(() => openDialogs(api).some((d) => d.title === "Confirm deletion"), 5000);
-        const d = openDialogs(api).find((x) => x.title === "Confirm deletion");
-        if (asked && d !== undefined) api.closeDialog?.(d.id, "Continue", {});
-      }
-      const closed = await settle(() => readChanges(api.getState()).length === 0, 15000);
-      if (!closed) {
-        throw new ControlError("confirm-unverified", "The External Changes dialog is still open after Confirm.", 500, {
-          externalChanges: externalChanges(api),
-        });
-      }
-      pausedRun = undefined;
-      const answered = { answered: changes.length, applied: plan.actions };
-      if (run === undefined) {
-        // Opened by a deploy the channel did not start (the user's, or an install's): it carries on by itself.
-        return { ...answered, note: "Vortex carries on with the deploy it was running.", verified: { dialogClosed: true } };
-      }
-      // The run may have given up while it waited (its own time budget); the read-back below decides.
-      await Promise.race([run.done.catch(() => undefined), new Promise((r) => setTimeout(r, budget(api)))]);
-      const profileId = activeProfileId(api);
-      if (run.kind === "purge") {
-        const left = await deployedFileCount(api, run.gameId);
-        if (left !== 0) {
-          throw new ControlError("purge-incomplete", `After the answer, ${String(left)} files are still deployed.`, 500, {
-            deployedFilesAfter: left,
-          });
-        }
-        return { ...answered, purge: "finished", verified: { dialogClosed: true, deployedFilesAfter: 0 } };
-      }
-      if (profileId === undefined) throw new ControlError("no-profile", "Vortex has no active profile.", 409);
-      const deployed = await verifyDeploy(api, run.gameId, profileId);
-      return { ...answered, deploy: "finished", ...deployed, verified: { dialogClosed: true, ...(deployed["verified"] as object) } };
+      return answerExternalChanges(api, body);
     },
     describe: (b) => (b["cancel"] === true ? "cancelled at Vortex's External Changes" : "answered Vortex's External Changes"),
   },
@@ -2536,8 +2602,17 @@ export const VERBS: Record<string, Verb> = {
     mutates: true,
     run: async (api, body) => {
       const gameId = activeGame(api);
+      const word = str(body["volatile"]);
+      if (word !== undefined && !CHOICE_WORDS.includes(word as Choice)) {
+        throw new ControlError("bad-request", `"volatile" is revert, save or newer, not "${word}".`);
+      }
       await guardClosed(api, gameId, body);
-      return { gameId, ...(await deploy(api, gameId)) };
+      try {
+        return { gameId, ...(await deploy(api, gameId)) };
+      } catch (err) {
+        if (word === undefined || !(err instanceof ControlError) || err.code !== "external-changes") throw err;
+        return { gameId, ...(await answerVolatile(api, word as Choice, err)) };
+      }
     },
     describe: (_b, r) => `deployed ${String(r["gameId"])}`,
   },

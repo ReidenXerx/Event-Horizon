@@ -21,6 +21,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { declaredKey, type DeclaredVolatile } from "../volatileFiles";
 
 /** Vortex's four kinds of change, and the answers its dialog offers for each. */
 const CHOICES: Record<string, Partial<Record<Choice, string>>> = {
@@ -85,6 +86,7 @@ export function describeExternalChanges(
   state: unknown,
   modIdBySource: (source: string) => string | undefined,
   locate?: Locate,
+  declared?: DeclaredLookup,
 ): Record<string, unknown> | undefined {
   const changes = readChanges(state);
   if (changes.length === 0) return undefined;
@@ -110,6 +112,7 @@ export function describeExternalChanges(
           choices: Object.keys(CHOICES[f.type] ?? {}),
           current: choiceOf(f.type, f.action) ?? f.action,
           ...(same !== undefined ? { sameFile: same } : {}),
+          ...(declared !== undefined && isDeclaredChange(f, modIdBySource, declared) ? { declaredVolatile: true } : {}),
         };
       }),
     })),
@@ -155,6 +158,43 @@ export function planAnswer(
     grouped.set(action, [...(grouped.get(action) ?? []), c.filePath]);
   }
   return { actions: [...grouped.entries()].map(([action, filePaths]) => ({ action, filePaths })), problems };
+}
+
+/**
+ * A mod's files the curator declared generated (a collection config's
+ * `externalMods[modId].volatileFiles`), by Vortex mod id; undefined when none.
+ */
+export type DeclaredLookup = (modId: string) => DeclaredVolatile | undefined;
+
+/** Whether this changed file is one its mod's curator declared generated. */
+export function isDeclaredChange(
+  c: Pick<Entry, "source" | "filePath">,
+  modIdBySource: (source: string) => string | undefined,
+  declared: DeclaredLookup,
+): boolean {
+  const modId = modIdBySource(c.source);
+  return modId !== undefined && declared(modId)?.has(declaredKey(c.filePath)) === true;
+}
+
+/**
+ * Pure: the answer that gives `word` to every changed file, or undefined
+ * unless EVERY file is one the curator declared generated for its mod.
+ *
+ * All or nothing on purpose: Confirm settles every file in the dialog at
+ * once, so answering the declared files alone would leave the others on
+ * Vortex's default, chosen by nobody. Skyrim-collection, 2026-11-06: OBody
+ * rewrites GT Softbody's OBody_presetDistributionConfig.json each session,
+ * and every deploy after a game launch stopped on the dialog.
+ */
+export function volatileAnswer(
+  changes: ReadonlyArray<Pick<Entry, "source" | "filePath">>,
+  word: Choice,
+  modIdBySource: (source: string) => string | undefined,
+  declared: DeclaredLookup,
+): { files: Record<string, string> } | undefined {
+  if (changes.length === 0) return undefined;
+  if (!changes.every((c) => isDeclaredChange(c, modIdBySource, declared))) return undefined;
+  return { files: Object.fromEntries(changes.map((c) => [c.filePath, word])) };
 }
 
 /** Clicks one of the dialog's footer buttons. False when the dialog is not on screen. */

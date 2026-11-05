@@ -292,7 +292,18 @@ export const TOOLS: ToolSpec[] = [
     verb: "deploy",
     mutates: true,
     description: "Deploy the active profile so the game sees the current mods. Needed after installs, enables, disables and rules. The game must be closed.",
-    properties: { assumeGameClosed: assume, pluginsChanged },
+    properties: {
+      assumeGameClosed: assume,
+      pluginsChanged,
+      volatile: {
+        type: "string",
+        enum: ["revert", "save", "newer"],
+        description:
+          "If Vortex stops on External Changes and EVERY changed file is in a collection config's volatileFiles for its mod " +
+          "(a file the game rewrites, e.g. OBody_presetDistributionConfig.json), answer them all with this and finish the deploy. " +
+          "Any other changed file: the reply is external-changes as usual.",
+      },
+    },
   },
   {
     name: "purge",
