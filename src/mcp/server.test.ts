@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { startControlServer, type ControlServer } from "../core/control/controlServer";
 import { VERBS } from "../core/control/verbs";
 import { HANDBOOK, PLAYBOOKS } from "./handbook";
-import { handle } from "./server";
+import { ChannelClosed, handle, runTool } from "./server";
 import { TOOLS } from "./tools";
 
 let server: ControlServer | undefined;
@@ -132,5 +132,31 @@ describe("the handbook", () => {
     const toolish = [...text.matchAll(/`([a-z]+_[a-z_]+)`/g)].map((m) => m[1]!);
     const bare = [...text.matchAll(/\b(diagnose_\w+|installer_\w+|plugins_\w+|mods_\w+|restore_points|recent_operations|logs_list|game_switch_install|external_changes_answer)\b/g)].map((m) => m[1]!);
     expect([...new Set([...toolish, ...bare])].filter((n) => !names.has(n))).toEqual([]);
+  });
+});
+
+describe("runTool polling", () => {
+  const tool = TOOLS.find((t) => t.verb === "externalChanges.answer")!;
+  const reset = (): Error => Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" });
+
+  it("asks ops.get again after a socket reset and returns the finished op", async () => {
+    let polls = 0;
+    const out = await runTool("unused", tool, { all: "revert" }, 1, async (_f, verb) => {
+      if (verb !== "ops.get") return { opId: "op-1", status: "queued" };
+      polls += 1;
+      if (polls === 1) throw reset();
+      return { result: { opId: "op-1", status: "succeeded", result: { deploy: "finished" } } };
+    });
+    expect(out).toMatchObject({ status: "succeeded", result: { deploy: "finished" } });
+    expect(polls).toBe(2);
+  });
+
+  it("still stops at once when Vortex is gone", async () => {
+    await expect(
+      runTool("unused", tool, {}, 1, async (_f, verb) => {
+        if (verb !== "ops.get") return { opId: "op-1", status: "queued" };
+        throw new ChannelClosed("Vortex is not running");
+      }),
+    ).rejects.toBeInstanceOf(ChannelClosed);
   });
 });

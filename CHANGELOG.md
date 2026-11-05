@@ -15,6 +15,7 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
 ### Agents
 - `deploy` takes `volatile`: when Vortex stops on External Changes only for files a collection config lists in
   `volatileFiles` (e.g. OBody_presetDistributionConfig.json), it answers them and finishes the deploy.
+- The MCP tools no longer lose a change's result to one dropped connection while Vortex is busy.
 
 ## [0.2.109] — 2026-11-02
 

@@ -26,6 +26,8 @@ type Control = { port: number; token: string };
 
 export const VERSION = "1";
 const WAIT_MS = 30 * 60 * 1000;
+/** Socket failures in a row before a poll gives up (about half a minute at 1 s). */
+const MAX_FAILED_POLLS = 30;
 
 function controlFile(argv: readonly string[]): string {
   const i = argv.indexOf("--control");
@@ -95,14 +97,35 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
  * long install is one tool call however long it takes, and a dropped
  * connection loses nothing.
  */
-export async function runTool(file: string, tool: ToolSpec, args: Json, pollMs = 1000): Promise<Json> {
-  if (!tool.mutates) return callChannel(file, tool.verb, args);
-  const accepted = await callChannel(file, tool.verb, { ...args, async: true });
+export async function runTool(
+  file: string,
+  tool: ToolSpec,
+  args: Json,
+  pollMs = 1000,
+  call: typeof callChannel = callChannel,
+): Promise<Json> {
+  if (!tool.mutates) return call(file, tool.verb, args);
+  const accepted = await call(file, tool.verb, { ...args, async: true });
   const opId = accepted["opId"];
   if (typeof opId !== "string" || accepted["status"] === "succeeded" || accepted["status"] === "failed") return accepted;
+  /**
+   * A poll that fails on the socket (ECONNRESET while a deploy keeps Vortex
+   * busy) is asked again: ops.get only reads, and the op runs on regardless.
+   * Giving up on the first one lost a finished deploy's result
+   * (general-modding-skyrim, 2026-11-06, external_changes_answer).
+   * A closed channel (Vortex gone) still ends the call at once.
+   */
+  let failedPolls = 0;
   for (let waited = 0; waited < WAIT_MS; waited += pollMs) {
     await sleep(pollMs);
-    const r = await callChannel(file, "ops.get", { opId });
+    let r: Json;
+    try {
+      r = await call(file, "ops.get", { opId });
+      failedPolls = 0;
+    } catch (err) {
+      if (err instanceof ChannelClosed || ++failedPolls > MAX_FAILED_POLLS) throw err;
+      continue;
+    }
     const op = (r["result"] ?? {}) as Json;
     if (op["status"] === "succeeded" || op["status"] === "failed") return op;
   }
