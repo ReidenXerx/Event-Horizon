@@ -42,7 +42,7 @@ describe("what the curator actions log", () => {
   it("freezing, notes and enables", () => {
     expect(section("const setFrozen", "const refreshUpdates")).toContain('"curator.freeze.set"');
     expect(section("const saveNote", "const setPluginEnabled")).toContain('"curator.note.set"');
-    expect(section("const setEnabledFor", "const enableWithProviders")).toContain('"curator.enable.set"');
+    expect(section("const applyEnabled", "const enableWithProviders")).toContain('"curator.enable.set"');
   });
 
   it("a removal or a download install that failed, per mod", () => {

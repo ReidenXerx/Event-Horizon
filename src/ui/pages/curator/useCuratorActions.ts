@@ -15,6 +15,7 @@
 
 import * as fsp from "fs/promises";
 import * as React from "react";
+import { confirmCuratorAction } from "../../runtime/uiMode";
 import {
   actions as vortexActions,
 } from "@nexusmods/vortex-api";
@@ -212,6 +213,13 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
         }
       }
     };
+
+  /** `guard`, plus the Player-mode question before anything changes mods (owner poll 2026-11-06). */
+  const curatorGuard = <A extends unknown[]>(label: string, what: string, fn: (...a: A) => Promise<void>) =>
+    guard(label, async (...a: A): Promise<void> => {
+      if (!(await confirmCuratorAction(api as never, what))) return;
+      await fn(...a);
+    });
 
   const ext = api as unknown as EmitAndAwait;
   const nexus = React.useMemo(() => nexusExtOf(api), [api]);
@@ -498,7 +506,7 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
   const linesOf = (m: CuratorMod): ModRequirement[] => report?.byMod.get(m.id)?.requirements ?? [];
 
   /** Run the previewed plan: downloads in order, each waited for, then the enables. */
-  const runPlan = guard("Installing requirements", async (): Promise<void> => {
+  const runPlan = curatorGuard("Installing requirements", "Download the planned requirements from Nexus, install them and switch them on.", async (): Promise<void> => {
     const st = planState;
     if (st === undefined || st.plan === undefined) return;
     const signal = session.begin("install-requirement", { keepReport: false });
@@ -544,7 +552,7 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
           ...(name === undefined ? {} : { name }),
         };
       },
-      enableMods: (targets) => setEnabledFor(targets, true),
+      enableMods: (targets) => applyEnabled(targets, true),
       onProgress: setProgress,
     });
     session.finish(lines);
@@ -559,7 +567,7 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
   };
 
   /** Uninstall from the pool. The user's explicit choice, confirmed; archives stay (Disk cleanup lists them). */
-  const removeMods = guard("Removing", async (targets: readonly CuratorMod[]): Promise<void> => {
+  const removeMods = curatorGuard("Removing", "Uninstall the chosen mods.", async (targets: readonly CuratorMod[]): Promise<void> => {
     const game = gameId;
     if (game === undefined || targets.length === 0) return;
     const ids = new Set(targets.map((m) => m.id));
@@ -614,7 +622,7 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
   });
 
   /** Install downloaded archives nothing was made from, one at a time, through Vortex's installer. */
-  const installDownloads = guard("Installing downloads", async (entries: readonly DownloadEntry[]): Promise<void> => {
+  const installDownloads = curatorGuard("Installing downloads", "Install the chosen downloads into this profile.", async (entries: readonly DownloadEntry[]): Promise<void> => {
     const game = gameId;
     if (game === undefined || entries.length === 0) return;
     const signal = session.begin("install-download");
@@ -657,7 +665,7 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
   };
 
   /** Plugins: Vortex's own action, dispatched raw (verified against the plugin-management source). */
-  const setPluginEnabled = (pluginName: string, enabled: boolean): void => {
+  const applyPluginEnabled = (pluginName: string, enabled: boolean): void => {
     api.store?.dispatch({ type: "SET_PLUGIN_ENABLED", payload: { pluginName, enabled } } as never);
     ehLog("info", "curator.plugin.set-enabled", { pluginName, enabled });
     setTick((t) => t + 1);
@@ -745,7 +753,7 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
 
   const describeEndorse = (o: EndorseRun, asked: number, stopped: boolean): string => describeEndorseRun(o, asked, stopped);
 
-  const updateAll = guard("Updating", async (candidates: readonly WorkRow[]): Promise<void> => {
+  const updateAll = curatorGuard("Updating", "Update the chosen mods to their newest Nexus files.", async (candidates: readonly WorkRow[]): Promise<void> => {
     const game = gameId;
     if (game === undefined) return;
     const signal = session.begin("update");
@@ -817,7 +825,7 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
     setTick((t) => t + 1);
   });
 
-  const reinstall = guard("Reinstalling", async (requested: readonly CuratorMod[]): Promise<void> => {
+  const reinstall = curatorGuard("Reinstalling", "Reinstall the chosen mods.", async (requested: readonly CuratorMod[]): Promise<void> => {
     const game = gameId;
     if (game === undefined || requested.length === 0) return;
     // Vortex recording an archive id is not the archive being on disk: an
@@ -937,7 +945,7 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
     setTick((t) => t + 1);
   });
 
-  const setEnabledFor = (targets: readonly CuratorMod[], to: boolean): void => {
+  const applyEnabled = (targets: readonly CuratorMod[], to: boolean): void => {
     const profileId = (
       api.getState() as unknown as { settings?: { profiles?: { activeProfileId?: string } } }
     )?.settings?.profiles?.activeProfileId;
@@ -970,6 +978,7 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
    * "everything is enabled and it still does not load" report.
    */
   const enableWithProviders = async (targets: readonly CuratorMod[]): Promise<void> => {
+    if (!(await confirmCuratorAction(api as never, "Switch on the chosen mods and the requirements they need."))) return;
     const ids = new Set(targets.map((m) => m.id));
     const what = targets.length === 1 ? targets[0]!.name : `${num(targets.length)} mods`;
     // The whole installed-but-disabled chain comes on (settled), and what is
@@ -997,7 +1006,7 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
     } else if (question.kind === "confirm") {
       if (!(await confirm({ title: question.title, text: question.text, confirmLabel: "Enable anyway" }))) return;
     }
-    setEnabledFor([...targets, ...providers], true);
+    applyEnabled([...targets, ...providers], true);
     if (providers.length > 0) {
       setNote(
         `Enabled ${num(targets.length)} mod(s) and ${num(providers.length)} requirement(s) they list that were installed but off: ` +
@@ -1013,6 +1022,7 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
 
   /** Disable, after saying what depends on it. */
   const disableWithDependants = async (targets: readonly CuratorMod[]): Promise<void> => {
+    if (!(await confirmCuratorAction(api as never, "Switch off the chosen mods."))) return;
     const ids = new Set(targets.map((m) => m.id));
     const broken = report === undefined ? [] : dependantsOf(report, mods, ids);
     if (broken.length > 0 && report !== undefined) {
@@ -1043,14 +1053,14 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
       );
       if (answer === undefined) return;
       if (answer === "Disable dependants too") {
-        setEnabledFor([...targets, ...everything], false);
+        applyEnabled([...targets, ...everything], false);
         return;
       }
     }
-    setEnabledFor(targets, false);
+    applyEnabled(targets, false);
   };
 
-  const setTypeFor = (targets: readonly CuratorMod[], to: string): void => {
+  const applyTypeFor = (targets: readonly CuratorMod[], to: string): void => {
     const game = gameId;
     if (game === undefined) return;
     const changes = planTypeChanges(targets, to);
@@ -1061,7 +1071,7 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
     setTick((t) => t + 1);
   };
 
-  const applyCleanup = guard("Cleanup", async (plan: CleanupPlan): Promise<void> => {
+  const applyCleanup = curatorGuard("Cleanup", "Delete the chosen archives and mods.", async (plan: CleanupPlan): Promise<void> => {
     const game = gameId;
     if (game === undefined) return;
     const signal = session.begin("cleanup");
@@ -1099,6 +1109,22 @@ export function useCuratorActions(ctx: CuratorActionsContext) {
     setTick((t) => t + 1);
   });
 
+
+  const setEnabledFor = (targets: readonly CuratorMod[], to: boolean): void => {
+    void confirmCuratorAction(api as never, to ? "Switch on the chosen mods." : "Switch off the chosen mods.").then((ok) => {
+      if (ok) applyEnabled(targets, to);
+    });
+  };
+  const setPluginEnabled = (pluginName: string, enabled: boolean): void => {
+    void confirmCuratorAction(api as never, `${enabled ? "Switch on" : "Switch off"} the plugin ${pluginName}.`).then((ok) => {
+      if (ok) applyPluginEnabled(pluginName, enabled);
+    });
+  };
+  const setTypeFor = (targets: readonly CuratorMod[], to: string): void => {
+    void confirmCuratorAction(api as never, "Change the chosen mods' type.").then((ok) => {
+      if (ok) applyTypeFor(targets, to);
+    });
+  };
 
   return {
     askThree,

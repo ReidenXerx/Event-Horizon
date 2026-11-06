@@ -10,6 +10,7 @@ import * as React from "react";
 
 import { Button, Callout, Card, ProgressRing } from "../../components";
 import { useApi } from "../../state";
+import { useUiMode } from "../../runtime/uiMode";
 import { ehLog } from "../../../core/logging/ehLog";
 import { openExternalUrl } from "../../../core/revealPath";
 import { DashboardView, type DashboardMode, type DashboardViewModel } from "./DashboardView";
@@ -42,7 +43,8 @@ export function DashboardPage(props: DashboardPageProps): JSX.Element {
     };
   }, []);
 
-  const [mode, setMode] = React.useState<DashboardMode>("player");
+  // Remembered, and read by Curator Tools: Player mode asks before a curator action changes mods.
+  const [mode, setMode] = useUiMode();
   const [disk, setDisk] = React.useState<DashboardViewModel["disk"]>(undefined);
   const [diskBusy, setDiskBusy] = React.useState(false);
   const [curatorBusy, setCuratorBusy] = React.useState(false);
