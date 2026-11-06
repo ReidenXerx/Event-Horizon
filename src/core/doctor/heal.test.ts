@@ -32,6 +32,7 @@ const ALL: HealAction[] = [
   "restore-light-flags",
   "switch-profile",
   "redeploy-winners",
+  "disable-extra-mods",
 ];
 
 describe("healNeedsManifest", () => {
@@ -40,6 +41,8 @@ describe("healNeedsManifest", () => {
     // those three repair from it alone. The other three re-run pipeline steps
     // that read the manifest, which lives in the .ehcoll.
     expect(ALL.filter((a) => !healNeedsManifest(a)).sort()).toEqual([
+      // The receipt's mod ids and Vortex's pool are all it reads (owner 2026-11-06).
+      "disable-extra-mods",
       "enable-mods",
       "repin-plugin-order",
       // The receipt carries each plugin's name and the curator's flag, so this
@@ -83,6 +86,8 @@ describe("healNeedsConfirmation", () => {
      *    folder and `HealAction` has no inverse for it. It asks.
      */
     expect(ALL.filter((a) => !healNeedsConfirmation(a)).sort()).toEqual([
+      // Switches off, removes nothing, and names every mod (owner 2026-11-06).
+      "disable-extra-mods",
       "enable-mods",
       "reapply-rules",
       "reapply-userlist",

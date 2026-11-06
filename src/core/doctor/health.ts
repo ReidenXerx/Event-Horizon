@@ -27,6 +27,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { findExtraMods } from "./extraMods";
 import { assessNativeOnDisk, type NativeOnDisk } from "./nativeOnDisk";
 import type { UserPluginMasters } from "../installer/repinPluginOrder";
 /** Which aspect of the collection a check covers. */
@@ -55,6 +56,8 @@ export type HealthCheckId =
   | "profile"
   | "mods-present"
   | "mods-enabled"
+  /** Mods switched on in the collection's profile that are not part of it (extraMods.ts, owner 2026-11-06). */
+  | "extra-mods"
   /** A collection mod replaced by another file of the same Nexus page the player enabled (playerVariants.ts). */
   | "player-variants"
   | "staging"
@@ -117,7 +120,9 @@ export type HealAction =
   /** Re-apply the collection's mod rules, then deploy, so each contested file goes to the mod the curator's did. */
   | "redeploy-winners"
   /** Let the player's own file of a collection mod's Nexus page stand for it (owner poll, 2026-10-06). */
-  | "keep-player-versions";
+  | "keep-player-versions"
+  /** Switch off mods in the collection's profile that are not part of it; reversible, never removes (owner 2026-11-06). */
+  | "disable-extra-mods";
 
 export interface HealthCheck {
   id: HealthCheckId;
@@ -699,6 +704,33 @@ export function evaluateHealth(
         }
       : {}),
   });
+
+  // ── mods that are not the collection's ───────────────────────────────
+  // Only when the pool was read: without names there is nothing to list.
+  if (!enabledUnreadable && obs.poolNexus !== undefined) {
+    const extra = findExtraMods({
+      collectionModIds: new Set(receipt.mods.map((m) => m.vortexModId)),
+      enabled,
+      pool: obs.poolNexus,
+      variantModIds: new Set(variants.map((v) => v.variant.vortexModId)),
+    });
+    const n = extra.length;
+    checks.push({
+      id: "extra-mods",
+      title: "Mods not in the collection",
+      status: n === 0 ? "healthy" : "drifted",
+      summary:
+        n === 0
+          ? "Only the collection's mods are switched on."
+          : `${n} mod${n === 1 ? " that is" : "s that are"} not part of the collection ${n === 1 ? "is" : "are"} switched on. ` +
+            `Switching ${n === 1 ? "it" : "them"} off is reversible: nothing is removed, and you can switch your own back on in Vortex's Mods tab.`,
+      detail: detailList(extra.map((m) => m.name)),
+      affectedCount: n,
+      ...(n > 0
+        ? { heal: { action: "disable-extra-mods" as const, label: `Switch off ${n} mod${n === 1 ? "" : "s"}` } }
+        : {}),
+    });
+  }
 
   // ── staging bytes ────────────────────────────────────────────────────
   if (obs.driftedCompareKeys === undefined) {

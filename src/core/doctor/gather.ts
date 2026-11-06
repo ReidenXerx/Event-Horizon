@@ -64,7 +64,7 @@ function readProfileIds(state: unknown, gameId: string): string[] | undefined {
  */
 /** Every mod of the game with its Nexus ids, name and install time; undefined when the table is unreadable. */
 export function readPoolNexus(state: unknown, gameId: string): import("../installer/playerVariants").PoolNexusMod[] | undefined {
-  const table = (state as { persistent?: { mods?: Record<string, Record<string, { attributes?: Record<string, unknown> }>> } })
+  const table = (state as { persistent?: { mods?: Record<string, Record<string, { attributes?: Record<string, unknown>; type?: unknown }>> } })
     ?.persistent?.mods;
   if (table === null || table === undefined || typeof table !== "object") return undefined;
   const mods = table[gameId] ?? {};
@@ -82,6 +82,7 @@ export function readPoolNexus(state: unknown, gameId: string): import("../instal
       ...(num(a["modId"]) !== undefined ? { modId: num(a["modId"])! } : {}),
       ...(num(a["fileId"]) !== undefined ? { fileId: num(a["fileId"])! } : {}),
       ...(a["installTime"] !== undefined ? { installTime: a["installTime"] } : {}),
+      ...(typeof m?.type === "string" ? { modType: m.type } : {}),
     };
   });
 }

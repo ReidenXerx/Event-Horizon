@@ -51,6 +51,7 @@ export function healNeedsManifest(action: HealAction): boolean {
     case "enable-mods":
     case "repin-plugin-order":
     case "keep-player-versions":
+    case "disable-extra-mods":
     // The receipt carries each plugin's name and the curator's flag, which is
     // everything the repair needs. Requiring the .ehcoll would hide the button
     // from exactly the user whose game has stopped starting.
@@ -106,6 +107,8 @@ export function healNeedsConfirmation(action: HealAction): boolean {
     case "reapply-userlist":
     case "switch-profile":
     case "enable-mods":
+    // Reversible and removes nothing: one press (owner 2026-11-06).
+    case "disable-extra-mods":
     case "repin-plugin-order":
       return false;
   }
@@ -120,6 +123,9 @@ export function healNeedsConfirmation(action: HealAction): boolean {
 export const REPAIR_ALL_ORDER: readonly HealAction[] = [
   "switch-profile",
   "enable-mods",
+  // Before rules and the deploy: an extra mod's own rules can cycle with the
+  // collection's, and Vortex then refuses every deploy (ilhamitaa24, 2026-11-06).
+  "disable-extra-mods",
   "reapply-rules",
   // After the rules, which it re-applies too, and before anything that
   // reads plugin files a deploy can rewrite.
@@ -210,6 +216,15 @@ export function describeHeal(action: HealAction): {
           "Every mod the collection installed will be enabled again in its " +
           "profile. Mods you added yourself are not touched.",
         confirm: "Enable mods",
+      };
+    case "disable-extra-mods":
+      return {
+        title: "Switch off the mods that are not part of the collection?",
+        body:
+          "Mods switched on in this profile that the collection does not have are switched off. Nothing is " +
+          "removed or uninstalled: each one is listed, and you can switch your own back on in Vortex's Mods tab " +
+          "at any time. If you added them on purpose, use \"Keep on purpose\" instead.",
+        confirm: "Switch off",
       };
     case "repin-plugin-order":
       return {

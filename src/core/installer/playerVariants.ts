@@ -26,7 +26,7 @@ import type { InstallReceipt } from "../../types/installLedger";
 import { ehLog } from "../logging/ehLog";
 import { getEventHorizonDir } from "../paths/appDataPaths";
 
-export type PoolNexusMod = { vortexModId: string; name: string; modId?: number; fileId?: number; installTime?: unknown };
+export type PoolNexusMod = { vortexModId: string; name: string; modId?: number; fileId?: number; installTime?: unknown; modType?: string };
 
 export type PlayerVariant = {
   compareKey: string;

@@ -432,6 +432,52 @@ async function healImpl(
       };
     }
 
+    case "disable-extra-mods": {
+      /**
+       * Recomputed from current state, like enable-mods: the card may have
+       * sat on screen while the player changed things. Switched OFF only,
+       * never removed, and every one named so a player turns their own back
+       * on (owner, 2026-11-06).
+       */
+      const profiles = (api.getState() as unknown as { persistent?: { profiles?: Record<string, unknown> } }).persistent?.profiles;
+      if (profiles !== undefined && !Object.prototype.hasOwnProperty.call(profiles, receipt.vortexProfileId)) {
+        return {
+          kind: "blocked",
+          reason: `The profile "${receipt.vortexProfileName}" no longer exists in Vortex, so there is nothing to switch off.`,
+        };
+      }
+      const [{ findPlayerVariants }, { readPoolNexus, readEnabledModIdsFor }, { findExtraMods }, { disableModInProfile }] =
+        await Promise.all([
+          import("../installer/playerVariants"),
+          import("./gather"),
+          import("./extraMods"),
+          import("../installer/profile"),
+        ]);
+      const pool = readPoolNexus(api.getState(), gameId) ?? [];
+      const enabledNow = new Set(readEnabledModIdsFor(api.getState(), receipt.vortexProfileId) ?? []);
+      const variants = findPlayerVariants({ receiptMods: receipt.mods, pool, enabled: enabledNow });
+      const extra = findExtraMods({
+        collectionModIds: new Set(receipt.mods.map((m) => m.vortexModId)),
+        enabled: enabledNow,
+        pool,
+        variantModIds: new Set(variants.map((v) => v.variant.vortexModId)),
+      });
+      for (const m of extra) disableModInProfile(api, receipt.vortexProfileId, m.vortexModId);
+      ehLog("info", "doctor.heal.disable-extra-mods", {
+        profileId: receipt.vortexProfileId,
+        disabled: extra.map((m) => m.vortexModId),
+      });
+      const n = extra.length;
+      return {
+        kind: "done",
+        summary:
+          n === 0
+            ? "No mod outside the collection is switched on."
+            : `Switched off ${n} mod${n === 1 ? "" : "s"} that ${n === 1 ? "is" : "are"} not part of ${receipt.packageName}: ` +
+              `${extra.map((m) => m.name).join(", ")}. Nothing was removed; switch your own back on in Vortex's Mods tab.`,
+      };
+    }
+
     case "restore-light-flags": {
       /**
        * ─── HEALABLE FROM THE RECEIPT ALONE ────────────────────────────
