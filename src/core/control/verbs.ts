@@ -74,9 +74,12 @@ import {
   annotateTypes,
   describeBasic,
   describeModuleConfig,
+  describePickCountProblem,
   notUsablePicks,
+  pickCountProblems,
   publicDescription,
   type BasicDescription,
+  type PickCountProblem,
   type FomodDescription,
 } from "./installerDescribe";
 
@@ -1835,20 +1838,73 @@ function restoreEnabledBefore(
 }
 
 /** Picks that land on an option NotUsable on this setup; empty when the installer cannot be read. */
+/**
+ * After a failed install switched mods back on: plugins of those mods that
+ * were unticked before the install are unticked again. Switching a mod on
+ * makes Vortex tick its plugins (one plugin, or a mod marked "enable all
+ * plugins"), and it does so after reading the mod's files, so this watches
+ * for a short while rather than looking once. Fallout-collection,
+ * 2026-11-06: VOC's two previs plugins came back ticked and broke a master.
+ */
+export async function keepPluginsOff(
+  api: types.IExtensionApi,
+  restoredModIds: readonly string[],
+  before: Readonly<Record<string, boolean>>,
+  watchMs = 2000,
+): Promise<string[]> {
+  const mods = new Set(restoredModIds);
+  const wasOff = (): Array<{ id: string; name: string }> =>
+    readPluginList(api.getState())
+      .filter((p) => p.modId !== undefined && mods.has(p.modId) && before[toPluginId(p.name)] === false)
+      .map((p) => ({ id: toPluginId(p.name), name: p.name }));
+  const keptOff = new Set<string>();
+  for (let waited = 0; ; waited += 100) {
+    const now = readEnabledState(api);
+    for (const p of wasOff()) {
+      if (now[p.id] !== true) continue;
+      dispatchRaw(api, ACTION_SET_PLUGIN_ENABLED, { pluginName: p.name, enabled: false });
+      keptOff.add(p.name);
+    }
+    if (waited >= watchMs) break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return [...keptOff].sort();
+}
+
 async function notUsableFor(
   api: types.IExtensionApi,
   gameId: string,
   archiveId: string,
   picks: FomodPick[],
 ): Promise<ReturnType<typeof notUsablePicks>> {
+  let wrongCount: PickCountProblem[] = [];
+  let notUsable: ReturnType<typeof notUsablePicks> = [];
   try {
     const looked = await readInstaller(api, archivePathFor(api, gameId, archiveId), false);
-    return looked.description.kind === "fomod" ? notUsablePicks(looked.description, picks) : [];
+    if (looked.description.kind === "fomod") {
+      notUsable = notUsablePicks(looked.description, picks);
+      wrongCount = pickCountProblems(looked.description, picks);
+    }
   } catch (err) {
     // The wizard still checks every pick; this only saves a failed run.
     ehLog("warn", "control.install.pick-precheck-skipped", { archiveId, error: err instanceof Error ? err.message : String(err) });
     return [];
   }
+  /*
+   * Refused here, before the install starts: the wizard would refuse the same
+   * pick, but only after Vortex had switched the mod's older version off
+   * (Fallout-collection, 2026-11-06, VOC "Previs Plugins" with no option).
+   */
+  if (wrongCount.length > 0) {
+    ehLog("warn", "control.install.pick-count-refused", { archiveId, wrongCount: wrongCount.map((p) => `${p.step}/${p.group}: ${p.got}`) });
+    throw new ControlError(
+      "bad-pick",
+      `Nothing was installed or switched off: ${wrongCount.map(describePickCountProblem).join(" ")}`,
+      400,
+      { archiveId, wrongCount },
+    );
+  }
+  return notUsable;
 }
 
 /** Does this FOMOD ask anything? (A script whose steps hold no groups installs without a question.) */
@@ -3259,6 +3315,16 @@ export const VERBS: Record<string, Verb> = {
       const autoSort = readsAutoSort(api.getState());
       await settlePlugins(api, wants, !sort); // the apply itself landed
       await waitForQuietPlugins(api); // ...and whatever Vortex's autosort does next has happened
+      /*
+       * With autosort on, Vortex starts LOOT well after the change, later than
+       * the quiet window above (Fallout-collection, 2026-11-06: verified
+       * "matches" at 22:46:23Z, re-sorted at 22:46:33Z). So the apply watches
+       * for that sort, and checks the order only after it has had its turn.
+       */
+      const sortWatch =
+        autoSort === true && !sort
+          ? await waitForPluginSortIdle(() => api.getState(), { quietMs: PLUGIN_QUIET_MS * 7, capMs: PLUGIN_SORT_CAP_MS })
+          : undefined;
       const check = checkPlugins(api, wants, !sort);
       const resortHint =
         autoSort === true && !sort
@@ -3276,6 +3342,7 @@ export const VERBS: Record<string, Verb> = {
             outOfOrder: check.outOfOrder,
             unknown: check.unknown,
             autoSort,
+            ...(sortWatch !== undefined ? { sortWatch } : {}),
             notes: applied.notes,
           },
         );
@@ -3297,6 +3364,7 @@ export const VERBS: Record<string, Verb> = {
         enabledCorrections: applied.enabledCorrections,
         sorted: applied.sorted,
         autoSort,
+        ...(sortWatch !== undefined ? { sortWatch } : {}),
         unknown: check.unknown,
         notes: applied.notes,
         pluginsTxt: disk,
@@ -3705,6 +3773,7 @@ export const VERBS: Record<string, Verb> = {
       // Who was enabled before, so "enable": false can undo Vortex switching an older version off.
       const profileBefore = activeProfileId(api);
       const enabledBefore = profileBefore === undefined ? {} : { ...enabledMap(api, profileBefore) };
+      const pluginsBefore = readEnabledState(api);
       let answered: Record<string, unknown> | undefined;
       let archiveId: string | undefined;
       try {
@@ -3801,9 +3870,12 @@ export const VERBS: Record<string, Verb> = {
         }
       } catch (err) {
         const restoredEnabled = restoreEnabledBefore(api, gameId, profileBefore, enabledBefore);
+        // Switching a mod back on can make Vortex tick its plugins; the ones that were off stay off.
+        const pluginsKeptOff = restoredEnabled.length > 0 ? await keepPluginsOff(api, restoredEnabled, pluginsBefore) : [];
         if (restoredEnabled.length > 0) {
           ehLog("warn", "control.install.failed-restored-enabled", {
             restoredEnabled,
+            pluginsKeptOff,
             error: err instanceof Error ? err.message : String(err),
           });
         }
@@ -3811,6 +3883,7 @@ export const VERBS: Record<string, Verb> = {
           throw new ControlError(err.code, `${err.message} Mods Vortex switched off for this install were switched back on.`, err.status, {
             ...err.details,
             restoredEnabled,
+            ...(pluginsKeptOff.length > 0 ? { pluginsKeptOff } : {}),
           });
         }
         throw err;

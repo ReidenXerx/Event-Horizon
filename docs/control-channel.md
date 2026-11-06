@@ -111,7 +111,7 @@ All of them act on Vortex's **active game**.
 | `mods.remove` | `modIds[]`, `assumeGameClosed?` | Uninstalls by exact id and verifies each mod is gone from the pool. `removed` lists them with `owner`. |
 | `mods.rule` | `source`, `type` (before/after/conflicts/requires/recommends), `reference`, `versionMatch?` (any/compatible/exact, default any); or `source`, `reference`, `remove: true`, `type?` | Adds or removes a rule, like Vortex's conflict editor: an order rule replaces any before/after/conflicts rule the source already has on that mod. Verified by reading the rules back. The reply has `rulesOnPair` (only the rules between the two) and `sourceRules` (everything the source holds). Reports `otherSideRules` (an order rule the other mod holds on this one, which could make a cycle) and whether the pair's conflict is now `resolved`. |
 | `plugins.setEnabled` | `names[]`, `enabled`, `profileId?` (must be the active profile) | Enables or disables plugins by file name. Names Vortex does not list come back in `unknown`. Verified in Vortex's state, and `pluginsTxt` reports what plugins.txt on disk holds once flushed. |
-| `plugins.apply` | `order: [{name, enabled}]`, `profileId?` (active only), `sort?` (default false) | Replays a known list, order and enabled state, through EH's installer writer: pins without disabling the user's other plugins, corrects only the states that differ, and flushes plugins.txt. The order is kept exactly unless `sort: true` lets LOOT place the rest. Verified in state (enabled, relative order) and on disk (`pluginsTxt.missingActive`). |
+| `plugins.apply` | `order: [{name, enabled}]`, `profileId?` (active only), `sort?` (default false) | Replays a known list, order and enabled state, through EH's installer writer: pins without disabling the user's other plugins, corrects only the states that differ, and flushes plugins.txt. The order is kept exactly unless `sort: true` lets LOOT place the rest. Verified in state (enabled, relative order) and on disk (`pluginsTxt.missingActive`). With autosort on it first waits for the sort Vortex runs after the change (`sortWatch`), so a re-sort is reported as `resorted-after-apply`, not missed. |
 | `plugins.rule` | `name`, `type` (after/before/requires/incompatible), `reference`, `sort?`; or the same with `remove: true` | A LOOT userlist rule, the kind of order that **survives autosort** (a pinned order does not). Written through the installer's `applyUserlist` and verified in the userlist. A `before` rule is stored as LOOT stores it: `reference` gets `after: name` (see `stored`). `sort: true` runs LOOT and checks the two plugins came out in that order. It waits for Vortex to go quiet first and gives LOOT up to three sorts, since a rule or a plugin installed moments earlier can reach LOOT late. It fails with `plugin-rule-not-effective` (with `attempts`) only after that. |
 | `plugins.setGroup` | `name`, `group` | Puts a plugin in a LOOT group (which must exist in LOOT's masterlist or the user's groups). Verified in the userlist. |
 | `plugins.sort` | none | Runs LOOT now (the Sort button's event), waits for Vortex to go quiet, and reports `moved: [{name, from, to}]`. |
@@ -298,12 +298,16 @@ into the archive first. If it has questions, it is refused with **`needs-choices
 same tree as `installer.describe`, and `details.archiveId` the download to re-send. The usual flow:
 
 1. `installer.describe {nexus, checkMasters: true}`, or just `install` and read `needs-choices`.
-2. Choose: skip options with `missingMasters`, prefer `type: Recommended`, and follow `visibleWhen` and `typeWhen`.
+2. Choose: skip options with `missingMasters`, and go by **`typeNow`**, the type on this setup. `type` is only the
+   installer's default before its conditions are read (a patch shows `type: NotUsable` even when its mod is active).
+   No `typeNow` means a rule needs a flag or the game version: follow `typeWhen` and `visibleWhen`.
 3. `install {archiveId, picks: [{group: "Main", options: ["PRP"]}, {group: "F4SE", options: ["AE"]}]}`. The
    install runs Vortex's real wizard and answers it as it opens, step by step, with the same verified routine as
    `fomod.answer`, so steps that show or hide on earlier flags are handled the way the wizard handles them. Groups
-   you do not name keep the wizard's defaults. A pick that does not fit cancels the wizard, and the install fails
-   with that `bad-pick`. It never hangs. The reply's `installer` says what was chosen, and Vortex records the
+   you do not name keep the wizard's defaults. Picks that give a pick-one group no option (or a pick-at-most-one
+   group several) on an always-shown step are refused with `bad-pick` BEFORE the install starts, so nothing is
+   switched off; `details.wrongCount` lists each option with its type now. Any other pick that does not fit cancels
+   the wizard, and the install fails with that `bad-pick`. It never hangs. The reply's `installer` says what was chosen, and Vortex records the
    answers as the mod's `installerChoices`, as usual.
 
 `interactive: true` lets the wizard open for the user, or for `fomod.answer` (`fomod` reads it).

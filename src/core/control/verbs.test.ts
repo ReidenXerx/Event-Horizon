@@ -739,6 +739,23 @@ describe("plugin rules, groups, sort, autosort", () => {
     ).rejects.toMatchObject({ code: "resorted-after-apply", details: { autoSort: true, outOfOrder: 1 } });
   });
 
+  it("plugins.apply waits for an autosort that starts after the quiet window (Fallout-collection, 2026-11-06: re-sorted 10 s later)", async () => {
+    v.state.settings.plugins = { autoSort: true };
+    const emit = v.api.events.emit;
+    v.api.events.emit = (ev: string, ...args: unknown[]) => {
+      emit(ev, ...args);
+      if (ev !== "set-plugin-list") return;
+      // LOOT starts after the old quiet window had already closed, and lands its order a while later.
+      setTimeout(() => (v.state.session = { ...v.state.session, base: { activity: { plugins: ["sorting"] } } }), 300);
+      setTimeout(() => {
+        v.state.loadOrder = { ...v.state.loadOrder, "c.esl": { ...v.state.loadOrder["c.esl"], loadOrder: 9 } };
+        v.state.session = { ...v.state.session, base: { activity: { plugins: [] } } };
+      }, 600);
+    };
+    const err = await run("plugins.apply", { order: [{ name: "C.esl", enabled: false }, { name: "A.esp", enabled: true }] }).catch((e) => e);
+    expect(err).toMatchObject({ code: "resorted-after-apply", details: { autoSort: true, outOfOrder: 1, sortWatch: { sawSort: true } } });
+  });
+
   it("plugins.apply fails when plugins.txt on disk has them out of order", async () => {
     disk.entries = [{ name: "A.esp", enabled: true }, { name: "B.esp", enabled: true }];
     await expect(

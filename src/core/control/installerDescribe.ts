@@ -351,6 +351,65 @@ export function annotateTypes(d: FomodDescription, plugins: ReadonlyMap<string, 
   };
 }
 
+export type PickCountProblem = {
+  step: string;
+  group: string;
+  groupType: string;
+  got: number;
+  /** Every option of the group, with its type on this setup (typeNow, else the installer's default). */
+  options: Array<{ name: string; type: string }>;
+};
+
+/**
+ * Picks that give a SelectExactlyOne group anything but one option, or a
+ * SelectAtMostOne group more than one: the wizard's own rule (fomod.ts
+ * resolvePick), checked BEFORE the install starts. Fallout-collection,
+ * 2026-11-06: VOC's "Previs Plugins" got [] and the wizard refused it only
+ * after Vortex had switched the old VOC off; the restore that followed
+ * re-ticked two plugins they had unticked on purpose.
+ *
+ * Only steps that always show are checked: a pick for a step with a
+ * visibility condition may never be used, and is left to the wizard. A pick
+ * with no step goes to the first step holding that group, as answerWizard
+ * applies it. Numeric groups and step indexes name the live wizard and are
+ * left to it.
+ */
+export function pickCountProblems(
+  d: FomodDescription,
+  picks: ReadonlyArray<{ group: string | number; options: ReadonlyArray<string | number>; step?: string | number }>,
+): PickCountProblem[] {
+  const same = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const out: PickCountProblem[] = [];
+  for (const pick of picks) {
+    if (typeof pick.group !== "string" || typeof pick.step === "number") continue;
+    const groupName = pick.group;
+    const step = d.steps.find((s) =>
+      pick.step !== undefined ? same(pick.step as string, s.name) : s.groups.some((g) => same(g.name, groupName)),
+    );
+    if (step === undefined || step.visibleWhen !== undefined) continue;
+    const g = step.groups.find((x) => same(x.name, groupName));
+    if (g === undefined) continue;
+    const got = pick.options.length;
+    const bad = /ExactlyOne/i.test(g.type) ? got !== 1 : /AtMostOne/i.test(g.type) ? got > 1 : false;
+    if (!bad) continue;
+    out.push({
+      step: step.name,
+      group: g.name,
+      groupType: g.type,
+      got,
+      options: g.options.map((o) => ({ name: o.name, type: o.typeNow ?? o.type })),
+    });
+  }
+  return out;
+}
+
+/** One sentence per problem, naming what the group takes and what each option is on this setup. */
+export function describePickCountProblem(p: PickCountProblem): string {
+  const takes = /ExactlyOne/i.test(p.groupType) ? "exactly one option" : "at most one option";
+  const opts = p.options.map((o) => `"${o.name}" (${o.type})`).join(", ");
+  return `"${p.group}" in step "${p.step}" takes ${takes}; got ${p.got}. Options on this setup: ${opts}.`;
+}
+
 /**
  * Picks (by name) that land on an option NotUsable on this setup. Numeric
  * picks name the live wizard's ids and are left to it.
