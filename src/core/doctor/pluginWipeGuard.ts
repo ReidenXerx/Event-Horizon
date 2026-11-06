@@ -103,6 +103,53 @@ function currentList(api: types.IExtensionApi): PluginSnapshotEntry[] {
     .map((p) => ({ name: p.name, enabled: p.enabled, ...(p.loadOrder !== undefined ? { loadOrder: p.loadOrder } : {}) }));
 }
 
+/** A reorder may add this many master-after-dependant pairs and still become the baseline. */
+export const MASTER_SLIP = 5;
+
+/**
+ * Pure: how many (plugin, master) pairs load the master AFTER the plugin.
+ * Masters not in the list (natives, Creations) are not counted.
+ */
+export function mastersAfterCount(order: readonly string[], mastersOf: (name: string) => readonly string[] | undefined): number {
+  const pos = new Map(order.map((n, i) => [n.toLowerCase(), i]));
+  let count = 0;
+  for (const [i, name] of order.entries()) {
+    for (const m of mastersOf(name) ?? []) {
+      const p = pos.get(m.toLowerCase());
+      if (p !== undefined && p > i) count += 1;
+    }
+  }
+  return count;
+}
+
+/**
+ * Pure: may `next` replace `prev` as the last good list? Not when it is the
+ * same plugins reordered so that more masters load after their dependants.
+ * Fallout-collection, 2026-11-06: a stray LOOT sort from another game left FO4
+ * with 619 such pairs, and the guard saved it as "last good" 3 s later.
+ */
+export function reorderBreaksMasters(
+  prev: readonly PluginSnapshotEntry[],
+  next: readonly PluginSnapshotEntry[],
+  mastersOf: (name: string) => readonly string[] | undefined,
+): { before: number; after: number } | undefined {
+  const byOrder = (l: readonly PluginSnapshotEntry[]): string[] =>
+    [...l].sort((a, b) => (a.loadOrder ?? 1e9) - (b.loadOrder ?? 1e9)).map((e) => e.name);
+  const before = mastersAfterCount(byOrder(prev), mastersOf);
+  const after = mastersAfterCount(byOrder(next), mastersOf);
+  return after > before + MASTER_SLIP ? { before, after } : undefined;
+}
+
+/** Each plugin's masters as Vortex read them from the file (session.plugins.pluginList[id].masterList). */
+function mastersFromState(state: unknown): (name: string) => readonly string[] | undefined {
+  const list = (state as { session?: { plugins?: { pluginList?: Record<string, { masterList?: unknown }> } } })?.session?.plugins?.pluginList ?? {};
+  const byLower = new Map<string, string[]>();
+  for (const [k, v] of Object.entries(list)) {
+    if (Array.isArray(v?.masterList)) byLower.set(k.toLowerCase(), v.masterList.filter((m): m is string => typeof m === "string"));
+  }
+  return (name) => byLower.get(name.toLowerCase());
+}
+
 function sameList(a: readonly PluginSnapshotEntry[], b: readonly PluginSnapshotEntry[]): boolean {
   return a.length === b.length && a.every((x, i) => x.name === b[i]!.name && x.enabled === b[i]!.enabled);
 }
@@ -131,6 +178,8 @@ export function startPluginWipeGuard(api: types.IExtensionApi): void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   /** profileId|snapshot time already warned about, so one wipe is one notification. */
   let warned = "";
+  /** The master-breaking list already refused, so one bad reorder is one log line. */
+  let refused = "";
 
   const look = (): void => {
     try {
@@ -191,6 +240,16 @@ export function startPluginWipeGuard(api: types.IExtensionApi): void {
         warned = "";
       }
       if (worthSaving(list.length, active) && (snapshot === undefined || !sameList(snapshot.entries, list))) {
+        const broke = snapshot !== undefined ? reorderBreaksMasters(snapshot.entries, list, mastersFromState(state)) : undefined;
+        if (broke !== undefined) {
+          const key = `${profileId}|masters|${broke.after}`;
+          if (refused !== key) {
+            refused = key;
+            ehLog("warn", "plugins.lastGood.refused", { profileId, gameId, mastersAfterBefore: broke.before, mastersAfterNow: broke.after });
+          }
+          return;
+        }
+        refused = "";
         saveSnapshot({ profileId, gameId, savedAt: new Date().toISOString(), active, entries: list });
       }
     } catch (err) {

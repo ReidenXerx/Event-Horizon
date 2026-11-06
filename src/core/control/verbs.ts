@@ -95,6 +95,7 @@ import {
   volatileAnswer,
 } from "./externalChanges";
 import { declaredSet } from "../volatileFiles";
+import { waitForPluginSortIdle, type SortIdleResult } from "./pluginSortIdle";
 import { askOwner } from "./ownerConsent";
 import { enabledAfterReplace, mergeReplacement, pickReplaceTarget, readEnabled, type EnabledByProfile, type PoolMod } from "./safeReplace";
 import { judgeCrash, parseCrashLog, type Owner } from "./diagnose";
@@ -806,6 +807,20 @@ export function setSettleWindowsForTests(ms: number): void {
 export let PLUGIN_QUIET_MS = 3000;
 /** How long Vortex may take to reflect plugin changes in its state. */
 export let PLUGIN_SETTLE_MS = 5000;
+/** The longest a profile switch waits for a running LOOT sort (one measured 7 s on 1,700 plugins). */
+const PLUGIN_SORT_CAP_MS = 120000;
+
+/** A profile's own plugins.txt copy (what Vortex syncs into the game on a switch), or undefined. */
+async function readProfilePluginsTxt(gameId: string, profileId: string): Promise<PluginWant[] | undefined> {
+  const { parsePluginsTxt } = await import("../comparePlugins");
+  try {
+    // latin1: see parsePluginsTxt.
+    const text = await fs.promises.readFile(path.join(getVortexUserDataPath(), gameId, "profiles", profileId, "plugins.txt"), "latin1");
+    return parsePluginsTxt(text).map((p) => ({ name: p.name, enabled: p.enabled }));
+  } catch {
+    return undefined;
+  }
+}
 
 async function deploy(api: types.IExtensionApi, gameId: string): Promise<Record<string, unknown>> {
   const profileId = activeProfileId(api);
@@ -3506,12 +3521,41 @@ export const VERBS: Record<string, Verb> = {
       if (target === undefined) throw new ControlError("bad-profile", `No profile ${profileId}.`, 404);
       // A switch deploys (Vortex's auto-deploy), so the game must be closed.
       await guardClosed(api, target.gameId ?? activeGame(api), body);
+      /**
+       * Across games, a LOOT sort still running for the old game lands on the
+       * new one (Fallout-collection, 2026-11-06: a Skyrim sort scrambled FO4's
+       * plugins.txt). So: no sort running before the switch, none after it,
+       * and the new game's order must equal its profile copy, which is what
+       * Vortex syncs from on a switch. A stray sort's order is put back.
+       */
+      const crossGame = target.gameId !== undefined && target.gameId !== activeGame(api);
+      const idle = (): Promise<SortIdleResult> =>
+        waitForPluginSortIdle(() => api.getState(), { quietMs: PLUGIN_QUIET_MS, capMs: PLUGIN_SORT_CAP_MS });
+      const before = crossGame ? await idle() : undefined;
+      const expected = crossGame ? await readProfilePluginsTxt(target.gameId!, profileId) : undefined;
       await switchToProfile(api, profileId);
       const active = activeProfileId(api);
       if (active !== profileId) {
         throw new ControlError("switch-unverified", `Vortex reports profile ${active ?? "none"} active, not ${profileId}.`, 500);
       }
-      return { profileId, name: target.name, gameId: target.gameId, verified: { activeProfile: active } };
+      let loadOrder: Record<string, unknown> | undefined;
+      if (crossGame && expected !== undefined && expected.length > 0) {
+        const after = await idle();
+        const moved = checkPlugins(api, expected, true).outOfOrder;
+        loadOrder = { sortWaitBeforeMs: before?.waitedMs ?? 0, sortWaitAfterMs: after.waitedMs, outOfOrder: moved };
+        if (moved > 0) {
+          ehLog("warn", "profile.switch.stray-order", { profileId, gameId: target.gameId, outOfOrder: moved, sawSort: after.sawSort });
+          await VERBS["plugins.apply"]!.run(api, { order: expected });
+          loadOrder["restoredFromProfileCopy"] = true;
+        }
+      }
+      return {
+        profileId,
+        name: target.name,
+        gameId: target.gameId,
+        ...(loadOrder !== undefined ? { loadOrder } : {}),
+        verified: { activeProfile: active, ...(loadOrder !== undefined ? { pluginOrder: "matches profile copy" } : {}) },
+      };
     },
     describe: (_b, r) => `switched to profile ${String(r["name"] ?? r["profileId"])}`,
   },

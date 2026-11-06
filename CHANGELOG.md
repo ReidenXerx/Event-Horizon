@@ -1,7 +1,7 @@
 # Changelog
 
 Everything that changed in Event Horizon, newest first, written for the people who use it. Since the first commit
-in April 2026 that is about 400 changes across 232 builds.
+in April 2026 that is about 400 changes across 233 builds.
 
 Until 0.1.0-alpha.149 builds were numbered `0.1.0-alpha.N`. From **0.1.151** the build number is the patch number:
 Vortex ignores everything after the dash when it decides whether an extension has an update, so an alpha number
@@ -9,6 +9,13 @@ could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
+
+## [0.2.111] — 2026-11-06
+
+### Plugins
+- Switching to another game's profile waits for a running LOOT sort, and puts the profile's load order back if
+  a sort from the previous game landed on it.
+- The saved last good plugin list no longer takes a reorder that loads masters after their plugins.
 
 ## [0.2.110] — 2026-11-06
 
