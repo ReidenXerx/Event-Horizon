@@ -457,7 +457,43 @@ export async function gatherObservations(
     }
   }
 
+  /**
+   * A curator's build profile holds mods queued for the next revision; the
+   * "mods not in the collection" check must never offer to switch them off
+   * there (Fallout-collection, 2026-11-06). It is the build profile when a
+   * collection config here was last built from it, or when the receipt is
+   * this machine's own collection installed into it.
+   */
+  let buildSourceOf: string | undefined;
+  let otherCollectionModIds: string[] | undefined;
+  try {
+    const [{ listReceipts }, { getVortexUserDataPath }] = await Promise.all([
+      import("../installLedger"),
+      import("../paths/appDataPaths"),
+    ]);
+    otherCollectionModIds = (await listReceipts(getVortexUserDataPath()))
+      .filter((r) => r.vortexProfileId === receiptProfileId)
+      .flatMap((r) => r.mods.map((m) => m.vortexModId));
+  } catch (err) {
+    ehLog("debug", "doctor.gather.receipts-unreadable", { err });
+  }
+  try {
+    const [{ listPublishedCollections }, { getCollectionsConfigDir }] = await Promise.all([
+      import("../manifest/collectionConfig"),
+      import("../paths/appDataPaths"),
+    ]);
+    const published = await listPublishedCollections(getCollectionsConfigDir());
+    const hit =
+      published.find((p) => p.lastBuiltProfileId === receiptProfileId) ??
+      (opts.orderReceipt !== undefined ? published.find((p) => p.packageId === opts.orderReceipt!.packageId) : undefined);
+    if (hit !== undefined) buildSourceOf = hit.lastBuiltName ?? hit.slug;
+  } catch (err) {
+    ehLog("debug", "doctor.gather.build-source-unreadable", { err });
+  }
+
   const observations: HealthObservations = {
+    ...(buildSourceOf !== undefined ? { buildSourceOf } : {}),
+    ...(otherCollectionModIds !== undefined ? { otherCollectionModIds } : {}),
     existingProfileIds: readProfileIds(state, gameId),
     activeProfileId,
     installedModIds: readInstalledModIds(state, gameId),

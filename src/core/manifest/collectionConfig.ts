@@ -317,6 +317,13 @@ export type CollectionConfig = {
    */
   lastBuiltProfileFingerprint?: string;
   /**
+   * Vortex profile id the last build read its mods from. The Doctor never
+   * offers to switch off "mods not in the collection" there: a curator's
+   * build profile holds mods queued for the next revision (Fallout-collection,
+   * 2026-11-06).
+   */
+  lastBuiltProfileId?: string;
+  /**
    * Vortex `gameId` this collection was built for (e.g. "skyrimse").
    * Recorded on every successful build so the curator dashboard can:
    *   • filter the "Published" list to the active game,
@@ -603,6 +610,8 @@ export type PublishedCollectionSummary = {
   lastBuiltAuthor?: string;
   /** Enabled-mod fingerprint at the last build; compare to spot a no-op update. */
   lastBuiltProfileFingerprint?: string;
+  /** Vortex profile id the last build read from. */
+  lastBuiltProfileId?: string;
   /**
    * Vortex `gameId` this collection was last built for, if recorded.
    * Drives the dashboard's per-game filter and the wizard's
@@ -721,6 +730,7 @@ export async function listPublishedCollections(
       lastBuiltName: config.lastBuiltName,
       lastBuiltAuthor: config.lastBuiltAuthor,
       lastBuiltProfileFingerprint: config.lastBuiltProfileFingerprint,
+      ...(config.lastBuiltProfileId !== undefined ? { lastBuiltProfileId: config.lastBuiltProfileId } : {}),
       gameId: config.gameId,
       configPath,
     });
@@ -956,6 +966,9 @@ function parseAndValidate(raw: string, configPath: string): CollectionConfig {
   }
   if (typeof obj.lastBuiltProfileFingerprint === "string") {
     config.lastBuiltProfileFingerprint = obj.lastBuiltProfileFingerprint;
+  }
+  if (typeof obj.lastBuiltProfileId === "string") {
+    config.lastBuiltProfileId = obj.lastBuiltProfileId;
   }
   if (typeof obj.lastBuiltName === "string") {
     config.lastBuiltName = obj.lastBuiltName;

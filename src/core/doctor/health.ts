@@ -27,7 +27,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
-import { findExtraMods } from "./extraMods";
+import { modsToSwitchOff } from "./extraMods";
 import { assessNativeOnDisk, type NativeOnDisk } from "./nativeOnDisk";
 import type { UserPluginMasters } from "../installer/repinPluginOrder";
 /** Which aspect of the collection a check covers. */
@@ -168,6 +168,10 @@ export interface HealthObservations {
   installedModIds: readonly string[] | undefined;
   /** Vortex mod ids enabled in the receipt's profile, or `undefined`. */
   enabledModIds: readonly string[] | undefined;
+  /** Set when the receipt's profile is a curator's build profile: the collection it builds. */
+  buildSourceOf?: string;
+  /** Mod ids of every collection installed into the receipt's profile: never "not in the collection". */
+  otherCollectionModIds?: readonly string[];
   /**
    * Mods whose staging folder no longer matches what we installed, by
    * compareKey. Empty when nothing drifted; `undefined` when not checked
@@ -385,6 +389,8 @@ export interface HealthReceiptView {
   /** Display name of that profile, for "installed in profile X". */
   vortexProfileName?: string;
   mods: ReadonlyArray<{ vortexModId: string; compareKey: string; name: string }>;
+  /** Mods installed by an earlier revision and dropped by the curator since. */
+  retiredMods?: ReadonlyArray<{ vortexModId: string; retiredInVersion?: string }>;
   rulesApplication?: {
     appliedRuleCount?: number;
     baselinePluginOrder?: readonly (PluginOrderEntry & {
@@ -707,12 +713,22 @@ export function evaluateHealth(
 
   // ── mods that are not the collection's ───────────────────────────────
   // Only when the pool was read: without names there is nothing to list.
-  if (!enabledUnreadable && obs.poolNexus !== undefined) {
-    const extra = findExtraMods({
-      collectionModIds: new Set(receipt.mods.map((m) => m.vortexModId)),
-      enabled,
+  if (obs.buildSourceOf !== undefined) {
+    // Mods queued for the next revision live here; switching them off would undo a curator's week.
+    checks.push({
+      id: "extra-mods",
+      title: "Mods not in the collection",
+      status: "not-applicable",
+      summary: `This is the profile ${obs.buildSourceOf} is built from, so mods not yet in the collection are expected here.`,
+      detail: [],
+      affectedCount: 0,
+    });
+  } else if (!enabledUnreadable && obs.poolNexus !== undefined) {
+    const extra = modsToSwitchOff({
+      receipt,
+      otherCollectionModIds: obs.otherCollectionModIds ?? [],
       pool: obs.poolNexus,
-      variantModIds: new Set(variants.map((v) => v.variant.vortexModId)),
+      enabled,
     });
     const n = extra.length;
     checks.push({

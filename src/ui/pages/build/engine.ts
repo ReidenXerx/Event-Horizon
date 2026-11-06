@@ -3192,6 +3192,8 @@ export async function runBuildPipeline(
       // What this build actually shipped, so the dashboard can tell a real
       // update from a rebuild of the same thing.
       lastBuiltProfileFingerprint: profileFingerprint(mods),
+      // The Doctor's "mods not in the collection" stands down in this profile.
+      lastBuiltProfileId: context.profileId,
       // Pin the gameId at build time so the dashboard's "Update"
       // affordance can refuse cross-game updates (which would
       // silently rewrite the manifest's gameId and ship a malformed

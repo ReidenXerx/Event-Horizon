@@ -446,21 +446,22 @@ async function healImpl(
           reason: `The profile "${receipt.vortexProfileName}" no longer exists in Vortex, so there is nothing to switch off.`,
         };
       }
-      const [{ findPlayerVariants }, { readPoolNexus, readEnabledModIdsFor }, { findExtraMods }, { disableModInProfile }] =
+      const [{ readPoolNexus, readEnabledModIdsFor }, { modsToSwitchOff }, { disableModInProfile }, { listReceipts }, { getVortexUserDataPath }] =
         await Promise.all([
-          import("../installer/playerVariants"),
           import("./gather"),
           import("./extraMods"),
           import("../installer/profile"),
+          import("../installLedger"),
+          import("../paths/appDataPaths"),
         ]);
-      const pool = readPoolNexus(api.getState(), gameId) ?? [];
-      const enabledNow = new Set(readEnabledModIdsFor(api.getState(), receipt.vortexProfileId) ?? []);
-      const variants = findPlayerVariants({ receiptMods: receipt.mods, pool, enabled: enabledNow });
-      const extra = findExtraMods({
-        collectionModIds: new Set(receipt.mods.map((m) => m.vortexModId)),
-        enabled: enabledNow,
-        pool,
-        variantModIds: new Set(variants.map((v) => v.variant.vortexModId)),
+      const sameProfile = (await listReceipts(getVortexUserDataPath()).catch(() => [])).filter(
+        (r) => r.vortexProfileId === receipt.vortexProfileId,
+      );
+      const extra = modsToSwitchOff({
+        receipt,
+        otherCollectionModIds: sameProfile.flatMap((r) => r.mods.map((m) => m.vortexModId)),
+        pool: readPoolNexus(api.getState(), gameId) ?? [],
+        enabled: new Set(readEnabledModIdsFor(api.getState(), receipt.vortexProfileId) ?? []),
       });
       for (const m of extra) disableModInProfile(api, receipt.vortexProfileId, m.vortexModId);
       ehLog("info", "doctor.heal.disable-extra-mods", {
