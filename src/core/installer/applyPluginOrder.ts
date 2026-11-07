@@ -337,6 +337,38 @@ export function toPluginId(name: string): string {
   return lower.endsWith(".ghost") ? lower.slice(0, -".ghost".length) : lower;
 }
 
+/**
+ * The curator's switched-OFF plugins that are on now, in a mod of this
+ * collection.
+ *
+ * Vortex ticks a mod's plugin the moment the mod is switched on when it is the
+ * mod's ONLY plugin (gamebryo-plugin-management `handleModEnabled`). The
+ * install's enabled pass runs once, inside the pin; a mod switched on after it
+ * (the retry at the end of a run) kept its plugin on, and the re-pins carry
+ * Vortex's own flags, so nothing took it back. Ivy Rev 28: ETJ10mmPistol.esp,
+ * shipped off, on for a player and asking for a master he did not have
+ * (stormy0286, 11-07). Only a collection mod's plugins: one of the player's
+ * own mods stays as they have it (NS-2).
+ */
+export function curatorOffPluginsOn(
+  order: ReadonlyArray<{ name: string; enabled: boolean }>,
+  plugins: ReadonlyArray<{ name: string; enabled: boolean; modId?: string }>,
+  collectionModIds: ReadonlySet<string>,
+): string[] {
+  const off = new Set(order.filter((p) => !p.enabled).map((p) => toPluginId(p.name)));
+  if (off.size === 0) return [];
+  return plugins
+    .filter(
+      (p) =>
+        p.enabled &&
+        p.modId !== undefined &&
+        collectionModIds.has(p.modId) &&
+        off.has(toPluginId(p.name)),
+    )
+    .map((p) => p.name)
+    .sort((a, b) => a.localeCompare(b));
+}
+
 /** Current enabled state per plugin id, or `{}` when unreadable. */
 export function readEnabledState(api: types.IExtensionApi): Record<string, boolean> {
   try {

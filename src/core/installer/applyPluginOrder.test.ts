@@ -13,6 +13,7 @@ import type { types } from "@nexusmods/vortex-api";
 
 import {
   applyPluginOrder,
+  curatorOffPluginsOn,
   describePluginOrderApplication,
 } from "./applyPluginOrder";
 import type { EhcollPluginEntry } from "../../types/ehcoll";
@@ -306,5 +307,30 @@ describe("the driver applies it after deploying", () => {
     expect(steps).toMatch(
       /<PluginOrderNotAppliedNotice[\s\S]{0,120}result\.pluginOrderNotApplied/,
     );
+  });
+});
+
+// Ivy Rev 28 (stormy0286, 11-07): ETJ10mmPistol.esp shipped off, ticked by
+// Vortex when its single-plugin mod was switched on after the enabled pass.
+describe("curatorOffPluginsOn", () => {
+  const order = [
+    { name: "Ivy.esm", enabled: true },
+    { name: "ETJ10mmPistol.esp", enabled: false },
+    { name: "VehicleOverhaulContinued_Previs.esp", enabled: false },
+  ];
+  it("names a collection mod's plugin the curator shipped off that is on now", () => {
+    const plugins = [
+      { name: "Ivy.esm", enabled: true, modId: "ivy" },
+      { name: "etj10mmpistol.esp", enabled: true, modId: "etj" },
+      { name: "VehicleOverhaulContinued_Previs.esp", enabled: false, modId: "voc" },
+    ];
+    expect(curatorOffPluginsOn(order, plugins, new Set(["ivy", "etj", "voc"]))).toEqual(["etj10mmpistol.esp"]);
+  });
+  it("leaves the player's own mod and loose plugins alone", () => {
+    const plugins = [
+      { name: "ETJ10mmPistol.esp", enabled: true, modId: "players-own" },
+      { name: "VehicleOverhaulContinued_Previs.esp", enabled: true },
+    ];
+    expect(curatorOffPluginsOn(order, plugins, new Set(["ivy", "etj", "voc"]))).toEqual([]);
   });
 });

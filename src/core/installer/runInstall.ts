@@ -190,6 +190,7 @@ import {
 import {
   ACTION_SET_PLUGIN_ENABLED,
   applyPluginOrder,
+  curatorOffPluginsOn,
   dispatchRaw,
   describePluginOrderApplication,
   type PluginOrderApplication,
@@ -5586,6 +5587,36 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           consequence:
             "these mods are installed but were not deployed, typed, tweaked " +
             "or mirrored, and the load order was not re-applied",
+        });
+      }
+    }
+
+    /**
+     * ─── THE CURATOR'S OFF PLUGINS, OFF AT THE END ──────────────────────
+     * The enabled pass inside the pin runs once. Vortex ticks a single-plugin
+     * mod's plugin whenever the mod is switched on, so a mod switched on after
+     * that pass — the retry above — left a plugin the curator shipped off
+     * ticked (Ivy Rev 28, ETJ10mmPistol.esp). Checked last, after every pass
+     * that could switch a mod on.
+     */
+    if (!stopBeforeWriting("switching off the curator's disabled plugins")) {
+      try {
+        const { readPluginList } = await import("../curator/pluginPool");
+        const unticked = curatorOffPluginsOn(
+          curatorOrderHere(),
+          readPluginList(api.getState()),
+          new Set(installedMods.map((m) => m.vortexModId)),
+        );
+        for (const name of unticked) {
+          dispatchRaw(api, ACTION_SET_PLUGIN_ENABLED, { pluginName: name, enabled: false });
+        }
+        if (unticked.length > 0) {
+          ehLog("info", "install.curator-off.unticked", { count: unticked.length, names: unticked.slice(0, 50) });
+        }
+      } catch (err) {
+        ehLog("warn", "install.curator-off.unchecked", {
+          err,
+          consequence: "a plugin the curator shipped off may be on; untick it on the Plugins tab",
         });
       }
     }
