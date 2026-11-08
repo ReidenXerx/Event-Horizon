@@ -192,6 +192,7 @@ import {
   applyPluginOrder,
   curatorOffPluginsOn,
   dispatchRaw,
+  pickedModPluginsOff,
   describePluginOrderApplication,
   type PluginOrderApplication,
 } from "./applyPluginOrder";
@@ -5602,16 +5603,34 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     if (!stopBeforeWriting("switching off the curator's disabled plugins")) {
       try {
         const { readPluginList } = await import("../curator/pluginPool");
+        // A mod the curator shipped OFF and the player picked (optional or a
+        // version): its plugins go on, whatever the curator's flags say.
+        const shippedOff = new Set(
+          plan.manifest.mods
+            .filter((m) => m.state?.enabled === false && (m.state.optional === true || m.state.variant !== undefined))
+            .map((m) => m.compareKey),
+        );
+        const pickedOffIds = new Set(
+          installedMods.filter((m) => shippedOff.has(m.compareKey)).map((m) => m.vortexModId),
+        );
+        const plugins = readPluginList(api.getState());
         const unticked = curatorOffPluginsOn(
           curatorOrderHere(),
-          readPluginList(api.getState()),
-          new Set(installedMods.map((m) => m.vortexModId)),
+          plugins,
+          new Set(installedMods.map((m) => m.vortexModId).filter((id) => !pickedOffIds.has(id))),
         );
         for (const name of unticked) {
           dispatchRaw(api, ACTION_SET_PLUGIN_ENABLED, { pluginName: name, enabled: false });
         }
         if (unticked.length > 0) {
           ehLog("info", "install.curator-off.unticked", { count: unticked.length, names: unticked.slice(0, 50) });
+        }
+        const ticked = pickedModPluginsOff(plugins, pickedOffIds);
+        for (const name of ticked) {
+          dispatchRaw(api, ACTION_SET_PLUGIN_ENABLED, { pluginName: name, enabled: true });
+        }
+        if (ticked.length > 0) {
+          ehLog("info", "install.picked-optional.ticked", { count: ticked.length, names: ticked.slice(0, 50) });
         }
       } catch (err) {
         ehLog("warn", "install.curator-off.unchecked", {

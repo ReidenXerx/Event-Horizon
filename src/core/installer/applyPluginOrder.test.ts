@@ -14,6 +14,7 @@ import type { types } from "@nexusmods/vortex-api";
 import {
   applyPluginOrder,
   curatorOffPluginsOn,
+  pickedModPluginsOff,
   describePluginOrderApplication,
 } from "./applyPluginOrder";
 import type { EhcollPluginEntry } from "../../types/ehcoll";
@@ -332,5 +333,22 @@ describe("curatorOffPluginsOn", () => {
       { name: "VehicleOverhaulContinued_Previs.esp", enabled: true },
     ];
     expect(curatorOffPluginsOn(order, plugins, new Set(["ivy", "etj", "voc"]))).toEqual([]);
+  });
+});
+
+describe("pickedModPluginsOff", () => {
+  const plugins = [
+    { name: "AceMaleRace.esp", enabled: false, modId: "amr" },
+    { name: "AMR KSHairdos.esp", enabled: false, modId: "amr-patch" },
+    { name: "AceMaleRace - Base.esp", enabled: true, modId: "amr" },
+    { name: "etj10mmpistol.esp", enabled: false, modId: "etj" },
+    { name: "Loose.esp", enabled: false },
+  ];
+  it("names the off plugins of a picked mod the curator shipped off", () => {
+    expect(pickedModPluginsOff(plugins, new Set(["amr", "amr-patch"]))).toEqual(["AceMaleRace.esp", "AMR KSHairdos.esp"]);
+  });
+  it("leaves every other mod's and loose plugins alone", () => {
+    expect(pickedModPluginsOff(plugins, new Set())).toEqual([]);
+    expect(pickedModPluginsOff(plugins, new Set(["players-own"]))).toEqual([]);
   });
 });

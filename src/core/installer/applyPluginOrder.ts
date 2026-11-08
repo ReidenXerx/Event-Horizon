@@ -369,6 +369,28 @@ export function curatorOffPluginsOn(
     .sort((a, b) => a.localeCompare(b));
 }
 
+/**
+ * Plugins still off that belong to a mod the player PICKED although the
+ * curator shipped it switched off (an optional mod or a version, which ship
+ * disabled: see `shipsWhenDisabled`).
+ *
+ * The curator's own flags say nothing about such a mod's plugins: a mod off in
+ * the curator's profile has its plugins off, or missing from the order, as a
+ * consequence, not as a choice. Vortex ticks a mod's plugin on enable only
+ * when it has exactly one; Ace Male Race has several, so a player who ticked
+ * it got the mod on and its race plugins off (Ivy Rev 28, 11-08).
+ */
+export function pickedModPluginsOff(
+  plugins: ReadonlyArray<{ name: string; enabled: boolean; modId?: string }>,
+  pickedOffModIds: ReadonlySet<string>,
+): string[] {
+  if (pickedOffModIds.size === 0) return [];
+  return plugins
+    .filter((p) => !p.enabled && p.modId !== undefined && pickedOffModIds.has(p.modId))
+    .map((p) => p.name)
+    .sort((a, b) => a.localeCompare(b));
+}
+
 /** Current enabled state per plugin id, or `{}` when unreadable. */
 export function readEnabledState(api: types.IExtensionApi): Record<string, boolean> {
   try {
