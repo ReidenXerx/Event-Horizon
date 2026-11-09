@@ -11,7 +11,13 @@ import { pluginsGatedOff } from "../manifest/conditionalFiles";
 import { parseManifest } from "../manifest/parseManifest";
 import type { RulesApplicationReceipt } from "../../types/installLedger";
 import type { InstallPlan } from "../../types/installPlan";
-import { describeOptionalNotInstalled, namesAbsentMod, optionalKeys, withoutOptionalSkips } from "./optionalMods";
+import {
+  describeOptionalNotInstalled,
+  leftOutSwitchOff,
+  namesAbsentMod,
+  optionalKeys,
+  withoutOptionalSkips,
+} from "./optionalMods";
 import { collectRemovalPlan, preflight } from "./runInstall";
 
 const CC = "nexus:900:1";
@@ -167,5 +173,29 @@ describe("the install driver's own gates", () => {
     const diverged = plan({ kind: "nexus-bytes-diverged", existingModId: "players-own" });
     expect(preflight(diverged, {})).toMatch(/choice/i);
     expect(preflight(diverged, { optionalSkipped: [CC] })).toBeUndefined();
+  });
+});
+
+describe("leftOutSwitchOff", () => {
+  const STEAM = "nexus:30379:792256";
+  const none = new Map<string, string>();
+  it("keeps the player's GOG build on when the Steam version is left out (sudo_bluuuk, 11-09)", () => {
+    const decision = { kind: "nexus-version-diverged", existingModId: "SKSE64 GOG-30379-2-2-6" };
+    expect(leftOutSwitchOff({ compareKey: STEAM, decision, receiptOwner: none, claimedByKept: new Set() })).toMatchObject({
+      skipped: "SKSE64 GOG-30379-2-2-6",
+    });
+  });
+  it("switches off a diverged file our receipt says this entry installed (2048 -> 1024 after an update)", () => {
+    const decision = { kind: "nexus-version-diverged", existingModId: "old-2048" };
+    const receiptOwner = new Map([["old-2048", STEAM]]);
+    expect(leftOutSwitchOff({ compareKey: STEAM, decision, receiptOwner, claimedByKept: new Set() })).toEqual({ modId: "old-2048" });
+  });
+  it("switches off the same file, and never one a kept entry resolved to", () => {
+    const decision = { kind: "nexus-already-installed", existingModId: "m" };
+    expect(leftOutSwitchOff({ compareKey: STEAM, decision, receiptOwner: none, claimedByKept: new Set() })).toEqual({ modId: "m" });
+    expect(leftOutSwitchOff({ compareKey: STEAM, decision, receiptOwner: none, claimedByKept: new Set(["m"]) })).toMatchObject({
+      skipped: "m",
+    });
+    expect(leftOutSwitchOff({ compareKey: STEAM, decision: { kind: "nexus-download" }, receiptOwner: none, claimedByKept: new Set() })).toBeUndefined();
   });
 });

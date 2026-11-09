@@ -155,6 +155,7 @@ import {
 import { buildCuratorReport } from "./curatorReport";
 import {
   describeOptionalNotInstalled,
+  leftOutSwitchOff,
   withoutOptionalSkips,
   type OptionalNotInstalled,
 } from "./optionalMods";
@@ -951,6 +952,29 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
   const optionalNotes: string[] = [];
   const optionalSkipped = new Set(ctx.decisions.optionalSkipped ?? []);
   const keptOffKeys = new Set(ctx.decisions.keptOff ?? []);
+  /**
+   * For a left-out version or kept-off mod: the mods entries installed in this
+   * run resolved to (never switched off), and who our last receipt says
+   * installed what (read once, only when something was left out).
+   */
+  const claimedByKeptMods = new Set<string>();
+  for (const r of plan.modResolutions) {
+    if (optionalSkipped.has(r.compareKey) || keptOffKeys.has(r.compareKey)) continue;
+    const id = (r.decision as { existingModId?: string }).existingModId;
+    if (id !== undefined) claimedByKeptMods.add(id);
+  }
+  let leftOutOwners: Map<string, string> | undefined;
+  const leftOutReceiptOwner = async (): Promise<Map<string, string>> => {
+    if (leftOutOwners !== undefined) return leftOutOwners;
+    leftOutOwners = new Map();
+    try {
+      const previous = await readReceipt(ctx.appDataPath, plan.manifest.package.id);
+      for (const m of previous?.mods ?? []) leftOutOwners.set(m.vortexModId, m.compareKey);
+    } catch (err) {
+      ehLog("warn", "install.left-out.receipt-unreadable", { err });
+    }
+    return leftOutOwners;
+  };
   /**
    * Plugin files of optional mods that are not here: every plugin of one not
    * installed, and the plugins verification found absent in one that was.
@@ -1781,17 +1805,35 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
            * two do not fight over the same files and switching back is one
            * more pick. Owner poll, 2026-10-09.
            */
-          const existing = (resolution.decision as { existingModId?: string }).existingModId;
-          if (keptOffKeys.has(resolution.compareKey) && existing !== undefined) {
-            disableModInProfile(api, activeProfileId, existing);
-            ehLog("info", "install.kept-off.switched-off", { name: resolution.name, vortexModId: existing });
-          } else if (manifestEntry.state.variant !== undefined && existing !== undefined && optionalSkipped.has(resolution.compareKey)) {
-            disableModInProfile(api, activeProfileId, existing);
+          const keptOff = keptOffKeys.has(resolution.compareKey);
+          const variantLeftOut =
+            !keptOff && manifestEntry.state.variant !== undefined && optionalSkipped.has(resolution.compareKey);
+          const target =
+            keptOff || variantLeftOut
+              ? leftOutSwitchOff({
+                  compareKey: resolution.compareKey,
+                  decision: resolution.decision as { kind: string; existingModId?: string },
+                  receiptOwner: await leftOutReceiptOwner(),
+                  claimedByKept: claimedByKeptMods,
+                })
+              : undefined;
+          if (target !== undefined && "skipped" in target) {
+            ehLog("info", "install.left-out.kept-on", {
+              name: resolution.name,
+              decision: resolution.decision.kind,
+              vortexModId: target.skipped,
+              why: target.why,
+            });
+          } else if (target !== undefined && keptOff) {
+            disableModInProfile(api, activeProfileId, target.modId);
+            ehLog("info", "install.kept-off.switched-off", { name: resolution.name, vortexModId: target.modId });
+          } else if (target !== undefined && manifestEntry.state.variant !== undefined) {
+            disableModInProfile(api, activeProfileId, target.modId);
             ehLog("info", "install.variant.switched-off", {
               name: resolution.name,
               group: manifestEntry.state.variant.group,
               label: manifestEntry.state.variant.label,
-              vortexModId: existing,
+              vortexModId: target.modId,
             });
           }
           continue;

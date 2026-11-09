@@ -60,6 +60,36 @@ export function withoutOptionalSkips(
   };
 }
 
+/**
+ * The mod to switch off for a version or kept-off mod left out, or why none.
+ *
+ * The resolver's `existingModId` is not always THIS entry's mod: a
+ * `nexus-version-diverged` match is any other file of the same Nexus page.
+ * Steam and GOG builds share a page (SKSE 30379, JContainers, PapyrusUtil), so
+ * a player on GOG who left out the collection's Steam version got their own
+ * GOG SKSE switched off (sudo_bluuuk, Meridia, 11-09). Switched off only when
+ * it is the same file, or our receipt says this entry installed it, and never
+ * when a mod the player kept in this run resolved to it.
+ */
+export function leftOutSwitchOff(args: {
+  compareKey: string;
+  decision: { kind: string; existingModId?: string };
+  /** vortexModId → compareKey, from the previous install's receipt. */
+  receiptOwner: ReadonlyMap<string, string>;
+  /** Mods that entries installed in this run resolved to. */
+  claimedByKept: ReadonlySet<string>;
+}): { modId: string } | { skipped: string; why: string } | undefined {
+  const existing = args.decision.existingModId;
+  if (existing === undefined) return undefined;
+  if (args.claimedByKept.has(existing)) {
+    return { skipped: existing, why: "another mod of this collection you kept uses it" };
+  }
+  if (args.decision.kind === "nexus-version-diverged" && args.receiptOwner.get(existing) !== args.compareKey) {
+    return { skipped: existing, why: "a different file of the same Nexus page, not installed for this entry" };
+  }
+  return { modId: existing };
+}
+
 /** The Done screen's lines for optional mods that were not installed. */
 export function describeOptionalNotInstalled(entries: readonly OptionalNotInstalled[]): string[] {
   return entries.map((e) => `${e.name}: ${e.reason}.`);
