@@ -1147,6 +1147,7 @@ class InstallSession {
     if (this.state.kind !== "confirm" || this.environmentGateRunning) return;
     this.environmentGateRunning = true;
     const plan = this.state.bundle.plan;
+    const leftOutAtStart = new Set(this.state.bundle.optionalSkipped ?? []);
     const manifest = plan.manifest;
     const gameId = manifest.game.id;
     const proceed = (): void => {
@@ -1217,6 +1218,54 @@ class InstallSession {
       if (gameDir === undefined) {
         proceed();
         return;
+      }
+      /**
+       * The player's own full plugins on top of the collection's (sunnyd0539,
+       * 11-09: seven full Anniversary Creations + Ivy's 224 + their own went
+       * over 254 and nothing said so before the install). A question, never a
+       * wall: a check that could not run lets the install go on.
+       */
+      try {
+        const { measurePluginBudget, describePluginBudget, orderWithoutLeftOut } = await import(
+          "../../../core/environment/pluginBudget"
+        );
+        const budget = await measurePluginBudget({
+          state: api.getState(),
+          gameId,
+          dataDir: (await import("path")).join(gameDir, "Data"),
+          collectionOrder: orderWithoutLeftOut(
+            manifest.plugins.order,
+            manifest.mods,
+            leftOutAtStart,
+          ),
+          freshProfile: plan.installTarget.kind === "fresh-profile",
+        });
+        if (budget !== undefined) {
+          logFailure(budget.over > 0 ? "warn" : "info", "install.plugin-budget", {
+            gameId,
+            limit: budget.limit,
+            collection: budget.collection,
+            native: budget.native.length,
+            own: budget.own.length,
+            unknown: budget.unknown,
+            total: budget.total,
+            over: budget.over,
+            ownNames: budget.own.slice(0, 60),
+          });
+        }
+        if (budget !== undefined && budget.over > 0) {
+          const d = describePluginBudget(budget, { game: facts.gameName, collection: manifest.package.name });
+          const answer = await api.showDialog?.(
+            "question",
+            d.title,
+            { text: d.text, message: d.message },
+            [{ label: "Cancel" }, { label: "Install anyway" }],
+          );
+          if (answer?.action !== "Install anyway") return;
+          logFailure("warn", "install.plugin-budget.overridden", { gameId, over: budget.over });
+        }
+      } catch (err) {
+        logFailure("warn", "install.plugin-budget.unavailable", { gameId, err });
       }
       // Vortex's purge acts on the ACTIVE game. The preview checked it, but a
       // user can switch games in Vortex between the preview and this click —
