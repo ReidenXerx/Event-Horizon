@@ -21,6 +21,7 @@ import { startControlServer, type ControlServer, type ControlVerb } from "./cont
 import { runVerb, VERBS } from "./verbs";
 import { readOpsJournal, type OpRecord } from "./ops";
 import { mcpLaunch, mergeDesktopConfig, type McpLaunch } from "./connectConfig";
+import { watchGameActivation } from "./activationSettle";
 
 /** v2: the newcomer pitch. A new id, so people who dismissed the technical v1 see it once. */
 export const PROMO_ID = "control-channel-promo-2";
@@ -163,6 +164,7 @@ async function stop(): Promise<void> {
 
 /** Startup: starts the channel only if the user turned it on before. */
 export function startControlChannelIfEnabled(api: types.IExtensionApi): void {
+  watchGameActivation(api);
   if (!loadPreferences().controlChannel.enabled) return;
   transition = transition.then(() => start(api)).then(emit);
 }
@@ -182,6 +184,7 @@ export function setAgentAskFirst(askFirst: boolean): void {
 }
 
 export function setControlChannelEnabled(api: types.IExtensionApi, enabled: boolean): Promise<ControlStatus> {
+  watchGameActivation(api);
   updatePreferences((p) => ({ ...p, controlChannel: { ...p.controlChannel, enabled } }));
   ehLog("info", "control.toggle", { enabled });
   transition = transition.then(() => (enabled ? start(api) : stop())).then(emit);

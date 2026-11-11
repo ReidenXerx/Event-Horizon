@@ -102,6 +102,7 @@ import { waitForPluginSortIdle, type SortIdleResult } from "./pluginSortIdle";
 import { askOwner } from "./ownerConsent";
 import { enabledAfterReplace, mergeReplacement, pickReplaceTarget, readEnabled, type EnabledByProfile, type PoolMod } from "./safeReplace";
 import { judgeCrash, parseCrashLog, type Owner } from "./diagnose";
+import { waitForActivationToSettle } from "./activationSettle";
 import {
   loadRestorePoints,
   planRestore,
@@ -3753,6 +3754,8 @@ export const VERBS: Record<string, Verb> = {
           installer: looked.description.kind === "fomod" ? publicDescription(looked.description) : looked.description,
         };
       }
+      // A game just activated: Vortex's staging refresh is still to come and would flag this install's folder.
+      await waitForActivationToSettle("install");
       const replaceModId = str(body["replaceModId"]);
       if (replaceModId !== undefined && body["ifExisting"] !== "replace") {
         throw new ControlError("bad-request", `"replaceModId" says which mod "ifExisting": "replace" replaces; send both.`);
