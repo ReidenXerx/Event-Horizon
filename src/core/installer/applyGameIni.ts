@@ -273,6 +273,8 @@ export async function applyGameIni(args: {
       changed: merged.changed.length,
       unchanged: merged.unchanged,
     });
+    // Before the live file: even when it already matches, Vortex's copies may not.
+    await syncVortexIniCopies(full, file.fileName, assignments);
     if (merged.changed.length === 0) continue;
 
     try {
@@ -317,6 +319,45 @@ export async function applyGameIni(args: {
     failed: receipt.failed.length,
   });
   return receipt;
+}
+
+/**
+ * The same keys into Vortex's own copies of the file, when they exist.
+ *
+ * Vortex keeps `<ini>.base` (the file without INI tweaks) and `<ini>.baked`
+ * (base + tweaks, last written) and, when it bakes settings on deploy or
+ * restores them on purge, REBUILDS the live file from `.base`. It first folds
+ * live-vs-`.baked` edits into `.base`, but a write that lands between that step
+ * and the rebuild is lost: sudo_bluuuk's Skyrim.ini lost 116 of the
+ * collection's keys between 8 and 11 Nov (read from Vortex 1.x app.asar,
+ * ini_prep: discoverSettingsChanges, bakeSettings, purgeChanges). Never created
+ * here; Vortex makes them when the game is activated.
+ */
+async function syncVortexIniCopies(
+  live: string,
+  fileName: string,
+  assignments: readonly IniAssignment[],
+): Promise<void> {
+  for (const suffix of [".base", ".baked"]) {
+    const copy = live + suffix;
+    let text: string;
+    try {
+      text = await fsp.readFile(copy, "utf8");
+    } catch {
+      continue;
+    }
+    const merged = mergeIniText(text, assignments);
+    if (merged.changed.length === 0) continue;
+    try {
+      await fsp.writeFile(copy, merged.text, "utf8");
+      ehLog("info", "game-ini.vortex-copy.ok", { file: fileName + suffix, keys: merged.changed.length });
+    } catch (err) {
+      ehLog("warn", "game-ini.vortex-copy.fail", {
+        file: fileName + suffix,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 }
 
 /**

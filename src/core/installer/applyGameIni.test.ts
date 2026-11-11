@@ -222,6 +222,27 @@ describe("applyGameIni (writes real files)", () => {
     );
     fs.rmSync(docs, { recursive: true, force: true });
   });
+
+  it("writes the keys into Vortex's .base and .baked copies too, so a Vortex rebuild keeps them (sudo_bluuuk, 11-11)", async () => {
+    const { fs, path, docs, dir } = await setup();
+    const { applyGameIni } = await import("./applyGameIni");
+    const live = path.join(dir, "Fallout4.ini");
+    // Live already matches (EH applied it before); Vortex's base does not.
+    fs.writeFileSync(live, ["[General]", "uGridsToLoad=7"].join("\n"));
+    fs.writeFileSync(live + ".base", ["; vortex", "[General]", "uGridsToLoad=5"].join("\n"));
+    fs.writeFileSync(live + ".baked", ["[General]", "uGridsToLoad=5"].join("\n"));
+    await applyGameIni({
+      gameId: "fallout4",
+      documentsPath: docs,
+      gameIni: { files: [{ fileName: "Fallout4.ini", settings: [{ section: "General", key: "uGridsToLoad", value: "7" }] }] },
+    });
+    expect(fs.readFileSync(live + ".base", "utf8")).toContain("uGridsToLoad=7");
+    expect(fs.readFileSync(live + ".base", "utf8")).toContain("; vortex");
+    expect(fs.readFileSync(live + ".baked", "utf8")).toContain("uGridsToLoad=7");
+    // Never created when Vortex has not made one.
+    expect(fs.existsSync(path.join(dir, "Fallout4Custom.ini.base"))).toBe(false);
+    fs.rmSync(docs, { recursive: true, force: true });
+  });
 });
 
 describe("shouldApplyGameIni", () => {
