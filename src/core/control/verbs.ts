@@ -99,6 +99,7 @@ import {
 } from "./externalChanges";
 import { declaredSet } from "../volatileFiles";
 import { waitForPluginSortIdle, type SortIdleResult } from "./pluginSortIdle";
+import { vortexBusy } from "./vortexBusy";
 import { askOwner } from "./ownerConsent";
 import { enabledAfterReplace, mergeReplacement, pickReplaceTarget, readEnabled, type EnabledByProfile, type PoolMod } from "./safeReplace";
 import { judgeCrash, parseCrashLog, type Owner } from "./diagnose";
@@ -402,6 +403,27 @@ async function answerVolatile(api: types.IExtensionApi, word: Choice, stopped: C
  * answer can wait for the same run to finish and verify it.
  */
 let pausedRun: { kind: "deploy" | "purge"; gameId: string; done: Promise<unknown> } | undefined;
+
+/** When the last mutating verb ended, for `state`'s `vortex.busy`. */
+let lastMutationEndedAt: number | undefined;
+
+function busyNow(api: types.IExtensionApi): ReturnType<typeof vortexBusy> {
+  const state = api.getState() as { session?: { base?: { activity?: Record<string, unknown> } } };
+  const waitingFor = [
+    ...openDialogs(api).map((d) => `dialog "${d.title ?? d.type ?? "untitled"}"`),
+    ...(readFomod(api.getState()) !== undefined ? ["an installer (FOMOD) is open"] : []),
+    ...(externalChanges(api) !== undefined ? ["External Changes"] : []),
+  ];
+  return vortexBusy({
+    activity: state.session?.base?.activity,
+    activityNotices: notices(api)
+      .filter((n) => n.type === "activity")
+      .map((n) => n.title ?? n.message ?? n.id),
+    waitingFor,
+    lastChangeAt: lastMutationEndedAt,
+    now: Date.now(),
+  });
+}
 
 /**
  * Runs a deploy or purge, and returns early with `external-changes` if Vortex
@@ -767,6 +789,7 @@ export async function runVerb(api: types.IExtensionApi, name: string, body: Verb
     throw new ControlError("vortex-error", String((err as Error)?.message ?? err), 500, { vortex: activity() });
   } finally {
     watch?.stop();
+    if (verb.mutates) lastMutationEndedAt = Date.now();
   }
 }
 
@@ -2039,6 +2062,7 @@ export const VERBS: Record<string, Verb> = {
           openDialogs: openDialogs(api).map(({ type, title, text }) => ({ type, title, text })),
           openInstaller: fomodSummary(readFomod(state)) ?? null,
           externalChanges: externalChanges(api) ?? null,
+          busy: busyNow(api),
         },
       };
       if (include.has("mods")) {
