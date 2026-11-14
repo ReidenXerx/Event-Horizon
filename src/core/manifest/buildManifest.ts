@@ -391,6 +391,27 @@ export function buildManifest(input: BuildManifestInput): BuildManifestResult {
     throw new BuildManifestError(errors);
   }
 
+  // An external that is not bundled and has neither a link nor instructions
+  // leaves a player nothing to fetch it with. Ivy 1.0.59's first build shipped
+  // 14 such mods and reported success (Fallout-collection, 11-14).
+  const unfetchable = mods
+    .filter(
+      (m) =>
+        m.source.kind === "external" &&
+        m.source.bundled !== true &&
+        m.source.url === undefined &&
+        (m.source.instructions ?? "").trim() === "",
+    )
+    .map((m) => m.name);
+  if (unfetchable.length > 0) {
+    warnings.push(
+      `${unfetchable.length} external mod${unfetchable.length === 1 ? " has" : "s have"} no ` +
+        `way for a player to get ${unfetchable.length === 1 ? "it" : "them"}: not bundled, ` +
+        `no download link, no instructions. Bundle ${unfetchable.length === 1 ? "it" : "them"} ` +
+        `or give a url: ${unfetchable.join(", ")}.`,
+    );
+  }
+
   const rules = buildRules(input.snapshot.mods, compareKeyById, warnings);
 
 

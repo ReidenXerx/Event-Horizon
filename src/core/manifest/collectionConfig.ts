@@ -386,6 +386,8 @@ export type ReconcileResult = {
   changed: boolean;
   /** Mod IDs added as fresh stubs (informational, for diagnostics). */
   added: string[];
+  /** New ids that took over the entry of a Vortex reinstall's old id. */
+  inherited?: Array<{ from: string; to: string }>;
 };
 
 export class CollectionConfigError extends Error {
@@ -498,15 +500,18 @@ export function reconcileExternalModsConfig(
 
   let changed = false;
   const added: string[] = [];
+  const inherited: Array<{ from: string; to: string }> = [];
+  const present = new Set(input.externalMods.map((m) => m.id));
 
   for (const mod of input.externalMods) {
     const existing = next[mod.id];
     if (existing === undefined) {
-      next[mod.id] = {
-        name: mod.name,
-        bundled: false,
-        instructions: "",
-      };
+      const from = reinstallPredecessor(mod.id, input.config.externalMods, present);
+      next[mod.id] =
+        from !== undefined
+          ? { ...input.config.externalMods[from]!, name: mod.name }
+          : { name: mod.name, bundled: false, instructions: "" };
+      if (from !== undefined) inherited.push({ from, to: mod.id });
       changed = true;
       added.push(mod.id);
       continue;
@@ -522,13 +527,42 @@ export function reconcileExternalModsConfig(
     externalMods: input.externalMods.length,
     added: added.length,
     changed,
+    ...(inherited.length > 0 ? { inherited } : {}),
   });
 
   return {
     config: changed ? { ...input.config, externalMods: next } : input.config,
     changed,
     added,
+    ...(inherited.length > 0 ? { inherited } : {}),
   };
+}
+
+/**
+ * The config entry a Vortex REINSTALL of a mod should take over.
+ *
+ * Reinstalling a mod in Vortex gives it a new id with a "+N" suffix
+ * ("1387286231_UAPv2.6.64-1" → "1387286231_UAPv2.6.64-1+2"). The config is
+ * keyed by mod id, so the reinstall used to get a blank stub: bundled false,
+ * no url, no instructions. The old entry's LoversLab url was lost and the
+ * Ivy 1.0.59 build shipped a mod no player could fetch (Fallout-collection, 11-14).
+ *
+ * Only an entry whose mod is GONE from the profile is a predecessor; one still
+ * installed is a separate mod. With several, the highest "+N" is the newest.
+ */
+export function reinstallPredecessor(
+  modId: string,
+  entries: Readonly<Record<string, ExternalModConfigEntry>>,
+  present: ReadonlySet<string>,
+): string | undefined {
+  const base = (id: string): string => id.replace(/\+\d+$/, "");
+  const suffix = (id: string): number => Number(/\+(\d+)$/.exec(id)?.[1] ?? 0);
+  const want = base(modId);
+  const candidates = Object.keys(entries).filter(
+    (id) => id !== modId && !present.has(id) && base(id) === want,
+  );
+  if (candidates.length === 0) return undefined;
+  return candidates.sort((a, b) => suffix(b) - suffix(a))[0];
 }
 
 /**
