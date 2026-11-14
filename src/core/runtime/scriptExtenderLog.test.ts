@@ -102,7 +102,70 @@ describe("an F4SE log", () => {
     ].join("\n");
     const s = summariseScriptExtenderLog(parseScriptExtenderLog(text));
     expect(s.loaded).toBe(1);
-    expect(s.failed.map((f) => f.file)).toEqual(["b.dll"]);
+    // No "init complete" and nothing said about b.dll: not a failure, just
+    // not reached yet.
+    expect(s.failed).toEqual([]);
+    expect(s.lines[0]).toBe("1 script-extender plugin loaded so far.");
+    expect(s.lines[1]).toMatch(/stops before the script extender finished/);
+  });
+});
+
+describe("an F4SE 0.7 log (AE 1.11), where every result comes at the end", () => {
+  /**
+   * Shape copied from two real 0.7.9 logs (110 DLLs each, game 1.11.240):
+   * all "checking plugin" lines first, then preload and load passes, then
+   * every "loaded correctly" line. Reading it as the 0.6 layout reported
+   * "108 of 109 did not load" for a log where all 108 loaded (11-14).
+   */
+  const F4SE_07 = [
+    "F4SE runtime: initialize (version = 0.7.9 010B0F00 01DD741E70165538, os = 6.2 (9200))",
+    "plugin directory = C:\\Steam\\steamapps\\common\\Fallout 4\\Data\\F4SE\\Plugins\\",
+    "checking plugin 0FastDecompress.dll",
+    "checking plugin AAF_1_11_240.DLL",
+    "checking plugin msdia140.dll",
+    "plugin msdia140.dll (00000000  00000000) no version data 0 (handle 0)",
+    "checking plugin XDI.dll",
+    'preloading plugin "Addictol"',
+    "registering plugin listener for F4SE at 17 of 110",
+    "preinit complete",
+    'loading plugin "FastDecompress"',
+    'loading plugin "aaf_1_11_240"',
+    "registering plugin listener for F4SE at 2 of 110",
+    'loading plugin "XDI"',
+    "plugin 0FastDecompress.dll (00000001 FastDecompress 01040020) loaded correctly (handle 1)",
+    "plugin AAF_1_11_240.DLL (00000001 aaf_1_11_240 00000000) loaded correctly (handle 2)",
+    "plugin XDI.dll (00000001 XDI 00000001) loaded correctly (handle 108)",
+    "config path = C:\\Steam\\steamapps\\common\\Fallout 4\\Data\\F4SE\\f4se.ini",
+    "init complete",
+  ].join("\n");
+
+  it("finds every result, wherever it sits", () => {
+    const s = summariseScriptExtenderLog(parseScriptExtenderLog(F4SE_07));
+    expect(s.loaded).toBe(3);
+    expect(s.skipped).toBe(1);
+    expect(s.failed).toEqual([]);
+    expect(s.lines[0]).toBe("All 3 script-extender plugins loaded.");
+  });
+
+  it("names a DLL that never loaded, with the lines that mention it", () => {
+    const text = F4SE_07.replace(
+      "plugin XDI.dll (00000001 XDI 00000001) loaded correctly (handle 108)",
+      "couldn't load plugin XDI.dll (Error 126)",
+    );
+    const s = summariseScriptExtenderLog(parseScriptExtenderLog(text));
+    expect(s.failed).toEqual([
+      { file: "XDI.dll", lines: ["couldn't load plugin XDI.dll (Error 126)"] },
+    ]);
+    expect(s.lines[0]).toBe("1 of 3 script-extender plugins did not load.");
+  });
+
+  it("calls a DLL with no result in a FINISHED log failed, not unfinished", () => {
+    const text = F4SE_07.replace(
+      "plugin XDI.dll (00000001 XDI 00000001) loaded correctly (handle 108)\n",
+      "",
+    );
+    const s = summariseScriptExtenderLog(parseScriptExtenderLog(text));
+    expect(s.failed.map((f) => f.file)).toEqual(["XDI.dll"]);
   });
 });
 

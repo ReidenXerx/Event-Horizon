@@ -25,6 +25,10 @@
  *     plugin <path> (00000001 Name 01050000) loaded correctly (handle 50)
  *     plugin <path> does not appear to be an F4SE plugin
  *
+ * F4SE 0.7 (AE 1.11) moved every "loaded correctly" line to the END, after
+ * all the checks, and writes a support DLL as "plugin msdia140.dll
+ * (00000000  00000000) no version data 0 (handle 0)". See the parser.
+ *
  * That third line is NOT a failure and must never be reported as one. Crash
  * loggers and helper libraries ship support DLLs into the same folder —
  * `msdia140.dll` is in both of those logs — and the extender dutifully checks
@@ -50,7 +54,13 @@ export type PluginOutcome =
   /** A DLL that is not an extender plugin at all. Normal; never a failure. */
   | { kind: "not-a-plugin"; file: string }
   /** Checked, never concluded. `lines` is the log's own account. */
-  | { kind: "failed"; file: string; lines: string[] };
+  | { kind: "failed"; file: string; lines: string[] }
+  /**
+   * Checked, but the log stops before "init complete" and nothing was said
+   * about it: the game was still starting (or died) when the log was read.
+   * Not evidence of a failure.
+   */
+  | { kind: "unfinished"; file: string };
 
 export type ScriptExtenderLog = {
   /** The extender's own version banner, when the log has one. */
@@ -78,15 +88,25 @@ export function parseScriptExtenderLog(text: string): ScriptExtenderLog {
   const out: ScriptExtenderLog = { outcomes: [] };
   const lines = text.split(/\r?\n/);
 
-  /** The plugin currently being checked, and everything said since. */
+  /**
+   * Two layouts, and the parser must not care which one it is reading.
+   *
+   *   F4SE 0.6 / SKSE64: "checking plugin X" and X's conclusion sit together.
+   *   F4SE 0.7 (AE 1.11): EVERY "checking plugin" line comes first, then the
+   *     preload and load passes, and only then ALL the "loaded correctly"
+   *     lines, at the very end (measured on two 0.7.9 logs, 110 DLLs each).
+   *
+   * Reading the second layout as the first made every DLL but the last one
+   * "failed" — "108 of 109 did not load" on a log where all 108 loaded
+   * (bigtimeluke, 11-14). So conclusions are collected by file name from
+   * anywhere in the log, and the verdict is made once the whole log is read.
+   */
+  const checked = new Map<string, { file: string; said: string[] }>();
+  const concluded = new Map<string, PluginOutcome>();
+  /** The plugin whose check is still being narrated (old layout evidence). */
   let open: { file: string; said: string[] } | undefined;
-  const close = (outcome?: PluginOutcome): void => {
-    if (open === undefined) return;
-    out.outcomes.push(
-      outcome ?? { kind: "failed", file: open.file, lines: [...open.said] },
-    );
-    open = undefined;
-  };
+  let complete = false;
+  const keyOf = (file: string): string => file.toLowerCase();
 
   for (const raw of lines) {
     const line = raw.trim();
@@ -101,42 +121,69 @@ export function parseScriptExtenderLog(text: string): ScriptExtenderLog {
       out.pluginDir = dir[1]!.trim();
       continue;
     }
-
-    const checking = /^checking plugin (.+)$/i.exec(line);
-    if (checking !== null) {
-      // A new check ends the previous one. If that one never concluded, the
-      // lines it accumulated are its reason.
-      close();
-      open = { file: baseName(checking[1]!), said: [] };
+    if (/^init complete$/i.test(line)) {
+      complete = true;
+      open = undefined;
+      continue;
+    }
+    // The 0.7 preload / load passes: nothing after this narrates one check.
+    if (/^(preloading plugin|preinit complete)/i.test(line)) {
+      open = undefined;
       continue;
     }
 
+    const checking = /^checking plugin (.+)$/i.exec(line);
+    if (checking !== null) {
+      const file = baseName(checking[1]!);
+      open = checked.get(keyOf(file)) ?? { file, said: [] };
+      checked.set(keyOf(file), open);
+      continue;
+    }
+
+    const loaded =
+      /^plugin (.+?) \(([0-9A-Fa-f]+) (.+?) ([0-9A-Fa-f]+)\) loaded correctly/i.exec(line);
+    if (loaded !== null) {
+      const file = baseName(loaded[1]!);
+      concluded.set(keyOf(file), {
+        kind: "loaded",
+        file,
+        name: loaded[3]!.trim(),
+        version: loaded[4]!,
+      });
+      if (open !== undefined && keyOf(open.file) === keyOf(file)) open = undefined;
+      continue;
+    }
+    // 0.6: "does not appear to be an F4SE plugin". 0.7: "(00000000  00000000)
+    // no version data 0 (handle 0)" — msdia140.dll, the crash loggers' helper.
+    const notPlugin =
+      /^plugin (.+?) does not appear to be an? .* plugin/i.exec(line) ??
+      /^plugin (.+?) \([0-9A-Fa-f ]+\) no version data/i.exec(line);
+    if (notPlugin !== null) {
+      const file = baseName(notPlugin[1]!);
+      concluded.set(keyOf(file), { kind: "not-a-plugin", file });
+      if (open !== undefined && keyOf(open.file) === keyOf(file)) open = undefined;
+      continue;
+    }
+
+    // Evidence: what was said while a check was open, plus any later line
+    // naming a checked DLL ("couldn't load plugin X (Error 126)").
     if (open !== undefined) {
-      const loaded =
-        /^plugin (.+?) \(([0-9A-Fa-f]+) (.+?) ([0-9A-Fa-f]+)\) loaded correctly/i.exec(
-          line,
-        );
-      if (loaded !== null && baseName(loaded[1]!) === open.file) {
-        close({
-          kind: "loaded",
-          file: open.file,
-          name: loaded[3]!.trim(),
-          version: loaded[4]!,
-        });
-        continue;
-      }
-      const notPlugin = /^plugin (.+?) does not appear to be an? .* plugin/i.exec(
-        line,
-      );
-      if (notPlugin !== null && baseName(notPlugin[1]!) === open.file) {
-        close({ kind: "not-a-plugin", file: open.file });
-        continue;
-      }
-      // Anything else said while this plugin is open is kept as evidence.
       open.said.push(line);
+      continue;
+    }
+    const low = line.toLowerCase();
+    for (const entry of checked.values()) {
+      if (low.includes(entry.file.toLowerCase())) entry.said.push(line);
     }
   }
-  close();
+
+  for (const [key, entry] of checked) {
+    const outcome = concluded.get(key);
+    if (outcome !== undefined) out.outcomes.push(outcome);
+    else if (!complete && entry.said.length === 0)
+      out.outcomes.push({ kind: "unfinished", file: entry.file });
+    else out.outcomes.push({ kind: "failed", file: entry.file, lines: [...entry.said] });
+  }
   return out;
 }
 
@@ -158,12 +205,23 @@ export function summariseScriptExtenderLog(
     .filter((o): o is Extract<PluginOutcome, { kind: "failed" }> => o.kind === "failed")
     .map((o) => ({ file: o.file, lines: o.lines }));
 
+  const unfinished = log.outcomes.filter((o) => o.kind === "unfinished").length;
+
   const lines: string[] = [];
   lines.push(
     failed.length === 0
-      ? `All ${loaded} script-extender plugin${loaded === 1 ? "" : "s"} loaded.`
-      : `${failed.length} of ${loaded + failed.length} script-extender plugins did not load.`,
+      ? unfinished === 0
+        ? `All ${loaded} script-extender plugin${loaded === 1 ? "" : "s"} loaded.`
+        : `${loaded} script-extender plugin${loaded === 1 ? "" : "s"} loaded so far.`
+      : `${failed.length} of ${loaded + failed.length + unfinished} script-extender plugins did not load.`,
   );
+  if (unfinished > 0) {
+    lines.push(
+      `The log stops before the script extender finished loading (${unfinished} plugin${
+        unfinished === 1 ? " has" : "s have"
+      } no result yet): the game was still starting or closed early. Read it again after reaching the main menu.`,
+    );
+  }
   for (const f of failed) {
     lines.push(
       f.lines.length > 0 ? `${f.file} — ${f.lines[0]}` : `${f.file} — the log says nothing more about it.`,
