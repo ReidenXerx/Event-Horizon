@@ -8266,6 +8266,46 @@ type RecoverResult =
       modRemoved: boolean;
     };
 
+/**
+ * A repair decision from the archive this mod was installed from, when that
+ * archive is still in Vortex's downloads AND hashes to the collection's
+ * sha256. Undefined otherwise: an unknown or different archive is not the
+ * curator's file, and reinstalling from it would land someone else's bytes.
+ */
+export async function ownArchiveRepairDecision(
+  ctx: DriverContext,
+  installEntry: InstalledModReportEntry,
+  manifestEntry: EhcollMod,
+): Promise<ModDecision | undefined> {
+  const src = manifestEntry.source;
+  if (src.kind !== "external" || src.sha256 === undefined) return undefined;
+  const gameId = ctx.plan.manifest.game.id;
+  const localPath = archivePathForMod(ctx.api, gameId, installEntry);
+  const archiveId = (
+    ctx.api.getState() as unknown as {
+      persistent?: { mods?: Record<string, Record<string, { archiveId?: string }>> };
+    }
+  )?.persistent?.mods?.[gameId]?.[installEntry.vortexModId]?.archiveId;
+  if (localPath === undefined || archiveId === undefined) return undefined;
+  const identity = await checkArchiveIdentity({
+    archivePath: localPath,
+    expectedSha256: src.sha256,
+    ...(ctx.abortSignal !== undefined ? { signal: ctx.abortSignal } : {}),
+  });
+  ehLog("info", "verify.repair.own-archive", {
+    name: installEntry.name,
+    compareKey: installEntry.compareKey,
+    verdict: identity.kind,
+  });
+  if (identity.kind !== "matches") return undefined;
+  return {
+    kind: "external-use-local-download",
+    sha256: src.sha256,
+    archiveId,
+    localPath,
+  };
+}
+
 async function tryRecoverFailedMod(args: {
   ctx: DriverContext;
   installEntry: InstalledModReportEntry;
@@ -8365,7 +8405,22 @@ async function tryRecoverFailedMod(args: {
      * which is exactly the outcome the pre-uninstall refusal exists to avoid.
      * It just was not applied to this arm.
      */
-    const repair = repairDecisionFor(manifestEntry);
+    /**
+     * ─── AN EXTERNAL MOD CAN REINSTALL FROM ITS OWN ARCHIVE ─────────────
+     * `repairDecisionFor` knows only Nexus and bundled sources, so an
+     * unbundled external mod (LoversLab, a manual download) always came back
+     * "no archive to reinstall from" — even when Vortex still held the very
+     * archive the collection names. Ivy 1.0.59 dropped one FOMOD pick from
+     * UAP, the archive stayed byte-identical, and every updater kept the old
+     * picks with "installer options differ" and no reinstall attempted
+     * (Fallout-collection, 11-15). The mod's own archive, PROVEN to be the
+     * curator's file by its hash before anything is uninstalled, is exactly
+     * what a reinstall with the collection's answers needs. Removing the mod
+     * does not remove its download.
+     */
+    const repair =
+      repairDecisionFor(manifestEntry) ??
+      (await ownArchiveRepairDecision(ctx, installEntry, manifestEntry));
     if (
       repair?.kind === "nexus-download" &&
       typeof (ctx.api as { ext?: { nexusDownload?: unknown } }).ext
