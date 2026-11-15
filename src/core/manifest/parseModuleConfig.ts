@@ -133,6 +133,21 @@ function parseStep(node: XmlElement): FomodStep {
  * Only `.esp`/`.esm`/`.esl` names are kept — a dependency on a loose file is
  * satisfied by extraction, not by activation, so ordering cannot help it.
  */
+/** Whether any option in this step installs a file or folder or sets a condition flag. */
+function stepChangesSomething(step: XmlElement): boolean {
+  for (const group of children(first(step, "optionalFileGroups"), "group")) {
+    for (const plugin of children(first(group, "plugins"), "plugin")) {
+      const files = first(plugin, "files");
+      if (files !== undefined && (children(files, "file").length > 0 || children(files, "folder").length > 0)) {
+        return true;
+      }
+      const flags = first(plugin, "conditionFlags");
+      if (flags !== undefined && children(flags, "flag").length > 0) return true;
+    }
+  }
+  return false;
+}
+
 function collectPluginStateDependencies(root: XmlElement): string[] {
   const found = new Set<string>();
 
@@ -153,7 +168,12 @@ function collectPluginStateDependencies(root: XmlElement): string[] {
   walk(first(root, "moduleDependencies"));
 
   for (const step of children(first(root, "installSteps"), "installStep")) {
-    walk(first(step, "visible"));
+    // A step that installs no file and sets no flag is a note ("Rapport is not
+    // active"): showing it or not changes nothing, so it is not a question
+    // about the game. Anatomy's note on Rapport made the two installers name
+    // each other, and the cycle was cut with Rapport (whose installer REFUSES
+    // without Anatomy.esp) first (Ivy 1.0.59, 11-15).
+    if (stepChangesSomething(step)) walk(first(step, "visible"));
     for (const group of children(first(step, "optionalFileGroups"), "group")) {
       for (const plugin of children(first(group, "plugins"), "plugin")) {
         for (const type of children(

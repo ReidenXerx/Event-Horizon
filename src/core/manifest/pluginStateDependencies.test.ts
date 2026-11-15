@@ -190,6 +190,42 @@ describe("plugins a FOMOD script asks the game about", () => {
 
     expect(deps).toEqual(["alpha.esm", "zeta.esm"]);
   });
+
+  it("ignores a step that only shows a note (Anatomy 1.2.8 on Rapport, Ivy 1.0.59)", async () => {
+    // Anatomy's "Rapport is not active" note made Anatomy and Rapport name each
+    // other; the cycle was cut with Rapport, whose installer REFUSES without
+    // Anatomy.esp, first. A note installs nothing and sets nothing.
+    const deps = await parse(`<config>
+      <moduleDependencies><fileDependency file="CBBE.esp" state="Active"/></moduleDependencies>
+      <installSteps order="Explicit">
+        <installStep name="Note: Rapport is not active">
+          <visible><dependencies operator="Or">
+            <fileDependency file="Rapport.esp" state="Missing"/>
+            <fileDependency file="Rapport.esp" state="Inactive"/>
+          </dependencies></visible>
+          <optionalFileGroups order="Explicit">
+            <group name="Read this" type="SelectAll"><plugins order="Explicit">
+              <plugin name="Without Rapport, no moans">
+                <description>Rapport gives the moans.</description>
+                <typeDescriptor><type name="Required"/></typeDescriptor>
+              </plugin>
+            </plugins></group>
+          </optionalFileGroups>
+        </installStep>
+        <installStep name="Sets a flag">
+          <visible><fileDependency file="LooksMenu.esp" state="Active"/></visible>
+          <optionalFileGroups order="Explicit">
+            <group name="G" type="SelectAll"><plugins order="Explicit">
+              <plugin name="P"><conditionFlags><flag name="lm">On</flag></conditionFlags>
+                <typeDescriptor><type name="Required"/></typeDescriptor></plugin>
+            </plugins></group>
+          </optionalFileGroups>
+        </installStep>
+      </installSteps>
+    </config>`);
+
+    expect(deps).toEqual(["cbbe.esp", "looksmenu.esp"]);
+  });
 });
 
 /**

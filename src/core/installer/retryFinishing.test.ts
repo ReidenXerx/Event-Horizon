@@ -38,6 +38,13 @@ const source = fs.readFileSync(path.join(__dirname, "runInstall.ts"), "utf8");
 /** The retry pass's own marker — everything below it is the catch-up. */
 const retryStart = source.indexOf('"install.retry.start"');
 const after = (needle: string): number => source.indexOf(needle, retryStart);
+/**
+ * The catch-up starts once the retry LOOP is done. Inside the loop a provider
+ * can be typed and deployed before the mods asking about it retry (Ivy 1.0.59:
+ * Rapport before Overture), so the first deploy after `retryStart` is that one.
+ */
+const finishStart = source.indexOf('"install.retry.done"');
+const afterFinish = (needle: string): number => source.indexOf(needle, finishStart);
 
 describe("what the retry pass does with the mods it recovers", () => {
   it("has every anchor it locates, so a rename cannot make this vacuous", () => {
@@ -68,7 +75,8 @@ describe("what the retry pass does with the mods it recovers", () => {
      * global: re-running it over every mod would re-dispatch work the first
      * pass already did.
      */
-    const call = after("applyModTypeChanges(");
+    expect(finishStart).toBeGreaterThan(retryStart);
+    const call = afterFinish("applyModTypeChanges(");
     expect(call).toBeGreaterThan(-1);
     const scope = source.slice(call, call + 400);
     expect(scope).toContain("installed: recoveredIds");
@@ -90,18 +98,18 @@ describe("what the retry pass does with the mods it recovers", () => {
      * the player's next deploy then opened Vortex's External Changes dialog.
      * The plugin re-pin reads what Vortex has linked, so it stays after.
      */
-    const deploy = after("await deployAndWait(api, activeProfileId);");
+    const deploy = afterFinish("await deployAndWait(api, activeProfileId);");
     expect(deploy).toBeGreaterThan(-1);
     for (const work of [
       "applyModTypeChanges(",
       "applyIniTweaks({",
       "applyModRules({",
-      "await mirrorOneMod(mod, { purgeFirst: false });",
+      "await mirrorOneMod(mod, { purgeFirst: deployedByRetry.has(mod.compareKey) });",
     ]) {
-      expect(after(work), work).toBeGreaterThan(-1);
-      expect(after(work), work).toBeLessThan(deploy);
+      expect(afterFinish(work), work).toBeGreaterThan(-1);
+      expect(afterFinish(work), work).toBeLessThan(deploy);
     }
-    expect(after("repinCuratorOrder(")).toBeGreaterThan(deploy);
+    expect(afterFinish("repinCuratorOrder(")).toBeGreaterThan(deploy);
   });
 
   it("mirrors a recovered mod through the SAME function the main loop uses", () => {
@@ -118,7 +126,7 @@ describe("what the retry pass does with the mods it recovers", () => {
     expect(firstCall).toBeGreaterThan(-1);
     expect(firstCall).toBeLessThan(retryStart);
     // ...and again, below the retry, for the recovered ones.
-    expect(source.indexOf("await mirrorOneMod(mod, { purgeFirst: false });", retryStart)).toBeGreaterThan(
+    expect(source.indexOf("await mirrorOneMod(mod, { purgeFirst: deployedByRetry.has(mod.compareKey) });", retryStart)).toBeGreaterThan(
       retryStart,
     );
   });

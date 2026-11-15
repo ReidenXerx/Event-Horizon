@@ -92,6 +92,75 @@ export type InstallEpochs = {
   unexamined: { compareKey: string; name: string }[];
 };
 
+/** Plugins the collection orders, minus base-game masters (active before anything installs). */
+function shippedPlugins(manifest: EhcollManifest): Set<string> {
+  return new Set(
+    manifest.plugins.order
+      .map((p) => p.name.toLowerCase())
+      .filter((name) => !isBaseGameMaster(name, manifest.game.id)),
+  );
+}
+
+/**
+ * Which mod's staged files carry each plugin the collection orders: the mod
+ * whose install makes it exist. Lowercased plugin name → compareKey; the first
+ * mod in manifest order wins when two ship the same plugin.
+ */
+export function pluginProviders(manifest: EhcollManifest): Map<string, string> {
+  const shipped = shippedPlugins(manifest);
+  const providerOf = new Map<string, string>();
+  for (const mod of manifest.mods) {
+    for (const f of mod.state?.stagingFiles ?? []) {
+      const base = f.path.replace(/\\/g, "/").split("/").pop()!.toLowerCase();
+      if (/\.(esp|esm|esl)$/.test(base) && shipped.has(base) && !providerOf.has(base)) {
+        providerOf.set(base, mod.compareKey);
+      }
+    }
+  }
+  return providerOf;
+}
+
+/**
+ * ─── THE RETRY PASS HAS BOUNDARIES TOO ────────────────────────────────────
+ * The retry pass re-runs every refused mod in one sweep. When the PROVIDER of
+ * a plugin is itself among them, the mods asking about that plugin used to be
+ * retried right after it, before anything had deployed it or switched it on,
+ * and were refused a second time.
+ *
+ * Ivy 1.0.59 (Fallout-collection, 11-15): Rapport's installer refuses unless
+ * Anatomy.esp is active; Anatomy's only shows a note when Rapport is missing.
+ * The two name each other, the cycle was cut with Rapport first, so Rapport
+ * was refused, then Overture and Chemistry ("File 'rapport.esp' is Active").
+ * The retry recovered Rapport and refused both again in the same sweep.
+ *
+ * This tracks what the mods recovered since the last activation provide, and
+ * says which of a mod's questions need an activation before it is retried.
+ */
+export function retryActivationTracker(manifest: EhcollManifest): {
+  /** A mod was just recovered: its plugins exist in staging, not in the game. */
+  recovered: (compareKey: string) => void;
+  /** The plugins this mod asks about that only an activation can make active now. */
+  needsBefore: (mod: { install?: { readsPluginState?: readonly string[] } }) => string[];
+  /** Plugins recovered since the last activation, lowercased. */
+  pending: () => string[];
+  /** An activation ran: everything pending is deployed and switched on. */
+  activated: () => void;
+} {
+  const providers = pluginProviders(manifest);
+  const pending = new Set<string>();
+  return {
+    recovered: (compareKey) => {
+      for (const [plugin, by] of providers) if (by === compareKey) pending.add(plugin);
+    },
+    needsBefore: (mod) =>
+      (mod.install?.readsPluginState ?? [])
+        .map((p) => p.toLowerCase())
+        .filter((p) => pending.has(p)),
+    pending: () => [...pending].sort(),
+    activated: () => pending.clear(),
+  };
+}
+
 /**
  * Split a manifest's mods into the two epochs.
  *
@@ -108,21 +177,8 @@ export function planInstallEpochs(manifest: EhcollManifest): InstallEpochs {
    * and buy nothing. A plugin the collection does not order is excluded for
    * the mirror-image reason: waiting will not make it active either.
    */
-  const shipped = new Set(
-    manifest.plugins.order
-      .map((p) => p.name.toLowerCase())
-      .filter((name) => !isBaseGameMaster(name, manifest.game.id)),
-  );
-  /** Which mod's staged files carry each plugin — the mod whose install makes it exist. */
-  const providerOf = new Map<string, string>();
-  for (const mod of manifest.mods) {
-    for (const f of mod.state?.stagingFiles ?? []) {
-      const base = f.path.replace(/\\/g, "/").split("/").pop()!.toLowerCase();
-      if (/\.(esp|esm|esl)$/.test(base) && shipped.has(base) && !providerOf.has(base)) {
-        providerOf.set(base, mod.compareKey);
-      }
-    }
-  }
+  const shipped = shippedPlugins(manifest);
+  const providerOf = pluginProviders(manifest);
   const waitsForOf = new Map<string, string[]>();
   for (const mod of manifest.mods) {
     const named = mod.install?.readsPluginState ?? [];

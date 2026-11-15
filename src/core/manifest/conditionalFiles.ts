@@ -12,6 +12,8 @@
  * player, and keep the file in the record (nothing is silently dropped).
  */
 
+import { isBaseGameMaster } from "./pluginMasters";
+
 import type { FomodCondition } from "./fomodReplay";
 
 /** A plugin's state as FOMOD asks it: active, installed but off, or not there. */
@@ -78,6 +80,30 @@ export function activePluginsFromState(state: unknown): (plugin: string) => bool
       .map(([k]) => k.toLowerCase()),
   );
   return (plugin) => on.has(plugin.toLowerCase());
+}
+
+/**
+ * ─── A BASE-GAME MASTER IS ACTIVE WHEN ITS FILE IS THERE ───────────────────
+ * Vortex keeps a native plugin's load-order entry as `{ loadOrder }` with no
+ * `enabled` (PluginPersistor.getItem builds it from `mPlugins`, which is read
+ * from plugins.txt, and Fallout 4's plugins.txt never lists them). So every
+ * test above reads DLCNukaWorld.esm as off, on every machine.
+ *
+ * Ivy 1.0.59 (Fallout-collection, 11-15): UAP's ErectionFix_SilverPerv.esp is
+ * recorded "needs dlcnukaworld.esm", so the install judged it correctly absent,
+ * switched it off as a curator-off plugin, and then switched off Anatomy Feral
+ * Ghouls - Ivy Patch.esp for its missing master. Adaptive Combat Tactics' DLC
+ * plugins and Immersive Dogs' Anatomy Female Wolves.esp went the same way.
+ *
+ * The master's file in Data is the answer, which is also what the game loads.
+ */
+export function withBaseGameMasters(
+  isActive: (plugin: string) => boolean,
+  gameId: string,
+  inData: (plugin: string) => boolean,
+): (plugin: string) => boolean {
+  return (plugin) =>
+    isActive(plugin) || (isBaseGameMaster(plugin, gameId) && inData(plugin));
 }
 
 type ConditionMod = {

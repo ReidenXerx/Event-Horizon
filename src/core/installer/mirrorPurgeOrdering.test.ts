@@ -43,9 +43,16 @@ describe("the purge before mirroring", () => {
     expect(main).toBeLessThan(source.indexOf("// ── 7. deploy"));
   });
 
-  it("is not asked for by the retry pass, whose mods were never deployed", () => {
-    // retryFinishing.test.ts pins that pass's deploy after its mirror.
-    expect(source).toContain("await mirrorOneMod(mod, { purgeFirst: false });");
+  it("is asked for by the retry pass only for mods a retry activation deployed", () => {
+    // retryFinishing.test.ts pins that pass's deploy after its mirror. A
+    // recovered PROVIDER (Rapport, Ivy 1.0.59) is deployed inside the retry
+    // loop so the mods asking about its plugin pass; its files are then linked.
+    expect(source).toContain("await mirrorOneMod(mod, { purgeFirst: deployedByRetry.has(mod.compareKey) });");
+    const activation = source.indexOf('"install.retry.activated"');
+    const marks = source.lastIndexOf("for (const key of recoveredKeys) deployedByRetry.add(key);", activation);
+    const deploy = source.lastIndexOf("await deployAndWait(api, activeProfileId);", marks);
+    expect(marks).toBeGreaterThan(-1);
+    expect(deploy).toBeGreaterThan(source.indexOf('"install.retry.start"'));
   });
 
   // Whether the purge counts only when Vortex emits did-purge for the install's

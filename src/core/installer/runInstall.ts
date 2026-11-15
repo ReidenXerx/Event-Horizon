@@ -85,7 +85,7 @@
 
 import { applyKeptOff } from "./keptOff";
 import { isAbort } from "../../utils/abortError";
-import { planInstallEpochs } from "../resolver/installEpochs";
+import { planInstallEpochs, retryActivationTracker } from "../resolver/installEpochs";
 import { actions, types, util } from "@nexusmods/vortex-api";
 import { stagingRootForModId } from "../stagingPath";
 import { existsSync } from "fs";
@@ -165,6 +165,7 @@ import {
   describeNeeds,
   installerConditionUnmet,
   pluginsGatedOff,
+  withBaseGameMasters,
   withGatedPluginsOff,
 } from "../manifest/conditionalFiles";
 import * as path from "path";
@@ -1009,15 +1010,21 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
    */
   const optionalFullLists = new Map<string, EhcollStagingFile[]>();
   /** See {@link pluginWillBeActive}: judges a BUNDLED mod's condition-gated files. */
-  const willBeActive = pluginWillBeActive({
-    order: plan.manifest.plugins.order,
-    mods: plan.manifest.mods,
-    notInstalled: () => new Set([...optionalSkipped, ...optionalNotInstalled.map((o) => o.compareKey)]),
-    inData: (name) => {
-      const dir = gameDataDirFor(api, plan.manifest.game.id);
-      return dir !== undefined && existsSync(path.join(dir, name));
-    },
-  });
+  /** A plugin file in this player's game Data folder, by name. */
+  const pluginInData = (name: string): boolean => {
+    const dir = gameDataDirFor(api, plan.manifest.game.id);
+    return dir !== undefined && existsSync(path.join(dir, name));
+  };
+  const willBeActive = withBaseGameMasters(
+    pluginWillBeActive({
+      order: plan.manifest.plugins.order,
+      mods: plan.manifest.mods,
+      notInstalled: () => new Set([...optionalSkipped, ...optionalNotInstalled.map((o) => o.compareKey)]),
+      inData: pluginInData,
+    }),
+    plan.manifest.game.id,
+    pluginInData,
+  );
   let userlistApplication: UserlistApplicationReceipt =
     emptyUserlistApplication();
   const verifications: ModVerificationReceipt[] = [];
@@ -2396,7 +2403,11 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             .filter(([, v]) => v?.enabled === true)
             .map(([k]) => k.toLowerCase()),
         );
-        return (plugin) => on.has(plugin.toLowerCase());
+        return withBaseGameMasters(
+          (plugin) => on.has(plugin.toLowerCase()),
+          plan.manifest.game.id,
+          pluginInData,
+        );
       })();
       for (let i = 0; i < installedMods.length; i++) {
         const installEntry = installedMods[i];
@@ -4510,7 +4521,10 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       withGatedPluginsOff(
         plan.manifest.plugins.order,
         new Set([
-          ...pluginsGatedOff(plan.manifest.mods, activePluginsFromState(api.getState())),
+          ...pluginsGatedOff(
+            plan.manifest.mods,
+            withBaseGameMasters(activePluginsFromState(api.getState()), plan.manifest.game.id, pluginInData),
+          ),
           ...optionalAbsentPlugins,
         ]),
       );
@@ -5243,6 +5257,10 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           "the collection is now installed, deployed and its plugins active " +
           "— an installer that refused for a missing prerequisite may pass now",
       });
+      /** See {@link retryActivationTracker}: Rapport recovered, Overture asks for it. */
+      const retryActivation = retryActivationTracker(plan.manifest);
+      /** Recovered mods an activation already deployed: their mirror purges first. */
+      const deployedByRetry = new Set<string>();
 
       for (const failed of failedMods) {
         if (ctx.abortSignal?.aborted === true) {
@@ -5282,6 +5300,61 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               "Vortex finished this install after the watchdog gave up on it " +
               "— adopting the mod instead of installing a second copy",
           });
+        }
+        /**
+         * ─── A RECOVERED PROVIDER GOES LIVE BEFORE ITS ASKERS RETRY ───────
+         * The boundary the first pass has between layers, for the retry: the
+         * mods recovered so far are typed, deployed and their plugins switched
+         * on (the curator's flags), so an installer asking "is rapport.esp
+         * Active?" gets the answer the collection intends. Order is left to
+         * the re-pin after this pass.
+         */
+        const needsActive = retryActivation.needsBefore(manifestEntry);
+        if (needsActive.length > 0) {
+          try {
+            const retryTypes = applyModTypeChanges(
+              ctx.api,
+              plan.manifest.game.id,
+              planModTypeChanges({
+                installed: new Map(
+                  installedMods
+                    .filter((m) => recoveredKeys.includes(m.compareKey))
+                    .map((m) => [m.compareKey, m.vortexModId] as const),
+                ),
+                currentTypes: readCurrentModTypes(ctx.api, plan.manifest.game.id),
+                manifestMods: plan.manifest.mods,
+              }),
+              actions,
+            );
+            await deployAndWait(api, activeProfileId);
+            for (const key of recoveredKeys) deployedByRetry.add(key);
+            const curatorOn = new Map(
+              plan.manifest.plugins.order
+                .filter((p) => p.enabled)
+                .map((p) => [p.name.toLowerCase(), p.name] as const),
+            );
+            const switchedOn: string[] = [];
+            for (const plugin of retryActivation.pending()) {
+              const name = curatorOn.get(plugin);
+              if (name === undefined) continue;
+              dispatchRaw(api, ACTION_SET_PLUGIN_ENABLED, { pluginName: name, enabled: true });
+              switchedOn.push(name);
+            }
+            ehLog("info", "install.retry.activated", {
+              before: failed.name,
+              asksFor: needsActive,
+              switchedOn,
+              modTypesRestored: retryTypes.length,
+            });
+          } catch (err) {
+            ehLog("warn", "install.retry.activation-failed", {
+              before: failed.name,
+              asksFor: needsActive,
+              consequence: "this mod is retried without those plugins active and may be refused again",
+              err,
+            });
+          }
+          retryActivation.activated();
         }
         try {
           const entry = await executeDecision({
@@ -5332,6 +5405,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           }
           retriedOk += 1;
           recoveredKeys.push(entry.compareKey);
+          retryActivation.recovered(entry.compareKey);
           /**
            * One row per installed mod, always. The verify pass ran before this
            * mod existed, so there is no verdict to record — but an ABSENT row
@@ -5490,8 +5564,9 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
              */
             const skippedBefore = mirrorSkipped.length;
             // No purge: these mods were installed after the last deploy, so
-            // nothing of theirs is linked yet for Vortex to compare against.
-            await mirrorOneMod(mod, { purgeFirst: false });
+            // nothing of theirs is linked yet for Vortex to compare against —
+            // unless a retry activation deployed them, as a provider.
+            await mirrorOneMod(mod, { purgeFirst: deployedByRetry.has(mod.compareKey) });
             if (mirrorSkipped.length > skippedBefore) retryMirrorSkipped += 1;
             else retryMirrored += 1;
           }

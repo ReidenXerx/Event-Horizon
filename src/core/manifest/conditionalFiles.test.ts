@@ -14,6 +14,7 @@ import {
   pluginsGatedOff,
   pluginWillBeActive,
   pluginsWanted,
+  withBaseGameMasters,
   withGatedPluginsOff,
   type PluginState,
 } from "./conditionalFiles";
@@ -367,3 +368,39 @@ function manifestWith(stagingFiles: unknown[]): string {
     externalDependencies: [],
   });
 }
+
+describe("a plugin gated on a base-game master (Ivy 1.0.59, ErectionFix_SilverPerv.esp)", () => {
+  // Vortex's load-order entry for a native plugin carries a position and no
+  // `enabled`, so DLCNukaWorld.esm read as off on every machine.
+  const state = {
+    loadOrder: {
+      "dlcnukaworld.esm": { loadOrder: 6 },
+      "erectionfix_silverperv.esp": { enabled: true, loadOrder: 400 },
+    },
+  };
+  const uap = {
+    state: {
+      stagingFiles: [{ path: "ErectionFix_SilverPerv.esp", installerCondition: { needs: ["dlcnukaworld.esm"] } }],
+    },
+  };
+
+  it("was judged correctly absent, and switched off", () => {
+    expect([...pluginsGatedOff([uap], activePluginsFromState(state))]).toEqual(["erectionfix_silverperv.esp"]);
+  });
+
+  it("is not gated when the DLC's file is in Data", () => {
+    const active = withBaseGameMasters(activePluginsFromState(state), "fallout4", () => true);
+    expect([...pluginsGatedOff([uap], active)]).toEqual([]);
+  });
+
+  it("is still gated for a player without the DLC", () => {
+    const active = withBaseGameMasters(activePluginsFromState(state), "fallout4", () => false);
+    expect([...pluginsGatedOff([uap], active)]).toEqual(["erectionfix_silverperv.esp"]);
+  });
+
+  it("only base-game masters get the file test, never a mod's plugin", () => {
+    const active = withBaseGameMasters(() => false, "fallout4", () => true);
+    expect(active("DLCNukaWorld.esm")).toBe(true);
+    expect(active("Rapport.esp")).toBe(false);
+  });
+});
