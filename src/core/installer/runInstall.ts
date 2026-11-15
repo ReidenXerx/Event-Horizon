@@ -276,7 +276,12 @@ import {
   classifyModFailure,
   describeSystemicFailure,
 } from "./downloadFailureShape";
-import { dismissNoisyNotifications } from "./quietNotifications";
+import {
+  dismissNoisyNotifications,
+  dismissNotices,
+  installerErrorNoticeIds,
+  noticesRaisedSince,
+} from "./quietNotifications";
 import { replayArgs } from "./installerChoices";
 import { isUnattended } from "./fomodReplayMode";
 import { describeVariantAmbiguous } from "./variantReport";
@@ -869,6 +874,12 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
    * cannot be fetched does not cost the user every mod after it.
    */
   const failedMods: FailedModReportEntry[] = [];
+  /**
+   * Vortex's "Installer reported errors" notifications each failed first-pass
+   * attempt raised, by compareKey. The retry pass dismisses them for the mods
+   * it recovers (see quietNotifications.ts).
+   */
+  const installerErrorNotices = new Map<string, string[]>();
   /**
    * Mods whose archive the USER supplied by hand and which is NOT the one the
    * collection was built from, keyed by compareKey.
@@ -1877,6 +1888,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
       });
 
       let installEntry: InstalledModReportEntry | undefined;
+      const noticesBefore = installerErrorNoticeIds(ctx.api);
       try {
         installEntry = await executeDecision({
           ctx,
@@ -2023,6 +2035,10 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           decision: resolution.decision.kind,
           error: formatError(err),
         });
+        {
+          const raised = noticesRaisedSince(noticesBefore, installerErrorNoticeIds(ctx.api));
+          if (raised.length > 0) installerErrorNotices.set(resolution.compareKey, raised);
+        }
         const failureShape = classifyModFailure(Date.now() - modStartedAt);
         run.noteModFailed(failureShape);
 
@@ -5419,10 +5435,20 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
             name: entry.name,
             reason: "recovered-after-verification",
           });
+          /**
+           * The first attempt's red "Installer reported errors" notification
+           * is now false: the mod is installed. Ivy Rev 29 players read
+           * Rapport/Overture/Chemistry as failed after the retry fixed them.
+           */
+          const errorNoticesDismissed = dismissNotices(
+            ctx.api,
+            installerErrorNotices.get(entry.compareKey) ?? [],
+          );
           ehLog("info", "install.retry.mod.ok", {
             name: entry.name,
             compareKey: entry.compareKey,
             firstError: failed.error,
+            errorNoticesDismissed,
           });
         } catch (err) {
           carryForward.push({ ...failed, error: formatError(err) });

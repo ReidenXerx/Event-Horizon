@@ -107,6 +107,60 @@ export function selectNoisyNotificationIds(state: unknown): string[] {
 }
 
 /**
+ * ─── A REFUSAL THE RETRY PASS UNDID ────────────────────────────────────
+ * Vortex reports a FOMOD that refuses ("Installer Prerequisits not
+ * fulfilled: File 'anatomy.esp' is Active") with an error notification,
+ * title "Installer reported errors", message = the attempt's mod id, and an
+ * id it generates itself (shortid). The retry pass then installs the same
+ * mod once its prerequisite is active — and the red notification stays,
+ * telling the player a mod failed that is installed (Ivy Rev 29: Rapport,
+ * Overture, Chemistry on EH 0.2.128).
+ *
+ * The ids are random, so they are attributed by DIFFERENCE: the ones present
+ * after a failed attempt and not before it belong to that attempt. Only those
+ * are dismissed, and only once the retry put that mod on disk; a mod that
+ * fails again keeps its notification.
+ */
+export const INSTALLER_ERRORS_TITLE = "Installer reported errors";
+
+/** Ids of Vortex's "Installer reported errors" notifications. Never throws. */
+export function installerErrorNoticeIds(api: types.IExtensionApi): Set<string> {
+  try {
+    const list = (
+      api.getState() as unknown as {
+        session?: { notifications?: { notifications?: unknown } };
+      }
+    )?.session?.notifications?.notifications;
+    if (!Array.isArray(list)) return new Set();
+    const out = new Set<string>();
+    for (const n of list) {
+      const { id, title } = (n ?? {}) as { id?: unknown; title?: unknown };
+      if (typeof id === "string" && title === INSTALLER_ERRORS_TITLE) out.add(id);
+    }
+    return out;
+  } catch {
+    return new Set();
+  }
+}
+
+/** Ids in `after` that were not in `before`: what one attempt raised. */
+export function noticesRaisedSince(before: ReadonlySet<string>, after: ReadonlySet<string>): string[] {
+  return [...after].filter((id) => !before.has(id));
+}
+
+/** Dismiss the given ids. Returns how many were dismissed. Never throws. */
+export function dismissNotices(api: types.IExtensionApi, ids: readonly string[]): number {
+  try {
+    const dismiss = api.dismissNotification;
+    if (typeof dismiss !== "function") return 0;
+    for (const id of ids) dismiss(id);
+    return ids.length;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * Clear them. Returns how many were dismissed. Never throws.
  *
  * Called repeatedly through a long install rather than once at the end,
