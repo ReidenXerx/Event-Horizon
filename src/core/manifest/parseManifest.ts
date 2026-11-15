@@ -78,12 +78,31 @@ import type {
 import { isFullyPinnedReference as isFullyPinnedModReference } from "../identity/compareKey";
 
 import { isSafeRelativePath, unsafePathReason } from "../safeRelativePath";
+import { EXTENSION_VERSION } from "../../ui/version";
+import { compareEhVersions } from "./minEventHorizon";
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 const SCHEMA_VERSION: SchemaVersion = 2;
+/** Schema 2 plus `package.requiresEventHorizon`; see {@link SchemaVersion}. */
+const SCHEMA_WITH_MIN_EVENT_HORIZON: SchemaVersion = 3;
+
+/** The running Event Horizon, compared with a package's minimum. Tests set it. */
+let runningEventHorizon: string = EXTENSION_VERSION;
+export function _setRunningEventHorizonForTest(version: string): void {
+  runningEventHorizon = version;
+}
+
+/** What a player whose Event Horizon is older than the curator's minimum reads. */
+export function describeTooOldEventHorizon(needed: string, collection: string | undefined): string {
+  return (
+    `${collection !== undefined ? `"${collection}"` : "This collection"} needs Event Horizon ${needed} or newer, ` +
+    `and you have ${runningEventHorizon}. Update Event Horizon first (Vortex → Extensions, or Event Horizon's ` +
+    `Nexus page), restart Vortex, then open the collection again. Nothing was installed or changed.`
+  );
+}
 
 /**
  * The last schema whose packages carried bundled mods as archives inside the
@@ -104,7 +123,7 @@ function describeUnsupportedVersion(version: unknown): string {
   }
   return (
     `Unsupported schemaVersion ${JSON.stringify(version)}. This installer ` +
-    `understands schemaVersion ${SCHEMA_VERSION} only. Update the Event ` +
+    `understands schemaVersion ${SCHEMA_VERSION} and ${SCHEMA_WITH_MIN_EVENT_HORIZON} only. Update the Event ` +
     `Horizon extension to install newer manifests.`
   );
 }
@@ -186,13 +205,20 @@ export function parseManifest(raw: string): ParseManifestResult {
   // schemaVersion is the gate: if it's wrong, we don't even know what
   // the rest of the document means. Report that and stop.
   const version = (parsed as Record<string, unknown>).schemaVersion;
-  if (version !== SCHEMA_VERSION) {
+  if (version !== SCHEMA_VERSION && version !== SCHEMA_WITH_MIN_EVENT_HORIZON) {
     throw new ParseManifestError([describeUnsupportedVersion(version)]);
   }
 
   const obj = parsed as Record<string, unknown>;
 
   const pkg = validatePackage(obj.package, errors);
+  /**
+   * The curator's minimum, checked before anything else is believed: nothing
+   * downloads, installs or changes for a player whose Event Horizon is older.
+   */
+  if (pkg?.requiresEventHorizon !== undefined && compareEhVersions(runningEventHorizon, pkg.requiresEventHorizon.version) < 0) {
+    throw new ParseManifestError([describeTooOldEventHorizon(pkg.requiresEventHorizon.version, pkg.name)]);
+  }
   const game = validateGame(obj.game, errors);
   const vortex = validateVortex(obj.vortex, errors);
   const mods = validateMods(obj.mods, errors);
@@ -280,7 +306,7 @@ export function parseManifest(raw: string): ParseManifestResult {
   }
 
   const manifest: EhcollManifest = {
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion: pkg?.requiresEventHorizon !== undefined ? SCHEMA_WITH_MIN_EVENT_HORIZON : SCHEMA_VERSION,
     package: {
       ...pkg!,
       ...(changelog !== undefined ? { changelog: changelog.entries } : {}),
@@ -372,6 +398,10 @@ function validatePackage(
     strictMissingMods,
     ...(description !== undefined ? { description } : {}),
     ...(verificationLevel !== undefined ? { verificationLevel } : {}),
+    ...(isObject(obj.requiresEventHorizon) &&
+    typeof (obj.requiresEventHorizon as { version?: unknown }).version === "string"
+      ? { requiresEventHorizon: { version: (obj.requiresEventHorizon as { version: string }).version } }
+      : {}),
     // Advisory, read leniently: a shape this version does not know is no warning, never an error.
     ...(isObject(obj.needsEventHorizon) &&
     typeof (obj.needsEventHorizon as { version?: unknown }).version === "string"

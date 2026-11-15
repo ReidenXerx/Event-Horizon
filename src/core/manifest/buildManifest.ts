@@ -75,6 +75,8 @@ import type {
 } from "../../types/ehcoll";
 
 const SCHEMA_VERSION: SchemaVersion = 2;
+/** Only a package with `requiresEventHorizon`: see {@link SchemaVersion}. */
+const SCHEMA_WITH_MIN_EVENT_HORIZON: SchemaVersion = 3;
 
 const SUPPORTED_GAME_IDS: ReadonlySet<SupportedGameId> = new Set([
   "skyrimse",
@@ -186,6 +188,8 @@ export type BuildManifestInput = {
      * three, and the writer below.
      */
     verificationLevel?: VerificationLevel;
+    /** The curator's `minEventHorizon`: an older Event Horizon refuses the package. */
+    minEventHorizon?: string;
   };
 
   game: {
@@ -547,6 +551,10 @@ export function buildManifest(input: BuildManifestInput): BuildManifestResult {
 
   const needs = neededEventHorizon(manifest);
   if (needs !== undefined) manifest.package.needsEventHorizon = needs;
+  if (input.package.minEventHorizon !== undefined) {
+    manifest.package.requiresEventHorizon = { version: input.package.minEventHorizon };
+    manifest.schemaVersion = SCHEMA_WITH_MIN_EVENT_HORIZON;
+  }
 
   if (input.archiveRestoresByModId !== undefined && input.archiveRestoresByModId.size > 0) {
     const restoresByKey = new Map<string, readonly ArchiveRestore[]>();

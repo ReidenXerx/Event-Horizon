@@ -57,6 +57,8 @@ import {
 } from "../../../core/comparePlugins";
 import { filesEveryGroupProvides, variantGroupsOf } from "../../../core/installer/variantGroups";
 import { buildManifest } from "../../../core/manifest/buildManifest";
+import { compareEhVersions } from "../../../core/manifest/minEventHorizon";
+import { EXTENSION_VERSION } from "../../version";
 import { buildOutputFileName, type PackageFormat } from "../../../core/manifest/packageFileName";
 import { prepareChangelog, type PreparedChangelog } from "./buildChangelog";
 import { saveChangelogHistory } from "../../../core/changelog/changelogHistory";
@@ -371,6 +373,8 @@ export interface BuildPipelineResult {
    * agreeing with a paragraph.
    */
   postProcessingCandidates: PostProcessingCandidate[];
+  /** The curator's minimum Event Horizon written into the package, when set. */
+  minEventHorizon?: string;
   /**
    * This version's changelog as written into the package, with the copies the
    * Done card offers. Absent only when one could not be prepared, which is a
@@ -2803,6 +2807,19 @@ export async function runBuildPipeline(
     });
   }
 
+  // A minimum newer than this Event Horizon would refuse the curator's own
+  // package, and every check after the build reads it back through the parser.
+  if (
+    collectionConfig.minEventHorizon !== undefined &&
+    compareEhVersions(EXTENSION_VERSION, collectionConfig.minEventHorizon) < 0
+  ) {
+    throw new BuildRefusedError(
+      "min-event-horizon-newer",
+      `This collection's minEventHorizon is ${collectionConfig.minEventHorizon}, newer than this Event Horizon ` +
+        `(${EXTENSION_VERSION}). Update Event Horizon, or lower minEventHorizon in the collection's config.`,
+    );
+  }
+
   const { manifest, warnings: manifestWarnings } = buildManifest({
     snapshot,
     package: {
@@ -2813,6 +2830,7 @@ export async function runBuildPipeline(
       description: curator.description.length > 0 ? curator.description : undefined,
       strictMissingMods: false,
       verificationLevel,
+      ...(collectionConfig.minEventHorizon !== undefined ? { minEventHorizon: collectionConfig.minEventHorizon } : {}),
     },
     game: {
       // What the curator asked for. Detected version is only the default the
@@ -3230,6 +3248,9 @@ export async function runBuildPipeline(
     userlistPlugins: manifest.userlist.plugins.length,
     userlistGroups: manifest.userlist.groups.length,
     stagingFiles: stagingFileCount,
+    ...(manifest.package.requiresEventHorizon !== undefined
+      ? { minEventHorizon: manifest.package.requiresEventHorizon.version, schemaVersion: manifest.schemaVersion }
+      : {}),
     warnings: [
       ...context.scopeWarnings,
       ...changelogWarnings,
@@ -3274,6 +3295,9 @@ export async function runBuildPipeline(
     userlistGroupCount: manifest.userlist.groups.length,
     verificationLevel,
     stagingFileCount,
+    ...(manifest.package.requiresEventHorizon !== undefined
+      ? { minEventHorizon: manifest.package.requiresEventHorizon.version }
+      : {}),
     ...(preparedChangelog !== undefined
       ? {
           changelog: {

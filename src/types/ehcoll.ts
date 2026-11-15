@@ -37,8 +37,12 @@ import type { PackagePresentation } from "../core/presentation/presentation";
  *  - 2: bundled mods ship as their loose files, `bundled/<sha256>/<path>`,
  *       the sha being the canonical zip those files make (bundleZip.ts),
  *       because Nexus quarantines an upload with an archive inside it.
+ *  - 3: schema 2 plus `package.requiresEventHorizon`, written ONLY when the
+ *       curator set a minimum Event Horizon (owner, 11-15). An Event Horizon
+ *       up to 0.2.127 refuses any schema but 2 before reading anything else,
+ *       which is the up-front refusal the minimum needs from old versions.
  */
-export type SchemaVersion = 2;
+export type SchemaVersion = 2 | 3;
 
 /**
  * Top-level shape of `manifest.json` inside an `.ehcoll` package.
@@ -150,6 +154,13 @@ export type PackageMetadata = {
    * a player whose EH is older; it never blocks (owner poll, 2026-10-06).
    */
   needsEventHorizon?: { version: string; why: string[] };
+  /**
+   * The oldest Event Horizon the curator lets install this package (config
+   * `minEventHorizon`; owner, 11-15, after Ivy Rev 29 needed 0.2.126's fixes).
+   * Unlike `needsEventHorizon` it REFUSES, up front, before anything is
+   * downloaded or installed. Its presence makes the package schema 3.
+   */
+  requiresEventHorizon?: { version: string };
   /**
    * How thoroughly the curator captured per-mod file integrity data at
    * build time. Drives what the user-side {@link verifyModInstall} check

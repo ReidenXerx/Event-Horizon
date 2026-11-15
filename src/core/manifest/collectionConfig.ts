@@ -273,6 +273,11 @@ export type CollectionConfig = {
    */
   optionalCreations?: string[];
   /**
+   * The oldest Event Horizon allowed to install this collection, e.g.
+   * "0.2.126" (owner, 11-15). An older one refuses before anything installs.
+   */
+  minEventHorizon?: string;
+  /**
    * The curator's trim of the game INI settings a build ships (Fallout-collection,
    * 2026-10-25): `File:Section:Key` patterns with `*`. `exclude` leaves a setting
    * out; `include` ships one the player-preference list would leave out.
@@ -919,6 +924,12 @@ function parseAndValidate(raw: string, configPath: string): CollectionConfig {
   if (obj.changelog !== undefined && typeof obj.changelog !== "string") {
     errors.push("changelog, when present, must be a string.");
   }
+  if (
+    obj.minEventHorizon !== undefined &&
+    (typeof obj.minEventHorizon !== "string" || !/^\d+\.\d+\.\d+$/.test(obj.minEventHorizon.trim()))
+  ) {
+    errors.push('minEventHorizon, when present, must be a version like "0.2.126".');
+  }
   if (obj.gameIni !== undefined) {
     const g = obj.gameIni as Record<string, unknown>;
     if (typeof g !== "object" || g === null || Array.isArray(g)) {
@@ -982,6 +993,7 @@ function parseAndValidate(raw: string, configPath: string): CollectionConfig {
     config.optionalCreations = (obj.optionalCreations as string[]).map((c) => c.trim()).filter((c) => c !== "");
   }
   if (typeof obj.changelog === "string") config.changelog = obj.changelog;
+  if (typeof obj.minEventHorizon === "string") config.minEventHorizon = obj.minEventHorizon.trim();
   if (obj.gameIni !== undefined) {
     const g = obj.gameIni as GameIniFilter;
     config.gameIni = {
