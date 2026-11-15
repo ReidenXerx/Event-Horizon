@@ -1,7 +1,7 @@
 # Changelog
 
 Everything that changed in Event Horizon, newest first, written for the people who use it. Since the first commit
-in April 2026 that is about 400 changes across 247 builds.
+in April 2026 that is about 400 changes across 248 builds.
 
 Until 0.1.0-alpha.149 builds were numbered `0.1.0-alpha.N`. From **0.1.151** the build number is the patch number:
 Vortex ignores everything after the dash when it decides whether an extension has an update, so an alpha number
@@ -9,6 +9,13 @@ could never reach you as one.
 
 Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha.85 and 0.1.0-alpha.94
 (7 September 2026), then 0.1.151 to 0.1.164 as the alpha, and from 0.2.0 the beta.
+
+## [0.2.126] — 2026-11-15
+### Fixed
+- A plugin that needs a DLC (ErectionFix_SilverPerv.esp, Adaptive Combat Tactics - DLC.esp) is no longer
+  switched off at the end of an install, along with the patches that need it.
+- Mods whose installer needs another collection mod's plugin active (Overture, Chemistry needing Rapport)
+  now install when that mod only succeeded on the retry.
 
 ## [0.2.125] — 2026-11-15
 ### Fixed
