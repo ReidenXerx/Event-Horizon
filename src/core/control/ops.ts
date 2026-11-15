@@ -47,7 +47,11 @@ export class OpLog {
 
   constructor(private readonly journalFile?: string) {
     // History survives a restart: the Agents page shows what agents did before this start too.
-    if (journalFile !== undefined) for (const op of readOpsJournal(journalFile, 100)) this.ops.set(op.opId, op);
+    if (journalFile !== undefined) {
+      // Read first, then rotate: the history still shows on the start that moves it.
+      for (const op of readOpsJournal(journalFile, 100)) this.ops.set(op.opId, op);
+      rotateOpsJournal(journalFile);
+    }
   }
 
   /** Called on every create/start/finish; returns an unsubscribe. */
@@ -129,11 +133,50 @@ export class OpLog {
   }
 }
 
+/**
+ * How much of the journal's END is read for its last ops.
+ *
+ * The whole file was read before, at every start: by 11-15 it held 80,377 ops
+ * (1.1 GB) and the Vortex window ran out of memory four times in a row and
+ * stayed down. An op line is a few KB (a `state` reply a few hundred); the
+ * tail read gets fewer than `limit` only for a journal of giant lines.
+ */
+export const JOURNAL_TAIL_BYTES = 16 * 1024 * 1024;
+
+/** A journal past this is moved aside (one previous kept) when the log opens. */
+export const JOURNAL_ROTATE_BYTES = 64 * 1024 * 1024;
+
+/** Moves an oversized journal to `<name>.previous.jsonl`, replacing an older one. Returns whether it did. */
+export function rotateOpsJournal(file: string, maxBytes: number = JOURNAL_ROTATE_BYTES): boolean {
+  try {
+    if (fs.statSync(file).size <= maxBytes) return false;
+    fs.renameSync(file, file.replace(/\.jsonl$/, "") + ".previous.jsonl");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The last `bytes` of a file as text; the first, possibly cut, line is dropped when the read starts mid-file. */
+function readTail(file: string, bytes: number): string {
+  const fd = fs.openSync(file, "r");
+  try {
+    const size = fs.fstatSync(fd).size;
+    const start = Math.max(0, size - bytes);
+    const buf = Buffer.alloc(size - start);
+    fs.readSync(fd, buf, 0, buf.length, start);
+    const text = buf.toString("utf8");
+    return start === 0 ? text : text.slice(text.indexOf("\n") + 1);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 /** The last `limit` finished ops in a journal, oldest first. A broken line is skipped, a missing file is none. */
-export function readOpsJournal(file: string, limit: number): OpRecord[] {
+export function readOpsJournal(file: string, limit: number, tailBytes: number = JOURNAL_TAIL_BYTES): OpRecord[] {
   let text: string;
   try {
-    text = fs.readFileSync(file, "utf8");
+    text = readTail(file, tailBytes);
   } catch {
     return [];
   }

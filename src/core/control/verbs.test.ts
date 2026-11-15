@@ -4,6 +4,8 @@ import * as path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { util, __testGame, __testPaths } from "@nexusmods/vortex-api";
 
+import { _setLastActivationForTest } from "./activationSettle";
+
 vi.mock("./gameProcess", () => ({ isProcessRunning: vi.fn(async () => false) }));
 /** Restore points go to a temp file, never the real Vortex folder. */
 vi.mock("./restorePoints", async (orig) => {
@@ -51,6 +53,8 @@ type Api = ReturnType<typeof fakeVortex>["api"];
 
 /** A Vortex that answers the events and actions the verbs use, and records their order. */
 beforeEach(() => {
+  // A profile.switch test starts the settle window; installs in later tests must not wait it out.
+  _setLastActivationForTest(0);
   consent.answer = "Allow";
   consent.asked = [];
   prefs.askFirst = true;

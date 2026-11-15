@@ -32,6 +32,19 @@ export function watchGameActivation(api: types.IExtensionApi): void {
   });
 }
 
+/**
+ * A switch verb just changed the profile: the activation counts from now.
+ *
+ * Vortex fires `gamemode-activated` some seconds AFTER the switch resolves
+ * (Meridia slot B, 11-15: switch ok 02:57:44.7, OPubes install 02:57:46.9,
+ * activation ~02:57:48), so an install sent right after the switch saw no
+ * recent activation, did not wait, and refreshMods popped "Mods changed on
+ * disk" for its half-installed folder.
+ */
+export function noteGameActivation(now: number = Date.now()): void {
+  lastActivation = Math.max(lastActivation, now);
+}
+
 /** How long to wait still; 0 when no activation is recent. */
 export function settleWaitMs(now: number, last: number, settleMs: number = ACTIVATION_SETTLE_MS): number {
   return last <= 0 ? 0 : Math.max(0, last + settleMs - now);
@@ -39,11 +52,15 @@ export function settleWaitMs(now: number, last: number, settleMs: number = ACTIV
 
 /** Waits out a recent activation; returns the milliseconds waited. */
 export async function waitForActivationToSettle(verb: string): Promise<number> {
-  const wait = settleWaitMs(Date.now(), lastActivation);
-  if (wait <= 0) return 0;
-  ehLog("info", "control.activation-settle.wait", { verb, waitMs: wait });
-  await new Promise<void>((resolve) => setTimeout(resolve, wait));
-  return wait;
+  let waited = 0;
+  // Re-checked on waking: the activation event can land while we wait (it
+  // follows the switch by seconds) and moves the end of the window.
+  for (let wait = settleWaitMs(Date.now(), lastActivation); wait > 0; wait = settleWaitMs(Date.now(), lastActivation)) {
+    ehLog("info", "control.activation-settle.wait", { verb, waitMs: wait, ...(waited > 0 ? { extendedAfterMs: waited } : {}) });
+    await new Promise<void>((resolve) => setTimeout(resolve, wait));
+    waited += wait;
+  }
+  return waited;
 }
 
 /** Tests only. */

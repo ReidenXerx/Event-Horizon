@@ -103,7 +103,7 @@ import { vortexBusy } from "./vortexBusy";
 import { askOwner } from "./ownerConsent";
 import { enabledAfterReplace, mergeReplacement, pickReplaceTarget, readEnabled, type EnabledByProfile, type PoolMod } from "./safeReplace";
 import { judgeCrash, parseCrashLog, type Owner } from "./diagnose";
-import { waitForActivationToSettle } from "./activationSettle";
+import { noteGameActivation, waitForActivationToSettle } from "./activationSettle";
 import {
   loadRestorePoints,
   planRestore,
@@ -3627,6 +3627,7 @@ export const VERBS: Record<string, Verb> = {
       const before = crossGame ? await idle() : undefined;
       const expected = crossGame ? await readProfilePluginsTxt(target.gameId!, profileId) : undefined;
       await switchToProfile(api, profileId);
+      noteGameActivation();
       const active = activeProfileId(api);
       if (active !== profileId) {
         throw new ControlError("switch-unverified", `Vortex reports profile ${active ?? "none"} active, not ${profileId}.`, 500);
@@ -3712,6 +3713,7 @@ export const VERBS: Record<string, Verb> = {
       const moved = await step("setPath", () => setGamePath(api, gameId, body));
       await step("profile", async () => {
         await switchToProfile(api, profileId);
+        noteGameActivation();
         if (activeProfileId(api) !== profileId) {
           throw new ControlError("switch-unverified", `Vortex reports profile ${activeProfileId(api) ?? "none"} active.`, 500);
         }
