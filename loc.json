@@ -1,16 +1,16 @@
 {
   "schemaVersion": 1,
   "label": "code",
-  "message": "153.0k lines",
+  "message": "153.2k lines",
   "color": "informational",
   "_breakdown": {
     "JavaScript": 3360,
     "Shell": 1017,
-    "TypeScript": 148618
+    "TypeScript": 148776
   },
-  "_files": 881,
+  "_files": 882,
   "_top": [
-    "148.6k TypeScript",
+    "148.8k TypeScript",
     "3.4k JavaScript"
   ]
 }
