@@ -1,6 +1,6 @@
 ---
 name: bearing-minions
-description: "Fan work out to a swarm of cheap, anchored subagents that GATHER — for wide mechanical work you would otherwise grind through serially: finding every call site, auditing N files against one rule, discovering migration sites, cross-referencing a list against the codebase, 'where is this used and how does it flow'. Use when the work is bounded, verifiable, independent and wide (3+ units). NOT when the judgment IS the work, when the answer only survives verbatim, or when the unit needs conversation context the minion was never in. Examples: \"find every place we do X\", \"which files still use the old API\", \"trace all callers of these 12 symbols\", \"audit every route for auth\"."
+description: "Fan work out to a swarm of cheap, anchored subagents that GATHER, when the USER asks to — \"use minions to find every place we do X\", \"fan this out\", \"split this across subagents\", \"which files still use the old API — fan out\". Each returns citations, never a verdict; you conclude. Do not fan out on your own initiative. If the work fails the gates (bounded, verifiable, independent, 3+), say so instead of fanning out."
 ---
 
 # Minions — fan out to gather, keep the thinking
@@ -11,6 +11,8 @@ through forty files serially, or worse, sample five and generalise. This skill i
 **Minions gather. You conclude.** They do **minimal or zero reasoning**.
 
 ## 1. Should you fan out at all?
+
+The user asked — that settles WHEN, not WHETHER. If the work fails the gates below, say which one and do it serially instead; fanning out only to comply is the expensive way to get a worse answer.
 
 All four must hold:
 
@@ -60,10 +62,10 @@ one that sees all of them pays that token cost once per agent.
 **3. Bounds.** State the unit, what to return, and **what NOT to decide**. Whatever you leave
 unstated, a subagent will decide anyway, using context it does not have.
 
-**4. The same tool discipline you follow.** If this repo has the GitNexus module, a subagent must
-use the graph — `query` to orient, `cypher` for structure — not grep. A subagent grepping for call
-sites is doing the exact thing the gates exist to redirect, one level down where no gate can see it,
-and what it brings back is the weaker kind of evidence.
+**4. The same tools you would use.** Grep and Read are the defaults. Hand a subagent the GitNexus
+graph only when the user asked for the graph in this task, and say so in its brief: a subagent
+never saw that request, so it cannot know the graph was wanted. When it does use the graph, its
+zeros and counts carry the same caveats yours do.
 
 **5. Parallel where the runtime allows it**, sequential where it does not. Claude Code can run them
 concurrently; treat that as an optimisation, never as a requirement — the routine must produce the
@@ -74,10 +76,12 @@ empty-but-confused has REDUCED YOUR COVERAGE, and silence reads as "I checked ev
 it, or say plainly what went unchecked. Never let the count of agents you spawned stand in for the
 count that actually reported.
 
-**7. Tier follows the return contract.** A subagent that must REASON needs a capable model; one
-that only GATHERS does not. Decide the tier from what you are asking it to return, never from
-what the task feels like — and if a gatherer seems to need a smarter model, you have asked it to
-reason and should take that part back.
+**7. Every minion runs on the MIDDLE tier** of your model family — `sonnet` for Anthropic, or the
+`minionModel` set in `.bearing/hooks.json` / `hooks.local.json`. That holds for minions that
+gather and minions that apply, because neither decides anything (NS-24). The tier follows the return
+contract, never how important the task feels: if a minion seems to need a smarter model, you handed
+it a decision — take that part back. The one subagent that runs on your main model is one whose
+return IS the reasoning, a microscope lens, and that is not a minion.
 
 **8. Spot-check before you trust.** Open at least one cited `file:line` per subagent and confirm it
 says what the report claims. A fabricated citation is the one failure the return shape cannot catch
@@ -95,7 +99,7 @@ Plus, verbatim:
 *because* minions do no reasoning. Gathering citations does not need a flagship, and a whole fan-out
 on the top tier costs more than doing the work yourself would have.
 
-Override per machine in `.bearing/hooks.local.json` (`"minionModel": "..."`) if your account has
+Pin a different middle-tier model with `minionModel` in `.bearing/hooks.json` (team) or `.bearing/hooks.local.json` (this machine) — `"minionModel": "..."` — if your account has
 different models available. If the tier you ask for is unavailable, **run anyway on whatever you
 get** — a costlier minion is a nuisance; a skipped unit is a hole in the answer.
 

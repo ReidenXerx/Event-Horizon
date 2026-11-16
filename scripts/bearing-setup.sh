@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Event-Horizon — all-in-one GitNexus teaching + git hooks team installer.
+# Event-Horizon — all-in-one GitNexus team installer.
 #
 # Installs:
 #   • Teaching bundle (skills sync, manifest)
 #   • GitNexus MCP (project + optional global)
-#   • Git pre-commit PDG index refresh (no personal tooling)
-#   • Knowledge graph index
+#   • Knowledge graph index (the first build; after that it is refreshed when the developer asks)
 #
 # Run once after cloning:
 #   npm run bearing:setup
@@ -51,9 +50,6 @@ usage() {
   echo "  npm run bearing:setup              # full team onboarding (recommended)"
   echo "  npm run bearing:setup -- --quick   # teaching + hooks/MCP, skip index"
   echo "  npm run bearing:setup -- --full    # force full graph rebuild"
-  echo ""
-  echo "Re-sync teaching only (after pulling rule/skill updates):"
-  echo "  npm run bearing:pack             # tar.gz for other projects"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -136,21 +132,17 @@ info "Verifying GitNexus teaching sources"
 CORE_SOURCES=(
   "scripts/bearing-setup.sh"
   "scripts/sync-cursor-bearing-teaching.sh"
-  "scripts/install-git-hooks.sh"
   "scripts/bearing-verify.mjs"
   "scripts/bearing-agent.mjs"
-  "scripts/bearing-gate-hint.mjs"
   "scripts/bearing-teaching/script-gates.mjs"
   "scripts/lib/setup-ui.mjs"
-  ".bearing/skills/bearing-workspace/SKILL.md"
-  ".bearing/skills/bearing-enforcement/SKILL.md"
+  ".bearing/skills/bearing-gitnexus/SKILL.md"
 )
 
 # These two moved out of the Cursor list rather than going with it: they are shared hook libs,
 # shipped for every runtime, and nothing else required them.
 CORE_LIB_SOURCES=(
   ".bearing/lib/hook-helpers.mjs"
-  ".bearing/lib/stale-policy.mjs"
 )
 
 ZED_SOURCES=(
@@ -170,14 +162,12 @@ if is_stealth; then
   CLAUDE_SOURCES=(
     ".claude/settings.local.json"
     ".bearing/contract.md"
-    ".bearing/lib/classify.mjs"
   )
 else
   CLAUDE_SOURCES=(
     ".mcp.json"
     ".claude/settings.json"
     "CLAUDE.md"
-    ".bearing/lib/classify.mjs"
   )
 fi
 
@@ -198,14 +188,9 @@ bash scripts/sync-cursor-bearing-teaching.sh
 # into .zed/settings.json — neither needs a step here. `--skip-global-mcp` still parses so an
 # existing caller keeps working (NS-15); it now controls nothing.
 
-# ── 6. git hooks (GitNexus refresh only — no personal tooling) ─────────────────
-
-if is_stealth; then
-  info "Skipping git hooks (stealth install — no .githooks/, and no npm scripts for it to call)"
-else
-  info "Installing git hooks"
-  bash scripts/install-git-hooks.sh
-fi
+# Step 6 installed a pre-commit hook that re-indexed on every commit. Retired: the index is refreshed
+# when the developer asks for it — in a chat ("refresh the gitnexus index") or with
+# `npm run bearing:agent-refresh` — not on a trigger (NS-25). An update removes the hook it wrote.
 
 # ── 7. knowledge graph index ─────────────────────────────────────────────────
 
@@ -250,11 +235,14 @@ echo "╚═══════════════════════�
 echo ""
 cat <<'ONBOARD'
 
-  GitNexus is now your agent's code brain — with enforcement on Claude Code.
+  GitNexus is installed. It is opt-in: nothing pushes your agent towards it.
+  Ask for it in a prompt ("use gitnexus to find what this change affects")
+  and the bearing-gitnexus skill loads. Grep and Read are never blocked.
 
-  ✓ Graph + embeddings indexed (or run bearing:agent-refresh after --quick)
-  ✓ Hooks block grep-first habits when the graph is fresh (Claude Code only)
-  ✓ Agent refreshes the index autonomously when stale
+  ✓ Graph indexed (or build it later after --quick)
+
+  Nothing refreshes the index on its own. When you want it current, ask
+  your agent ("refresh the gitnexus index") or run npm run bearing:agent-refresh.
 
   NEXT STEPS
   ──────────
@@ -264,26 +252,18 @@ cat <<'ONBOARD'
 
   Quick check:  npm run bearing:health
   Full audit:   npm run bearing:verify
-  Gate docs:    npm run bearing.__gate.1.session
-
-  When hooks redirect the agent (grep/read blocked), that is expected —
-  GitNexus is enforcing graph-first reasoning.
+  Refresh:      npm run bearing:agent-refresh
 
   ── Maintainer details ────────────────────────────────────────
-
-  Agent workflow (enforced):
-    query → context → cypher (structural) → impact → detect_changes
 
   Daily commands:
     npm run bearing:health          human-friendly status
     npm run bearing:agent-brief     session orientation (agents)
     npm run bearing:agent-status    staleness (agents)
-    npm run bearing:agent-refresh   re-index when stale
+    npm run bearing:agent-refresh   re-index (only when you run it)
     npm run bearing:sync-teaching   after pulling kit updates
 
-  Hooks DENY (when fresh): symbol Grep, SemanticSearch, broad Glob, large Read
-  Hooks ALLOW: gitnexus npm scripts (agent refresh pre-approved)
-  MCP: gitnexus in .mcp.json (Claude) / .zed/settings.json (Zed) · pre-commit → bearing:pdg
+  MCP: gitnexus in .mcp.json (Claude) / .zed/settings.json (Zed)
 
 ONBOARD
 echo ""

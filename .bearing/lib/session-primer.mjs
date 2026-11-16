@@ -3,47 +3,9 @@
  * Session-first-tool nudge + flag management for GitNexus hooks.
  */
 import fs from 'node:fs';
-import { howToRun } from './how-to-run.mjs';
 import os from 'node:os';
 import path from 'node:path';
-import { playbookForHint, mcpReadContext, repoName, clearDenyCache } from './hook-helpers.mjs';
-
-/**
- * Which feature modules the user actually chose, per the install manifest.
- *
- * The manifest is the ONLY authoritative record. Probing for a lib file instead does not work:
- * `session-primer.mjs` (needed by north-stars and task-core) imports `check-staleness.mjs`, so
- * `coreLibClosure()` absorbs the whole staleness chain into core and ships it even when GitNexus
- * was declined. File presence therefore says "core pulled this in", never "the user wants this".
- *
- * @returns {Set<string>|null} chosen features, or null when unknowable (no manifest, unreadable,
- *   or a pre-1.0.3 manifest with no `features` field) — callers must then fall back, never assume.
- */
-export function installedFeatures(root) {
-  // Newest first: during an interrupted upgrade both can exist, and the legacy copy is the stale
-  // one — reading it would report a module selection the user already changed.
-  for (const rel of ['.bearing/manifest.json', '.gitnexus/agent-kit-manifest.json']) {
-    try {
-      const m = JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8'));
-      if (Array.isArray(m.features)) return new Set(m.features);
-    } catch {
-      /* missing or malformed → try the next location, then fall back */
-    }
-  }
-  return null;
-}
-
-/**
- * Is the GitNexus enforcement module installed? Manifest first; for pre-1.0.3 installs (no
- * `features` field) fall back to the file probe, which was accurate back when every install
- * included GitNexus. Fail toward ENABLED: an old GitNexus repo silently losing graph-first
- * discipline is a worse regression than an intel-only repo seeing one stale line.
- */
-export function graphFeatureEnabled(root) {
-  const features = installedFeatures(root);
-  if (features) return features.has('gitnexus');
-  return fs.existsSync(path.join(root, '.bearing/lib/check-staleness.mjs'));
-}
+import { repoName } from './hook-helpers.mjs';
 
 export function sessionPaths(root) {
   const stateDir = path.join(root, '.bearing');
@@ -53,10 +15,13 @@ export function sessionPaths(root) {
     promptHint: path.join(stateDir, '.gitnexus-prompt-hint.json'),
     refreshPendingFlag: path.join(stateDir, '.gitnexus-refresh-pending.flag'),
     refreshFailedFlag: path.join(stateDir, '.gitnexus-refresh-failed.flag'),
+    // Written only by the retired gates (NS-28). Still named so a new session deletes what an
+    // upgraded install left behind; nothing writes them any more.
     mcpUsedFlag: path.join(stateDir, '.gitnexus-mcp-used.flag'),
     impactUsedFlag: path.join(stateDir, '.gitnexus-impact-used.flag'),
     detectUsedFlag: path.join(stateDir, '.gitnexus-detect-used.flag'),
     stalenessCacheFile: path.join(stateDir, '.gitnexus-staleness-cache.json'),
+    denyCacheFile: path.join(stateDir, '.gitnexus-deny-cache.json'),
     scorecardFile: path.join(stateDir, '.gitnexus-scorecard.json'),
     fallbackFlag: path.join(stateDir, '.gitnexus-fallback.json'),
     northStarCounter: path.join(stateDir, '.gitnexus-northstar-counter.json'),
@@ -244,7 +209,6 @@ export function northStarsDigest(root, max = 0) {
  * @returns {number} the count AFTER this call
  */
 export function bumpNorthStarCounter(root, reset = false, key = null) {
-  const { stateDir, northStarCounter } = sessionPaths(root);
   // ONE COUNTER PER CHAT, not per repo — the same correction the task-core was given, and for the
   // same reason: several agent sessions in one repository is the normal case, not the edge one.
   // A single shared counter meant every concurrent agent bumped it, so with N sessions the repo
@@ -253,53 +217,177 @@ export function bumpNorthStarCounter(root, reset = false, key = null) {
   // bumps per one of the observing agent's own tool calls, and 391 anchors in a single repo's
   // telemetry against 8 impact gates fleet-wide. Its neighbours `.bearing-microscope-<key>.json`
   // and `.bearing-consult-<key>.flag` were already keyed; this one was not.
-  const counterPath = key
-    ? path.join(stateDir, `.gitnexus-northstar-counter-${sessionKey(key)}.json`)
-    : northStarCounter;
-  let n = 0;
-  if (!reset) {
-    try {
-      n = JSON.parse(fs.readFileSync(counterPath, 'utf8')).n || 0;
-    } catch {
-      n = 0;
-    }
-  }
-  const next = reset ? 0 : n + 1;
-  try {
-    fs.mkdirSync(stateDir, { recursive: true });
-    // Two PostToolUse hooks run per tool call and both touch session state. Write-then-rename so a
-    // concurrent reader never observes a partially-written file. (Lost updates are still possible
-    // and are benign here: the anchor fires a little later than configured.)
-    const tmp = `${counterPath}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify({ n: next }));
-    fs.renameSync(tmp, counterPath);
-  } catch {
-    /* best-effort — a missing counter just means we anchor again sooner */
-  }
+  const state = readNorthStarState(root, key);
+  const next = reset ? 0 : state.n + 1;
+  writeNorthStarState(root, key, { ...state, n: next });
   return next;
 }
 
-// ── Classical fallback escape hatch ──────────────────────────────────────────
-// When GitNexus returns wrong / suspicious / incomplete info while the index is
-// FRESH, graph-first enforcement would otherwise trap the agent. grantClassicalFallback
-// opens a BOUNDED, REASONED, LOGGED window where classical Grep/Read/shell are allowed
-// (evaluateStalePolicy honours it → phase classical_fallback). It is surfaced in the
-// session brief + `gitnexus:status`, so it can never be a silent lazy bypass.
+function northStarStatePath(root, key) {
+  const { stateDir, northStarCounter } = sessionPaths(root);
+  return key
+    ? path.join(stateDir, `.gitnexus-northstar-counter-${sessionKey(key)}.json`)
+    : northStarCounter;
+}
 
-const FALLBACK_TTL_MS = 15 * 60 * 1000; // 15 min, then enforcement auto-resumes
+/** @returns {{n: number, ctx: number|null}} calls since the last anchor, context size at the last full one */
+function readNorthStarState(root, key) {
+  try {
+    const j = JSON.parse(fs.readFileSync(northStarStatePath(root, key), 'utf8'));
+    return { n: Number(j.n) || 0, ctx: Number.isFinite(j.ctx) ? j.ctx : null };
+  } catch {
+    return { n: 0, ctx: null };
+  }
+}
 
-/** @param {string} root @param {string} reason @param {number} [ttlMs] */
-export function grantClassicalFallback(root, reason = '', ttlMs = FALLBACK_TTL_MS) {
-  const { stateDir, fallbackFlag } = sessionPaths(root);
-  fs.mkdirSync(stateDir, { recursive: true });
-  fs.writeFileSync(
-    fallbackFlag,
-    JSON.stringify(
-      { at: new Date().toISOString(), reason: String(reason).slice(0, 300), ttlMs },
-      null,
-      2,
-    ),
-  );
+function writeNorthStarState(root, key, state) {
+  const p = northStarStatePath(root, key);
+  try {
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    // Two PostToolUse hooks run per tool call and both touch session state. Write-then-rename so a
+    // concurrent reader never observes a partially-written file. (Lost updates are still possible
+    // and are benign here: the anchor fires a little later than configured.)
+    const tmp = `${p}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(state));
+    fs.renameSync(tmp, p);
+  } catch {
+    /* best-effort — a missing counter just means we anchor again sooner */
+  }
+}
+
+/**
+ * The context size, in tokens, when the last FULL anchor fired (or when this chat was first seen).
+ * @returns {number|null} null when no baseline has been recorded yet
+ */
+export function northStarBaseline(root, key = null) {
+  return readNorthStarState(root, key).ctx;
+}
+
+/** Record the context size a full anchor just re-established (or a fresh baseline). */
+export function setNorthStarBaseline(root, key, ctx) {
+  const state = readNorthStarState(root, key);
+  writeNorthStarState(root, key, { ...state, ctx });
+}
+
+/**
+ * How many tokens the agent's context holds right now, read from the newest main-chain `usage`
+ * record in the Claude Code transcript.
+ *
+ * This is the SIZE of the context, which the transcript records on every assistant turn — not the
+ * WINDOW, which it never records (NS-19). The anchor needs only the size: how much has been added
+ * since the north-stars were last in front of the agent is what dilutes them. A count of tool calls
+ * was a poor stand-in — measured on this repo, 25 calls added anywhere from 25k (p10) to 65k (p90)
+ * tokens, and up to 155k.
+ *
+ * NS-7: this runs on every tool call, so it reads a bounded TAIL of the file, never the whole of it.
+ * NS-8: any surprise — no file, a format that changed, no usage line in the tail — returns null and
+ * the caller falls back to counting calls.
+ * @param {string} transcriptPath
+ * @param {number} tailBytes
+ * @returns {number|null}
+ */
+export function transcriptContextTokens(transcriptPath, tailBytes = 1 << 20) {
+  if (!transcriptPath) return null;
+  let fd;
+  try {
+    fd = fs.openSync(transcriptPath, 'r');
+    const size = fs.fstatSync(fd).size;
+    const len = Math.min(size, tailBytes);
+    const buf = Buffer.alloc(len);
+    fs.readSync(fd, buf, 0, len, size - len);
+    const lines = buf.toString('utf8').split('\n');
+    // The first line of the tail is usually cut mid-record; JSON.parse rejects it and we move on.
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const l = lines[i];
+      if (!l.includes('"usage"')) continue;
+      let rec;
+      try {
+        rec = JSON.parse(l);
+      } catch {
+        continue;
+      }
+      // A subagent's turns describe ITS context, not this agent's.
+      if (rec.isSidechain) continue;
+      const u = rec.message?.usage;
+      if (!u) continue;
+      const total =
+        (Number(u.input_tokens) || 0) +
+        (Number(u.cache_read_input_tokens) || 0) +
+        (Number(u.cache_creation_input_tokens) || 0);
+      if (total > 0) return total;
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        /* already closed */
+      }
+    }
+  }
+}
+
+// Words too common to say what a sentence is ABOUT. Kept short on purpose: an over-eager list
+// removes domain words, and a missed common word only adds a little noise to every score equally.
+const NS_STOPWORDS = new Set(
+  ('that this with from have when what which their there they them then than into only also ' +
+    'each other were will your been being here same after before about because where while ' +
+    'should would could these those does just more must never every always any all not but ' +
+    'for the and are was its can how why who our out own one two use used using has had you ' +
+    'get got let put see new old way too may now off per via yes did don isn doesn')
+    .split(' '),
+);
+
+// A crude stem, so "registered" meets "registration" and "subagents" meets "subagent". It only has
+// to make two forms of one word collide; it never has to produce a real word.
+function stem(w) {
+  return w.replace(/(?:ations?|ings?|ed|es|s)$/, '').replace(/(.)\1$/, '$1') || w;
+}
+
+function contentWords(text) {
+  const out = new Set();
+  // Three letters is the floor: "npm", "git", "tsx" carry meaning here.
+  for (const w of String(text).toLowerCase().match(/[a-z][a-z0-9_]{2,}/g) || []) {
+    if (!NS_STOPWORDS.has(w)) out.add(stem(w));
+  }
+  return out;
+}
+
+/**
+ * The north-stars that what the agent just WROTE is about — so the anchor after a doc write can
+ * carry three relevant claims instead of all of them.
+ *
+ * Scored by shared content words, plus a large bonus for an explicit `NS-#` in the text: an agent
+ * that cites one is telling you exactly which it is relying on. This is lexical, so it can miss a
+ * north-star that applies in different words; the periodic FULL anchor is the backstop for that.
+ * @param {string[]} lines full NS-# lines (from northStarsDigest)
+ * @param {string} text what was written
+ * @param {{max?: number, minScore?: number}} [opts]
+ * @returns {string[]} the matching lines, most relevant first; [] when nothing clears the bar
+ */
+export function relevantNorthStars(lines, text, { max = 4, minScore = 2.5 } = {}) {
+  const words = contentWords(text);
+  const cited = new Set((String(text).match(/\bNS-\d+\b/g) || []).map((s) => s.toUpperCase()));
+  const lineWords = lines.map(contentWords);
+  // A word in every north-star says nothing about which one applies; a word in one says a lot.
+  // And a plain overlap count ranks the LONGEST north-star first for any long document — measured
+  // on this repo, the longest one topped all five real docs tried. So: rare words weigh more, and a
+  // line's score is divided by the square root of its length.
+  const df = new Map();
+  for (const ws of lineWords) for (const w of ws) df.set(w, (df.get(w) || 0) + 1);
+  const scored = [];
+  lines.forEach((line, i) => {
+    const id = (line.match(/^NS-\d+/) || [''])[0].toUpperCase();
+    let overlap = 0;
+    for (const w of lineWords[i]) if (words.has(w)) overlap += Math.log((lines.length + 1) / df.get(w));
+    const score = (cited.has(id) ? 100 : 0) + overlap / Math.sqrt(Math.max(lineWords[i].size, 1) / 10);
+    if (score >= minScore) scored.push({ line, score, i });
+  });
+  scored.sort((a, b) => b.score - a.score || a.i - b.i);
+  return scored.slice(0, max).map((s) => s.line);
 }
 
 // ── Fallback → telemetry bridge (a "where did GitNexus fail" report log) ──────
@@ -373,74 +461,10 @@ export function readFallbackReports(root) {
   return out;
 }
 
-/** @param {string} root */
-export function revokeClassicalFallback(root) {
-  try {
-    fs.unlinkSync(sessionPaths(root).fallbackFlag);
-  } catch {
-    /* ignore */
-  }
-}
-
 /**
- * Active classical-fallback grant, or null. Auto-expires (and self-cleans) after ttlMs.
- * @param {string} root
- * @returns {{ reason: string, remainingMs: number, expiresAt: string } | null}
- */
-export function fallbackGrant(root) {
-  let rec;
-  try {
-    rec = JSON.parse(fs.readFileSync(sessionPaths(root).fallbackFlag, 'utf8'));
-  } catch {
-    return null;
-  }
-  const startedAt = Date.parse(rec.at);
-  if (!Number.isFinite(startedAt)) return null;
-  const ttl = typeof rec.ttlMs === 'number' ? rec.ttlMs : FALLBACK_TTL_MS;
-  const remainingMs = startedAt + ttl - Date.now();
-  if (remainingMs <= 0) {
-    revokeClassicalFallback(root);
-    return null;
-  }
-  return {
-    reason: rec.reason || '',
-    remainingMs,
-    expiresAt: new Date(startedAt + ttl).toISOString(),
-  };
-}
-
-/**
- * Record which GitNexus MCP tool the agent used, so edit/commit guards can enforce
- * "impact before edit" and "detect_changes before commit" once per session.
- * @param {string} root
- * @param {string} toolName e.g. "gitnexus_impact" / "mcp_gitnexus_detect_changes"
- */
-export function setMcpToolUsed(root, toolName) {
-  const { stateDir, mcpUsedFlag, impactUsedFlag, detectUsedFlag } = sessionPaths(root);
-  fs.mkdirSync(stateDir, { recursive: true });
-  const stamp = new Date().toISOString();
-  try {
-    fs.writeFileSync(mcpUsedFlag, stamp);
-    if (/impact|rename/i.test(toolName)) fs.writeFileSync(impactUsedFlag, stamp);
-    if (/detect_changes|detect-changes/i.test(toolName)) fs.writeFileSync(detectUsedFlag, stamp);
-  } catch {
-    /* best effort */
-  }
-}
-
-/** @param {string} root */
-export function isImpactUsed(root) {
-  return fs.existsSync(sessionPaths(root).impactUsedFlag);
-}
-
-/** @param {string} root */
-export function isDetectUsed(root) {
-  return fs.existsSync(sessionPaths(root).detectUsedFlag);
-}
-
-/**
- * Lightweight enforcement scorecard — counts how often the kit redirected the agent
- * from a lazy pattern to the graph. Surfaced in agent-brief / `gitnexus:scorecard`.
+ * Session scorecard — counts what the hooks did this session (nudges shown, re-anchors,
+ * compactions). Surfaced in agent-brief and `bearing:scorecard`. Older sessions also hold the
+ * retired gates' redirect counts.
  * @param {string} root
  * @param {string} key
  */
@@ -462,76 +486,6 @@ export function bumpScore(root, key) {
   } catch {
     /* best effort — never block a tool on telemetry */
   }
-}
-
-/** @param {string} root */
-/**
- * Is the enforcement layer earning its keep, or is it just getting in the way?
- *
- * The kit collects every number needed to answer that and never asked the question. A real session
- * logged 60 graph calls against 49 grep redirects and 8 read redirects — the gates were the
- * dominant interaction, not the graph — and nothing surfaced it. The operator only found out
- * because an agent wrote a report by hand.
- *
- * Deliberately conservative: it stays silent below a traffic floor (early ratios are noise), and
- * every finding names the concrete knob to turn. A diagnosis nobody can act on is just another
- * unactionable message (NS-6).
- *
- * @param {Record<string, number>} counts scorecard counts
- * @returns {{ level: 'warn'|'info', headline: string, advice: string }[]}
- */
-export function diagnoseEnforcement(counts = {}) {
-  const n = (k) => Number(counts[k] ?? 0);
-  const redirects = n('grepRedirects') + n('readRedirects');
-  const graphCalls = n('graphCalls');
-  const findings = [];
-  if (redirects + graphCalls < 15) return findings; // too little traffic to mean anything
-
-  // Not `redirects > graphCalls`: a real reported session ran 57 redirects against 60 graph calls
-  // and read as "the gates are the dominant interaction" to the operator, yet a strict majority
-  // rule stays silent on it. What matters is that enforcement is a large SHARE of the session.
-  if (redirects >= graphCalls * 0.75) {
-    findings.push({
-      level: 'warn',
-      headline:
-        `Enforcement is ${Math.round((redirects / (redirects + graphCalls)) * 100)}% of graph interaction: ` +
-        `${redirects} redirects vs ${graphCalls} graph calls.`,
-      advice:
-        'This reads two ways and the log tells you which: the gates may be firing on work the graph ' +
-        'cannot answer (a real misfit), OR they may be doing exactly their job on an agent that ' +
-        `keeps reaching for grep first (working as intended). Check \`${howToRun('bearing:fallback-log')}\` ` +
-        '— recurring distrust of the same tool is the first case and is worth reporting upstream; ' +
-        'an empty log points at the second. Only downgrade to `"mode": "guide"` for the first.',
-    });
-  }
-  if (n('classicalFallbackGranted') >= 3) {
-    findings.push({
-      level: 'warn',
-      headline: `${n('classicalFallbackGranted')} classical-fallback grants — agents repeatedly distrusted the graph.`,
-      advice:
-        `Each grant is a logged failure report. Review with \`${howToRun('bearing:fallback-log')} --json\` ` +
-        'and send it upstream; a recurring shape there is a real coverage gap, not agent error.',
-    });
-  }
-  if (n('impactVerdictsQuestioned') >= 2) {
-    findings.push({
-      level: 'warn',
-      headline: `${n('impactVerdictsQuestioned')} impact verdicts had no resolvable callers.`,
-      advice:
-        'The pre-edit gate is grading changes on a caller set it could not resolve (DI/factory ' +
-        'seams, module consts). Confirm blast radius classically before edits in those areas.',
-    });
-  }
-  if (n('driftRefreshBlocks') >= 5) {
-    findings.push({
-      level: 'info',
-      headline: `${n('driftRefreshBlocks')} drift-refresh blocks — the drift gate is firing often.`,
-      advice:
-        'Expected during a large refactor. If it is constant, raise `driftRefreshThreshold` in ' +
-        '.bearing/hooks.json (default 3 uncommitted source edits).',
-    });
-  }
-  return findings;
 }
 
 export function readScorecard(root) {
@@ -687,9 +641,8 @@ export function isRefreshFailed(root) {
 }
 
 // ── Durable memory + compaction recovery ────────────────────────────────────
-// Context compaction (auto or manual) drops the middle of a conversation. The
-// per-session gate flags + a running memory file must survive it, so the agent
-// doesn't re-run cleared gates or lose task state after a compaction.
+// Context compaction (auto or manual) drops the middle of a conversation. Per-session state
+// (nudges already shown, counters) must survive it, so the agent is not re-nudged mid-task.
 
 const MEMORY_FILE = 'MEMORY.md';
 
@@ -707,9 +660,38 @@ export function memoryPath(root) {
 }
 
 /**
+ * When the project memory was last written: the newest `.md` in the memory directory, since a fact
+ * lives in its own file and the index changes only when a file is added. Bounded — one readdir and a
+ * stat per file — so it is safe on a hook path (NS-7). `newestMs` is null when there is no memory.
+ * @param {string} root
+ */
+export function memoryFreshness(root) {
+  const dir = path.dirname(memoryPath(root));
+  let newestMs = null;
+  try {
+    for (const name of fs.readdirSync(dir)) {
+      if (!name.endsWith('.md')) continue;
+      const m = fs.statSync(path.join(dir, name)).mtimeMs;
+      if (newestMs === null || m > newestMs) newestMs = m;
+    }
+  } catch {
+    /* no memory directory yet */
+  }
+  return { dir, newestMs };
+}
+
+/** "3 days", "5 hours", "12 minutes" — for a line an agent reads, not a timestamp it must parse. */
+export function humanAge(ms) {
+  const m = Math.max(0, Math.round(ms / 60000));
+  if (m < 120) return `${m} minute${m === 1 ? '' : 's'}`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h} hours`;
+  return `${Math.round(h / 24)} days`;
+}
+
+/**
  * Clear per-session state ONLY on a genuinely new session. A compaction/resume
- * is the SAME task continuing — clearing there would wipe satisfied gates and
- * re-block the agent mid-task.
+ * is the SAME task continuing — clearing there would re-arm nudges already shown.
  * @param {string} [source] Claude SessionStart source: startup|clear|compact|resume
  */
 export function shouldClearOnSource(source) {
@@ -744,13 +726,14 @@ export function clearSessionState(root) {
     detectUsedFlag,
     refreshFailedFlag,
     // refreshFailedFlag is deliberately NOT here. Everything else in this list is per-session —
-    // gates satisfied, nudges shown, counters — and resetting it for a new session is right.
+    // nudges shown, counters — and resetting it for a new session is right.
     // "The index could not be built" is not a fact about the session: an index does not repair
-    // itself because the user opened a new chat. Clearing it meant the pre-commit hook's warning
+    // itself because the user opened a new chat. Clearing it meant a failed refresh's warning
     // survived only until the next session, after which the agent went back to trusting a graph
     // that had failed to build. It is cleared where it is actually disproven — bearing-agent
     // passes `clear` on a successful refresh and `set-failed` on a failed one.
     stalenessCacheFile,
+    denyCacheFile,
     scorecardFile,
     fallbackFlag,
     northStarCounter,
@@ -765,6 +748,7 @@ export function clearSessionState(root) {
     impactUsedFlag,
     detectUsedFlag,
     stalenessCacheFile,
+    denyCacheFile,
     scorecardFile,
     fallbackFlag,
     // NB the north-stars DOC itself is never touched here (it's user-owned + committed) — only the
@@ -784,54 +768,6 @@ export function clearSessionState(root) {
       /* ignore */
     }
   }
-  clearDenyCache(root);
 }
 
-export function writePromptHint(root, hint) {
-  const { stateDir, promptHint } = sessionPaths(root);
-  fs.mkdirSync(stateDir, { recursive: true });
-  fs.writeFileSync(promptHint, JSON.stringify({ ...hint, at: new Date().toISOString() }, null, 2));
-}
-
-export function readPromptHint(root) {
-  const { promptHint } = sessionPaths(root);
-  try {
-    return JSON.parse(fs.readFileSync(promptHint, 'utf8'));
-  } catch {
-    return {};
-  }
-}
-
-/**
- * Returns nudge text once per session (sets primed flag).
- * @param {object} stale from check-staleness.mjs
- */
-export function firstToolNudge(root, stale) {
-  const { primedFlag } = sessionPaths(root);
-  if (fs.existsSync(primedFlag)) return null;
-
-  fs.mkdirSync(path.dirname(primedFlag), { recursive: true });
-  fs.writeFileSync(primedFlag, new Date().toISOString());
-
-  const hint = readPromptHint(root);
-  const repo = repoName(root);
-  const parts = [];
-
-  if (!stale?.fresh) {
-    const reason =
-      stale?.reason === 'missing_embeddings'
-        ? 'MISSING EMBEDDINGS: semantic query unavailable — '
-        : 'STALE INDEX: ';
-    parts.push(
-      `${reason}next Shell MUST be ${howToRun('bearing:agent-refresh')} (required_permissions: ["all"]). Includes --embeddings. Run yourself — never ask user to analyze.`
-    );
-  } else {
-    parts.push(`SESSION: ${mcpReadContext(repo)} OR ${howToRun('bearing:agent-brief')}`);
-  }
-
-  const playbook = playbookForHint(hint, repo);
-  if (playbook) parts.push(playbook);
-
-  return parts.join('\n');
-}
 

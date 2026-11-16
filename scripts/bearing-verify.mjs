@@ -11,7 +11,6 @@ const root = process.argv[2] ?? process.cwd();
 const jsonOut = process.argv.includes('--json');
 
 const ZED_PROFILE_KEY = 'zed-gitnexus';
-const ZED_PROFILE_NAME = 'Zed + GitNexus';
 const SKILLS_STORE = '.bearing/skills';
 
 // Newest first. The older paths stay readable because this script ships INTO the repo and can be
@@ -144,15 +143,13 @@ function checkPackageGates() {
   }
   try {
     const scripts = JSON.parse(fs.readFileSync(p, 'utf8')).scripts ?? {};
-    const ok =
-      Object.keys(scripts).some((k) => k.startsWith('bearing.__gate.')) &&
-      scripts['bearing:verify'] &&
-      scripts['bearing:agent-brief'];
+    // The id stays `pkg_gates` (CI and tests read it); the gate entries it once required are retired.
+    const ok = Boolean(scripts['bearing:verify'] && scripts['bearing:agent-brief']);
     return {
       id: 'pkg_gates',
       ok,
-      label: 'package.json gates',
-      detail: ok ? 'gated bearing:* scripts injected' : 'run kit install/update',
+      label: 'package.json scripts',
+      detail: ok ? 'bearing:* scripts present' : 'run kit install/update',
     };
   } catch {
     return { id: 'pkg_gates', ok: false, label: 'package.json gates', detail: 'invalid JSON' };
@@ -228,6 +225,11 @@ function checkModuleDelivery() {
     tsjs: 'bearing-tsjs',
     frontend: 'bearing-frontend',
     react: 'bearing-react',
+    astgrep: 'bearing-astgrep',
+    history: 'bearing-history',
+    knip: 'bearing-knip',
+    mergiraf: 'bearing-mergiraf',
+    publish: 'bearing-publish-visuals',
   };
   // Modules whose payload is a FILE rather than a skill. Without this the loop below skips them
   // entirely and reports them as fine when nothing landed — the same failure 1.1.2 fixed for
@@ -270,9 +272,8 @@ function checkModuleDelivery() {
 
 async function checkRetiredHookKeys() {
   // A setting that silently does nothing looks handled, which is why it outlasts the feature it
-  // configured. NS-19 retired the context-fullness family, but hooks.json is seed-once — an old
-  // install's own comment still worked-examples `"contextWindowTokens": 1000000`, so following the
-  // documentation configures a no-op and nothing says so.
+  // configured. hooks.json is seed-once, so a retired key stays wherever someone set it; an update
+  // drops the ones still holding bearing's own seeded value, and this names the rest.
   let inUse = [];
   try {
     const mod = await import(pathToFileURL(path.join(root, '.bearing/lib/hook-helpers.mjs')).href);
@@ -285,13 +286,13 @@ async function checkRetiredHookKeys() {
     ok: inUse.length === 0,
     label: 'Hook config has no retired keys',
     detail: inUse.length
-      ? `${inUse.map((k) => `${k.key} (${k.file})`).join(', ')} — retired by NS-19, read by nothing. Remove them; the window is not measurable at runtime.`
+      ? `read by nothing — remove: ${inUse.map((k) => `${k.key} in ${k.file} (${k.why ?? 'retired'})`).join('; ')}`
       : 'no dead settings',
   };
 }
 
 function checkSkillsStore() {
-  const store = path.join(root, SKILLS_STORE, 'bearing-workspace/SKILL.md');
+  const store = path.join(root, SKILLS_STORE, 'bearing-gitnexus/SKILL.md');
   return {
     id: 'skills_store',
     ok: fs.existsSync(store),
@@ -301,7 +302,7 @@ function checkSkillsStore() {
 }
 
 function checkSkillSymlinks(runtime) {
-  const zedOk = fs.existsSync(path.join(root, '.agents/skills/bearing-workspace/SKILL.md'));
+  const zedOk = fs.existsSync(path.join(root, '.agents/skills/bearing-gitnexus/SKILL.md'));
   // The `else` branch asserted the ZED directory for every runtime that was not Cursor — so a
   // Claude-only install failed on "missing .agents/skills symlinks", a Zed path it was never
   // supposed to have. Check the link dirs the runtimes ACTUALLY installed, and when none of them
@@ -309,7 +310,7 @@ function checkSkillSymlinks(runtime) {
   // sync-cursor-bearing-teaching.sh links `.claude/skills` for a claude runtime too, so a
   // claude-only repo DOES have a farm to check. Dropping Zed's path for it (correct) also dropped
   // Claude's (not), leaving this check vacuous on exactly the install it was rewritten for.
-  const claudeOk = fs.existsSync(path.join(root, '.claude/skills/bearing-workspace/SKILL.md'));
+  const claudeOk = fs.existsSync(path.join(root, '.claude/skills/bearing-gitnexus/SKILL.md'));
   const want = [];
   if (wantsZed(runtime)) want.push(['.agents/skills', zedOk]);
   if (wantsClaude(runtime)) want.push(['.claude/skills', claudeOk]);
@@ -340,15 +341,18 @@ function checkZed() {
     label: 'GitNexus MCP (Zed)',
     detail: zedCfg.context_servers?.gitnexus ? 'context_servers.gitnexus' : 'missing',
   });
+  // bearing no longer writes a Zed profile: the default Write profile enables every context server.
+  // The one it used to write enabled NO built-in tool (Zed profiles are allowlists), so what is
+  // checked now is that it is gone — unless the user turned tools on, which makes it theirs.
+  const oldProfile = zedCfg.agent?.profiles?.[ZED_PROFILE_KEY];
+  const toolless = Boolean(oldProfile) && !Object.values(oldProfile.tools ?? {}).includes(true);
   checks.push({
     id: 'zed_profile',
-    ok: Boolean(zedCfg.agent?.profiles?.[ZED_PROFILE_KEY]),
+    ok: !toolless,
     label: 'Zed agent profile',
-    detail: zedCfg.agent?.profiles?.[ZED_PROFILE_KEY]
-      ? `"${ZED_PROFILE_NAME}"`
-      : zedCfg.agent?.profiles?.gitnexus
-        ? 'legacy key "gitnexus" — run kit update'
-        : 'missing',
+    detail: toolless
+      ? 'the old "Zed + GitNexus" profile has no file tools — run kit update to remove it'
+      : 'none needed (gitnexus tools are in the default Write profile)',
   });
   if (zedCfg.agent?.profiles?.gitnexus) {
     checks.push({
@@ -454,7 +458,7 @@ async function printHuman(report) {
 
   const steps = [await run('bearing:health')];
   if (wantsZed(report.runtime)) {
-    steps.unshift('Restart Zed — trust worktree; profile "Zed + GitNexus"');
+    steps.unshift('Restart Zed — trust the worktree (.agents/skills load only on trusted repos)');
   }
   ui.nextSteps(steps);
   return 0;

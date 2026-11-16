@@ -3,53 +3,6 @@
     "GITNEXUS_REPO": "Event-Horizon"
   },
   "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Grep|Glob",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-grep-guard.mjs').href)\""
-          }
-        ]
-      },
-      {
-        "matcher": "Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-read-guard.mjs').href)\""
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-edit-guard.mjs').href)\""
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-bash-guard.mjs').href)\""
-          }
-        ]
-      },
-      {
-        "matcher": "mcp__gitnexus__.*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-mcp-guard.mjs').href)\""
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "hooks": [
@@ -83,31 +36,16 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-minion-nudge.mjs').href)\""
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-consult-nudge.mjs').href)\""
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-microscope-nudge.mjs').href)\""
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-northstar-anchor.mjs').href)\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"import(require('url').pathToFileURL((process.env.CLAUDE_PROJECT_DIR||process.cwd())+'/.claude/hooks/bearing-memory-nudge.mjs').href)\""
           }
         ]
       },

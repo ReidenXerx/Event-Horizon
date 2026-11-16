@@ -1,6 +1,6 @@
 ---
 name: bearing-microscope
-description: "Deep multi-lens audit ('microscope waves') for MILESTONE moments — feature done / big-task checkpoint / shared-code refactor / pre-ship, or when asked to 'audit / find real bugs / is this solid'. NOT for small localized changes. Goes beyond cascade code-review: it opinionates (relevance, soundness, over-engineering) as a senior domain expert, verifies findings adversarially, and iterates in waves. Examples: \"microscope this\", \"audit before we ship\", \"find the real oversights\", \"deep review this refactor\"."
+description: "Deep multi-lens audit ('microscope waves'), run when the USER asks for one — \"microscope this\", \"audit before we ship\", \"is this solid?\", \"find the real bugs\", \"deep review this refactor\". Do not start it on your own initiative. Goes beyond cascade code-review: it opinionates (relevance, soundness, over-engineering) as a senior domain expert, verifies findings adversarially, and iterates in waves."
 ---
 
 # Microscope waves — deep, opinionated, verified audit
@@ -10,17 +10,17 @@ description: "Deep multi-lens audit ('microscope waves') for MILESTONE moments �
 
 A zero is not absence; a near-0.5 `r.confidence` edge is a lead, not proof (~92% of `USES`); a count
 can be a floor — `impact` says which in `epistemic`. Before a conclusion that matters, confirm with a
-scoped `Grep` (allowed here, not a gate violation) and say which check you ran.
+scoped `Grep` and say which check you ran.
 <!-- END GENERATED: graph-uncertainty -->
 
 
 This is **not** a cascade code review or a linter pass. A microscope wave scrutinizes a target from many independent angles, **has real opinions** (is this even needed? is this the right approach? is it over-engineered?), verifies every finding **against real logic — not "does it run"**, and iterates in numbered **waves** until clean. With the GitNexus module installed it is the power-composition of that whole toolset; without it the same routine runs on a classically-built map.
 
-## When to run (trigger) — and when NOT (scope gate)
+## When to run — the user asks — and how much (scope gate)
 
-Fire at **milestone boundaries**: a feature is "done" / pre-PR / pre-ship · a checkpoint in a large multi-step task · after a refactor touching shared/hub code · the user asks to "audit / review deeply / find real bugs / is this solid?".
+**The user starts it**: "microscope this", "audit before we ship", "is this solid?", "find the real bugs". That is the trigger, and the only one. A review panel the user did not ask for costs them time and tokens they did not choose to spend — and measured on sonnet, an agent left to decide never needed one (`eval/intel/REPORT-HARD.md`).
 
-**Scope gate (avoid harm):** run the full waves only when the work is *substantial* — multi-file, OR touches a hub (`impact` blast-radius with the graph; `git diff --stat` plus who-imports-this without it), OR high-risk path. A small localized change → **skip**, or run one quick lens. Don't fan out six agents on a one-file fix. This is a **capability you invoke**, not a mandatory gate — use judgment.
+**Scope gate (avoid harm):** run the full waves only when the work is *substantial* — multi-file, OR touches a hub (`impact` blast-radius with the graph; `git diff --stat` plus who-imports-this without it), OR high-risk path. A small localized change → **skip**, or run one quick lens. Don't fan out six agents on a one-file fix. When the user asked for it on a small change, say it is small and run one quick lens rather than the full waves.
 
 ## Two KINDS of lenses (not a fixed list)
 
@@ -35,11 +35,12 @@ Kind B is what separates this from cascade review — a linter never asks *"why 
 
 ## The routine (one wave)
 
-> **With or without the graph.** Microscope does not require GitNexus. Steps 0 and 2 have a graph
-> path and a classical path; every other step is identical. Use the classical path whenever the
-> graph module is not installed, the index is stale and cannot be refreshed, or a graph call
-> returns nothing — and **say which path you used**, because the map's completeness bounds how much
-> the wave can claim to have covered.
+> **Classical by default; the graph when the user asks for it.** Microscope does not need GitNexus.
+> Steps 0 and 2 have a graph path and a classical path; every other step is identical. Take the
+> graph path only when the user asked for the graph, the module is installed, and the index is in
+> scope and current. Otherwise take the classical path, including when a graph call returns
+> nothing — and **say which path you used**, because the map's completeness bounds how much the wave
+> can claim to have covered.
 
 ```
 0. SCOPE-GATE: substantial? If not → skip or one lens.
@@ -65,10 +66,9 @@ Kind B is what separates this from cascade review — a linter never asks *"why 
              repeat until clean. Record each pass to memory as a handoff.
 ```
 
-> **Graph module installed and the index is stale?** Refresh it first with the
-> `bearing:agent-refresh` script — the graph map is only as good as the index. If that script is
-> not in this repo's `package.json`, the graph module is not installed: take the classical path
-> above rather than going looking for it.
+> **Asked for the graph, but the index is stale?** Say how far behind it is and ask whether to
+> refresh — a refresh can take minutes on a large repo, so that is the user's call. Until it is
+> refreshed, take the classical path.
 
 <!-- BEGIN GENERATED: anchored-spawn — bearing regenerates this block; edits here are replaced on update -->
 ### Anchored spawn — how to send work out
@@ -87,10 +87,10 @@ one that sees all of them pays that token cost once per agent.
 **3. Bounds.** State the unit, what to return, and **what NOT to decide**. Whatever you leave
 unstated, a subagent will decide anyway, using context it does not have.
 
-**4. The same tool discipline you follow.** If this repo has the GitNexus module, a subagent must
-use the graph — `query` to orient, `cypher` for structure — not grep. A subagent grepping for call
-sites is doing the exact thing the gates exist to redirect, one level down where no gate can see it,
-and what it brings back is the weaker kind of evidence.
+**4. The same tools you would use.** Grep and Read are the defaults. Hand a subagent the GitNexus
+graph only when the user asked for the graph in this task, and say so in its brief: a subagent
+never saw that request, so it cannot know the graph was wanted. When it does use the graph, its
+zeros and counts carry the same caveats yours do.
 
 **5. Parallel where the runtime allows it**, sequential where it does not. Claude Code can run them
 concurrently; treat that as an optimisation, never as a requirement — the routine must produce the
@@ -101,10 +101,12 @@ empty-but-confused has REDUCED YOUR COVERAGE, and silence reads as "I checked ev
 it, or say plainly what went unchecked. Never let the count of agents you spawned stand in for the
 count that actually reported.
 
-**7. Tier follows the return contract.** A subagent that must REASON needs a capable model; one
-that only GATHERS does not. Decide the tier from what you are asking it to return, never from
-what the task feels like — and if a gatherer seems to need a smarter model, you have asked it to
-reason and should take that part back.
+**7. Every minion runs on the MIDDLE tier** of your model family — `sonnet` for Anthropic, or the
+`minionModel` set in `.bearing/hooks.json` / `hooks.local.json`. That holds for minions that
+gather and minions that apply, because neither decides anything (NS-24). The tier follows the return
+contract, never how important the task feels: if a minion seems to need a smarter model, you handed
+it a decision — take that part back. The one subagent that runs on your main model is one whose
+return IS the reasoning, a microscope lens, and that is not a minion.
 
 **8. Spot-check before you trust.** Open at least one cited `file:line` per subagent and confirm it
 says what the report claims. A fabricated citation is the one failure the return shape cannot catch

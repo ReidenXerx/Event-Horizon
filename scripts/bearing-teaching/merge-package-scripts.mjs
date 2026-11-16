@@ -21,8 +21,7 @@ export {
   allManagedScriptKeys,
   mergeGitnexusScripts,
   mergeIntoPackageJson,
-  findGate,
-  gateCommentKey,
+  isRetiredScript,
 } from './script-gates.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -63,8 +62,8 @@ async function resolveGitnexusCmd() {
  * be hidden by `.git/info/exclude`.
  *
  * The manifest is the only record of the choice, and it is what refresh-cli.mjs already reads.
- * Guarding HERE rather than at the call site covers every caller — setup, install-from-bundle, or
- * someone running the command by hand.
+ * Guarding HERE rather than at the call site covers every caller — setup, or someone running the
+ * command by hand.
  */
 function isStealth() {
   try {
@@ -104,7 +103,7 @@ async function main() {
       gitnexusCmd,
     });
     console.log(
-      `GitNexus npm scripts: ${stats.added} added, ${stats.updated} updated, ${stats.unchanged} unchanged (${stats.total} total incl. gate hints)` +
+      `GitNexus npm scripts: ${stats.added} added, ${stats.updated} updated, ${stats.unchanged} unchanged (${stats.total} total)` +
         (gitnexusCmd ? ` — via \`${gitnexusCmd}\`` : '')
     );
     return;

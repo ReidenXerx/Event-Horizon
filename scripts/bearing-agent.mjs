@@ -28,19 +28,23 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  */
 const labels = {
   graphCalls: "GitNexus MCP calls",
-  grepRedirects: "Grep → graph redirects",
-  readRedirects: "Large Read → graph redirects",
-  impactGate: "Impact-before-edit gates",
-  commitGate: "detect_changes-before-commit gates",
-  editStaleBlocks: "Stale-edit blocks",
+  // Counted only by the retired gates (NS-28) — present in telemetry from before an upgrade.
+  grepRedirects: "Grep → graph redirects (retired gate)",
+  readRedirects: "Large Read → graph redirects (retired gate)",
+  impactGate: "Impact-before-edit gates (retired)",
+  commitGate: "detect_changes-before-commit gates (retired)",
+  editStaleBlocks: "Stale-edit blocks (retired)",
+  classicalFallbackGranted: "Classical-fallback grants (retired)",
+  driftRefreshBlocks: "Graph-drift refresh blocks (retired)",
   compactions: "Context compactions",
-  classicalFallbackGranted: "Classical-fallback grants (GN distrusted)",
-  driftRefreshBlocks: "Graph-drift refresh blocks (edited since index)",
   taskCoreNudges: "Task-core nudges (edits since the core was last written)",
   northStarAnchors: "North-star re-anchors (mid-session drift guards)",
   impactVerdictsQuestioned: "Impact verdicts questioned (LOW from unresolved callers)",
   consultNudges: "Consult prompts (invent-vs-implement, at first edit)",
-  microscopeNudges: "Deep-review nudges (change grew multi-file)"
+  memoryNudges: "Memory nudges (at a merge, tag, release or publish)",
+  sessionWarnings: "Parallel-session warnings (another session edited the same file)",
+  microscopeNudges: "Deep-review nudges (change grew multi-file)",
+  graphFailureReports: "GitNexus failure reports filed"
 };
 
 const labelFor = (k) => labels[k] ?? k.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
@@ -99,9 +103,6 @@ const { inspectPersistence,
     .href
 );
 const {
-  grantClassicalFallback,
-  revokeClassicalFallback,
-  fallbackGrant,
   appendFallbackReport,
   readFallbackReports,
   northStarsPath,
@@ -179,17 +180,14 @@ if (cmd === "fallback") {
     );
     process.exit(2);
   }
-  grantClassicalFallback(ROOT, reason);
-  bumpScore(ROOT, "classicalFallbackGranted");
-  appendFallbackReport(ROOT, reason); // durable "where GitNexus fell short" report
-  const g = fallbackGrant(ROOT);
-  const mins = g ? Math.max(1, Math.round(g.remainingMs / 60000)) : 15;
-  console.log(`⚠ Classical fallback GRANTED for ~${mins} min — reason: ${reason}`);
-  console.log(
-    "  Classical Grep/Read/shell are now allowed. Re-confirm findings with the graph once GitNexus is reliable.",
-  );
-  console.log(`  Logged for review → ${howToRun('bearing:fallback-log')} (report these to the GitNexus devs).`);
-  console.log(`  End early: ${howToRun('bearing:fallback:off')}`);
+  // NS-15: the name stays, because agents and docs invoke it by name. What it USED to do — open a
+  // 15-minute window in which the GitNexus gates stood down — has nothing left to unlock: the gates are
+  // retired (NS-25, NS-28). What survives is the half that was always worth keeping: a durable report
+  // of where the graph fell short, captured with the index state, for the GitNexus developers.
+  bumpScore(ROOT, "graphFailureReports");
+  appendFallbackReport(ROOT, reason);
+  console.log(`Logged a GitNexus failure report: ${reason}`);
+  console.log(`  Review: ${howToRun('bearing:fallback-log')} (send these to the GitNexus devs).`);
   process.exit(0);
 }
 
@@ -243,20 +241,12 @@ if (cmd === "northstars") {
 }
 
 if (cmd === "fallback:off" || cmd === "unfallback") {
-  revokeClassicalFallback(ROOT);
-  console.log("Classical fallback ended — graph-first enforcement re-armed.");
+  // Kept as an alias (NS-15). There is no window to end any more.
+  console.log("Nothing to end — bearing no longer gates any tool, so there is no fallback window.");
   process.exit(0);
 }
 
 if (cmd === "status") {
-  const grant = fallbackGrant(ROOT);
-  if (grant) {
-    const mins = Math.max(1, Math.round(grant.remainingMs / 60000));
-    console.log(
-      `⚠ CLASSICAL FALLBACK active (${grant.reason || "GitNexus distrusted"}) — classical tools allowed for ~${mins} min more.`,
-    );
-    console.log(`  End early: ${howToRun('bearing:fallback:off')}\n`);
-  }
   const stale = loadStaleness();
   const systemTmp = tmpSpaceReport(ROOT);
   if (stale.fresh) {
@@ -328,7 +318,7 @@ if (cmd === "refresh") {
     if (rc !== 0) {
       markRefreshOutcome(false, `analyze exited ${rc} — index could not be refreshed`);
       console.error(
-        "\n==> Refresh FAILED. Classical Grep/Read are now permitted so you are not stuck.\n" +
+        "\n==> Refresh FAILED. The index was not updated: graph answers may be stale until a refresh succeeds.\n" +
           `    Fix the cause (network, disk, gitnexus install) and re-run: ${howToRun('bearing:agent-refresh')}\n` +
           `    If GitNexus itself is the problem: ${howToRun('bearing:fallback')} -- \"<what went wrong>\"`,
       );
@@ -339,9 +329,9 @@ if (cmd === "refresh") {
     //
     // It used to run under `run()`, which throws into the catch below and reports "agent-refresh
     // failed (ENOSPC or command error)" with exit 1. A zed install hit exactly that: the sync
-    // verified a Cursor rule the repo never had, and every refresh looked catastrophic. Since
-    // `bearing:agent-status` tells the agent to run this AUTONOMOUSLY, exit 1 reads as an unusable
-    // graph and can stop work that was never broken. The runtime bug is fixed; this makes the
+    // verified a Cursor rule the repo never had, and every refresh looked catastrophic. An agent
+    // running this for the user reads exit 1 as an unusable graph and can stop work that was never
+    // broken. The runtime bug is fixed; this makes the
     // whole class survivable.
     if (
       fs.existsSync(path.join(ROOT, "scripts/sync-cursor-bearing-teaching.sh"))
@@ -612,7 +602,7 @@ if (cmd === "review" || cmd === "pr-impact") {
     "3) If GitNexus has multi-branch indexes for base + head, use the branch parameter consistently.",
   );
   lines.push(
-    "4) HIGH/CRITICAL or security-sensitive changes → PDG impact + bearing-security-review.",
+    "4) HIGH/CRITICAL or security-sensitive changes → PDG impact and taint (explain); see bearing-gitnexus.",
   );
   lines.push(
     "5) Confirm affected_processes match PR intent; verify tests cover them.",
@@ -779,7 +769,7 @@ if (cmd === "scorecard") {
   );
   const card = readScorecard(ROOT);
   const counts = card.counts ?? {};
-  console.log("GitNexus enforcement scorecard (this session)");
+  console.log("bearing session scorecard (this session)");
   console.log(
     card.startedAt ? `  since ${card.startedAt}` : "  (no activity yet)",
   );
@@ -790,23 +780,10 @@ if (cmd === "scorecard") {
   const keys = Object.keys(counts).filter((k) => counts[k]);
   if (!keys.length) {
     console.log(
-      "  No enforcement events yet — run some tools in a chat first.",
+      "  Nothing counted yet — run some tools in a chat first.",
     );
   } else {
     for (const k of keys) console.log(`  ${labelFor(k)}: ${counts[k]}`);
-  }
-  // The numbers alone never told anyone whether the gates were helping. Say it outright.
-  const { diagnoseEnforcement } = await import(
-    pathToFileURL(path.join(ROOT, ".bearing/lib/session-primer.mjs")).href
-  );
-  const findings = diagnoseEnforcement(counts);
-  if (findings.length) {
-    console.log("");
-    console.log("Diagnosis");
-    for (const f of findings) {
-      console.log(`  ${f.level === "warn" ? "!" : "\u00b7"} ${f.headline}`);
-      console.log(`    -> ${f.advice}`);
-    }
   }
   process.exit(0);
 }
@@ -832,7 +809,7 @@ if (cmd === "stats") {
     process.stdout.write(JSON.stringify({ ...s, latestIndex }, null, 2) + "\n");
     process.exit(0);
   }
-  console.log("GitNexus telemetry — all sessions");
+  console.log("bearing telemetry — all sessions");
   if (!s.sessions) {
     console.log("  No sessions recorded yet. A session is archived on the NEXT");
     console.log("  session start; run some tools + start a new chat to accrue data.");
@@ -848,7 +825,7 @@ if (cmd === "stats") {
   console.log("  " + "metric".padEnd(width) + "total   avg/session");
   const keys = Object.keys(s.totals).filter((k) => s.totals[k]);
   if (!keys.length) {
-    console.log("  (no enforcement events across recorded sessions)");
+    console.log("  (nothing counted across recorded sessions)");
   } else {
     for (const k of keys) {
       console.log(
@@ -858,9 +835,14 @@ if (cmd === "stats") {
   }
   const gate = (s.totals.impactGate ?? 0) + (s.totals.commitGate ?? 0);
   const redir = (s.totals.grepRedirects ?? 0) + (s.totals.readRedirects ?? 0);
-  console.log(
-    `\n  Value: ${redir} lazy-search redirect(s) to the graph, ${gate} pre-edit/commit gate(s) fired.`,
-  );
+  // This line used to read "Value: N lazy-search redirect(s)". A redirect is an INTERCEPTION, not a
+  // result: it cannot tell a call sent to a better answer from a false deny (NS-27). Say what the
+  // numbers are, and put outcome numbers beside them where they exist.
+  if (redir || gate) {
+    console.log(
+      `\n  Interceptions (from before the gates were retired): ${redir} redirect(s), ${gate} gate(s) — counts of what the hooks did, not of what helped.`,
+    );
+  }
   console.log(`  Log: ${path.join(".bearing", ".gitnexus-telemetry.jsonl")}`);
   const fb = readFallbackReports(ROOT);
   if (fb.length) {

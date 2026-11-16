@@ -6,6 +6,10 @@ dist/
 
 # Built extension packages (npm run package:extension).
 release/
+.scratch-render/
+# A local Discord MCP server logs to a relative ./target/ when launched from
+# here, and those logs carry other people's messages. Never commit them.
+target/
 
 # bearing — generated local state (safe to remove via bearing-uninstall)
 .bearing/.gitnexus-*
@@ -13,6 +17,7 @@ release/
 .bearing/.task-core.md
 .bearing/task-cores/
 *.bearing-backup
+*.bearing-new
 .bearing/manifest.json
 .bearing/hooks.local.json
 .gitnexus/
@@ -21,8 +26,5 @@ release/
 docs/ARCHITECTURE.gitnexus.md
 .claude/skills/*
 !.claude/skills/gitnexus-area-*/
+.claude/worktrees/
 # --- end bearing ---
-.scratch-render/
-# A local Discord MCP server logs to a relative ./target/ when launched from
-# here, and those logs carry other people's messages. Never commit them.
-target/
