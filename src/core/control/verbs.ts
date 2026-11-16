@@ -85,6 +85,7 @@ import {
 
 import { ControlError } from "./controlError";
 import { COLLECTION_VERBS } from "./collectionVerbs";
+import { COLLECTION_INSTALL_VERBS } from "./collectionInstall";
 import { installRootFor } from "../stagingPath";
 import {
   CHOICE_WORDS,
@@ -3987,4 +3988,6 @@ export const VERBS: Record<string, Verb> = {
 
   // Collection build + draft upload: no publish verb, ever (collectionVerbs.ts).
   ...COLLECTION_VERBS,
+  // A whole collection install, through the install page's own session (collectionInstall.ts).
+  ...COLLECTION_INSTALL_VERBS,
 };

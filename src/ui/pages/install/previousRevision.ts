@@ -79,7 +79,7 @@ const isPlugin = (p: string): boolean => /\.(esp|esm|esl)$/i.test(p);
  * player switches away, so an inactive profile is read from that file.
  * Undefined when neither has an answer.
  */
-async function enabledPluginsOf(s: StateShape, gameId: string, profileId: string): Promise<string[] | undefined> {
+export async function enabledPluginsOf(s: StateShape, gameId: string, profileId: string): Promise<string[] | undefined> {
   if (s.settings?.profiles?.activeProfileId === profileId && s.loadOrder !== undefined) {
     return Object.entries(s.loadOrder)
       .filter(([, e]) => e?.enabled === true)

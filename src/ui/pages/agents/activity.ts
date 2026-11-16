@@ -105,6 +105,11 @@ const META: Record<string, Meta> = {
     doing: (b) => `${b["dryRun"] === true ? "Planning" : "Building"} ${String(b["name"])} ${String(b["version"])}`,
   },
   "collection.upload": { badge: "DRAFT", doing: (b) => `Uploading ${String(b["name"] ?? "a collection")} to Nexus as a draft` },
+  "collection.install": {
+    badge: "INSTALL",
+    doing: (b) => `${b["dryRun"] === true ? "Planning an install of" : "Installing"} ${String(b["path"] ?? "a collection").split(/[\\/]/).pop()}`,
+  },
+  "collection.installStatus": { badge: "READ", doing: () => "Reading the install's progress", read: true },
   "game.switchInstall": { badge: "SWITCH", doing: (b) => `Switching the game to ${String(b["path"])}` },
 };
 

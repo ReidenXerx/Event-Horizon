@@ -292,6 +292,16 @@ export type WizardAction =
   | { type: "set-optional-skipped"; compareKey: string; skipped: boolean }
   | { type: "set-keep-off"; compareKey: string; keep: boolean }
   | { type: "set-carry"; vortexModId: string; carry: boolean }
+  /**
+   * The control channel's collection.install with no receipt: the player's own
+   * mods from a profile they name, carried into the fresh profile the way an
+   * update carries them (alasdairn, 2026-11-17). Preview only.
+   */
+  | {
+      type: "agent-carry";
+      carry: Array<{ vortexModId: string; name: string }>;
+      previousEnabledPlugins?: string[];
+    }
   | { type: "pick-store"; store: GameStore; optionalSkipped: string[] }
   | { type: "back-from-confirm" }
   | { type: "ready-to-start" }
@@ -436,6 +446,16 @@ export function wizardReducer(
           ? { ...prev, keepOff: prev.keepOff.map((k) => (k.compareKey === action.compareKey ? { ...k, keep: action.keep } : k)) }
           : { ...prev, carry: prev.carry.map((c) => (c.vortexModId === action.vortexModId ? { ...c, carry: action.carry } : c)) };
       return { ...state, bundle: { ...state.bundle, previousRevision: next } } as WizardState;
+    }
+    case "agent-carry": {
+      if (state.kind !== "preview") return state;
+      const prev = state.bundle.previousRevision ?? { keepOff: [], refused: [], carry: [] };
+      const next = {
+        ...prev,
+        carry: action.carry.map((c) => ({ ...c, carry: true })),
+        ...(action.previousEnabledPlugins !== undefined ? { previousEnabledPlugins: action.previousEnabledPlugins } : {}),
+      };
+      return { ...state, bundle: { ...state.bundle, previousRevision: next } };
     }
     case "pick-store": {
       if (state.kind !== "preview") return state;

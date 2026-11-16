@@ -93,6 +93,26 @@ export type InstallSessionListener = (snapshot: InstallSessionSnapshot) => void;
 
 export type StaleReceiptResolution = "delete" | "keep" | "cancel";
 
+/** Which start-gate question is being asked; the agent answers by kind, never by wording. */
+export type AgentAskKind =
+  | "extractor-broken"
+  | "environment-blocked"
+  | "plugin-budget"
+  | "active-game-changed"
+  | "clean-plan"
+  | "clean-failed"
+  | "environment-check-crashed"
+  | "no-deployment-method"
+  | "auto-deploy"
+  | "auto-sort"
+  | "auto-sort-still-on";
+
+export type AgentAsk = { kind: AgentAskKind; title: string; text: string; actions: string[] };
+/** The label to press; undefined = dismissed without an answer (the gate stops). */
+export type AgentAnswerer = (ask: AgentAsk) => string | undefined;
+
+type DialogArgs = Parameters<NonNullable<types.IExtensionApi["showDialog"]>>;
+
 // ───────────────────────────────────────────────────────────────────────
 // Implementation
 // ───────────────────────────────────────────────────────────────────────
@@ -575,6 +595,14 @@ class InstallSession {
     this.dispatch({ type: "set-carry", vortexModId, carry });
   }
 
+  /** collection.install: carry the player's own mods from a profile they named (no receipt to read them from). */
+  setAgentCarry(carry: Array<{ vortexModId: string; name: string }>, previousEnabledPlugins?: string[]): void {
+    this.dispatch({
+      type: "agent-carry",
+      carry,
+      ...(previousEnabledPlugins !== undefined ? { previousEnabledPlugins } : {}),
+    });
+  }
   /** Pick one version of a mod offered in several: every other member of its group is left out. */
   pickVariant(memberKeys: readonly string[], picked: string): void {
     for (const key of memberKeys) {
@@ -679,7 +707,7 @@ class InstallSession {
       ...blocked.steps,
     ].join(NL);
 
-    const choice = await api.showDialog?.(
+    const choice = await this.ask(api, "extractor-broken", 
       "error",
       "Vortex cannot unpack mod archives",
       { text: body },
@@ -1203,7 +1231,7 @@ class InstallSession {
       const blocked = blockingChecks(report.checks);
       if (blocked.length > 0) {
         logFailure("warn", "install.blocked.environment", { gameId, checks: blocked.map((c) => c.id) });
-        await api.showDialog?.(
+        await this.ask(api, "environment-blocked", 
           "error",
           blocked.length === 1 ? blocked[0]!.title : `${facts.gameName} is not ready for this collection`,
           {
@@ -1255,7 +1283,7 @@ class InstallSession {
         }
         if (budget !== undefined && budget.over > 0) {
           const d = describePluginBudget(budget, { game: facts.gameName, collection: manifest.package.name });
-          const answer = await api.showDialog?.(
+          const answer = await this.ask(api, "plugin-budget", 
             "question",
             d.title,
             { text: d.text, message: d.message },
@@ -1274,7 +1302,7 @@ class InstallSession {
       const activeNow = getActiveGameId(api.getState());
       if (activeNow !== gameId) {
         logFailure("warn", "install.blocked.active-game-changed", { gameId, activeNow });
-        await api.showDialog?.(
+        await this.ask(api, "active-game-changed", 
           "error",
           `Vortex is managing ${activeNow ?? "no game"} now, not ${facts.gameName}`,
           { text: `Switch Vortex back to ${facts.gameName} and click Install again. Nothing was changed.` },
@@ -1331,7 +1359,7 @@ class InstallSession {
         },
         confirm: async (preview) => {
           const d = describeCleanPlan(preview);
-          const answer = await api.showDialog?.(
+          const answer = await this.ask(api, "clean-plan", 
             "question",
             d.title,
             { text: d.text, message: d.message },
@@ -1354,7 +1382,7 @@ class InstallSession {
       logFailure("info", "install.environment-gate.outcome", { gameId, outcome: outcome.kind, purged, recordPath });
       if (outcome.kind === "declined") return;
       if (outcome.kind === "failed") {
-        await api.showDialog?.(
+        await this.ask(api, "clean-failed", 
           "error",
           `The ${facts.gameName} folder could not be made clean`,
           {
@@ -1394,7 +1422,7 @@ class InstallSession {
       ];
       // A check that could not run must not become a wall: say so, with what
       // already happened, and let the user decide.
-      const answer = await api.showDialog?.(
+      const answer = await this.ask(api, "environment-check-crashed", 
         "error",
         "The game setup check failed",
         {
@@ -1438,7 +1466,7 @@ class InstallSession {
               ?.manifest?.game?.id
           : undefined,
     });
-    await api.showDialog?.(
+    await this.ask(api, "no-deployment-method", 
       "error",
       described.title,
       { text: described.body },
@@ -1466,7 +1494,7 @@ class InstallSession {
     const described = describeAutoDeployBlock(modCount);
     ehLog("warn", "install.blocked.auto-deploy", { modCount });
 
-    const result = await api.showDialog?.(
+    const result = await this.ask(api, "auto-deploy", 
       "question",
       described.title,
       { text: described.body },
@@ -1515,7 +1543,7 @@ class InstallSession {
     ehLog("warn", "install.blocked.auto-sort", { pluginCount });
     const plan = this.state.bundle.plan;
 
-    const result = await api.showDialog?.(
+    const result = await this.ask(api, "auto-sort", 
       "question",
       described.title,
       { text: described.body },
@@ -1555,7 +1583,7 @@ class InstallSession {
     // The user agreed to install WITH sorting off, and it is not off. Going on
     // as though it were is the silent version of this failure; asking again
     // keeps the choice theirs.
-    const again = await api.showDialog?.(
+    const again = await this.ask(api, "auto-sort-still-on", 
       "error",
       "Automatic sorting is still on",
       {
@@ -1605,6 +1633,39 @@ class InstallSession {
   /** True while a stop has been requested but the driver has not yet stopped. */
   isCancelPending(): boolean {
     return this.installController?.signal.aborted ?? false;
+  }
+
+  // ── Agent answers (control channel collection.install) ──────────
+
+  /**
+   * Who answers the start gates' questions. Undefined = the person at the
+   * screen, through Vortex's dialog, exactly as before. Set only by the
+   * control channel's collection.install for the length of its run, so an
+   * agent install walks the same gates in the same order as a click does and
+   * only the answering hand differs.
+   */
+  private agent: AgentAnswerer | undefined;
+
+  setAgent(agent: AgentAnswerer | undefined): void {
+    this.agent = agent;
+  }
+
+  private async ask(
+    api: types.IExtensionApi,
+    kind: AgentAskKind,
+    type: DialogArgs[0],
+    title: DialogArgs[1],
+    content: DialogArgs[2],
+    actions: DialogArgs[3],
+  ): Promise<{ action?: string } | undefined> {
+    const agent = this.agent;
+    if (agent === undefined) return api.showDialog?.(type, title, content, actions);
+    const c = content as { text?: unknown; message?: unknown };
+    const text = [c.text, c.message].filter((t): t is string => typeof t === "string" && t !== "").join("\n");
+    const labels = (actions as ReadonlyArray<{ label: string }>).map((a) => a.label);
+    const action = agent({ kind, title, text, actions: labels });
+    logFailure("info", "install.agent.answered", { kind, title, answer: action ?? "(none)" });
+    return action === undefined ? undefined : { action };
   }
 
   // ── Phase: any → reset ───────────────────────────────────────────

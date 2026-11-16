@@ -554,6 +554,36 @@ export const TOOLS: ToolSpec[] = [
       collection: str("The Nexus collection slug you expect, as a check."),
     },
   },
+  {
+    name: "collection_install",
+    verb: "collection.install",
+    mutates: true,
+    description:
+      "Install an Event Horizon collection package exactly as the install page does (same checks, rules, plugin order, " +
+      "receipt), with the start checks answered for you: auto-deploy and auto-sort switched off, unaccounted game-folder " +
+      "files moved aside. A machine that cannot take the install stops it with the reason. With no earlier install " +
+      "record it installs into a NEW profile and carries the player's own mods from carryFromProfileId (default: the " +
+      "active profile). A FOMOD with nothing recorded still opens its wizard: answer it with fomod_answer. Hours long: " +
+      "send async:true, then poll with ops_get and collection_install_status. Run dryRun:true first.",
+    properties: {
+      path: str("The collection package file."),
+      carryFromProfileId: str("The profile whose own mods to carry (default: the active one)."),
+      staleReceipt: { type: "string", enum: ["keep", "delete"] },
+      store: { type: "string", enum: ["steam", "gog"] },
+      fomodReplayMode: { type: "string", enum: ["silent", "supervised"] },
+      localFiles: { type: "object", description: "For mods the plan asks a file for: { compareKey or mod name: file path }. The rest are skipped." },
+      allowOverBudget: bool("Install even when the plugin count goes over the game's limit."),
+      dryRun: bool("Load and plan only: target, decisions, carried mods, files asked for. Nothing installed."),
+    },
+    required: ["path"],
+  },
+  {
+    name: "collection_install_status",
+    verb: "collection.installStatus",
+    mutates: false,
+    description: "Where the install page is: loading (hashing x of y), installing (phase, step x of y), done or error.",
+    properties: {},
+  },
 ];
 
 /** What the AI is told when it connects: how to work in Vortex safely, for someone who may be new to modding. */
