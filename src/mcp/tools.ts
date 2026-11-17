@@ -485,6 +485,15 @@ export const TOOLS: ToolSpec[] = [
     required: ["answer"],
   },
   {
+    name: "load_order_reapply",
+    verb: "loadOrder.reapply",
+    mutates: true,
+    description:
+      "The Doctor's \"Re-apply curator's order\": puts the active collection's plugins back in the curator's order, " +
+      "keeping the player's own plugins under their masters and their userlist rules. dryRun:true reports the drift only.",
+    properties: { dryRun: bool("Report the drift only; move nothing.") },
+  },
+  {
     name: "dialog_answer",
     verb: "dialog.answer",
     mutates: true,

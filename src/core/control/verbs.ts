@@ -2368,6 +2368,65 @@ export const VERBS: Record<string, Verb> = {
    * the queue is waiting on.
    */
   /**
+   * The Doctor's "Re-apply curator's order", for the collection that owns the
+   * active profile's order: the install's own merge (repinCuratorOrder through
+   * runHeal "repin-plugin-order"), so the player's own plugins stay under
+   * their masters and his userlist rules hold. Not plugins.apply with the
+   * manifest's list: that pins the list as given and has no idea where his own
+   * plugins belong (Fallout-collection, 2026-11-17: 21 of 1,091 moved by a sort).
+   *
+   *   { dryRun?: true }   -> the status only
+   */
+  "loadOrder.reapply": {
+    mutates: true,
+    restorePoint: true,
+    run: async (api, body) => {
+      const { assessActiveOrder, reapplyCuratorOrder } = await import("../doctor/loadOrderWatcher");
+      const { canReapply, describeLoadOrder } = await import("../doctor/loadOrderStatus");
+      const look = await assessActiveOrder(api);
+      if (look.kind === "nothing") {
+        throw new ControlError(
+          "no-collection-order",
+          look.reason === "no-active-game"
+            ? "No game is active."
+            : look.reason === "no-receipt"
+              ? "No collection installed here recorded a load order."
+              : `The active profile's order is no collection's. Collections: ${look.elsewhere.join("; ")}.`,
+          409,
+        );
+      }
+      const label = `${look.receipt.packageName} ${look.receipt.packageVersion ?? ""}`.trim();
+      const said = describeLoadOrder(look.status);
+      const before = {
+        package: label,
+        profile: look.receipt.vortexProfileName,
+        status: look.status.kind,
+        headline: said.headline,
+        ...(look.status.kind === "drifted" ? { misordered: look.status.drift.misordered.map((m) => m.name) } : {}),
+      };
+      if (body["dryRun"] === true || look.status.kind === "matches") return { ...before, reapplied: false };
+      if (!canReapply(look.status)) {
+        throw new ControlError("cannot-reapply", `${said.headline}: nothing a re-apply can fix.`, 409, before);
+      }
+      const outcome = await reapplyCuratorOrder(api, look.receipt);
+      if (outcome.kind !== "done") {
+        throw new ControlError("reapply-blocked", outcome.kind === "blocked" ? outcome.reason : outcome.summary, 409, before);
+      }
+      await waitForQuietPlugins(api);
+      const after = await assessActiveOrder(api);
+      const afterKind = after.kind === "assessed" ? after.status.kind : after.reason;
+      return {
+        ...before,
+        reapplied: true,
+        summary: outcome.summary,
+        after: afterKind,
+        verified: { matches: afterKind === "matches" },
+      };
+    },
+    describe: (_b, r) => (r["reapplied"] === true ? `re-applied ${String(r["package"])}'s load order` : `checked ${String(r["package"])}'s load order`),
+  },
+
+  /**
    * Presses a button on a dialog Vortex is showing right now, by its id (from
    * vortex.notifications) or its title. For the question that already opened
    * and that no command was there to answer (alasdairn, 2026-11-17: an older-
