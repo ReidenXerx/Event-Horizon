@@ -1626,3 +1626,36 @@ describe("mods.updates", () => {
     expect(r.refreshed).toBe(true);
   });
 });
+
+describe("dialog.answer: a question already open", () => {
+  const OLDER = {
+    id: "dlg9",
+    title: "Tacticool",
+    text: "An older version of this mod is already installed.",
+    actions: ["Cancel", "Update all profiles", "Update current profile"],
+  };
+
+  it("presses the named button on the dialog with that title, and checks it closed", async () => {
+    let pressed = "";
+    void v.openDialog(OLDER).then((a) => (pressed = a));
+    const r = (await run("dialog.answer", { title: "Tacticool", label: "Update current profile" })) as any;
+    expect(pressed).toBe("Update current profile");
+    expect(r).toMatchObject({ pressed: "Update current profile", verified: { dialogClosed: true } });
+  });
+
+  it("refuses a button the dialog does not have, and presses nothing", async () => {
+    void v.openDialog(OLDER);
+    await expect(run("dialog.answer", { id: "dlg9", label: "Replace" })).rejects.toMatchObject({ code: "no-such-button" });
+    expect(v.closed).toEqual([]);
+  });
+
+  it("never answers the owner's own confirmation", async () => {
+    void v.openDialog({ id: "c1", title: "An agent wants to remove 3 mods", text: "x", actions: ["Deny", "Allow"] });
+    await expect(run("dialog.answer", { id: "c1", label: "Allow" })).rejects.toMatchObject({ code: "owner-only" });
+    expect(v.closed).toEqual([]);
+  });
+
+  it("says which dialogs are open when none matches", async () => {
+    await expect(run("dialog.answer", { title: "Nope", label: "OK" })).rejects.toMatchObject({ code: "no-dialog" });
+  });
+});

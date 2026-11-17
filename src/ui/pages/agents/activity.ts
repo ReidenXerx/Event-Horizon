@@ -66,6 +66,10 @@ const META: Record<string, Meta> = {
       `Cleaning up: ${Array.isArray(b["removeMods"]) ? (b["removeMods"] as unknown[]).length : 0} mod(s), ` +
       `${Array.isArray(b["deleteArchives"]) ? (b["deleteArchives"] as unknown[]).length : 0} archive(s)`,
   },
+  "dialog.answer": {
+    badge: "DIALOG",
+    doing: (b) => `Pressing "${String(b["label"])}" on ${b["title"] !== undefined ? `"${String(b["title"])}"` : "a Vortex dialog"}`,
+  },
   "pluginsChanged.answer": {
     badge: "PLUGINS",
     doing: (b) => `Answering "Plugin list changed outside Vortex" (${String(b["answer"])})`,

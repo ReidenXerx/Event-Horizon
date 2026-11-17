@@ -86,11 +86,20 @@ export function agentAnswer(ask: AgentAsk, opts: AgentOptions): AgentVerdict {
   return rule[ask.kind]();
 }
 
-/** The player's own mods in a profile: on there, in the pool, and not a mod this plan resolves as the collection's. */
+/**
+ * The player's own mods in a profile: on there, in the pool, not a mod this
+ * plan resolves as the collection's, and not another file of a Nexus page the
+ * collection installs. That last one is an older or newer copy of a
+ * collection mod: carrying it puts two copies of one mod in the new profile
+ * and stops the run on Vortex's "An older version of this mod is already
+ * installed" (alasdairn, 2026-11-17: Tacticool 0.23.30 against 0.23.31).
+ */
 export function ownModsToCarry(args: {
   plan: Pick<InstallPlan, "modResolutions">;
   pool: Readonly<Record<string, { attributes?: Record<string, unknown> } | undefined>>;
   modState: Readonly<Record<string, { enabled?: boolean } | undefined>>;
+  /** Nexus mod ids (pages) of the collection's Nexus mods. */
+  collectionNexusModIds?: ReadonlySet<string>;
 }): Array<{ vortexModId: string; name: string }> {
   const collection = new Set<string>();
   for (const r of args.plan.modResolutions) {
@@ -103,6 +112,9 @@ export function ownModsToCarry(args: {
     const mod = args.pool[id];
     if (mod === undefined) continue;
     const a = mod.attributes ?? {};
+    const nexusId = a["modId"];
+    const fromNexus = a["source"] === undefined || a["source"] === "nexus";
+    if (fromNexus && (typeof nexusId === "number" || typeof nexusId === "string") && args.collectionNexusModIds?.has(String(nexusId))) continue;
     const name = [a["customFileName"], a["logicalFileName"], a["name"]].find((v): v is string => typeof v === "string" && v !== "") ?? id;
     out.push({ vortexModId: id, name });
   }
@@ -162,10 +174,33 @@ function errorOf(state: WizardState): never | undefined {
 
 const MIN = 60_000;
 
-/** Every "Invalid fomod" Vortex raises during the run gets Ignore: the same installer, same choices, validation off. */
-function answerInvalidFomod(api: types.IExtensionApi, answered: string[]): () => void {
+/** What the run pressed on Vortex's own install questions. */
+type DialogsAnswered = { invalidFomod: string[]; alreadyInstalled: Array<{ title?: string; text: string; answer: string }> };
+type DialogTools = Pick<typeof import("./verbs"), "answerFor" | "rawDialogs">;
+
+/**
+ * Vortex's own install questions during the run:
+ *   - "Invalid fomod" gets Ignore: the same installer, same choices, validation off;
+ *   - "An older version of this mod is already installed" and "Install options"
+ *     (already installed) are answered ALONGSIDE, as a clicked install's
+ *     bundled mods are (bundledTargetName.ts): the new profile gets the
+ *     collection's file and every other profile keeps what it had (NS-2).
+ */
+function answerRunDialogs(api: types.IExtensionApi, answered: DialogsAnswered, tools: DialogTools): () => void {
   const handled = new Set<string>();
   const check = (): void => {
+    for (const d of tools.rawDialogs(api)) {
+      if (handled.has(d.id)) continue;
+      const answer = tools.answerFor({ ifExisting: "alongside" }, d);
+      if (answer === undefined) continue;
+      handled.add(d.id);
+      answered.alreadyInstalled.push({ ...(d.title !== undefined ? { title: d.title } : {}), text: d.text.slice(0, 300), answer: answer.label });
+      ehLog("info", "control.collection-install.already-installed-answered", { title: d.title, text: d.text.slice(0, 300), answer: answer.label });
+      setTimeout(() => api.closeDialog?.(d.id, answer.label, answer.input ?? {}), 0);
+    }
+    answerInvalidFomodNow();
+  };
+  const answerInvalidFomodNow = (): void => {
     const dialogs = (api.getState() as { session?: { notifications?: { dialogs?: unknown[] } } }).session?.notifications?.dialogs;
     for (const d of Array.isArray(dialogs) ? dialogs : []) {
       const x = d as { id?: unknown; title?: unknown; actions?: unknown[]; content?: { text?: unknown; message?: unknown } };
@@ -175,7 +210,7 @@ function answerInvalidFomod(api: types.IExtensionApi, answered: string[]): () =>
       if (!labels.includes("Ignore")) continue;
       handled.add(x.id);
       const text = String(x.content?.text ?? x.content?.message ?? "").slice(0, 300);
-      answered.push(text);
+      answered.invalidFomod.push(text);
       ehLog("warn", "control.collection-install.invalid-fomod-ignored", { text });
       const id = x.id;
       setTimeout(() => api.closeDialog?.(id, "Ignore", {}), 0);
@@ -302,6 +337,12 @@ export const COLLECTION_INSTALL_VERBS = {
           plan,
           pool: vortexState.persistent?.mods?.[manifest.game.id] ?? {},
           modState: sourceProfile.modState ?? {},
+          collectionNexusModIds: new Set(
+            manifest.mods.flatMap((m) => {
+              const src = m.source as { kind: string; modId?: unknown };
+              return src.kind === "nexus" && src.modId !== undefined ? [String(src.modId)] : [];
+            }),
+          ),
         });
       }
 
@@ -392,8 +433,10 @@ export const COLLECTION_INSTALL_VERBS = {
         if (v.stops) stopped = { kind: ask.kind, title: ask.title, text: ask.text.slice(0, 2000) };
         return v.label;
       });
-      const invalidFomods: string[] = [];
-      const stopWatching = answerInvalidFomod(api, invalidFomods);
+      const dialogsAnswered: DialogsAnswered = { invalidFomod: [], alreadyInstalled: [] };
+      // Imported here: verbs.ts imports this module's verbs at load.
+      const { answerFor, rawDialogs } = await import("./verbs");
+      const stopWatching = answerRunDialogs(api, dialogsAnswered, { answerFor, rawDialogs });
       let lastPhase = "";
       const stopProgress = session.subscribe((snap) => {
         const s = snap.state;
@@ -437,7 +480,12 @@ export const COLLECTION_INSTALL_VERBS = {
           "the install to finish",
         );
         const result = done.result;
-        const base = { ...summary, asked, ...(invalidFomods.length > 0 ? { invalidFomodIgnored: invalidFomods } : {}) };
+        const base = {
+          ...summary,
+          asked,
+          ...(dialogsAnswered.invalidFomod.length > 0 ? { invalidFomodIgnored: dialogsAnswered.invalidFomod } : {}),
+          ...(dialogsAnswered.alreadyInstalled.length > 0 ? { alreadyInstalledAnswered: dialogsAnswered.alreadyInstalled } : {}),
+        };
         if (result.kind === "success") {
           return {
             ...base,

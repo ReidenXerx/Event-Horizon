@@ -485,6 +485,20 @@ export const TOOLS: ToolSpec[] = [
     required: ["answer"],
   },
   {
+    name: "dialog_answer",
+    verb: "dialog.answer",
+    mutates: true,
+    description:
+      "Press a button on a dialog Vortex is showing right now (vortex_notifications lists each open dialog with its id and " +
+      "buttons). For a question that opened with no command there to answer it. Never the owner's own confirmation.",
+    properties: {
+      id: str("The dialog's id from vortex_notifications."),
+      title: str("Or its title, when only one open dialog has it."),
+      label: str("The button to press, exactly as listed."),
+    },
+    required: ["label"],
+  },
+  {
     name: "profile_switch",
     verb: "profile.switch",
     mutates: true,

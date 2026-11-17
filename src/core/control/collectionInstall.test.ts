@@ -109,3 +109,19 @@ describe("the session: a person at the screen still gets every dialog", () => {
     );
   });
 });
+
+describe("an older copy of a collection mod is not the player's own", () => {
+  it("is left behind when the collection installs another file of its Nexus page", () => {
+    const carry = ownModsToCarry({
+      plan: { modResolutions: [] } as never,
+      pool: {
+        "tacticool-0.23.30": { attributes: { name: "Tacticool", modId: 12345, source: "nexus" } },
+        mine: { attributes: { name: "Mine", modId: 999, source: "nexus" } },
+        local: { attributes: { name: "Local", modId: 12345, source: "website" } },
+      },
+      modState: { "tacticool-0.23.30": { enabled: true }, mine: { enabled: true }, local: { enabled: true } },
+      collectionNexusModIds: new Set(["12345"]),
+    });
+    expect(carry.map((c) => c.vortexModId)).toEqual(["local", "mine"]);
+  });
+});

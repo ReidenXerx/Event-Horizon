@@ -101,7 +101,7 @@ import {
 import { declaredSet } from "../volatileFiles";
 import { waitForPluginSortIdle, type SortIdleResult } from "./pluginSortIdle";
 import { vortexBusy } from "./vortexBusy";
-import { askOwner } from "./ownerConsent";
+import { askOwner, CONSENT_TITLE_PREFIX } from "./ownerConsent";
 import { enabledAfterReplace, mergeReplacement, pickReplaceTarget, readEnabled, type EnabledByProfile, type PoolMod } from "./safeReplace";
 import { judgeCrash, parseCrashLog, type Owner } from "./diagnose";
 import { noteGameActivation, waitForActivationToSettle } from "./activationSettle";
@@ -508,7 +508,7 @@ export const PLUGINS_CHANGED_ACTION: Record<string, string> = { keep: "Keep", re
 /** Verbs whose result depends on Vortex writing plugins.txt. */
 const PLUGINS_TXT_WRITERS = new Set(["plugins.setEnabled", "plugins.apply", "plugins.sort", "deploy"]);
 
-type RawDialog = {
+export type RawDialog = {
   id: string;
   type?: string;
   title?: string;
@@ -520,7 +520,7 @@ type RawDialog = {
 
 export type DialogAnswer = { label: string; input?: Record<string, unknown> };
 
-function rawDialogs(api: types.IExtensionApi): RawDialog[] {
+export function rawDialogs(api: types.IExtensionApi): RawDialog[] {
   const list = (api.getState() as { session?: { notifications?: { dialogs?: unknown[] } } }).session?.notifications
     ?.dialogs;
   return (Array.isArray(list) ? list : []).map((d) => {
@@ -2367,6 +2367,55 @@ export const VERBS: Record<string, Verb> = {
    * Runs beside the queue: the install that opened the wizard is the command
    * the queue is waiting on.
    */
+  /**
+   * Presses a button on a dialog Vortex is showing right now, by its id (from
+   * vortex.notifications) or its title. For the question that already opened
+   * and that no command was there to answer (alasdairn, 2026-11-17: an older-
+   * version question held a collection install at mod 1146 until a UI
+   * Automation click).
+   *
+   *   { id?: string, title?: string, label: string }
+   *
+   * Never the owner's own confirmation ("An agent wants to …"): an agent
+   * cannot say yes to itself. Runs beside the queue: the command waiting on the
+   * dialog is usually the one in front.
+   */
+  "dialog.answer": {
+    mutates: true,
+    queue: false,
+    run: async (api, body) => {
+      const label = str(body["label"]);
+      const id = str(body["id"]);
+      const title = str(body["title"]);
+      if (label === undefined || (id === undefined && title === undefined)) {
+        throw new ControlError("bad-request", `Send "label" and the dialog's "id" or "title" (see vortex.notifications).`);
+      }
+      const open = rawDialogs(api);
+      const matches = open.filter((d) => (id !== undefined ? d.id === id : d.title === title));
+      if (matches.length === 0) {
+        throw new ControlError("no-dialog", `No such dialog is open. Open: ${open.map((d) => `"${d.title ?? d.id}"`).join(", ") || "none"}.`, 409);
+      }
+      if (matches.length > 1) {
+        throw new ControlError("ambiguous-dialog", `${matches.length} open dialogs are titled "${title}"; send its "id".`, 409, {
+          ids: matches.map((d) => d.id),
+        });
+      }
+      const d = matches[0]!;
+      if ((d.title ?? "").startsWith(CONSENT_TITLE_PREFIX)) {
+        throw new ControlError("owner-only", "That is the owner's own confirmation; only a person at the PC answers it.", 403);
+      }
+      if (!d.actions.includes(label)) {
+        throw new ControlError("no-such-button", `The dialog's buttons are ${d.actions.map((a) => `"${a}"`).join(", ")}; none is "${label}".`, 409);
+      }
+      ehLog("info", "control.dialog.answer", { title: d.title, text: d.text.slice(0, 300), label });
+      api.closeDialog?.(d.id, label, {});
+      const closed = await settle(() => rawDialogs(api).every((x) => x.id !== d.id), 5000);
+      if (!closed) throw new ControlError("answer-unverified", `The "${d.title ?? d.id}" dialog is still open.`, 500);
+      return { title: d.title, pressed: label, verified: { dialogClosed: true } };
+    },
+    describe: (_b, r) => `pressed "${String(r["pressed"])}" on "${String(r["title"] ?? "a Vortex dialog")}"`,
+  },
+
   "fomod.answer": {
     mutates: true,
     queue: false,
@@ -2670,7 +2719,8 @@ export const VERBS: Record<string, Verb> = {
     mutates: false,
     run: async (api) => ({
       notifications: notices(api).map(({ type, title, message }) => ({ type, title, message })),
-      openDialogs: openDialogs(api).map(({ type, title, text }) => ({ type, title, text })),
+      // Answer one with dialog.answer (its id and a button label).
+      openDialogs: rawDialogs(api).map(({ id, type, title, text, actions }) => ({ id, type, title, text: text.slice(0, 500), actions })),
       // A FOMOD wizard waiting for answers: read it in full with `fomod`, answer it with `fomod.answer`.
       openInstaller: fomodSummary(readFomod(api.getState())) ?? null,
       // Vortex's External Changes dialog: answer it with externalChanges.answer.
