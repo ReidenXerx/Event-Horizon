@@ -25,6 +25,13 @@ try {
   /* malformed stdin must never break the tool call (NS-8) */
 }
 
+// A SUBAGENT's tool call reaches this hook with the PARENT's transcript_path, so every per-chat key
+// below would be the parent's: its re-anchor delivered into a subagent, its once-per-chat budget
+// spent there, a subagent told to rewrite the parent's task-core. Claude Code marks those calls with
+// `agent_id` (hooks docs, "Subagents and hooks"). A subagent executes a decided task (NS-24); the
+// parent's save-state and cadence are not its to consume. Absent field → the main chat, unchanged.
+if (input.agent_id) process.exit(0);
+
 if ((input.tool_name || "") !== "Bash") process.exit(0);
 const cmd = String(input.tool_input?.command ?? "");
 // Cheap before anything is imported: this runs after every shell command (NS-7).
@@ -69,7 +76,7 @@ if (config.memoryNudge === false) process.exit(0);
 
 const HALF_HOUR = 30 * 60 * 1000;
 const now = Date.now();
-const mem = sp.memoryFreshness(root);
+const mem = sp.memoryFreshness(root, input.transcript_path);
 if (mem.newestMs && now - mem.newestMs < HALF_HOUR) process.exit(0); // already written
 
 const STATE = path.join(root, ".bearing/.bearing-memory-nudge.json");
@@ -91,9 +98,9 @@ try {
   /* no scorecard → nothing to count */
 }
 
-const age = mem.newestMs ? `last written ${sp.humanAge(now - mem.newestMs)} ago` : "not written yet";
+const age = mem.newestMs ? `was last written ${sp.humanAge(now - mem.newestMs)} ago` : "is not written yet";
 emitContext(
-  `· Milestone — ${hit[1]}. Your project memory (${mem.dir}) is ${age}. The next session starts ` +
+  `· Milestone — ${hit[1]}. Your project memory (${mem.dir}) ${age}. The next session starts ` +
     "from that memory, not from this transcript: if this changed the project's state, a decision, what " +
     "is next or what you learned about how the user works, update it now — one fact per file, the " +
     "index line in MEMORY.md, stale entries corrected or deleted. Nothing changed? Then nothing to write.",

@@ -18,7 +18,7 @@ target/
 .bearing/task-cores/
 *.bearing-backup
 *.bearing-new
-.bearing/manifest.json
+.bearing/manifest.local.json
 .bearing/hooks.local.json
 .gitnexus/
 .tmp-agent/
