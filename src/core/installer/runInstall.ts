@@ -328,6 +328,7 @@ import {
 import { storeInstalledPackage } from "./packageStore";
 import { repairDecisionFor } from "../resolver/resolveInstallPlan";
 import { downloadAccountCause } from "./checkNexusAccount";
+import { pluginsToActivateBeforeRepair } from "./repairPluginState";
 // NOTE: there used to be a `pluginsTxt.ts` writer module here. It
 // was deleted along with the `writing-plugins-txt` driver phase
 // when the rules-only strategy locked. Vortex's
@@ -2915,6 +2916,29 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           `Reinstalling "${installEntry.name}" (${failSummary})...`,
         );
 
+        // An installer that asks whether a plugin is active must see the
+        // curator's answer here too. See `repairPluginState.ts`.
+        const activateFirst = pluginsToActivateBeforeRepair(plan.manifest, manifestEntry);
+        if (activateFirst.length > 0) {
+          try {
+            await deployAndWait(api, activeProfileId!);
+            for (const pluginName of activateFirst) {
+              dispatchRaw(api, ACTION_SET_PLUGIN_ENABLED, { pluginName, enabled: true });
+            }
+            ehLog("info", "verify.repair.plugins-activated", {
+              name: installEntry.name,
+              plugins: activateFirst,
+              why: "this mod's installer picks files by whether these plugins are active",
+            });
+          } catch (err) {
+            ehLog("warn", "verify.repair.plugins-activate-failed", {
+              name: installEntry.name,
+              plugins: activateFirst,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+
         const retried = await tryRecoverFailedMod({
           ctx,
           installEntry,
@@ -2974,6 +2998,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
          * Theirs is disabled HERE only; every other profile it belongs to is
          * untouched, because enablement is per-profile.
          */
+        let alongsideInstalled = false;
         if (retried.kind === "not-ours") {
           const alongside = await tryInstallAlongside({
             ctx,
@@ -2984,6 +3009,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           });
 
           if (alongside !== undefined) {
+            alongsideInstalled = true;
             installedMods[i] = alongside;
             await appendJournalEntry(ctx.appDataPath, plan.manifest.package.id, {
               compareKey: alongside.compareKey,
@@ -3251,7 +3277,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               judgement.kind === "reinstall" && judgement.archiveConsulted,
             attempts: [
               "Verified against the file list the collection recorded",
-              describeRepairAttempt(retried),
+              describeRepairAttempt(retried, { alongsideInstalled }),
               describeArchiveIdentity(archiveIdentity),
             ],
             archiveNote:
@@ -8336,7 +8362,10 @@ function emptyUserlistApplication(): UserlistApplicationReceipt {
  * when there was no archive and nothing was reinstalled (cloud_16493, Ivy
  * 1.0.64: 39 of 41 reports).
  */
-export function describeRepairAttempt(r: RecoverResult): string {
+export function describeRepairAttempt(
+  r: RecoverResult,
+  opts: { alongsideInstalled?: boolean } = {},
+): string {
   switch (r.kind) {
     case "recovered":
     case "retry-failed":
@@ -8344,7 +8373,9 @@ export function describeRepairAttempt(r: RecoverResult): string {
     case "not-eligible":
       return `Not reinstalled: ${r.why}`;
     case "not-ours":
-      return "Not reinstalled: the mod is the user's own, and a copy beside it could not be installed";
+      return opts.alongsideInstalled === true
+        ? "Left the user's own copy alone; installed the collection's copy beside it and verified that again"
+        : "Not reinstalled: the mod is the user's own, and a copy beside it could not be installed";
     case "errored":
       return r.modRemoved
         ? "Tried to reinstall: the old copy was removed and the reinstall failed"
