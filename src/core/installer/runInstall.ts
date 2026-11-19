@@ -3251,13 +3251,15 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
               judgement.kind === "reinstall" && judgement.archiveConsulted,
             attempts: [
               "Verified against the file list the collection recorded",
-              "Reinstalled from the archive and verified again",
+              describeRepairAttempt(retried),
               describeArchiveIdentity(archiveIdentity),
             ],
             archiveNote:
-              judgement.kind === "reinstall"
+              judgement.kind === "reinstall" && judgement.archiveConsulted
                 ? `Checked against the mod's own archive: ${judgement.why}`
-                : `Could not consult the mod's archive: ${judgement.why}`,
+                : judgement.kind === "reinstall"
+                  ? `Not a question the archive could answer: ${judgement.why}`
+                  : `Could not consult the mod's archive: ${judgement.why}`,
             platform: describeHostForReport(),
           }),
         );
@@ -8328,7 +8330,29 @@ function emptyUserlistApplication(): UserlistApplicationReceipt {
  *                      as a non-fatal soft failure to keep the
  *                      driver moving toward the rules phase.
  */
-type RecoverResult =
+/**
+ * What the repair really did, for the curator report. This line used to be
+ * the constant "Reinstalled from the archive and verified again", printed
+ * when there was no archive and nothing was reinstalled (cloud_16493, Ivy
+ * 1.0.64: 39 of 41 reports).
+ */
+export function describeRepairAttempt(r: RecoverResult): string {
+  switch (r.kind) {
+    case "recovered":
+    case "retry-failed":
+      return "Reinstalled from the archive and verified again";
+    case "not-eligible":
+      return `Not reinstalled: ${r.why}`;
+    case "not-ours":
+      return "Not reinstalled: the mod is the user's own, and a copy beside it could not be installed";
+    case "errored":
+      return r.modRemoved
+        ? "Tried to reinstall: the old copy was removed and the reinstall failed"
+        : "Tried to reinstall: the reinstall failed";
+  }
+}
+
+export type RecoverResult =
   | {
       kind: "recovered";
       installEntry: InstalledModReportEntry;
@@ -8347,7 +8371,8 @@ type RecoverResult =
    * them. Files verify; the load order silently does not reproduce.
    */
   | { kind: "retry-failed"; installEntry: InstalledModReportEntry }
-  | { kind: "not-eligible" }
+  /** `why` is printed in the curator report's "What was already tried". */
+  | { kind: "not-eligible"; why: string }
   /**
    * The mod is the USER's, not ours. Distinct from `not-eligible` because the
    * caller acts on it: it installs the curator's copy alongside theirs rather
@@ -8447,7 +8472,7 @@ async function tryRecoverFailedMod(args: {
     (r) => r.compareKey === installEntry.compareKey,
   );
   if (resolution === undefined || manifestEntry === undefined) {
-    return { kind: "not-eligible" };
+    return { kind: "not-eligible", why: "the collection has no install step for this mod" };
   }
 
   // An already-installed arm has no install to re-execute — re-running it
@@ -8532,7 +8557,10 @@ async function tryRecoverFailedMod(args: {
         compareKey: installEntry.compareKey,
         why: "Nexus downloading is unavailable — signed out, or the Nexus extension is disabled",
       });
-      return { kind: "not-eligible" };
+      return {
+        kind: "not-eligible",
+        why: "Nexus downloading is unavailable (signed out, or the Nexus extension is disabled)",
+      };
     }
     if (repair === undefined) {
       ehLog("info", "verify.repair.not-possible", {
@@ -8540,7 +8568,7 @@ async function tryRecoverFailedMod(args: {
         fromDecision: installEntry.fromDecision,
         why: "no archive to reinstall from",
       });
-      return { kind: "not-eligible" };
+      return { kind: "not-eligible", why: "no archive to reinstall from" };
     }
     retryResolution = { ...resolution, decision: repair };
     ehLog("info", "verify.repair.rebuilt-decision", {
