@@ -36,6 +36,7 @@ import {
   readEhcoll,
 } from "../../../core/manifest/readEhcoll";
 import { enrichInstalledModsWithStagingSetHashes } from "../../../core/resolver/enrichStagingSetHashes";
+import { withoutFolderlessMods } from "../../../core/resolver/folderlessMods";
 import { listInstallAttempts } from "../../../core/installer/attemptRecord";
 import { listInterruptedInstalls } from "../../../core/installer/installMarker";
 import { logInstallPlan } from "../../../core/resolver/logInstallPlan";
@@ -226,7 +227,14 @@ export async function runLoadingPipeline(args: {
    * new or someone else's — so the candidate list was empty and everything
    * was reinstalled. See getModsForGame.
    */
-  const rawMods = getModsForGame(state, activeGameId, activeProfileId);
+  // A pool entry whose staging folder is gone has no files: never adopt or
+  // carry it (1,674 of them after a staging-folder Reinitialize, 11-22).
+  const rawMods = withoutFolderlessMods(
+    state,
+    activeGameId,
+    getModsForGame(state, activeGameId, activeProfileId),
+    "install-preview",
+  );
   events.onPhase("hashing-mods", rawMods.length);
   const archiveHashed = await hashInstalledArchives(state, activeGameId, rawMods, {
     signal,
@@ -476,7 +484,14 @@ export async function runLoadingPipelineWithReceipt(args: {
    * new or someone else's — so the candidate list was empty and everything
    * was reinstalled. See getModsForGame.
    */
-  const rawMods = getModsForGame(state, activeGameId, activeProfileId);
+  // A pool entry whose staging folder is gone has no files: never adopt or
+  // carry it (1,674 of them after a staging-folder Reinitialize, 11-22).
+  const rawMods = withoutFolderlessMods(
+    state,
+    activeGameId,
+    getModsForGame(state, activeGameId, activeProfileId),
+    "install-preview",
+  );
   events.onPhase("hashing-mods", rawMods.length);
   const archiveHashed = await hashInstalledArchives(state, activeGameId, rawMods, {
     signal,

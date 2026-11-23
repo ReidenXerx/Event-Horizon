@@ -329,6 +329,7 @@ import { storeInstalledPackage } from "./packageStore";
 import { repairDecisionFor } from "../resolver/resolveInstallPlan";
 import { downloadAccountCause } from "./checkNexusAccount";
 import { pluginsToActivateBeforeRepair } from "./repairPluginState";
+import { withoutFolderlessMods } from "../resolver/folderlessMods";
 // NOTE: there used to be a `pluginsTxt.ts` writer module here. It
 // was deleted along with the `writing-plugins-txt` driver phase
 // when the rules-only strategy locked. Vortex's
@@ -6370,7 +6371,8 @@ export function adoptIfNowInstalled(args: {
 
   let pool;
   try {
-    pool = getModsForGame(api.getState(), gameId, enablementProfileId);
+    const state = api.getState();
+    pool = withoutFolderlessMods(state, gameId, getModsForGame(state, gameId, enablementProfileId), "retry-adoption");
   } catch {
     // A pool we cannot read is not evidence of anything. Re-install, which is
     // exactly what this pass did before.
