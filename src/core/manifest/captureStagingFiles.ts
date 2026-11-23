@@ -75,6 +75,7 @@ async function readNativePlugins(files: readonly WalkedFile[]): Promise<EhcollNa
         hasQuery: d.hasQuery,
         ...(d.addressIndependence !== undefined ? { addressIndependence: d.addressIndependence } : {}),
         ...(d.structureIndependence !== undefined ? { structureIndependence: d.structureIndependence } : {}),
+        ...(d.signatureBuiltFor !== undefined ? { signatureBuiltFor: d.signatureBuiltFor } : {}),
       });
     } else if (d.kind === "query-only") {
       out.push({ path: file.relativePath, extender, kind: "query-only" });

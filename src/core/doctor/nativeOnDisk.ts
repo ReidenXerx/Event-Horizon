@@ -125,6 +125,7 @@ export function gatherNativeOnDisk(args: {
             hasQuery: d.hasQuery,
             ...(d.addressIndependence !== undefined ? { addressIndependence: d.addressIndependence } : {}),
             ...(d.structureIndependence !== undefined ? { structureIndependence: d.structureIndependence } : {}),
+            ...(d.signatureBuiltFor !== undefined ? { signatureBuiltFor: d.signatureBuiltFor } : {}),
           }
         : { path: `${ext.pluginDir}/${f}`, extender: ext.extender, kind: "query-only" };
     if (d.kind === "declares" && (d.versionIndependent || ((d.addressIndependence ?? 0) & 6) !== 0)) {

@@ -187,6 +187,25 @@ export function judgePlugin(plugin: EhcollNativePlugin, target: NativeTarget): P
       : // Not established for next-gen F4SE, so not claimed.
         { kind: "unknown", why: "it declares no game version, and this extender's handling of that is not known" };
   }
+  /**
+   * Signature-only SKSE plugins whose file names the runtime they were made
+   * for (see signatureBuildOf). SKSE loads them anywhere; they only WORK on
+   * that build. Compared on major.minor.build, so a GOG ".1" marker or its
+   * absence in embedded text never decides it on its own.
+   */
+  const builtFor = plugin.signatureBuiltFor ?? [];
+  if (builtFor.length > 0) {
+    const base = (r: string): string => r.split(".").slice(0, 3).join(".");
+    if (!builtFor.some((r) => base(r) === base(target.runtime))) {
+      return {
+        kind: "cannot-load",
+        why:
+          `it is a build for ${builtFor.join(", ")}, and this game is ${target.runtime}; ` +
+          `it declares signature scanning, so the extender loads it, but its signatures do not fit this game`,
+      };
+    }
+    return { kind: "loads" };
+  }
   if (plugin.extender === "f4se" && plugin.addressIndependence !== undefined && plugin.structureIndependence !== undefined) {
     if (f4seIndependentOn(plugin.addressIndependence, plugin.structureIndependence, target.runtime)) return { kind: "loads" };
   } else if (plugin.versionIndependent === true) return { kind: "loads" };

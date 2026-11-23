@@ -779,6 +779,12 @@ export type EhcollNativePlugin = {
    */
   addressIndependence?: number;
   structureIndependence?: number;
+  /**
+   * SKSE `declares` only: independent by signatures alone, and the file names
+   * the runtimes those signatures were made for. Absent = no such fingerprint
+   * (or a build from before EH 0.2.136 recorded it).
+   */
+  signatureBuiltFor?: string[];
 };
 
 export type EhcollStagingFile = {

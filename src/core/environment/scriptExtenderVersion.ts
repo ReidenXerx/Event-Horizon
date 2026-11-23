@@ -71,6 +71,13 @@ export type NativePluginDeclaration =
        */
       addressIndependence?: number;
       structureIndependence?: number;
+      /**
+       * SKSE only: the plugin is independent by SIGNATURES alone (no Address
+       * Library bit), and the file names the runtimes its signatures were made
+       * for — in its runtime list or as text inside the DLL. See
+       * {@link signatureBuildOf}.
+       */
+      signatureBuiltFor?: string[];
     }
   /** Only the old `…Plugin_Query` function: declares nothing readable. */
   | { kind: "query-only" }
@@ -188,7 +195,36 @@ export function readNativePluginDeclaration(
     runtimes,
     hasQuery,
     ...(extender === "f4se" ? f4seIndependence(dll, block) : {}),
+    ...(extender === "skse" ? signatureBuildOf(dll, block.readUInt32LE(layout.independence), runtimes) : {}),
   };
+}
+
+/**
+ * ─── "SIGNATURES" CAN STILL MEAN ONE BUILD ─────────────────────────────
+ * SKSE loads a plugin that declares signature scanning (bit 1) on any
+ * runtime, so its runtime list is never consulted. Some authors set that flag
+ * on a build made for ONE executable: alasdairn's Steam 1.6.1170 game (Meridia
+ * 1.0.55, 2026-11-23) got PrivateProfileRedirector's "RT 1.6.1179" file (lists
+ * only 1.6.1179.1) and Save and Load Accelerator's GOG option (lists nothing,
+ * embeds "1.6.1179.1"). SKSE loaded both; neither was built for that game.
+ *
+ * Measured on the curator's Skyrim staging (305 declaring plugins): 6 are
+ * signatures-only, exactly those two carry a runtime in their list or text,
+ * and the other four — real signature scanners — carry none. So the rule only
+ * speaks when the file itself names a runtime, and never for a plugin that
+ * also has an Address Library bit.
+ */
+const RUNTIME_TEXT = /(?<![\d.])1\.(?:5\.(?:39|50|53|62|73|80|97)|6\.\d{3,4})(?:\.\d)?(?![\d])/g;
+
+function signatureBuildOf(
+  dll: Buffer,
+  independence: number,
+  runtimes: readonly string[],
+): { signatureBuiltFor?: string[] } {
+  if ((independence & 0b11) !== 0b10) return {};
+  const named = new Set(runtimes);
+  for (const m of dll.toString("latin1").matchAll(RUNTIME_TEXT)) named.add(m[0]);
+  return named.size > 0 ? { signatureBuiltFor: [...named].sort() } : {};
 }
 
 /**

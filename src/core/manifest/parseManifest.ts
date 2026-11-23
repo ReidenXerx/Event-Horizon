@@ -1158,6 +1158,11 @@ function readNativePlugins(raw: unknown): EhcollNativePlugin[] | undefined {
       ...(typeof e.hasQuery === "boolean" ? { hasQuery: e.hasQuery } : {}),
       ...(Number.isInteger(e.addressIndependence) ? { addressIndependence: e.addressIndependence as number } : {}),
       ...(Number.isInteger(e.structureIndependence) ? { structureIndependence: e.structureIndependence as number } : {}),
+      ...(Array.isArray(e.signatureBuiltFor) &&
+      e.signatureBuiltFor.length > 0 &&
+      e.signatureBuiltFor.every((r) => typeof r === "string")
+        ? { signatureBuiltFor: e.signatureBuiltFor as string[] }
+        : {}),
     });
   }
   return out;
