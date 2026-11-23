@@ -119,7 +119,12 @@ export function describeExternalChanges(
   };
 }
 
-export type AnswerPlan = { actions: Array<{ filePaths: string[]; action: string }>; problems: string[] };
+export type AnswerPlan = {
+  actions: Array<{ filePaths: string[]; action: string }>;
+  problems: string[];
+  /** Files no answer reached: they keep Vortex's default on Confirm. */
+  unanswered: string[];
+};
 
 /**
  * Pure: the Vortex actions that carry out an answer. `all` applies to every
@@ -137,7 +142,8 @@ export function planAnswer(
   for (const w of words) {
     if (w !== undefined && !CHOICE_WORDS.includes(w as Choice)) problems.push(`"${w}" is not an answer; use revert, save or newer.`);
   }
-  if (problems.length > 0) return { actions: [], problems };
+  const unanswered: string[] = [];
+  if (problems.length > 0) return { actions: [], problems, unanswered };
   for (const c of changes) {
     const modId = modIdBySource(c.source);
     const word =
@@ -145,7 +151,10 @@ export function planAnswer(
       answer.mods?.[c.source] ??
       (modId !== undefined ? answer.mods?.[modId] : undefined) ??
       answer.all;
-    if (word === undefined) continue;
+    if (word === undefined) {
+      unanswered.push(c.filePath);
+      continue;
+    }
     const action = CHOICES[c.type]?.[word as Choice];
     if (action === undefined) {
       problems.push(
@@ -157,7 +166,7 @@ export function planAnswer(
     if (c.action === action) continue;
     grouped.set(action, [...(grouped.get(action) ?? []), c.filePath]);
   }
-  return { actions: [...grouped.entries()].map(([action, filePaths]) => ({ action, filePaths })), problems };
+  return { actions: [...grouped.entries()].map(([action, filePaths]) => ({ action, filePaths })), problems, unanswered };
 }
 
 /**

@@ -441,7 +441,8 @@ export const TOOLS: ToolSpec[] = [
       "Answer Vortex's External Changes dialog: mod files changed outside Vortex, found before a deploy or purge, which " +
       "waits on this answer (a deploy reply with code external-changes lists them). Per file: revert (put Vortex's copy " +
       "back), save (keep the change; for a deletion, delete for good), newer (keep whichever is newer; changed files " +
-      "only). Then it finishes and verifies the waiting deploy.",
+      "only). Give all, mods or files (an empty answer is refused); files no answer reaches keep Vortex's default and " +
+      "come back as keptVortexDefault. Then it finishes and verifies the waiting deploy.",
     properties: {
       all: { type: "string", enum: ["revert", "save", "newer"], description: "One answer for every file." },
       mods: { type: "object", description: "Answers per mod, by the mod name or id the dialog listed: {\"<mod>\": \"newer\"}." },

@@ -896,10 +896,27 @@ async function answerExternalChanges(api: types.IExtensionApi, body: Record<stri
     return { cancelled: true, [run?.kind ?? "deploy"]: "cancelled by Vortex", verified: { dialogClosed: true } };
   }
   const idOf = modIdBySource(api);
+  /**
+   * ─── NO ANSWER IS NOT AN ANSWER ───────────────────────────────────────
+   * Skyrim-collection, 2026-11-23: `{"answer":"revert"}` (pluginsChanged.answer's
+   * shape) named none of all/mods/files, so the plan was empty, Confirm took
+   * Vortex's default ("newer") for every file, and the verb said it answered 5.
+   * The game-folder copies won and overwrote staging. `answer` is now read as
+   * `all`, and a body that answers nothing is refused before Confirm.
+   */
+  const all = str(body["all"]) ?? str(body["answer"]);
+  if (all === undefined && !isRecord(body["mods"]) && !isRecord(body["files"])) {
+    throw new ControlError(
+      "bad-request",
+      `No answer given. Send "all" (or "answer"): "revert"|"save"|"newer", and/or "mods"/"files" maps. Nothing was confirmed.`,
+      400,
+      { externalChanges: shown },
+    );
+  }
   const plan = planAnswer(
     changes,
     {
-      ...(str(body["all"]) !== undefined ? { all: str(body["all"])! } : {}),
+      ...(all !== undefined ? { all } : {}),
       ...(isRecord(body["mods"]) ? { mods: body["mods"] as Record<string, string> } : {}),
       ...(isRecord(body["files"]) ? { files: body["files"] as Record<string, string> } : {}),
     },
@@ -916,6 +933,11 @@ async function answerExternalChanges(api: types.IExtensionApi, body: Record<stri
   if (!applied) {
     throw new ControlError("answer-unverified", "Vortex did not take the answers.", 500, { externalChanges: externalChanges(api) });
   }
+  // Files no answer reached keep Vortex's default; say which, so "answered 5" cannot hide it.
+  const unanswered = new Set(plan.unanswered);
+  const keptDefault = readChanges(api.getState())
+    .filter((c) => unanswered.has(c.filePath))
+    .map((c) => ({ path: c.filePath, mod: c.source, action: c.action }));
   const deletions = readChanges(api.getState()).filter((c) => c.action === "delete").length;
   if (!clickDialogButton("confirm")) {
     throw new ControlError("dialog-not-shown", "The External Changes dialog is not on screen to confirm.", 409, {
@@ -935,7 +957,11 @@ async function answerExternalChanges(api: types.IExtensionApi, body: Record<stri
     });
   }
   pausedRun = undefined;
-  const answered = { answered: changes.length, applied: plan.actions };
+  const answered = {
+    answered: changes.length - keptDefault.length,
+    applied: plan.actions,
+    ...(keptDefault.length > 0 ? { keptVortexDefault: keptDefault } : {}),
+  };
   if (run === undefined) {
     // Opened by a deploy the channel did not start (the user's, or an install's): it carries on by itself.
     return { ...answered, note: "Vortex carries on with the deploy it was running.", verified: { dialogClosed: true } };
@@ -2533,6 +2559,9 @@ export const VERBS: Record<string, Verb> = {
    * finish and verifies it.
    *
    *   { all?: "revert"|"save"|"newer", mods?: {<mod or id>: answer}, files?: {<path>: answer}, cancel?: true }
+   *
+   * `answer` is accepted as `all`. A body naming none of them is refused, and
+   * files no answer reached come back as `keptVortexDefault`.
    *
    * Runs beside the queue: the deploy it unblocks may be the queued command.
    */
