@@ -12,8 +12,8 @@ Published on [Nexus Mods](https://www.nexusmods.com/site/mods/2235): 0.1.0-alpha
 
 ## [0.2.136] — 2026-11-23
 ### Fixed
-- Mods Vortex still lists after its staging folder was reinitialized, with no files left,
-  are no longer treated as already installed; the collection installs them again.
+- The game-version check now catches SKSE plugins that use signature scanning but were built
+  for one game version (e.g. a GOG 1.6.1179 build on Steam 1.6.1170).
 
 ## [0.2.135] — 2026-11-23
 ### Fixed
