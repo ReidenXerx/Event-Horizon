@@ -48,6 +48,8 @@ import {
   nexusCompareKey,
   nexusFileReference,
   nexusModReference,
+  nexusStoreTwinCompareKey,
+  parseCompareKey,
 } from "../identity/compareKey";
 import type {
   EhcollExternalDependency,
@@ -335,6 +337,20 @@ function isNexusSourcedForManifest(mod: AuditorMod): boolean {
   );
 }
 
+/**
+ * The key for the second install of ONE Nexus file as the other store's build,
+ * or undefined when the two mods are not such a pair: both optional members of
+ * the same version group, each with a store, the stores different.
+ */
+export function storeTwinKey(key: string, mod: AuditorMod, twin: AuditorMod | undefined): string | undefined {
+  const a = mod.optional === true ? mod.variant : undefined;
+  const b = twin?.optional === true ? twin.variant : undefined;
+  if (a?.store === undefined || b?.store === undefined) return undefined;
+  if (a.group !== b.group || a.store === b.store) return undefined;
+  if (parseCompareKey(key).kind !== "nexus") return undefined;
+  return nexusStoreTwinCompareKey(key, a.store);
+}
+
 export function buildManifest(input: BuildManifestInput): BuildManifestResult {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -367,6 +383,7 @@ export function buildManifest(input: BuildManifestInput): BuildManifestResult {
   );
 
   const mods: EhcollMod[] = [];
+  const modById = new Map(orderedMods.map((m) => [m.id, m] as const));
   for (const mod of orderedMods) {
     const built = buildModEntry(
       mod,
@@ -376,6 +393,14 @@ export function buildManifest(input: BuildManifestInput): BuildManifestResult {
       input.bundledModIds,
     );
     if (!built) continue;
+
+    // One Nexus file whose FOMOD holds BOTH store builds (CBPC 21224:814665:
+    // GOG 1.6.1179 and Steam 1.6.1170 DLLs), installed twice by the curator
+    // and tagged as a store pair: the later one by install order gets the
+    // store suffix, so the earlier keeps its key across revisions.
+    const twinOf = usedCompareKeys.get(built.compareKey);
+    const twinKey = twinOf === undefined ? undefined : storeTwinKey(built.compareKey, mod, modById.get(twinOf));
+    if (twinKey !== undefined && !usedCompareKeys.has(twinKey)) built.compareKey = twinKey;
 
     compareKeyById.set(mod.id, built.compareKey);
 

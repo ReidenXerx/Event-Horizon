@@ -39,9 +39,9 @@ export type PlayerVariant = {
 
 export type VariantChoice = { nexusModId: number; nexusFileId: number; name: string };
 
-/** `nexus:<modId>:<fileId>` → the ids; anything else → undefined. */
+/** `nexus:<modId>:<fileId>` (or its `#<store>` twin) → the ids; anything else → undefined. */
 export function nexusIdsOfKey(compareKey: string): { modId: number; fileId: number } | undefined {
-  const m = /^nexus:(\d+):(\d+)$/.exec(compareKey);
+  const m = /^nexus:(\d+):(\d+)(?:#[a-z]+)?$/.exec(compareKey);
   return m === null ? undefined : { modId: Number(m[1]), fileId: Number(m[2]) };
 }
 

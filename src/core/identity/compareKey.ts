@@ -47,6 +47,17 @@ export function nexusCompareKey(
   return `nexus:${String(nexusModId)}:${String(nexusFileId)}`;
 }
 
+/**
+ * `nexus:<modId>:<fileId>#<store>` — the OTHER store's build installed from
+ * the SAME Nexus file. One FOMOD can hold both (CBPC 21224:814665 carries the
+ * GOG 1.6.1179 and Steam 1.6.1170 DLLs), so the curator installs it twice and
+ * tags the pair; the second gets this key (Skyrim-collection, 11-24). Still
+ * fully pinned: it names one manifest entry. Its source is the plain file.
+ */
+export function nexusStoreTwinCompareKey(plainKey: string, store: string): string {
+  return `${plainKey}#${store}`;
+}
+
 /** `external:<sha256>` — a mod identified by its source archive's bytes. */
 export function externalArchiveCompareKey(sha256: string): string {
   return `external:${sha256}`;
@@ -65,7 +76,7 @@ export function externalStagingCompareKey(stagingSetHash: string): string {
 }
 
 export type ParsedCompareKey =
-  | { kind: "nexus"; nexusModId: string; nexusFileId: string }
+  | { kind: "nexus"; nexusModId: string; nexusFileId: string; storeTwin?: string }
   | { kind: "external-archive"; sha256: string }
   | { kind: "external-staging"; stagingSetHash: string }
   | { kind: "unrecognised"; raw: string };
@@ -80,7 +91,10 @@ export type ParsedCompareKey =
 export function parseCompareKey(key: string): ParsedCompareKey {
   const parts = key.split(":");
   if (parts[0] === "nexus" && parts.length === 3) {
-    return { kind: "nexus", nexusModId: parts[1]!, nexusFileId: parts[2]! };
+    const [fileId, twin, extra] = parts[2]!.split("#");
+    if (extra === undefined && twin !== "") {
+      return { kind: "nexus", nexusModId: parts[1]!, nexusFileId: fileId!, ...(twin !== undefined ? { storeTwin: twin } : {}) };
+    }
   }
   if (parts[0] === "external") {
     if (parts.length === 3 && parts[1] === "staging") {
