@@ -4,11 +4,13 @@
  * 5.45mm weapon plugin is present. Ivy ships none, the curator's staging still
  * had the file, and the player was told the mod "could not be reproduced".
  */
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
   activePluginsFromState,
   describeNeeds,
+  nativePluginsFromState,
   evaluateCondition,
   installerConditionUnmet,
   pluginsGatedOff,
@@ -402,5 +404,66 @@ describe("a plugin gated on a base-game master (Ivy 1.0.59, ErectionFix_SilverPe
     const active = withBaseGameMasters(() => false, "fallout4", () => true);
     expect(active("DLCNukaWorld.esm")).toBe(true);
     expect(active("Rapport.esp")).toBe(false);
+  });
+});
+
+describe("a plugin gated on .ccc Creations (Ivy 1.0.66, necessity - creation club.esp)", () => {
+  // AE loads these from Fallout4.ccc; plugins.txt never lists them, so their
+  // load-order entry has no `enabled`, like a DLC. Vortex marks them isNative.
+  const cc = ["ccfsvfo4007-halloween.esl", "ccotmfo4001-remnants.esl", "ccsbjfo4003-grenade.esl"];
+  const state = {
+    loadOrder: {
+      ...Object.fromEntries(cc.map((c, i) => [c, { loadOrder: 10 + i }])),
+      "necessity.esp": { enabled: true, loadOrder: 500 },
+      "necessity - creation club.esp": { enabled: true, loadOrder: 501 },
+    },
+    session: {
+      plugins: {
+        pluginList: {
+          ...Object.fromEntries(cc.map((c) => [c, { isNative: true }])),
+          "necessity.esp": { isNative: false, modId: "necessity" },
+          "necessity - creation club.esp": { isNative: false, modId: "necessity" },
+        },
+      },
+    },
+  };
+  const necessity = {
+    state: {
+      stagingFiles: [{ path: "necessity - creation club.esp", installerCondition: { needs: cc, all: true as const } }],
+    },
+  };
+
+  it("was judged absent with only base-game masters rescued, and unticked", () => {
+    const active = withBaseGameMasters(activePluginsFromState(state), "fallout4", () => true);
+    expect([...pluginsGatedOff([necessity], active)]).toEqual(["necessity - creation club.esp"]);
+  });
+
+  it("is not gated when Vortex lists the Creations as native and their files are in Data", () => {
+    const active = withBaseGameMasters(activePluginsFromState(state), "fallout4", () => true, nativePluginsFromState(() => state));
+    expect([...pluginsGatedOff([necessity], active)]).toEqual([]);
+  });
+
+  it("is still gated for a player whose Data lacks one of them", () => {
+    const active = withBaseGameMasters(
+      activePluginsFromState(state),
+      "fallout4",
+      (p) => p.toLowerCase() !== "ccsbjfo4003-grenade.esl",
+      nativePluginsFromState(() => state),
+    );
+    expect([...pluginsGatedOff([necessity], active)]).toEqual(["necessity - creation club.esp"]);
+  });
+
+  it("a mod's plugin is never active through the native test", () => {
+    const native = nativePluginsFromState(() => state);
+    expect(native("CCOTMFO4001-Remnants.esl")).toBe(true);
+    expect(native("necessity.esp")).toBe(false);
+    expect(native("unlisted.esp")).toBe(false);
+    expect(nativePluginsFromState(() => undefined)("ccotmfo4001-remnants.esl")).toBe(false);
+  });
+
+  it("every install-side active test passes the native check", () => {
+    const src = readFileSync(new URL("../installer/runInstall.ts", import.meta.url), "utf8");
+    expect(src.match(/withBaseGameMasters\(/g)?.length).toBe(3);
+    expect(src.match(/nativePluginsFromState\(\(\) => api\.getState\(\)\)/g)?.length).toBe(3);
   });
 });

@@ -161,6 +161,7 @@ import {
 } from "./optionalMods";
 import {
   activePluginsFromState,
+  nativePluginsFromState,
   pluginWillBeActive,
   describeNeeds,
   installerConditionUnmet,
@@ -1037,6 +1038,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
     }),
     plan.manifest.game.id,
     pluginInData,
+    nativePluginsFromState(() => api.getState()),
   );
   let userlistApplication: UserlistApplicationReceipt =
     emptyUserlistApplication();
@@ -2425,6 +2427,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
           (plugin) => on.has(plugin.toLowerCase()),
           plan.manifest.game.id,
           pluginInData,
+          nativePluginsFromState(() => api.getState()),
         );
       })();
       for (let i = 0; i < installedMods.length; i++) {
@@ -4568,7 +4571,7 @@ async function runInstallImpl(ctx: DriverContext): Promise<InstallResult> {
         new Set([
           ...pluginsGatedOff(
             plan.manifest.mods,
-            withBaseGameMasters(activePluginsFromState(api.getState()), plan.manifest.game.id, pluginInData),
+            withBaseGameMasters(activePluginsFromState(api.getState()), plan.manifest.game.id, pluginInData, nativePluginsFromState(() => api.getState())),
           ),
           ...optionalAbsentPlugins,
         ]),

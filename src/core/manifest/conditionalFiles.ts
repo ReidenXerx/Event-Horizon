@@ -96,14 +96,40 @@ export function activePluginsFromState(state: unknown): (plugin: string) => bool
  * plugins and Immersive Dogs' Anatomy Female Wolves.esp went the same way.
  *
  * The master's file in Data is the answer, which is also what the game loads.
+ *
+ * ─── AND SO IS A CREATION THE GAME LISTS IN ITS .ccc ──────────────────────
+ * Ivy 1.0.65/1.0.66 (Fallout-collection, 11-24; spilcam, stormy0286): Necessity
+ * 2.0.5's "necessity - creation club.esp" is recorded "needs all of
+ * ccfsvfo4007-halloween.esl, ccotmfo4001-remnants.esl, ccsbjfo4003-grenade.esl".
+ * AE loads those from Fallout4.ccc, never from plugins.txt, so they have the
+ * same `{ loadOrder }`-only entry as a DLC, read as off, and the install
+ * unticked the plugin as curator-off. Vortex marks every plugin its game
+ * lists natively (base masters, the .ccc) `isNative` in its plugin list;
+ * that, with the file in Data, is active.
  */
 export function withBaseGameMasters(
   isActive: (plugin: string) => boolean,
   gameId: string,
   inData: (plugin: string) => boolean,
+  isNative?: (plugin: string) => boolean,
 ): (plugin: string) => boolean {
   return (plugin) =>
-    isActive(plugin) || (isBaseGameMaster(plugin, gameId) && inData(plugin));
+    isActive(plugin) ||
+    ((isBaseGameMaster(plugin, gameId) || isNative?.(plugin) === true) && inData(plugin));
+}
+
+/**
+ * Plugins Vortex lists as the game's own (`session.plugins.pluginList[id]
+ * .isNative`): base masters and every Creation in the game's `.ccc`. Read live
+ * on each call, so a check built early in a run sees the list as it is later.
+ */
+export function nativePluginsFromState(getState: () => unknown): (plugin: string) => boolean {
+  return (plugin) => {
+    const list = (getState() as { session?: { plugins?: { pluginList?: Record<string, { isNative?: unknown } | undefined> } } } | undefined)
+      ?.session?.plugins?.pluginList;
+    const id = plugin.toLowerCase();
+    return list?.[id]?.isNative === true || list?.[id.replace(/\.ghost$/, "")]?.isNative === true;
+  };
 }
 
 type ConditionMod = {
