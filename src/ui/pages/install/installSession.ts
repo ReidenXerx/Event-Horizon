@@ -1350,11 +1350,25 @@ class InstallSession {
               import("../../../core/installer/timeBudgets"),
               import("../../../core/proton"),
             ]);
-          await purgeGameDeployment(api, {
+          const purging = purgeGameDeployment(api, {
             timeoutMs: deployBudgetMs(countMods(api.getState()), {
               wine: looksLikeWine(),
             }),
           });
+          /**
+           * An agent at the gate cannot see Vortex's External Changes dialog,
+           * so a purge that stops on it waited out the whole budget (1800 s on
+           * alasdairn's PC, 11-25: GT Softbody's OBody json, written by OBody
+           * in-game). Stopped at once instead, naming the files, the way the
+           * deploy and purge verbs stop. The person at the screen sees the
+           * dialog and answers it, as before.
+           */
+          if (this.agent !== undefined) {
+            const { externalChangesHeldPurge } = await import("../../../core/control/externalChanges");
+            await externalChangesHeldPurge(purging, () => api.getState());
+          } else {
+            await purging;
+          }
           purged = true;
         },
         confirm: async (preview) => {

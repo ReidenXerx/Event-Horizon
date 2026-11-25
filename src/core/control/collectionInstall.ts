@@ -462,7 +462,15 @@ export const COLLECTION_INSTALL_VERBS = {
         );
         if (stopped !== undefined) {
           const st = stopped as { kind: string; title: string; text: string };
-          throw new ControlError("gate-stopped", `${st.title}: ${st.text}`.slice(0, 2500), 409, { gate: st.kind, asked, ...summary });
+          // A clean whose purge Vortex holds on External Changes: the files, so the caller can answer and re-run.
+          const { changesForAgent } = await import("./externalChanges");
+          const pending = changesForAgent(api.getState());
+          throw new ControlError("gate-stopped", `${st.title}: ${st.text}`.slice(0, 2500), 409, {
+            gate: st.kind,
+            asked,
+            ...summary,
+            ...(pending.length > 0 ? { externalChanges: pending, purgeWaiting: true } : {}),
+          });
         }
         const atGate = session.getSnapshot().state;
         if (atGate.kind === "confirm" && atGate.readyToStart === true) {

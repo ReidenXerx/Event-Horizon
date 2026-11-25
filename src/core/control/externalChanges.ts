@@ -60,6 +60,44 @@ export function readChanges(state: unknown): Entry[] {
   return Array.isArray(list) ? (list as Entry[]).filter((e) => typeof e?.filePath === "string") : [];
 }
 
+/** The External Changes entries, short, for a stop an agent reads. */
+export function changesForAgent(state: unknown): Array<{ path: string; mod: string; kind: string; current: string }> {
+  return readChanges(state).map((c) => ({ path: c.filePath, mod: c.source, kind: c.type, current: c.action }));
+}
+
+/**
+ * Wait for a purge, but throw as soon as Vortex holds it on its External
+ * Changes dialog. The purge stays paused on that dialog: answering it with
+ * externalChanges.answer lets it finish.
+ */
+export async function externalChangesHeldPurge(purging: Promise<void>, getState: () => unknown, pollMs = 500): Promise<void> {
+  let done = false;
+  const settled = purging.then(
+    () => undefined,
+    () => undefined,
+  );
+  void settled.then(() => {
+    done = true;
+  });
+  const held = await new Promise<ReturnType<typeof changesForAgent> | undefined>((resolve) => {
+    void settled.then(() => resolve(undefined));
+    const tick = (): void => {
+      if (done) return;
+      const changes = changesForAgent(getState());
+      if (changes.length > 0) resolve(changes);
+      else setTimeout(tick, pollMs);
+    };
+    setTimeout(tick, pollMs);
+  });
+  if (held === undefined) return purging;
+  const shown = held.slice(0, 10).map((c) => `${c.path} (${c.mod}, ${c.kind})`).join("; ");
+  throw new Error(
+    `Vortex stopped the purge on its External Changes dialog: ${held.length} file(s) changed outside Vortex: ${shown}` +
+      `${held.length > 10 ? `; and ${held.length - 10} more` : ""}. Answer it with externalChanges.answer ("revert", "save" or "newer"); ` +
+      `the purge then finishes. Then run collection.install again.`,
+  );
+}
+
 const choiceOf = (type: string, action: string): Choice | undefined =>
   (Object.entries(CHOICES[type] ?? {}) as Array<[Choice, string]>).find(([, a]) => a === action)?.[0];
 
