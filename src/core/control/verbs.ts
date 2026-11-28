@@ -2708,9 +2708,13 @@ export const VERBS: Record<string, Verb> = {
       const { readPluginHeader, isCreationClubMaster } = await import("../manifest/pluginMasters");
       const capability = pluginCapabilityFor(gameId);
       const all = readPluginList(api.getState());
-      const enabled = all.filter((p) => p.enabled).sort((a, b) => (a.loadOrder ?? -1) - (b.loadOrder ?? -1));
-      const position = new Map(enabled.map((p, i) => [p.name.toLowerCase(), p.isNative ? -1 : i]));
+      const { loadPositions, loadsBeforeMaster } = await import("./masterOrder");
+      const enabled = all.filter((p) => p.enabled);
+      // plugins.txt on disk, not Vortex's loadOrder numbers (see masterOrder).
+      const position = loadPositions(enabled, await readUserPluginsTxt(gameId, readDiscovery(api.getState(), gameId).store));
       const known = new Map(all.map((p) => [p.name.toLowerCase(), p]));
+      const isMasterFile = new Map<string, boolean>();
+      const mastersOf: Array<{ p: (typeof enabled)[number]; masters: string[] }> = [];
       let light = 0;
       let medium = 0;
       let regular = 0;
@@ -2732,8 +2736,14 @@ export const VERBS: Record<string, Verb> = {
           if (h.flags?.isLight === true || (/\.esl$/i.test(p.name) && capability?.lightPlugins === true)) light++;
           else if (h.flags?.isMedium === true) medium++;
           else regular++;
-          const me = position.get(p.name.toLowerCase()) ?? 0;
-          for (const m of h.masters) {
+          isMasterFile.set(p.name.toLowerCase(), h.flags?.isMaster === true || /\.es[ml]$/i.test(p.name));
+          mastersOf.push({ p, masters: h.masters });
+        }
+      };
+      await Promise.all(Array.from({ length: 16 }, worker));
+      for (const { p, masters } of mastersOf) {
+        {
+          for (const m of masters) {
             const at = position.get(m.toLowerCase());
             if (at === undefined) {
               const there = known.get(m.toLowerCase());
@@ -2744,13 +2754,12 @@ export const VERBS: Record<string, Verb> = {
                     ? { severity: "error", code: "missing-cc-master", message: `${p.name} needs ${m}, Creation Club content that is not installed.`, fix: "the user needs that Creation Club item, or disable the plugin that needs it" }
                     : { severity: "error", code: "missing-master", message: `${p.name} needs ${m}, which is not installed. The game will not start (or crash on load) with it active.`, fix: `install the mod that provides ${m}, or disable ${p.name}` },
               );
-            } else if (at > me) {
+            } else if (loadsBeforeMaster(p.name, m, position, (n) => isMasterFile.get(n.toLowerCase()))) {
               add({ severity: "error", code: "master-after", message: `${p.name} loads before its master ${m}.`, fix: `plugins_rule ${p.name} after ${m}, then plugins_sort` });
             }
           }
         }
-      };
-      await Promise.all(Array.from({ length: 16 }, worker));
+      }
       if (capability !== undefined && regular > capability.regularSlots) {
         add({ severity: "error", code: "too-many-plugins", message: `${regular} full plugins are active; the game can load ${capability.regularSlots}.`, fix: "disable plugins, or ESL-flag small ones that are safe to flag" });
       }
